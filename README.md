@@ -130,11 +130,11 @@ b.name = "Alan"      # never touches a
 ```
 
 Fields are read with `p.x` and written with `p.x = v` (including nested,
-`r.lo.x = v`). Construction is positional in declaration order. A struct must
-be declared before it is used as a type. *Not yet:* struct comparison
-(`==`/`!=`), and index-*writing* a struct's array field (`p.tags[0] = v`) —
-reading `p.tags[0]` works; assign the whole field, or copy the array out,
-mutate, and reassign.
+`r.lo.x = v`, and a struct's array-field element, `p.tags[0] = v`).
+Construction is positional in declaration order. A struct must be declared
+before it is used as a type. Structs compare by value with `==`/`!=`
+(field-wise, recursing into nested structs/arrays/strings) — `a == b` is true
+exactly when `b` is an independent copy of `a`.
 
 ### Arrays (`[int]`, `[string]`)
 
