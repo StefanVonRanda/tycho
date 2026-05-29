@@ -806,6 +806,17 @@ static int vars_can_mutate(const char *name) {
     return 1;
 }
 
+/* names of the current proc's inout params (resolver side), so push can reject
+ * growth through an inout array (shared buffer can't be reallocated safely
+ * across the call boundary yet — only in-place mutation is supported). */
+static const char *g_res_inout[8];
+static int g_nres_inout = 0;
+static int is_res_inout(const char *name) {
+    for (int i = 0; i < g_nres_inout; i++)
+        if (!strcmp(g_res_inout[i], name)) return 1;
+    return 0;
+}
+
 /* --------------------------------------------------------- type resolve */
 
 static int is_cmp(TokKind op) {
@@ -898,6 +909,9 @@ static Type resolve_expr(Expr *e) {
                 Type arrt = resolve_expr(e->args[0]);
                 if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
                     die_at(e->line, "push's first argument must be an [int] or [string] array");
+                if (is_res_inout(root->sval))
+                    die_at(e->line, "cannot push to inout array '%s' (growth across a call boundary is not supported yet; mutate elements in place, or return a fresh array)",
+                           root->sval);
                 if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
@@ -1104,13 +1118,16 @@ static void resolve_program(ProcVec *prog) {
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
-            /* inout v1: non-heap types only (int/bool/pure struct). Copy-out
-             * is a plain word store with no arena interaction, so it cannot
-             * dangle. Heap inout would need the callee to know each arg's
-             * owning arena — deferred. */
-            if (pr->params[j].is_inout && type_is_heap(pr->params[j].type))
-                die_at(pr->line, "inout parameter '%s' must be a non-heap type "
-                       "(int, bool, or a pure-value struct) for now",
+            /* inout: non-heap types (int/bool/pure struct) and [int]. A
+             * non-heap copy-out is a plain word store; an [int] inout shares
+             * the caller's buffer by pointer and is mutated in place
+             * (index-set, no allocation) — both can't dangle. [string]/string/
+             * heap-bearing structs and push-through-inout are deferred (they'd
+             * copy/grow into an arena the callee can't correctly name). */
+            if (pr->params[j].is_inout && type_is_heap(pr->params[j].type)
+                && pr->params[j].type != T_ARRAY_INT)
+                die_at(pr->line, "inout parameter '%s': only non-heap types or "
+                       "[int] are supported as inout for now",
                        pr->params[j].name);
         }
         g_sigs[g_nsigs++] = s;
@@ -1124,10 +1141,16 @@ static void resolve_program(ProcVec *prog) {
          * buffer is shared, so in-place push/set would hit the caller); all
          * other value params — int/bool/string/struct — are copies and so are
          * mutable locals (a struct field-set rebinds only the local copy). */
+        g_nres_inout = 0;
         for (int j = 0; j < pr->nparams; j++) {
             Type pt = pr->params[j].type;
-            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING);
+            /* arrays are read-only borrows EXCEPT an inout [int], which is a
+             * by-pointer share the callee may mutate in place. */
+            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING)
+                          || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
+            if (pr->params[j].is_inout && g_nres_inout < 8)
+                g_res_inout[g_nres_inout++] = pr->params[j].name;
         }
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");

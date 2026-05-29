@@ -1,0 +1,14 @@
+fn fib(n: int, memo: inout [int]) -> int:
+    if n < 2:
+        return n
+    if memo[n] != 0:
+        return memo[n]
+    r := fib(n - 1, memo) + fib(n - 2, memo)
+    memo[n] = r
+    return r
+
+fn main():
+    memo := []int
+    for i in range(0, 41):
+        push(memo, 0)
+    print("fib(40) = " + str(fib(40, memo)) + "\n")
