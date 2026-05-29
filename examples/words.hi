@@ -1,0 +1,22 @@
+# [string] arrays and split/join: count and re-join the words of a sentence.
+
+fn join(parts: [string], sep: string) -> string:
+    out := ""
+    for i in range(0, len(parts)):
+        if i > 0:
+            out = out + sep
+        out = out + parts[i]
+    return out                       # the [string] is borrowed; the result
+                                     # string is promoted to the caller's arena
+
+fn main():
+    words := split("the quick brown fox", " ")
+    print("count: " + str(len(words)) + "\n")     # 4
+    print("first: " + words[0] + "\n")            # the
+    print("last:  " + words[len(words) - 1] + "\n")  # fox
+
+    # build a [string] across a loop, then join it back
+    tags := []string
+    for i in range(0, 3):
+        push(tags, "tag" + str(i))   # each pushed string is copied into tags' arena
+    print("csv: " + join(tags, ",") + "\n")       # tag0,tag1,tag2

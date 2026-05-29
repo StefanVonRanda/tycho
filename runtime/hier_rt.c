@@ -210,3 +210,85 @@ HierArrInt hier_arr_int_copy(Arena *a, HierArrInt src) {
     if (src.len) memcpy(r.data, src.data, (size_t)src.len * sizeof(long));
     return r;
 }
+
+/* --- [string] arrays ------------------------------------------------------
+ * Like HierArrInt, but the elements are char* whose bytes live in an arena.
+ * The lifetime seam (see hier_str_copy) nests here: every operation that
+ * moves a string *into* the array (push/set/literal/copy) must copy the
+ * bytes into the array's owning arena, and copying the array must deep-copy
+ * each element too — otherwise a promoted array keeps pointers into a freed
+ * scope. */
+
+typedef struct { char **data; long len; long cap; } HierArrStr;
+
+HierArrStr hier_arr_str_with_cap(Arena *a, long cap) {
+    HierArrStr r;
+    r.len = 0;
+    r.cap = cap;
+    r.data = cap > 0 ? (char **)arena_alloc(a, (size_t)cap * sizeof(char *)) : NULL;
+    return r;
+}
+
+void hier_arr_str_push(Arena *a, HierArrStr *xs, const char *v) {
+    if (xs->len == xs->cap) {
+        long ncap = xs->cap ? xs->cap * 2 : 4;
+        char **nd = (char **)arena_alloc(a, (size_t)ncap * sizeof(char *));
+        if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
+        xs->data = nd;
+        xs->cap = ncap;
+    }
+    xs->data[xs->len++] = hier_str_copy(a, v);   /* copy bytes into owner arena */
+}
+
+char *hier_arr_str_get(HierArrStr xs, long i) {
+    if (i < 0 || i >= xs.len) {
+        fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs.len);
+        exit(1);
+    }
+    return xs.data[i];
+}
+
+void hier_arr_str_set(Arena *a, HierArrStr *xs, long i, const char *v) {
+    if (i < 0 || i >= xs->len) {
+        fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs->len);
+        exit(1);
+    }
+    xs->data[i] = hier_str_copy(a, v);           /* copy bytes into owner arena */
+}
+
+/* value-semantic copy: independent buffer AND independent element bytes in a */
+HierArrStr hier_arr_str_copy(Arena *a, HierArrStr src) {
+    HierArrStr r = hier_arr_str_with_cap(a, src.len);
+    r.len = src.len;
+    for (long i = 0; i < src.len; i++) r.data[i] = hier_str_copy(a, src.data[i]);
+    return r;
+}
+
+/* split s on a (non-empty) separator into a fresh [string] in arena a.
+ * n separators -> n+1 fields (leading/trailing/adjacent seps yield empty
+ * fields); an empty s yields one empty field. An empty separator has no
+ * well-defined splitting, so fail closed rather than guess. */
+HierArrStr hier_str_split(Arena *a, const char *s, const char *sep) {
+    size_t seplen = strlen(sep);
+    if (seplen == 0) {
+        fprintf(stderr, "hier: split with an empty separator\n");
+        exit(1);
+    }
+    HierArrStr r = hier_arr_str_with_cap(a, 4);
+    const char *start = s;
+    for (;;) {
+        const char *hit = strstr(start, sep);
+        if (!hit) {                              /* last field: rest of string */
+            hier_arr_str_push(a, &r, start);
+            break;
+        }
+        /* field is [start, hit); copy it as a counted slice */
+        size_t flen = (size_t)(hit - start);
+        char *field = (char *)arena_alloc(a, flen + 1);
+        memcpy(field, start, flen);
+        field[flen] = '\0';
+        hier_arr_str_push(a, &r, field);
+        start = hit + seplen;
+    }
+    return r;
+}

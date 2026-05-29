@@ -101,7 +101,7 @@ Construction is positional in declaration order. A struct must be declared
 before it is used as a type. *Not yet:* `string`/`[int]` fields (those need
 deep-copy-on-move; coming next), and struct comparison.
 
-### Arrays (`[int]`)
+### Arrays (`[int]`, `[string]`)
 
 ```
 xs := [10, 20, 30]      # literal
@@ -111,10 +111,16 @@ len(xs)                 # length -> int
 xs[0]                   # index read (bounds-checked)
 xs[0] = 99              # index write (bounds-checked)
 zs := xs                # value semantics: zs is an independent deep copy
+
+names := ["ada", "alan"]  # [string] works the same way
+push(names, "grace")
+names[0] = "Ada"          # element-set copies the string into the array's arena
 ```
 
-Arrays are values: assigning one copies it, so mutating the copy never
-touches the original. Out-of-bounds access aborts with a message.
+Element types are `int` and `string`. Arrays are values: assigning one
+copies it (a `[string]` copy is deep — its element bytes are copied too),
+so mutating the copy never touches the original. Out-of-bounds access aborts
+with a message.
 
 Arrays cross function boundaries too:
 
@@ -134,7 +140,8 @@ fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
 
 A parameter is passed as a borrow (no copy); mutating it in place is a
 compile error — copy it first (`b := a`) to get a mutable local. *Not yet:*
-`[string]`/struct elements, and `inout` parameters for in-place mutation.
+struct/array elements (arrays of arrays or of structs), and `inout`
+parameters for in-place mutation.
 
 ### Declarations and assignment
 
@@ -188,9 +195,10 @@ scoped to the loop. The condition form takes any `bool` expression.
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
 | `str(n)` | `int -> string` | Integer to string. |
-| `len(x)` | `string -> int` / `[int] -> int` | Byte length of a string, or element count of an array. |
+| `len(x)` | `string -> int` / `[T] -> int` | Byte length of a string, or element count of an array. |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
+| `split(s, sep)` | `(string, string) -> [string]` | Split on a non-empty separator; `n` separators yield `n+1` fields (an empty `s` yields one empty field). Empty separator aborts. |
 
 String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
 `substr`, and `find` are all byte-oriented (not Unicode-aware).
@@ -237,7 +245,9 @@ None of this appears in Hier source.
 - A `return` from *inside* a loop does not free that loop's scratch arena
   (the function's own arena and the returned value are handled correctly).
   Reclaimed at process exit. Harmless for short-lived programs.
-- No structs, arrays, floats, modules, or generics. Single source file.
+- No floats, modules, or generics. Single source file. Structs are
+  pure-value (no `string`/array fields yet); arrays are one-dimensional
+  (`[int]`, `[string]` — no arrays of arrays or of structs).
 
 ## Repository layout
 
@@ -246,7 +256,8 @@ src/hierc.c        the compiler (lexer, parser, type resolver, C codegen)
 runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
 build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
-examples/          hello.hi, demo.hi, accumulate.hi
+examples/          hello, demo, accumulate, arrays, array_fns, structs,
+                   strings, words (.hi)
 ```
 
 The runtime is turned into a C string literal at build time (`make`

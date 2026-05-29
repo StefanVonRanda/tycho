@@ -244,7 +244,7 @@ static TokVec lex(const char *src) {
  * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
  * constants keep working in every existing == and switch. */
 typedef int Type;
-enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT };
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING };
 #define T_STRUCT_BASE   64
 #define IS_STRUCT(t)    ((t) >= T_STRUCT_BASE)
 #define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
@@ -265,21 +265,23 @@ static int struct_find(const char *name) {
 static const char *c_type(Type t) {
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     switch (t) {
-        case T_INT:       return "long ";
-        case T_BOOL:      return "int ";
-        case T_STRING:    return "char *";
-        case T_ARRAY_INT: return "HierArrInt ";
-        default:          return "void ";
+        case T_INT:          return "long ";
+        case T_BOOL:         return "int ";
+        case T_STRING:       return "char *";
+        case T_ARRAY_INT:    return "HierArrInt ";
+        case T_ARRAY_STRING: return "HierArrStr ";
+        default:             return "void ";
     }
 }
 static const char *type_name(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     switch (t) {
-        case T_INT:       return "int";
-        case T_BOOL:      return "bool";
-        case T_STRING:    return "string";
-        case T_ARRAY_INT: return "[int]";
-        default:          return "void";
+        case T_INT:          return "int";
+        case T_BOOL:         return "bool";
+        case T_STRING:       return "string";
+        case T_ARRAY_INT:    return "[int]";
+        case T_ARRAY_STRING: return "[string]";
+        default:             return "void";
     }
 }
 
@@ -348,12 +350,13 @@ static int accept(Parser *ps, TokKind k) {
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
-    if (t->kind == TK_LBRACKET) {        /* [int] */
+    if (t->kind == TK_LBRACKET) {        /* [int] or [string] */
         ps->p++;
         Type elem = parse_type(ps);
         eat(ps, TK_RBRACKET, "']'");
-        if (elem != T_INT) die_at(t->line, "only [int] arrays are supported for now");
-        return T_ARRAY_INT;
+        if (elem == T_INT)    return T_ARRAY_INT;
+        if (elem == T_STRING) return T_ARRAY_STRING;
+        die_at(t->line, "only [int] and [string] arrays are supported");
     }
     if (t->kind == TK_IDENT) {           /* a struct name */
         int sid = struct_find(t->text);
@@ -394,10 +397,12 @@ static Expr *parse_primary(Parser *ps) {
     if (t->kind == TK_LBRACKET) {            /* array literal */
         ps->p++;
         Expr *e = new_expr(E_ARRLIT, t->line);
-        if (at(ps, TK_RBRACKET)) {           /* empty: []int */
+        if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string */
             ps->p++;
             Type elem = parse_type(ps);
-            if (elem != T_INT) die_at(t->line, "only [int] arrays are supported for now");
+            if (elem == T_INT)         e->ival = T_ARRAY_INT;      /* type carried */
+            else if (elem == T_STRING) e->ival = T_ARRAY_STRING;   /* to resolver */
+            else die_at(t->line, "only [int] and [string] arrays are supported");
             return e;
         }
         int cap = 0;
@@ -741,6 +746,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ "str",    T_STRING, { T_INT },                     1, 1 };
     g_sigs[g_nsigs++] = (Sig){ "substr", T_STRING, { T_STRING, T_INT, T_INT },    3, 1 };
     g_sigs[g_nsigs++] = (Sig){ "find",   T_INT,    { T_STRING, T_STRING },        2, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "split",  T_ARRAY_STRING, { T_STRING, T_STRING },  2, 1 };
 }
 
 /* ---------------------------------------------------- variable scoping */
@@ -790,18 +796,24 @@ static Type resolve_expr(Expr *e) {
             return e->type = t;
         }
         case E_ARRLIT: {
-            for (int i = 0; i < e->nargs; i++)
-                if (resolve_expr(e->args[i]) != T_INT)
-                    die_at(e->line, "array elements must be int");
-            return e->type = T_ARRAY_INT;
+            if (e->nargs == 0)                 /* empty literal: type from []T */
+                return e->type = (Type)e->ival;
+            Type elem = resolve_expr(e->args[0]);
+            if (elem != T_INT && elem != T_STRING)
+                die_at(e->line, "array elements must be int or string");
+            for (int i = 1; i < e->nargs; i++)
+                if (resolve_expr(e->args[i]) != elem)
+                    die_at(e->line, "array elements must all have the same type");
+            return e->type = (elem == T_STRING ? T_ARRAY_STRING : T_ARRAY_INT);
         }
         case E_INDEX: {
             Type bt = resolve_expr(e->lhs);
             if (resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "index must be int");
+            if (bt == T_ARRAY_STRING) return e->type = T_STRING;  /* element */
             if (bt != T_ARRAY_INT && bt != T_STRING)
-                die_at(e->line, "can only index an [int] array or a string");
-            return e->type = T_INT;   /* array element or string byte */
+                die_at(e->line, "can only index an [int]/[string] array or a string");
+            return e->type = T_INT;   /* [int] element or string byte */
         }
         case E_FIELD: {
             Type bt = resolve_expr(e->lhs);
@@ -837,21 +849,23 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_ARRAY_INT && at_ != T_STRING)
-                    die_at(e->line, "len(...) takes an [int] array or a string");
+                if (at_ != T_ARRAY_INT && at_ != T_ARRAY_STRING && at_ != T_STRING)
+                    die_at(e->line, "len(...) takes an array or a string");
                 return e->type = T_INT;
             }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
                 if (e->args[0]->kind != E_IDENT)
                     die_at(e->line, "push's first argument must be an array variable");
-                if (resolve_expr(e->args[0]) != T_ARRAY_INT)
-                    die_at(e->line, "push's first argument must be an [int] array");
+                Type arrt = resolve_expr(e->args[0]);
+                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
+                    die_at(e->line, "push's first argument must be an [int] or [string] array");
                 if (!vars_can_mutate(e->args[0]->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            e->args[0]->sval, e->args[0]->sval);
-                if (resolve_expr(e->args[1]) != T_INT)
-                    die_at(e->line, "push's value must be int");
+                Type want = (arrt == T_ARRAY_STRING) ? T_STRING : T_INT;
+                if (resolve_expr(e->args[1]) != want)
+                    die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
             }
             Sig *s = sig_find(e->sval);
@@ -969,12 +983,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (!vars_can_mutate(s->target->lhs->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                        s->target->lhs->sval, s->target->lhs->sval);
-            if (resolve_expr(s->target->lhs) != T_ARRAY_INT)
-                die_at(s->line, "can only index-assign an [int] array (strings are immutable)");
-            Type tt = resolve_expr(s->target);    /* E_INDEX -> int, checks array */
+            Type arrt = resolve_expr(s->target->lhs);
+            if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
+                die_at(s->line, "can only index-assign an [int] or [string] array (strings themselves are immutable)");
+            Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
             Type vt = resolve_expr(s->expr);
             if (tt != vt)
-                die_at(s->line, "cannot assign %s to an int element", type_name(vt));
+                die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
             break;
         }
         case S_FIELDSET: {
@@ -1077,12 +1092,21 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("hier_str_find(%s, %s)", s, sub);
     }
     if (!strcmp(e->sval, "push")) {
-        /* grow the array in *its owning arena*, not the current one */
+        /* grow the array in *its owning arena*, not the current one. For
+         * [string], the runtime push also copies the element bytes into that
+         * arena, so a pushed loop-scratch temporary does not dangle. */
         const char *nm = e->args[0]->sval;       /* checked E_IDENT in resolve */
         const char *owner = cv_arena(nm);
         if (!owner) owner = arena;
         char *v = gen_expr(e->args[1], arena);
+        if (e->args[0]->type == T_ARRAY_STRING)
+            return sfmt("hier_arr_str_push(%s, &h_%s, %s)", owner, nm, v);
         return sfmt("hier_arr_int_push(%s, &h_%s, %s)", owner, nm, v);
+    }
+    if (!strcmp(e->sval, "split")) {
+        char *s   = gen_expr(e->args[0], arena);
+        char *sep = gen_expr(e->args[1], arena);
+        return sfmt("hier_str_split(%s, %s, %s)", arena, s, sep);
     }
     if (!strcmp(e->sval, "print")) {
         char *a = gen_expr(e->args[0], arena);
@@ -1133,11 +1157,22 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING)
                 return sfmt("hier_str_get(%s, %s)", a, ix);
+            if (e->lhs->type == T_ARRAY_STRING)
+                return sfmt("hier_arr_str_get(%s, %s)", a, ix);
             return sfmt("hier_arr_int_get(%s, %s)", a, ix);
         }
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
             int id = g_blk++;
+            if (e->type == T_ARRAY_STRING) {
+                /* copy each element into `arena` so the literal owns its bytes */
+                char *out = sfmt("({ HierArrStr _l%d = hier_arr_str_with_cap(%s, %dL);",
+                                 id, arena, e->nargs);
+                for (int i = 0; i < e->nargs; i++)
+                    out = sfmt("%s _l%d.data[%d] = hier_str_copy(%s, %s);",
+                               out, id, i, arena, gen_expr(e->args[i], arena));
+                return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
+            }
             char *out = sfmt("({ HierArrInt _l%d = hier_arr_int_with_cap(%s, %dL);",
                              id, arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
@@ -1190,8 +1225,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* value semantics: binding a plain array *variable* aliases its
              * buffer, so deep-copy. A literal or call result is already a
              * freshly-owned value — no copy needed. */
-            if (s->decl_type == T_ARRAY_INT && s->expr->kind == E_IDENT)
-                v = sfmt("hier_arr_int_copy(%s, %s)", scope, v);
+            if (s->expr->kind == E_IDENT) {
+                if (s->decl_type == T_ARRAY_INT)
+                    v = sfmt("hier_arr_int_copy(%s, %s)", scope, v);
+                else if (s->decl_type == T_ARRAY_STRING)
+                    v = sfmt("hier_arr_str_copy(%s, %s)", scope, v);
+            }
             indent(o, ind);
             fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
             cv_push(s->name, scope);   /* this variable lives in `scope` */
@@ -1210,6 +1249,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (s->expr->kind == E_IDENT) {
                 if (s->expr->type == T_ARRAY_INT)
                     v = sfmt("hier_arr_int_copy(%s, %s)", owner, v);
+                else if (s->expr->type == T_ARRAY_STRING)
+                    v = sfmt("hier_arr_str_copy(%s, %s)", owner, v);
                 else if (s->expr->type == T_STRING)
                     v = sfmt("hier_str_copy(%s, %s)", owner, v);
             }
@@ -1222,7 +1263,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *ix = gen_expr(s->target->rhs, scope);
             char *v  = gen_expr(s->expr, scope);
             indent(o, ind);
-            fprintf(o, "hier_arr_int_set(&h_%s, %s, %s);\n", nm, ix, v);
+            if (s->target->lhs->type == T_ARRAY_STRING) {
+                /* set copies the element into the array's owning arena */
+                const char *owner = cv_arena(nm);
+                if (!owner) owner = scope;
+                fprintf(o, "hier_arr_str_set(%s, &h_%s, %s, %s);\n", owner, nm, ix, v);
+            } else {
+                fprintf(o, "hier_arr_int_set(&h_%s, %s, %s);\n", nm, ix, v);
+            }
             break;
         }
         case S_FIELDSET: {
@@ -1264,6 +1312,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ HierArrInt _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                }
+            } else if (ret == T_ARRAY_STRING) {
+                /* promote up. A fresh value (literal/split/call) is built
+                 * directly in the caller's arena; a bare variable is
+                 * deep-copied (buffer + every element) into it. */
+                if (s->expr->kind == E_IDENT) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = hier_arr_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = %s; arena_free(&_scope); return _ret; }\n", v);
                 }
             } else {
                 /* int/bool, or a pure-value struct: a value, nothing on the
