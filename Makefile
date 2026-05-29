@@ -53,4 +53,5 @@ clean:
 	rm -f examples/arrays examples/arrays.c
 	rm -f examples/array_fns examples/array_fns.c
 	rm -f examples/structs examples/structs.c
+	rm -f examples/strings examples/strings.c
 	-rmdir build 2>/dev/null || true

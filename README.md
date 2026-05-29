@@ -149,7 +149,10 @@ x = x + 1        # assignment (variable must already exist)
 - Arithmetic on `int`: `+ - * /`, unary `-`.
 - `+` on `string` concatenates.
 - Comparisons `== != < > <= >=` produce `bool`. `==`/`!=` work on any
-  matching pair (including `string`); ordering is `int`-only.
+  matching pair (including `string`); ordering (`< > <= >=`) works on two
+  `int`s or two `string`s (strings compare lexicographically by byte).
+- `s[i]` on a `string` reads the byte at index `i` as an `int` (0..255),
+  bounds-checked. Strings are immutable — `s[i] = v` is a compile error.
 - Calls: `f(a, b)`.
 
 ### Control flow
@@ -185,8 +188,12 @@ scoped to the loop. The condition form takes any `bool` expression.
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
 | `str(n)` | `int -> string` | Integer to string. |
+| `len(x)` | `string -> int` / `[int] -> int` | Byte length of a string, or element count of an array. |
+| `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
+| `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
 
-String escapes: `\n \t \\ \"`.
+String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
+`substr`, and `find` are all byte-oriented (not Unicode-aware).
 
 ## Memory model
 

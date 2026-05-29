@@ -87,6 +87,41 @@ char *hier_str_concat(Arena *a, const char *x, const char *y) {
 
 void hier_print(const char *s) { fputs(s, stdout); }
 
+/* --- string builtins ------------------------------------------------------
+ * Strings are NUL-terminated byte buffers (char *). len/index are byte-
+ * oriented. substr returns a fresh copy in the target arena (value
+ * semantics, like everything else); its range is clamped Python-style. */
+
+long hier_str_len(const char *s) { return (long)strlen(s); }
+
+long hier_str_get(const char *s, long i) {
+    long n = (long)strlen(s);
+    if (i < 0 || i >= n) {
+        fprintf(stderr, "hier: string index %ld out of bounds (len %ld)\n", i, n);
+        exit(1);
+    }
+    return (long)(unsigned char)s[i];   /* unsigned: 0..255, never negative */
+}
+
+/* substring [start, end); out-of-range bounds are clamped, not an error */
+char *hier_str_substr(Arena *a, const char *s, long start, long end) {
+    long n = (long)strlen(s);
+    if (start < 0) start = 0;
+    if (end > n) end = n;
+    if (end < start) end = start;
+    long m = end - start;
+    char *r = (char *)arena_alloc(a, (size_t)m + 1);
+    memcpy(r, s + start, (size_t)m);
+    r[m] = '\0';
+    return r;
+}
+
+/* byte index of the first occurrence of sub in s, or -1 if absent */
+long hier_str_find(const char *s, const char *sub) {
+    const char *p = strstr(s, sub);
+    return p ? (long)(p - s) : -1;
+}
+
 char *hier_input(Arena *a) {
     size_t cap = 128, len = 0;
     char *buf = (char *)arena_alloc(a, cap);

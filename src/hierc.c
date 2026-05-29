@@ -736,9 +736,11 @@ static Sig *sig_find(const char *name) {
 }
 
 static void register_builtins(void) {
-    g_sigs[g_nsigs++] = (Sig){ "print", T_VOID,   { T_STRING }, 1, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "input", T_STRING, { 0 },        0, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "str",   T_STRING, { T_INT },    1, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "print",  T_VOID,   { T_STRING },                  1, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "input",  T_STRING, { 0 },                         0, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "str",    T_STRING, { T_INT },                     1, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "substr", T_STRING, { T_STRING, T_INT, T_INT },    3, 1 };
+    g_sigs[g_nsigs++] = (Sig){ "find",   T_INT,    { T_STRING, T_STRING },        2, 1 };
 }
 
 /* ---------------------------------------------------- variable scoping */
@@ -794,11 +796,12 @@ static Type resolve_expr(Expr *e) {
             return e->type = T_ARRAY_INT;
         }
         case E_INDEX: {
-            if (resolve_expr(e->lhs) != T_ARRAY_INT)
-                die_at(e->line, "can only index an [int] array");
+            Type bt = resolve_expr(e->lhs);
             if (resolve_expr(e->rhs) != T_INT)
-                die_at(e->line, "array index must be int");
-            return e->type = T_INT;
+                die_at(e->line, "index must be int");
+            if (bt != T_ARRAY_INT && bt != T_STRING)
+                die_at(e->line, "can only index an [int] array or a string");
+            return e->type = T_INT;   /* array element or string byte */
         }
         case E_FIELD: {
             Type bt = resolve_expr(e->lhs);
@@ -832,8 +835,10 @@ static Type resolve_expr(Expr *e) {
             }
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
-                if (e->nargs != 1 || resolve_expr(e->args[0]) != T_ARRAY_INT)
-                    die_at(e->line, "len(...) takes one [int] array");
+                if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                if (at_ != T_ARRAY_INT && at_ != T_STRING)
+                    die_at(e->line, "len(...) takes an [int] array or a string");
                 return e->type = T_INT;
             }
             if (!strcmp(e->sval, "push")) {
@@ -874,8 +879,10 @@ static Type resolve_expr(Expr *e) {
                     if (lt == T_ARRAY_INT) die_at(e->line, "cannot compare arrays");
                     if (IS_STRUCT(lt)) die_at(e->line, "cannot compare structs");
                 } else {
-                    if (lt != T_INT || rt != T_INT)
-                        die_at(e->line, "ordering compares ints only");
+                    int ok = (lt == T_INT && rt == T_INT) ||
+                             (lt == T_STRING && rt == T_STRING);
+                    if (!ok)
+                        die_at(e->line, "ordering compares two ints or two strings");
                 }
                 return e->type = T_BOOL;
             }
@@ -962,6 +969,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (!vars_can_mutate(s->target->lhs->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                        s->target->lhs->sval, s->target->lhs->sval);
+            if (resolve_expr(s->target->lhs) != T_ARRAY_INT)
+                die_at(s->line, "can only index-assign an [int] array (strings are immutable)");
             Type tt = resolve_expr(s->target);    /* E_INDEX -> int, checks array */
             Type vt = resolve_expr(s->expr);
             if (tt != vt)
@@ -1052,7 +1061,20 @@ static const char *cv_arena(const char *name) {
 static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "len")) {
         char *a = gen_expr(e->args[0], arena);
+        if (e->args[0]->type == T_STRING)
+            return sfmt("hier_str_len(%s)", a);
         return sfmt("((%s).len)", a);
+    }
+    if (!strcmp(e->sval, "substr")) {
+        char *s = gen_expr(e->args[0], arena);
+        char *a = gen_expr(e->args[1], arena);
+        char *b = gen_expr(e->args[2], arena);
+        return sfmt("hier_str_substr(%s, %s, %s, %s)", arena, s, a, b);
+    }
+    if (!strcmp(e->sval, "find")) {
+        char *s   = gen_expr(e->args[0], arena);
+        char *sub = gen_expr(e->args[1], arena);
+        return sfmt("hier_str_find(%s, %s)", s, sub);
     }
     if (!strcmp(e->sval, "push")) {
         /* grow the array in *its owning arena*, not the current one */
@@ -1109,6 +1131,8 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_INDEX: {
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);
+            if (e->lhs->type == T_STRING)
+                return sfmt("hier_str_get(%s, %s)", a, ix);
             return sfmt("hier_arr_int_get(%s, %s)", a, ix);
         }
         case E_ARRLIT: {
@@ -1137,8 +1161,9 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *r = gen_expr(e->rhs, arena);
             if (e->op == TK_PLUS && e->lhs->type == T_STRING)
                 return sfmt("hier_str_concat(%s, %s, %s)", arena, l, r);
-            if ((e->op == TK_EQEQ || e->op == TK_NEQ) && e->lhs->type == T_STRING)
-                return sfmt("(strcmp(%s, %s) %s 0)", l, r, e->op == TK_EQEQ ? "==" : "!=");
+            /* every comparison on strings goes through strcmp (==/!= and ordering) */
+            if (is_cmp(e->op) && e->lhs->type == T_STRING)
+                return sfmt("(strcmp(%s, %s) %s 0)", l, r, op_str(e->op));
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }
     }
