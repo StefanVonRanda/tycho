@@ -94,12 +94,28 @@ fn main():
     r.lo.x = 100            # nested field write, in place
 ```
 
-Structs are values: assignment, parameters, and returns all copy the whole
-value, so two struct variables never share storage. Fields are read with
-`p.x` and written with `p.x = v` (including nested, `r.lo.x = v`).
-Construction is positional in declaration order. A struct must be declared
-before it is used as a type. *Not yet:* `string`/`[int]` fields (those need
-deep-copy-on-move; coming next), and struct comparison.
+Fields may be `int`, `bool`, `string`, `[int]`, `[string]`, or another
+struct. Structs are values: assignment, parameters, and returns all copy the
+whole value — and the copy is **deep**, so a field that owns heap bytes
+(`string`/array, at any nesting depth) is duplicated too. Two struct
+variables never share storage:
+
+```
+struct Person:
+    name: string
+    tags: [string]
+
+a := Person("Ada", ["x"])
+b := a               # deep copy: b.name and b.tags are independent
+b.name = "Alan"      # never touches a
+```
+
+Fields are read with `p.x` and written with `p.x = v` (including nested,
+`r.lo.x = v`). Construction is positional in declaration order. A struct must
+be declared before it is used as a type. *Not yet:* struct comparison
+(`==`/`!=`), and index-*writing* a struct's array field (`p.tags[0] = v`) —
+reading `p.tags[0]` works; assign the whole field, or copy the array out,
+mutate, and reassign.
 
 ### Arrays (`[int]`, `[string]`)
 
@@ -245,9 +261,10 @@ None of this appears in Hier source.
 - A `return` from *inside* a loop does not free that loop's scratch arena
   (the function's own arena and the returned value are handled correctly).
   Reclaimed at process exit. Harmless for short-lived programs.
-- No floats, modules, or generics. Single source file. Structs are
-  pure-value (no `string`/array fields yet); arrays are one-dimensional
-  (`[int]`, `[string]` — no arrays of arrays or of structs).
+- No floats, modules, or generics. Single source file. Arrays are
+  one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs),
+  and a struct's array field can be read by index but not index-written in
+  place. Struct comparison is not implemented.
 
 ## Repository layout
 

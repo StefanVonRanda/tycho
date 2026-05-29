@@ -260,6 +260,23 @@ static int struct_find(const char *name) {
     return -1;
 }
 
+/* A "heap" type owns arena-allocated bytes outside its own value word(s):
+ * string (char* into an arena), [int]/[string] (a buffer), or any struct
+ * that (transitively) contains such a field. int/bool and pure structs are
+ * not heap: copying the value word is a complete copy. This is what decides
+ * whether a move (decl/assign/return/field-set/construction) must deep-copy
+ * to keep the implicit-arena model sound. Structs are defined before use, so
+ * a field's struct type is fully known here — no cycles, recursion ends. */
+static int type_is_heap(Type t) {
+    if (t == T_STRING || t == T_ARRAY_INT || t == T_ARRAY_STRING) return 1;
+    if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int i = 0; i < sd->nfields; i++)
+            if (type_is_heap(sd->fields[i].type)) return 1;
+    }
+    return 0;
+}
+
 /* trailing space so "%sh_name" / "%s_ret" / signatures all read right;
  * "char *" needs none because "char *h_name" is already valid */
 static const char *c_type(Type t) {
@@ -694,9 +711,7 @@ static void parse_struct(Parser *ps) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
-        Type ft = parse_type(ps);
-        if (ft == T_STRING || ft == T_ARRAY_INT)
-            die_at(fn->line, "struct fields must be int, bool, or another struct for now");
+        Type ft = parse_type(ps);   /* int, bool, string, [int], [string], or struct */
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -1034,11 +1049,15 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         g_nvars = 0;
-        /* arrays are passed as read-only borrows; value params (int/bool/
-         * string/pure-struct) are copies, so they are mutable locals */
-        for (int j = 0; j < pr->nparams; j++)
-            vars_push(pr->params[j].name, pr->params[j].type,
-                      pr->params[j].type != T_ARRAY_INT);
+        /* arrays ([int]/[string]) are passed as read-only borrows (their
+         * buffer is shared, so in-place push/set would hit the caller); all
+         * other value params — int/bool/string/struct — are copies and so are
+         * mutable locals (a struct field-set rebinds only the local copy). */
+        for (int j = 0; j < pr->nparams; j++) {
+            Type pt = pr->params[j].type;
+            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING);
+            vars_push(pr->params[j].name, pt, mutable);
+        }
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");
         resolve_block(pr->body, pr->nbody, pr->ret);
@@ -1071,6 +1090,30 @@ static const char *cv_arena(const char *name) {
     for (int i = g_ncv - 1; i >= 0; i--)
         if (!strcmp(g_cv[i].name, name)) return g_cv[i].arena;
     return NULL;
+}
+
+/* Wrap a generated C expression `val` of type `t` in the deep-copy call that
+ * re-homes its bytes into `arena`. For non-heap types (int/bool/pure struct)
+ * the value word is already a complete copy — returned unchanged. */
+static char *copy_into(Type t, const char *arena, char *val) {
+    switch (t) {
+        case T_STRING:       return sfmt("hier_str_copy(%s, %s)", arena, val);
+        case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
+        case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
+        default:
+            if (IS_STRUCT(t) && type_is_heap(t))
+                return sfmt("hier_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
+            return val;   /* int/bool/pure struct: nothing to re-home */
+    }
+}
+
+/* A "place" expression denotes existing storage (a variable, a field of one,
+ * an array element) rather than a freshly-built value. Reading a place only
+ * aliases its bytes, so storing a *heap* place into a same-or-longer-lived
+ * location must deep-copy. A literal/call/concat/split result is already a
+ * fresh value owned by the arena it was built in — no copy needed. */
+static int is_place(Expr *e) {
+    return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX;
 }
 
 static char *gen_call(Expr *e, const char *arena) {
@@ -1184,11 +1227,19 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("((%s).f_%s)", b, e->sval);
         }
         case E_STRUCTLIT: {
-            /* positional C99 compound literal; pure value, no arena needed */
-            const char *nm = g_structs[STRUCT_ID(e->type)].name;
-            char *out = sfmt("((S_%s){ ", nm);
-            for (int i = 0; i < e->nargs; i++)
-                out = sfmt("%s%s%s", out, gen_expr(e->args[i], arena), i + 1 < e->nargs ? ", " : "");
+            /* positional C99 compound literal. Each heap field that is built
+             * from a *place* (variable/field/element) must be deep-copied into
+             * `arena` so the new struct owns its bytes; fresh values and
+             * non-heap fields pass through. */
+            StructDef *sd = &g_structs[STRUCT_ID(e->type)];
+            char *out = sfmt("((S_%s){ ", sd->name);
+            for (int i = 0; i < e->nargs; i++) {
+                char *a = gen_expr(e->args[i], arena);
+                Type ft = sd->fields[i].type;
+                if (type_is_heap(ft) && is_place(e->args[i]))
+                    a = copy_into(ft, arena, a);
+                out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
+            }
             return sfmt("%s })", out);
         }
         case E_BINOP: {
@@ -1222,15 +1273,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     switch (s->kind) {
         case S_DECL: {
             char *v = gen_expr(s->expr, scope);
-            /* value semantics: binding a plain array *variable* aliases its
-             * buffer, so deep-copy. A literal or call result is already a
-             * freshly-owned value — no copy needed. */
-            if (s->expr->kind == E_IDENT) {
-                if (s->decl_type == T_ARRAY_INT)
-                    v = sfmt("hier_arr_int_copy(%s, %s)", scope, v);
-                else if (s->decl_type == T_ARRAY_STRING)
-                    v = sfmt("hier_arr_str_copy(%s, %s)", scope, v);
-            }
+            /* value semantics: binding from a heap *place* aliases its bytes,
+             * so deep-copy into this scope. A literal/call/concat result is
+             * already a freshly-owned value — no copy needed. */
+            if (is_place(s->expr) && type_is_heap(s->decl_type))
+                v = copy_into(s->decl_type, scope, v);
             indent(o, ind);
             fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
             cv_push(s->name, scope);   /* this variable lives in `scope` */
@@ -1242,18 +1289,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             const char *owner = cv_arena(s->name);
             if (!owner) owner = scope;
             char *v = gen_expr(s->expr, owner);
-            /* a bare aggregate variable is only an alias into some (possibly
-             * inner, soon-to-collapse) scope; deep-copy it into the target's
-             * arena so it survives. A literal/call/concat result is already
-             * freshly allocated in `owner` — no copy needed. */
-            if (s->expr->kind == E_IDENT) {
-                if (s->expr->type == T_ARRAY_INT)
-                    v = sfmt("hier_arr_int_copy(%s, %s)", owner, v);
-                else if (s->expr->type == T_ARRAY_STRING)
-                    v = sfmt("hier_arr_str_copy(%s, %s)", owner, v);
-                else if (s->expr->type == T_STRING)
-                    v = sfmt("hier_str_copy(%s, %s)", owner, v);
-            }
+            /* a heap *place* is only an alias into some (possibly inner,
+             * soon-to-collapse) scope; deep-copy it into the target's arena
+             * so it survives. A literal/call/concat result is already freshly
+             * allocated in `owner` — no copy needed. */
+            if (is_place(s->expr) && type_is_heap(s->expr->type))
+                v = copy_into(s->expr->type, owner, v);
             indent(o, ind);
             fprintf(o, "h_%s = %s;\n", s->name, v);
             break;
@@ -1274,9 +1315,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_FIELDSET: {
-            /* gen_expr(E_FIELD) is a valid C lvalue, e.g. (h_p).f_x */
+            /* gen_expr(E_FIELD) is a valid C lvalue, e.g. (h_p).f_x. The
+             * struct lives in its root variable's arena, so a heap field's
+             * new bytes must go there too (not the current block scope, which
+             * may collapse first); a heap *place* RHS is also deep-copied. */
+            Expr *root = s->target;
+            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
+            if (!owner) owner = scope;
             char *lv = gen_expr(s->target, scope);
-            char *v  = gen_expr(s->expr, scope);
+            char *v  = gen_expr(s->expr, owner);
+            if (type_is_heap(s->target->type) && is_place(s->expr))
+                v = copy_into(s->target->type, owner, v);
             indent(o, ind);
             fprintf(o, "%s = %s;\n", lv, v);
             break;
@@ -1323,6 +1373,19 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ HierArrStr _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                }
+            } else if (IS_STRUCT(ret) && type_is_heap(ret)) {
+                /* promote up. A heap struct built from a *place* is deep-copied
+                 * into the caller's arena; a fresh struct literal/call is built
+                 * directly there (its construction re-homes any heap fields). */
+                if (is_place(s->expr)) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
+                                            c_type(ret), copy_into(ret, "_parent", v));
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
+                                            c_type(ret), v);
                 }
             } else {
                 /* int/bool, or a pure-value struct: a value, nothing on the
@@ -1442,6 +1505,23 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < sd->nfields; j++)
             fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
         fprintf(o, "} S_%s;\n\n", sd->name);
+    }
+    /* deep-copy function per heap-bearing struct: re-home every heap field
+     * into arena `a`. Non-heap fields are copied by the initial `r = v`.
+     * Emitted in definition order, so a nested struct field's copy fn (a
+     * lower index, since it was defined first) is already declared above. */
+    for (int i = 0; i < g_nstructs; i++) {
+        StructDef *sd = &g_structs[i];
+        if (!type_is_heap(STRUCT_TYPE(i))) continue;
+        fprintf(o, "static S_%s hier_copy_S_%s(Arena *a, S_%s v) {\n", sd->name, sd->name, sd->name);
+        fprintf(o, "    S_%s r = v;\n", sd->name);
+        for (int j = 0; j < sd->nfields; j++) {
+            Type ft = sd->fields[j].type;
+            if (!type_is_heap(ft)) continue;
+            char *src = sfmt("v.f_%s", sd->fields[j].name);
+            fprintf(o, "    r.f_%s = %s;\n", sd->fields[j].name, copy_into(ft, "a", src));
+        }
+        fprintf(o, "    return r;\n}\n\n");
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
