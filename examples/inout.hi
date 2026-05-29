@@ -1,0 +1,36 @@
+# `inout` parameters: explicit borrow-for-mutation. The callee writes back
+# into the caller's variable — copy-in copy-out, equivalent to `x = f(x)`.
+# The `&` at the call site marks where mutation happens. Value semantics is
+# preserved: the same variable can't be passed to two inout params at once.
+# Restricted to non-heap types (int, bool, pure-value structs).
+
+struct Stats:
+    sum: int
+    count: int
+
+fn incr(n: inout int):
+    n = n + 1
+
+fn swap(a: inout int, b: inout int):
+    t := a
+    a = b
+    b = t
+
+fn record(s: inout Stats, value: int):
+    s.sum = s.sum + value
+    s.count = s.count + 1
+
+fn main():
+    x := 41
+    incr(&x)
+    print("incr: " + str(x) + "\n")                  # 42
+
+    a := 1
+    b := 2
+    swap(&a, &b)                                      # &a and &b are distinct
+    print("swap: " + str(a) + " " + str(b) + "\n")   # 2 1
+
+    st := Stats(0, 0)
+    for i in range(1, 5):
+        record(&st, i)                               # mutate the caller's struct
+    print("sum=" + str(st.sum) + " count=" + str(st.count) + "\n")  # sum=10 count=4

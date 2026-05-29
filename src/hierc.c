@@ -67,6 +67,7 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
+    TK_INOUT, TK_AMP,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING
 } TokKind;
@@ -100,6 +101,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
+    if (!strcmp(s, "inout"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
     if (!strcmp(s, "int"))    return TK_KW_INT;
@@ -222,6 +224,7 @@ static TokVec lex(const char *src) {
             else if (c == ']') k = TK_RBRACKET;
             else if (c == '.') k = TK_DOT;
             else if (c == ',') k = TK_COMMA;
+            else if (c == '&') k = TK_AMP;
             else die_at(line, "unexpected character '%c'", c);
             tv_push(&out, (Tok){k, NULL, 0, line});
             p += len;
@@ -303,7 +306,7 @@ static const char *type_name(Type t) {
 }
 
 typedef enum { E_INT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
-               E_STRUCTLIT, E_FIELD } ExprKind;
+               E_STRUCTLIT, E_FIELD, E_ADDR } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -335,7 +338,7 @@ struct Stmt {
     Stmt   **els;  int nels;
 };
 
-typedef struct { char *name; Type type; } Param;
+typedef struct { char *name; Type type; int is_inout; } Param;
 
 typedef struct {
     char   *name;
@@ -485,6 +488,12 @@ static Expr *parse_unary(Parser *ps) {
         Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
         Expr *e = new_expr(E_BINOP, t->line);
         e->op = TK_MINUS; e->lhs = zero; e->rhs = parse_unary(ps);
+        return e;
+    }
+    if (at(ps, TK_AMP)) {                  /* &lvalue — an inout argument */
+        Tok *t = cur(ps); ps->p++;
+        Expr *e = new_expr(E_ADDR, t->line);
+        e->lhs = parse_unary(ps);
         return e;
     }
     return parse_postfix(ps);
@@ -671,10 +680,12 @@ static Proc *parse_fn(Parser *ps) {
     while (!at(ps, TK_RPAREN)) {
         Tok *pn = eat(ps, TK_IDENT, "a parameter name");
         eat(ps, TK_COLON, "':' after parameter name");
+        int is_inout = accept(ps, TK_INOUT);   /* `name: inout type` */
         Type pt = parse_type(ps);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
+        pr->params[pr->nparams].is_inout = is_inout;
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
     }
@@ -742,6 +753,7 @@ typedef struct {
     const char *name;
     Type        ret;
     Type        params[8];
+    int         inout[8];   /* per-param: is it an inout (by-pointer) param? */
     int         nparams;
     int         builtin;
 } Sig;
@@ -756,12 +768,14 @@ static Sig *sig_find(const char *name) {
 }
 
 static void register_builtins(void) {
-    g_sigs[g_nsigs++] = (Sig){ "print",  T_VOID,   { T_STRING },                  1, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "input",  T_STRING, { 0 },                         0, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "str",    T_STRING, { T_INT },                     1, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "substr", T_STRING, { T_STRING, T_INT, T_INT },    3, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "find",   T_INT,    { T_STRING, T_STRING },        2, 1 };
-    g_sigs[g_nsigs++] = (Sig){ "split",  T_ARRAY_STRING, { T_STRING, T_STRING },  2, 1 };
+    /* designated initializers: robust to field order (inout[] sits between
+     * params and nparams). All builtins are by-value (no inout). */
+    g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="input",  .ret=T_STRING,       .params={ 0 },                       .nparams=0, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="substr", .ret=T_STRING,       .params={ T_STRING, T_INT, T_INT },  .nparams=3, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="split",  .ret=T_ARRAY_STRING, .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
 }
 
 /* ---------------------------------------------------- variable scoping */
@@ -840,6 +854,9 @@ static Type resolve_expr(Expr *e) {
                     return e->type = sd->fields[i].type;
             die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
         }
+        case E_ADDR:   /* &place; only valid as an inout argument (checked at
+                        * the call site). Its type is the underlying place's. */
+            return e->type = resolve_expr(e->lhs);
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
@@ -896,11 +913,43 @@ static Type resolve_expr(Expr *e) {
                        e->sval, s->nparams, e->nargs);
             for (int i = 0; i < e->nargs; i++) {
                 Type at_ = resolve_expr(e->args[i]);
+                /* inout parameter: the argument must be `&place` naming a
+                 * mutable variable (an lvalue we can write back through). A
+                 * by-value param rejects `&`. */
+                if (s->inout[i]) {
+                    if (e->args[i]->kind != E_ADDR)
+                        die_at(e->line, "argument %d of '%s' is inout; pass it as '&variable'",
+                               i + 1, e->sval);
+                    Expr *tgt = e->args[i]->lhs;
+                    Expr *root = tgt;
+                    while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+                    if (root->kind != E_IDENT)
+                        die_at(e->line, "inout argument %d of '%s' must name a variable", i + 1, e->sval);
+                    if (!vars_can_mutate(root->sval))
+                        die_at(e->line, "cannot pass borrowed parameter '%s' as inout (it is read-only; copy it first)", root->sval);
+                } else if (e->args[i]->kind == E_ADDR) {
+                    die_at(e->line, "argument %d of '%s' is not inout; remove the '&'", i + 1, e->sval);
+                }
                 if (at_ != s->params[i])
                     die_at(e->line, "argument %d of '%s' is %s, expected %s",
                            i + 1, e->sval, type_name(at_), type_name(s->params[i]));
             }
-            if (s->ret == T_VOID && e->nargs >= 0) { /* allowed only as stmt; checked at codegen use */ }
+            /* exclusivity (Law of Exclusivity): the same variable may not be
+             * passed to two inout params of one call — that would be two
+             * overlapping writes, breaking the x = f(x) value-semantics model.
+             * No globals/closures exist in Hier, so this is the only alias. */
+            for (int i = 0; i < e->nargs; i++) {
+                if (!s->inout[i]) continue;
+                Expr *ri = e->args[i]->lhs;
+                while (ri->kind == E_FIELD || ri->kind == E_INDEX) ri = ri->lhs;
+                for (int j = i + 1; j < e->nargs; j++) {
+                    if (!s->inout[j]) continue;
+                    Expr *rj = e->args[j]->lhs;
+                    while (rj->kind == E_FIELD || rj->kind == E_INDEX) rj = rj->lhs;
+                    if (ri->kind == E_IDENT && rj->kind == E_IDENT && !strcmp(ri->sval, rj->sval))
+                        die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
+                }
+            }
             return e->type = s->ret;
         }
         case E_BINOP: {
@@ -1052,7 +1101,18 @@ static void resolve_program(ProcVec *prog) {
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         if (pr->nparams > 8) die_at(pr->line, "too many parameters (max 8)");
-        for (int j = 0; j < pr->nparams; j++) s.params[j] = pr->params[j].type;
+        for (int j = 0; j < pr->nparams; j++) {
+            s.params[j] = pr->params[j].type;
+            s.inout[j]  = pr->params[j].is_inout;
+            /* inout v1: non-heap types only (int/bool/pure struct). Copy-out
+             * is a plain word store with no arena interaction, so it cannot
+             * dangle. Heap inout would need the callee to know each arg's
+             * owning arena — deferred. */
+            if (pr->params[j].is_inout && type_is_heap(pr->params[j].type))
+                die_at(pr->line, "inout parameter '%s' must be a non-heap type "
+                       "(int, bool, or a pure-value struct) for now",
+                       pr->params[j].name);
+        }
         g_sigs[g_nsigs++] = s;
     }
     Sig *m = sig_find("main");
@@ -1101,6 +1161,17 @@ static const char *cv_arena(const char *name) {
     for (int i = g_ncv - 1; i >= 0; i--)
         if (!strcmp(g_cv[i].name, name)) return g_cv[i].arena;
     return NULL;
+}
+
+/* names of the current proc's inout params: in the generated body they are
+ * C pointers (T *h_x), so every read/lvalue use derefs as (*h_x). Reset per
+ * proc; a proc has at most 8 params. */
+static const char *g_inout[8];
+static int g_ninout = 0;
+static int is_inout_param(const char *name) {
+    for (int i = 0; i < g_ninout; i++)
+        if (!strcmp(g_inout[i], name)) return 1;
+    return 0;
 }
 
 /* Wrap a generated C expression `val` of type `t` in the deep-copy call that
@@ -1220,7 +1291,11 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_INT:  return sfmt("%ldL", e->ival);
         case E_BOOL: return sfmt("%ld", e->ival);
         case E_STR:  return sfmt("\"%s\"", e->sval);
-        case E_IDENT:return sfmt("h_%s", e->sval);
+        case E_IDENT:return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
+                                                    : sfmt("h_%s", e->sval);
+        case E_ADDR: /* &place as an inout arg: address of the underlying
+                      * lvalue (gen_expr already derefs an inout root) */
+            return sfmt("&(%s)", gen_expr(e->lhs, arena));
         case E_CALL: return gen_call(e, arena);
         case E_INDEX: {
             char *a = gen_expr(e->lhs, arena);
@@ -1328,7 +1403,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (is_place(s->expr) && type_is_heap(s->expr->type))
                 v = copy_into(s->expr->type, owner, v);
             indent(o, ind);
-            fprintf(o, "h_%s = %s;\n", s->name, v);
+            /* an inout param is a pointer in the body; assign through it */
+            if (is_inout_param(s->name))
+                fprintf(o, "(*h_%s) = %s;\n", s->name, v);
+            else
+                fprintf(o, "h_%s = %s;\n", s->name, v);
             break;
         }
         case S_INDEXSET: {
@@ -1503,8 +1582,12 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
 
 static void gen_signature(FILE *o, Proc *pr) {
     fprintf(o, "%sh_%s(Arena *_parent", c_type(pr->ret), pr->name);
-    for (int i = 0; i < pr->nparams; i++)
-        fprintf(o, ", %sh_%s", c_type(pr->params[i].type), pr->params[i].name);
+    for (int i = 0; i < pr->nparams; i++) {
+        /* inout params are received by pointer so writes reach the caller's
+         * storage (copy-in copy-out, realized as call-by-reference). */
+        const char *star = pr->params[i].is_inout ? "*" : "";
+        fprintf(o, ", %s%sh_%s", c_type(pr->params[i].type), star, pr->params[i].name);
+    }
     fprintf(o, ")");
 }
 
@@ -1515,6 +1598,10 @@ static void gen_proc(FILE *o, Proc *pr) {
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
     g_ncv = 0;
+    /* register this proc's inout params so the body derefs them as (*h_x) */
+    g_ninout = 0;
+    for (int i = 0; i < pr->nparams; i++)
+        if (pr->params[i].is_inout) g_inout[g_ninout++] = pr->params[i].name;
     /* a reassigned param must land in this proc's scope to outlive any
      * inner block; the incoming pointer itself is borrowed from the caller */
     for (int i = 0; i < pr->nparams; i++) cv_push(pr->params[i].name, "&_scope");
