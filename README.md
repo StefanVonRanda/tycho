@@ -279,15 +279,22 @@ value returned into a caller's loop is still reclaimed by that loop's
 scratch reset). The analysis only promotes function-top-level locals, so a
 loop-scratch local is never lifted to a longer lifetime.
 
+**In-place append (build a string in a loop, cheaply).** The accumulator
+pattern `acc = acc + e` repeated in a loop is the textbook O(n²) trap —
+naively each step copies the whole accumulator. Hier compiles a *self-append*
+(`acc` on the left of `+`, reassigned to `acc`) to grow `acc`'s buffer in
+place with geometric capacity, like an array's `push`, so the loop is O(n)
+time and O(n) memory. This is sound because value semantics already
+guarantees `acc` is uniquely owned at that point — a `b := acc` elsewhere
+took its own deep copy, so growing `acc` in place is invisible to everyone
+else. Measured: accumulating an n-char string went from ~836 MB at n=40 000
+(quadratic) to a flat ~3 MB (linear). Like the others, it changes nothing in
+the source — `acc = acc + e` is still just value-semantic concatenation.
+
 None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- Values accumulated into an outer-scope variable inside a loop (e.g. the
-  `total` above) grow that scope's arena for the whole loop; individual
-  old values are not reclaimed until the scope ends. This is inherent to
-  arena allocation, not a leak — memory is bounded by the scope's
-  lifetime.
 - A `return` from *inside* a loop does not free that loop's scratch arena
   (the function's own arena and the returned value are handled correctly).
   Reclaimed at process exit. Harmless for short-lived programs.

@@ -1212,6 +1212,39 @@ static int name_escapes(const char *nm) {
     return 0;
 }
 
+/* --- accumulator analysis (in-place string append) ----------------------
+ * A string variable that is the target of a self-append `v = v + e` (v on the
+ * LEFT of +; concat is not commutative) can grow in place instead of
+ * re-concatenating each time, turning a loop of appends from O(N^2) into
+ * O(N). Value semantics guarantees v is uniquely owned at the rebind, so the
+ * in-place mutation is invisible to every other variable (a `b := v` bind
+ * already deep-copies). We pre-scan the body for such names; an eligible
+ * variable carries sidecar len/cap C locals (emitted AT its declaration, in
+ * v's own C scope — never hoisted, so a loop-body accumulator's sidecars
+ * reset in lockstep with its buffer each iteration). */
+static const char *g_accum[256];
+static int g_naccum = 0;
+static int is_self_append(Stmt *s) {
+    return s->kind == S_ASSIGN && s->expr
+        && s->expr->kind == E_BINOP && s->expr->op == TK_PLUS
+        && s->expr->type == T_STRING
+        && s->expr->lhs->kind == E_IDENT
+        && !strcmp(s->expr->lhs->sval, s->name);
+}
+static void collect_accums(Stmt **body, int n) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (is_self_append(s) && g_naccum < 256) g_accum[g_naccum++] = s->name;
+        if (s->body) collect_accums(s->body, s->nbody);
+        if (s->els)  collect_accums(s->els, s->nels);
+    }
+}
+static int is_accum(const char *nm) {
+    for (int i = 0; i < g_naccum; i++)
+        if (!strcmp(g_accum[i], nm)) return 1;
+    return 0;
+}
+
 /* Wrap a generated C expression `val` of type `t` in the deep-copy call that
  * re-homes its bytes into `arena`. For non-heap types (int/bool/pure struct)
  * the value word is already a complete copy — returned unchanged. */
@@ -1435,6 +1468,16 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
             fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
+            /* in-place append sidecars, declared HERE (same C scope as h_v, so
+             * a loop-body accumulator re-inits them each iteration in lockstep
+             * with its buffer — never hoist these). cap 0 = "not growable in
+             * place yet", so the first append allocates and the initial buffer
+             * (possibly a string literal in .rodata) is never written. */
+            if (s->decl_type == T_STRING && is_accum(s->name)) {
+                indent(o, ind);
+                fprintf(o, "long _len_h_%s = (long)strlen(h_%s); long _cap_h_%s = 0;\n",
+                        s->name, s->name, s->name);
+            }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
             break;
         }
@@ -1443,6 +1486,19 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * currently are, so it survives any inner scope collapsing */
             const char *owner = cv_arena(s->name);
             if (!owner) owner = scope;
+            /* in-place append: `acc = acc + e` on a tracked accumulator grows
+             * acc's buffer in its OWNER arena (cv_arena), not the current loop
+             * scratch scope. The append result re-homes acc, so the rest of
+             * the function still sees an ordinary NUL-terminated char*. e is
+             * fully evaluated before the buffer is touched (handles acc=acc+acc
+             * and acc=acc+f(acc)). */
+            if (is_accum(s->name) && is_self_append(s)) {
+                char *e = gen_expr(s->expr->rhs, owner);
+                indent(o, ind);
+                fprintf(o, "hier_str_append(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
+                        owner, s->name, s->name, s->name, e);
+                break;
+            }
             char *v = gen_expr(s->expr, owner);
             /* a heap *place* is only an alias into some (possibly inner,
              * soon-to-collapse) scope; deep-copy it into the target's arena
@@ -1456,6 +1512,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 fprintf(o, "(*h_%s) = %s;\n", s->name, v);
             else
                 fprintf(o, "h_%s = %s;\n", s->name, v);
+            /* a non-self assignment to a tracked accumulator rebinds its
+             * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
+             * grow in place — forces the next append to allocate). */
+            if (is_accum(s->name) && s->expr->type == T_STRING)
+                fprintf(o, "%*s_len_h_%s = (long)strlen(h_%s); _cap_h_%s = 0;\n",
+                        ind * 4, "", s->name, s->name, s->name);
             break;
         }
         case S_INDEXSET: {

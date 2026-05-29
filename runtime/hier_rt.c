@@ -85,6 +85,30 @@ char *hier_str_concat(Arena *a, const char *x, const char *y) {
     return r;
 }
 
+/* In-place string append for the accumulator pattern `acc = acc + e`. The
+ * compiler emits this only for a uniquely-owned local string it tracks with
+ * sidecar len/cap, so growing the buffer in place is sound (value semantics
+ * guarantees no alias observes the mutation). Geometric growth makes a loop
+ * of appends amortized O(1) each -> O(N) total time and memory, vs the O(N^2)
+ * of repeated hier_str_concat. Mirrors hier_arr_int_push. The new buffer
+ * lives in arena `a` (the variable's owning arena, not the caller's scratch).
+ * memmove, not memcpy: e may alias *s (acc = acc + acc). */
+void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
+    long el = (long)strlen(e);
+    long need = *len + el + 1;
+    if (need > *cap) {
+        long nc = *cap ? *cap * 2 : 16;
+        while (nc < need) nc *= 2;
+        char *nb = (char *)arena_alloc(a, (size_t)nc);
+        memcpy(nb, *s, (size_t)*len);    /* old buffer still live (bump arena) */
+        *s = nb;
+        *cap = nc;
+    }
+    memmove(*s + *len, e, (size_t)el);
+    *len += el;
+    (*s)[*len] = '\0';
+}
+
 /* value-semantic copy of a string into arena `a`. Used when a bare string
  * variable is returned or assigned to an outer scope: the variable is only
  * a pointer into a scope about to be freed, so the bytes must be copied
