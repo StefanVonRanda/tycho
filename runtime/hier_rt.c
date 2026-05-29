@@ -85,6 +85,17 @@ char *hier_str_concat(Arena *a, const char *x, const char *y) {
     return r;
 }
 
+/* value-semantic copy of a string into arena `a`. Used when a bare string
+ * variable is returned or assigned to an outer scope: the variable is only
+ * a pointer into a scope about to be freed, so the bytes must be copied
+ * into the destination arena to survive (cf. hier_arr_int_copy). */
+char *hier_str_copy(Arena *a, const char *s) {
+    size_t n = strlen(s);
+    char *r = (char *)arena_alloc(a, n + 1);
+    memcpy(r, s, n + 1);
+    return r;
+}
+
 void hier_print(const char *s) { fputs(s, stdout); }
 
 /* --- string builtins ------------------------------------------------------

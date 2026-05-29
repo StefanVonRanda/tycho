@@ -1203,8 +1203,16 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             const char *owner = cv_arena(s->name);
             if (!owner) owner = scope;
             char *v = gen_expr(s->expr, owner);
-            if (s->expr->type == T_ARRAY_INT && s->expr->kind == E_IDENT)
-                v = sfmt("hier_arr_int_copy(%s, %s)", owner, v);
+            /* a bare aggregate variable is only an alias into some (possibly
+             * inner, soon-to-collapse) scope; deep-copy it into the target's
+             * arena so it survives. A literal/call/concat result is already
+             * freshly allocated in `owner` — no copy needed. */
+            if (s->expr->kind == E_IDENT) {
+                if (s->expr->type == T_ARRAY_INT)
+                    v = sfmt("hier_arr_int_copy(%s, %s)", owner, v);
+                else if (s->expr->type == T_STRING)
+                    v = sfmt("hier_str_copy(%s, %s)", owner, v);
+            }
             indent(o, ind);
             fprintf(o, "h_%s = %s;\n", s->name, v);
             break;
@@ -1235,10 +1243,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (!s->expr) {
                 indent(o, ind); fprintf(o, "{ arena_free(&_scope); return; }\n");
             } else if (ret == T_STRING) {
-                /* promote up: allocate the value in the caller's arena so
-                 * it outlives this scope, then free this scope */
-                char *v = gen_expr(s->expr, "_parent");
-                indent(o, ind); fprintf(o, "{ char *_ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                /* promote up. A fresh value (literal/call/concat) is built
+                 * directly in the caller's arena; a bare string variable is
+                 * only a pointer into this scope, so deep-copy it into the
+                 * caller's arena before freeing this scope. */
+                if (s->expr->kind == E_IDENT) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ char *_ret = hier_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ char *_ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                }
             } else if (ret == T_ARRAY_INT) {
                 /* promote up. A fresh value (literal/call) is built directly
                  * in the caller's arena; a borrowed/local variable is
