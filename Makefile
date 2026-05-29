@@ -56,4 +56,8 @@ clean:
 	rm -f examples/strings examples/strings.c
 	rm -f examples/words examples/words.c
 	rm -f examples/records examples/records.c
+	rm -f examples/inout examples/inout.c
+	rm -f examples/strings examples/strings.c
+	rm -f examples/words examples/words.c
+	rm -f examples/records examples/records.c
 	-rmdir build 2>/dev/null || true

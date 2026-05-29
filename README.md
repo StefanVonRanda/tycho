@@ -66,10 +66,29 @@ A `fn` with no `-> type` returns nothing. Blocks are indentation-based
 (spaces only; tabs are an error) and every block header ends with `:`,
 like Python. `#` starts a comment.
 
+By default a parameter is a copy (or, for arrays, a read-only borrow). An
+`inout` parameter is mutated in place — the callee writes back into the
+caller's variable, marked with `&` at the call site:
+
+```
+fn incr(n: inout int):
+    n = n + 1
+
+fn main():
+    x := 41
+    incr(&x)             # x is 42 afterwards
+```
+
+This is copy-in copy-out (equivalent to `x = incr(x)`), so it preserves
+value semantics: the `&` argument must name a mutable variable, and the same
+variable can't be passed to two `inout` parameters of one call (that would
+be overlapping mutable access). `inout` is currently limited to non-heap
+types — `int`, `bool`, and pure-value structs.
+
 ### Types
 
-`int` (64-bit), `bool`, `string`, `[int]` (growable array of int), and
-user-defined `struct`s.
+`int` (64-bit), `bool`, `string`, `[int]` and `[string]` (growable arrays),
+and user-defined `struct`s.
 
 ### Structs
 
@@ -149,7 +168,7 @@ fn make_squares(n: int) -> [int]:   # returned arrays are promoted into
 
 fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
     total := 0                      # you may read it but not push/index-set
-    for i in range(len(a)):         # it (that needs a copy, or `inout` later)
+    for i in range(len(a)):         # it (that needs a copy, or an inout param)
         total = total + a[i]
     return total
 ```
