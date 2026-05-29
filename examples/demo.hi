@@ -1,0 +1,30 @@
+# Exercises the rest of the language: arithmetic, if/else, and the single
+# `for` loop in both shapes (condition form, like a while; and counting
+# form over range). Each iteration uses a fresh scratch arena.
+
+fn countdown(n: int):
+    for n > 0:                       # condition form
+        print(str(n) + " ")
+        n = n - 1
+    print("liftoff\n")
+
+fn classify(n: int) -> string:
+    if n < 0:
+        return "negative"
+    else:
+        return "non-negative"
+
+fn main():
+    print("counting down from 5:\n")
+    countdown(5)
+
+    print("squares:\n")
+    for i in range(1, 6):            # counting form
+        print("  " + str(i) + "^2 = " + str(i * i) + "\n")
+
+    print("evens 0..10: ")
+    for i in range(0, 11, 2):
+        print(str(i) + " ")
+    print("\n")
+
+    print("the number -3 is " + classify(-3) + "\n")

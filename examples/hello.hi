@@ -1,0 +1,9 @@
+# The success-criterion demo: ask for a name, greet it.
+
+fn greet(name: string) -> string:
+    return "hello " + name + "\n"
+
+fn main():
+    print("what is your name: ")
+    name := input()
+    print(greet(name))

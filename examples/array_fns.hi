@@ -1,0 +1,32 @@
+# Arrays across function boundaries: pass down (borrow) and return up
+# (promote). All value-semantic, no pointers, no visible arenas.
+
+fn make_squares(n: int) -> [int]:
+    r := []int
+    for i in range(n):
+        push(r, i * i)
+    return r                       # promoted into the caller's arena
+
+fn sum(a: [int]) -> int:
+    total := 0
+    for i in range(len(a)):        # 'a' is a read-only borrow
+        total = total + a[i]
+    return total
+
+fn doubled(a: [int]) -> [int]:
+    b := a                         # value semantics: independent copy
+    for i in range(len(b)):
+        b[i] = b[i] * 2            # mutating the copy, not the caller's array
+    return b
+
+fn main():
+    sq := make_squares(5)
+    print("squares: ")
+    for i in range(len(sq)):
+        print(str(sq[i]) + " ")
+    print("\n")
+
+    print("sum = " + str(sum(sq)) + "\n")
+
+    d := doubled(sq)
+    print("doubled[2] = " + str(d[2]) + ", original[2] = " + str(sq[2]) + "\n")

@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# The compiled Hier compiler (built by `make`)
+/hierc
+
+# Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
+/build/
+
+# Per-example outputs: generated C and native binaries. The .hi sources are
+# tracked; everything else in examples/ is reproducible with `make` / `./hierc`.
+/examples/*
+!/examples/*.hi
+
+# Editor/OS noise
+*.o
+*.out
+*.dSYM/

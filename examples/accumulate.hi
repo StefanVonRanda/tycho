@@ -1,0 +1,11 @@
+# Building a string across loop iterations. `total` lives in main's
+# arena; each `total = ...` allocates there, so it safely outlives the
+# loop's per-iteration scratch arena. Memory the programmer never sees.
+
+fn main():
+    total := ""
+    for i in range(1, 6):
+        total = total + str(i)
+        if i < 5:
+            total = total + ", "
+    print("counted: " + total + "\n")

@@ -1,0 +1,55 @@
+# Hier compiler build.
+#
+#   make            -> build ./hierc (native, macOS/Linux host)
+#   make demo       -> compile + run examples/hello.hi natively
+#   make image      -> build the alpine static-build podman image
+#   make static HI=examples/hello.hi  -> produce a static linux binary
+#   make clean
+
+CC      ?= cc
+CFLAGS  ?= -O2 -Wall -Wextra -std=c11
+
+EMBED   := build/hier_rt_embed.h
+RUNTIME := runtime/hier_rt.c
+
+.PHONY: all demo image static clean
+
+all: hierc
+
+# Turn the runtime C source into a single C string literal the compiler
+# embeds into every generated file. Each line is escaped and suffixed
+# with \n so the emitted C is byte-for-byte the runtime source.
+$(EMBED): $(RUNTIME) | build
+	@awk 'BEGIN{print "static const char *HIER_RUNTIME ="} \
+	     {gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "\"%s\\n\"\n",$$0} \
+	     END{print ";"}' $(RUNTIME) > $(EMBED)
+
+build:
+	@mkdir -p build
+
+hierc: src/hierc.c $(EMBED)
+	$(CC) $(CFLAGS) -Ibuild src/hierc.c -o hierc
+
+demo: hierc
+	./hierc examples/hello.hi
+	@echo "--- running examples/hello (type a name) ---"
+	@./examples/hello
+
+image:
+	podman build -t hier-build -f podman/Dockerfile .
+
+# Produce a fully static linux binary from a .hi file using the alpine
+# image. HI defaults to the hello example.
+HI ?= examples/hello.hi
+static: hierc image
+	./hierc $(HI) --emit-c
+	podman run --rm -v "$(CURDIR)":/work -w /work hier-build \
+	    sh -c 'gcc -static -O2 -o $(basename $(HI)) $(basename $(HI)).c && echo "static build ok:" && file $(basename $(HI))'
+
+clean:
+	rm -f hierc build/hier_rt_embed.h
+	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
+	rm -f examples/accumulate examples/accumulate.c
+	rm -f examples/arrays examples/arrays.c
+	rm -f examples/array_fns examples/array_fns.c
+	-rmdir build 2>/dev/null || true
