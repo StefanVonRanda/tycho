@@ -66,7 +66,8 @@ typedef enum {
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
-    TK_FN, TK_RETURN, TK_IF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE,
+    TK_FN, TK_RETURN, TK_IF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
+    TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING
 } TokKind;
 
@@ -98,6 +99,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "else"))   return TK_ELSE;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
+    if (!strcmp(s, "struct")) return TK_STRUCT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
     if (!strcmp(s, "int"))    return TK_KW_INT;
@@ -218,6 +220,7 @@ static TokVec lex(const char *src) {
             else if (c == ')') k = TK_RPAREN;
             else if (c == '[') k = TK_LBRACKET;
             else if (c == ']') k = TK_RBRACKET;
+            else if (c == '.') k = TK_DOT;
             else if (c == ',') k = TK_COMMA;
             else die_at(line, "unexpected character '%c'", c);
             tv_push(&out, (Tok){k, NULL, 0, line});
@@ -237,11 +240,30 @@ static TokVec lex(const char *src) {
 
 /* ------------------------------------------------------------------ AST */
 
-typedef enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT } Type;
+/* Type is an int so a struct id can be encoded in it: values >=
+ * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
+ * constants keep working in every existing == and switch. */
+typedef int Type;
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT };
+#define T_STRUCT_BASE   64
+#define IS_STRUCT(t)    ((t) >= T_STRUCT_BASE)
+#define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
+#define STRUCT_TYPE(id) (T_STRUCT_BASE + (id))
+
+typedef struct { char *name; Type type; } Field;
+typedef struct { char *name; Field fields[64]; int nfields; int line; } StructDef;
+static StructDef g_structs[128];
+static int g_nstructs = 0;
+static int struct_find(const char *name) {
+    for (int i = 0; i < g_nstructs; i++)
+        if (!strcmp(g_structs[i].name, name)) return i;
+    return -1;
+}
 
 /* trailing space so "%sh_name" / "%s_ret" / signatures all read right;
  * "char *" needs none because "char *h_name" is already valid */
 static const char *c_type(Type t) {
+    if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     switch (t) {
         case T_INT:       return "long ";
         case T_BOOL:      return "int ";
@@ -251,6 +273,7 @@ static const char *c_type(Type t) {
     }
 }
 static const char *type_name(Type t) {
+    if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     switch (t) {
         case T_INT:       return "int";
         case T_BOOL:      return "bool";
@@ -260,7 +283,8 @@ static const char *type_name(Type t) {
     }
 }
 
-typedef enum { E_INT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX } ExprKind;
+typedef enum { E_INT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
+               E_STRUCTLIT, E_FIELD } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -274,7 +298,8 @@ struct Expr {
     Expr   **args; int nargs;   /* E_CALL */
 };
 
-typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE, S_INDEXSET, S_EXPR } StmtKind;
+typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
+               S_INDEXSET, S_FIELDSET, S_EXPR } StmtKind;
 
 typedef struct Stmt Stmt;
 struct Stmt {
@@ -330,11 +355,17 @@ static Type parse_type(Parser *ps) {
         if (elem != T_INT) die_at(t->line, "only [int] arrays are supported for now");
         return T_ARRAY_INT;
     }
+    if (t->kind == TK_IDENT) {           /* a struct name */
+        int sid = struct_find(t->text);
+        if (sid < 0) die_at(t->line, "unknown type '%s'", t->text);
+        ps->p++;
+        return STRUCT_TYPE(sid);
+    }
     switch (t->kind) {
         case TK_KW_INT:    ps->p++; return T_INT;
         case TK_KW_BOOL:   ps->p++; return T_BOOL;
         case TK_KW_STRING: ps->p++; return T_STRING;
-        default: die_at(t->line, "expected a type (int, bool, string, [int])");
+        default: die_at(t->line, "expected a type (int, bool, string, [int], or a struct)");
     }
     return T_VOID; /* unreachable */
 }
@@ -404,16 +435,24 @@ static Expr *parse_primary(Parser *ps) {
     return NULL;
 }
 
-/* postfix indexing: primary ( '[' expr ']' )* */
+/* postfix: primary ( '[' expr ']' | '.' field )* */
 static Expr *parse_postfix(Parser *ps) {
     Expr *e = parse_primary(ps);
-    while (at(ps, TK_LBRACKET)) {
-        Tok *t = cur(ps); ps->p++;
-        Expr *idx = parse_expr(ps);
-        eat(ps, TK_RBRACKET, "']'");
-        Expr *ix = new_expr(E_INDEX, t->line);
-        ix->lhs = e; ix->rhs = idx;
-        e = ix;
+    for (;;) {
+        if (at(ps, TK_LBRACKET)) {
+            Tok *t = cur(ps); ps->p++;
+            Expr *idx = parse_expr(ps);
+            eat(ps, TK_RBRACKET, "']'");
+            Expr *ix = new_expr(E_INDEX, t->line);
+            ix->lhs = e; ix->rhs = idx;
+            e = ix;
+        } else if (at(ps, TK_DOT)) {
+            Tok *t = cur(ps); ps->p++;
+            Tok *f = eat(ps, TK_IDENT, "a field name after '.'");
+            Expr *fe = new_expr(E_FIELD, t->line);
+            fe->lhs = e; fe->sval = f->text;
+            e = fe;
+        } else break;
     }
     return e;
 }
@@ -569,9 +608,9 @@ static Stmt *parse_stmt(Parser *ps) {
     /* expression statement, or an index-assignment `xs[i] = v` */
     Expr *e = parse_expr(ps);
     if (accept(ps, TK_EQ)) {
-        if (e->kind != E_INDEX)
+        if (e->kind != E_INDEX && e->kind != E_FIELD)
             die_at(t->line, "cannot assign to this expression");
-        Stmt *s = new_stmt(S_INDEXSET, t->line);
+        Stmt *s = new_stmt(e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line);
         s->target = e;
         s->expr = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
@@ -628,11 +667,48 @@ static Proc *parse_fn(Parser *ps) {
     return pr;
 }
 
+/* struct Name:
+ *     field: type
+ *     ...
+ * Registered into g_structs immediately so later declarations can name it
+ * as a type (a struct must be defined before it is used as a type). */
+static void parse_struct(Parser *ps) {
+    eat(ps, TK_STRUCT, "'struct'");
+    Tok *nameT = eat(ps, TK_IDENT, "a struct name");
+    if (struct_find(nameT->text) >= 0) die_at(nameT->line, "'%s' is already defined", nameT->text);
+    if (g_nstructs >= 128) die_at(nameT->line, "too many structs");
+    eat(ps, TK_COLON, "':' before the block");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_INDENT, "an indented field list");
+
+    StructDef *sd = &g_structs[g_nstructs];
+    sd->name = nameT->text;
+    sd->nfields = 0;
+    sd->line = nameT->line;
+    while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+        if (accept(ps, TK_NEWLINE)) continue;
+        Tok *fn = eat(ps, TK_IDENT, "a field name");
+        eat(ps, TK_COLON, "':' after field name");
+        Type ft = parse_type(ps);
+        if (ft == T_STRING || ft == T_ARRAY_INT)
+            die_at(fn->line, "struct fields must be int, bool, or another struct for now");
+        if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
+        sd->fields[sd->nfields].name = fn->text;
+        sd->fields[sd->nfields].type = ft;
+        sd->nfields++;
+        eat(ps, TK_NEWLINE, "newline");
+    }
+    eat(ps, TK_DEDENT, "dedent");
+    if (sd->nfields == 0) die_at(nameT->line, "a struct needs at least one field");
+    g_nstructs++;                 /* commit only once fully parsed */
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0 };
     ProcVec out = {0};
     while (!at(&ps, TK_EOF)) {
         if (accept(&ps, TK_NEWLINE)) continue;
+        if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         Proc *pr = parse_fn(&ps);
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
@@ -724,7 +800,36 @@ static Type resolve_expr(Expr *e) {
                 die_at(e->line, "array index must be int");
             return e->type = T_INT;
         }
+        case E_FIELD: {
+            Type bt = resolve_expr(e->lhs);
+            if (!IS_STRUCT(bt))
+                die_at(e->line, "'.%s' on a non-struct value", e->sval);
+            StructDef *sd = &g_structs[STRUCT_ID(bt)];
+            for (int i = 0; i < sd->nfields; i++)
+                if (!strcmp(sd->fields[i].name, e->sval))
+                    return e->type = sd->fields[i].type;
+            die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
+        }
+        case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
+            return e->type;
         case E_CALL: {
+            /* a call whose name is a struct is positional construction */
+            int sid = struct_find(e->sval);
+            if (sid >= 0) {
+                StructDef *sd = &g_structs[sid];
+                if (e->nargs != sd->nfields)
+                    die_at(e->line, "%s takes %d field value(s), got %d",
+                           sd->name, sd->nfields, e->nargs);
+                for (int i = 0; i < e->nargs; i++) {
+                    Type at_ = resolve_expr(e->args[i]);
+                    if (at_ != sd->fields[i].type)
+                        die_at(e->line, "field '%s' of %s is %s, got %s",
+                               sd->fields[i].name, sd->name,
+                               type_name(sd->fields[i].type), type_name(at_));
+                }
+                e->kind = E_STRUCTLIT;          /* reinterpret for codegen */
+                return e->type = STRUCT_TYPE(sid);
+            }
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1 || resolve_expr(e->args[0]) != T_ARRAY_INT)
@@ -767,6 +872,7 @@ static Type resolve_expr(Expr *e) {
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
                     if (lt == T_ARRAY_INT) die_at(e->line, "cannot compare arrays");
+                    if (IS_STRUCT(lt)) die_at(e->line, "cannot compare structs");
                 } else {
                     if (lt != T_INT || rt != T_INT)
                         die_at(e->line, "ordering compares ints only");
@@ -862,6 +968,18 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "cannot assign %s to an int element", type_name(vt));
             break;
         }
+        case S_FIELDSET: {
+            /* the variable at the root of the field chain must be mutable */
+            Expr *root = s->target;
+            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            if (root->kind == E_IDENT && !vars_can_mutate(root->sval))
+                die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only)", root->sval);
+            Type tt = resolve_expr(s->target);   /* E_FIELD -> field type */
+            Type vt = resolve_expr(s->expr);
+            if (tt != vt)
+                die_at(s->line, "cannot assign %s to a %s field", type_name(vt), type_name(tt));
+            break;
+        }
         case S_EXPR:
             resolve_expr(s->expr);
             break;
@@ -892,8 +1010,11 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         g_nvars = 0;
-        /* parameters are immutable borrows: readable, not push/index-set-able */
-        for (int j = 0; j < pr->nparams; j++) vars_push(pr->params[j].name, pr->params[j].type, 0);
+        /* arrays are passed as read-only borrows; value params (int/bool/
+         * string/pure-struct) are copies, so they are mutable locals */
+        for (int j = 0; j < pr->nparams; j++)
+            vars_push(pr->params[j].name, pr->params[j].type,
+                      pr->params[j].type != T_ARRAY_INT);
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");
         resolve_block(pr->body, pr->nbody, pr->ret);
@@ -999,6 +1120,18 @@ static char *gen_expr(Expr *e, const char *arena) {
                 out = sfmt("%s _l%d.data[%d] = %s;", out, id, i, gen_expr(e->args[i], arena));
             return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
         }
+        case E_FIELD: {
+            char *b = gen_expr(e->lhs, arena);
+            return sfmt("((%s).f_%s)", b, e->sval);
+        }
+        case E_STRUCTLIT: {
+            /* positional C99 compound literal; pure value, no arena needed */
+            const char *nm = g_structs[STRUCT_ID(e->type)].name;
+            char *out = sfmt("((S_%s){ ", nm);
+            for (int i = 0; i < e->nargs; i++)
+                out = sfmt("%s%s%s", out, gen_expr(e->args[i], arena), i + 1 < e->nargs ? ", " : "");
+            return sfmt("%s })", out);
+        }
         case E_BINOP: {
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
@@ -1059,6 +1192,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             fprintf(o, "hier_arr_int_set(&h_%s, %s, %s);\n", nm, ix, v);
             break;
         }
+        case S_FIELDSET: {
+            /* gen_expr(E_FIELD) is a valid C lvalue, e.g. (h_p).f_x */
+            char *lv = gen_expr(s->target, scope);
+            char *v  = gen_expr(s->expr, scope);
+            indent(o, ind);
+            fprintf(o, "%s = %s;\n", lv, v);
+            break;
+        }
         case S_EXPR: {
             char *v = gen_expr(s->expr, scope);
             indent(o, ind);
@@ -1085,7 +1226,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     indent(o, ind); fprintf(o, "{ HierArrInt _ret = %s; arena_free(&_scope); return _ret; }\n", v);
                 }
             } else {
-                /* int/bool are values: nothing to keep alive */
+                /* int/bool, or a pure-value struct: a value, nothing on the
+                 * heap to keep alive — copy it out and free the scope */
                 char *v = gen_expr(s->expr, "&_scope");
                 indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
                                         c_type(ret), v);
@@ -1193,6 +1335,15 @@ static void gen_proc(FILE *o, Proc *pr) {
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(HIER_RUNTIME, o);
     fputs("\n/* ---- generated from Hier source ---- */\n\n", o);
+    /* struct typedefs, in declaration order (define-before-use guarantees a
+     * struct field's type is already typedef'd above it) */
+    for (int i = 0; i < g_nstructs; i++) {
+        StructDef *sd = &g_structs[i];
+        fprintf(o, "typedef struct {\n");
+        for (int j = 0; j < sd->nfields; j++)
+            fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
+        fprintf(o, "} S_%s;\n\n", sd->name);
+    }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
     for (int i = 0; i < prog->n; i++) gen_proc(o, prog->v[i]);

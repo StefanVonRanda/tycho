@@ -68,7 +68,38 @@ like Python. `#` starts a comment.
 
 ### Types
 
-`int` (64-bit), `bool`, `string`, and `[int]` (growable array of int).
+`int` (64-bit), `bool`, `string`, `[int]` (growable array of int), and
+user-defined `struct`s.
+
+### Structs
+
+```
+struct Point:
+    x: int
+    y: int
+
+struct Rect:
+    lo: Point
+    hi: Point
+
+fn area(r: Rect) -> int:
+    return (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
+
+fn main():
+    a := Point(1, 2)        # positional construction, fields in order
+    r := Rect(a, Point(4, 6))
+    print(str(area(r)) + "\n")
+    b := a                  # value semantics: b is an independent copy
+    b.x = 99                # mutating b never touches a
+    r.lo.x = 100            # nested field write, in place
+```
+
+Structs are values: assignment, parameters, and returns all copy the whole
+value, so two struct variables never share storage. Fields are read with
+`p.x` and written with `p.x = v` (including nested, `r.lo.x = v`).
+Construction is positional in declaration order. A struct must be declared
+before it is used as a type. *Not yet:* `string`/`[int]` fields (those need
+deep-copy-on-move; coming next), and struct comparison.
 
 ### Arrays (`[int]`)
 
