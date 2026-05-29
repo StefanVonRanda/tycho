@@ -1720,6 +1720,9 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* return-slot optimization: which top-level locals escape via return */
     g_nesc = 0;
     collect_escapes(pr->body, pr->nbody);
+    /* in-place append: which string locals are self-append accumulators */
+    g_naccum = 0;
+    collect_accums(pr->body, pr->nbody);
     /* register this proc's inout params so the body derefs them as (*h_x) */
     g_ninout = 0;
     for (int i = 0; i < pr->nparams; i++)
