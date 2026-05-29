@@ -870,14 +870,20 @@ static Type resolve_expr(Expr *e) {
             }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
-                if (e->args[0]->kind != E_IDENT)
-                    die_at(e->line, "push's first argument must be an array variable");
+                /* target may be an array variable or a struct's array field
+                 * (e.g. push(p.tags, x)); the root variable must be mutable.
+                 * Struct params are deep-copied on entry, so their array
+                 * fields are owned locally and safe to grow. */
+                Expr *root = e->args[0];
+                while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+                if (root->kind != E_IDENT)
+                    die_at(e->line, "push's first argument must be an array variable or field");
                 Type arrt = resolve_expr(e->args[0]);
                 if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
                     die_at(e->line, "push's first argument must be an [int] or [string] array");
-                if (!vars_can_mutate(e->args[0]->sval))
+                if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
-                           e->args[0]->sval, e->args[0]->sval);
+                           root->sval, root->sval);
                 Type want = (arrt == T_ARRAY_STRING) ? T_STRING : T_INT;
                 if (resolve_expr(e->args[1]) != want)
                     die_at(e->line, "push's value must be %s", type_name(want));
@@ -994,11 +1000,15 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_INDEXSET: {
-            if (s->target->lhs->kind != E_IDENT)
-                die_at(s->line, "can only index-assign an array variable");
-            if (!vars_can_mutate(s->target->lhs->sval))
+            /* lhs is the array being indexed: a variable or a struct's array
+             * field (e.g. p.tags[0] = v). The root variable must be mutable. */
+            Expr *root = s->target->lhs;
+            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            if (root->kind != E_IDENT)
+                die_at(s->line, "can only index-assign an array variable or field");
+            if (!vars_can_mutate(root->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
-                       s->target->lhs->sval, s->target->lhs->sval);
+                       root->sval, root->sval);
             Type arrt = resolve_expr(s->target->lhs);
             if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
                 die_at(s->line, "can only index-assign an [int] or [string] array (strings themselves are immutable)");
@@ -1148,16 +1158,20 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("hier_str_find(%s, %s)", s, sub);
     }
     if (!strcmp(e->sval, "push")) {
-        /* grow the array in *its owning arena*, not the current one. For
-         * [string], the runtime push also copies the element bytes into that
-         * arena, so a pushed loop-scratch temporary does not dangle. */
-        const char *nm = e->args[0]->sval;       /* checked E_IDENT in resolve */
-        const char *owner = cv_arena(nm);
+        /* grow the array in *its owning arena* (the root variable's), not the
+         * current one. The target may be a variable or a struct's array field;
+         * &(lvalue) works for both (h_xs / ((h_p).f_tags)). For [string] the
+         * runtime push copies the element bytes into that arena, so a pushed
+         * loop-scratch temporary does not dangle. */
+        Expr *root = e->args[0];
+        while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+        const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
         if (!owner) owner = arena;
+        char *arr = gen_expr(e->args[0], arena);
         char *v = gen_expr(e->args[1], arena);
         if (e->args[0]->type == T_ARRAY_STRING)
-            return sfmt("hier_arr_str_push(%s, &h_%s, %s)", owner, nm, v);
-        return sfmt("hier_arr_int_push(%s, &h_%s, %s)", owner, nm, v);
+            return sfmt("hier_arr_str_push(%s, &(%s), %s)", owner, arr, v);
+        return sfmt("hier_arr_int_push(%s, &(%s), %s)", owner, arr, v);
     }
     if (!strcmp(e->sval, "split")) {
         char *s   = gen_expr(e->args[0], arena);
@@ -1318,17 +1332,22 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_INDEXSET: {
-            const char *nm = s->target->lhs->sval;   /* array variable */
-            char *ix = gen_expr(s->target->rhs, scope);
-            char *v  = gen_expr(s->expr, scope);
+            /* the array being indexed: a variable or a struct's array field.
+             * &(lvalue) gives a HierArr* for both. */
+            Expr *arrx = s->target->lhs;
+            Expr *root = arrx;
+            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            char *arr = gen_expr(arrx, scope);
+            char *ix  = gen_expr(s->target->rhs, scope);
+            char *v   = gen_expr(s->expr, scope);
             indent(o, ind);
-            if (s->target->lhs->type == T_ARRAY_STRING) {
+            if (arrx->type == T_ARRAY_STRING) {
                 /* set copies the element into the array's owning arena */
-                const char *owner = cv_arena(nm);
+                const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
                 if (!owner) owner = scope;
-                fprintf(o, "hier_arr_str_set(%s, &h_%s, %s, %s);\n", owner, nm, ix, v);
+                fprintf(o, "hier_arr_str_set(%s, &(%s), %s, %s);\n", owner, arr, ix, v);
             } else {
-                fprintf(o, "hier_arr_int_set(&h_%s, %s, %s);\n", nm, ix, v);
+                fprintf(o, "hier_arr_int_set(&(%s), %s, %s);\n", arr, ix, v);
             }
             break;
         }
@@ -1499,6 +1518,20 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* a reassigned param must land in this proc's scope to outlive any
      * inner block; the incoming pointer itself is borrowed from the caller */
     for (int i = 0; i < pr->nparams; i++) cv_push(pr->params[i].name, "&_scope");
+    /* Structs are passed by value, but C copies them shallowly — a heap field
+     * (string/array) still points at the caller's bytes. Deep-copy heap-
+     * bearing struct params into this scope so the parameter is a truly
+     * independent value: mutating its array field cannot touch the caller, and
+     * the copy is owned here. ([int]/[string] params stay read-only borrows;
+     * string params are immutable, so neither needs this.) */
+    for (int i = 0; i < pr->nparams; i++) {
+        Type pt = pr->params[i].type;
+        if (IS_STRUCT(pt) && type_is_heap(pt)) {
+            indent(o, 1);
+            fprintf(o, "h_%s = hier_copy_S_%s(&_scope, h_%s);\n",
+                    pr->params[i].name, g_structs[STRUCT_ID(pt)].name, pr->params[i].name);
+        }
+    }
     gen_block(o, pr->body, pr->nbody, 1, "&_scope", pr->ret);
     if (!block_ends_in_return(pr->body, pr->nbody)) {
         if (pr->ret == T_VOID) {
