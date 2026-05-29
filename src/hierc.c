@@ -1163,6 +1163,13 @@ static const char *cv_arena(const char *name) {
     return NULL;
 }
 
+/* true iff a live variable's storage is the caller's arena (_parent). Set by
+ * the return-slot optimization below; gates skipping the deep copy at return. */
+static int cv_in_parent(const char *name) {
+    const char *a = cv_arena(name);
+    return a && !strcmp(a, "_parent");
+}
+
 /* names of the current proc's inout params: in the generated body they are
  * C pointers (T *h_x), so every read/lvalue use derefs as (*h_x). Reset per
  * proc; a proc has at most 8 params. */
@@ -1171,6 +1178,37 @@ static int g_ninout = 0;
 static int is_inout_param(const char *name) {
     for (int i = 0; i < g_ninout; i++)
         if (!strcmp(g_inout[i], name)) return 1;
+    return 0;
+}
+
+/* --- return-slot optimization (escape analysis) -------------------------
+ * A function-top-level local that is returned by name (`return r`) is
+ * allocated in the caller's arena (_parent) from birth, so the return needs
+ * no deep copy — the bytes are already where the caller will read them. This
+ * is the move-elision that removes the O(n) promote-by-copy for the common
+ * "build a value locally, then return it" pattern.
+ *
+ * Soundness: allocating a local in _parent is ALWAYS memory-safe (the parent
+ * strictly outlives this scope); the only cost of over-marking is mild
+ * retention. So the analysis may safely over-approximate. We collect the set
+ * of names that appear as `return <ident>` anywhere in the body (recursing
+ * into nested blocks); a top-level heap decl with a matching name is then
+ * built in _parent. The copy is skipped at return ONLY when cv_in_parent()
+ * confirms the value truly lives there, so the skip can never dangle. */
+static const char *g_esc[256];
+static int g_nesc = 0;
+static void collect_escapes(Stmt **body, int n) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (s->kind == S_RETURN && s->expr && s->expr->kind == E_IDENT)
+            if (g_nesc < 256) g_esc[g_nesc++] = s->expr->sval;
+        if (s->body) collect_escapes(s->body, s->nbody);   /* if/while/for body */
+        if (s->els)  collect_escapes(s->els, s->nels);     /* else body */
+    }
+}
+static int name_escapes(const char *nm) {
+    for (int i = 0; i < g_nesc; i++)
+        if (!strcmp(g_esc[i], nm)) return 1;
     return 0;
 }
 
@@ -1379,15 +1417,25 @@ static int block_ends_in_return(Stmt **body, int n) {
 static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     switch (s->kind) {
         case S_DECL: {
-            char *v = gen_expr(s->expr, scope);
+            /* return-slot optimization: a function-top-level heap local that
+             * is returned by name is built directly in the caller's arena, so
+             * the eventual `return` is a no-op move instead of a deep copy.
+             * Top-level only (scope is the proc's own "&_scope") — never a
+             * loop/if body, so a bounded loop-scratch local is never promoted
+             * to function lifetime. */
+            const char *owner = scope;
+            if (!strcmp(scope, "&_scope") && type_is_heap(s->decl_type)
+                && name_escapes(s->name))
+                owner = "_parent";
+            char *v = gen_expr(s->expr, owner);
             /* value semantics: binding from a heap *place* aliases its bytes,
-             * so deep-copy into this scope. A literal/call/concat result is
-             * already a freshly-owned value — no copy needed. */
+             * so deep-copy into the owner arena. A literal/call/concat result
+             * is already a freshly-owned value built in `owner` — no copy. */
             if (is_place(s->expr) && type_is_heap(s->decl_type))
-                v = copy_into(s->decl_type, scope, v);
+                v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
             fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
-            cv_push(s->name, scope);   /* this variable lives in `scope` */
+            cv_push(s->name, owner);   /* this variable lives in `owner` */
             break;
         }
         case S_ASSIGN: {
@@ -1460,8 +1508,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 /* promote up. A fresh value (literal/call/concat) is built
                  * directly in the caller's arena; a bare string variable is
                  * only a pointer into this scope, so deep-copy it into the
-                 * caller's arena before freeing this scope. */
-                if (s->expr->kind == E_IDENT) {
+                 * caller's arena before freeing this scope — UNLESS the
+                 * return-slot optimization already built it in _parent. */
+                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ char *_ret = hier_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
                 } else {
@@ -1471,8 +1520,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else if (ret == T_ARRAY_INT) {
                 /* promote up. A fresh value (literal/call) is built directly
                  * in the caller's arena; a borrowed/local variable is
-                 * deep-copied into it. Either way nothing dangles. */
-                if (s->expr->kind == E_IDENT) {
+                 * deep-copied into it — UNLESS the return-slot optimization
+                 * already built it in _parent (then it's a no-op move). */
+                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ HierArrInt _ret = hier_arr_int_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
                 } else {
@@ -1482,8 +1532,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else if (ret == T_ARRAY_STRING) {
                 /* promote up. A fresh value (literal/split/call) is built
                  * directly in the caller's arena; a bare variable is
-                 * deep-copied (buffer + every element) into it. */
-                if (s->expr->kind == E_IDENT) {
+                 * deep-copied (buffer + every element) into it — UNLESS the
+                 * return-slot optimization already built it in _parent. */
+                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ HierArrStr _ret = hier_arr_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
                 } else {
@@ -1493,8 +1544,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else if (IS_STRUCT(ret) && type_is_heap(ret)) {
                 /* promote up. A heap struct built from a *place* is deep-copied
                  * into the caller's arena; a fresh struct literal/call is built
-                 * directly there (its construction re-homes any heap fields). */
-                if (is_place(s->expr)) {
+                 * directly there (its construction re-homes any heap fields).
+                 * A return-slot local (already in _parent) needs neither — it's
+                 * a no-op move, like the array cases above. */
+                if (s->expr->kind == E_IDENT && cv_in_parent(s->expr->sval)) {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
+                                            c_type(ret), v);
+                } else if (is_place(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
                                             c_type(ret), copy_into(ret, "_parent", v));
@@ -1598,6 +1655,9 @@ static void gen_proc(FILE *o, Proc *pr) {
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
     g_ncv = 0;
+    /* return-slot optimization: which top-level locals escape via return */
+    g_nesc = 0;
+    collect_escapes(pr->body, pr->nbody);
     /* register this proc's inout params so the body derefs them as (*h_x) */
     g_ninout = 0;
     for (int i = 0; i < pr->nparams; i++)

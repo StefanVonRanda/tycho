@@ -267,6 +267,18 @@ for i in range(1, 6):
   temporaries (e.g. `print(str(i) + " ")`) keep loop memory bounded —
   a million such iterations run in constant memory.
 
+**Return-slot optimization (move, not copy).** Returning a value normally
+means allocating it in the caller's arena. When the returned value is a
+local built up in the function (the common `r := []int; … ; return r`
+pattern), the compiler proves it escapes and allocates it in the caller's
+arena *from the start* — so the `return` is a move, not an O(n) deep copy.
+This composes across call frames: a value returned up several levels is
+built once, in the final consumer's arena, with zero copies along the way.
+It is invisible — same source, same value semantics, same bounded memory (a
+value returned into a caller's loop is still reclaimed by that loop's
+scratch reset). The analysis only promotes function-top-level locals, so a
+loop-scratch local is never lifted to a longer lifetime.
+
 None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
@@ -280,9 +292,9 @@ None of this appears in Hier source.
   (the function's own arena and the returned value are handled correctly).
   Reclaimed at process exit. Harmless for short-lived programs.
 - No floats, modules, or generics. Single source file. Arrays are
-  one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs),
-  and a struct's array field can be read by index but not index-written in
-  place. Struct comparison is not implemented.
+  one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
+  `inout` is limited to non-heap types (int, bool, pure-value structs).
+- No logical operators (`and`/`or`/`not`) or `elif` yet.
 
 ## Repository layout
 
