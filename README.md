@@ -173,10 +173,9 @@ fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
     return total
 ```
 
-A parameter is passed as a borrow (no copy); mutating it in place is a
-compile error — copy it first (`b := a`) to get a mutable local. *Not yet:*
-struct/array elements (arrays of arrays or of structs), and `inout`
-parameters for in-place mutation.
+An array parameter is passed as a borrow (no copy); mutating it in place is
+a compile error — copy it first (`b := a`) to get a mutable local, or take
+it `inout`. *Not yet:* arrays of arrays or of structs.
 
 ### Declarations and assignment
 
