@@ -902,11 +902,12 @@ static Type resolve_expr(Expr *e) {
             Type rt = resolve_expr(e->rhs);
             if (is_cmp(e->op)) {
                 if (e->op == TK_EQEQ || e->op == TK_NEQ) {
+                    /* equality is structural for every type (value semantics):
+                     * ints/bools directly, strings/arrays/structs by content,
+                     * recursing through nesting. Only void is incomparable. */
                     if (lt != rt)
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
-                    if (lt == T_ARRAY_INT) die_at(e->line, "cannot compare arrays");
-                    if (IS_STRUCT(lt)) die_at(e->line, "cannot compare structs");
                 } else {
                     int ok = (lt == T_INT && rt == T_INT) ||
                              (lt == T_STRING && rt == T_STRING);
@@ -1116,6 +1117,18 @@ static int is_place(Expr *e) {
     return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX;
 }
 
+/* C expression that is nonzero iff the two operands of type `t` are equal by
+ * *value* — the mirror of copy_into. int/bool compare directly; strings by
+ * byte; arrays element-wise; structs field-wise via a generated hier_eq_S_X.
+ * Recurses through nesting exactly as the deep copy does. */
+static char *gen_eq(Type t, const char *a, const char *b) {
+    if (t == T_STRING)       return sfmt("(strcmp(%s, %s) == 0)", a, b);
+    if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
+    if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
+    if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
+    return sfmt("(%s == %s)", a, b);   /* int/bool */
+}
+
 static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "len")) {
         char *a = gen_expr(e->args[0], arena);
@@ -1247,7 +1260,12 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *r = gen_expr(e->rhs, arena);
             if (e->op == TK_PLUS && e->lhs->type == T_STRING)
                 return sfmt("hier_str_concat(%s, %s, %s)", arena, l, r);
-            /* every comparison on strings goes through strcmp (==/!= and ordering) */
+            /* equality dispatches by type (deep/structural); != negates it */
+            if (e->op == TK_EQEQ || e->op == TK_NEQ) {
+                char *eq = gen_eq(e->lhs->type, l, r);
+                return e->op == TK_EQEQ ? eq : sfmt("(!%s)", eq);
+            }
+            /* ordering on strings is lexicographic via strcmp */
             if (is_cmp(e->op) && e->lhs->type == T_STRING)
                 return sfmt("(strcmp(%s, %s) %s 0)", l, r, op_str(e->op));
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
@@ -1522,6 +1540,25 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    r.f_%s = %s;\n", sd->fields[j].name, copy_into(ft, "a", src));
         }
         fprintf(o, "    return r;\n}\n\n");
+    }
+    /* structural-equality function per struct: field-wise, recursing into
+     * nested structs/arrays/strings. Emitted in definition order so a nested
+     * field's eq fn (lower index) is already declared above. */
+    for (int i = 0; i < g_nstructs; i++) {
+        StructDef *sd = &g_structs[i];
+        fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b) {\n", sd->name, sd->name, sd->name);
+        fprintf(o, "    return ");
+        if (sd->nfields == 0) {
+            fprintf(o, "1");
+        } else {
+            for (int j = 0; j < sd->nfields; j++) {
+                char *af = sfmt("a.f_%s", sd->fields[j].name);
+                char *bf = sfmt("b.f_%s", sd->fields[j].name);
+                fprintf(o, "%s%s", gen_eq(sd->fields[j].type, af, bf),
+                        j + 1 < sd->nfields ? "\n        && " : "");
+            }
+        }
+        fprintf(o, ";\n}\n\n");
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);

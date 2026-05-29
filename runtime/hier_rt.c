@@ -211,6 +211,14 @@ HierArrInt hier_arr_int_copy(Arena *a, HierArrInt src) {
     return r;
 }
 
+/* structural equality: same length and equal elements (value semantics) */
+int hier_arr_int_eq(HierArrInt x, HierArrInt y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.len; i++)
+        if (x.data[i] != y.data[i]) return 0;
+    return 1;
+}
+
 /* --- [string] arrays ------------------------------------------------------
  * Like HierArrInt, but the elements are char* whose bytes live in an arena.
  * The lifetime seam (see hier_str_copy) nests here: every operation that
@@ -262,6 +270,14 @@ HierArrStr hier_arr_str_copy(Arena *a, HierArrStr src) {
     r.len = src.len;
     for (long i = 0; i < src.len; i++) r.data[i] = hier_str_copy(a, src.data[i]);
     return r;
+}
+
+/* structural equality: same length and byte-equal elements (value semantics) */
+int hier_arr_str_eq(HierArrStr x, HierArrStr y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.len; i++)
+        if (strcmp(x.data[i], y.data[i]) != 0) return 0;
+    return 1;
 }
 
 /* split s on a (non-empty) separator into a fresh [string] in arena a.
