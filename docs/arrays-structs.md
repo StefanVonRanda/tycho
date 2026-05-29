@@ -1,10 +1,14 @@
 # Hier aggregates: arrays & structs under value semantics
 
-Status: design / pressure-test. Not implemented. This spec exists to
-answer one question: *do implicit hierarchical arenas still hold once
-the language has arrays and structs, given strict value semantics and no
-pointer type?* Conclusion: **yes**, subject to five invariants and three
-honest costs, both listed below.
+Status: **implemented** (this began as a design pressure-test; arrays,
+structs, heap-bearing/nested struct fields, structural equality, and `inout`
+all ship as described — see the [README](../README.md) and
+[thesis.md](thesis.md)). It answered one question: *do implicit hierarchical
+arenas still hold once the language has arrays and structs, given strict value
+semantics and no pointer type?* Conclusion: **yes**, subject to five
+invariants and three honest costs, both listed below — and the costs are now
+largely sealed by two compiler optimizations (return-slot move, in-place
+append) documented in [thesis.md](thesis.md) §4.
 
 ## 1. The model in one paragraph
 

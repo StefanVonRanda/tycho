@@ -23,6 +23,10 @@ fn main():
 Python-looking syntax, Go/Odin semantics (static types, value semantics,
 explicit returns), arena memory underneath.
 
+Why this works — value semantics is what lets the arenas be *implicit* — and
+where it doesn't, with measured numbers, is written up in
+[docs/thesis.md](docs/thesis.md).
+
 ```
 $ make
 $ ./hierc examples/hello.hi
@@ -300,7 +304,10 @@ None of this appears in Hier source.
   Reclaimed at process exit. Harmless for short-lived programs.
 - No floats, modules, or generics. Single source file. Arrays are
   one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
-  `inout` is limited to non-heap types (int, bool, pure-value structs).
+  `inout` covers non-heap types (int, bool, pure-value structs) and `[int]`
+  (shared mutable arrays across calls, e.g. a memo table — see
+  `examples/memo.hi`); `inout` of `[string]`/`string`/heap-bearing structs,
+  and `push`/growth through an `inout` array, are not supported yet.
 - No logical operators (`and`/`or`/`not`) or `elif` yet.
 
 ## Repository layout
@@ -310,8 +317,11 @@ src/hierc.c        the compiler (lexer, parser, type resolver, C codegen)
 runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
 build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
-examples/          hello, demo, accumulate, arrays, array_fns, structs,
-                   strings, words (.hi)
+examples/          hello, demo, accumulate, accumulate_big, arrays,
+                   array_fns, structs, strings, words, records, inout,
+                   memo (.hi)
+docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
+docs/arrays-structs.md   the original aggregates design pressure-test
 ```
 
 The runtime is turned into a C string literal at build time (`make`
