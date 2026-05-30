@@ -968,13 +968,17 @@ static void parse_struct(Parser *ps) {
     sd->name = nameT->text;
     sd->nfields = 0;
     sd->line = nameT->line;
+    g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
+                     * may reference this struct — e.g. a recursive `[Node]`
+                     * child list. (Parsing is single-pass and sequential, so a
+                     * half-built struct is only visible to its own fields.) */
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
-        Type ft = parse_type(ps);   /* int, bool, string, [int], [string], or struct */
-        if (IS_ARRC(ft) || IS_OPT(ft))   /* v1: avoids the struct<->generated-type emit cycle */
-            die_at(fn->line, "a struct field cannot be an array-of-struct/array or an Option yet");
+        Type ft = parse_type(ps);   /* int, bool, string, [int], a struct, [Struct]/[[T]], ... */
+        if (IS_OPT(ft))             /* Option fields deferred (need a by-value type sort) */
+            die_at(fn->line, "a struct field cannot be an Option yet");
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -983,7 +987,6 @@ static void parse_struct(Parser *ps) {
     }
     eat(ps, TK_DEDENT, "dedent");
     if (sd->nfields == 0) die_at(nameT->line, "a struct needs at least one field");
-    g_nstructs++;                 /* commit only once fully parsed */
 }
 
 static ProcVec parse_program(Tok *toks) {
@@ -1067,6 +1070,16 @@ static int is_cmp(TokKind op) {
 }
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+
+/* A place we can mutate in place (take `&` of in C): a variable, or a field of
+ * such a place. An array index is NOT an lvalue — `arr[i]` returns a copy of
+ * the element (value semantics), so you cannot mutate through it (e.g.
+ * `arr[i].f = v` or `push(arr[i].xs, v)`); rebuild the element instead. */
+static int is_lvalue(Expr *e) {
+    if (e->kind == E_IDENT) return 1;
+    if (e->kind == E_FIELD) return is_lvalue(e->lhs);
+    return 0;
+}
 
 static Type resolve_expr(Expr *e) {
     switch (e->kind) {
@@ -1243,6 +1256,9 @@ static Type resolve_expr(Expr *e) {
                 Type arrt = resolve_expr(e->args[0]);
                 if (!is_array(arrt))
                     die_at(e->line, "push's first argument must be an array");
+                if (!is_lvalue(e->args[0]))
+                    die_at(e->line, "cannot push through an array element (arr[i] is a copy) — "
+                                    "build the element, then push the whole thing");
                 /* push through a heap inout array is allowed: the regrow
                  * targets the value's owning arena (carried as _ina_<name>),
                  * so the new buffer outlives the call and the caller sees the
@@ -1454,6 +1470,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             Type arrt = resolve_expr(s->target->lhs);
             if (!is_array(arrt))
                 die_at(s->line, "can only index-assign an array element (strings themselves are immutable)");
+            if (!is_lvalue(s->target->lhs))
+                die_at(s->line, "cannot index-assign through an array element (arr[i] is a copy)");
             Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
             Type vt = resolve_expr(s->expr);
             if (tt != vt)
@@ -1466,6 +1484,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
             if (root->kind == E_IDENT && !vars_can_mutate(root->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only)", root->sval);
+            if (!is_lvalue(s->target))
+                die_at(s->line, "cannot assign to a field through an array element (arr[i] is a copy)");
             Type tt = resolve_expr(s->target);   /* E_FIELD -> field type */
             Type vt = resolve_expr(s->expr);
             if (tt != vt)
@@ -2489,19 +2509,49 @@ static void gen_proc(FILE *o, Proc *pr) {
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(HIER_RUNTIME, o);
     fputs("\n/* ---- generated from Hier source ---- */\n\n", o);
-    /* struct typedefs, in declaration order (define-before-use guarantees a
-     * struct field's type is already typedef'd above it) */
-    for (int i = 0; i < g_nstructs; i++) {
+    /* Types reference one another, sometimes cyclically (a `[Node]` field is a
+     * HierArrC descriptor holding S_Node*). Emit in dependency layers:
+     *   1. forward-declare every struct tag,
+     *   2. composite-array typedefs (each holds only a pointer + longs, so a
+     *      struct element needs just its tag from step 1),
+     *   3. struct bodies (which can hold an array descriptor by value),
+     *   4. prototypes for the generated copy/eq + array ops — this breaks the
+     *      copy<->copy recursion (a struct's copy calls its array field's copy,
+     *      which calls the element struct's copy),
+     *   5-7. the function bodies, then the Option types. */
+    for (int i = 0; i < g_nstructs; i++)            /* (1) struct tags */
+        fprintf(o, "typedef struct S_%s_ S_%s;\n", g_structs[i].name, g_structs[i].name);
+    fputs("\n", o);
+    for (int i = 0; i < g_narrtypes; i++)           /* (2) composite-array typedefs */
+        fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
+                c_type(g_arrtypes[i].elem), i);
+    fputs("\n", o);
+    for (int i = 0; i < g_nstructs; i++) {          /* (3) struct bodies */
         StructDef *sd = &g_structs[i];
-        fprintf(o, "typedef struct {\n");
+        fprintf(o, "struct S_%s_ {\n", sd->name);
         for (int j = 0; j < sd->nfields; j++)
             fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
-        fprintf(o, "} S_%s;\n\n", sd->name);
+        fprintf(o, "};\n");
     }
-    /* deep-copy function per heap-bearing struct: re-home every heap field
-     * into arena `a`. Non-heap fields are copied by the initial `r = v`.
-     * Emitted in definition order, so a nested struct field's copy fn (a
-     * lower index, since it was defined first) is already declared above. */
+    fputs("\n", o);
+    for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
+        const char *nm = g_structs[i].name;
+        if (type_is_heap(STRUCT_TYPE(i)))
+            fprintf(o, "static S_%s hier_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
+        fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
+    }
+    for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
+        const char *ct = c_type(g_arrtypes[i].elem);
+        fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
+        fprintf(o, "static void hier_arr_C%d_push(Arena*, HierArrC%d*, %s);\n", i, i, ct);
+        fprintf(o, "static %shier_arr_C%d_get(HierArrC%d, long);\n", ct, i, i);
+        fprintf(o, "static void hier_arr_C%d_set(Arena*, HierArrC%d*, long, %s);\n", i, i, ct);
+        fprintf(o, "static HierArrC%d hier_arr_C%d_copy(Arena*, HierArrC%d);\n", i, i, i);
+        fprintf(o, "static int hier_arr_C%d_eq(HierArrC%d, HierArrC%d);\n", i, i, i);
+    }
+    fputs("\n", o);
+    /* (5) deep-copy body per heap-bearing struct: re-home every heap field into
+     * arena `a`. Non-heap fields are copied by the initial `r = v`. */
     for (int i = 0; i < g_nstructs; i++) {
         StructDef *sd = &g_structs[i];
         if (!type_is_heap(STRUCT_TYPE(i))) continue;
@@ -2515,9 +2565,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, "    return r;\n}\n\n");
     }
-    /* structural-equality function per struct: field-wise, recursing into
-     * nested structs/arrays/strings. Emitted in definition order so a nested
-     * field's eq fn (lower index) is already declared above. */
+    /* (6) structural-equality body per struct, field-wise. */
     for (int i = 0; i < g_nstructs; i++) {
         StructDef *sd = &g_structs[i];
         fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b) {\n", sd->name, sd->name, sd->name);
@@ -2534,16 +2582,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, ";\n}\n\n");
     }
-    /* generated monomorphic composite arrays ([Struct], [[T]], ...), in
-     * interning order. The element of each was interned first (lower id, so
-     * emitted earlier) and structs are all emitted above, so every element op
-     * referenced by push/set/copy/eq (via copy_into / gen_eq) is already
-     * declared. Each array deep-copies its elements through the same seam as
-     * the hand-written [string] array. */
+    /* (7) composite-array op bodies (typedef already emitted in step 2). Each
+     * deep-copies its elements through the same seam as the [string] array. */
     for (int i = 0; i < g_narrtypes; i++) {
         Type et = g_arrtypes[i].elem;
         const char *ct = c_type(et);              /* element C type (trailing space) */
-        fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n", ct, i);
         fprintf(o,
             "static HierArrC%d hier_arr_C%d_with_cap(Arena *a, long cap) {\n"
             "    HierArrC%d r; r.len = 0; r.cap = cap;\n"

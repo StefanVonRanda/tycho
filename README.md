@@ -148,10 +148,12 @@ fn main():
     r.lo.x = 100            # nested field write, in place
 ```
 
-Fields may be `int`, `bool`, `string`, `[int]`, `[string]`, or another
-struct. Structs are values: assignment, parameters, and returns all copy the
-whole value — and the copy is **deep**, so a field that owns heap bytes
-(`string`/array, at any nesting depth) is duplicated too. Two struct
+Fields may be `int`, `float`, `bool`, `string`, an array (including an array of
+structs — even of the struct being defined, so `children: [Node]` builds a
+recursive tree), or another struct. Structs are values: assignment, parameters,
+and returns all copy the whole value — and the copy is **deep**, so a field
+that owns heap bytes (`string`/array, at any nesting depth) is duplicated too —
+copying a tree copies the whole tree. Two struct
 variables never share storage:
 
 ```
@@ -448,8 +450,11 @@ None of this appears in Hier source.
 ### Known limitations (proof-of-concept)
 
 - No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
-  `[string]`, `[Struct]`, `[[T]]`), but a struct *field* cannot yet be an
-  array-of-struct/array (the recursive-tree case). Maps are string-keyed with
+  `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
+  `[Node]`), but a struct field cannot yet be an `Option`, and you cannot mutate
+  *through* an array element (`arr[i]` is a copy, so `arr[i].f = v` /
+  `push(arr[i].xs, v)` are rejected — rebuild the element instead). Maps are
+  string-keyed with
   `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
   or value type yet; they support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
