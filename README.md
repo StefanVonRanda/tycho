@@ -105,8 +105,9 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 
 ### Types
 
-`int` (64-bit), `bool`, `string`, `[int]` and `[string]` (growable arrays),
-`[string: int]` (a string-keyed map), and user-defined `struct`s.
+`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `[int]` and
+`[string]` (growable arrays), `[string: int]` (a string-keyed map), and
+user-defined `struct`s.
 
 ### Structs
 
@@ -255,7 +256,11 @@ x = x + 1        # assignment (variable must already exist)
 
 ### Expressions
 
-- Arithmetic on `int`: `+ - * /`, unary `-`.
+- Arithmetic on `int`: `+ - * /` (`/` truncates), unary `-`.
+- Arithmetic on `float`: `+ - * /` (`/` is true division), unary `-`. A float
+  literal is `digits.digits` (e.g. `3.14`, `4.0` — no exponent or leading-dot
+  form yet). `int` and `float` never mix implicitly: convert with `to_float(n)`
+  / `to_int(x)` (the latter truncates toward zero).
 - `+` on `string` concatenates.
 - Comparisons `== != < > <= >=` produce `bool`. `==`/`!=` work on any
   matching pair (including `string`); ordering (`< > <= >=`) works on two
@@ -302,7 +307,9 @@ scoped to the loop. The condition form takes any `bool` expression.
 | --- | --- | --- |
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
-| `str(n)` | `int -> string` | Integer to string. |
+| `str(x)` | `int -> string` / `float -> string` | Number to string (a float prints with up to 15 significant digits, always with a `.`). |
+| `to_float(n)` | `int -> float` | Widen an int to a float. |
+| `to_int(x)` | `float -> int` | Truncate a float toward zero. |
 | `len(x)` | `string -> int` / `[T] -> int` / `[string: int] -> int` | Byte length of a string, element count of an array, or entry count of a map. |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
@@ -374,7 +381,7 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No floats, modules, or generics. Single source file. Arrays are
+- No modules or generics. Single source file. Arrays are
   one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
   The only map is `[string: int]` (string keys, `int` values — no other value
   type yet); it supports `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`,

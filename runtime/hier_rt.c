@@ -184,6 +184,24 @@ char *hier_int_to_str(Arena *a, long n) {
     return r;
 }
 
+/* Float to string: %.15g trims trailing zeros while keeping ~15 significant
+ * digits (readable, not full 17-digit round-trip). A value that prints with no
+ * '.', exponent, or inf/nan marker (e.g. 3 for 3.0) gets a trailing ".0" so it
+ * is never mistaken for an int. */
+char *hier_float_to_str(Arena *a, double x) {
+    char tmp[64];
+    int m = snprintf(tmp, sizeof tmp, "%.15g", x);
+    int floaty = 0;
+    for (int i = 0; i < m; i++) {
+        char c = tmp[i];
+        if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { floaty = 1; break; }
+    }
+    if (!floaty && m + 2 < (int)sizeof tmp) { tmp[m++] = '.'; tmp[m++] = '0'; tmp[m] = '\0'; }
+    char *r = (char *)arena_alloc(a, (size_t)m + 1);
+    memcpy(r, tmp, (size_t)m + 1);
+    return r;
+}
+
 /* --- [int] arrays ---------------------------------------------------------
  * A HierArrInt is a value (passed/copied by value, 3 words). Its backing
  * buffer lives in the arena that owns the variable holding it; growth

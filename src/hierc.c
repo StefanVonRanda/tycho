@@ -61,7 +61,7 @@ static char *xstrndup(const char *s, size_t n) {
 
 typedef enum {
     TK_EOF, TK_NEWLINE, TK_INDENT, TK_DEDENT,
-    TK_IDENT, TK_INT, TK_STR,
+    TK_IDENT, TK_INT, TK_FLOAT, TK_STR,
     TK_COLONCOLON, TK_COLONEQ, TK_COLON, TK_EQ,
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
@@ -69,7 +69,7 @@ typedef enum {
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT,
     TK_DOT,
-    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING
+    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
 
 typedef struct {
@@ -77,6 +77,7 @@ typedef struct {
     char   *text;   /* identifier name, or raw string contents */
     long    ival;
     int     line;
+    double  fval;   /* TK_FLOAT literal value */
 } Tok;
 
 typedef struct {
@@ -111,6 +112,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "int"))    return TK_KW_INT;
     if (!strcmp(s, "bool"))   return TK_KW_BOOL;
     if (!strcmp(s, "string")) return TK_KW_STRING;
+    if (!strcmp(s, "float"))  return TK_KW_FLOAT;
     return TK_IDENT;
 }
 
@@ -161,11 +163,21 @@ static TokVec lex(const char *src) {
             if (c == ' ' || c == '\r') { p++; continue; }
 
             if (isdigit((unsigned char)c)) {
-                long v = 0;
                 const char *s = p;
-                while (isdigit((unsigned char)*p)) { v = v * 10 + (*p - '0'); p++; }
-                (void)s;
-                tv_push(&out, (Tok){TK_INT, NULL, v, line});
+                while (isdigit((unsigned char)*p)) p++;
+                /* a '.' immediately followed by a digit makes it a float (D.D);
+                 * otherwise the '.' is a separate token (e.g. struct field). No
+                 * exponent or leading-dot form yet. */
+                if (*p == '.' && isdigit((unsigned char)p[1])) {
+                    p++;
+                    while (isdigit((unsigned char)*p)) p++;
+                    double dv = strtod(s, NULL);
+                    tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv});
+                } else {
+                    long v = 0;
+                    for (const char *q = s; q < p; q++) v = v * 10 + (*q - '0');
+                    tv_push(&out, (Tok){TK_INT, NULL, v, line});
+                }
                 continue;
             }
             if (isalpha((unsigned char)c) || c == '_') {
@@ -251,7 +263,7 @@ static TokVec lex(const char *src) {
  * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
  * constants keep working in every existing == and switch. */
 typedef int Type;
-enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI };
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT };
 #define T_STRUCT_BASE   64
 #define IS_STRUCT(t)    ((t) >= T_STRUCT_BASE)
 #define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
@@ -290,6 +302,7 @@ static const char *c_type(Type t) {
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     switch (t) {
         case T_INT:          return "long ";
+        case T_FLOAT:        return "double ";
         case T_BOOL:         return "int ";
         case T_STRING:       return "char *";
         case T_ARRAY_INT:    return "HierArrInt ";
@@ -302,6 +315,7 @@ static const char *type_name(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     switch (t) {
         case T_INT:          return "int";
+        case T_FLOAT:        return "float";
         case T_BOOL:         return "bool";
         case T_STRING:       return "string";
         case T_ARRAY_INT:    return "[int]";
@@ -311,7 +325,7 @@ static const char *type_name(Type t) {
     }
 }
 
-typedef enum { E_INT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
+typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
                E_STRUCTLIT, E_FIELD, E_ADDR } ExprKind;
 
 typedef struct Expr Expr;
@@ -320,6 +334,7 @@ struct Expr {
     Type     type;     /* filled in by resolver */
     int      line;
     long     ival;     /* E_INT / E_BOOL */
+    double   fval;     /* E_FLOAT */
     char    *sval;     /* E_STR contents / E_IDENT name / E_CALL callee */
     TokKind  op;       /* E_BINOP */
     Expr    *lhs, *rhs;
@@ -399,9 +414,10 @@ static Type parse_type(Parser *ps) {
     }
     switch (t->kind) {
         case TK_KW_INT:    ps->p++; return T_INT;
+        case TK_KW_FLOAT:  ps->p++; return T_FLOAT;
         case TK_KW_BOOL:   ps->p++; return T_BOOL;
         case TK_KW_STRING: ps->p++; return T_STRING;
-        default: die_at(t->line, "expected a type (int, bool, string, [int], or a struct)");
+        default: die_at(t->line, "expected a type (int, float, bool, string, [int], or a struct)");
     }
     return T_VOID; /* unreachable */
 }
@@ -418,6 +434,7 @@ static Expr *parse_expr(Parser *ps);
 static Expr *parse_primary(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_INT)  { ps->p++; Expr *e = new_expr(E_INT, t->line);  e->ival = t->ival; return e; }
+    if (t->kind == TK_FLOAT){ ps->p++; Expr *e = new_expr(E_FLOAT, t->line); e->fval = t->fval; return e; }
     if (t->kind == TK_STR)  { ps->p++; Expr *e = new_expr(E_STR, t->line);  e->sval = t->text; return e; }
     if (t->kind == TK_TRUE) { ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 1; return e; }
     if (t->kind == TK_FALSE){ ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 0; return e; }
@@ -525,11 +542,10 @@ static Expr *parse_postfix(Parser *ps) {
 }
 
 static Expr *parse_unary(Parser *ps) {
-    if (at(ps, TK_MINUS)) {
+    if (at(ps, TK_MINUS)) {                /* unary negation: operand in lhs, rhs NULL */
         Tok *t = cur(ps); ps->p++;
-        Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
         Expr *e = new_expr(E_BINOP, t->line);
-        e->op = TK_MINUS; e->lhs = zero; e->rhs = parse_unary(ps);
+        e->op = TK_MINUS; e->lhs = parse_unary(ps);
         return e;
     }
     if (at(ps, TK_AMP)) {                  /* &lvalue — an inout argument */
@@ -906,6 +922,7 @@ static int is_cmp(TokKind op) {
 static Type resolve_expr(Expr *e) {
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
+        case E_FLOAT:return e->type = T_FLOAT;
         case E_BOOL: return e->type = T_BOOL;
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
@@ -976,6 +993,28 @@ static Type resolve_expr(Expr *e) {
                 }
                 e->kind = E_STRUCTLIT;          /* reinterpret for codegen */
                 return e->type = STRUCT_TYPE(sid);
+            }
+            /* str is polymorphic (int or float); to_int/to_float convert
+             * between the two (no implicit mixing exists). Handled inline so
+             * they bypass the fixed-signature Sig table. */
+            if (!strcmp(e->sval, "str")) {
+                if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                if (at_ != T_INT && at_ != T_FLOAT)
+                    die_at(e->line, "str(x) takes an int or a float");
+                return e->type = T_STRING;
+            }
+            if (!strcmp(e->sval, "to_float")) {
+                if (e->nargs != 1) die_at(e->line, "to_float(n) takes one argument");
+                if (resolve_expr(e->args[0]) != T_INT)
+                    die_at(e->line, "to_float(n) takes an int");
+                return e->type = T_FLOAT;
+            }
+            if (!strcmp(e->sval, "to_int")) {
+                if (e->nargs != 1) die_at(e->line, "to_int(x) takes one argument");
+                if (resolve_expr(e->args[0]) != T_FLOAT)
+                    die_at(e->line, "to_int(x) takes a float (truncates toward zero)");
+                return e->type = T_INT;
             }
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
@@ -1105,6 +1144,12 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "`not` needs a bool operand");
                 return e->type = T_BOOL;
             }
+            if (e->op == TK_MINUS && e->rhs == NULL) {   /* unary negation */
+                Type ot = resolve_expr(e->lhs);
+                if (ot != T_INT && ot != T_FLOAT)
+                    die_at(e->line, "unary `-` needs an int or a float");
+                return e->type = ot;
+            }
             Type lt = resolve_expr(e->lhs);
             Type rt = resolve_expr(e->rhs);
             if (e->op == TK_AND || e->op == TK_OR) {
@@ -1122,9 +1167,10 @@ static Type resolve_expr(Expr *e) {
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
                 } else {
                     int ok = (lt == T_INT && rt == T_INT) ||
+                             (lt == T_FLOAT && rt == T_FLOAT) ||
                              (lt == T_STRING && rt == T_STRING);
                     if (!ok)
-                        die_at(e->line, "ordering compares two ints or two strings");
+                        die_at(e->line, "ordering compares two ints, two floats, or two strings");
                 }
                 return e->type = T_BOOL;
             }
@@ -1133,10 +1179,12 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "cannot concatenate string with %s", type_name(rt));
                 return e->type = T_STRING;
             }
-            if (lt != T_INT || rt != T_INT)
-                die_at(e->line, "arithmetic requires ints (got %s, %s)",
-                       type_name(lt), type_name(rt));
-            return e->type = T_INT;
+            /* arithmetic: two ints or two floats (no implicit mixing — use
+             * to_float/to_int). float `/` is true division; int `/` truncates. */
+            if (lt == T_INT && rt == T_INT) return e->type = T_INT;
+            if (lt == T_FLOAT && rt == T_FLOAT) return e->type = T_FLOAT;
+            die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s)",
+                   type_name(lt), type_name(rt));
         }
     }
     return T_VOID;
@@ -1572,8 +1620,14 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "str")) {
         char *a = gen_expr(e->args[0], arena);
+        if (e->args[0]->type == T_FLOAT)
+            return sfmt("hier_float_to_str(%s, %s)", arena, a);
         return sfmt("hier_int_to_str(%s, %s)", arena, a);
     }
+    if (!strcmp(e->sval, "to_float"))    /* int -> double */
+        return sfmt("((double)%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
+        return sfmt("((long)%s)", gen_expr(e->args[0], arena));
     /* user proc: first arg is the destination arena for its return. A heap
      * inout parameter takes TWO C args: the value's owning arena, then the
      * &pointer — so an allocating mutation in the callee lands where the
@@ -1618,6 +1672,17 @@ static const char *op_str(TokKind op) {
 static char *gen_expr(Expr *e, const char *arena) {
     switch (e->kind) {
         case E_INT:  return sfmt("%ldL", e->ival);
+        case E_FLOAT: {
+            /* %.17g round-trips the double exactly; ensure the C literal reads
+             * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is
+             * not integer division. */
+            char b[64];
+            snprintf(b, sizeof b, "%.17g", e->fval);
+            int isfloaty = 0;
+            for (char *q = b; *q; q++)
+                if (*q == '.' || *q == 'e' || *q == 'E' || *q == 'n' || *q == 'i') { isfloaty = 1; break; }
+            return isfloaty ? sfmt("%s", b) : sfmt("%s.0", b);
+        }
         case E_BOOL: return sfmt("%ld", e->ival);
         case E_STR:  return sfmt("\"%s\"", e->sval);
         case E_IDENT:return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
@@ -1688,6 +1753,8 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_BINOP: {
             if (e->op == TK_NOT)               /* unary: operand in lhs, rhs NULL */
                 return sfmt("(!%s)", gen_expr(e->lhs, arena));
+            if (e->op == TK_MINUS && e->rhs == NULL)   /* unary negation */
+                return sfmt("(-%s)", gen_expr(e->lhs, arena));
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */
