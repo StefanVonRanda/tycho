@@ -806,16 +806,6 @@ static int vars_can_mutate(const char *name) {
     return 1;
 }
 
-/* names of the current proc's inout params (resolver side), so push can reject
- * growth through an inout array (shared buffer can't be reallocated safely
- * across the call boundary yet — only in-place mutation is supported). */
-static const char *g_res_inout[8];
-static int g_nres_inout = 0;
-static int is_res_inout(const char *name) {
-    for (int i = 0; i < g_nres_inout; i++)
-        if (!strcmp(g_res_inout[i], name)) return 1;
-    return 0;
-}
 
 /* --------------------------------------------------------- type resolve */
 
@@ -909,9 +899,10 @@ static Type resolve_expr(Expr *e) {
                 Type arrt = resolve_expr(e->args[0]);
                 if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
                     die_at(e->line, "push's first argument must be an [int] or [string] array");
-                if (is_res_inout(root->sval))
-                    die_at(e->line, "cannot push to inout array '%s' (growth across a call boundary is not supported yet; mutate elements in place, or return a fresh array)",
-                           root->sval);
+                /* push through a heap inout array is allowed: the regrow
+                 * targets the value's owning arena (carried as _ina_<name>),
+                 * so the new buffer outlives the call and the caller sees the
+                 * updated descriptor. */
                 if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
@@ -1118,16 +1109,16 @@ static void resolve_program(ProcVec *prog) {
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
-            /* inout: non-heap types (int/bool/pure struct) and [int]. A
-             * non-heap copy-out is a plain word store; an [int] inout shares
-             * the caller's buffer by pointer and is mutated in place
-             * (index-set, no allocation) — both can't dangle. [string]/string/
-             * heap-bearing structs and push-through-inout are deferred (they'd
-             * copy/grow into an arena the callee can't correctly name). */
-            if (pr->params[j].is_inout && type_is_heap(pr->params[j].type)
-                && pr->params[j].type != T_ARRAY_INT)
-                die_at(pr->line, "inout parameter '%s': only non-heap types or "
-                       "[int] are supported as inout for now",
+            /* inout: non-heap types (int/bool/pure struct) and the mutable
+             * aggregates [int]/[string]/heap-bearing structs. A heap inout
+             * carries its value's owning arena (_ina_<name>), so any
+             * allocating mutation (element copy, field copy, regrow/push)
+             * lands in the caller's arena where the value lives. Plain
+             * `string` stays excluded: it's immutable (only reassignable), so
+             * an inout buys nothing. */
+            if (pr->params[j].is_inout && pr->params[j].type == T_STRING)
+                die_at(pr->line, "inout parameter '%s': `string` is immutable; "
+                       "inout supports int/bool/struct and [int]/[string]",
                        pr->params[j].name);
         }
         g_sigs[g_nsigs++] = s;
@@ -1141,16 +1132,13 @@ static void resolve_program(ProcVec *prog) {
          * buffer is shared, so in-place push/set would hit the caller); all
          * other value params — int/bool/string/struct — are copies and so are
          * mutable locals (a struct field-set rebinds only the local copy). */
-        g_nres_inout = 0;
         for (int j = 0; j < pr->nparams; j++) {
             Type pt = pr->params[j].type;
-            /* arrays are read-only borrows EXCEPT an inout [int], which is a
+            /* arrays are read-only borrows EXCEPT an inout array, which is a
              * by-pointer share the callee may mutate in place. */
             int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING)
                           || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
-            if (pr->params[j].is_inout && g_nres_inout < 8)
-                g_res_inout[g_nres_inout++] = pr->params[j].name;
         }
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");
@@ -1202,6 +1190,27 @@ static int is_inout_param(const char *name) {
     for (int i = 0; i < g_ninout; i++)
         if (!strcmp(g_inout[i], name)) return 1;
     return 0;
+}
+
+/* HEAP inout params additionally carry their value's owning arena as a hidden
+ * C parameter `_ina_<name>`. Any allocating mutation of the param (a [string]
+ * element copy, a heap struct field copy, an array regrow/push) must allocate
+ * into THAT arena — the caller's, where the value lives — not the callee's
+ * _scope. Non-heap inout (int/bool/pure struct) never allocates, so it has no
+ * arena param. Populated per proc alongside g_inout. */
+static const char *g_heap_inout[8];
+static int g_nheap_inout = 0;
+static int is_heap_inout_param(const char *name) {
+    for (int i = 0; i < g_nheap_inout; i++)
+        if (!strcmp(g_heap_inout[i], name)) return 1;
+    return 0;
+}
+/* owning-arena C expression for a variable's *root*: the carried _ina_ param
+ * for a heap inout, otherwise the variable's tracked arena (cv_arena). */
+static char *owner_arena_of(const char *root) {
+    if (is_heap_inout_param(root)) return sfmt("_ina_%s", root);
+    const char *a = cv_arena(root);
+    return (char *)(a ? a : "&_scope");
 }
 
 /* --- return-slot optimization (escape analysis) -------------------------
@@ -1330,8 +1339,10 @@ static char *gen_call(Expr *e, const char *arena) {
          * loop-scratch temporary does not dangle. */
         Expr *root = e->args[0];
         while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
-        const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
-        if (!owner) owner = arena;
+        /* regrow targets the array's owning arena — the carried _ina_ arena
+         * if the root is a heap inout param (so the new buffer outlives the
+         * call and the caller sees the updated descriptor). */
+        const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_expr(e->args[0], arena);
         char *v = gen_expr(e->args[1], arena);
         if (e->args[0]->type == T_ARRAY_STRING)
@@ -1354,12 +1365,25 @@ static char *gen_call(Expr *e, const char *arena) {
         char *a = gen_expr(e->args[0], arena);
         return sfmt("hier_int_to_str(%s, %s)", arena, a);
     }
-    /* user proc: first arg is the destination arena for its return */
+    /* user proc: first arg is the destination arena for its return. A heap
+     * inout parameter takes TWO C args: the value's owning arena, then the
+     * &pointer — so an allocating mutation in the callee lands where the
+     * value lives. The owner is computed from the argument's root variable
+     * (which, if it's itself a heap inout param here, yields its carried
+     * _ina_ arena — threading the real owner across recursion). */
+    Sig *cs = sig_find(e->sval);
     char *out = sfmt("h_%s(%s", e->sval, arena);
     for (int i = 0; i < e->nargs; i++) {
         char *a = gen_expr(e->args[i], arena);
-        char *tmp = sfmt("%s, %s", out, a);
-        out = tmp;
+        if (cs && i < cs->nparams && cs->inout[i] && type_is_heap(cs->params[i])
+            && e->args[i]->kind == E_ADDR) {
+            Expr *root = e->args[i]->lhs;
+            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
+            out = sfmt("%s, %s, %s", out, owner, a);
+        } else {
+            out = sfmt("%s, %s", out, a);
+        }
     }
     return sfmt("%s)", out);
 }
@@ -1554,9 +1578,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *v   = gen_expr(s->expr, scope);
             indent(o, ind);
             if (arrx->type == T_ARRAY_STRING) {
-                /* set copies the element into the array's owning arena */
-                const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
-                if (!owner) owner = scope;
+                /* set copies the element into the array's owning arena — the
+                 * carried _ina_ arena if the root is a heap inout param. */
+                const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
                 fprintf(o, "hier_arr_str_set(%s, &(%s), %s, %s);\n", owner, arr, ix, v);
             } else {
                 fprintf(o, "hier_arr_int_set(&(%s), %s, %s);\n", arr, ix, v);
@@ -1570,8 +1594,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * may collapse first); a heap *place* RHS is also deep-copied. */
             Expr *root = s->target;
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
-            const char *owner = (root->kind == E_IDENT) ? cv_arena(root->sval) : NULL;
-            if (!owner) owner = scope;
+            /* heap field's new bytes go in the struct's owning arena — the
+             * carried _ina_ arena if the root is a heap inout param. */
+            const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
             char *lv = gen_expr(s->target, scope);
             char *v  = gen_expr(s->expr, owner);
             if (type_is_heap(s->target->type) && is_place(s->expr))
@@ -1726,9 +1751,18 @@ static void gen_signature(FILE *o, Proc *pr) {
     fprintf(o, "%sh_%s(Arena *_parent", c_type(pr->ret), pr->name);
     for (int i = 0; i < pr->nparams; i++) {
         /* inout params are received by pointer so writes reach the caller's
-         * storage (copy-in copy-out, realized as call-by-reference). */
-        const char *star = pr->params[i].is_inout ? "*" : "";
-        fprintf(o, ", %s%sh_%s", c_type(pr->params[i].type), star, pr->params[i].name);
+         * storage (copy-in copy-out, realized as call-by-reference). A HEAP
+         * inout additionally carries its value's owning arena (_ina_<name>),
+         * passed just before the pointer, so allocating mutations land where
+         * the value lives rather than in this callee's _scope. */
+        Type pt = pr->params[i].type;
+        if (pr->params[i].is_inout && type_is_heap(pt))
+            fprintf(o, ", Arena *_ina_%s, %s*h_%s",
+                    pr->params[i].name, c_type(pt), pr->params[i].name);
+        else if (pr->params[i].is_inout)
+            fprintf(o, ", %s*h_%s", c_type(pt), pr->params[i].name);
+        else
+            fprintf(o, ", %sh_%s", c_type(pt), pr->params[i].name);
     }
     fprintf(o, ")");
 }
@@ -1748,8 +1782,13 @@ static void gen_proc(FILE *o, Proc *pr) {
     collect_accums(pr->body, pr->nbody);
     /* register this proc's inout params so the body derefs them as (*h_x) */
     g_ninout = 0;
+    g_nheap_inout = 0;
     for (int i = 0; i < pr->nparams; i++)
-        if (pr->params[i].is_inout) g_inout[g_ninout++] = pr->params[i].name;
+        if (pr->params[i].is_inout) {
+            g_inout[g_ninout++] = pr->params[i].name;
+            if (type_is_heap(pr->params[i].type))
+                g_heap_inout[g_nheap_inout++] = pr->params[i].name;
+        }
     /* a reassigned param must land in this proc's scope to outlive any
      * inner block; the incoming pointer itself is borrowed from the caller */
     for (int i = 0; i < pr->nparams; i++) cv_push(pr->params[i].name, "&_scope");
@@ -1761,7 +1800,10 @@ static void gen_proc(FILE *o, Proc *pr) {
      * string params are immutable, so neither needs this.) */
     for (int i = 0; i < pr->nparams; i++) {
         Type pt = pr->params[i].type;
-        if (IS_STRUCT(pt) && type_is_heap(pt)) {
+        /* an inout struct is a pointer to the caller's value — must NOT be
+         * deep-copied (the whole point is to mutate the caller's). Only
+         * by-value heap struct params are copied for independence. */
+        if (IS_STRUCT(pt) && type_is_heap(pt) && !pr->params[i].is_inout) {
             indent(o, 1);
             fprintf(o, "h_%s = hier_copy_S_%s(&_scope, h_%s);\n",
                     pr->params[i].name, g_structs[STRUCT_ID(pt)].name, pr->params[i].name);

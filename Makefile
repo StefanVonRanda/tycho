@@ -58,6 +58,8 @@ clean:
 	rm -f examples/records examples/records.c
 	rm -f examples/inout examples/inout.c
 	rm -f examples/memo examples/memo.c
+	rm -f examples/collect examples/collect.c
+	rm -f examples/context examples/context.c
 	rm -f examples/strings examples/strings.c
 	rm -f examples/words examples/words.c
 	rm -f examples/records examples/records.c

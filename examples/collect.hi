@@ -1,0 +1,17 @@
+# Recursive output collector: a [string] threaded through `inout` accumulates
+# across call frames. The buffer regrows in the *caller's* arena (carried as
+# _ina_out), so every push survives the nested return — past Wall #3's
+# shared-mutable-output case.
+
+fn collect(out: inout [string], n: int):
+    if n == 0:
+        return
+    push(out, "item-" + str(n))
+    collect(&out, n - 1)
+
+fn main():
+    acc := []string
+    collect(&acc, 5)
+    print("collected " + str(len(acc)) + ":\n")
+    for i in range(len(acc)):
+        print(acc[i] + "\n")
