@@ -1780,6 +1780,16 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* in-place append: which string locals are self-append accumulators */
     g_naccum = 0;
     collect_accums(pr->body, pr->nbody);
+    /* the accumulator opt declares its sidecar len/cap locals at the
+     * variable's S_DECL; a parameter has no S_DECL, so a self-append on a
+     * string param (`s = s + e`) must NOT take the in-place path — its
+     * sidecars would be undeclared C. Drop any param from the accumulator set;
+     * it falls back to ordinary concat-and-rebind, which is correct. */
+    for (int p = 0; p < pr->nparams; p++)
+        for (int a = 0; a < g_naccum; a++)
+            if (!strcmp(g_accum[a], pr->params[p].name)) {
+                g_accum[a] = g_accum[--g_naccum]; a--;
+            }
     /* register this proc's inout params so the body derefs them as (*h_x) */
     g_ninout = 0;
     g_nheap_inout = 0;
