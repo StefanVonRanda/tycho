@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo image static clean
+.PHONY: all demo test image static clean
 
 all: hierc
 
@@ -34,6 +34,13 @@ demo: hierc
 	./hierc examples/hello.hi
 	@echo "--- running examples/hello (type a name) ---"
 	@./examples/hello
+
+# Differential test suite: every examples/*.hi and tests/*.hi built both
+# native -O2 and under -fsanitize=address,undefined, run on matching stdin,
+# asserting exit 0, clean sanitizers, and byte-identical output. See
+# tests/run.sh and docs/thesis.md §3.
+test: hierc
+	@sh tests/run.sh
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .

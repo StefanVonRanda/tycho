@@ -46,7 +46,18 @@ hello Ada
 | `make image` | Build the Alpine/musl podman image used for static builds. |
 | `make static HI=f.hi` | Produce a **fully static** Linux binary via podman. |
 | `make demo` | Build and run `examples/hello.hi`. |
+| `make test` | Run the differential test suite (see below). |
 | `make clean` | Remove build artifacts. |
+
+`make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
+native `-O2` binary and one under `-fsanitize=address,undefined` — runs both on
+the same stdin, and asserts all three of: exit 0, no sanitizer report, and
+**byte-identical output** between the two builds. The byte-identical check is
+the teeth: any undefined behaviour the optimizer and the sanitizer disagree on
+surfaces as an output diff. Arena retention is by design (the runtime is a pool
+allocator), so leak detection is off — the suite guards correctness
+(use-after-free, out-of-bounds, UB), not reclamation timing. This is the
+standard described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 
 Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
@@ -381,6 +392,8 @@ podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
                    inout, memo, collect, context (.hi)
+tests/run.sh       differential test harness (native -O2 vs ASan/UBSan)
+tests/*.hi         dedicated regression programs (+ optional <name>.in stdin)
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 ```
