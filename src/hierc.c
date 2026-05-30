@@ -247,7 +247,7 @@ static TokVec lex(const char *src) {
  * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
  * constants keep working in every existing == and switch. */
 typedef int Type;
-enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING };
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI };
 #define T_STRUCT_BASE   64
 #define IS_STRUCT(t)    ((t) >= T_STRUCT_BASE)
 #define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
@@ -271,7 +271,7 @@ static int struct_find(const char *name) {
  * to keep the implicit-arena model sound. Structs are defined before use, so
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
-    if (t == T_STRING || t == T_ARRAY_INT || t == T_ARRAY_STRING) return 1;
+    if (t == T_STRING || t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_MAP_SI) return 1;
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
         for (int i = 0; i < sd->nfields; i++)
@@ -290,6 +290,7 @@ static const char *c_type(Type t) {
         case T_STRING:       return "char *";
         case T_ARRAY_INT:    return "HierArrInt ";
         case T_ARRAY_STRING: return "HierArrStr ";
+        case T_MAP_SI:       return "HierMapSI ";
         default:             return "void ";
     }
 }
@@ -301,6 +302,7 @@ static const char *type_name(Type t) {
         case T_STRING:       return "string";
         case T_ARRAY_INT:    return "[int]";
         case T_ARRAY_STRING: return "[string]";
+        case T_MAP_SI:       return "[string: int]";
         default:             return "void";
     }
 }
@@ -370,9 +372,16 @@ static int accept(Parser *ps, TokKind k) {
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
-    if (t->kind == TK_LBRACKET) {        /* [int] or [string] */
+    if (t->kind == TK_LBRACKET) {        /* [int] / [string] / [string: int] */
         ps->p++;
         Type elem = parse_type(ps);
+        if (at(ps, TK_COLON)) {          /* map type: [K: V] */
+            ps->p++;
+            Type val = parse_type(ps);
+            eat(ps, TK_RBRACKET, "']'");
+            if (elem == T_STRING && val == T_INT) return T_MAP_SI;
+            die_at(t->line, "only [string: int] maps are supported");
+        }
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_INT)    return T_ARRAY_INT;
         if (elem == T_STRING) return T_ARRAY_STRING;
@@ -414,22 +423,51 @@ static Expr *parse_primary(Parser *ps) {
         eat(ps, TK_RPAREN, "')'");
         return e;
     }
-    if (t->kind == TK_LBRACKET) {            /* array literal */
+    if (t->kind == TK_LBRACKET) {            /* array or map literal */
         ps->p++;
         Expr *e = new_expr(E_ARRLIT, t->line);
-        if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string */
+        if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string / []string: int */
             ps->p++;
             Type elem = parse_type(ps);
+            if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
+                ps->p++;
+                Type val = parse_type(ps);
+                if (elem == T_STRING && val == T_INT) { e->ival = T_MAP_SI; e->op = TK_COLON; }
+                else die_at(t->line, "only [string: int] maps are supported");
+                return e;
+            }
             if (elem == T_INT)         e->ival = T_ARRAY_INT;      /* type carried */
             else if (elem == T_STRING) e->ival = T_ARRAY_STRING;   /* to resolver */
             else die_at(t->line, "only [int] and [string] arrays are supported");
             return e;
         }
         int cap = 0;
-        while (!at(ps, TK_RBRACKET)) {
-            if (e->nargs == cap) { cap = cap ? cap * 2 : 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+        /* first element decides array vs map: a `key: value` pair => map. The
+         * map literal interleaves args as k0,v0,k1,v1,... and is flagged with
+         * op == TK_COLON (E_ARRLIT otherwise leaves op unset). */
+        Expr *first = parse_expr(ps);
+        if (at(ps, TK_COLON)) {              /* map literal ["k": v, ...] */
+            e->op = TK_COLON;
+            ps->p++;
+            cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+            e->args[e->nargs++] = first;             /* key0 */
+            e->args[e->nargs++] = parse_expr(ps);    /* val0 */
+            while (accept(ps, TK_COMMA)) {
+                if (at(ps, TK_RBRACKET)) break;       /* trailing comma */
+                if (e->nargs + 2 > cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+                e->args[e->nargs++] = parse_expr(ps);   /* key */
+                eat(ps, TK_COLON, "':' in a map literal entry");
+                e->args[e->nargs++] = parse_expr(ps);   /* value */
+            }
+            eat(ps, TK_RBRACKET, "']'");
+            return e;
+        }
+        cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+        e->args[e->nargs++] = first;
+        while (accept(ps, TK_COMMA)) {
+            if (at(ps, TK_RBRACKET)) break;          /* trailing comma */
+            if (e->nargs == cap) { cap = cap * 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
             e->args[e->nargs++] = parse_expr(ps);
-            if (!accept(ps, TK_COMMA)) break;
         }
         eat(ps, TK_RBRACKET, "']'");
         return e;
@@ -826,7 +864,17 @@ static Type resolve_expr(Expr *e) {
             return e->type = t;
         }
         case E_ARRLIT: {
-            if (e->nargs == 0)                 /* empty literal: type from []T */
+            if (e->op == TK_COLON) {           /* map literal [k: v, ...] */
+                /* args interleave k0,v0,k1,v1,...; keys string, values int */
+                for (int i = 0; i < e->nargs; i += 2) {
+                    if (resolve_expr(e->args[i]) != T_STRING)
+                        die_at(e->line, "map keys must be string");
+                    if (resolve_expr(e->args[i + 1]) != T_INT)
+                        die_at(e->line, "map values must be int (only [string: int] maps exist)");
+                }
+                return e->type = T_MAP_SI;
+            }
+            if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
             Type elem = resolve_expr(e->args[0]);
             if (elem != T_INT && elem != T_STRING)
@@ -882,9 +930,35 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_ARRAY_INT && at_ != T_ARRAY_STRING && at_ != T_STRING)
-                    die_at(e->line, "len(...) takes an array or a string");
+                if (at_ != T_ARRAY_INT && at_ != T_ARRAY_STRING && at_ != T_STRING && at_ != T_MAP_SI)
+                    die_at(e->line, "len(...) takes an array, a string, or a map");
                 return e->type = T_INT;
+            }
+            /* map builtins ([string: int]). map_set is pure (returns a new
+             * map); the m = map_set(m, ...) self-rebind is grown in place by
+             * the accumulator pass, exactly like array push / string append. */
+            if (!strcmp(e->sval, "map_set")) {
+                if (e->nargs != 3) die_at(e->line, "map_set(m, key, value) takes three arguments");
+                if (resolve_expr(e->args[0]) != T_MAP_SI)
+                    die_at(e->line, "map_set's first argument must be a [string: int] map");
+                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_set key must be string");
+                if (resolve_expr(e->args[2]) != T_INT)    die_at(e->line, "map_set value must be int");
+                return e->type = T_MAP_SI;
+            }
+            if (!strcmp(e->sval, "map_get")) {
+                if (e->nargs != 3) die_at(e->line, "map_get(m, key, default) takes three arguments");
+                if (resolve_expr(e->args[0]) != T_MAP_SI)
+                    die_at(e->line, "map_get's first argument must be a [string: int] map");
+                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_get key must be string");
+                if (resolve_expr(e->args[2]) != T_INT)    die_at(e->line, "map_get default must be int");
+                return e->type = T_INT;
+            }
+            if (!strcmp(e->sval, "map_has")) {
+                if (e->nargs != 2) die_at(e->line, "map_has(m, key) takes two arguments");
+                if (resolve_expr(e->args[0]) != T_MAP_SI)
+                    die_at(e->line, "map_has's first argument must be a [string: int] map");
+                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_has key must be string");
+                return e->type = T_BOOL;
             }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
@@ -1285,6 +1359,7 @@ static char *copy_into(Type t, const char *arena, char *val) {
         case T_STRING:       return sfmt("hier_str_copy(%s, %s)", arena, val);
         case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
         case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
+        case T_MAP_SI:       return sfmt("hier_map_si_copy(%s, %s)", arena, val);
         default:
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("hier_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
@@ -1309,6 +1384,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_STRING)       return sfmt("(strcmp(%s, %s) == 0)", a, b);
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
+    if (t == T_MAP_SI)       return sfmt("hier_map_si_eq(%s, %s)", a, b);
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool */
 }
@@ -1318,7 +1394,26 @@ static char *gen_call(Expr *e, const char *arena) {
         char *a = gen_expr(e->args[0], arena);
         if (e->args[0]->type == T_STRING)
             return sfmt("hier_str_len(%s)", a);
-        return sfmt("((%s).len)", a);
+        return sfmt("((%s).len)", a);   /* arrays AND maps both have .len */
+    }
+    /* map builtins: map_set is pure (deep-copy + insert into `arena`); the
+     * accumulator pass rewrites a self-rebind to an in-place put separately. */
+    if (!strcmp(e->sval, "map_set")) {
+        char *m = gen_expr(e->args[0], arena);
+        char *k = gen_expr(e->args[1], arena);
+        char *v = gen_expr(e->args[2], arena);
+        return sfmt("hier_map_si_set(%s, %s, %s, %s)", arena, m, k, v);
+    }
+    if (!strcmp(e->sval, "map_get")) {
+        char *m = gen_expr(e->args[0], arena);
+        char *k = gen_expr(e->args[1], arena);
+        char *d = gen_expr(e->args[2], arena);
+        return sfmt("hier_map_si_get(%s, %s, %s)", m, k, d);
+    }
+    if (!strcmp(e->sval, "map_has")) {
+        char *m = gen_expr(e->args[0], arena);
+        char *k = gen_expr(e->args[1], arena);
+        return sfmt("hier_map_si_has(%s, %s)", m, k);
     }
     if (!strcmp(e->sval, "substr")) {
         char *s = gen_expr(e->args[0], arena);
@@ -1427,6 +1522,18 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
             int id = g_blk++;
+            if (e->type == T_MAP_SI) {
+                /* map literal: build empty in `arena`, then put each pair. The
+                 * runtime put copies the key bytes into `arena`. args interleave
+                 * k0,v0,k1,v1,...; an empty literal (nargs 0) just yields {0}. */
+                char *out = sfmt("({ HierMapSI _l%d = hier_map_si_with_cap(%s, 0L);",
+                                 id, arena);
+                for (int i = 0; i + 1 < e->nargs; i += 2)
+                    out = sfmt("%s hier_map_si_put(%s, &_l%d, %s, %s);",
+                               out, arena, id, gen_expr(e->args[i], arena),
+                               gen_expr(e->args[i + 1], arena));
+                return sfmt("%s _l%d; })", out, id);
+            }
             if (e->type == T_ARRAY_STRING) {
                 /* copy each element into `arena` so the literal owns its bytes */
                 char *out = sfmt("({ HierArrStr _l%d = hier_arr_str_with_cap(%s, %dL);",
@@ -1650,6 +1757,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ HierArrStr _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                }
+            } else if (ret == T_MAP_SI) {
+                /* promote up, exactly like the array cases: a bare map variable
+                 * is only a value whose tables live in this scope, so deep-copy
+                 * into the caller's arena before freeing — UNLESS the return-slot
+                 * optimization already built it in _parent (then a no-op move). */
+                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = hier_map_si_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = %s; arena_free(&_scope); return _ret; }\n", v);
                 }
             } else if (IS_STRUCT(ret) && type_is_heap(ret)) {
                 /* promote up. A heap struct built from a *place* is deep-copied
