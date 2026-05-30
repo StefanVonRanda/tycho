@@ -12,11 +12,13 @@
 # sanitizer disagree on shows up as an output diff. UB aborts the run
 # (-fno-sanitize-recover=all), so (a) catches it too.
 #
-# Arena retention is BY DESIGN (the runtime is a pool allocator; blocks are
-# freed at scope exit, and whatever is still live at process exit is reclaimed
-# by the OS). LeakSanitizer's "still reachable at exit" is therefore not a bug
-# here, so leak detection is disabled — this harness guards CORRECTNESS
-# (use-after-free, out-of-bounds, UB), not pool-reclamation timing.
+# Leak detection is ON: under the implicit-arena model every scope frees its
+# arena at exit (including main's), so at normal process exit nothing should
+# remain allocated. A LeakSanitizer report therefore means a real bug — a
+# missing arena free — most likely an early `return` that skipped an enclosing
+# loop/if scratch arena. (This is the regression guard for the loop-return
+# leak: that bug made memory grow linearly with the number of returns-from-loop;
+# LSan now catches any reintroduction.)
 #
 # A program may supply fixture stdin as tests/<name>.in (else /dev/null is fed).
 # Exit status: 0 iff every program passes.
@@ -29,7 +31,7 @@ HIERC=./hierc
 CC="${CC:-cc}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-export ASAN_OPTIONS=detect_leaks=0
+export ASAN_OPTIONS=detect_leaks=1
 
 pass=0
 fail=0

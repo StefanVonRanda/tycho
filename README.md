@@ -54,10 +54,11 @@ native `-O2` binary and one under `-fsanitize=address,undefined` — runs both o
 the same stdin, and asserts all three of: exit 0, no sanitizer report, and
 **byte-identical output** between the two builds. The byte-identical check is
 the teeth: any undefined behaviour the optimizer and the sanitizer disagree on
-surfaces as an output diff. Arena retention is by design (the runtime is a pool
-allocator), so leak detection is off — the suite guards correctness
-(use-after-free, out-of-bounds, UB), not reclamation timing. This is the
-standard described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
+surfaces as an output diff. Leak detection is on too: every scope frees its
+arena at exit (including `main`'s), so at normal exit nothing should remain
+allocated — a LeakSanitizer report means a real missing free (e.g. an early
+`return` that skipped an enclosing loop's scratch arena). This is the standard
+described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 
 Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
@@ -367,9 +368,6 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- A `return` from *inside* a loop does not free that loop's scratch arena
-  (the function's own arena and the returned value are handled correctly).
-  Reclaimed at process exit. Harmless for short-lived programs.
 - No floats, modules, or generics. Single source file. Arrays are
   one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
   The only map is `[string: int]` (string keys, `int` values — no other value

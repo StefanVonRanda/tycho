@@ -1,0 +1,33 @@
+# Returning from inside nested loops/ifs. Exercises the early-return arena
+# free-path: the loop scratch arenas between the return point and the proc
+# body must be freed (else they leak), and the returned heap value must still
+# survive (it lives in the caller's arena). Deterministic, so the differential
+# harness confirms native and sanitizer builds agree byte-for-byte and the
+# sanitizer build sees no use-after-free from the added frees.
+
+fn squares(target: int, n: int) -> [int]:
+    for i in range(n):
+        r := []int
+        for j in range(i + 1):
+            push(r, j * j)
+        if i == target:
+            return r              # return a heap [int] from inside two loops
+    return []int
+
+fn count_down(start: int) -> int:
+    k := start
+    for k > 0:
+        scratch := str(k) + "!"   # per-iteration scratch in the while arena
+        if k == 3:
+            return len(scratch)   # return from inside a while loop
+        k = k - 1
+    return -1
+
+fn main():
+    xs := squares(3, 10)             # i=3 -> [0, 1, 4, 9]
+    s := ""
+    for idx in range(len(xs)):
+        s = s + str(xs[idx]) + " "
+    print(s + "\n")               # "0 1 4 9 "
+    print("len(squares(7,10))=" + str(len(squares(7, 10))) + "\n")   # 8 elements
+    print("count_down=" + str(count_down(9)) + "\n")           # "3!" -> 2

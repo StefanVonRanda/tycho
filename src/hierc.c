@@ -1651,6 +1651,31 @@ static int block_ends_in_return(Stmt **body, int n) {
     return n > 0 && body[n - 1]->kind == S_RETURN;
 }
 
+/* Stack of enclosing loop/if block arenas live at the current codegen point,
+ * outermost-first (e.g. "&_scr3", "&_b7"). Each is an INDEPENDENT arena
+ * (arena_child is a fresh block list, not physically nested in _scope), so an
+ * early `return` must free them explicitly or they leak — this is the
+ * loop-return scratch leak. Reset per proc; pushed around each block body. */
+static const char *g_ascope[64];
+static int g_nascope = 0;
+static void ascope_push(const char *a) {
+    if (g_nascope >= 64) { fprintf(stderr, "hierc: block nesting too deep\n"); exit(1); }
+    g_ascope[g_nascope++] = a;
+}
+
+/* The free sequence an (early) return must run: every enclosing block arena
+ * innermost-first, then the proc's own _scope. The return value already lives
+ * in _parent (built or deep-copied there), which strictly outlives all of
+ * these, so freeing them here can never touch the returned bytes. At proc top
+ * level (g_nascope == 0) this is exactly "arena_free(&_scope);" — unchanged,
+ * so a top-level return emits byte-identical C to before. */
+static char *return_frees(void) {
+    char *s = sfmt("%s", "");
+    for (int i = g_nascope - 1; i >= 0; i--)
+        s = sfmt("%sarena_free(%s); ", s, g_ascope[i]);
+    return sfmt("%sarena_free(&_scope);", s);
+}
+
 /* `scope` is a C expression of type Arena* into which local allocations
  * go. Returns always promote/collapse the proc's own arena, named
  * "_scope" in every generated proc body. */
@@ -1807,8 +1832,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_RETURN: {
+            /* `rf` frees every arena live at this return — enclosing loop/if
+             * block arenas (innermost-first) then _scope — and ends with
+             * "arena_free(&_scope);". At proc top level it IS just that, so a
+             * top-level return is byte-identical to before; inside a loop/if it
+             * additionally frees the scratch arena that used to leak. */
+            char *rf = return_frees();
             if (!s->expr) {
-                indent(o, ind); fprintf(o, "{ arena_free(&_scope); return; }\n");
+                indent(o, ind); fprintf(o, "{ %s return; }\n", rf);
             } else if (ret == T_STRING) {
                 /* promote up. A fresh value (literal/call/concat) is built
                  * directly in the caller's arena; a bare string variable is
@@ -1817,10 +1848,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * return-slot optimization already built it in _parent. */
                 if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ char *_ret = hier_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ char *_ret = hier_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ char *_ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ char *_ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (ret == T_ARRAY_INT) {
                 /* promote up. A fresh value (literal/call) is built directly
@@ -1829,10 +1860,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * already built it in _parent (then it's a no-op move). */
                 if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ HierArrInt _ret = hier_arr_int_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierArrInt _ret = hier_arr_int_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ HierArrInt _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierArrInt _ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (ret == T_ARRAY_STRING) {
                 /* promote up. A fresh value (literal/split/call) is built
@@ -1841,10 +1872,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * return-slot optimization already built it in _parent. */
                 if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = hier_arr_str_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = hier_arr_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierArrStr _ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (ret == T_MAP_SI) {
                 /* promote up, exactly like the array cases: a bare map variable
@@ -1853,10 +1884,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * optimization already built it in _parent (then a no-op move). */
                 if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = hier_map_si_copy(_parent, %s); arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = hier_map_si_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = %s; arena_free(&_scope); return _ret; }\n", v);
+                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (IS_STRUCT(ret) && type_is_heap(ret)) {
                 /* promote up. A heap struct built from a *place* is deep-copied
@@ -1866,23 +1897,23 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * a no-op move, like the array cases above. */
                 if (s->expr->kind == E_IDENT && cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
-                                            c_type(ret), v);
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
+                                            c_type(ret), v, rf);
                 } else if (is_place(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
-                                            c_type(ret), copy_into(ret, "_parent", v));
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
+                                            c_type(ret), copy_into(ret, "_parent", v), rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
-                                            c_type(ret), v);
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
+                                            c_type(ret), v, rf);
                 }
             } else {
                 /* int/bool, or a pure-value struct: a value, nothing on the
                  * heap to keep alive — copy it out and free the scope */
                 char *v = gen_expr(s->expr, "&_scope");
-                indent(o, ind); fprintf(o, "{ %s_ret = %s; arena_free(&_scope); return _ret; }\n",
-                                        c_type(ret), v);
+                indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
+                                        c_type(ret), v, rf);
             }
             break;
         }
@@ -1892,7 +1923,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind); fprintf(o, "if (%s) {\n", c);
             indent(o, ind + 1); fprintf(o, "Arena _b%d = arena_child(%s);\n", id, scope);
             char *bs = sfmt("&_b%d", id);
+            ascope_push(bs);   /* a return inside the block must free _bN too */
             gen_block(o, s->body, s->nbody, ind + 1, bs, ret);
+            g_nascope--;
             indent(o, ind + 1); fprintf(o, "arena_free(&_b%d);\n", id);
             indent(o, ind); fprintf(o, "}");
             if (s->els) {
@@ -1900,7 +1933,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 fprintf(o, " else {\n");
                 indent(o, ind + 1); fprintf(o, "Arena _b%d = arena_child(%s);\n", eid, scope);
                 char *es = sfmt("&_b%d", eid);
+                ascope_push(es);
                 gen_block(o, s->els, s->nels, ind + 1, es, ret);
+                g_nascope--;
                 indent(o, ind + 1); fprintf(o, "arena_free(&_b%d);\n", eid);
                 indent(o, ind); fprintf(o, "}\n");
             } else {
@@ -1916,7 +1951,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             char *ss = sfmt("&_scr%d", id);
+            ascope_push(ss);   /* a return inside the loop must free _scrN too */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
+            g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
             indent(o, ind); fprintf(o, "}\n");
@@ -1937,7 +1974,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             int m = cv_mark();
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
+            ascope_push(ss);        /* a return inside the loop must free _scrN too */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
+            g_nascope--;
             cv_restore(m);
             indent(o, ind + 1); fprintf(o, "}\n");
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
@@ -1981,6 +2020,7 @@ static void gen_proc(FILE *o, Proc *pr) {
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
     g_ncv = 0;
+    g_nascope = 0;   /* no enclosing block arenas at the proc body top level */
     /* return-slot optimization: which top-level locals escape via return */
     g_nesc = 0;
     collect_escapes(pr->body, pr->nbody);
