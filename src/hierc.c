@@ -1337,10 +1337,25 @@ static int is_self_append(Stmt *s) {
         && s->expr->lhs->kind == E_IDENT
         && !strcmp(s->expr->lhs->sval, s->name);
 }
+/* `m = map_set(m, k, v)` — a self-rebind of a map accumulator. The rebind
+ * reuses m's unique backing table via an in-place put instead of the pure
+ * deep-copy-then-insert (amortized O(1) vs O(n) per step). Soundness is the
+ * same uniqueness argument as the string accumulator: value semantics already
+ * deep-copied any snapshot (`b := m`/`b = m`) eagerly at its own program
+ * point, so mutating m's table in place afterward can never be observed
+ * through another binding. */
+static int is_self_mapset(Stmt *s) {
+    return s->kind == S_ASSIGN
+        && s->expr->kind == E_CALL
+        && !strcmp(s->expr->sval, "map_set")
+        && s->expr->nargs == 3
+        && s->expr->args[0]->kind == E_IDENT
+        && !strcmp(s->expr->args[0]->sval, s->name);
+}
 static void collect_accums(Stmt **body, int n) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
-        if (is_self_append(s) && g_naccum < 256) g_accum[g_naccum++] = s->name;
+        if ((is_self_append(s) || is_self_mapset(s)) && g_naccum < 256) g_accum[g_naccum++] = s->name;
         if (s->body) collect_accums(s->body, s->nbody);
         if (s->els)  collect_accums(s->els, s->nels);
     }
@@ -1651,6 +1666,19 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind);
                 fprintf(o, "hier_str_append(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
                         owner, s->name, s->name, s->name, e);
+                break;
+            }
+            /* in-place map accumulator: `m = map_set(m, k, v)` grows m's unique
+             * table in its OWNER arena via put, instead of the pure deep-copy
+             * set. The key/value args are fully evaluated before the put runs
+             * (so `map_set(m, w, map_get(m, w, 0) + 1)` reads the old m first);
+             * no sidecars needed — len/cap live inside HierMapSI. */
+            if (is_accum(s->name) && is_self_mapset(s)) {
+                char *k = gen_expr(s->expr->args[1], owner);
+                char *v = gen_expr(s->expr->args[2], owner);
+                indent(o, ind);
+                fprintf(o, "hier_map_si_put(%s, &h_%s, %s, %s);\n",
+                        owner, s->name, k, v);
                 break;
             }
             char *v = gen_expr(s->expr, owner);
