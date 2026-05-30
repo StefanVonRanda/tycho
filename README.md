@@ -186,10 +186,24 @@ push(names, "grace")
 names[0] = "Ada"          # element-set copies the string into the array's arena
 ```
 
-Element types are `int`, `float`, and `string` (`[float]` behaves exactly like
-`[int]` — a buffer of value words). Arrays are values: assigning one copies it
-(a `[string]` copy is deep — its element bytes are copied too), so mutating the
-copy never touches the original. Out-of-bounds access aborts with a message.
+Element types are `int`, `float`, `string`, a **struct** (`[Point]`), or another
+**array** (`[[int]]`, `[[string]]`) — arbitrarily nested. The element ops for
+struct and nested-array elements are monomorphized (one generated array type per
+distinct element type used). Arrays are values: assigning one copies it, and the
+copy is **deep** — a `[string]`/`[Point]`/`[[int]]` copy duplicates element bytes,
+nested structs, and inner buffers too — so mutating the copy never touches the
+original. Out-of-bounds access aborts with a message.
+
+```
+ps := [Point(1, 2), Point(3, 4)]   # array of structs
+push(ps, Point(5, 6))
+ps[0] = Point(9, 9)                # element-set deep-copies the struct in
+total := ps[1].x + ps[1].y         # index, then read a field
+
+grid := [][int]                    # array of arrays
+push(grid, [1, 2, 3])
+cell := grid[0][2]                 # 3
+```
 
 Arrays cross function boundaries too:
 
@@ -209,7 +223,9 @@ fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
 
 An array parameter is passed as a borrow (no copy); mutating it in place is
 a compile error — copy it first (`b := a`) to get a mutable local, or take
-it `inout`. *Not yet:* arrays of arrays or of structs.
+it `inout`. *Not yet:* a struct **field** of array-of-struct/array type (e.g.
+`struct Node: children: [Node]` — the recursive tree); use index references
+(a `[Node]` plus `[int]` child indices) for now.
 
 ### Maps (`[string: int]`)
 
@@ -396,9 +412,10 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No modules or generics. Single source file. Arrays are
-  one-dimensional (`[int]`, `[float]`, `[string]` — no arrays of arrays or of
-  structs). The only map is `[string: int]` (string keys, `int` values — no other value
+- No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
+  `[string]`, `[Struct]`, `[[T]]`), but a struct *field* cannot yet be an
+  array-of-struct/array (the recursive-tree case). The only map is
+  `[string: int]` (string keys, `int` values — no other value
   type yet); it supports `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`,
   in-place accumulator rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates
