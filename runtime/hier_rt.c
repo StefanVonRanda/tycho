@@ -334,18 +334,27 @@ HierArrStr hier_str_split(Arena *a, const char *s, const char *sep) {
 }
 
 /* ----------------------------------------------------------- Map(string,int)
- * A HierMapSI is a value (4 words, passed/copied by value like HierArr*). Its
+ * A HierMapSI is a value (5 words, passed/copied by value like HierArr*). Its
  * backing tables live in an arena. Open addressing, linear probe, power-of-two
- * capacity, no deletes (no tombstones needed). keys[i]==NULL means empty. A
- * 0-cap map is the empty literal; the first insert allocates.
+ * capacity. keys[i]==NULL means empty; keys[i]==HIER_MAP_TOMB is a deleted slot
+ * (a tombstone) kept so a probe chain that ran through it is not broken. A
+ * 0-cap map is the empty literal; the first insert allocates. `len` counts live
+ * entries; `used` counts live + tombstone slots and drives rehash, so a
+ * delete-heavy map cannot fill with tombstones and stall probing.
  *
  * Value semantics, same as the arrays: `m2 = map_set(m, k, v)` returns a NEW
  * map (deep copy + insert) so `m` is unchanged; the compiler rewrites the
  * uniquely-owned accumulator shape `m = map_set(m, ...)` to map_put in place
  * (cf. the in-place string append) so a build-up loop is amortized O(1) per
- * insert instead of O(n) deep-copy each step. Key bytes are copied into the
+ * insert instead of O(n) deep-copy each step. `m = map_del(m, k)` is rewritten
+ * the same way to an in-place tombstone delete. Key bytes are copied into the
  * owning arena exactly as [string] elements are (the lifetime seam nests). */
-typedef struct { char **keys; long *vals; long len; long cap; } HierMapSI;
+typedef struct { char **keys; long *vals; long len; long cap; long used; } HierMapSI;
+
+/* the tombstone sentinel: a unique non-NULL char* that is never a real key. */
+static char hier_map_tomb_;
+#define HIER_MAP_TOMB (&hier_map_tomb_)
+static int hier_map_live(const char *p) { return p != NULL && p != HIER_MAP_TOMB; }
 
 static unsigned long hier_si_hash(const char *s) {        /* FNV-1a */
     unsigned long h = 1469598103934665603UL;
@@ -357,7 +366,7 @@ HierMapSI hier_map_si_with_cap(Arena *a, long cap) {
     HierMapSI m;
     long c = 8; while (c < cap) c *= 2;
     if (cap == 0) c = 0;
-    m.cap = c; m.len = 0;
+    m.cap = c; m.len = 0; m.used = 0;
     if (c == 0) { m.keys = NULL; m.vals = NULL; return m; }
     m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));
     m.vals = (long *) arena_alloc(a, (size_t)c * sizeof(long));
@@ -365,42 +374,73 @@ HierMapSI hier_map_si_with_cap(Arena *a, long cap) {
     return m;
 }
 
-/* slot of key if present, else the first empty slot it would occupy; -1 only
- * for a 0-cap map. Caller distinguishes hit/miss by keys[idx]==NULL. */
-static long hier_map_si_slot(HierMapSI m, const char *k) {
+/* lookup: slot of a live key, or -1 if absent (skips tombstones, never inserts).
+ * used by get/has/eq/del. Terminates because used <= cap/2 leaves a NULL slot. */
+static long hier_map_si_find(HierMapSI m, const char *k) {
     if (m.cap == 0) return -1;
     unsigned long mask = (unsigned long)m.cap - 1;
     long i = (long)(hier_si_hash(k) & mask);
     while (m.keys[i] != NULL) {
-        if (strcmp(m.keys[i], k) == 0) return i;
+        if (m.keys[i] != HIER_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i;
         i = (long)((i + 1) & mask);
     }
-    return i;
+    return -1;
 }
 
-/* in-place insert into a uniquely-owned map; grows (rehash) past 1/2 load.
- * Key bytes copied into arena a so a pushed loop-scratch key does not dangle. */
+/* insert slot: a matching live key's slot, else the first tombstone the probe
+ * passed (reuse it), else the terminating NULL slot. Caller tests liveness. */
+static long hier_map_si_slot(HierMapSI m, const char *k) {
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_si_hash(k) & mask);
+    long tomb = -1;
+    while (m.keys[i] != NULL) {
+        if (m.keys[i] == HIER_MAP_TOMB) { if (tomb < 0) tomb = i; }
+        else if (strcmp(m.keys[i], k) == 0) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return tomb >= 0 ? tomb : i;
+}
+
+/* in-place insert into a uniquely-owned map; rehashes past 1/2 load (counting
+ * tombstones), growing only when live entries pass the threshold — a rehash at
+ * the same size purges tombstones. Key bytes copied into arena a so a pushed
+ * loop-scratch key does not dangle. */
 void hier_map_si_put(Arena *a, HierMapSI *m, const char *k, long v) {
-    if (m->cap == 0 || (m->len + 1) * 2 > m->cap) {
-        long nc = m->cap ? m->cap * 2 : 8;
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
+                                              : (m->cap ? m->cap : 8);
         HierMapSI n = hier_map_si_with_cap(a, nc);
         for (long i = 0; i < m->cap; i++)
-            if (m->keys[i]) {
+            if (hier_map_live(m->keys[i])) {
                 long s = hier_map_si_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++;
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
             }
         *m = n;
     }
     long s = hier_map_si_slot(*m, k);
-    if (m->keys[s] == NULL) { m->keys[s] = hier_str_copy(a, k); m->len++; }
+    if (!hier_map_live(m->keys[s])) {
+        if (m->keys[s] == NULL) m->used++;     /* fresh slot; reusing a tombstone keeps used */
+        m->keys[s] = hier_str_copy(a, k);
+        m->len++;
+    }
     m->vals[s] = v;
 }
 
-/* deep copy (value semantics): independent tables + copied key bytes. */
+/* in-place delete from a uniquely-owned map: tombstone the slot if the key is
+ * live. `used` is unchanged (the slot is still occupied); a later put purges it. */
+void hier_map_si_del(HierMapSI *m, const char *k) {
+    long s = hier_map_si_find(*m, k);
+    if (s < 0) return;
+    m->keys[s] = HIER_MAP_TOMB;
+    m->len--;
+}
+
+/* deep copy (value semantics): independent tables + copied key bytes. Drops any
+ * tombstones (only live entries are reinserted), so the copy is compact. */
 HierMapSI hier_map_si_copy(Arena *a, HierMapSI src) {
-    HierMapSI r = hier_map_si_with_cap(a, src.cap ? src.cap : 0);
+    HierMapSI r = hier_map_si_with_cap(a, src.len ? src.len * 2 : 0);
     for (long i = 0; i < src.cap; i++)
-        if (src.keys[i]) hier_map_si_put(a, &r, src.keys[i], src.vals[i]);
+        if (hier_map_live(src.keys[i])) hier_map_si_put(a, &r, src.keys[i], src.vals[i]);
     return r;
 }
 
@@ -411,24 +451,39 @@ HierMapSI hier_map_si_set(Arena *a, HierMapSI m, const char *k, long v) {
     return r;
 }
 
+/* pure delete: returns a NEW map (deep copy of m) without key k. */
+HierMapSI hier_map_si_del_pure(Arena *a, HierMapSI m, const char *k) {
+    HierMapSI r = hier_map_si_copy(a, m);
+    hier_map_si_del(&r, k);
+    return r;
+}
+
 long hier_map_si_get(HierMapSI m, const char *k, long dflt) {
-    long s = hier_map_si_slot(m, k);
-    if (s < 0 || m.keys[s] == NULL) return dflt;
-    return m.vals[s];
+    long s = hier_map_si_find(m, k);
+    return s < 0 ? dflt : m.vals[s];
 }
 
 int hier_map_si_has(HierMapSI m, const char *k) {
-    long s = hier_map_si_slot(m, k);
-    return s >= 0 && m.keys[s] != NULL;
+    return hier_map_si_find(m, k) >= 0;
+}
+
+/* the live keys as a [string], in table order. Key bytes are copied into a so
+ * the result owns them (value semantics; cf. hier_arr_str_copy). This is how a
+ * map is iterated: keys(m) then index the array. */
+HierArrStr hier_map_si_keys(Arena *a, HierMapSI m) {
+    HierArrStr r = hier_arr_str_with_cap(a, m.len);
+    for (long i = 0; i < m.cap; i++)
+        if (hier_map_live(m.keys[i])) hier_arr_str_push(a, &r, m.keys[i]);
+    return r;
 }
 
 /* structural equality (value semantics): same live entries, same values. */
 int hier_map_si_eq(HierMapSI x, HierMapSI y) {
     if (x.len != y.len) return 0;
     for (long i = 0; i < x.cap; i++)
-        if (x.keys[i]) {
-            long s = hier_map_si_slot(y, x.keys[i]);
-            if (s < 0 || y.keys[s] == NULL || y.vals[s] != x.vals[i]) return 0;
+        if (hier_map_live(x.keys[i])) {
+            long s = hier_map_si_find(y, x.keys[i]);
+            if (s < 0 || y.vals[s] != x.vals[i]) return 0;
         }
     return 1;
 }

@@ -94,7 +94,7 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 ### Types
 
 `int` (64-bit), `bool`, `string`, `[int]` and `[string]` (growable arrays),
-and user-defined `struct`s.
+`[string: int]` (a string-keyed map), and user-defined `struct`s.
 
 ### Structs
 
@@ -183,6 +183,56 @@ An array parameter is passed as a borrow (no copy); mutating it in place is
 a compile error — copy it first (`b := a`) to get a mutable local, or take
 it `inout`. *Not yet:* arrays of arrays or of structs.
 
+### Maps (`[string: int]`)
+
+The one map type is `[string: int]` — string keys, `int` values:
+
+```
+counts := ["ada": 1, "alan": 2]   # literal: "key": value pairs
+empty := []string: int            # empty map (key/value types required)
+
+map_get(counts, "ada", 0)         # value for "ada", or 0 if absent -> int
+map_has(counts, "ada")            # membership -> bool
+len(counts)                       # entry count -> int
+
+counts = map_set(counts, "grace", 5)   # add/overwrite -> a new map
+counts = map_del(counts, "alan")       # remove a key -> a new map
+
+ks := keys(counts)                     # iterate: keys(m) -> [string]
+for i in range(len(ks)):
+    k := ks[i]
+    print(k + "=" + str(map_get(counts, k, 0)) + "\n")
+```
+
+`keys(m)` returns the live keys as a `[string]` (in unspecified order); index
+it to walk the map — there is no dedicated `for k in m` form. `map_del(m, k)`
+removes a key (a no-op if absent). See [`examples/wordcount.hi`](examples/wordcount.hi).
+
+`map_set(m, k, v)` is a **pure** operation: it returns a new map and leaves
+`m` untouched, the same way `+` on a string returns a new string. The
+canonical counter idiom is therefore a self-rebind:
+
+```
+counts = map_set(counts, w, map_get(counts, w, 0) + 1)
+```
+
+Maps are values, like everything else: assigning one (`b := counts`) is a
+deep copy, so mutating the copy never touches the original, and `==`/`!=`
+compare entry-wise (`a == b` is true exactly when `b` is an independent copy
+of `a`). They cross function boundaries the same way arrays do — a `[string: int]`
+parameter is a read-only borrow (mutating it is a compile error; copy it first
+or take it `inout`), and returned maps are promoted into the caller's arena. An
+`inout [string: int]` lets a callee share and mutate the caller's map in place
+(a counter threaded through calls), exactly like an `inout` array.
+
+The self-rebinds `m = map_set(m, k, v)` and `m = map_del(m, k)` look O(n) per
+step (build a fresh map each time), but because value semantics proves `m` is
+uniquely owned at that point, the compiler mutates it in place — the loop is
+O(n) total, the same trick as in-place string append (see
+[Memory model](#memory-model)).
+
+*Not yet:* value types other than `int` (`[string: int]` is the only map).
+
 ### Declarations and assignment
 
 ```
@@ -235,10 +285,15 @@ scoped to the loop. The condition form takes any `bool` expression.
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
 | `str(n)` | `int -> string` | Integer to string. |
-| `len(x)` | `string -> int` / `[T] -> int` | Byte length of a string, or element count of an array. |
+| `len(x)` | `string -> int` / `[T] -> int` / `[string: int] -> int` | Byte length of a string, element count of an array, or entry count of a map. |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
 | `split(s, sep)` | `(string, string) -> [string]` | Split on a non-empty separator; `n` separators yield `n+1` fields (an empty `s` yields one empty field). Empty separator aborts. |
+| `map_set(m, k, v)` | `([string: int], string, int) -> [string: int]` | Returns a new map with `k`→`v` added/overwritten; pure (`m` unchanged). The `m = map_set(m, …)` self-rebind grows in place. |
+| `map_get(m, k, d)` | `([string: int], string, int) -> int` | Value for key `k`, or default `d` if absent. |
+| `map_has(m, k)` | `([string: int], string) -> bool` | Whether key `k` is present. |
+| `map_del(m, k)` | `([string: int], string) -> [string: int]` | Returns a new map without key `k` (no-op if absent); pure. The `m = map_del(m, …)` self-rebind deletes in place. |
+| `keys(m)` | `[string: int] -> [string]` | The live keys as a `[string]` (unspecified order); index it to iterate the map. |
 
 String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
 `substr`, and `find` are all byte-oriented (not Unicode-aware).
@@ -306,6 +361,9 @@ None of this appears in Hier source.
   Reclaimed at process exit. Harmless for short-lived programs.
 - No floats, modules, or generics. Single source file. Arrays are
   one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
+  The only map is `[string: int]` (string keys, `int` values — no other value
+  type yet); it supports `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`,
+  in-place accumulator rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,
@@ -321,8 +379,8 @@ runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
 build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
-                   array_fns, structs, strings, words, records, inout,
-                   memo, collect, context (.hi)
+                   array_fns, structs, strings, words, wordcount, records,
+                   inout, memo, collect, context (.hi)
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 ```

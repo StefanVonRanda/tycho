@@ -960,6 +960,23 @@ static Type resolve_expr(Expr *e) {
                 if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_has key must be string");
                 return e->type = T_BOOL;
             }
+            /* map_del is pure (returns a new map); the m = map_del(m, k)
+             * self-rebind is rewritten to an in-place tombstone delete by the
+             * accumulator pass, exactly like map_set's in-place put. */
+            if (!strcmp(e->sval, "map_del")) {
+                if (e->nargs != 2) die_at(e->line, "map_del(m, key) takes two arguments");
+                if (resolve_expr(e->args[0]) != T_MAP_SI)
+                    die_at(e->line, "map_del's first argument must be a [string: int] map");
+                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_del key must be string");
+                return e->type = T_MAP_SI;
+            }
+            /* keys(m) -> [string]: the map's live keys, for iteration. */
+            if (!strcmp(e->sval, "keys")) {
+                if (e->nargs != 1) die_at(e->line, "keys(m) takes one argument");
+                if (resolve_expr(e->args[0]) != T_MAP_SI)
+                    die_at(e->line, "keys's argument must be a [string: int] map");
+                return e->type = T_ARRAY_STRING;
+            }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
                 /* target may be an array variable or a struct's array field
@@ -1208,9 +1225,9 @@ static void resolve_program(ProcVec *prog) {
          * mutable locals (a struct field-set rebinds only the local copy). */
         for (int j = 0; j < pr->nparams; j++) {
             Type pt = pr->params[j].type;
-            /* arrays are read-only borrows EXCEPT an inout array, which is a
-             * by-pointer share the callee may mutate in place. */
-            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING)
+            /* arrays and maps are read-only borrows EXCEPT an inout one, which
+             * is a by-pointer share the callee may mutate in place. */
+            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING && pt != T_MAP_SI)
                           || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
         }
@@ -1352,10 +1369,20 @@ static int is_self_mapset(Stmt *s) {
         && s->expr->args[0]->kind == E_IDENT
         && !strcmp(s->expr->args[0]->sval, s->name);
 }
+/* `m = map_del(m, k)` — the delete twin of is_self_mapset; rewritten to an
+ * in-place tombstone delete on m's unique table instead of a pure deep-copy. */
+static int is_self_mapdel(Stmt *s) {
+    return s->kind == S_ASSIGN
+        && s->expr->kind == E_CALL
+        && !strcmp(s->expr->sval, "map_del")
+        && s->expr->nargs == 2
+        && s->expr->args[0]->kind == E_IDENT
+        && !strcmp(s->expr->args[0]->sval, s->name);
+}
 static void collect_accums(Stmt **body, int n) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
-        if ((is_self_append(s) || is_self_mapset(s)) && g_naccum < 256) g_accum[g_naccum++] = s->name;
+        if ((is_self_append(s) || is_self_mapset(s) || is_self_mapdel(s)) && g_naccum < 256) g_accum[g_naccum++] = s->name;
         if (s->body) collect_accums(s->body, s->nbody);
         if (s->els)  collect_accums(s->els, s->nels);
     }
@@ -1429,6 +1456,17 @@ static char *gen_call(Expr *e, const char *arena) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
         return sfmt("hier_map_si_has(%s, %s)", m, k);
+    }
+    /* map_del pure: deep-copy + delete into `arena`; the accumulator pass
+     * rewrites a self-rebind to an in-place tombstone delete separately. */
+    if (!strcmp(e->sval, "map_del")) {
+        char *m = gen_expr(e->args[0], arena);
+        char *k = gen_expr(e->args[1], arena);
+        return sfmt("hier_map_si_del_pure(%s, %s, %s)", arena, m, k);
+    }
+    if (!strcmp(e->sval, "keys")) {
+        char *m = gen_expr(e->args[0], arena);
+        return sfmt("hier_map_si_keys(%s, %s)", arena, m);
     }
     if (!strcmp(e->sval, "substr")) {
         char *s = gen_expr(e->args[0], arena);
@@ -1652,9 +1690,13 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
         }
         case S_ASSIGN: {
             /* allocate the value where the variable lives, not where we
-             * currently are, so it survives any inner scope collapsing */
+             * currently are, so it survives any inner scope collapsing. For a
+             * heap inout param the value lives in the caller's arena (_ina_),
+             * so a whole-map/array reassignment must build there, not in this
+             * callee's _scope (which would dangle once the call returns). */
             const char *owner = cv_arena(s->name);
             if (!owner) owner = scope;
+            if (is_heap_inout_param(s->name)) owner = owner_arena_of(s->name);
             /* in-place append: `acc = acc + e` on a tracked accumulator grows
              * acc's buffer in its OWNER arena (cv_arena), not the current loop
              * scratch scope. The append result re-homes acc, so the rest of
@@ -1674,11 +1716,29 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * (so `map_set(m, w, map_get(m, w, 0) + 1)` reads the old m first);
              * no sidecars needed — len/cap live inside HierMapSI. */
             if (is_accum(s->name) && is_self_mapset(s)) {
-                char *k = gen_expr(s->expr->args[1], owner);
-                char *v = gen_expr(s->expr->args[2], owner);
+                /* the map's owning arena and a pointer to its descriptor: for an
+                 * inout map param the descriptor is the caller's (pointer h_m,
+                 * arena _ina_m) so the put lands where the value lives; for a
+                 * local it is &h_m in the local's own arena. */
+                const char *mo = owner_arena_of(s->name);
+                const char *mp = is_heap_inout_param(s->name) ? sfmt("h_%s", s->name)
+                                                              : sfmt("&h_%s", s->name);
+                char *k = gen_expr(s->expr->args[1], mo);
+                char *v = gen_expr(s->expr->args[2], mo);
                 indent(o, ind);
-                fprintf(o, "hier_map_si_put(%s, &h_%s, %s, %s);\n",
-                        owner, s->name, k, v);
+                fprintf(o, "hier_map_si_put(%s, %s, %s, %s);\n", mo, mp, k, v);
+                break;
+            }
+            /* in-place map delete: `m = map_del(m, k)` tombstones in place. No
+             * allocation, so no arena arg; the pointer is the inout pointer for
+             * an inout map, else the address of the local descriptor. */
+            if (is_accum(s->name) && is_self_mapdel(s)) {
+                const char *mo = owner_arena_of(s->name);
+                const char *mp = is_heap_inout_param(s->name) ? sfmt("h_%s", s->name)
+                                                              : sfmt("&h_%s", s->name);
+                char *k = gen_expr(s->expr->args[1], mo);
+                indent(o, ind);
+                fprintf(o, "hier_map_si_del(%s, %s);\n", mp, k);
                 break;
             }
             char *v = gen_expr(s->expr, owner);
@@ -1927,16 +1987,23 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* in-place append: which string locals are self-append accumulators */
     g_naccum = 0;
     collect_accums(pr->body, pr->nbody);
-    /* the accumulator opt declares its sidecar len/cap locals at the
-     * variable's S_DECL; a parameter has no S_DECL, so a self-append on a
-     * string param (`s = s + e`) must NOT take the in-place path — its
-     * sidecars would be undeclared C. Drop any param from the accumulator set;
-     * it falls back to ordinary concat-and-rebind, which is correct. */
-    for (int p = 0; p < pr->nparams; p++)
+    /* the string accumulator opt declares its sidecar len/cap locals at the
+     * variable's S_DECL; a by-value parameter has no S_DECL, so a self-append on
+     * a string param (`s = s + e`) must NOT take the in-place path — its
+     * sidecars would be undeclared C. Drop NON-inout params from the accumulator
+     * set; they fall back to ordinary concat/pure-set-and-rebind, which is
+     * correct. An inout param is KEPT: it carries no string sidecars (inout
+     * string is forbidden, so the only inout accumulator is a map), and its
+     * in-place map put/del is exactly the wanted mutation — landing in the
+     * caller's arena (_ina_) so it survives the call, where the pure fallback
+     * would allocate in this callee's _scope and dangle after return. */
+    for (int p = 0; p < pr->nparams; p++) {
+        if (pr->params[p].is_inout) continue;
         for (int a = 0; a < g_naccum; a++)
             if (!strcmp(g_accum[a], pr->params[p].name)) {
                 g_accum[a] = g_accum[--g_naccum]; a--;
             }
+    }
     /* register this proc's inout params so the body derefs them as (*h_x) */
     g_ninout = 0;
     g_nheap_inout = 0;
