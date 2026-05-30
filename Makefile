@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update image static clean
+.PHONY: all demo test test-update bench image static clean
 
 all: hierc
 
@@ -47,6 +47,11 @@ test: hierc
 # silently rebake itself into the expected files. Review `git diff tests/`.
 test-update: hierc
 	@RECORD=1 sh tests/run.sh
+
+# Performance guard: assert the thesis's optimizations still hold (peak RSS
+# stays linear, the inout memo stays O(n)). See bench/run.sh.
+bench: hierc
+	@sh bench/run.sh
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .

@@ -48,6 +48,7 @@ hello Ada
 | `make demo` | Build and run `examples/hello.hi`. |
 | `make test` | Run the test suite (see below). |
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
+| `make bench` | Run the performance guard (see below). |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
@@ -64,6 +65,15 @@ free (e.g. an early `return` that skipped a loop's scratch arena). Goldens are
 rewritten only by `make test-update` — never by a normal run — so a regression
 can't silently rebake itself into the expected files. This is the standard
 described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
+
+`make bench` guards the *performance* claims the way `make test` guards
+correctness. Each `bench/*.hi` program exercises one optimization and asserts a
+single metric against a deliberately generous bound — peak RSS for the
+memory-shape claims (in-place string append, loop scratch reset, the map
+accumulator) and wall time for the `inout` memo. The bounds catch
+order-of-magnitude regressions, not jitter: the in-place append holds ~1.5 MB
+where the un-optimized path is ~825 MB at the same N, so the 32 MB bound sits
+firmly between a working and a broken optimization.
 
 Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
@@ -410,6 +420,8 @@ examples/          hello, demo, accumulate, accumulate_big, arrays,
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
 tests/*.hi         dedicated regression programs (+ optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
+bench/run.sh       performance guard (peak RSS / time bounds per optimization)
+bench/*.hi         one benchmark program per optimization; bench/peakrss.c helper
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 ```
