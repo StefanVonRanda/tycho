@@ -332,3 +332,103 @@ HierArrStr hier_str_split(Arena *a, const char *s, const char *sep) {
     }
     return r;
 }
+
+/* ----------------------------------------------------------- Map(string,int)
+ * A HierMapSI is a value (4 words, passed/copied by value like HierArr*). Its
+ * backing tables live in an arena. Open addressing, linear probe, power-of-two
+ * capacity, no deletes (no tombstones needed). keys[i]==NULL means empty. A
+ * 0-cap map is the empty literal; the first insert allocates.
+ *
+ * Value semantics, same as the arrays: `m2 = map_set(m, k, v)` returns a NEW
+ * map (deep copy + insert) so `m` is unchanged; the compiler rewrites the
+ * uniquely-owned accumulator shape `m = map_set(m, ...)` to map_put in place
+ * (cf. the in-place string append) so a build-up loop is amortized O(1) per
+ * insert instead of O(n) deep-copy each step. Key bytes are copied into the
+ * owning arena exactly as [string] elements are (the lifetime seam nests). */
+typedef struct { char **keys; long *vals; long len; long cap; } HierMapSI;
+
+static unsigned long hier_si_hash(const char *s) {        /* FNV-1a */
+    unsigned long h = 1469598103934665603UL;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; }
+    return h;
+}
+
+HierMapSI hier_map_si_with_cap(Arena *a, long cap) {
+    HierMapSI m;
+    long c = 8; while (c < cap) c *= 2;
+    if (cap == 0) c = 0;
+    m.cap = c; m.len = 0;
+    if (c == 0) { m.keys = NULL; m.vals = NULL; return m; }
+    m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));
+    m.vals = (long *) arena_alloc(a, (size_t)c * sizeof(long));
+    for (long i = 0; i < c; i++) m.keys[i] = NULL;
+    return m;
+}
+
+/* slot of key if present, else the first empty slot it would occupy; -1 only
+ * for a 0-cap map. Caller distinguishes hit/miss by keys[idx]==NULL. */
+static long hier_map_si_slot(HierMapSI m, const char *k) {
+    if (m.cap == 0) return -1;
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_si_hash(k) & mask);
+    while (m.keys[i] != NULL) {
+        if (strcmp(m.keys[i], k) == 0) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return i;
+}
+
+/* in-place insert into a uniquely-owned map; grows (rehash) past 1/2 load.
+ * Key bytes copied into arena a so a pushed loop-scratch key does not dangle. */
+void hier_map_si_put(Arena *a, HierMapSI *m, const char *k, long v) {
+    if (m->cap == 0 || (m->len + 1) * 2 > m->cap) {
+        long nc = m->cap ? m->cap * 2 : 8;
+        HierMapSI n = hier_map_si_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (m->keys[i]) {
+                long s = hier_map_si_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++;
+            }
+        *m = n;
+    }
+    long s = hier_map_si_slot(*m, k);
+    if (m->keys[s] == NULL) { m->keys[s] = hier_str_copy(a, k); m->len++; }
+    m->vals[s] = v;
+}
+
+/* deep copy (value semantics): independent tables + copied key bytes. */
+HierMapSI hier_map_si_copy(Arena *a, HierMapSI src) {
+    HierMapSI r = hier_map_si_with_cap(a, src.cap ? src.cap : 0);
+    for (long i = 0; i < src.cap; i++)
+        if (src.keys[i]) hier_map_si_put(a, &r, src.keys[i], src.vals[i]);
+    return r;
+}
+
+/* pure set: returns a NEW map (deep copy of m, then insert). */
+HierMapSI hier_map_si_set(Arena *a, HierMapSI m, const char *k, long v) {
+    HierMapSI r = hier_map_si_copy(a, m);
+    hier_map_si_put(a, &r, k, v);
+    return r;
+}
+
+long hier_map_si_get(HierMapSI m, const char *k, long dflt) {
+    long s = hier_map_si_slot(m, k);
+    if (s < 0 || m.keys[s] == NULL) return dflt;
+    return m.vals[s];
+}
+
+int hier_map_si_has(HierMapSI m, const char *k) {
+    long s = hier_map_si_slot(m, k);
+    return s >= 0 && m.keys[s] != NULL;
+}
+
+/* structural equality (value semantics): same live entries, same values. */
+int hier_map_si_eq(HierMapSI x, HierMapSI y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.cap; i++)
+        if (x.keys[i]) {
+            long s = hier_map_si_slot(y, x.keys[i]);
+            if (s < 0 || y.keys[s] == NULL || y.vals[s] != x.vals[i]) return 0;
+        }
+    return 1;
+}
