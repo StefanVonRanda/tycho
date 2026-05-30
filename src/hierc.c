@@ -146,11 +146,11 @@ static TokVec lex(const char *src) {
         if (col > indent_stack[sp]) {
             if (sp + 1 >= 256) die_at(line, "indentation too deep");
             indent_stack[++sp] = col;
-            tv_push(&out, (Tok){TK_INDENT, NULL, 0, line});
+            tv_push(&out, (Tok){TK_INDENT, NULL, 0, line, 0});
         } else {
             while (col < indent_stack[sp]) {
                 sp--;
-                tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line});
+                tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0});
             }
             if (col != indent_stack[sp])
                 die_at(line, "inconsistent indentation");
@@ -176,7 +176,7 @@ static TokVec lex(const char *src) {
                 } else {
                     long v = 0;
                     for (const char *q = s; q < p; q++) v = v * 10 + (*q - '0');
-                    tv_push(&out, (Tok){TK_INT, NULL, v, line});
+                    tv_push(&out, (Tok){TK_INT, NULL, v, line, 0});
                 }
                 continue;
             }
@@ -185,7 +185,7 @@ static TokVec lex(const char *src) {
                 while (isalnum((unsigned char)*p) || *p == '_') p++;
                 char *name = xstrndup(s, (size_t)(p - s));
                 TokKind k = keyword(name);
-                tv_push(&out, (Tok){k, name, 0, line});
+                tv_push(&out, (Tok){k, name, 0, line, 0});
                 continue;
             }
             if (c == '"') {
@@ -212,7 +212,7 @@ static TokVec lex(const char *src) {
                 }
                 if (*p != '"') die_at(line, "unterminated string literal");
                 p++;
-                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), 0, line});
+                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), 0, line, 0});
                 continue;
             }
 
@@ -242,18 +242,18 @@ static TokVec lex(const char *src) {
             else if (c == ',') k = TK_COMMA;
             else if (c == '&') k = TK_AMP;
             else die_at(line, "unexpected character '%c'", c);
-            tv_push(&out, (Tok){k, NULL, 0, line});
+            tv_push(&out, (Tok){k, NULL, 0, line, 0});
             p += len;
         }
 
-        tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line});
+        tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0});
         if (*p == '#') while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
     }
 
     /* close out remaining indentation, then EOF */
-    while (sp > 0) { sp--; tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line}); }
-    tv_push(&out, (Tok){TK_EOF, NULL, 0, line});
+    while (sp > 0) { sp--; tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0}); }
+    tv_push(&out, (Tok){TK_EOF, NULL, 0, line, 0});
     return out;
 }
 
