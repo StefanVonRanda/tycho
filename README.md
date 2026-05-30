@@ -86,8 +86,10 @@ fn main():
 This is copy-in copy-out (equivalent to `x = incr(x)`), so it preserves
 value semantics: the `&` argument must name a mutable variable, and the same
 variable can't be passed to two `inout` parameters of one call (that would
-be overlapping mutable access). `inout` is currently limited to non-heap
-types — `int`, `bool`, and pure-value structs.
+be overlapping mutable access). `inout` covers `int`, `bool`, pure-value
+structs, and the heap aggregates `[int]`/`[string]` and heap-bearing structs —
+including `push`/growth and element/field mutation through the borrow. Only
+plain `inout string` is excluded (a string is immutable, so it buys nothing).
 
 ### Types
 
@@ -304,10 +306,11 @@ None of this appears in Hier source.
   Reclaimed at process exit. Harmless for short-lived programs.
 - No floats, modules, or generics. Single source file. Arrays are
   one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
-  `inout` covers non-heap types (int, bool, pure-value structs) and `[int]`
-  (shared mutable arrays across calls, e.g. a memo table — see
-  `examples/memo.hi`); `inout` of `[string]`/`string`/heap-bearing structs,
-  and `push`/growth through an `inout` array, are not supported yet.
+  `inout` covers int, bool, pure-value structs, and the heap aggregates
+  `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
+  element/field mutation through the borrow (shared mutable state across calls,
+  e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
+  `examples/context.hi`). Only plain `inout string` is excluded (immutable).
 - No logical operators (`and`/`or`/`not`) or `elif` yet.
 
 ## Repository layout
@@ -319,7 +322,7 @@ build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, records, inout,
-                   memo (.hi)
+                   memo, collect, context (.hi)
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 ```

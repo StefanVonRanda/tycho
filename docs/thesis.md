@@ -175,9 +175,13 @@ graphs, cycles, caches." Probing this empirically dissolved most of it:
   copy-in/copy-out mutable borrow (Swift/Hylo's model — *not* a stored
   reference). `inout` does not break value semantics: it is equivalent to
   `x = f(x)`, made safe by an exclusivity rule (the same variable cannot be
-  passed to two `inout` parameters of one call). Heap `inout` (currently
-  `[int]`) lets the callee share and mutate the caller's array in place, so a
-  memo table is genuinely shared across all recursive frames.
+  passed to two `inout` parameters of one call). Heap `inout` — now `[int]`,
+  `[string]`, and heap-bearing structs, including `push`/growth and
+  element/field mutation through the borrow — lets the callee share and mutate
+  the caller's aggregate in place, so a memo table (or a recursive output
+  collector, or a mutable context object) is genuinely shared across all
+  frames. The owning arena is threaded as a hidden parameter, so an allocating
+  mutation lands where the value lives and survives the call.
 
   *Measured*: memoized `fib(40)` = 102334155 in **0.001s**; the naive
   exponential `fib(40)` computes the same answer in **0.60s**. The `inout` memo
