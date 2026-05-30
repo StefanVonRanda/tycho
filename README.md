@@ -262,6 +262,10 @@ x = x + 1        # assignment (variable must already exist)
   `int`s or two `string`s (strings compare lexicographically by byte).
 - `s[i]` on a `string` reads the byte at index `i` as an `int` (0..255),
   bounds-checked. Strings are immutable — `s[i] = v` is a compile error.
+- Logical `and`, `or`, `not` on `bool`s, producing `bool`. `and`/`or`
+  short-circuit (the right operand is not evaluated when the left already
+  decides it). Precedence, tightest first: comparisons, then `not`, `and`,
+  `or` — so `a < b and not done` is `(a < b) and (not done)`.
 - Calls: `f(a, b)`.
 
 ### Control flow
@@ -271,6 +275,8 @@ everything a `while` would (cf. Wren):
 
 ```
 if cond:
+    ...
+elif other:                 # zero or more elif branches
     ...
 else:
     ...
@@ -378,7 +384,6 @@ None of this appears in Hier source.
   element/field mutation through the borrow (shared mutable state across calls,
   e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
   `examples/context.hi`). Only plain `inout string` is excluded (immutable).
-- No logical operators (`and`/`or`/`not`) or `elif` yet.
 
 ## Repository layout
 

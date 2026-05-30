@@ -1,0 +1,34 @@
+fn grade(n: int) -> string:
+    if n >= 90:
+        return "A"
+    elif n >= 80:
+        return "B"
+    elif n >= 70:
+        return "C"
+    else:
+        return "F"
+
+fn side(tag: string, v: bool) -> bool:
+    print("eval:" + tag + " ")
+    return v
+
+fn main():
+    # precedence: comparisons bind tighter than and/or; not tighter than and
+    a := 3
+    b := 7
+    if a < b and b < 10:
+        print("and-ok\n")
+    if a > b or b == 7:
+        print("or-ok\n")
+    if not (a == b):
+        print("not-ok\n")
+    if not a > b:           # parses as (not (a>b)) -> not false -> true
+        print("not-prec-ok\n")
+    # short-circuit: && must not evaluate the right side when left is false
+    if side("L", false) and side("R", true):
+        print("unreachable\n")
+    print("\n")
+    if side("L2", true) or side("R2", false):
+        print("or-short-ok\n")
+    # elif chain
+    print(grade(95) + grade(85) + grade(72) + grade(40) + "\n")

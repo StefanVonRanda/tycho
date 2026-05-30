@@ -66,8 +66,8 @@ typedef enum {
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
-    TK_FN, TK_RETURN, TK_IF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
-    TK_INOUT, TK_AMP,
+    TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING
 } TokKind;
@@ -97,7 +97,11 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "fn"))     return TK_FN;
     if (!strcmp(s, "return")) return TK_RETURN;
     if (!strcmp(s, "if"))     return TK_IF;
+    if (!strcmp(s, "elif"))   return TK_ELIF;
     if (!strcmp(s, "else"))   return TK_ELSE;
+    if (!strcmp(s, "and"))    return TK_AND;
+    if (!strcmp(s, "or"))     return TK_OR;
+    if (!strcmp(s, "not"))    return TK_NOT;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -559,7 +563,7 @@ static Expr *parse_add(Parser *ps) {
     return l;
 }
 
-static Expr *parse_expr(Parser *ps) {           /* comparison level */
+static Expr *parse_cmp(Parser *ps) {            /* comparison level */
     Expr *l = parse_add(ps);
     while (at(ps, TK_EQEQ) || at(ps, TK_NEQ) || at(ps, TK_LT) ||
            at(ps, TK_GT)   || at(ps, TK_LE)  || at(ps, TK_GE)) {
@@ -571,12 +575,70 @@ static Expr *parse_expr(Parser *ps) {           /* comparison level */
     return l;
 }
 
+/* Logical operators, conventional precedence (tighter binds first):
+ * comparisons > not > and > or. `not` is unary (operand in lhs, rhs NULL);
+ * `and`/`or` short-circuit, lowering directly to C's && / ||. */
+static Expr *parse_not(Parser *ps) {
+    if (at(ps, TK_NOT)) {
+        Tok *t = cur(ps); ps->p++;
+        Expr *e = new_expr(E_BINOP, t->line);
+        e->op = TK_NOT; e->lhs = parse_not(ps);   /* rhs stays NULL (zeroed) */
+        return e;
+    }
+    return parse_cmp(ps);
+}
+
+static Expr *parse_and(Parser *ps) {
+    Expr *l = parse_not(ps);
+    while (at(ps, TK_AND)) {
+        Tok *t = cur(ps); ps->p++;
+        Expr *e = new_expr(E_BINOP, t->line);
+        e->op = TK_AND; e->lhs = l; e->rhs = parse_not(ps);
+        l = e;
+    }
+    return l;
+}
+
+static Expr *parse_expr(Parser *ps) {           /* logical-or: the top level */
+    Expr *l = parse_and(ps);
+    while (at(ps, TK_OR)) {
+        Tok *t = cur(ps); ps->p++;
+        Expr *e = new_expr(E_BINOP, t->line);
+        e->op = TK_OR; e->lhs = l; e->rhs = parse_and(ps);
+        l = e;
+    }
+    return l;
+}
+
 static Stmt **parse_block(Parser *ps, int *count);
 
 static Stmt *new_stmt(StmtKind k, int line) {
     Stmt *s = (Stmt *)xmalloc(sizeof(Stmt));
     memset(s, 0, sizeof *s);
     s->kind = k; s->line = line;
+    return s;
+}
+
+/* `if` / `elif` / `else`. `elif` is sugar for `else:` containing a single
+ * nested `if`, so the existing S_IF codegen (which already emits `else { ... }`
+ * around the else-block) needs no special case. */
+static Stmt *parse_if(Parser *ps, int line) {
+    Stmt *s = new_stmt(S_IF, line);
+    s->expr = parse_expr(ps);
+    eat(ps, TK_COLON, "':' before the block");
+    eat(ps, TK_NEWLINE, "newline");
+    s->body = parse_block(ps, &s->nbody);
+    if (at(ps, TK_ELIF)) {
+        Tok *e = cur(ps); ps->p++;
+        s->els = (Stmt **)xmalloc(sizeof(Stmt *));
+        s->els[0] = parse_if(ps, e->line);   /* the elif, as the whole else-branch */
+        s->nels = 1;
+    } else if (at(ps, TK_ELSE)) {
+        ps->p++;
+        eat(ps, TK_COLON, "':' after else");
+        eat(ps, TK_NEWLINE, "newline after else");
+        s->els = parse_block(ps, &s->nels);
+    }
     return s;
 }
 
@@ -592,18 +654,7 @@ static Stmt *parse_stmt(Parser *ps) {
     }
     if (t->kind == TK_IF) {
         ps->p++;
-        Stmt *s = new_stmt(S_IF, t->line);
-        s->expr = parse_expr(ps);
-        eat(ps, TK_COLON, "':' before the block");
-        eat(ps, TK_NEWLINE, "newline");
-        s->body = parse_block(ps, &s->nbody);
-        if (at(ps, TK_ELSE)) {
-            ps->p++;
-            eat(ps, TK_COLON, "':' after else");
-            eat(ps, TK_NEWLINE, "newline after else");
-            s->els = parse_block(ps, &s->nels);
-        }
-        return s;
+        return parse_if(ps, t->line);
     }
     if (t->kind == TK_FOR) {
         ps->p++;
@@ -1049,8 +1100,18 @@ static Type resolve_expr(Expr *e) {
             return e->type = s->ret;
         }
         case E_BINOP: {
+            if (e->op == TK_NOT) {              /* unary: operand in lhs, rhs NULL */
+                if (resolve_expr(e->lhs) != T_BOOL)
+                    die_at(e->line, "`not` needs a bool operand");
+                return e->type = T_BOOL;
+            }
             Type lt = resolve_expr(e->lhs);
             Type rt = resolve_expr(e->rhs);
+            if (e->op == TK_AND || e->op == TK_OR) {
+                if (lt != T_BOOL || rt != T_BOOL)
+                    die_at(e->line, "`%s` needs bool operands", e->op == TK_AND ? "and" : "or");
+                return e->type = T_BOOL;
+            }
             if (is_cmp(e->op)) {
                 if (e->op == TK_EQEQ || e->op == TK_NEQ) {
                     /* equality is structural for every type (value semantics):
@@ -1548,6 +1609,8 @@ static const char *op_str(TokKind op) {
         case TK_GE:    return ">=";
         case TK_EQEQ:  return "==";
         case TK_NEQ:   return "!=";
+        case TK_AND:   return "&&";
+        case TK_OR:    return "||";
         default:       return "?";
     }
 }
@@ -1623,8 +1686,11 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s })", out);
         }
         case E_BINOP: {
+            if (e->op == TK_NOT)               /* unary: operand in lhs, rhs NULL */
+                return sfmt("(!%s)", gen_expr(e->lhs, arena));
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
+            /* and/or lower to C's short-circuiting && / || via op_str below */
             if (e->op == TK_PLUS && e->lhs->type == T_STRING)
                 return sfmt("hier_str_concat(%s, %s, %s)", arena, l, r);
             /* equality dispatches by type (deep/structural); != negates it */
