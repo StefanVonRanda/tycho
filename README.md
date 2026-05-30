@@ -105,9 +105,9 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 
 ### Types
 
-`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `[int]` and
-`[string]` (growable arrays), `[string: int]` (a string-keyed map), and
-user-defined `struct`s.
+`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `[int]`,
+`[float]`, and `[string]` (growable arrays), `[string: int]` (a string-keyed
+map), and user-defined `struct`s.
 
 ### Structs
 
@@ -171,10 +171,10 @@ push(names, "grace")
 names[0] = "Ada"          # element-set copies the string into the array's arena
 ```
 
-Element types are `int` and `string`. Arrays are values: assigning one
-copies it (a `[string]` copy is deep — its element bytes are copied too),
-so mutating the copy never touches the original. Out-of-bounds access aborts
-with a message.
+Element types are `int`, `float`, and `string` (`[float]` behaves exactly like
+`[int]` — a buffer of value words). Arrays are values: assigning one copies it
+(a `[string]` copy is deep — its element bytes are copied too), so mutating the
+copy never touches the original. Out-of-bounds access aborts with a message.
 
 Arrays cross function boundaries too:
 
@@ -382,8 +382,8 @@ None of this appears in Hier source.
 ### Known limitations (proof-of-concept)
 
 - No modules or generics. Single source file. Arrays are
-  one-dimensional (`[int]`, `[string]` — no arrays of arrays or of structs).
-  The only map is `[string: int]` (string keys, `int` values — no other value
+  one-dimensional (`[int]`, `[float]`, `[string]` — no arrays of arrays or of
+  structs). The only map is `[string: int]` (string keys, `int` values — no other value
   type yet); it supports `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`,
   in-place accumulator rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates

@@ -263,7 +263,7 @@ static TokVec lex(const char *src) {
  * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
  * constants keep working in every existing == and switch. */
 typedef int Type;
-enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT };
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT };
 #define T_STRUCT_BASE   64
 #define IS_STRUCT(t)    ((t) >= T_STRUCT_BASE)
 #define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
@@ -287,7 +287,7 @@ static int struct_find(const char *name) {
  * to keep the implicit-arena model sound. Structs are defined before use, so
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
-    if (t == T_STRING || t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_MAP_SI) return 1;
+    if (t == T_STRING || t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_ARRAY_FLOAT || t == T_MAP_SI) return 1;
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
         for (int i = 0; i < sd->nfields; i++)
@@ -306,6 +306,7 @@ static const char *c_type(Type t) {
         case T_BOOL:         return "int ";
         case T_STRING:       return "char *";
         case T_ARRAY_INT:    return "HierArrInt ";
+        case T_ARRAY_FLOAT:  return "HierArrFloat ";
         case T_ARRAY_STRING: return "HierArrStr ";
         case T_MAP_SI:       return "HierMapSI ";
         default:             return "void ";
@@ -319,10 +320,29 @@ static const char *type_name(Type t) {
         case T_BOOL:         return "bool";
         case T_STRING:       return "string";
         case T_ARRAY_INT:    return "[int]";
+        case T_ARRAY_FLOAT:  return "[float]";
         case T_ARRAY_STRING: return "[string]";
         case T_MAP_SI:       return "[string: int]";
         default:             return "void";
     }
+}
+
+/* An array type's runtime-function infix and element type. [int]/[float]
+ * elements are plain value words; [string] elements own arena bytes. */
+static const char *arr_fn(Type arr) {
+    if (arr == T_ARRAY_STRING) return "str";
+    if (arr == T_ARRAY_FLOAT)  return "float";
+    return "int";   /* T_ARRAY_INT */
+}
+static Type arr_elem(Type arr) {
+    if (arr == T_ARRAY_STRING) return T_STRING;
+    if (arr == T_ARRAY_FLOAT)  return T_FLOAT;
+    return T_INT;
+}
+static Type arr_of(Type elem) {
+    if (elem == T_STRING) return T_ARRAY_STRING;
+    if (elem == T_FLOAT)  return T_ARRAY_FLOAT;
+    return T_ARRAY_INT;
 }
 
 typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
@@ -403,8 +423,9 @@ static Type parse_type(Parser *ps) {
         }
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_INT)    return T_ARRAY_INT;
+        if (elem == T_FLOAT)  return T_ARRAY_FLOAT;
         if (elem == T_STRING) return T_ARRAY_STRING;
-        die_at(t->line, "only [int] and [string] arrays are supported");
+        die_at(t->line, "only [int], [float], and [string] arrays are supported");
     }
     if (t->kind == TK_IDENT) {           /* a struct name */
         int sid = struct_find(t->text);
@@ -458,8 +479,9 @@ static Expr *parse_primary(Parser *ps) {
                 return e;
             }
             if (elem == T_INT)         e->ival = T_ARRAY_INT;      /* type carried */
-            else if (elem == T_STRING) e->ival = T_ARRAY_STRING;   /* to resolver */
-            else die_at(t->line, "only [int] and [string] arrays are supported");
+            else if (elem == T_FLOAT)  e->ival = T_ARRAY_FLOAT;    /* to resolver */
+            else if (elem == T_STRING) e->ival = T_ARRAY_STRING;
+            else die_at(t->line, "only [int], [float], and [string] arrays are supported");
             return e;
         }
         int cap = 0;
@@ -945,20 +967,21 @@ static Type resolve_expr(Expr *e) {
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
             Type elem = resolve_expr(e->args[0]);
-            if (elem != T_INT && elem != T_STRING)
-                die_at(e->line, "array elements must be int or string");
+            if (elem != T_INT && elem != T_FLOAT && elem != T_STRING)
+                die_at(e->line, "array elements must be int, float, or string");
             for (int i = 1; i < e->nargs; i++)
                 if (resolve_expr(e->args[i]) != elem)
                     die_at(e->line, "array elements must all have the same type");
-            return e->type = (elem == T_STRING ? T_ARRAY_STRING : T_ARRAY_INT);
+            return e->type = arr_of(elem);
         }
         case E_INDEX: {
             Type bt = resolve_expr(e->lhs);
             if (resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "index must be int");
             if (bt == T_ARRAY_STRING) return e->type = T_STRING;  /* element */
+            if (bt == T_ARRAY_FLOAT)  return e->type = T_FLOAT;   /* element */
             if (bt != T_ARRAY_INT && bt != T_STRING)
-                die_at(e->line, "can only index an [int]/[string] array or a string");
+                die_at(e->line, "can only index an [int]/[float]/[string] array or a string");
             return e->type = T_INT;   /* [int] element or string byte */
         }
         case E_FIELD: {
@@ -1020,7 +1043,7 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_ARRAY_INT && at_ != T_ARRAY_STRING && at_ != T_STRING && at_ != T_MAP_SI)
+                if (at_ != T_ARRAY_INT && at_ != T_ARRAY_STRING && at_ != T_ARRAY_FLOAT && at_ != T_STRING && at_ != T_MAP_SI)
                     die_at(e->line, "len(...) takes an array, a string, or a map");
                 return e->type = T_INT;
             }
@@ -1078,8 +1101,8 @@ static Type resolve_expr(Expr *e) {
                 if (root->kind != E_IDENT)
                     die_at(e->line, "push's first argument must be an array variable or field");
                 Type arrt = resolve_expr(e->args[0]);
-                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
-                    die_at(e->line, "push's first argument must be an [int] or [string] array");
+                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING && arrt != T_ARRAY_FLOAT)
+                    die_at(e->line, "push's first argument must be an [int], [float], or [string] array");
                 /* push through a heap inout array is allowed: the regrow
                  * targets the value's owning arena (carried as _ina_<name>),
                  * so the new buffer outlives the call and the caller sees the
@@ -1087,7 +1110,7 @@ static Type resolve_expr(Expr *e) {
                 if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
-                Type want = (arrt == T_ARRAY_STRING) ? T_STRING : T_INT;
+                Type want = arr_elem(arrt);
                 if (resolve_expr(e->args[1]) != want)
                     die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
@@ -1264,8 +1287,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                        root->sval, root->sval);
             Type arrt = resolve_expr(s->target->lhs);
-            if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING)
-                die_at(s->line, "can only index-assign an [int] or [string] array (strings themselves are immutable)");
+            if (arrt != T_ARRAY_INT && arrt != T_ARRAY_STRING && arrt != T_ARRAY_FLOAT)
+                die_at(s->line, "can only index-assign an [int], [float], or [string] array (strings themselves are immutable)");
             Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
             Type vt = resolve_expr(s->expr);
             if (tt != vt)
@@ -1336,7 +1359,7 @@ static void resolve_program(ProcVec *prog) {
             Type pt = pr->params[j].type;
             /* arrays and maps are read-only borrows EXCEPT an inout one, which
              * is a by-pointer share the callee may mutate in place. */
-            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING && pt != T_MAP_SI)
+            int mutable = (pt != T_ARRAY_INT && pt != T_ARRAY_STRING && pt != T_ARRAY_FLOAT && pt != T_MAP_SI)
                           || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
         }
@@ -1509,6 +1532,7 @@ static char *copy_into(Type t, const char *arena, char *val) {
     switch (t) {
         case T_STRING:       return sfmt("hier_str_copy(%s, %s)", arena, val);
         case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
+        case T_ARRAY_FLOAT:  return sfmt("hier_arr_float_copy(%s, %s)", arena, val);
         case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
         case T_MAP_SI:       return sfmt("hier_map_si_copy(%s, %s)", arena, val);
         default:
@@ -1534,6 +1558,7 @@ static int is_place(Expr *e) {
 static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_STRING)       return sfmt("(strcmp(%s, %s) == 0)", a, b);
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
+    if (t == T_ARRAY_FLOAT)  return sfmt("hier_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
     if (t == T_MAP_SI)       return sfmt("hier_map_si_eq(%s, %s)", a, b);
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
@@ -1602,9 +1627,8 @@ static char *gen_call(Expr *e, const char *arena) {
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_expr(e->args[0], arena);
         char *v = gen_expr(e->args[1], arena);
-        if (e->args[0]->type == T_ARRAY_STRING)
-            return sfmt("hier_arr_str_push(%s, &(%s), %s)", owner, arr, v);
-        return sfmt("hier_arr_int_push(%s, &(%s), %s)", owner, arr, v);
+        /* push has the same (owner, &arr, v) shape for every element type */
+        return sfmt("hier_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
     }
     if (!strcmp(e->sval, "split")) {
         char *s   = gen_expr(e->args[0], arena);
@@ -1696,9 +1720,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING)
                 return sfmt("hier_str_get(%s, %s)", a, ix);
-            if (e->lhs->type == T_ARRAY_STRING)
-                return sfmt("hier_arr_str_get(%s, %s)", a, ix);
-            return sfmt("hier_arr_int_get(%s, %s)", a, ix);
+            return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
@@ -1724,8 +1746,9 @@ static char *gen_expr(Expr *e, const char *arena) {
                                out, id, i, arena, gen_expr(e->args[i], arena));
                 return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
             }
-            char *out = sfmt("({ HierArrInt _l%d = hier_arr_int_with_cap(%s, %dL);",
-                             id, arena, e->nargs);
+            /* [int] or [float]: each element is a plain value word, no copy */
+            char *out = sfmt("({ %s_l%d = hier_arr_%s_with_cap(%s, %dL);",
+                             c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
                 out = sfmt("%s _l%d.data[%d] = %s;", out, id, i, gen_expr(e->args[i], arena));
             return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
@@ -1935,8 +1958,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * carried _ina_ arena if the root is a heap inout param. */
                 const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
                 fprintf(o, "hier_arr_str_set(%s, &(%s), %s, %s);\n", owner, arr, ix, v);
-            } else {
-                fprintf(o, "hier_arr_int_set(&(%s), %s, %s);\n", arr, ix, v);
+            } else {   /* [int] or [float]: value word, no arena, no byte copy */
+                fprintf(o, "hier_arr_%s_set(&(%s), %s, %s);\n", arr_fn(arrx->type), arr, ix, v);
             }
             break;
         }
@@ -1997,6 +2020,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ HierArrInt _ret = %s; %s return _ret; }\n", v, rf);
+                }
+            } else if (ret == T_ARRAY_FLOAT) {
+                /* promote up, exactly like [int] (a buffer of value words). */
+                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ HierArrFloat _ret = hier_arr_float_copy(_parent, %s); %s return _ret; }\n", v, rf);
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ HierArrFloat _ret = %s; %s return _ret; }\n", v, rf);
                 }
             } else if (ret == T_ARRAY_STRING) {
                 /* promote up. A fresh value (literal/split/call) is built

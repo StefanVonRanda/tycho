@@ -261,6 +261,62 @@ int hier_arr_int_eq(HierArrInt x, HierArrInt y) {
     return 1;
 }
 
+/* --- [float] arrays -------------------------------------------------------
+ * Exactly HierArrInt with double elements (a value word, no heap nesting), so
+ * every op mirrors the int array. Equality is bitwise via ==, with the usual
+ * float caveats. */
+
+typedef struct { double *data; long len; long cap; } HierArrFloat;
+
+HierArrFloat hier_arr_float_with_cap(Arena *a, long cap) {
+    HierArrFloat r;
+    r.len = 0;
+    r.cap = cap;
+    r.data = cap > 0 ? (double *)arena_alloc(a, (size_t)cap * sizeof(double)) : NULL;
+    return r;
+}
+
+void hier_arr_float_push(Arena *a, HierArrFloat *xs, double v) {
+    if (xs->len == xs->cap) {
+        long ncap = xs->cap ? xs->cap * 2 : 4;
+        double *nd = (double *)arena_alloc(a, (size_t)ncap * sizeof(double));
+        if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(double));
+        xs->data = nd;
+        xs->cap = ncap;
+    }
+    xs->data[xs->len++] = v;
+}
+
+double hier_arr_float_get(HierArrFloat xs, long i) {
+    if (i < 0 || i >= xs.len) {
+        fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs.len);
+        exit(1);
+    }
+    return xs.data[i];
+}
+
+void hier_arr_float_set(HierArrFloat *xs, long i, double v) {
+    if (i < 0 || i >= xs->len) {
+        fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs->len);
+        exit(1);
+    }
+    xs->data[i] = v;
+}
+
+HierArrFloat hier_arr_float_copy(Arena *a, HierArrFloat src) {
+    HierArrFloat r = hier_arr_float_with_cap(a, src.len);
+    r.len = src.len;
+    if (src.len) memcpy(r.data, src.data, (size_t)src.len * sizeof(double));
+    return r;
+}
+
+int hier_arr_float_eq(HierArrFloat x, HierArrFloat y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.len; i++)
+        if (x.data[i] != y.data[i]) return 0;
+    return 1;
+}
+
 /* --- [string] arrays ------------------------------------------------------
  * Like HierArrInt, but the elements are char* whose bytes live in an arena.
  * The lifetime seam (see hier_str_copy) nests here: every operation that
