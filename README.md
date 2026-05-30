@@ -121,9 +121,9 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 ### Types
 
 `int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, arrays
-(`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), `[string: int]` (a
-string-keyed map), `Option(T)` (a value or nothing — the no-`null` story), and
-user-defined `struct`s.
+(`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), string-keyed maps
+(`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
+no-`null` story), and user-defined `struct`s.
 
 ### Structs
 
@@ -228,9 +228,11 @@ it `inout`. *Not yet:* a struct **field** of array-of-struct/array type (e.g.
 `struct Node: children: [Node]` — the recursive tree); use index references
 (a `[Node]` plus `[int]` child indices) for now.
 
-### Maps (`[string: int]`)
+### Maps (`[string: int]`, `[string: float]`)
 
-The one map type is `[string: int]` — string keys, `int` values:
+A map has `string` keys and either `int` or `float` values; the value type
+follows from the literal or annotation (`["a": 1]` is a `[string: int]`,
+`["a": 1.5]` a `[string: float]`):
 
 ```
 counts := ["ada": 1, "alan": 2]   # literal: "key": value pairs
@@ -276,7 +278,10 @@ uniquely owned at that point, the compiler mutates it in place — the loop is
 O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
-*Not yet:* value types other than `int` (`[string: int]` is the only map).
+All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, the
+in-place accumulator rebind, `==`, `inout`) work the same on both; `map_get`'s
+default and `map_set`'s value just take the map's value type. *Not yet:* value
+types other than `int`/`float`, and key types other than `string`.
 
 ### Option and `match`
 
@@ -444,10 +449,11 @@ None of this appears in Hier source.
 
 - No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`), but a struct *field* cannot yet be an
-  array-of-struct/array (the recursive-tree case). The only map is
-  `[string: int]` (string keys, `int` values — no other value
-  type yet); it supports `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`,
-  in-place accumulator rebinds, and `inout`.
+  array-of-struct/array (the recursive-tree case). Maps are string-keyed with
+  `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
+  or value type yet; they support
+  `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
+  rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,

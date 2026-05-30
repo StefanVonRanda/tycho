@@ -265,6 +265,7 @@ static TokVec lex(const char *src) {
  * constants keep working in every existing == and switch. */
 typedef int Type;
 enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT,
+       T_MAP_SF /* [string: float] */,
        T_NONE /* type of a bare `None` until context fixes its concrete Option type */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
@@ -332,6 +333,14 @@ static Type opt_of(Type inner) {                 /* find-or-create Option(inner)
 }
 static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
 
+/* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
+ * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
+ * value type, map_of the map type for a value type. */
+static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF; }
+static const char *map_fn(Type t) { return t == T_MAP_SF ? "sf" : "si"; }
+static Type map_val(Type t) { return t == T_MAP_SF ? T_FLOAT : T_INT; }
+static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
+
 /* A "heap" type owns arena-allocated bytes outside its own value word(s):
  * string (char* into an arena), [int]/[string] (a buffer), or any struct
  * that (transitively) contains such a field. int/bool and pure structs are
@@ -340,7 +349,7 @@ static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
  * to keep the implicit-arena model sound. Structs are defined before use, so
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
-    if (t == T_STRING || t == T_MAP_SI || is_array(t)) return 1;
+    if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
@@ -365,6 +374,7 @@ static const char *c_type(Type t) {
         case T_ARRAY_FLOAT:  return "HierArrFloat ";
         case T_ARRAY_STRING: return "HierArrStr ";
         case T_MAP_SI:       return "HierMapSI ";
+        case T_MAP_SF:       return "HierMapSF ";
         default:             return "void ";
     }
 }
@@ -382,6 +392,7 @@ static const char *type_name(Type t) {
         case T_ARRAY_FLOAT:  return "[float]";
         case T_ARRAY_STRING: return "[string]";
         case T_MAP_SI:       return "[string: int]";
+        case T_MAP_SF:       return "[string: float]";
         default:             return "void";
     }
 }
@@ -478,8 +489,8 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
-            if (elem == T_STRING && val == T_INT) return T_MAP_SI;
-            die_at(t->line, "only [string: int] maps are supported");
+            if (elem == T_STRING && (val == T_INT || val == T_FLOAT)) return map_of(val);
+            die_at(t->line, "maps are [string: int] or [string: float]");
         }
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
@@ -541,8 +552,8 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
-                if (elem == T_STRING && val == T_INT) { e->ival = T_MAP_SI; e->op = TK_COLON; }
-                else die_at(t->line, "only [string: int] maps are supported");
+                if (elem == T_STRING && (val == T_INT || val == T_FLOAT)) { e->ival = map_of(val); e->op = TK_COLON; }
+                else die_at(t->line, "maps are [string: int] or [string: float]");
                 return e;
             }
             if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
@@ -1077,15 +1088,21 @@ static Type resolve_expr(Expr *e) {
             return e->type = t;
         }
         case E_ARRLIT: {
-            if (e->op == TK_COLON) {           /* map literal [k: v, ...] */
-                /* args interleave k0,v0,k1,v1,...; keys string, values int */
+            if (e->op == TK_COLON) {           /* map literal ["k": v, ...] */
+                if (e->nargs == 0)             /* empty []string: V — type carried in ival */
+                    return e->type = (Type)e->ival;
+                /* args interleave k0,v0,k1,v1,...; keys string, values all int
+                 * or all float (the value type picks [string: int]/[string: float]). */
+                Type vt = resolve_expr(e->args[1]);
+                if (vt != T_INT && vt != T_FLOAT)
+                    die_at(e->line, "map values must be int or float");
                 for (int i = 0; i < e->nargs; i += 2) {
                     if (resolve_expr(e->args[i]) != T_STRING)
                         die_at(e->line, "map keys must be string");
-                    if (resolve_expr(e->args[i + 1]) != T_INT)
-                        die_at(e->line, "map values must be int (only [string: int] maps exist)");
+                    if (resolve_expr(e->args[i + 1]) != vt)
+                        die_at(e->line, "map values must all have the same type");
                 }
-                return e->type = T_MAP_SI;
+                return e->type = map_of(vt);
             }
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
@@ -1164,51 +1181,53 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (!is_array(at_) && at_ != T_STRING && at_ != T_MAP_SI)
+                if (!is_array(at_) && at_ != T_STRING && !is_map(at_))
                     die_at(e->line, "len(...) takes an array, a string, or a map");
                 return e->type = T_INT;
             }
-            /* map builtins ([string: int]). map_set is pure (returns a new
-             * map); the m = map_set(m, ...) self-rebind is grown in place by
-             * the accumulator pass, exactly like array push / string append. */
+            /* map builtins ([string: int] or [string: float]). The value type
+             * follows the map. map_set is pure (returns a new map); the
+             * m = map_set(m, ...) self-rebind is grown in place by the
+             * accumulator pass, like array push / string append. */
             if (!strcmp(e->sval, "map_set")) {
                 if (e->nargs != 3) die_at(e->line, "map_set(m, key, value) takes three arguments");
-                if (resolve_expr(e->args[0]) != T_MAP_SI)
-                    die_at(e->line, "map_set's first argument must be a [string: int] map");
+                Type mt = resolve_expr(e->args[0]);
+                if (!is_map(mt)) die_at(e->line, "map_set's first argument must be a map");
                 if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_set key must be string");
-                if (resolve_expr(e->args[2]) != T_INT)    die_at(e->line, "map_set value must be int");
-                return e->type = T_MAP_SI;
+                if (resolve_expr(e->args[2]) != map_val(mt))
+                    die_at(e->line, "map_set value must be %s", type_name(map_val(mt)));
+                return e->type = mt;
             }
             if (!strcmp(e->sval, "map_get")) {
                 if (e->nargs != 3) die_at(e->line, "map_get(m, key, default) takes three arguments");
-                if (resolve_expr(e->args[0]) != T_MAP_SI)
-                    die_at(e->line, "map_get's first argument must be a [string: int] map");
+                Type mt = resolve_expr(e->args[0]);
+                if (!is_map(mt)) die_at(e->line, "map_get's first argument must be a map");
                 if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_get key must be string");
-                if (resolve_expr(e->args[2]) != T_INT)    die_at(e->line, "map_get default must be int");
-                return e->type = T_INT;
+                if (resolve_expr(e->args[2]) != map_val(mt))
+                    die_at(e->line, "map_get default must be %s", type_name(map_val(mt)));
+                return e->type = map_val(mt);
             }
             if (!strcmp(e->sval, "map_has")) {
                 if (e->nargs != 2) die_at(e->line, "map_has(m, key) takes two arguments");
-                if (resolve_expr(e->args[0]) != T_MAP_SI)
-                    die_at(e->line, "map_has's first argument must be a [string: int] map");
+                if (!is_map(resolve_expr(e->args[0])))
+                    die_at(e->line, "map_has's first argument must be a map");
                 if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_has key must be string");
                 return e->type = T_BOOL;
             }
             /* map_del is pure (returns a new map); the m = map_del(m, k)
-             * self-rebind is rewritten to an in-place tombstone delete by the
-             * accumulator pass, exactly like map_set's in-place put. */
+             * self-rebind is rewritten to an in-place tombstone delete. */
             if (!strcmp(e->sval, "map_del")) {
                 if (e->nargs != 2) die_at(e->line, "map_del(m, key) takes two arguments");
-                if (resolve_expr(e->args[0]) != T_MAP_SI)
-                    die_at(e->line, "map_del's first argument must be a [string: int] map");
+                Type mt = resolve_expr(e->args[0]);
+                if (!is_map(mt)) die_at(e->line, "map_del's first argument must be a map");
                 if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_del key must be string");
-                return e->type = T_MAP_SI;
+                return e->type = mt;
             }
             /* keys(m) -> [string]: the map's live keys, for iteration. */
             if (!strcmp(e->sval, "keys")) {
                 if (e->nargs != 1) die_at(e->line, "keys(m) takes one argument");
-                if (resolve_expr(e->args[0]) != T_MAP_SI)
-                    die_at(e->line, "keys's argument must be a [string: int] map");
+                if (!is_map(resolve_expr(e->args[0])))
+                    die_at(e->line, "keys's argument must be a map");
                 return e->type = T_ARRAY_STRING;
             }
             if (!strcmp(e->sval, "push")) {
@@ -1505,7 +1524,7 @@ static void resolve_program(ProcVec *prog) {
             Type pt = pr->params[j].type;
             /* arrays and maps are read-only borrows EXCEPT an inout one, which
              * is a by-pointer share the callee may mutate in place. */
-            int mutable = (!is_array(pt) && pt != T_MAP_SI)
+            int mutable = (!is_array(pt) && !is_map(pt))
                           || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
         }
@@ -1680,7 +1699,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
         case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
         case T_ARRAY_FLOAT:  return sfmt("hier_arr_float_copy(%s, %s)", arena, val);
         case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
-        case T_MAP_SI:       return sfmt("hier_map_si_copy(%s, %s)", arena, val);
+        case T_MAP_SI:
+        case T_MAP_SF:       return sfmt("hier_map_%s_copy(%s, %s)", map_fn(t), arena, val);
         default:
             if (IS_OPT(t))
                 return type_is_heap(t) ? sfmt("hier_opt%d_copy(%s, %s)", OPT_ID(t), arena, val) : val;
@@ -1710,7 +1730,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("hier_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
-    if (t == T_MAP_SI)       return sfmt("hier_map_si_eq(%s, %s)", a, b);
+    if (is_map(t))           return sfmt("hier_map_%s_eq(%s, %s)", map_fn(t), a, b);
     if (IS_ARRC(t))          return sfmt("hier_arr_C%d_eq(%s, %s)", ARRC_ID(t), a, b);
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
@@ -1729,29 +1749,29 @@ static char *gen_call(Expr *e, const char *arena) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
         char *v = gen_expr(e->args[2], arena);
-        return sfmt("hier_map_si_set(%s, %s, %s, %s)", arena, m, k, v);
+        return sfmt("hier_map_%s_set(%s, %s, %s, %s)", map_fn(e->type), arena, m, k, v);
     }
     if (!strcmp(e->sval, "map_get")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
         char *d = gen_expr(e->args[2], arena);
-        return sfmt("hier_map_si_get(%s, %s, %s)", m, k, d);
+        return sfmt("hier_map_%s_get(%s, %s, %s)", map_fn(e->args[0]->type), m, k, d);
     }
     if (!strcmp(e->sval, "map_has")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
-        return sfmt("hier_map_si_has(%s, %s)", m, k);
+        return sfmt("hier_map_%s_has(%s, %s)", map_fn(e->args[0]->type), m, k);
     }
     /* map_del pure: deep-copy + delete into `arena`; the accumulator pass
      * rewrites a self-rebind to an in-place tombstone delete separately. */
     if (!strcmp(e->sval, "map_del")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
-        return sfmt("hier_map_si_del_pure(%s, %s, %s)", arena, m, k);
+        return sfmt("hier_map_%s_del_pure(%s, %s, %s)", map_fn(e->type), arena, m, k);
     }
     if (!strcmp(e->sval, "keys")) {
         char *m = gen_expr(e->args[0], arena);
-        return sfmt("hier_map_si_keys(%s, %s)", arena, m);
+        return sfmt("hier_map_%s_keys(%s, %s)", map_fn(e->args[0]->type), arena, m);
     }
     if (!strcmp(e->sval, "substr")) {
         char *s = gen_expr(e->args[0], arena);
@@ -1882,15 +1902,16 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
             int id = g_blk++;
-            if (e->type == T_MAP_SI) {
+            if (is_map(e->type)) {
                 /* map literal: build empty in `arena`, then put each pair. The
                  * runtime put copies the key bytes into `arena`. args interleave
                  * k0,v0,k1,v1,...; an empty literal (nargs 0) just yields {0}. */
-                char *out = sfmt("({ HierMapSI _l%d = hier_map_si_with_cap(%s, 0L);",
-                                 id, arena);
+                const char *mf = map_fn(e->type);
+                char *out = sfmt("({ %s_l%d = hier_map_%s_with_cap(%s, 0L);",
+                                 c_type(e->type), id, mf, arena);
                 for (int i = 0; i + 1 < e->nargs; i += 2)
-                    out = sfmt("%s hier_map_si_put(%s, &_l%d, %s, %s);",
-                               out, arena, id, gen_expr(e->args[i], arena),
+                    out = sfmt("%s hier_map_%s_put(%s, &_l%d, %s, %s);",
+                               out, mf, arena, id, gen_expr(e->args[i], arena),
                                gen_expr(e->args[i + 1], arena));
                 return sfmt("%s _l%d; })", out, id);
             }
@@ -2060,7 +2081,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 char *k = gen_expr(s->expr->args[1], mo);
                 char *v = gen_expr(s->expr->args[2], mo);
                 indent(o, ind);
-                fprintf(o, "hier_map_si_put(%s, %s, %s, %s);\n", mo, mp, k, v);
+                fprintf(o, "hier_map_%s_put(%s, %s, %s, %s);\n", map_fn(s->expr->type), mo, mp, k, v);
                 break;
             }
             /* in-place map delete: `m = map_del(m, k)` tombstones in place. No
@@ -2072,7 +2093,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                                                               : sfmt("&h_%s", s->name);
                 char *k = gen_expr(s->expr->args[1], mo);
                 indent(o, ind);
-                fprintf(o, "hier_map_si_del(%s, %s);\n", mp, k);
+                fprintf(o, "hier_map_%s_del(%s, %s);\n", map_fn(s->expr->type), mp, k);
                 break;
             }
             char *v = gen_expr(s->expr, owner);
@@ -2207,17 +2228,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n", c_type(ret), v, rf);
                 }
-            } else if (ret == T_MAP_SI) {
+            } else if (is_map(ret)) {
                 /* promote up, exactly like the array cases: a bare map variable
                  * is only a value whose tables live in this scope, so deep-copy
                  * into the caller's arena before freeing — UNLESS the return-slot
                  * optimization already built it in _parent (then a no-op move). */
                 if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
                     char *v = gen_expr(s->expr, "&_scope");
-                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = hier_map_si_copy(_parent, %s); %s return _ret; }\n", v, rf);
+                    indent(o, ind); fprintf(o, "{ %s_ret = hier_map_%s_copy(_parent, %s); %s return _ret; }\n", c_type(ret), map_fn(ret), v, rf);
                 } else {
                     char *v = gen_expr(s->expr, "_parent");
-                    indent(o, ind); fprintf(o, "{ HierMapSI _ret = %s; %s return _ret; }\n", v, rf);
+                    indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n", c_type(ret), v, rf);
                 }
             } else if ((IS_STRUCT(ret) || IS_OPT(ret)) && type_is_heap(ret)) {
                 /* promote up. A heap struct/Option built from a *place* is

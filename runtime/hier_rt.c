@@ -561,3 +561,117 @@ int hier_map_si_eq(HierMapSI x, HierMapSI y) {
         }
     return 1;
 }
+
+/* ----------------------------------------------------------- Map(string,float)
+ * Exactly HierMapSI with `double` values (string keys, float values) — the
+ * same open-addressing / tombstone table, sharing hier_map_live, hier_si_hash,
+ * and the tombstone sentinel. Only the value word's type differs. */
+typedef struct { char **keys; double *vals; long len; long cap; long used; } HierMapSF;
+
+HierMapSF hier_map_sf_with_cap(Arena *a, long cap) {
+    HierMapSF m;
+    long c = 8; while (c < cap) c *= 2;
+    if (cap == 0) c = 0;
+    m.cap = c; m.len = 0; m.used = 0;
+    if (c == 0) { m.keys = NULL; m.vals = NULL; return m; }
+    m.keys = (char **) arena_alloc(a, (size_t)c * sizeof(char *));
+    m.vals = (double *)arena_alloc(a, (size_t)c * sizeof(double));
+    for (long i = 0; i < c; i++) m.keys[i] = NULL;
+    return m;
+}
+
+static long hier_map_sf_find(HierMapSF m, const char *k) {
+    if (m.cap == 0) return -1;
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_si_hash(k) & mask);
+    while (m.keys[i] != NULL) {
+        if (m.keys[i] != HIER_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return -1;
+}
+
+static long hier_map_sf_slot(HierMapSF m, const char *k) {
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_si_hash(k) & mask);
+    long tomb = -1;
+    while (m.keys[i] != NULL) {
+        if (m.keys[i] == HIER_MAP_TOMB) { if (tomb < 0) tomb = i; }
+        else if (strcmp(m.keys[i], k) == 0) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return tomb >= 0 ? tomb : i;
+}
+
+void hier_map_sf_put(Arena *a, HierMapSF *m, const char *k, double v) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
+                                              : (m->cap ? m->cap : 8);
+        HierMapSF n = hier_map_sf_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (hier_map_live(m->keys[i])) {
+                long s = hier_map_sf_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
+            }
+        *m = n;
+    }
+    long s = hier_map_sf_slot(*m, k);
+    if (!hier_map_live(m->keys[s])) {
+        if (m->keys[s] == NULL) m->used++;
+        m->keys[s] = hier_str_copy(a, k);
+        m->len++;
+    }
+    m->vals[s] = v;
+}
+
+void hier_map_sf_del(HierMapSF *m, const char *k) {
+    long s = hier_map_sf_find(*m, k);
+    if (s < 0) return;
+    m->keys[s] = HIER_MAP_TOMB;
+    m->len--;
+}
+
+HierMapSF hier_map_sf_copy(Arena *a, HierMapSF src) {
+    HierMapSF r = hier_map_sf_with_cap(a, src.len ? src.len * 2 : 0);
+    for (long i = 0; i < src.cap; i++)
+        if (hier_map_live(src.keys[i])) hier_map_sf_put(a, &r, src.keys[i], src.vals[i]);
+    return r;
+}
+
+HierMapSF hier_map_sf_set(Arena *a, HierMapSF m, const char *k, double v) {
+    HierMapSF r = hier_map_sf_copy(a, m);
+    hier_map_sf_put(a, &r, k, v);
+    return r;
+}
+
+HierMapSF hier_map_sf_del_pure(Arena *a, HierMapSF m, const char *k) {
+    HierMapSF r = hier_map_sf_copy(a, m);
+    hier_map_sf_del(&r, k);
+    return r;
+}
+
+double hier_map_sf_get(HierMapSF m, const char *k, double dflt) {
+    long s = hier_map_sf_find(m, k);
+    return s < 0 ? dflt : m.vals[s];
+}
+
+int hier_map_sf_has(HierMapSF m, const char *k) {
+    return hier_map_sf_find(m, k) >= 0;
+}
+
+HierArrStr hier_map_sf_keys(Arena *a, HierMapSF m) {
+    HierArrStr r = hier_arr_str_with_cap(a, m.len);
+    for (long i = 0; i < m.cap; i++)
+        if (hier_map_live(m.keys[i])) hier_arr_str_push(a, &r, m.keys[i]);
+    return r;
+}
+
+int hier_map_sf_eq(HierMapSF x, HierMapSF y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.cap; i++)
+        if (hier_map_live(x.keys[i])) {
+            long s = hier_map_sf_find(y, x.keys[i]);
+            if (s < 0 || y.vals[s] != x.vals[i]) return 0;
+        }
+    return 1;
+}

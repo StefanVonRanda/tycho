@@ -1,0 +1,33 @@
+fn yn(b: bool) -> string:
+    if b:
+        return "T"
+    return "F"
+
+fn total(m: [string: float]) -> float:
+    ks := keys(m)
+    s := 0.0
+    for i in range(len(ks)):
+        s = s + map_get(m, ks[i], 0.0)
+    return s
+
+fn bump(m: inout [string: float], k: string, by: float):
+    m = map_set(m, k, map_get(m, k, 0.0) + by)
+
+fn main():
+    prices := ["apple": 1.5, "pear": 2.25]
+    prices = map_set(prices, "fig", 0.75)
+    print("apple=" + str(map_get(prices, "apple", 0.0)) + " len=" + str(len(prices)) + "\n")
+    print("total=" + str(total(prices)) + "\n")
+    print("has_pear=" + yn(map_has(prices, "pear")) + " has_x=" + yn(map_has(prices, "x")) + "\n")
+    snap := prices
+    prices = map_set(prices, "apple", 9.0)
+    print("snap_apple=" + str(map_get(snap, "apple", 0.0)) + " now=" + str(map_get(prices, "apple", 0.0)) + "\n")
+    prices = map_del(prices, "fig")
+    print("after_del len=" + str(len(prices)) + " fig?=" + yn(map_has(prices, "fig")) + "\n")
+    acc := []string: float
+    bump(&acc, "a", 1.5)
+    bump(&acc, "a", 2.5)
+    print("acc_a=" + str(map_get(acc, "a", 0.0)) + " len=" + str(len(acc)) + "\n")
+    counts := ["x": 1, "y": 2]
+    counts = map_set(counts, "x", map_get(counts, "x", 0) + 10)
+    print("int x=" + str(map_get(counts, "x", 0)) + "\n")
