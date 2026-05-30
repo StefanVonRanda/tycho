@@ -1,27 +1,32 @@
 #!/bin/sh
-# Differential test harness — the verification standard from docs/thesis.md §3.
+# Differential + golden test harness — the verification standard from
+# docs/thesis.md §3, plus an expected-output check.
 #
 # For every .hi program in examples/ and tests/, transpile it, build BOTH a
 # native -O2 binary and an AddressSanitizer+UBSan binary, run both on the same
 # stdin, and assert:
 #   (a) both exit 0,
 #   (b) the sanitizer binary reports no memory / undefined-behaviour error,
-#   (c) the two outputs are byte-identical.
+#   (c) the two outputs are byte-identical,
+#   (d) the output matches the committed golden tests/<name>.out.
 #
-# (c) is the core check: any undefined behaviour the optimizer and the
-# sanitizer disagree on shows up as an output diff. UB aborts the run
-# (-fno-sanitize-recover=all), so (a) catches it too.
+# (c) catches undefined behaviour the optimizer and the sanitizer disagree on.
+# But (c) does NOT catch a miscompile that produces the SAME wrong output in
+# both builds (e.g. reading a double array slot as a long) — both agree, just
+# wrongly. (d) is what catches that: the golden is the recorded correct output,
+# so any value regression fails the build instead of needing a human to notice.
+#
+# Goldens are recorded only by `make test-update` (RECORD=1), never by a normal
+# run — so a regression can't silently rebake itself into the expected file.
+# Review the diff before committing a re-record.
 #
 # Leak detection is ON: under the implicit-arena model every scope frees its
 # arena at exit (including main's), so at normal process exit nothing should
-# remain allocated. A LeakSanitizer report therefore means a real bug — a
-# missing arena free — most likely an early `return` that skipped an enclosing
-# loop/if scratch arena. (This is the regression guard for the loop-return
-# leak: that bug made memory grow linearly with the number of returns-from-loop;
-# LSan now catches any reintroduction.)
+# remain allocated. A LeakSanitizer report means a real bug — a missing arena
+# free — most likely an early `return` that skipped a loop/if scratch arena.
 #
 # A program may supply fixture stdin as tests/<name>.in (else /dev/null is fed).
-# Exit status: 0 iff every program passes.
+# Exit status: 0 iff every program passes (or, under RECORD=1, builds + runs).
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
@@ -29,12 +34,16 @@ HIERC=./hierc
 [ -x "$HIERC" ] || { echo "no ./hierc — run 'make' first"; exit 2; }
 
 CC="${CC:-cc}"
+RECORD="${RECORD:-0}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export ASAN_OPTIONS=detect_leaks=1
 
+[ "$RECORD" = 1 ] && echo "*** RECORD MODE: rewriting tests/*.out goldens — review the diff before committing ***"
+
 pass=0
 fail=0
+recorded=0
 fails=""
 
 # note a problem (prints only); the per-program tally happens once in run_one.
@@ -47,6 +56,7 @@ run_one() {
     nat="$TMP/$name.native"
     san="$TMP/$name.asan"
     in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
+    g="tests/$name.out"
     ok=1
 
     if ! "$HIERC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
@@ -71,6 +81,21 @@ run_one() {
         fi
     fi
 
+    # record mode: if the build/run was clean, (over)write the golden and stop.
+    if [ "$RECORD" = 1 ]; then
+        if [ "$ok" -eq 1 ]; then cp "$TMP/$name.nout" "$g"; echo "rec   $name"; recorded=$((recorded + 1))
+        else fail=$((fail + 1)); fails="$fails $name"; fi
+        return
+    fi
+
+    # (d) golden comparison
+    if [ "$ok" -eq 1 ] && [ ! -f "$g" ]; then
+        note "$name" "no golden — run 'make test-update'"; ok=0
+    elif [ "$ok" -eq 1 ] && ! cmp -s "$TMP/$name.nout" "$g"; then
+        note "$name" "output != golden ($g)"
+        diff "$g" "$TMP/$name.nout" | head | sed 's/^/      /'; ok=0
+    fi
+
     if [ "$ok" -eq 1 ]; then echo "ok    $name"; pass=$((pass + 1))
     else fail=$((fail + 1)); fails="$fails $name"; fi
 }
@@ -81,6 +106,12 @@ for hi in examples/*.hi tests/*.hi; do
 done
 
 echo "-----------------------------------------"
+if [ "$RECORD" = 1 ]; then
+    echo "recorded: $recorded   failed: $fail"
+    [ "$fail" -eq 0 ] || { echo "failed:$fails"; exit 1; }
+    echo "goldens written — review 'git diff tests/' before committing"
+    exit 0
+fi
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || { echo "failed:$fails"; exit 1; }
 echo "all green"

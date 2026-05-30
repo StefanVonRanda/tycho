@@ -1,0 +1,9 @@
+pi=3.14159 2pi=6.28318
+truediv=3.5
+intdiv=3
+neg=-3.14159
+whole=4.0
+cmp-ok
+mag2=25.0
+avg=2.5
+trunc=3

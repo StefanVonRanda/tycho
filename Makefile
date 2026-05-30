@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test image static clean
+.PHONY: all demo test test-update image static clean
 
 all: hierc
 
@@ -41,6 +41,12 @@ demo: hierc
 # tests/run.sh and docs/thesis.md §3.
 test: hierc
 	@sh tests/run.sh
+
+# Re-record the expected-output goldens (tests/*.out) from current output.
+# Opt-in only: a normal `make test` never writes them, so a regression cannot
+# silently rebake itself into the expected files. Review `git diff tests/`.
+test-update: hierc
+	@RECORD=1 sh tests/run.sh
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .

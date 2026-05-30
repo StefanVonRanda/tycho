@@ -46,18 +46,23 @@ hello Ada
 | `make image` | Build the Alpine/musl podman image used for static builds. |
 | `make static HI=f.hi` | Produce a **fully static** Linux binary via podman. |
 | `make demo` | Build and run `examples/hello.hi`. |
-| `make test` | Run the differential test suite (see below). |
+| `make test` | Run the test suite (see below). |
+| `make test-update` | Re-record the expected-output goldens (review the diff). |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
 native `-O2` binary and one under `-fsanitize=address,undefined` — runs both on
-the same stdin, and asserts all three of: exit 0, no sanitizer report, and
-**byte-identical output** between the two builds. The byte-identical check is
-the teeth: any undefined behaviour the optimizer and the sanitizer disagree on
-surfaces as an output diff. Leak detection is on too: every scope frees its
-arena at exit (including `main`'s), so at normal exit nothing should remain
-allocated — a LeakSanitizer report means a real missing free (e.g. an early
-`return` that skipped an enclosing loop's scratch arena). This is the standard
+the same stdin, and asserts four things: exit 0, no sanitizer report,
+**byte-identical output** between the two builds, and that the output matches
+the committed golden `tests/<name>.out`. The byte-identical check catches
+undefined behaviour the optimizer and the sanitizer disagree on; the golden
+check catches the rest — a miscompile that produces the *same* wrong output in
+both builds (it agrees with itself, just wrongly) only shows up against the
+recorded correct output. Leak detection is on too: every scope frees its arena
+at exit (including `main`'s), so a LeakSanitizer report means a real missing
+free (e.g. an early `return` that skipped a loop's scratch arena). Goldens are
+rewritten only by `make test-update` — never by a normal run — so a regression
+can't silently rebake itself into the expected files. This is the standard
 described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 
 Apple's clang cannot statically link libc on macOS, so `make static`
@@ -402,8 +407,9 @@ podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
                    inout, memo, collect, context (.hi)
-tests/run.sh       differential test harness (native -O2 vs ASan/UBSan)
+tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
 tests/*.hi         dedicated regression programs (+ optional <name>.in stdin)
+tests/*.out        recorded expected output (goldens) for every test program
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 ```
