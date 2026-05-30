@@ -1790,8 +1790,23 @@ static void gen_proc(FILE *o, Proc *pr) {
                 g_heap_inout[g_nheap_inout++] = pr->params[i].name;
         }
     /* a reassigned param must land in this proc's scope to outlive any
-     * inner block; the incoming pointer itself is borrowed from the caller */
-    for (int i = 0; i < pr->nparams; i++) cv_push(pr->params[i].name, "&_scope");
+     * inner block; the incoming pointer itself is borrowed from the caller.
+     * EXCEPT a returned `string` parameter: its bytes already live in the
+     * caller's arena (_parent or an ancestor — a string param is a char* into
+     * the caller), and a string is immutable, so handing those same bytes back
+     * is both lifetime-safe and value-safe (no mutation can ever observe the
+     * aliasing). Track it as living in _parent so the return-slot path skips
+     * the O(n) deep copy; a reassignment of such a param then also stores into
+     * _parent — always memory-safe, at most mild retention. Strings only:
+     * arrays are mutable (aliasing would break value semantics) and heap
+     * structs are deep-copied into _scope on entry (bytes not in _parent). */
+    for (int i = 0; i < pr->nparams; i++) {
+        const char *pa = "&_scope";
+        if (pr->params[i].type == T_STRING && !pr->params[i].is_inout
+            && name_escapes(pr->params[i].name))
+            pa = "_parent";
+        cv_push(pr->params[i].name, pa);
+    }
     /* Structs are passed by value, but C copies them shallowly — a heap field
      * (string/array) still points at the caller's bytes. Deep-copy heap-
      * bearing struct params into this scope so the parameter is a truly
