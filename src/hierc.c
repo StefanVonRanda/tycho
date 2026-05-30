@@ -67,7 +67,7 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
@@ -103,6 +103,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "and"))    return TK_AND;
     if (!strcmp(s, "or"))     return TK_OR;
     if (!strcmp(s, "not"))    return TK_NOT;
+    if (!strcmp(s, "match"))  return TK_MATCH;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -263,7 +264,8 @@ static TokVec lex(const char *src) {
  * T_STRUCT_BASE name a struct (id = value - base). The primitive enum
  * constants keep working in every existing == and switch. */
 typedef int Type;
-enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT };
+enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT,
+       T_NONE /* type of a bare `None` until context fixes its concrete Option type */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -290,10 +292,11 @@ static int struct_find(const char *name) {
  * range; the element is interned before its container, so id order is a valid
  * emit order. */
 #define T_ARRC_BASE 1024
+#define T_OPT_BASE  4096   /* defined here so IS_ARRC's upper bound can reference it */
 typedef struct { Type elem; } ArrType;
 static ArrType g_arrtypes[256];
 static int g_narrtypes = 0;
-#define IS_ARRC(t)  ((t) >= T_ARRC_BASE)
+#define IS_ARRC(t)  ((t) >= T_ARRC_BASE && (t) < T_OPT_BASE)   /* options sit above */
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
 static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
     for (int i = 0; i < g_narrtypes; i++)
@@ -312,6 +315,23 @@ static Type arr_elem(Type arr) {
     return T_INT;   /* T_ARRAY_INT */
 }
 
+/* Option(T) — a tagged optional (Some(value) or None). Interned like composite
+ * arrays; one monomorphic HierOpt<id> { char has; T val; } is generated per
+ * inner type used. Ids sit above the array range (T_OPT_BASE, defined above). */
+typedef struct { Type inner; } OptType;
+static OptType g_opttypes[256];
+static int g_nopttypes = 0;
+#define IS_OPT(t)  ((t) >= T_OPT_BASE)
+#define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
+static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
+    for (int i = 0; i < g_nopttypes; i++)
+        if (g_opttypes[i].inner == inner) return T_OPT_BASE + i;
+    if (g_nopttypes >= 256) { fprintf(stderr, "hierc: too many option types\n"); exit(1); }
+    g_opttypes[g_nopttypes].inner = inner;
+    return T_OPT_BASE + g_nopttypes++;
+}
+static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
+
 /* A "heap" type owns arena-allocated bytes outside its own value word(s):
  * string (char* into an arena), [int]/[string] (a buffer), or any struct
  * that (transitively) contains such a field. int/bool and pure structs are
@@ -321,6 +341,7 @@ static Type arr_elem(Type arr) {
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
     if (t == T_STRING || t == T_MAP_SI || is_array(t)) return 1;
+    if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
         for (int i = 0; i < sd->nfields; i++)
@@ -334,6 +355,7 @@ static int type_is_heap(Type t) {
 static const char *c_type(Type t) {
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t))   return sfmt("HierArrC%d ", ARRC_ID(t));
+    if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
     switch (t) {
         case T_INT:          return "long ";
         case T_FLOAT:        return "double ";
@@ -349,7 +371,9 @@ static const char *c_type(Type t) {
 static const char *type_name(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
+    if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
     switch (t) {
+        case T_NONE:         return "None";
         case T_INT:          return "int";
         case T_FLOAT:        return "float";
         case T_BOOL:         return "bool";
@@ -382,7 +406,7 @@ static Type arr_of(Type elem) {
 }
 
 typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
-               E_STRUCTLIT, E_FIELD, E_ADDR } ExprKind;
+               E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -398,7 +422,7 @@ struct Expr {
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
-               S_INDEXSET, S_FIELDSET, S_EXPR } StmtKind;
+               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH } StmtKind;
 
 typedef struct Stmt Stmt;
 struct Stmt {
@@ -458,9 +482,17 @@ static Type parse_type(Parser *ps) {
             die_at(t->line, "only [string: int] maps are supported");
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID || elem == T_BOOL)
+        if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
             die_at(t->line, "array elements must be int, float, string, a struct, or an array");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
+    }
+    if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
+        ps->p++;
+        eat(ps, TK_LPAREN, "'(' after Option");
+        Type inner = parse_type(ps);
+        eat(ps, TK_RPAREN, "')'");
+        if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
+        return opt_of(inner);
     }
     if (t->kind == TK_IDENT) {           /* a struct name */
         int sid = struct_find(t->text);
@@ -513,7 +545,7 @@ static Expr *parse_primary(Parser *ps) {
                 else die_at(t->line, "only [string: int] maps are supported");
                 return e;
             }
-            if (elem == T_VOID || elem == T_BOOL)
+            if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -551,6 +583,15 @@ static Expr *parse_primary(Parser *ps) {
     }
     if (t->kind == TK_IDENT) {
         ps->p++;
+        if (!strcmp(t->text, "None"))      /* the bare None literal */
+            return new_expr(E_NONE, t->line);
+        if (!strcmp(t->text, "Some")) {    /* Some(value) */
+            eat(ps, TK_LPAREN, "'(' after Some");
+            Expr *e = new_expr(E_SOME, t->line);
+            e->lhs = parse_expr(ps);
+            eat(ps, TK_RPAREN, "')'");
+            return e;
+        }
         if (at(ps, TK_LPAREN)) {           /* call */
             ps->p++;
             Expr *e = new_expr(E_CALL, t->line);
@@ -724,6 +765,43 @@ static Stmt *parse_stmt(Parser *ps) {
         eat(ps, TK_NEWLINE, "newline");
         return s;
     }
+    if (t->kind == TK_MATCH) {
+        ps->p++;
+        Stmt *s = new_stmt(S_MATCH, t->line);
+        s->expr = parse_expr(ps);                 /* the Option being matched */
+        eat(ps, TK_COLON, "':' before the match arms");
+        eat(ps, TK_NEWLINE, "newline");
+        eat(ps, TK_INDENT, "indented match arms");
+        int have_some = 0, have_none = 0;
+        while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+            Tok *arm = cur(ps);
+            if (arm->kind != TK_IDENT) die_at(arm->line, "a match arm is `Some(name):` or `None:`");
+            ps->p++;
+            if (!strcmp(arm->text, "Some")) {
+                if (have_some) die_at(arm->line, "duplicate Some arm");
+                eat(ps, TK_LPAREN, "'(' after Some");
+                Tok *bind = eat(ps, TK_IDENT, "a name to bind the Some value");
+                eat(ps, TK_RPAREN, "')'");
+                eat(ps, TK_COLON, "':' after the arm");
+                eat(ps, TK_NEWLINE, "newline");
+                s->name = bind->text;
+                s->body = parse_block(ps, &s->nbody);
+                have_some = 1;
+            } else if (!strcmp(arm->text, "None")) {
+                if (have_none) die_at(arm->line, "duplicate None arm");
+                eat(ps, TK_COLON, "':' after None");
+                eat(ps, TK_NEWLINE, "newline");
+                s->els = parse_block(ps, &s->nels);
+                have_none = 1;
+            } else {
+                die_at(arm->line, "a match arm is `Some(name):` or `None:`");
+            }
+        }
+        eat(ps, TK_DEDENT, "end of the match arms");
+        if (!have_some || !have_none)
+            die_at(t->line, "match on an Option must cover both Some and None");
+        return s;
+    }
     if (t->kind == TK_IF) {
         ps->p++;
         return parse_if(ps, t->line);
@@ -884,8 +962,8 @@ static void parse_struct(Parser *ps) {
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, bool, string, [int], [string], or struct */
-        if (IS_ARRC(ft))            /* v1: avoids the struct<->array emit cycle */
-            die_at(fn->line, "a struct field cannot be an array of structs or arrays yet");
+        if (IS_ARRC(ft) || IS_OPT(ft))   /* v1: avoids the struct<->generated-type emit cycle */
+            die_at(fn->line, "a struct field cannot be an array-of-struct/array or an Option yet");
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -977,10 +1055,19 @@ static int is_cmp(TokKind op) {
            op == TK_GT   || op == TK_LE  || op == TK_GE;
 }
 
+static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+
 static Type resolve_expr(Expr *e) {
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
         case E_FLOAT:return e->type = T_FLOAT;
+        case E_NONE: return e->type = T_NONE;   /* concrete Option fixed by context */
+        case E_SOME: {
+            Type inner = resolve_expr(e->lhs);
+            if (inner == T_VOID || inner == T_NONE)
+                die_at(e->line, "Some(...) needs a concrete value");
+            return e->type = opt_of(inner);
+        }
         case E_BOOL: return e->type = T_BOOL;
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
@@ -1003,7 +1090,7 @@ static Type resolve_expr(Expr *e) {
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
             Type elem = resolve_expr(e->args[0]);
-            if (elem == T_VOID || elem == T_BOOL)
+            if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
                 die_at(e->line, "array elements must be int, float, string, a struct, or an array");
             for (int i = 1; i < e->nargs; i++)
                 if (resolve_expr(e->args[i]) != elem)
@@ -1155,7 +1242,7 @@ static Type resolve_expr(Expr *e) {
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
             for (int i = 0; i < e->nargs; i++) {
-                Type at_ = resolve_expr(e->args[i]);
+                Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
                 /* inout parameter: the argument must be `&place` naming a
                  * mutable variable (an lvalue we can write back through). A
                  * by-value param rejects `&`. */
@@ -1222,6 +1309,7 @@ static Type resolve_expr(Expr *e) {
                     if (lt != rt)
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
+                    if (IS_OPT(lt)) die_at(e->line, "cannot compare Option values; match on them instead");
                 } else {
                     int ok = (lt == T_INT && rt == T_INT) ||
                              (lt == T_FLOAT && rt == T_FLOAT) ||
@@ -1247,18 +1335,31 @@ static Type resolve_expr(Expr *e) {
     return T_VOID;
 }
 
+/* Resolve `e` where the surrounding context expects type `want`. The only thing
+ * this does beyond resolve_expr is fix a bare `None`'s concrete Option type from
+ * the context (a decl annotation, return type, assignment target, or param) —
+ * the one place None can learn which Option it is. The chosen type is written
+ * back onto the E_NONE node so codegen emits the right HierOpt. */
+static Type resolve_exp(Expr *e, Type want) {
+    Type t = resolve_expr(e);
+    if (t == T_NONE && IS_OPT(want)) return e->type = want;
+    return t;
+}
+
 static void resolve_block(Stmt **body, int n, Type ret);
 
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_DECL: {
-            Type t = resolve_expr(s->expr);
+            Type t = s->typed_decl ? resolve_exp(s->expr, s->annot) : resolve_expr(s->expr);
             if (t == T_VOID) die_at(s->line, "cannot bind a void value");
             if (s->typed_decl) {
                 if (t != s->annot)
                     die_at(s->line, "declared type %s but value is %s",
                            type_name(s->annot), type_name(t));
                 t = s->annot;
+            } else if (t == T_NONE) {
+                die_at(s->line, "cannot infer the type of None — annotate it (x : Option(T) = None)");
             }
             s->decl_type = t;
             vars_push(s->name, t, 1);
@@ -1268,7 +1369,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             Type vt;
             if (!vars_find(s->name, &vt))
                 die_at(s->line, "assignment to unknown variable '%s'", s->name);
-            Type t = resolve_expr(s->expr);
+            Type t = resolve_exp(s->expr, vt);
             if (t != vt)
                 die_at(s->line, "cannot assign %s to '%s' of type %s",
                        type_name(t), s->name, type_name(vt));
@@ -1276,7 +1377,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
         }
         case S_RETURN: {
             if (s->expr) {
-                Type t = resolve_expr(s->expr);
+                Type t = resolve_exp(s->expr, ret);
                 if (ret == T_VOID) die_at(s->line, "this proc returns nothing");
                 if (t != ret)
                     die_at(s->line, "returning %s but proc returns %s",
@@ -1291,6 +1392,17 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "if condition must be bool");
             resolve_block(s->body, s->nbody, ret);
             if (s->els) resolve_block(s->els, s->nels, ret);
+            break;
+        }
+        case S_MATCH: {
+            Type st = resolve_expr(s->expr);
+            if (!IS_OPT(st))
+                die_at(s->line, "match expects an Option value, got %s", type_name(st));
+            int m = vars_mark();
+            vars_push(s->name, opt_inner(st), 1);   /* Some(name): name is the inner value */
+            resolve_block(s->body, s->nbody, ret);
+            vars_restore(m);                         /* the binding is scoped to the Some arm */
+            resolve_block(s->els, s->nels, ret);
             break;
         }
         case S_WHILE: {
@@ -1570,6 +1682,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
         case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
         case T_MAP_SI:       return sfmt("hier_map_si_copy(%s, %s)", arena, val);
         default:
+            if (IS_OPT(t))
+                return type_is_heap(t) ? sfmt("hier_opt%d_copy(%s, %s)", OPT_ID(t), arena, val) : val;
             if (IS_ARRC(t))
                 return sfmt("hier_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
             if (IS_STRUCT(t) && type_is_heap(t))
@@ -1746,6 +1860,12 @@ static char *gen_expr(Expr *e, const char *arena) {
         }
         case E_BOOL: return sfmt("%ld", e->ival);
         case E_STR:  return sfmt("\"%s\"", e->sval);
+        case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */
+        case E_SOME: {
+            Type inner = opt_inner(e->type);
+            char *v = gen_expr(e->lhs, arena);   /* deep-copy the value into the option */
+            return sfmt("(%s){ 1, %s }", c_type(e->type), copy_into(inner, arena, v));
+        }
         case E_IDENT:return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
                                                     : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
@@ -2099,10 +2219,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ HierMapSI _ret = %s; %s return _ret; }\n", v, rf);
                 }
-            } else if (IS_STRUCT(ret) && type_is_heap(ret)) {
-                /* promote up. A heap struct built from a *place* is deep-copied
-                 * into the caller's arena; a fresh struct literal/call is built
-                 * directly there (its construction re-homes any heap fields).
+            } else if ((IS_STRUCT(ret) || IS_OPT(ret)) && type_is_heap(ret)) {
+                /* promote up. A heap struct/Option built from a *place* is
+                 * deep-copied into the caller's arena; a fresh literal/call is
+                 * built directly there (construction re-homes any heap value).
                  * A return-slot local (already in _parent) needs neither — it's
                  * a no-op move, like the array cases above. */
                 if (s->expr->kind == E_IDENT && cv_in_parent(s->expr->sval)) {
@@ -2151,6 +2271,40 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else {
                 fprintf(o, "\n");
             }
+            break;
+        }
+        case S_MATCH: {
+            int oid = g_blk++;
+            char *scrut = gen_expr(s->expr, scope);
+            Type inner = opt_inner(s->expr->type);
+            indent(o, ind); fprintf(o, "{\n");
+            indent(o, ind + 1); fprintf(o, "%s_opt%d = %s;\n", c_type(s->expr->type), oid, scrut);
+            indent(o, ind + 1); fprintf(o, "if (_opt%d.has) {\n", oid);
+            /* Some(name): a child arena, then bind name to the option's value,
+             * deep-copied in so it is an independent local (like any binding). */
+            int bid = g_blk++;
+            indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
+            char *bs = sfmt("&_b%d", bid);
+            char *val = sfmt("_opt%d.val", oid);
+            indent(o, ind + 2);
+            fprintf(o, "%sh_%s = %s;\n", c_type(inner), s->name, copy_into(inner, bs, val));
+            int m = cv_mark();
+            cv_push(s->name, bs);
+            ascope_push(bs);
+            gen_block(o, s->body, s->nbody, ind + 2, bs, ret);
+            g_nascope--;
+            cv_restore(m);
+            indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+            indent(o, ind + 1); fprintf(o, "} else {\n");
+            int eid = g_blk++;
+            indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eid, scope);
+            char *es = sfmt("&_b%d", eid);
+            ascope_push(es);
+            gen_block(o, s->els, s->nels, ind + 2, es, ret);
+            g_nascope--;
+            indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eid);
+            indent(o, ind + 1); fprintf(o, "}\n");
+            indent(o, ind); fprintf(o, "}\n");
             break;
         }
         case S_WHILE: {
@@ -2401,6 +2555,20 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
+    }
+    /* generated Option types, in interning order (inner interned first, and
+     * structs/arrays emitted above). A copy fn is emitted only when the value
+     * is heap (it re-homes the value when present); a pure Option is copied by
+     * its plain struct assignment. */
+    for (int i = 0; i < g_nopttypes; i++) {
+        Type it = g_opttypes[i].inner;
+        fprintf(o, "typedef struct { char has; %sval; } HierOpt%d;\n", c_type(it), i);
+        if (type_is_heap(it)) {
+            fprintf(o,
+                "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v) {\n"
+                "    if (v.has) v.val = %s;\n"
+                "    return v;\n}\n\n", i, i, i, copy_into(it, "a", "v.val"));
+        }
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);

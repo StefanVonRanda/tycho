@@ -1,0 +1,74 @@
+# Option(T) + exhaustive match: Some/None, None typed from return/param/
+# annotation, the Some binding, and inner types int, string (heap), a struct,
+# an array, and nested Option(Option(int)). Deterministic so the differential
+# + golden harness checks the values.
+
+struct P:
+    x: int
+    y: int
+
+fn index_of(xs: [int], target: int) -> Option(int):
+    for i in range(len(xs)):
+        if xs[i] == target:
+            return Some(i)
+    return None
+
+fn describe(o: Option(string)) -> string:
+    match o:
+        Some(s):
+            return "got:" + s
+        None:
+            return "nothing"
+
+fn origin_or(o: Option(P)) -> int:
+    match o:
+        Some(p):
+            return p.x + p.y
+        None:
+            return -1
+
+fn main():
+    xs := [10, 20, 30, 40]
+    match index_of(xs, 30):
+        Some(i):
+            print("at " + str(i) + "\n")
+        None:
+            print("missing\n")
+    match index_of(xs, 99):
+        Some(i):
+            print("at " + str(i) + "\n")
+        None:
+            print("missing\n")
+
+    print(describe(Some("hi")) + "\n")
+    print(describe(None) + "\n")
+
+    box : Option(string) = None
+    match box:
+        Some(s):
+            print("box " + s + "\n")
+        None:
+            print("box empty\n")
+
+    print("pt " + str(origin_or(Some(P(3, 4)))) + "\n")
+    print("pt " + str(origin_or(None)) + "\n")
+
+    # Option of an array (heap inner)
+    oa : Option([int]) = Some([1, 2, 3])
+    match oa:
+        Some(a):
+            print("arr len " + str(len(a)) + " a1 " + str(a[1]) + "\n")
+        None:
+            print("no arr\n")
+
+    # nested Option(Option(int))
+    nn := Some(Some(5))
+    match nn:
+        Some(inner):
+            match inner:
+                Some(v):
+                    print("nested " + str(v) + "\n")
+                None:
+                    print("inner none\n")
+        None:
+            print("outer none\n")

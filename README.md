@@ -120,9 +120,10 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 
 ### Types
 
-`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `[int]`,
-`[float]`, and `[string]` (growable arrays), `[string: int]` (a string-keyed
-map), and user-defined `struct`s.
+`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, arrays
+(`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), `[string: int]` (a
+string-keyed map), `Option(T)` (a value or nothing — the no-`null` story), and
+user-defined `struct`s.
 
 ### Structs
 
@@ -276,6 +277,35 @@ O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
 *Not yet:* value types other than `int` (`[string: int]` is the only map).
+
+### Option and `match`
+
+`Option(T)` is a value that is either `Some(x)` or `None` — the no-`null`
+story. You build one with `Some(value)` or `None`, and you take it apart with
+an **exhaustive `match`** (both arms required):
+
+```
+fn index_of(xs: [int], target: int) -> Option(int):
+    for i in range(len(xs)):
+        if xs[i] == target:
+            return Some(i)
+    return None                 # None's type comes from the return type
+
+fn main():
+    match index_of([10, 20, 30], 20):
+        Some(i):                # i is bound to the value (an int here)
+            print("found at " + str(i) + "\n")
+        None:
+            print("not found\n")
+```
+
+`None` has no type of its own, so it is only allowed where the expected type is
+known — a return type, a declaration annotation (`box : Option(string) = None`),
+an assignment target, or a call argument; a bare `x := None` is a compile error.
+`T` may be any type (`Option(string)`, `Option(Point)`, `Option([int])`, even
+`Option(Option(int))`); each is monomorphized to a tagged value and deep-copied
+by value like everything else. *Not yet:* `Option` as a struct field or array
+element, and comparing two options with `==` (match on them instead).
 
 ### Declarations and assignment
 
