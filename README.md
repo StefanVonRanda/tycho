@@ -315,9 +315,11 @@ known — a return type, a declaration annotation (`box : Option(string) = None`
 an assignment target, or a call argument; a bare `x := None` is a compile error.
 `T` may be any type (`Option(string)`, `Option(Point)`, `Option([int])`, even
 `Option(Option(int))`); each is monomorphized to a tagged value and deep-copied
-by value like everything else, and may be a struct field (`age: Option(int)`).
-*Not yet:* an `Option` as an array element, and comparing two options with `==`
-(match on them instead — though structs that *contain* options compare fine).
+by value like everything else, and may be a struct field (`age: Option(int)`)
+or an array element (`[Option(int)]` — a list of optionals; a `None` element
+takes its type from the others, so the first cannot be a bare `None`). *Not
+yet:* comparing two options with `==` (match on them instead — though structs
+that *contain* options compare fine).
 
 ### Declarations and assignment
 
@@ -458,8 +460,8 @@ None of this appears in Hier source.
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). You
   cannot mutate *through* an array element (`arr[i]` is a copy, so `arr[i].f = v`
-  / `push(arr[i].xs, v)` are rejected — rebuild the element instead), and an
-  array element cannot itself be an `Option`. Maps are string-keyed with
+  / `push(arr[i].xs, v)` are rejected — rebuild the element instead). Maps are
+  string-keyed with
   `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
   or value type yet; they support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator

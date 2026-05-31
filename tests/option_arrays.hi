@@ -1,0 +1,33 @@
+struct Point:
+    x: int
+    y: int
+
+fn defined_count(xs: [Option(int)]) -> int:
+    c := 0
+    for i in range(len(xs)):
+        match xs[i]:
+            Some(v):
+                c = c + v
+            None:
+                c = c + 0
+    return c
+
+fn main():
+    xs := [Some(1), None, Some(3)]
+    print("len=" + str(len(xs)) + " sum_defined=" + str(defined_count(xs)) + "\n")  # 3, 4
+    xs[1] = Some(10)                         # index-set an Option element
+    print("now=" + str(defined_count(xs)) + "\n")   # 14
+    push(xs, None)
+    print("after_push len=" + str(len(xs)) + "\n")  # 4
+    # copy independence
+    ys := xs
+    push(ys, Some(99))
+    print("xs_len=" + str(len(xs)) + " ys_len=" + str(len(ys)) + "\n")  # 4, 5
+
+    # array of Option(struct) (heap inner)
+    pts := [Some(Point(1, 2)), None]
+    match pts[0]:
+        Some(p):
+            print("p0=" + str(p.x) + "," + str(p.y) + "\n")  # 1,2
+        None:
+            print("none\n")

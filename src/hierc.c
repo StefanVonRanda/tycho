@@ -493,7 +493,7 @@ static Type parse_type(Parser *ps) {
             die_at(t->line, "maps are [string: int] or [string: float]");
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
+        if (elem == T_VOID || elem == T_BOOL)
             die_at(t->line, "array elements must be int, float, string, a struct, or an array");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -556,7 +556,7 @@ static Expr *parse_primary(Parser *ps) {
                 else die_at(t->line, "maps are [string: int] or [string: float]");
                 return e;
             }
-            if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
+            if (elem == T_VOID || elem == T_BOOL)
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -1118,10 +1118,12 @@ static Type resolve_expr(Expr *e) {
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
             Type elem = resolve_expr(e->args[0]);
-            if (elem == T_VOID || elem == T_BOOL || IS_OPT(elem))
-                die_at(e->line, "array elements must be int, float, string, a struct, or an array");
+            if (elem == T_VOID || elem == T_BOOL)
+                die_at(e->line, "array elements must be int, float, string, a struct, an array, or an Option");
+            if (elem == T_NONE)   /* the first element fixes the type, so it can't be a bare None */
+                die_at(e->line, "cannot infer the array's element type from None — put a Some(...) first");
             for (int i = 1; i < e->nargs; i++)
-                if (resolve_expr(e->args[i]) != elem)
+                if (resolve_exp(e->args[i], elem) != elem)   /* coerces a None element */
                     die_at(e->line, "array elements must all have the same type");
             return e->type = arr_of(elem);
         }
@@ -1265,7 +1267,7 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
                 Type want = arr_elem(arrt);
-                if (resolve_expr(e->args[1]) != want)
+                if (resolve_exp(e->args[1], want) != want)   /* coerces a None value */
                     die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
             }
@@ -1471,7 +1473,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (!is_lvalue(s->target->lhs))
                 die_at(s->line, "cannot index-assign through an array element (arr[i] is a copy)");
             Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
-            Type vt = resolve_expr(s->expr);
+            Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
             break;
@@ -1485,7 +1487,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (!is_lvalue(s->target))
                 die_at(s->line, "cannot assign to a field through an array element (arr[i] is a copy)");
             Type tt = resolve_expr(s->target);   /* E_FIELD -> field type */
-            Type vt = resolve_expr(s->expr);
+            Type vt = resolve_exp(s->expr, tt);  /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s field", type_name(vt), type_name(tt));
             break;
@@ -2552,7 +2554,7 @@ static void emit_aggregate(FILE *o, Type t) {
         Type inner = g_opttypes[id].inner;
         if (IS_STRUCT(inner) || IS_OPT(inner)) emit_aggregate(o, inner);
         g_opt_color[id] = 2;
-        if (o) fprintf(o, "typedef struct { char has; %sval; } HierOpt%d;\n", c_type(inner), id);
+        if (o) fprintf(o, "struct HierOpt%d_ { char has; %sval; };\n", id, c_type(inner));
     }
 }
 
@@ -2582,8 +2584,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
      *      the copy<->copy recursion (a struct's copy calls its array field's
      *      copy, which calls the element struct's copy),
      *   5-7. the function bodies. */
-    for (int i = 0; i < g_nstructs; i++)            /* (1) struct tags */
+    for (int i = 0; i < g_nstructs; i++)            /* (1) struct + Option tags, so */
         fprintf(o, "typedef struct S_%s_ S_%s;\n", g_structs[i].name, g_structs[i].name);
+    for (int i = 0; i < g_nopttypes; i++)           /* a pointer to either resolves */
+        fprintf(o, "typedef struct HierOpt%d_ HierOpt%d;\n", i, i);
     fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++)           /* (2) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
