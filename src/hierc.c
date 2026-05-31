@@ -2647,7 +2647,27 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
                       const char *scope, Type ret);
 
 static int block_ends_in_return(Stmt **body, int n) {
-    return n > 0 && body[n - 1]->kind == S_RETURN;
+    if (n <= 0) return 0;
+    Stmt *s = body[n - 1];
+    switch (s->kind) {
+        case S_RETURN:
+            return 1;
+        case S_MATCH:
+            /* match is exhaustive (enforced in checking); if every arm ends in
+             * a return, the whole match returns on every path. */
+            for (int i = 0; i < s->narms; i++)
+                if (!block_ends_in_return(s->arms[i].body, s->arms[i].nbody))
+                    return 0;
+            return s->narms > 0;
+        case S_IF:
+            /* only total when an else exists and both sides return (an elif
+             * chain is an S_IF nested in els, handled by the recursion). */
+            return s->nels > 0
+                && block_ends_in_return(s->body, s->nbody)
+                && block_ends_in_return(s->els, s->nels);
+        default:
+            return 0;
+    }
 }
 
 /* Stack of enclosing loop/if block arenas live at the current codegen point,
@@ -3256,7 +3276,7 @@ static void gen_proc(FILE *o, Proc *pr) {
         } else {
             /* defensive: a well-typed proc always returns on every path,
              * but keep cc quiet for ones that fall through */
-            indent(o, 1); fprintf(o, "arena_free(&_scope); return (%s)0;\n", c_type(pr->ret));
+            indent(o, 1); fprintf(o, "arena_free(&_scope); return (%s){0};\n", c_type(pr->ret));
         }
     }
     fprintf(o, "}\n\n");
