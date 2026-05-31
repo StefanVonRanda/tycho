@@ -150,8 +150,14 @@ cluster of languages, and the differences are the interesting part:
    instead of copied, turning the O(n²) comb *build* into O(n) (`bench/
    comb_build` measures ~2 MB vs ~368 MB at n=4000). The gate requires the
    name to occur exactly once in the RHS and to be a same-arena local, so a
-   mid-build snapshot still freezes correctly (`tests/loop_rebuild.hi`). Still
-   open: extending the payload borrow to `Option`/`Result` match arms.
+   mid-build snapshot still freezes correctly (`tests/loop_rebuild.hi`).
+   ✅ *Fifth step done: the payload borrow now covers `Option`/`Result` match
+   arms too.* A read-only `Some(xs)`/`Ok(xs)`/`Err(e)` binding borrows the
+   scrutinee's value (`h_xs = _m.okv`, no deep copy); a binding mutated in the
+   arm keeps its owning copy (`tests/optres_borrow.hi`). Tier 3 #8 is now
+   fully realized — reuse is proven from value semantics + lexical arenas
+   across binds, destructures, constructions, and loop-carried rebuilds, with
+   no reference counts.
 9. **SOA arrays** (Odin/Jai) — `#soa [N]Struct` cache-friendly layout; fits the
    value+arena model and the performance narrative.
 

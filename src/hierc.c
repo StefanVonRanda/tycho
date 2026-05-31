@@ -3128,9 +3128,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
                 char *bs = sfmt("&_b%d", bid);
                 indent(o, ind + 2);
+                int sborrow = type_is_heap(inner)
+                    && !block_mutates(some->body, some->nbody, some->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
-                        copy_into(inner, bs, sfmt("_m%d.val", mid)));
-                int m = cv_mark(); cv_push(some->binds[0], bs); ascope_push(bs);
+                        sborrow ? sfmt("_m%d.val", mid)
+                                : copy_into(inner, bs, sfmt("_m%d.val", mid)));
+                int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : bs); ascope_push(bs);
                 gen_block(o, some->body, some->nbody, ind + 2, bs, ret);
                 g_nascope--; cv_restore(m);
                 indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
@@ -3153,9 +3156,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
                 char *bs = sfmt("&_b%d", bid);
                 indent(o, ind + 2);
+                int okborrow = type_is_heap(okt)
+                    && !block_mutates(okarm->body, okarm->nbody, okarm->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
-                        copy_into(okt, bs, sfmt("_m%d.okv", mid)));
-                int m = cv_mark(); cv_push(okarm->binds[0], bs); ascope_push(bs);
+                        okborrow ? sfmt("_m%d.okv", mid)
+                                 : copy_into(okt, bs, sfmt("_m%d.okv", mid)));
+                int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : bs); ascope_push(bs);
                 gen_block(o, okarm->body, okarm->nbody, ind + 2, bs, ret);
                 g_nascope--; cv_restore(m);
                 indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
@@ -3164,9 +3170,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eb, scope);
                 char *es = sfmt("&_b%d", eb);
                 indent(o, ind + 2);
+                int errborrow = type_is_heap(errt)
+                    && !block_mutates(errarm->body, errarm->nbody, errarm->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
-                        copy_into(errt, es, sfmt("_m%d.errv", mid)));
-                int m2 = cv_mark(); cv_push(errarm->binds[0], es); ascope_push(es);
+                        errborrow ? sfmt("_m%d.errv", mid)
+                                  : copy_into(errt, es, sfmt("_m%d.errv", mid)));
+                int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : es); ascope_push(es);
                 gen_block(o, errarm->body, errarm->nbody, ind + 2, es, ret);
                 g_nascope--; cv_restore(m2);
                 indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
