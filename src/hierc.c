@@ -2169,6 +2169,59 @@ static int can_move_from(Expr *rhs, const char *owner) {
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
 }
 
+/* --- match-arm payload borrow (deep-copy elision) -----------------------
+ * Binding a heap enum payload field (`Add(l, r)` over an Expr) normally
+ * deep-copies that field's whole subtree into the arm's arena, so the
+ * binding is an independent owned value. But the scrutinee's payload memory
+ * already outlives the match (a param borrows the caller's; a local or
+ * temporary lives in an enclosing arena), and an enum value is immutable —
+ * so the binding can just BORROW the field (share the payload pointer) with
+ * no copy, exactly as an array parameter borrows its caller's buffer. The
+ * one exception is a binding that is MUTATED in the arm (a [int]/[string]
+ * payload that is push'd, element/field-assigned, reassigned, or passed
+ * `&`-inout): that write would reach through into the scrutinee and break
+ * value semantics, so such a binding keeps its owning copy. Same FBIP reuse
+ * as move-on-last-use, applied to destructuring: a match->reconstruct tree
+ * rewrite drops from O(n^2) copying to O(n). */
+static const char *place_root(Expr *e) {
+    while (e && (e->kind == E_FIELD || e->kind == E_INDEX ||
+                 e->kind == E_ADDR  || e->kind == E_SLICE)) e = e->lhs;
+    return (e && e->kind == E_IDENT) ? e->sval : NULL;
+}
+static int expr_mutates(Expr *e, const char *nm) {
+    if (!e) return 0;
+    if (e->kind == E_ADDR) {                  /* &nm... — an inout argument */
+        const char *r = place_root(e);
+        if (r && !strcmp(r, nm)) return 1;
+    }
+    if (e->kind == E_CALL && e->op != TK_ENUM /* push(nm..., x) grows nm */
+        && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1) {
+        const char *r = place_root(e->args[0]);
+        if (r && !strcmp(r, nm)) return 1;
+    }
+    if (expr_mutates(e->lhs, nm) || expr_mutates(e->rhs, nm)) return 1;
+    for (int i = 0; i < e->nargs; i++) if (expr_mutates(e->args[i], nm)) return 1;
+    return 0;
+}
+static int block_mutates(Stmt **body, int n, const char *nm) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (s->kind == S_ASSIGN && s->name && !strcmp(s->name, nm)) return 1;
+        if (s->kind == S_INDEXSET || s->kind == S_FIELDSET) {
+            const char *r = place_root(s->target);
+            if (r && !strcmp(r, nm)) return 1;
+        }
+        if (expr_mutates(s->expr, nm) || expr_mutates(s->target, nm)) return 1;
+        if (expr_mutates(s->r_start, nm) || expr_mutates(s->r_stop, nm)
+            || expr_mutates(s->r_step, nm)) return 1;
+        if (block_mutates(s->body, s->nbody, nm)) return 1;
+        if (block_mutates(s->els, s->nels, nm)) return 1;
+        for (int a = 0; a < s->narms; a++)
+            if (block_mutates(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
+    }
+    return 0;
+}
+
 /* --- return-slot optimization (escape analysis) -------------------------
  * A function-top-level local that is returned by name (`return r`) is
  * allocated in the caller's arena (_parent) from birth, so the return needs
@@ -3101,10 +3154,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         fprintf(o, "E_%s_%s *_p%d = (E_%s_%s *)_m%d.payload;\n",
                                 en, var->name, bid, en, var->name, mid);
                         for (int b = 0; b < arm->nbinds; b++) {
+                            char *field = sfmt("_p%d->f%d", bid, b);
+                            /* borrow the scrutinee's payload instead of deep-
+                             * copying it, unless this binding is mutated in
+                             * place in the arm (which would reach through). */
+                            int borrow = type_is_heap(var->payload[b])
+                                && !block_mutates(arm->body, arm->nbody, arm->binds[b]);
                             indent(o, ind + 2);
                             fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), arm->binds[b],
-                                    copy_into(var->payload[b], bs, sfmt("_p%d->f%d", bid, b)));
-                            cv_push(arm->binds[b], bs);
+                                    borrow ? field : copy_into(var->payload[b], bs, field));
+                            /* a borrowed binding owns no arena (like a param):
+                             * NULL keeps move-on-last-use from handing it off. */
+                            cv_push(arm->binds[b], borrow ? NULL : bs);
                         }
                     }
                     ascope_push(bs);

@@ -124,9 +124,18 @@ cluster of languages, and the differences are the interesting part:
    for params, so borrows are never moved). Like the accumulator reuse, it is
    FBIP proven from value semantics + lexical arenas rather than reference
    counts — and it generalizes the principle beyond the three hand-coded shapes
-   (the `bench/move` guard: ~126 MB moved vs ~187 MB copied). Still open: reuse
-   in match-arm reconstruction (the Perceus list/tree-rewrite case) and
-   construction-arg moves (`t := (a, b)` with `a`/`b` dead).
+   (the `bench/move` guard: ~126 MB moved vs ~187 MB copied). ✅ *Second step
+   done: match-arm payload borrow.* Destructuring a heap enum payload
+   (`Add(l, r)` over an `Expr`) used to deep-copy each field's whole subtree
+   into the arm; now the binding BORROWS the scrutinee's payload (shares the
+   pointer, like an array param borrows its caller's buffer), since the
+   scrutinee outlives the match and enum values are immutable. A binding that
+   is mutated in the arm (`push`/element-set/`&`-inout on a `[int]` payload)
+   keeps its owning copy, so the write can't reach through. This is the
+   Perceus tree-rewrite case: it drops a `match`→reconstruct pass (the
+   `examples/optimize.hi` optimizer, `tests/match_reuse.hi`) from O(n²) to
+   O(n) copying. Still open: construction-arg moves (`t := (a, b)` with
+   `a`/`b` dead), and extending the borrow to `Option`/`Result` arms.
 9. **SOA arrays** (Odin/Jai) — `#soa [N]Struct` cache-friendly layout; fits the
    value+arena model and the performance narrative.
 
