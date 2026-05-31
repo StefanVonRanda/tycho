@@ -976,9 +976,7 @@ static void parse_struct(Parser *ps) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
-        Type ft = parse_type(ps);   /* int, bool, string, [int], a struct, [Struct]/[[T]], ... */
-        if (IS_OPT(ft))             /* Option fields deferred (need a by-value type sort) */
-            die_at(fn->line, "a struct field cannot be an Option yet");
+        Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -1159,7 +1157,7 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "%s takes %d field value(s), got %d",
                            sd->name, sd->nfields, e->nargs);
                 for (int i = 0; i < e->nargs; i++) {
-                    Type at_ = resolve_expr(e->args[i]);
+                    Type at_ = resolve_exp(e->args[i], sd->fields[i].type);   /* fixes a None field */
                     if (at_ != sd->fields[i].type)
                         die_at(e->line, "field '%s' of %s is %s, got %s",
                                sd->fields[i].name, sd->name,
@@ -1752,6 +1750,11 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
     if (is_map(t))           return sfmt("hier_map_%s_eq(%s, %s)", map_fn(t), a, b);
     if (IS_ARRC(t))          return sfmt("hier_arr_C%d_eq(%s, %s)", ARRC_ID(t), a, b);
+    if (IS_OPT(t)) {         /* same tag, and equal values when both present */
+        Type in = opt_inner(t);
+        return sfmt("((%s).has == (%s).has && (!(%s).has || %s))",
+                    a, b, a, gen_eq(in, sfmt("(%s).val", a), sfmt("(%s).val", b)));
+    }
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
@@ -2506,6 +2509,64 @@ static void gen_proc(FILE *o, Proc *pr) {
     fprintf(o, "}\n\n");
 }
 
+/* Struct bodies and Option typedefs embed their members BY VALUE, so they must
+ * be emitted in containment order (composite-array typedefs are emitted before
+ * this — they hold only pointers, so they break cycles). A DFS with colouring
+ * (0 unvisited, 1 on-stack, 2 done) emits each in dependency order; a back-edge
+ * is an infinite type (a struct that contains itself by value), which is a real
+ * error — use an array or `Option([T])` for indirection. */
+static int g_struct_color[128];
+static int g_opt_color[256];
+static int g_emit_line;
+
+static void emit_aggregate(FILE *o, Type t) {
+    if (IS_STRUCT(t)) {
+        int id = STRUCT_ID(t);
+        if (g_struct_color[id] == 2) return;
+        if (g_struct_color[id] == 1)
+            die_at(g_emit_line, "infinite type: %s contains itself by value — "
+                   "use an array ([%s]) or Option([%s]) for indirection",
+                   g_structs[id].name, g_structs[id].name, g_structs[id].name);
+        g_struct_color[id] = 1;
+        int save = g_emit_line; g_emit_line = g_structs[id].line;
+        StructDef *sd = &g_structs[id];
+        for (int j = 0; j < sd->nfields; j++) {
+            Type ft = sd->fields[j].type;
+            if (IS_STRUCT(ft) || IS_OPT(ft)) emit_aggregate(o, ft);
+        }
+        g_emit_line = save;
+        g_struct_color[id] = 2;
+        if (o) {   /* o == NULL: a pure infinite-type check, no emit */
+            fprintf(o, "struct S_%s_ {\n", sd->name);
+            for (int j = 0; j < sd->nfields; j++)
+                fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
+            fprintf(o, "};\n");
+        }
+    } else {   /* IS_OPT */
+        int id = OPT_ID(t);
+        if (g_opt_color[id] == 2) return;
+        if (g_opt_color[id] == 1)
+            die_at(g_emit_line, "infinite type: an Option contains itself by value — "
+                   "use Option([T]) for indirection");
+        g_opt_color[id] = 1;
+        Type inner = g_opttypes[id].inner;
+        if (IS_STRUCT(inner) || IS_OPT(inner)) emit_aggregate(o, inner);
+        g_opt_color[id] = 2;
+        if (o) fprintf(o, "typedef struct { char has; %sval; } HierOpt%d;\n", c_type(inner), id);
+    }
+}
+
+/* Run the DFS purely to reject infinite (by-value self-containing) types, BEFORE
+ * the resolver runs — type_is_heap recurses through fields and would otherwise
+ * loop forever on such a type. */
+static void check_finite_types(void) {
+    for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
+    for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
+    g_emit_line = 0;
+    for (int i = 0; i < g_nstructs; i++)  emit_aggregate(NULL, STRUCT_TYPE(i));
+    for (int i = 0; i < g_nopttypes; i++) emit_aggregate(NULL, T_OPT_BASE + i);
+}
+
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(HIER_RUNTIME, o);
     fputs("\n/* ---- generated from Hier source ---- */\n\n", o);
@@ -2514,11 +2575,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
      *   1. forward-declare every struct tag,
      *   2. composite-array typedefs (each holds only a pointer + longs, so a
      *      struct element needs just its tag from step 1),
-     *   3. struct bodies (which can hold an array descriptor by value),
-     *   4. prototypes for the generated copy/eq + array ops — this breaks the
-     *      copy<->copy recursion (a struct's copy calls its array field's copy,
-     *      which calls the element struct's copy),
-     *   5-7. the function bodies, then the Option types. */
+     *   3. struct bodies AND Option typedefs, topologically by by-value
+     *      containment (a struct/Option embeds its members by value; the arrays
+     *      above, being pointers, already broke any cycle),
+     *   4. prototypes for the generated copy/eq + array/Option ops — this breaks
+     *      the copy<->copy recursion (a struct's copy calls its array field's
+     *      copy, which calls the element struct's copy),
+     *   5-7. the function bodies. */
     for (int i = 0; i < g_nstructs; i++)            /* (1) struct tags */
         fprintf(o, "typedef struct S_%s_ S_%s;\n", g_structs[i].name, g_structs[i].name);
     fputs("\n", o);
@@ -2526,13 +2589,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
     fputs("\n", o);
-    for (int i = 0; i < g_nstructs; i++) {          /* (3) struct bodies */
-        StructDef *sd = &g_structs[i];
-        fprintf(o, "struct S_%s_ {\n", sd->name);
-        for (int j = 0; j < sd->nfields; j++)
-            fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
-        fprintf(o, "};\n");
-    }
+    /* (3) struct bodies + Option typedefs in containment order (infinite types
+     * are rejected here). */
+    for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
+    for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
+    g_emit_line = 0;
+    for (int i = 0; i < g_nstructs; i++)  emit_aggregate(o, STRUCT_TYPE(i));
+    for (int i = 0; i < g_nopttypes; i++) emit_aggregate(o, T_OPT_BASE + i);
     fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
         const char *nm = g_structs[i].name;
@@ -2540,6 +2603,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static S_%s hier_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
         fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
     }
+    for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
+        if (type_is_heap(g_opttypes[i].inner))
+            fprintf(o, "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v);\n", i, i, i);
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
@@ -2620,19 +2686,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
     }
-    /* generated Option types, in interning order (inner interned first, and
-     * structs/arrays emitted above). A copy fn is emitted only when the value
-     * is heap (it re-homes the value when present); a pure Option is copied by
-     * its plain struct assignment. */
+    /* (8) Option copy bodies (typedefs already emitted in step 3). A copy fn is
+     * emitted only for a heap-valued Option; it re-homes the value when present.
+     * Recurses via copy_into, which may call a struct copy (above) — both are
+     * prototyped, so an Option(Struct) field copies correctly. */
     for (int i = 0; i < g_nopttypes; i++) {
         Type it = g_opttypes[i].inner;
-        fprintf(o, "typedef struct { char has; %sval; } HierOpt%d;\n", c_type(it), i);
-        if (type_is_heap(it)) {
+        if (type_is_heap(it))
             fprintf(o,
                 "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v) {\n"
                 "    if (v.has) v.val = %s;\n"
                 "    return v;\n}\n\n", i, i, i, copy_into(it, "a", "v.val"));
-        }
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
@@ -2691,6 +2755,7 @@ int main(int argc, char **argv) {
     char *src = read_file(input);
     TokVec toks = lex(src);
     ProcVec prog = parse_program(toks.v);
+    check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
 
     FILE *o = fopen(c_path, "wb");

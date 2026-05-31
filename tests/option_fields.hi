@@ -1,0 +1,57 @@
+# Struct fields that are Options: nullable scalar (Option(int)), nullable struct
+# (Option(Point)), nullable list (Option([Tree]) — indirection). Covers match on
+# a field, None in a constructor, deep-copy independence, and struct == over an
+# Option field. An infinite Option(Self) field is a separate compile error.
+
+struct Point:
+    x: int
+    y: int
+
+struct Person:
+    name: string
+    age: Option(int)
+    home: Option(Point)
+
+struct Tree:
+    v: int
+    kids: Option([Tree])
+
+fn describe(p: Person) -> string:
+    s := p.name
+    match p.age:
+        Some(a):
+            s = s + " age " + str(a)
+        None:
+            s = s + " age ?"
+    match p.home:
+        Some(pt):
+            s = s + " at " + str(pt.x) + "," + str(pt.y)
+        None:
+            s = s + " homeless"
+    return s
+
+fn yn(b: bool) -> string:
+    if b:
+        return "T"
+    return "F"
+
+fn main():
+    a := Person("Ada", Some(36), Some(Point(1, 2)))
+    b := Person("Bo", None, None)
+    print(describe(a) + "\n")
+    print(describe(b) + "\n")
+    snap := a
+    a = Person("Ada2", None, None)
+    print(describe(snap) + "\n")                 # snap unchanged: deep copy
+
+    # struct == recurses through the Option fields
+    a2 := Person("Ada", Some(36), Some(Point(1, 2)))
+    print("eq=" + yn(snap == a2) + " neq=" + yn(snap == b) + "\n")
+
+    # nullable list field
+    t := Tree(1, None)
+    match t.kids:
+        Some(ks):
+            print("has " + str(len(ks)) + " kids\n")
+        None:
+            print("leaf\n")

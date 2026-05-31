@@ -150,7 +150,11 @@ fn main():
 
 Fields may be `int`, `float`, `bool`, `string`, an array (including an array of
 structs — even of the struct being defined, so `children: [Node]` builds a
-recursive tree), or another struct. Structs are values: assignment, parameters,
+recursive tree), an `Option` (a nullable field, e.g. `age: Option(int)` or
+`home: Option(Point)`), or another struct. A field that would make a struct
+infinitely large by value (`next: Option(Node)` inside `Node`) is a compile
+error — use indirection (`[Node]` or `Option([Node])`). Structs are values:
+assignment, parameters,
 and returns all copy the whole value — and the copy is **deep**, so a field
 that owns heap bytes (`string`/array, at any nesting depth) is duplicated too —
 copying a tree copies the whole tree. Two struct
@@ -311,8 +315,9 @@ known — a return type, a declaration annotation (`box : Option(string) = None`
 an assignment target, or a call argument; a bare `x := None` is a compile error.
 `T` may be any type (`Option(string)`, `Option(Point)`, `Option([int])`, even
 `Option(Option(int))`); each is monomorphized to a tagged value and deep-copied
-by value like everything else. *Not yet:* `Option` as a struct field or array
-element, and comparing two options with `==` (match on them instead).
+by value like everything else, and may be a struct field (`age: Option(int)`).
+*Not yet:* an `Option` as an array element, and comparing two options with `==`
+(match on them instead — though structs that *contain* options compare fine).
 
 ### Declarations and assignment
 
@@ -451,10 +456,10 @@ None of this appears in Hier source.
 
 - No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
-  `[Node]`), but a struct field cannot yet be an `Option`, and you cannot mutate
-  *through* an array element (`arr[i]` is a copy, so `arr[i].f = v` /
-  `push(arr[i].xs, v)` are rejected — rebuild the element instead). Maps are
-  string-keyed with
+  `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). You
+  cannot mutate *through* an array element (`arr[i]` is a copy, so `arr[i].f = v`
+  / `push(arr[i].xs, v)` are rejected — rebuild the element instead), and an
+  array element cannot itself be an `Option`. Maps are string-keyed with
   `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
   or value type yet; they support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
