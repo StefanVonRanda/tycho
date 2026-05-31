@@ -101,14 +101,32 @@ cluster of languages, and the differences are the interesting part:
 
 ### Tier 3 — planned in the design doc / data-oriented perf
 
-6. **Slices** — non-owning array views (already listed in `arrays-structs.md`),
-   so passing a sub-array doesn't copy. Needs a non-storable borrow rule.
-7. **`distinct` newtypes** — zero-cost type safety (`type Meters = float`),
-   already listed as planned; borrowed from Odin/Tycho.
-8. **Generalized reuse analysis (Perceus/FBIP).** Promote the in-place
-   optimizations from the three hand-recognized accumulator shapes to *any*
-   uniquely-owned destructure→reconstruct. Deep, on-thesis, and the most
-   intellectually aligned with the FBIP framing above. Hard.
+6. **Slices** — ✅ *Implemented.* `xs[a:b]` (and `xs[a:]`/`xs[:b]`/`xs[:]`) is a
+   bounds-checked sub-range descriptor `{ data + a, b - a, 0 }`. The
+   non-storable-borrow rule falls out of the existing value semantics for free:
+   the view aliases the source buffer ONLY as a read-only argument (the same
+   zero-copy borrow an array param already is), and `is_place(E_SLICE)` makes
+   any bind/return/push deep-copy it into an owning array — so it can never be
+   stored while aliasing. No borrow checker; the one added rule rejects a slice
+   of `xs` alongside an `inout` of `xs` in one call. Works on every array type
+   and composes. Strings still use `substr` (a copy).
+7. **`distinct` newtypes** — ✅ *Implemented.* `type Meters = float` is a named
+   type interned in its own band; `c_type`/`type_is_heap`/`copy_into`/`gen_eq`
+   all delegate to the underlying, so it is genuinely zero-cost (a `Meters` *is*
+   a `double` in the C). `Meters(x)` wraps (identity at runtime), `to_int`/
+   `to_float` unwrap. Arithmetic/ordering/`str` are allowed only between two of
+   the SAME newtype — units can't be mixed with each other or the base. Scoped
+   to `int`/`float` underlying; `string`/`bool`/aggregate underlying deferred.
+8. **Generalized reuse analysis (Perceus/FBIP).** ✅ *First step done:
+   move-on-last-use.* `b := a` / `b = a` elides the deep copy and hands off
+   `a`'s buffer when `a` is a uniquely-owned local read exactly once (last use on
+   every path), not inside a loop, in the destination's arena (`cv_arena` is NULL
+   for params, so borrows are never moved). Like the accumulator reuse, it is
+   FBIP proven from value semantics + lexical arenas rather than reference
+   counts — and it generalizes the principle beyond the three hand-coded shapes
+   (the `bench/move` guard: ~126 MB moved vs ~187 MB copied). Still open: reuse
+   in match-arm reconstruction (the Perceus list/tree-rewrite case) and
+   construction-arg moves (`t := (a, b)` with `a`/`b` dead).
 9. **SOA arrays** (Odin/Jai) — `#soa [N]Struct` cache-friendly layout; fits the
    value+arena model and the performance narrative.
 

@@ -70,10 +70,11 @@ described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 correctness. Each `bench/*.hi` program exercises one optimization and asserts a
 single metric against a deliberately generous bound — peak RSS for the
 memory-shape claims (in-place string append, loop scratch reset, the map
-accumulator) and wall time for the `inout` memo. The bounds catch
-order-of-magnitude regressions, not jitter: the in-place append holds ~1.5 MB
-where the un-optimized path is ~825 MB at the same N, so the 32 MB bound sits
-firmly between a working and a broken optimization.
+accumulator, and move-on-last-use) and wall time for the `inout` memo. The
+bounds catch order-of-magnitude regressions, not jitter: the in-place append
+holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
+bound sits firmly between a working and a broken optimization; likewise the
+`move` bench holds ~126 MB where deep-copying the dead local would be ~187 MB.
 
 Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
@@ -125,8 +126,9 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 (`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
 no-exceptions error story), tuples `(T1, ..., Tn)` (anonymous products — the
-multiple-return-values story), user-defined `struct`s, and user-defined `enum`s
-(sum types / tagged unions, including recursive ones — ASTs).
+multiple-return-values story), user-defined `struct`s, user-defined `enum`s
+(sum types / tagged unions, including recursive ones — ASTs), and `type`
+newtypes (distinct, zero-cost aliases of `int`/`float`).
 
 ### Structs
 
@@ -249,9 +251,33 @@ fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
 
 An array parameter is passed as a borrow (no copy); mutating it in place is
 a compile error — copy it first (`b := a`) to get a mutable local, or take
-it `inout`. *Not yet:* a struct **field** of array-of-struct/array type (e.g.
-`struct Node: children: [Node]` — the recursive tree); use index references
-(a `[Node]` plus `[int]` child indices) for now.
+it `inout`.
+
+### Slices (`xs[a:b]`)
+
+`xs[a:b]` is a sub-range of an array — `xs[a:]` runs to the end, `xs[:b]` from
+the start, `xs[:]` is the whole thing (all bounds-checked: `0 ≤ a ≤ b ≤ len`).
+A slice behaves exactly like any array value, so its cost depends on what you do
+with it:
+
+```
+xs := [10, 20, 30, 40, 50]
+print(str(sum(xs[1:4])))      # passed to a read-only param: a ZERO-COPY view
+                              # (the descriptor aliases xs's buffer) -> 90
+mid := xs[1:4]                # stored: a deep copy, owning its own buffer
+```
+
+Passing a slice to a function that only reads its parameter costs nothing — the
+descriptor `{ data + a, b - a }` points into `xs`'s buffer, the same borrow an
+ordinary array argument already is. But the moment you **store** a slice
+(`mid := xs[1:4]`), **return** it, or **push** it somewhere, it deep-copies into
+an owning array — so value semantics still holds: mutating `xs` afterwards never
+touches `mid`. This keeps the view *non-storable* (it can never outlive or alias
+the buffer it came from) without any borrow checker. Slices work on every array
+type (`[int]`, `[string]`, `[Point]`, `[[int]]`) and compose (`xs[1:5][1:3]`).
+The one rule: you cannot pass a slice of `xs` and an `inout` of `xs` to the same
+call (the `inout` could reallocate the buffer the slice views). Strings use
+`substr(s, a, b)` (a copy), not slice syntax.
 
 ### Maps (`[string: int]`, `[string: float]`)
 
@@ -448,6 +474,36 @@ copy of the whole tree**; `==` compares structurally. Variant names are global
 (no `Enum.Variant` qualification). An enum may be a struct field, an array
 element (`[Expr]`), and so on. *Not yet:* generic/parameterised enums (besides
 the built-in `Option(T)`).
+
+### Distinct newtypes (`type`)
+
+`type Meters = float` declares a **distinct** type: it has the same runtime
+representation as its underlying type (zero cost — a `Meters` *is* a `double` in
+the generated C) but is type-incompatible with `float` and with every other
+newtype. The underlying type is `int` or `float`.
+
+```
+type Meters = float
+type Seconds = float
+
+fn area(w: Meters, h: Meters) -> Meters:
+    return w * h            # arithmetic stays in Meters
+
+fn main():
+    w := Meters(3.0)        # wrap a float into a Meters
+    a := area(w, Meters(4.0))
+    print(str(a))           # 12 -- str sees the underlying float
+    # area(3.0, 4.0)        -> error: a float is not a Meters
+    # w + Seconds(1.0)      -> error: can't mix two newtypes
+```
+
+A newtype value supports its base type's **arithmetic, ordering, `==`, and
+`str`** — but only between two values of the *same* newtype, so `Meters` and
+`Seconds` (or `Meters` and a bare `float`) never mix by accident. That is the
+whole point: zero-cost unit/ID safety. Construct one with `Meters(x)`; get the
+raw number back with `to_int(x)` / `to_float(x)`. A newtype works anywhere a
+type does — parameter, return, struct field, array element. *Not yet:* `string`,
+`bool`, or aggregate underlying types (only `int`/`float`).
 
 ### Declarations and assignment
 

@@ -67,7 +67,7 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
@@ -109,6 +109,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
     if (!strcmp(s, "enum"))   return TK_ENUM;
+    if (!strcmp(s, "type"))   return TK_TYPE;
     if (!strcmp(s, "inout"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
@@ -303,6 +304,7 @@ static int struct_find(const char *name) {
 #define T_RES_BASE  6144   /* Result(T,E), between the Option and enum ranges */
 #define T_ENUM_BASE 8192   /* user sum types, above the Result range */
 #define T_TUP_BASE  16384  /* tuples (T1, ..., Tn), above the (now bounded) enum range */
+#define T_NT_BASE   24576  /* distinct newtypes (type X = int/float), above tuples */
 typedef struct { Type elem; } ArrType;
 static ArrType g_arrtypes[256];
 static int g_narrtypes = 0;
@@ -397,7 +399,7 @@ static int variant_find(const char *vname, int *vi) {
 typedef struct { Type elems[8]; int n; } TupType;
 static TupType g_tuptypes[256];
 static int g_ntuptypes = 0;
-#define IS_TUP(t)  ((t) >= T_TUP_BASE)
+#define IS_TUP(t)  ((t) >= T_TUP_BASE && (t) < T_NT_BASE)
 #define TUP_ID(t)  ((int)((t) - T_TUP_BASE))
 static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
     for (int i = 0; i < g_ntuptypes; i++)
@@ -413,6 +415,27 @@ static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
 }
 static int  tup_n(Type t)         { return g_tuptypes[TUP_ID(t)].n; }
 static Type tup_elem(Type t, int i) { return g_tuptypes[TUP_ID(t)].elems[i]; }
+
+/* Distinct newtypes: `type Meters = float` declares a named type that is
+ * type-incompatible with its underlying type and with every other newtype, but
+ * has the SAME C representation (zero-cost). Underlying is int or float for now;
+ * a newtype value supports its base's arithmetic/ordering/str ONLY between two
+ * values of the SAME newtype, so units can't be mixed. Construct with Meters(x),
+ * unwrap with to_int/to_float. Named like structs; registered at parse time. */
+typedef struct { char *name; Type under; } NewtypeDef;
+static NewtypeDef g_newtypes[128];
+static int g_nnewtypes = 0;
+#define IS_NEWTYPE(t)  ((t) >= T_NT_BASE)
+#define NT_ID(t)       ((int)((t) - T_NT_BASE))
+#define NT_TYPE(id)    (T_NT_BASE + (id))
+static int newtype_find(const char *name) {
+    for (int i = 0; i < g_nnewtypes; i++)
+        if (!strcmp(g_newtypes[i].name, name)) return i;
+    return -1;
+}
+static Type nt_under(Type t) { return g_newtypes[NT_ID(t)].under; }
+/* the underlying type seen through any newtype (else the type itself) */
+static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
@@ -430,6 +453,7 @@ static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
  * to keep the implicit-arena model sound. Structs are defined before use, so
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
+    if (IS_NEWTYPE(t)) return type_is_heap(nt_under(t));   /* same rep as its base */
     if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_RES(t)) return type_is_heap(res_ok(t)) || type_is_heap(res_err(t));
@@ -454,6 +478,7 @@ static int type_is_heap(Type t) {
 /* trailing space so "%sh_name" / "%s_ret" / signatures all read right;
  * "char *" needs none because "char *h_name" is already valid */
 static const char *c_type(Type t) {
+    if (IS_NEWTYPE(t)) return c_type(nt_under(t));   /* zero-cost: emitted as its base C type */
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t))   return sfmt("HierArrC%d ", ARRC_ID(t));
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
@@ -474,6 +499,7 @@ static const char *c_type(Type t) {
     }
 }
 static const char *type_name(Type t) {
+    if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
@@ -524,7 +550,8 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT
                E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE, E_OK, E_ERR,
                E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
-               E_TUPIDX    /* t.0 / t.1: a tuple element by integer index (in ival) */ } ExprKind;
+               E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
+               E_SLICE     /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */ } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -642,11 +669,13 @@ static Type parse_type(Parser *ps) {
         if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
         return res_of(ok, err);
     }
-    if (t->kind == TK_IDENT) {           /* a struct or enum name */
+    if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
         int sid = struct_find(t->text);
         if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }
         int eid = enum_find(t->text);
         if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
+        int nid = newtype_find(t->text);
+        if (nid >= 0) { ps->p++; return NT_TYPE(nid); }
         die_at(t->line, "unknown type '%s'", t->text);
     }
     switch (t->kind) {
@@ -792,11 +821,26 @@ static Expr *parse_postfix(Parser *ps) {
     for (;;) {
         if (at(ps, TK_LBRACKET)) {
             Tok *t = cur(ps); ps->p++;
-            Expr *idx = parse_expr(ps);
+            /* xs[i] is an index; xs[a:b] / xs[a:] / xs[:b] / xs[:] is a slice.
+             * A ':' anywhere inside the brackets makes it a slice; either bound
+             * may be omitted (lo defaults to 0, hi to len). */
+            Expr *lo = NULL, *hi = NULL; int is_slice = 0;
+            if (at(ps, TK_COLON)) { is_slice = 1; ps->p++; if (!at(ps, TK_RBRACKET)) hi = parse_expr(ps); }
+            else {
+                lo = parse_expr(ps);
+                if (at(ps, TK_COLON)) { is_slice = 1; ps->p++; if (!at(ps, TK_RBRACKET)) hi = parse_expr(ps); }
+            }
             eat(ps, TK_RBRACKET, "']'");
-            Expr *ix = new_expr(E_INDEX, t->line);
-            ix->lhs = e; ix->rhs = idx;
-            e = ix;
+            if (is_slice) {
+                Expr *sl = new_expr(E_SLICE, t->line);
+                sl->lhs = e; sl->rhs = lo;          /* lo NULL => 0 */
+                if (hi) { sl->args = (Expr **)realloc(sl->args, sizeof(Expr *)); sl->args[0] = hi; sl->nargs = 1; }
+                e = sl;
+            } else {
+                Expr *ix = new_expr(E_INDEX, t->line);
+                ix->lhs = e; ix->rhs = lo;
+                e = ix;
+            }
         } else if (at(ps, TK_DOT)) {
             Tok *t = cur(ps); ps->p++;
             if (at(ps, TK_INT)) {              /* tuple index: t.0 / t.1 */
@@ -1223,6 +1267,23 @@ static void parse_enum(Parser *ps) {
     if (ed->nvariants == 0) die_at(nameT->line, "an enum needs at least one variant");
 }
 
+/* `type X = int` / `type X = float` — a distinct, zero-cost newtype. */
+static void parse_typedecl(Parser *ps) {
+    eat(ps, TK_TYPE, "'type'");
+    Tok *nameT = eat(ps, TK_IDENT, "a type name");
+    if (struct_find(nameT->text) >= 0 || enum_find(nameT->text) >= 0 || newtype_find(nameT->text) >= 0)
+        die_at(nameT->line, "'%s' is already defined", nameT->text);
+    if (g_nnewtypes >= 128) die_at(nameT->line, "too many newtypes");
+    eat(ps, TK_EQ, "'=' in a type declaration");
+    Type under = parse_type(ps);
+    if (under != T_INT && under != T_FLOAT)
+        die_at(nameT->line, "a newtype's underlying type must be int or float (got %s)", type_name(under));
+    eat(ps, TK_NEWLINE, "newline");
+    g_newtypes[g_nnewtypes].name = nameT->text;
+    g_newtypes[g_nnewtypes].under = under;
+    g_nnewtypes++;
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0 };
     ProcVec out = {0};
@@ -1230,6 +1291,7 @@ static ProcVec parse_program(Tok *toks) {
         if (accept(&ps, TK_NEWLINE)) continue;
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
+        if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
         Proc *pr = parse_fn(&ps);
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
@@ -1421,6 +1483,16 @@ static Type resolve_expr(Expr *e) {
             if (bt == T_STRING) return e->type = T_INT;        /* string byte */
             die_at(e->line, "can only index an array or a string");
         }
+        case E_SLICE: {   /* xs[a:b] — a sub-range of the same array type */
+            Type bt = resolve_expr(e->lhs);
+            if (!is_array(bt))
+                die_at(e->line, "can only slice an array (a string sub-range is substr(s, a, b))");
+            if (e->rhs && resolve_expr(e->rhs) != T_INT)
+                die_at(e->line, "slice start must be int");
+            if (e->nargs && resolve_expr(e->args[0]) != T_INT)
+                die_at(e->line, "slice end must be int");
+            return e->type = bt;
+        }
         case E_FIELD: {
             Type bt = resolve_expr(e->lhs);
             if (!IS_STRUCT(bt))
@@ -1437,6 +1509,19 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            /* a call whose name is a newtype wraps its underlying value: Meters(x)
+             * with x : float -> Meters. Zero-cost; codegen is the identity. */
+            int ntid = newtype_find(e->sval);
+            if (ntid >= 0) {
+                Type under = g_newtypes[ntid].under;
+                if (e->nargs != 1)
+                    die_at(e->line, "%s(x) takes one %s", e->sval, type_name(under));
+                Type at_ = resolve_expr(e->args[0]);
+                if (at_ != under)
+                    die_at(e->line, "%s(x) needs a %s, got %s", e->sval, type_name(under), type_name(at_));
+                e->op = TK_TYPE;   /* mark as a newtype wrap for codegen (identity) */
+                return e->type = NT_TYPE(ntid);
+            }
             /* a call whose name is a struct is positional construction */
             int sid = struct_find(e->sval);
             if (sid >= 0) {
@@ -1476,21 +1561,23 @@ static Type resolve_expr(Expr *e) {
              * they bypass the fixed-signature Sig table. */
             if (!strcmp(e->sval, "str")) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
-                Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_INT && at_ != T_FLOAT)
+                Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
+                if (b != T_INT && b != T_FLOAT)
                     die_at(e->line, "str(x) takes an int or a float");
                 return e->type = T_STRING;
             }
-            if (!strcmp(e->sval, "to_float")) {
+            if (!strcmp(e->sval, "to_float")) {   /* int -> float, or unwrap a float newtype */
                 if (e->nargs != 1) die_at(e->line, "to_float(n) takes one argument");
-                if (resolve_expr(e->args[0]) != T_INT)
-                    die_at(e->line, "to_float(n) takes an int");
+                Type at_ = resolve_expr(e->args[0]);
+                if (at_ != T_INT && !(IS_NEWTYPE(at_) && nt_under(at_) == T_FLOAT))
+                    die_at(e->line, "to_float(n) takes an int or a float newtype");
                 return e->type = T_FLOAT;
             }
-            if (!strcmp(e->sval, "to_int")) {
+            if (!strcmp(e->sval, "to_int")) {   /* float -> int (truncate), or unwrap an int newtype */
                 if (e->nargs != 1) die_at(e->line, "to_int(x) takes one argument");
-                if (resolve_expr(e->args[0]) != T_FLOAT)
-                    die_at(e->line, "to_int(x) takes a float (truncates toward zero)");
+                Type at_ = resolve_expr(e->args[0]);
+                if (at_ != T_FLOAT && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
+                    die_at(e->line, "to_int(x) takes a float (truncates toward zero) or an int newtype");
                 return e->type = T_INT;
             }
             /* array builtins (don't fit the scalar Sig table) */
@@ -1618,6 +1705,23 @@ static Type resolve_expr(Expr *e) {
                         die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
                 }
             }
+            /* A slice argument views its source's buffer; an inout of that same
+             * variable in the same call could reallocate the buffer (e.g. push),
+             * leaving the slice dangling. Forbid the overlap. */
+            for (int i = 0; i < e->nargs; i++) {
+                if (e->args[i]->kind != E_SLICE) continue;
+                Expr *si = e->args[i]->lhs;
+                while (si->kind == E_FIELD || si->kind == E_INDEX || si->kind == E_SLICE) si = si->lhs;
+                if (si->kind != E_IDENT) continue;
+                for (int j = 0; j < e->nargs; j++) {
+                    if (!s->inout[j]) continue;
+                    Expr *rj = e->args[j]->lhs;
+                    while (rj->kind == E_FIELD || rj->kind == E_INDEX) rj = rj->lhs;
+                    if (rj->kind == E_IDENT && !strcmp(rj->sval, si->sval))
+                        die_at(e->line, "cannot pass a slice of '%s' and an inout of '%s' in one call "
+                               "(the inout may reallocate the buffer the slice views)", si->sval, si->sval);
+                }
+            }
             return e->type = s->ret;
         }
         case E_BINOP: {
@@ -1628,9 +1732,9 @@ static Type resolve_expr(Expr *e) {
             }
             if (e->op == TK_MINUS && e->rhs == NULL) {   /* unary negation */
                 Type ot = resolve_expr(e->lhs);
-                if (ot != T_INT && ot != T_FLOAT)
+                if (base_of(ot) != T_INT && base_of(ot) != T_FLOAT)
                     die_at(e->line, "unary `-` needs an int or a float");
-                return e->type = ot;
+                return e->type = ot;   /* -Meters is a Meters */
             }
             Type lt = resolve_expr(e->lhs);
             Type rt = resolve_expr(e->rhs);
@@ -1650,11 +1754,13 @@ static Type resolve_expr(Expr *e) {
                     if (IS_OPT(lt)) die_at(e->line, "cannot compare Option values; match on them instead");
                     if (IS_RES(lt)) die_at(e->line, "cannot compare Result values; match on them instead");
                 } else {
-                    int ok = (lt == T_INT && rt == T_INT) ||
-                             (lt == T_FLOAT && rt == T_FLOAT) ||
-                             (lt == T_STRING && rt == T_STRING);
+                    /* ordering: two ints, two floats, two strings, or two values
+                     * of the SAME numeric/string newtype */
+                    Type b = base_of(lt);
+                    int ok = lt == rt && (b == T_INT || b == T_FLOAT || b == T_STRING);
                     if (!ok)
-                        die_at(e->line, "ordering compares two ints, two floats, or two strings");
+                        die_at(e->line, "ordering compares two ints, two floats, two strings, "
+                               "or two values of the same numeric newtype");
                 }
                 return e->type = T_BOOL;
             }
@@ -1664,9 +1770,13 @@ static Type resolve_expr(Expr *e) {
                 return e->type = T_STRING;
             }
             /* arithmetic: two ints or two floats (no implicit mixing — use
-             * to_float/to_int). float `/` is true division; int `/` truncates. */
+             * to_float/to_int). float `/` is true division; int `/` truncates.
+             * Two values of the SAME numeric newtype yield that newtype, so units
+             * stay typed (Meters + Meters -> Meters) and can't mix with the base. */
             if (lt == T_INT && rt == T_INT) return e->type = T_INT;
             if (lt == T_FLOAT && rt == T_FLOAT) return e->type = T_FLOAT;
+            if (lt == rt && IS_NEWTYPE(lt) && (nt_under(lt) == T_INT || nt_under(lt) == T_FLOAT))
+                return e->type = lt;
             die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s)",
                    type_name(lt), type_name(rt));
         }
@@ -2016,6 +2126,49 @@ static char *owner_arena_of(const char *root) {
     return (char *)(a ? a : "&_scope");
 }
 
+/* --- move-on-last-use (deep-copy elision) -------------------------------
+ * `b := a` / `b = a` normally deep-copies a heap value so the two are
+ * independent. But if `a` is a uniquely-owned local whose ONLY read is this one,
+ * the copy is pure waste — `b` can take over `a`'s buffer (a move). Soundness is
+ * conservative and static: (1) the source is a bare variable of heap type; (2) it
+ * is read exactly once in the whole function, so this read is its last use on
+ * every path, INCLUDING loop back-edges; (3) the move is not lexically inside any
+ * loop, so that single textual read is a single dynamic read; (4) the source's
+ * arena equals the destination's, so the handed-off buffer's lifetime matches
+ * (cv_arena is NULL for parameters, which borrow the caller's buffer — so params
+ * are never moved). Like the accumulator reuse, this is FBIP: reuse proven from
+ * value semantics + lexical arenas, not reference counts. */
+static Stmt **g_proc_body; static int g_proc_nbody;   /* current proc body, for the read-count scan */
+static int g_loop_depth = 0;                           /* lexical loop nesting at the current codegen point */
+
+static int count_reads_e(Expr *e, const char *nm) {
+    if (!e) return 0;
+    int c = (e->kind == E_IDENT && e->sval && !strcmp(e->sval, nm)) ? 1 : 0;
+    c += count_reads_e(e->lhs, nm) + count_reads_e(e->rhs, nm);
+    for (int i = 0; i < e->nargs; i++) c += count_reads_e(e->args[i], nm);
+    return c;
+}
+static int count_reads_b(Stmt **body, int n, const char *nm) {
+    int c = 0;
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        c += count_reads_e(s->expr, nm) + count_reads_e(s->target, nm);
+        c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm) + count_reads_e(s->r_step, nm);
+        c += count_reads_b(s->body, s->nbody, nm) + count_reads_b(s->els, s->nels, nm);
+        for (int a = 0; a < s->narms; a++) c += count_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
+    }
+    return c;
+}
+/* may `b := rhs` / `b = rhs` move rhs's buffer instead of deep-copying it, given
+ * the destination lives in arena `owner`? See the conditions above. */
+static int can_move_from(Expr *rhs, const char *owner) {
+    if (rhs->kind != E_IDENT || !type_is_heap(rhs->type)) return 0;
+    if (g_loop_depth != 0) return 0;
+    const char *a = cv_arena(rhs->sval);
+    if (!a || strcmp(a, owner) != 0) return 0;        /* not a same-arena local (NULL = a param) */
+    return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
+}
+
 /* --- return-slot optimization (escape analysis) -------------------------
  * A function-top-level local that is returned by name (`return r`) is
  * allocated in the caller's arena (_parent) from birth, so the return needs
@@ -2109,6 +2262,7 @@ static int is_accum(const char *nm) {
  * re-homes its bytes into `arena`. For non-heap types (int/bool/pure struct)
  * the value word is already a complete copy — returned unchanged. */
 static char *copy_into(Type t, const char *arena, char *val) {
+    if (IS_NEWTYPE(t)) t = nt_under(t);   /* re-home as its base (int/float: nothing to do) */
     switch (t) {
         case T_STRING:       return sfmt("hier_str_copy(%s, %s)", arena, val);
         case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
@@ -2139,7 +2293,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
  * location must deep-copy. A literal/call/concat/split result is already a
  * fresh value owned by the arena it was built in — no copy needed. */
 static int is_place(Expr *e) {
-    return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX || e->kind == E_TUPIDX;
+    return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX
+        || e->kind == E_TUPIDX || e->kind == E_SLICE;   /* a slice aliases its source; binding it copies */
 }
 
 /* C expression that is nonzero iff the two operands of type `t` are equal by
@@ -2147,6 +2302,7 @@ static int is_place(Expr *e) {
  * byte; arrays element-wise; structs field-wise via a generated hier_eq_S_X.
  * Recurses through nesting exactly as the deep copy does. */
 static char *gen_eq(Type t, const char *a, const char *b) {
+    if (IS_NEWTYPE(t))       return gen_eq(nt_under(t), a, b);
     if (t == T_STRING)       return sfmt("(strcmp(%s, %s) == 0)", a, b);
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("hier_arr_float_eq(%s, %s)", a, b);
@@ -2176,6 +2332,8 @@ static char *gen_eq(Type t, const char *a, const char *b) {
 }
 
 static char *gen_call(Expr *e, const char *arena) {
+    if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
+        return gen_expr(e->args[0], arena);
     if (e->op == TK_ENUM) {   /* enum constructor: descriptor { tag, payload } */
         int eid = ENUM_ID(e->type), vi = (int)e->ival;
         Variant *var = &g_enums[eid].variants[vi];
@@ -2268,7 +2426,7 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "str")) {
         char *a = gen_expr(e->args[0], arena);
-        if (e->args[0]->type == T_FLOAT)
+        if (base_of(e->args[0]->type) == T_FLOAT)   /* sees through a float newtype */
             return sfmt("hier_float_to_str(%s, %s)", arena, a);
         return sfmt("hier_int_to_str(%s, %s)", arena, a);
     }
@@ -2389,6 +2547,26 @@ static char *gen_expr(Expr *e, const char *arena) {
             if (e->lhs->type == T_STRING)
                 return sfmt("hier_str_get(%s, %s)", a, ix);
             return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
+        }
+        case E_SLICE: {
+            /* A bounds-checked sub-range descriptor { data + lo, hi - lo, 0 }.
+             * cap = 0 marks it non-growable; the data pointer ALIASES the source
+             * buffer, so this is a zero-copy view — but is_place(E_SLICE) makes
+             * any bind/return/push deep-copy it into an owning array. The source
+             * is bound to a temp so it is evaluated exactly once (lo/hi may use
+             * its .len). Works for every array type (all are {data,len,cap}). */
+            int id = g_blk++;
+            const char *ct = c_type(e->type);
+            char *a  = gen_expr(e->lhs, arena);
+            char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
+            char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("_sv%d.len", id);
+            return sfmt("({ %s_sv%d = %s; long _lo%d = %s, _hi%d = %s; "
+                        "if (_lo%d < 0 || _hi%d > _sv%d.len || _lo%d > _hi%d) { "
+                        "fprintf(stderr, \"hier: slice [%%ld:%%ld] out of bounds (len %%ld)\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
+                        "(%s){ _sv%d.data + _lo%d, _hi%d - _lo%d, 0 }; })",
+                        ct, id, a, id, lo, id, hi,
+                        id, id, id, id, id, id, id, id,
+                        ct, id, id, id, id);
         }
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
@@ -2535,8 +2713,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *v = gen_expr(s->expr, owner);
             /* value semantics: binding from a heap *place* aliases its bytes,
              * so deep-copy into the owner arena. A literal/call/concat result
-             * is already a freshly-owned value built in `owner` — no copy. */
-            if (is_place(s->expr) && type_is_heap(s->decl_type))
+             * is already a freshly-owned value built in `owner` — no copy. And a
+             * dead same-arena local is MOVED (copy elided): it takes over the
+             * source's buffer (see can_move_from). */
+            if (is_place(s->expr) && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
             fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
@@ -2628,7 +2808,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * soon-to-collapse) scope; deep-copy it into the target's arena
              * so it survives. A literal/call/concat result is already freshly
              * allocated in `owner` — no copy needed. */
-            if (is_place(s->expr) && type_is_heap(s->expr->type))
+            if (is_place(s->expr) && type_is_heap(s->expr->type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->expr->type, owner, v);
             indent(o, ind);
             /* an inout param is a pointer in the body; assign through it */
@@ -2926,7 +3106,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             char *ss = sfmt("&_scr%d", id);
             ascope_push(ss);   /* a return inside the loop must free _scrN too */
+            g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
+            g_loop_depth--;
             g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
@@ -2949,7 +3131,9 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int m = cv_mark();
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
             ascope_push(ss);        /* a return inside the loop must free _scrN too */
+            g_loop_depth++;         /* moves are unsafe inside a loop (single read runs N times) */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
+            g_loop_depth--;
             g_nascope--;
             cv_restore(m);
             indent(o, ind + 1); fprintf(o, "}\n");
@@ -2994,6 +3178,8 @@ static void gen_proc(FILE *o, Proc *pr) {
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
     g_gen_ret = pr->ret;
+    g_proc_body = pr->body; g_proc_nbody = pr->nbody;   /* for move-on-last-use read counts */
+    g_loop_depth = 0;
     g_ncv = 0;
     g_nascope = 0;   /* no enclosing block arenas at the proc body top level */
     /* return-slot optimization: which top-level locals escape via return */

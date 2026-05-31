@@ -1,0 +1,45 @@
+# Move-on-last-use is an OPTIMIZATION: observable behaviour is identical to the
+# deep-copy version. These cases check value semantics still holds whether or
+# not the copy is elided -- a moved value is correct and fully usable, and a
+# source that is still live keeps an independent copy.
+
+fn build(n: int) -> [int]:
+    r := []int
+    for i in range(n):
+        push(r, i * i)
+    return r
+
+fn total(xs: [int]) -> int:
+    t := 0
+    for i in range(len(xs)):
+        t = t + xs[i]
+    return t
+
+struct Bag:
+    name: string
+    tags: [string]
+
+fn main():
+    # `a` is dead after the bind -> MOVE (copy elided)
+    a := build(5)
+    b := a
+    print("moved=" + str(total(b)) + "\n")              # 0+1+4+9+16 = 30
+
+    # `c` is read again -> NOT moved, so `d` is an independent copy
+    c := build(4)
+    d := c
+    print("kept=" + str(total(c)) + "," + str(total(d)) + "\n")   # 14,14
+
+    # a moved buffer is fully usable -- grow it after the move
+    xs := build(3)
+    ys := xs
+    push(ys, 99)
+    print("grown=" + str(len(ys)) + " last=" + str(ys[3]) + "\n") # 4 99
+
+    # string move and heap-struct move
+    s := "a fairly long string value to move"
+    t := s
+    print("str_len=" + str(len(t)) + "\n")              # 34
+    bag := Bag("acct", ["x", "y", "z"])
+    bag2 := bag
+    print("bag=" + bag2.name + " tags=" + str(len(bag2.tags)) + "\n")  # acct 3

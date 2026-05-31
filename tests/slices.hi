@@ -1,0 +1,52 @@
+# Slices: xs[a:b] is a sub-range that ALIASES xs's buffer when passed to a
+# read-only array parameter (zero copy), but deep-copies (owning) when stored,
+# returned, or pushed -- a non-storable borrow. Bounds default: xs[a:], xs[:b],
+# xs[:].
+
+fn sum(s: [int]) -> int:
+    t := 0
+    for i in range(len(s)):
+        t = t + s[i]
+    return t
+
+fn first(words: [string]) -> string:
+    return words[0]
+
+struct P:
+    x: int
+    y: int
+
+fn sumx(ps: [P]) -> int:
+    t := 0
+    for i in range(len(ps)):
+        t = t + ps[i].x
+    return t
+
+fn main():
+    xs := [10, 20, 30, 40, 50]
+
+    # zero-copy views passed to a read-only parameter
+    print("mid=" + str(sum(xs[1:4])) + "\n")       # 20+30+40 = 90
+    print("from2=" + str(sum(xs[2:])) + "\n")      # 30+40+50 = 120
+    print("upto3=" + str(sum(xs[:3])) + "\n")      # 10+20+30 = 60
+    print("all=" + str(sum(xs[:])) + "\n")         # 150
+    print("empty=" + str(sum(xs[2:2])) + "\n")     # 0
+
+    # a stored slice is an owning copy: independent of later mutation of xs
+    mid := xs[1:4]
+    print("midlen=" + str(len(mid)) + " mid0=" + str(mid[0]) + "\n")   # 3, 20
+    push(xs, 60)
+    xs[1] = 999
+    print("after_mut mid0=" + str(mid[0]) + " mid_len=" + str(len(mid)) + "\n")  # still 20, 3
+
+    # slice of a slice (a view of a view), still zero-copy as an argument
+    print("subsub=" + str(sum(xs[1:5][1:3])) + "\n")   # [999,30,40,50] -> [30,40] = 70
+
+    # heap-element slice ([string]) and struct-element slice ([P])
+    words := ["a", "bb", "ccc", "dddd"]
+    print("fw=" + first(words[2:]) + "\n")             # "ccc"
+    ps := [P(1, 2), P(3, 4), P(5, 6)]
+    print("sumx_tail=" + str(sumx(ps[1:])) + "\n")     # 3+5 = 8
+
+    # index a view directly (transient, used immediately)
+    print("direct=" + str(xs[2:5][0]) + "\n")          # xs[2] = 30

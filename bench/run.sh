@@ -14,6 +14,10 @@
 #   memo          wall time — inout memo keeps fib O(n); an exponential
 #                             regression blows the bound (instant vs seconds;
 #                             bound 1000 ms).
+#   move          peak RSS  — move-on-last-use elides the deep copy of a dead
+#                             local (`dup := big`), so only one ~64 MB buffer is
+#                             live; reverting to a copy makes it ~187 MB
+#                             (measured), so the 160 MB bound catches it.
 #
 # Each program's output is also checked (a bench must compute the right answer).
 # Exit status: 0 iff every bench passes. Bounds are intentionally generous;
@@ -60,10 +64,11 @@ run_bench() {
     printf '%-14s %8sMB %6sms   %s\n' "$name" "$rssmb" "$ms" "$verdict"
 }
 
-run_bench append       40000       rss  32768 KB
-run_bench loop_scratch 8           rss  32768 KB
-run_bench map_accum    40000       rss  65536 KB
-run_bench memo         1134903170  time 1000  ms
+run_bench append       40000          rss  32768  KB
+run_bench loop_scratch 8              rss  32768  KB
+run_bench map_accum    40000          rss  65536  KB
+run_bench memo         1134903170     time 1000   ms
+run_bench move         31999996000000 rss  163840 KB
 
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && { echo "all benchmarks within bounds"; exit 0; }

@@ -113,8 +113,11 @@ fn main():
      (We already do the leaf version: a return expression targets the
      parent arena.) Conservative when a value *may* be returned on some
      path; still sound, still local.
-   - *Move on last use*: `b := a` where `a` is dead afterwards becomes a
-     move, not a copy.
+   - *Move on last use* (✅ done): `b := a` / `b = a` where `a` is a
+     uniquely-owned local read exactly once (so this is its last use on every
+     path), not inside a loop, and in the same arena as the destination, hands
+     off `a`'s buffer instead of deep-copying it. Conservative and static; a
+     parameter (which borrows the caller's buffer) is never moved.
    - *Borrow on read*: a by-value parameter the callee only reads is
      passed as a transient borrow (zero copy) — safe because the borrow
      can't be stored (invariant 4) and the caller is suspended.
@@ -152,7 +155,8 @@ fn main():
 | build in loop, return | value escapes scope | deep copy up, or build-in-parent (opt.) |
 | push scratch value into outer array | element outlives iteration | safe: push *copies* into outer arena |
 | `a[i] = someString` | old element becomes garbage | sound; wasted-in-arena, bounded by `a`'s life |
-| substring / slice | view would alias parent buffer | **slices are copies** (own their bytes); no aliasing views |
+| array slice `xs[a:b]` | view aliases parent buffer | safe: a view only as a read-only arg (zero-copy borrow, like any array param); storing/returning/pushing it deep-copies, so it is non-storable. A slice + an `inout` of the same var in one call is rejected. |
+| substring | view would alias parent buffer | **substr is a copy** (owns its bytes); no aliasing string views (a string slice can't be NUL-terminated) |
 | recursive/graph types | would need pointers | not allowed; use array + indices |
 | return a reference to a local | classic dangling | **inexpressible** — no reference type exists |
 
@@ -184,9 +188,11 @@ Still required, and none of these is generics:
 - **`inout` parameters** (exclusive mutable borrow) — efficient mutation
   without copies or aliasing.
 - **`Option(T)` + exhaustive `match`** — the no-`null` story.
-- **Slices as owning copies** (or a non-storable view mode later).
-- **`distinct` types** (`type Meters = f64`) — zero-cost newtypes; optional,
-  borrowed from Tycho.
+- **Slices** (`xs[a:b]`) — ✅ done: a non-storable view (zero-copy when passed
+  to a read-only param, deep-copied when stored), no borrow checker needed.
+- **`distinct` newtypes** (`type Meters = float`) — ✅ done: a distinct,
+  zero-cost type over `int`/`float` (same C rep, type-incompatible with the base
+  and other newtypes); arithmetic/ordering/`str` only between the same newtype.
 
 ## 8. Allocation strategy: signature-directed escape (Tycho's lesson, improved)
 

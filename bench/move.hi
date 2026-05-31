@@ -1,0 +1,22 @@
+# Move-on-last-use guard: `b := a` where `a` is a dead local hands off a's
+# buffer instead of deep-copying it. Without the optimization, `dup := big`
+# allocates a SECOND full copy of the array, roughly doubling the live buffer.
+# The bound sits between the moved (one buffer) and copied (two buffers) sizes,
+# so a regression that reverts to copying blows it.
+
+fn build(n: int) -> [int]:
+    r := []int
+    for i in range(n):
+        push(r, i)
+    return r
+
+fn total(xs: [int]) -> int:
+    t := 0
+    for i in range(len(xs)):
+        t = t + xs[i]
+    return t
+
+fn main():
+    big := build(8000000)     # ~64 MB of longs (plus geometric-growth slack)
+    dup := big                # big is dead after -> MOVE, no second buffer
+    print(str(total(dup)) + "\n")
