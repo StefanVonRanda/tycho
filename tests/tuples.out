@@ -1,0 +1,8 @@
+q=3 r=2
+t0=3 t1=2
+lo=1 hi=7 sum=15
+sum_pair=5
+sum_lit=30
+doubled len=3 last=14
+a0=doubled b1len=2
+eq-ok

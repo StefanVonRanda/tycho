@@ -1,0 +1,8 @@
+ok:3
+err:not a digit: 9
+err:not a digit: 7
+doubled=10,12
+short_err=too short
+ok:20
+err:not a digit: x
+ok:0

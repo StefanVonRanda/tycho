@@ -72,19 +72,32 @@ cluster of languages, and the differences are the interesting part:
 
 ### Tier 2 — removes current real limitations
 
-3. **Projections / yielding element access (Hylo-style).** Fix the standing
-   limitation that `arr[i]` is a copy, so `arr[i].f = v` and
-   `push(arr[i].xs, v)` are rejected. A subscript that *yields* a mutable
-   interior (copy-in/copy-out, like `inout`) would make deep in-place mutation
-   work without exposing a pointer. Most on-model way to close the gap.
+3. **Projections / yielding element access (Hylo-style).** ✅ *Implemented.*
+   A composite-array element is now a mutable place: `arr[i].f = v`,
+   `push(arr[i].xs, v)`, `m[i][j] = v`, and `&arr[i].x` (inout) all yield the
+   element's slot in the backing buffer (a bounds-checked `hier_arr_C<id>_ptr`),
+   with no pointer exposed in Hier and value semantics preserved. The lvalue is
+   only granted for composite (ARRC) elements rooted in a mutable variable/field
+   — a read-only borrow or scalar-array byte is still rejected.
 
-4. **Error handling.** Hier has no error story beyond abort. Two flavours, both
-   compatible: a `Result(T, E)` value (falls out of #1) consumed by `match`, or
-   an `or_return`-style early-return operator (Odin) for ergonomics.
+4. **Error handling.** ✅ *Implemented* (`Result(T, E)` + `or_return`).
+   A built-in generic `Result(T, E)` — `Ok(value)` / `Err(error)` — consumed by
+   the same exhaustive `match` as `Option`/enums, interned per (T,E) pair like
+   `Option`. Both halves may be heap types; value semantics + return-promotion
+   hold. The ergonomic half landed too: `v := expr or_return` unwraps an `Ok` or
+   propagates the `Err` from the enclosing `Result(_, E)`-returning function
+   (postfix operator, lowered to a statement-expression that promotes the err
+   payload into the caller's arena before freeing the live scopes). Still open:
+   `or_return` for `Option` (None-propagation) — currently `Result`-only.
 
-5. **Multiple return values** (Odin/Go/Jai). Ergonomic for the
-   value-or-found-flag pattern (e.g. `map_get` returning `(value, bool)` instead
-   of a default), and composes with value semantics trivially.
+5. **Multiple return values** (Odin/Go/Jai). ✅ *Implemented, as first-class
+   tuples.* `(T1, ..., Tn)` is a real anonymous-product value type (interned per
+   element-list like Option/Result): `return a, b` builds one, `x, y := f()`
+   destructures it (decl-only), and a tuple is also storable, indexable (`t.0`),
+   literal-constructible (`(1, 2)`), passable, comparable, and deep-copied by
+   value. Went beyond the Go/Odin "boundary-only" framing because first-class
+   tuples compose with value semantics for free. Still open: `a, b = f()`
+   re-assignment and mutable elements (`t.0 = v`).
 
 ### Tier 3 — planned in the design doc / data-oriented perf
 

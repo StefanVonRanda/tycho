@@ -123,8 +123,10 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 `int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), string-keyed maps
 (`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
-no-`null` story), user-defined `struct`s, and user-defined `enum`s (sum types /
-tagged unions, including recursive ones — ASTs).
+no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
+no-exceptions error story), tuples `(T1, ..., Tn)` (anonymous products — the
+multiple-return-values story), user-defined `struct`s, and user-defined `enum`s
+(sum types / tagged unions, including recursive ones — ASTs).
 
 ### Structs
 
@@ -212,6 +214,22 @@ grid := [][int]                    # array of arrays
 push(grid, [1, 2, 3])
 cell := grid[0][2]                 # 3
 ```
+
+A composite-array element is also a **mutable place** — you can write through it
+in place instead of rebuilding the whole element (a *projection*: the compiler
+yields the element's slot in the backing buffer, bounds-checked, with no pointer
+ever exposed in Hier):
+
+```
+ps[0].x = 10                       # field of an element
+push(ps[0].tags, "extra")          # grow an element's array field in place
+grid[1][2] = 60                    # nested-array element
+bump(&ps[1].x)                     # an element field as an `inout` argument
+```
+
+Value semantics still holds: after `qs := ps`, mutating `ps[0].x` leaves `qs`
+untouched (each owns its buffer). The element's owning array must be a mutable
+variable or field — you cannot project through a read-only borrowed parameter.
 
 Arrays cross function boundaries too:
 
@@ -321,6 +339,77 @@ or an array element (`[Option(int)]` — a list of optionals; a `None` element
 takes its type from the others, so the first cannot be a bare `None`). *Not
 yet:* comparing two options with `==` (match on them instead — though structs
 that *contain* options compare fine).
+
+### Result and `match`
+
+`Result(T, E)` is a value that is either `Ok(value)` or `Err(error)` — the
+no-exceptions error story. A function that can fail returns one, and the caller
+takes it apart with the same **exhaustive `match`** (both arms required):
+
+```
+fn checked_div(a: int, b: int) -> Result(int, string):
+    if b == 0:
+        return Err("divide by zero")
+    return Ok(a / b)
+
+fn main():
+    match checked_div(10, 0):
+        Ok(v):                  # v is the success value (an int here)
+            print("= " + str(v) + "\n")
+        Err(e):                 # e is the error value (a string here)
+            print("error: " + e + "\n")
+```
+
+Like `None`, a bare `Ok(v)`/`Err(e)` only fixes *one* of the two type
+parameters, so the other comes from context — a return type, a declaration
+annotation (`x : Result(int, string) = Err("nope")`), an assignment target, or
+a call argument; a bare `x := Ok(1)` is a compile error. Both `T` and `E` may be
+any type, including heap ones (`Result([int], string)`); the value is
+monomorphized and deep-copied by value like everything else. *Not yet:*
+comparing two results with `==` (match instead).
+
+`or_return` propagates errors without the `match` boilerplate. Writing
+`v := expr or_return` unwraps an `Ok` (binding `v` to the value) or, if `expr`
+is an `Err`, immediately returns that `Err` from the enclosing function — which
+must itself return a `Result(_, E)` with the *same* error type `E`:
+
+```
+fn add_two(a: string, b: string) -> Result(int, string):
+    x := parse_digit(a) or_return    # Ok -> bind x; Err -> return it from add_two
+    y := parse_digit(b) or_return
+    return Ok(x + y)
+```
+
+`or_return` is a postfix operator (it binds tighter than any arithmetic), valid
+anywhere the unwrapped value is wanted — `foo(parse(s) or_return)`,
+`return Ok(parse(s) or_return + 1)`, and inside nested blocks. The propagated
+`Err`'s payload is promoted into the caller's arena, so it outlives the
+short-circuit. There is no `or_return` for `Option` yet (it is `Result`-only).
+
+### Tuples and multiple return values
+
+A tuple `(T1, ..., Tn)` (2–8 elements) is an anonymous product value — the way
+a function returns more than one thing. `return a, b` builds one, and you can
+**destructure** it into fresh locals at the call:
+
+```
+fn divmod(a: int, b: int) -> (int, int):
+    q := a / b
+    return q, a - q * b           # builds the tuple (q, remainder)
+
+fn main():
+    quot, rem := divmod(17, 5)     # destructure -> quot = 3, rem = 2
+    print(str(quot) + " " + str(rem) + "\n")
+```
+
+But tuples are **first-class values**, not just a return convention: you can
+store one whole (`t := divmod(17, 5)`), index it by position (`t.0`, `t.1`),
+write a tuple literal (`p := (10, 20)`), pass it as an argument or a struct
+field, and compare two with `==` (element-wise). Any element type works,
+including heap ones (`(string, [int])`); a tuple is a value, deep-copied on
+bind like everything else, so `b := a` leaves the two independent. The
+destructuring bind is decl-only (`a, b := f()`); there is no `a, b = f()`
+re-assignment form yet, and tuple elements are read-only (no `t.0 = v`).
 
 ### Enums (sum types)
 
@@ -497,9 +586,7 @@ None of this appears in Hier source.
 
 - No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
-  `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). You
-  cannot mutate *through* an array element (`arr[i]` is a copy, so `arr[i].f = v`
-  / `push(arr[i].xs, v)` are rejected — rebuild the element instead). Maps are
+  `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
   string-keyed with
   `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
   or value type yet; they support

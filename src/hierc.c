@@ -67,7 +67,7 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
@@ -101,6 +101,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "elif"))   return TK_ELIF;
     if (!strcmp(s, "else"))   return TK_ELSE;
     if (!strcmp(s, "and"))    return TK_AND;
+    if (!strcmp(s, "or_return")) return TK_ORRETURN;   /* before "or": longer match wins anyway, but explicit */
     if (!strcmp(s, "or"))     return TK_OR;
     if (!strcmp(s, "not"))    return TK_NOT;
     if (!strcmp(s, "match"))  return TK_MATCH;
@@ -267,7 +268,11 @@ static TokVec lex(const char *src) {
 typedef int Type;
 enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT,
        T_MAP_SF /* [string: float] */,
-       T_NONE /* type of a bare `None` until context fixes its concrete Option type */ };
+       T_NONE, /* type of a bare `None` until context fixes its concrete Option type */
+       /* Ok(v)/Err(e) each know only ONE of Result's two type params, so they
+        * carry a partial sentinel (the known inner type sits on the value's lhs)
+        * until context fixes the full Result type — the same trick as T_NONE. */
+       T_OK_PARTIAL, T_ERR_PARTIAL };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -295,7 +300,9 @@ static int struct_find(const char *name) {
  * emit order. */
 #define T_ARRC_BASE 1024
 #define T_OPT_BASE  4096   /* defined here so IS_ARRC's upper bound can reference it */
-#define T_ENUM_BASE 8192   /* user sum types, above the Option range */
+#define T_RES_BASE  6144   /* Result(T,E), between the Option and enum ranges */
+#define T_ENUM_BASE 8192   /* user sum types, above the Result range */
+#define T_TUP_BASE  16384  /* tuples (T1, ..., Tn), above the (now bounded) enum range */
 typedef struct { Type elem; } ArrType;
 static ArrType g_arrtypes[256];
 static int g_narrtypes = 0;
@@ -324,7 +331,7 @@ static Type arr_elem(Type arr) {
 typedef struct { Type inner; } OptType;
 static OptType g_opttypes[256];
 static int g_nopttypes = 0;
-#define IS_OPT(t)  ((t) >= T_OPT_BASE && (t) < T_ENUM_BASE)   /* enums sit above */
+#define IS_OPT(t)  ((t) >= T_OPT_BASE && (t) < T_RES_BASE)   /* Results sit above */
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
     for (int i = 0; i < g_nopttypes; i++)
@@ -334,6 +341,26 @@ static Type opt_of(Type inner) {                 /* find-or-create Option(inner)
     return T_OPT_BASE + g_nopttypes++;
 }
 static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
+
+/* Result(T, E) — a tagged success-or-failure (Ok(value) or Err(error)). The
+ * no-exceptions error story: a function returns Result(T, E) and the caller
+ * matches Ok/Err. Interned like Option, but over TWO inner types; one
+ * monomorphic HierRes<id> { char ok; T okv; E errv; } is generated per (T,E)
+ * pair used. Ids sit in [T_RES_BASE, T_ENUM_BASE). */
+typedef struct { Type ok; Type err; } ResType;
+static ResType g_restypes[256];
+static int g_nrestypes = 0;
+#define IS_RES(t)  ((t) >= T_RES_BASE && (t) < T_ENUM_BASE)
+#define RES_ID(t)  ((int)((t) - T_RES_BASE))
+static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, err) */
+    for (int i = 0; i < g_nrestypes; i++)
+        if (g_restypes[i].ok == ok && g_restypes[i].err == err) return T_RES_BASE + i;
+    if (g_nrestypes >= 256) { fprintf(stderr, "hierc: too many result types\n"); exit(1); }
+    g_restypes[g_nrestypes].ok = ok; g_restypes[g_nrestypes].err = err;
+    return T_RES_BASE + g_nrestypes++;
+}
+static Type res_ok(Type t)  { return g_restypes[RES_ID(t)].ok; }
+static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
 
 /* User sum types (enums): one or more named variants, each with a payload tuple
  * of 0+ types. A value is a small descriptor { int tag; void *payload } — the
@@ -345,7 +372,7 @@ typedef struct { char *name; Type payload[8]; int npayload; } Variant;
 typedef struct { char *name; Variant variants[64]; int nvariants; int line; } EnumDef;
 static EnumDef g_enums[64];
 static int g_nenums = 0;
-#define IS_ENUM(t)    ((t) >= T_ENUM_BASE)
+#define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
 #define ENUM_ID(t)    ((int)((t) - T_ENUM_BASE))
 #define ENUM_TYPE(id) (T_ENUM_BASE + (id))
 static int enum_find(const char *name) {
@@ -361,6 +388,31 @@ static int variant_find(const char *vname, int *vi) {
             if (!strcmp(g_enums[e].variants[v].name, vname)) { if (vi) *vi = v; return e; }
     return -1;
 }
+
+/* Tuples (T1, ..., Tn), n >= 2 — first-class anonymous product values, used for
+ * multiple return values (`return a, b` builds one) but storable, passable, and
+ * indexable (`t.0`) like any value. Interned like Option/Result; one monomorphic
+ * HierTup<id> { T0 _0; ...; Tn-1 _n-1; } is generated per distinct element-type
+ * list. Ids sit at [T_TUP_BASE, ...). Deep-copied by value field-wise. */
+typedef struct { Type elems[8]; int n; } TupType;
+static TupType g_tuptypes[256];
+static int g_ntuptypes = 0;
+#define IS_TUP(t)  ((t) >= T_TUP_BASE)
+#define TUP_ID(t)  ((int)((t) - T_TUP_BASE))
+static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
+    for (int i = 0; i < g_ntuptypes; i++)
+        if (g_tuptypes[i].n == n) {
+            int same = 1;
+            for (int j = 0; j < n; j++) if (g_tuptypes[i].elems[j] != elems[j]) { same = 0; break; }
+            if (same) return T_TUP_BASE + i;
+        }
+    if (g_ntuptypes >= 256) { fprintf(stderr, "hierc: too many tuple types\n"); exit(1); }
+    g_tuptypes[g_ntuptypes].n = n;
+    for (int j = 0; j < n; j++) g_tuptypes[g_ntuptypes].elems[j] = elems[j];
+    return T_TUP_BASE + g_ntuptypes++;
+}
+static int  tup_n(Type t)         { return g_tuptypes[TUP_ID(t)].n; }
+static Type tup_elem(Type t, int i) { return g_tuptypes[TUP_ID(t)].elems[i]; }
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
@@ -380,6 +432,11 @@ static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
 static int type_is_heap(Type t) {
     if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
+    if (IS_RES(t)) return type_is_heap(res_ok(t)) || type_is_heap(res_err(t));
+    if (IS_TUP(t)) {   /* heap iff any element is */
+        for (int i = 0; i < tup_n(t); i++) if (type_is_heap(tup_elem(t, i))) return 1;
+        return 0;
+    }
     if (IS_ENUM(t)) {   /* heap iff any variant carries a payload (an arena ptr) */
         EnumDef *ed = &g_enums[ENUM_ID(t)];
         for (int i = 0; i < ed->nvariants; i++)
@@ -400,6 +457,8 @@ static const char *c_type(Type t) {
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t))   return sfmt("HierArrC%d ", ARRC_ID(t));
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
+    if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
+    if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
     if (IS_ENUM(t))   return sfmt("E_%s ", g_enums[ENUM_ID(t)].name);
     switch (t) {
         case T_INT:          return "long ";
@@ -418,9 +477,17 @@ static const char *type_name(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
+    if (IS_RES(t))    return sfmt("Result(%s, %s)", type_name(res_ok(t)), type_name(res_err(t)));
+    if (IS_TUP(t)) {
+        char *s = sfmt("(%s", type_name(tup_elem(t, 0)));
+        for (int i = 1; i < tup_n(t); i++) s = sfmt("%s, %s", s, type_name(tup_elem(t, i)));
+        return sfmt("%s)", s);
+    }
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
     switch (t) {
         case T_NONE:         return "None";
+        case T_OK_PARTIAL:   return "Ok(...)";
+        case T_ERR_PARTIAL:  return "Err(...)";
         case T_INT:          return "int";
         case T_FLOAT:        return "float";
         case T_BOOL:         return "bool";
@@ -454,7 +521,10 @@ static Type arr_of(Type elem) {
 }
 
 typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
-               E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE } ExprKind;
+               E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE, E_OK, E_ERR,
+               E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
+               E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
+               E_TUPIDX    /* t.0 / t.1: a tuple element by integer index (in ival) */ } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -470,7 +540,7 @@ struct Expr {
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
-               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH } StmtKind;
+               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL } StmtKind;
 
 typedef struct Stmt Stmt;
 /* one arm of a `match`: a variant name (Some/None or an enum variant), the
@@ -486,6 +556,8 @@ struct Stmt {
     Expr    *expr;         /* value / condition / return / S_INDEXSET rhs / match scrutinee */
     Expr    *target;       /* S_INDEXSET lvalue (an E_INDEX) */
     Expr    *r_start, *r_stop, *r_step;  /* S_FORRANGE; r_step NULL means 1 */
+    char    *names[8]; int nnames;       /* S_MDECL targets: `a, b := f()` */
+    Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
     Stmt   **els;  int nels;
     MatchArm *arms; int narms;           /* S_MATCH */
@@ -523,6 +595,20 @@ static int accept(Parser *ps, TokKind k) {
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
+    if (t->kind == TK_LPAREN) {          /* tuple type (T1, ..., Tn), n >= 2 */
+        ps->p++;
+        Type elems[8]; int n = 0;
+        elems[n++] = parse_type(ps);
+        while (accept(ps, TK_COMMA)) {
+            if (n >= 8) die_at(t->line, "a tuple has at most 8 elements");
+            elems[n++] = parse_type(ps);
+        }
+        eat(ps, TK_RPAREN, "')'");
+        if (n < 2) die_at(t->line, "a tuple type needs at least two elements");
+        for (int i = 0; i < n; i++)
+            if (elems[i] == T_VOID) die_at(t->line, "a tuple element cannot be void");
+        return tup_of(elems, n);
+    }
     if (t->kind == TK_LBRACKET) {        /* [int] / [string] / [string: int] */
         ps->p++;
         Type elem = parse_type(ps);
@@ -545,6 +631,16 @@ static Type parse_type(Parser *ps) {
         eat(ps, TK_RPAREN, "')'");
         if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
         return opt_of(inner);
+    }
+    if (t->kind == TK_IDENT && !strcmp(t->text, "Result")) {   /* Result(T, E) */
+        ps->p++;
+        eat(ps, TK_LPAREN, "'(' after Result");
+        Type ok = parse_type(ps);
+        eat(ps, TK_COMMA, "',' between Result's ok and error types");
+        Type err = parse_type(ps);
+        eat(ps, TK_RPAREN, "')'");
+        if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
+        return res_of(ok, err);
     }
     if (t->kind == TK_IDENT) {           /* a struct or enum name */
         int sid = struct_find(t->text);
@@ -581,8 +677,21 @@ static Expr *parse_primary(Parser *ps) {
     if (t->kind == TK_FALSE){ ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 0; return e; }
     if (t->kind == TK_LPAREN) {
         ps->p++;
-        Expr *e = parse_expr(ps);
+        Expr *first = parse_expr(ps);
+        if (!at(ps, TK_COMMA)) {         /* plain grouping ( expr ) */
+            eat(ps, TK_RPAREN, "')'");
+            return first;
+        }
+        Expr *e = new_expr(E_TUPLE, t->line);   /* tuple literal (e1, e2, ...) */
+        int cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+        e->args[e->nargs++] = first;
+        while (accept(ps, TK_COMMA)) {
+            if (at(ps, TK_RPAREN)) break;       /* trailing comma */
+            if (e->nargs == cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+            e->args[e->nargs++] = parse_expr(ps);
+        }
         eat(ps, TK_RPAREN, "')'");
+        if (e->nargs > 8) die_at(t->line, "a tuple has at most 8 elements");
         return e;
     }
     if (t->kind == TK_LBRACKET) {            /* array or map literal */
@@ -645,6 +754,14 @@ static Expr *parse_primary(Parser *ps) {
             eat(ps, TK_RPAREN, "')'");
             return e;
         }
+        if (!strcmp(t->text, "Ok") || !strcmp(t->text, "Err")) {   /* Ok(v) / Err(e) */
+            int isok = !strcmp(t->text, "Ok");
+            eat(ps, TK_LPAREN, isok ? "'(' after Ok" : "'(' after Err");
+            Expr *e = new_expr(isok ? E_OK : E_ERR, t->line);
+            e->lhs = parse_expr(ps);
+            eat(ps, TK_RPAREN, "')'");
+            return e;
+        }
         if (at(ps, TK_LPAREN)) {           /* call */
             ps->p++;
             Expr *e = new_expr(E_CALL, t->line);
@@ -682,11 +799,24 @@ static Expr *parse_postfix(Parser *ps) {
             e = ix;
         } else if (at(ps, TK_DOT)) {
             Tok *t = cur(ps); ps->p++;
-            Tok *f = eat(ps, TK_IDENT, "a field name after '.'");
-            Expr *fe = new_expr(E_FIELD, t->line);
-            fe->lhs = e; fe->sval = f->text;
-            e = fe;
+            if (at(ps, TK_INT)) {              /* tuple index: t.0 / t.1 */
+                Tok *n = cur(ps); ps->p++;
+                Expr *ti = new_expr(E_TUPIDX, t->line);
+                ti->lhs = e; ti->ival = n->ival;
+                e = ti;
+            } else {
+                Tok *f = eat(ps, TK_IDENT, "a field name or tuple index after '.'");
+                Expr *fe = new_expr(E_FIELD, t->line);
+                fe->lhs = e; fe->sval = f->text;
+                e = fe;
+            }
         } else break;
+    }
+    if (at(ps, TK_ORRETURN)) {   /* postfix: binds tighter than any binary op */
+        Tok *t = cur(ps); ps->p++;
+        Expr *o = new_expr(E_ORRETURN, t->line);
+        o->lhs = e;
+        e = o;
     }
     return e;
 }
@@ -814,7 +944,22 @@ static Stmt *parse_stmt(Parser *ps) {
     if (t->kind == TK_RETURN) {
         ps->p++;
         Stmt *s = new_stmt(S_RETURN, t->line);
-        if (!at(ps, TK_NEWLINE)) s->expr = parse_expr(ps);
+        if (!at(ps, TK_NEWLINE)) {
+            Expr *first = parse_expr(ps);
+            if (at(ps, TK_COMMA)) {       /* return a, b, ... builds a tuple */
+                Expr *e = new_expr(E_TUPLE, t->line);
+                int cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+                e->args[e->nargs++] = first;
+                while (accept(ps, TK_COMMA)) {
+                    if (e->nargs == cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+                    e->args[e->nargs++] = parse_expr(ps);
+                }
+                if (e->nargs > 8) die_at(t->line, "a tuple has at most 8 elements");
+                s->expr = e;
+            } else {
+                s->expr = first;
+            }
+        }
         eat(ps, TK_NEWLINE, "newline");
         return s;
     }
@@ -888,6 +1033,21 @@ static Stmt *parse_stmt(Parser *ps) {
         eat(ps, TK_COLON, "':' before the block");
         eat(ps, TK_NEWLINE, "newline");
         s->body = parse_block(ps, &s->nbody);
+        return s;
+    }
+
+    /* destructuring decl `a, b := f()` — an identifier immediately followed by
+     * a comma. Decl form only (`:=`); the RHS must yield a tuple. */
+    if (t->kind == TK_IDENT && peek(ps, 1)->kind == TK_COMMA) {
+        Stmt *s = new_stmt(S_MDECL, t->line);
+        s->names[s->nnames++] = eat(ps, TK_IDENT, "a name")->text;
+        while (accept(ps, TK_COMMA)) {
+            if (s->nnames >= 8) die_at(t->line, "at most 8 destructuring targets");
+            s->names[s->nnames++] = eat(ps, TK_IDENT, "a name in the destructuring list")->text;
+        }
+        eat(ps, TK_COLONEQ, "':=' (destructuring binds new variables; use `:=`)");
+        s->expr = parse_expr(ps);
+        eat(ps, TK_NEWLINE, "newline");
         return s;
     }
 
@@ -1145,14 +1305,18 @@ static int is_cmp(TokKind op) {
 }
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+static Type g_fn_ret = T_VOID;   /* return type of the proc currently being resolved (for or_return) */
 
-/* A place we can mutate in place (take `&` of in C): a variable, or a field of
- * such a place. An array index is NOT an lvalue — `arr[i]` returns a copy of
- * the element (value semantics), so you cannot mutate through it (e.g.
- * `arr[i].f = v` or `push(arr[i].xs, v)`); rebuild the element instead. */
+/* A place we can mutate in place (take `&` of in C): a variable, a field of
+ * such a place, or an element of a composite array (a projection). For an
+ * ARRC element, gen_lvalue yields a pointer into the backing buffer
+ * (hier_arr_C<id>_ptr), so `arr[i].f = v` and `push(arr[i].xs, v)` mutate the
+ * element in place without exposing a pointer to Hier. A scalar-array or
+ * string index is not a mutable interior, so it is never an inner lvalue. */
 static int is_lvalue(Expr *e) {
     if (e->kind == E_IDENT) return 1;
     if (e->kind == E_FIELD) return is_lvalue(e->lhs);
+    if (e->kind == E_INDEX) return IS_ARRC(e->lhs->type) && is_lvalue(e->lhs);
     return 0;
 }
 
@@ -1166,6 +1330,45 @@ static Type resolve_expr(Expr *e) {
             if (inner == T_VOID || inner == T_NONE)
                 die_at(e->line, "Some(...) needs a concrete value");
             return e->type = opt_of(inner);
+        }
+        case E_OK: case E_ERR: {   /* one half of a Result; context fixes the rest */
+            Type inner = resolve_expr(e->lhs);
+            const char *w = e->kind == E_OK ? "Ok" : "Err";
+            if (inner == T_VOID || inner == T_NONE || inner == T_OK_PARTIAL || inner == T_ERR_PARTIAL)
+                die_at(e->line, "%s(...) needs a concrete value", w);
+            return e->type = (e->kind == E_OK ? T_OK_PARTIAL : T_ERR_PARTIAL);
+        }
+        case E_TUPLE: {   /* (e1, ..., en): a tuple literal */
+            if (e->nargs < 2) die_at(e->line, "a tuple needs at least two elements");
+            if (e->nargs > 8) die_at(e->line, "a tuple has at most 8 elements");
+            Type elems[8];
+            for (int i = 0; i < e->nargs; i++) {
+                Type et = resolve_expr(e->args[i]);
+                if (et == T_VOID || et == T_NONE || et == T_OK_PARTIAL || et == T_ERR_PARTIAL)
+                    die_at(e->line, "tuple element %d needs a concrete value", i + 1);
+                elems[i] = et;
+            }
+            return e->type = tup_of(elems, e->nargs);
+        }
+        case E_TUPIDX: {   /* t.0 / t.1 */
+            Type bt = resolve_expr(e->lhs);
+            if (!IS_TUP(bt))
+                die_at(e->line, "tuple index .%ld on a non-tuple value (%s)", e->ival, type_name(bt));
+            if (e->ival < 0 || e->ival >= tup_n(bt))
+                die_at(e->line, "tuple index %ld out of range (the tuple has %d elements)", e->ival, tup_n(bt));
+            return e->type = tup_elem(bt, (int)e->ival);
+        }
+        case E_ORRETURN: {   /* unwrap Ok(v) to v, or short-circuit the enclosing fn with Err(e) */
+            Type rt = resolve_expr(e->lhs);
+            if (!IS_RES(rt))
+                die_at(e->line, "or_return applies to a Result value, got %s", type_name(rt));
+            if (!IS_RES(g_fn_ret))
+                die_at(e->line, "or_return requires the enclosing function to return a Result, "
+                       "but it returns %s", type_name(g_fn_ret));
+            if (res_err(rt) != res_err(g_fn_ret))
+                die_at(e->line, "or_return propagates a %s error, but the function's error type is %s",
+                       type_name(res_err(rt)), type_name(res_err(g_fn_ret)));
+            return e->type = res_ok(rt);   /* the value yielded when Ok */
         }
         case E_BOOL: return e->type = T_BOOL;
         case E_STR:  return e->type = T_STRING;
@@ -1357,8 +1560,8 @@ static Type resolve_expr(Expr *e) {
                 if (!is_array(arrt))
                     die_at(e->line, "push's first argument must be an array");
                 if (!is_lvalue(e->args[0]))
-                    die_at(e->line, "cannot push through an array element (arr[i] is a copy) — "
-                                    "build the element, then push the whole thing");
+                    die_at(e->line, "cannot push through this expression — the array must be a "
+                                    "variable, field, or composite-array element");
                 /* push through a heap inout array is allowed: the regrow
                  * targets the value's owning arena (carried as _ina_<name>),
                  * so the new buffer outlives the call and the caller sees the
@@ -1445,6 +1648,7 @@ static Type resolve_expr(Expr *e) {
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
                     if (IS_OPT(lt)) die_at(e->line, "cannot compare Option values; match on them instead");
+                    if (IS_RES(lt)) die_at(e->line, "cannot compare Result values; match on them instead");
                 } else {
                     int ok = (lt == T_INT && rt == T_INT) ||
                              (lt == T_FLOAT && rt == T_FLOAT) ||
@@ -1478,6 +1682,11 @@ static Type resolve_expr(Expr *e) {
 static Type resolve_exp(Expr *e, Type want) {
     Type t = resolve_expr(e);
     if (t == T_NONE && IS_OPT(want)) return e->type = want;
+    /* Ok(v)/Err(e): the value fixes one of Result's two params; `want` must be a
+     * Result whose matching half equals that value's type, and it supplies the
+     * other half. The chosen type is written onto the node for codegen. */
+    if (t == T_OK_PARTIAL  && IS_RES(want) && res_ok(want)  == e->lhs->type) return e->type = want;
+    if (t == T_ERR_PARTIAL && IS_RES(want) && res_err(want) == e->lhs->type) return e->type = want;
     return t;
 }
 
@@ -1495,9 +1704,30 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 t = s->annot;
             } else if (t == T_NONE) {
                 die_at(s->line, "cannot infer the type of None — annotate it (x : Option(T) = None)");
+            } else if (t == T_OK_PARTIAL || t == T_ERR_PARTIAL) {
+                die_at(s->line, "cannot infer the Result type of %s — annotate it "
+                       "(x : Result(T, E) = %s)", t == T_OK_PARTIAL ? "Ok(...)" : "Err(...)",
+                       t == T_OK_PARTIAL ? "Ok(...)" : "Err(...)");
             }
             s->decl_type = t;
             vars_push(s->name, t, 1);
+            break;
+        }
+        case S_MDECL: {   /* a, b := f() — destructure a tuple into fresh locals */
+            Type rt = resolve_expr(s->expr);
+            if (!IS_TUP(rt))
+                die_at(s->line, "the right side of a destructuring `:=` must be a tuple, got %s",
+                       type_name(rt));
+            if (tup_n(rt) != s->nnames)
+                die_at(s->line, "destructuring %d name(s) from a %d-element tuple",
+                       s->nnames, tup_n(rt));
+            for (int i = 0; i < s->nnames; i++) {
+                for (int j = 0; j < i; j++)
+                    if (!strcmp(s->names[i], s->names[j]))
+                        die_at(s->line, "duplicate name '%s' in the destructuring list", s->names[i]);
+                s->mtypes[i] = tup_elem(rt, i);
+                vars_push(s->names[i], s->mtypes[i], 1);
+            }
             break;
         }
         case S_ASSIGN: {
@@ -1552,6 +1782,27 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     vars_restore(m);
                 }
                 if (!some || !none) die_at(s->line, "match on an Option must cover both Some and None");
+            } else if (IS_RES(st)) {
+                Type okt = res_ok(st), errt = res_err(st);
+                int ok = 0, err = 0;
+                for (int i = 0; i < s->narms; i++) {
+                    MatchArm *arm = &s->arms[i];
+                    int m = vars_mark();
+                    if (!strcmp(arm->variant, "Ok")) {
+                        if (ok) die_at(arm->line, "duplicate Ok arm");
+                        if (arm->nbinds != 1) die_at(arm->line, "Ok(x) binds exactly one value");
+                        vars_push(arm->binds[0], okt, 1); ok = 1;
+                    } else if (!strcmp(arm->variant, "Err")) {
+                        if (err) die_at(arm->line, "duplicate Err arm");
+                        if (arm->nbinds != 1) die_at(arm->line, "Err(e) binds exactly one value");
+                        vars_push(arm->binds[0], errt, 1); err = 1;
+                    } else {
+                        die_at(arm->line, "a Result's arms are Ok(x) and Err(e), not '%s'", arm->variant);
+                    }
+                    resolve_block(arm->body, arm->nbody, ret);
+                    vars_restore(m);
+                }
+                if (!ok || !err) die_at(s->line, "match on a Result must cover both Ok and Err");
             } else if (IS_ENUM(st)) {
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 int covered[64] = {0};
@@ -1576,7 +1827,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                         die_at(s->line, "non-exhaustive match: missing variant %s of %s",
                                ed->variants[v].name, ed->name);
             } else {
-                die_at(s->line, "match expects an Option or enum value, got %s", type_name(st));
+                die_at(s->line, "match expects an Option, Result, or enum value, got %s", type_name(st));
             }
             break;
         }
@@ -1611,7 +1862,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (!is_array(arrt))
                 die_at(s->line, "can only index-assign an array element (strings themselves are immutable)");
             if (!is_lvalue(s->target->lhs))
-                die_at(s->line, "cannot index-assign through an array element (arr[i] is a copy)");
+                die_at(s->line, "cannot index-assign through this expression (only a variable, field, or composite-array element is a place)");
             Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
             Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
@@ -1624,9 +1875,9 @@ static void resolve_stmt(Stmt *s, Type ret) {
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
             if (root->kind == E_IDENT && !vars_can_mutate(root->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only)", root->sval);
+            Type tt = resolve_expr(s->target);   /* E_FIELD -> field type; also types the chain for is_lvalue */
             if (!is_lvalue(s->target))
-                die_at(s->line, "cannot assign to a field through an array element (arr[i] is a copy)");
-            Type tt = resolve_expr(s->target);   /* E_FIELD -> field type */
+                die_at(s->line, "cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)");
             Type vt = resolve_exp(s->expr, tt);  /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s field", type_name(vt), type_name(tt));
@@ -1690,6 +1941,7 @@ static void resolve_program(ProcVec *prog) {
         }
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");
+        g_fn_ret = pr->ret;
         resolve_block(pr->body, pr->nbody, pr->ret);
     }
 }
@@ -1700,6 +1952,9 @@ static void resolve_program(ProcVec *prog) {
  * expression should go (so return values land in the caller's arena). */
 
 static char *gen_expr(Expr *e, const char *arena);
+static char *gen_lvalue(Expr *e, const char *arena);   /* C lvalue for a place (with array-element projection) */
+static char *return_frees(void);                       /* arena_free()s for every live scope at a return */
+static Type g_gen_ret = T_VOID;                        /* return type of the proc being emitted (for or_return) */
 
 static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
 
@@ -1864,6 +2119,10 @@ static char *copy_into(Type t, const char *arena, char *val) {
         default:
             if (IS_OPT(t))
                 return type_is_heap(t) ? sfmt("hier_opt%d_copy(%s, %s)", OPT_ID(t), arena, val) : val;
+            if (IS_RES(t))
+                return type_is_heap(t) ? sfmt("hier_res%d_copy(%s, %s)", RES_ID(t), arena, val) : val;
+            if (IS_TUP(t))
+                return type_is_heap(t) ? sfmt("hier_tup%d_copy(%s, %s)", TUP_ID(t), arena, val) : val;
             if (IS_ENUM(t))
                 return type_is_heap(t) ? sfmt("hier_copy_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, arena, val) : val;
             if (IS_ARRC(t))
@@ -1880,7 +2139,7 @@ static char *copy_into(Type t, const char *arena, char *val) {
  * location must deep-copy. A literal/call/concat/split result is already a
  * fresh value owned by the arena it was built in — no copy needed. */
 static int is_place(Expr *e) {
-    return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX;
+    return e->kind == E_IDENT || e->kind == E_FIELD || e->kind == E_INDEX || e->kind == E_TUPIDX;
 }
 
 /* C expression that is nonzero iff the two operands of type `t` are equal by
@@ -1899,6 +2158,18 @@ static char *gen_eq(Type t, const char *a, const char *b) {
         Type in = opt_inner(t);
         return sfmt("((%s).has == (%s).has && (!(%s).has || %s))",
                     a, b, a, gen_eq(in, sfmt("(%s).val", a), sfmt("(%s).val", b)));
+    }
+    if (IS_RES(t)) {         /* same tag, then the active variant's value */
+        return sfmt("((%s).ok == (%s).ok && ((%s).ok ? %s : %s))",
+                    a, b, a,
+                    gen_eq(res_ok(t),  sfmt("(%s).okv",  a), sfmt("(%s).okv",  b)),
+                    gen_eq(res_err(t), sfmt("(%s).errv", a), sfmt("(%s).errv", b)));
+    }
+    if (IS_TUP(t)) {         /* element-wise */
+        char *s = sfmt("(%s", gen_eq(tup_elem(t, 0), sfmt("(%s)._0", a), sfmt("(%s)._0", b)));
+        for (int i = 1; i < tup_n(t); i++)
+            s = sfmt("%s && %s", s, gen_eq(tup_elem(t, i), sfmt("(%s)._%d", a, i), sfmt("(%s)._%d", b, i)));
+        return sfmt("%s)", s);
     }
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
@@ -1978,7 +2249,7 @@ static char *gen_call(Expr *e, const char *arena) {
          * if the root is a heap inout param (so the new buffer outlives the
          * call and the caller sees the updated descriptor). */
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
-        char *arr = gen_expr(e->args[0], arena);
+        char *arr = gen_lvalue(e->args[0], arena);   /* lvalue so a projected `arr[i].xs` is the buffer slot */
         char *v = gen_expr(e->args[1], arena);
         /* push has the same (owner, &arr, v) shape for every element type */
         return sfmt("hier_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
@@ -2068,11 +2339,49 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *v = gen_expr(e->lhs, arena);   /* deep-copy the value into the option */
             return sfmt("(%s){ 1, %s }", c_type(e->type), copy_into(inner, arena, v));
         }
+        case E_OK: {   /* designated init: errv auto-zeroes, dodging -Wmissing-field-initializers */
+            char *v = gen_expr(e->lhs, arena);
+            return sfmt("(%s){ .ok = 1, .okv = %s }", c_type(e->type),
+                        copy_into(res_ok(e->type), arena, v));
+        }
+        case E_ERR: {
+            char *v = gen_expr(e->lhs, arena);
+            return sfmt("(%s){ .ok = 0, .errv = %s }", c_type(e->type),
+                        copy_into(res_err(e->type), arena, v));
+        }
+        case E_ORRETURN: {
+            /* ({ Tmp _or = <src>; if (!_or.ok) { promote err to _parent, free
+             * the live arenas, return Err from the enclosing fn; } _or.okv; })
+             * The err copy is taken BEFORE the frees (it points into a scope we
+             * are about to free), exactly like the S_RETURN promotion. */
+            int id = g_blk++;
+            char *v = gen_expr(e->lhs, arena);
+            char *promote = copy_into(res_err(g_gen_ret), "_parent", sfmt("_or%d.errv", id));
+            char *rf = return_frees();
+            return sfmt("({ %s_or%d = %s; if (!_or%d.ok) { %s_rr%d = (%s){ .ok = 0, .errv = %s }; %s return _rr%d; } _or%d.okv; })",
+                        c_type(e->lhs->type), id, v, id,
+                        c_type(g_gen_ret), id, c_type(g_gen_ret), promote, rf, id, id);
+        }
+        case E_TUPLE: {   /* (e1, ..., en): positional struct literal; heap places deep-copied in */
+            char *out = sfmt("(%s){ ", c_type(e->type));
+            for (int i = 0; i < e->nargs; i++) {
+                Type et = tup_elem(e->type, i);
+                char *a = gen_expr(e->args[i], arena);
+                if (type_is_heap(et) && is_place(e->args[i]))
+                    a = copy_into(et, arena, a);
+                out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
+            }
+            return sfmt("%s }", out);
+        }
+        case E_TUPIDX:   /* t.0 -> (t)._0 */
+            return sfmt("((%s)._%ld)", gen_expr(e->lhs, arena), e->ival);
         case E_IDENT:return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
                                                     : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
-                      * lvalue (gen_expr already derefs an inout root) */
-            return sfmt("&(%s)", gen_expr(e->lhs, arena));
+                      * lvalue. gen_lvalue derefs an inout root and projects an
+                      * array element to its buffer slot, so `&arr[i].x` is a
+                      * real address, not the address of a `_get` temporary. */
+            return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
         case E_CALL: return gen_call(e, arena);
         case E_INDEX: {
             char *a = gen_expr(e->lhs, arena);
@@ -2191,6 +2500,25 @@ static char *return_frees(void) {
 /* `scope` is a C expression of type Arena* into which local allocations
  * go. Returns always promote/collapse the proc's own arena, named
  * "_scope" in every generated proc body. */
+/* A C lvalue for a place expression — the mutable-mutation counterpart of
+ * gen_expr. For E_IDENT/E_FIELD it is exactly what gen_expr already produces
+ * (a variable, or `(place).f_x`). The difference is E_INDEX: instead of the
+ * by-value `_get` copy, a composite-array element yields a pointer into the
+ * backing buffer via the bounds-checked hier_arr_C<id>_ptr, dereferenced to a
+ * real lvalue. So `arr[i].f = v`, `m[i][j] = v`, `push(arr[i].xs, v)`, and
+ * `&arr[i].x` (inout) all mutate the element in place — Hylo-style projection,
+ * with no pointer ever surfaced in Hier. Only ARRC bases are projected
+ * (is_lvalue guarantees it); other kinds fall back to gen_expr. */
+static char *gen_lvalue(Expr *e, const char *arena) {
+    if (e->kind == E_FIELD)
+        return sfmt("((%s).f_%s)", gen_lvalue(e->lhs, arena), e->sval);
+    if (e->kind == E_INDEX)
+        return sfmt("(*hier_arr_C%d_ptr(&(%s), %s))",
+                    ARRC_ID(e->lhs->type), gen_lvalue(e->lhs, arena),
+                    gen_expr(e->rhs, arena));
+    return gen_expr(e, arena);
+}
+
 static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     switch (s->kind) {
         case S_DECL: {
@@ -2223,6 +2551,23 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         s->name, s->name, s->name);
             }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
+            break;
+        }
+        case S_MDECL: {
+            /* a, b := f() — build the tuple in `scope` (the call promotes its
+             * returns there), then bind each name to an element. Each element
+             * is an independently-owned value inside the tuple, so the binds
+             * alias directly with no extra copy; they live in `scope`. */
+            int id = g_blk++;
+            Type tt = s->expr->type;
+            char *v = gen_expr(s->expr, scope);
+            indent(o, ind);
+            fprintf(o, "%s_mt%d = %s;\n", c_type(tt), id, v);
+            for (int i = 0; i < s->nnames; i++) {
+                indent(o, ind);
+                fprintf(o, "%sh_%s = _mt%d._%d;\n", c_type(s->mtypes[i]), s->names[i], id, i);
+                cv_push(s->names[i], scope);
+            }
             break;
         }
         case S_ASSIGN: {
@@ -2305,7 +2650,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             Expr *arrx = s->target->lhs;
             Expr *root = arrx;
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
-            char *arr = gen_expr(arrx, scope);
+            char *arr = gen_lvalue(arrx, scope);   /* lvalue so a nested `m[i][j]=v` indexes m's buffer */
             char *ix  = gen_expr(s->target->rhs, scope);
             char *v   = gen_expr(s->expr, scope);
             indent(o, ind);
@@ -2330,7 +2675,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* heap field's new bytes go in the struct's owning arena — the
              * carried _ina_ arena if the root is a heap inout param. */
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
-            char *lv = gen_expr(s->target, scope);
+            char *lv = gen_lvalue(s->target, scope);   /* projects `arr[i].f` to the element's buffer slot */
             char *v  = gen_expr(s->expr, owner);
             if (type_is_heap(s->target->type) && is_place(s->expr))
                 v = copy_into(s->target->type, owner, v);
@@ -2422,8 +2767,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n", c_type(ret), v, rf);
                 }
-            } else if ((IS_STRUCT(ret) || IS_OPT(ret) || IS_ENUM(ret)) && type_is_heap(ret)) {
-                /* promote up. A heap struct/Option built from a *place* is
+            } else if ((IS_STRUCT(ret) || IS_OPT(ret) || IS_RES(ret) || IS_TUP(ret) || IS_ENUM(ret)) && type_is_heap(ret)) {
+                /* promote up. A heap struct/Option/Result/tuple built from a *place* is
                  * deep-copied into the caller's arena; a fresh literal/call is
                  * built directly there (construction re-homes any heap value).
                  * A return-slot local (already in _parent) needs neither — it's
@@ -2505,6 +2850,35 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 ascope_push(sfmt("&_b%d", eb));
                 gen_block(o, none->body, none->nbody, ind + 2, sfmt("&_b%d", eb), ret);
                 g_nascope--;
+                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
+                indent(o, ind + 1); fprintf(o, "}\n");
+            } else if (IS_RES(st)) {   /* Ok(x) -> .okv / Err(e) -> .errv, tag is .ok */
+                Type okt = res_ok(st), errt = res_err(st);
+                MatchArm *okarm = NULL, *errarm = NULL;
+                for (int i = 0; i < s->narms; i++)
+                    if (!strcmp(s->arms[i].variant, "Ok")) okarm = &s->arms[i];
+                    else errarm = &s->arms[i];
+                indent(o, ind + 1); fprintf(o, "if (_m%d.ok) {\n", mid);
+                int bid = g_blk++;
+                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
+                char *bs = sfmt("&_b%d", bid);
+                indent(o, ind + 2);
+                fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
+                        copy_into(okt, bs, sfmt("_m%d.okv", mid)));
+                int m = cv_mark(); cv_push(okarm->binds[0], bs); ascope_push(bs);
+                gen_block(o, okarm->body, okarm->nbody, ind + 2, bs, ret);
+                g_nascope--; cv_restore(m);
+                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                indent(o, ind + 1); fprintf(o, "} else {\n");
+                int eb = g_blk++;
+                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eb, scope);
+                char *es = sfmt("&_b%d", eb);
+                indent(o, ind + 2);
+                fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
+                        copy_into(errt, es, sfmt("_m%d.errv", mid)));
+                int m2 = cv_mark(); cv_push(errarm->binds[0], es); ascope_push(es);
+                gen_block(o, errarm->body, errarm->nbody, ind + 2, es, ret);
+                g_nascope--; cv_restore(m2);
                 indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
@@ -2619,6 +2993,7 @@ static void gen_proc(FILE *o, Proc *pr) {
     gen_signature(o, pr);
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
+    g_gen_ret = pr->ret;
     g_ncv = 0;
     g_nascope = 0;   /* no enclosing block arenas at the proc body top level */
     /* return-slot optimization: which top-level locals escape via return */
@@ -2709,6 +3084,8 @@ static void gen_proc(FILE *o, Proc *pr) {
  * error — use an array or `Option([T])` for indirection. */
 static int g_struct_color[128];
 static int g_opt_color[256];
+static int g_res_color[256];
+static int g_tup_color[256];
 static int g_emit_line;
 
 static void emit_aggregate(FILE *o, Type t) {
@@ -2724,7 +3101,7 @@ static void emit_aggregate(FILE *o, Type t) {
         StructDef *sd = &g_structs[id];
         for (int j = 0; j < sd->nfields; j++) {
             Type ft = sd->fields[j].type;
-            if (IS_STRUCT(ft) || IS_OPT(ft)) emit_aggregate(o, ft);
+            if (IS_STRUCT(ft) || IS_OPT(ft) || IS_RES(ft) || IS_TUP(ft)) emit_aggregate(o, ft);
         }
         g_emit_line = save;
         g_struct_color[id] = 2;
@@ -2734,7 +3111,7 @@ static void emit_aggregate(FILE *o, Type t) {
                 fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
             fprintf(o, "};\n");
         }
-    } else {   /* IS_OPT */
+    } else if (IS_OPT(t)) {
         int id = OPT_ID(t);
         if (g_opt_color[id] == 2) return;
         if (g_opt_color[id] == 1)
@@ -2742,9 +3119,39 @@ static void emit_aggregate(FILE *o, Type t) {
                    "use Option([T]) for indirection");
         g_opt_color[id] = 1;
         Type inner = g_opttypes[id].inner;
-        if (IS_STRUCT(inner) || IS_OPT(inner)) emit_aggregate(o, inner);
+        if (IS_STRUCT(inner) || IS_OPT(inner) || IS_RES(inner) || IS_TUP(inner)) emit_aggregate(o, inner);
         g_opt_color[id] = 2;
         if (o) fprintf(o, "struct HierOpt%d_ { char has; %sval; };\n", id, c_type(inner));
+    } else if (IS_RES(t)) {   /* embeds both inner types by value (the inactive one zeroed) */
+        int id = RES_ID(t);
+        if (g_res_color[id] == 2) return;
+        if (g_res_color[id] == 1)
+            die_at(g_emit_line, "infinite type: a Result contains itself by value — "
+                   "use indirection (e.g. Result([T], E))");
+        g_res_color[id] = 1;
+        Type okt = g_restypes[id].ok, errt = g_restypes[id].err;
+        if (IS_STRUCT(okt)  || IS_OPT(okt)  || IS_RES(okt)  || IS_TUP(okt))  emit_aggregate(o, okt);
+        if (IS_STRUCT(errt) || IS_OPT(errt) || IS_RES(errt) || IS_TUP(errt)) emit_aggregate(o, errt);
+        g_res_color[id] = 2;
+        if (o) fprintf(o, "struct HierRes%d_ { char ok; %sokv; %serrv; };\n",
+                       id, c_type(okt), c_type(errt));
+    } else {   /* IS_TUP: embeds every element by value */
+        int id = TUP_ID(t);
+        if (g_tup_color[id] == 2) return;
+        if (g_tup_color[id] == 1)
+            die_at(g_emit_line, "infinite type: a tuple contains itself by value");
+        g_tup_color[id] = 1;
+        TupType *tt = &g_tuptypes[id];
+        for (int j = 0; j < tt->n; j++) {
+            Type et = tt->elems[j];
+            if (IS_STRUCT(et) || IS_OPT(et) || IS_RES(et) || IS_TUP(et)) emit_aggregate(o, et);
+        }
+        g_tup_color[id] = 2;
+        if (o) {
+            fprintf(o, "struct HierTup%d_ {", id);
+            for (int j = 0; j < tt->n; j++) fprintf(o, " %s_%d;", c_type(tt->elems[j]), j);
+            fprintf(o, " };\n");
+        }
     }
 }
 
@@ -2754,9 +3161,13 @@ static void emit_aggregate(FILE *o, Type t) {
 static void check_finite_types(void) {
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
+    for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
+    for (int i = 0; i < g_ntuptypes; i++) g_tup_color[i] = 0;
     g_emit_line = 0;
     for (int i = 0; i < g_nstructs; i++)  emit_aggregate(NULL, STRUCT_TYPE(i));
     for (int i = 0; i < g_nopttypes; i++) emit_aggregate(NULL, T_OPT_BASE + i);
+    for (int i = 0; i < g_nrestypes; i++) emit_aggregate(NULL, T_RES_BASE + i);
+    for (int i = 0; i < g_ntuptypes; i++) emit_aggregate(NULL, T_TUP_BASE + i);
 }
 
 static void gen_program(FILE *o, ProcVec *prog) {
@@ -2778,6 +3189,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "typedef struct S_%s_ S_%s;\n", g_structs[i].name, g_structs[i].name);
     for (int i = 0; i < g_nopttypes; i++)           /* a pointer to either resolves */
         fprintf(o, "typedef struct HierOpt%d_ HierOpt%d;\n", i, i);
+    for (int i = 0; i < g_nrestypes; i++)           /* Result tags too */
+        fprintf(o, "typedef struct HierRes%d_ HierRes%d;\n", i, i);
+    for (int i = 0; i < g_ntuptypes; i++)           /* tuple tags too */
+        fprintf(o, "typedef struct HierTup%d_ HierTup%d;\n", i, i);
     fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++)           /* (2) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
@@ -2790,9 +3205,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * may embed an enum by value (it's only 2 words). */
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
+    for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
+    for (int i = 0; i < g_ntuptypes; i++) g_tup_color[i] = 0;
     g_emit_line = 0;
     for (int i = 0; i < g_nstructs; i++)  emit_aggregate(o, STRUCT_TYPE(i));
     for (int i = 0; i < g_nopttypes; i++) emit_aggregate(o, T_OPT_BASE + i);
+    for (int i = 0; i < g_nrestypes; i++) emit_aggregate(o, T_RES_BASE + i);
+    for (int i = 0; i < g_ntuptypes; i++) emit_aggregate(o, T_TUP_BASE + i);
     /* (3b) enum payload structs: one per variant-with-payload, holding its
      * fields by value (structs/options/arrays/enum-descriptors all emitted
      * above). The payload is heap-allocated, so recursive enums stay finite. */
@@ -2815,6 +3234,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner))
             fprintf(o, "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v);\n", i, i, i);
+    for (int i = 0; i < g_nrestypes; i++)           /* (4) Result-copy prototypes */
+        if (type_is_heap(T_RES_BASE + i))
+            fprintf(o, "static HierRes%d hier_res%d_copy(Arena *a, HierRes%d v);\n", i, i, i);
+    for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple-copy prototypes */
+        if (type_is_heap(T_TUP_BASE + i))
+            fprintf(o, "static HierTup%d hier_tup%d_copy(Arena *a, HierTup%d v);\n", i, i, i);
     for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
         const char *en = g_enums[i].name;
         if (type_is_heap(ENUM_TYPE(i)))
@@ -2826,6 +3251,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
         fprintf(o, "static void hier_arr_C%d_push(Arena*, HierArrC%d*, %s);\n", i, i, ct);
         fprintf(o, "static %shier_arr_C%d_get(HierArrC%d, long);\n", ct, i, i);
+        fprintf(o, "static %s*hier_arr_C%d_ptr(HierArrC%d*, long);\n", ct, i, i);
         fprintf(o, "static void hier_arr_C%d_set(Arena*, HierArrC%d*, long, %s);\n", i, i, ct);
         fprintf(o, "static HierArrC%d hier_arr_C%d_copy(Arena*, HierArrC%d);\n", i, i, i);
         fprintf(o, "static int hier_arr_C%d_eq(HierArrC%d, HierArrC%d);\n", i, i, i);
@@ -2886,6 +3312,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "static %shier_arr_C%d_get(HierArrC%d xs, long i) {\n"
             "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, xs.len); exit(1); }\n"
             "    return xs.data[i];\n}\n", ct, i, i);
+        fprintf(o,   /* projection: a bounds-checked pointer into the buffer, so an */
+            "static %s*hier_arr_C%d_ptr(HierArrC%d *xs, long i) {\n"   /* element is a mutable lvalue */
+            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
+            "    return &xs->data[i];\n}\n", ct, i, i);
         fprintf(o,
             "static void hier_arr_C%d_set(Arena *a, HierArrC%d *xs, long i, %sv) {\n"
             "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
@@ -2912,6 +3342,28 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v) {\n"
                 "    if (v.has) v.val = %s;\n"
                 "    return v;\n}\n\n", i, i, i, copy_into(it, "a", "v.val"));
+    }
+    /* (8b) Result copy bodies: re-home only the active variant's value (the
+     * inactive field is zero from the designated-initializer construction). */
+    for (int i = 0; i < g_nrestypes; i++) {
+        if (!type_is_heap(T_RES_BASE + i)) continue;
+        Type okt = g_restypes[i].ok, errt = g_restypes[i].err;
+        fprintf(o,
+            "static HierRes%d hier_res%d_copy(Arena *a, HierRes%d v) {\n"
+            "    if (v.ok) v.okv = %s;\n"
+            "    else v.errv = %s;\n"
+            "    return v;\n}\n\n", i, i, i,
+            copy_into(okt, "a", "v.okv"), copy_into(errt, "a", "v.errv"));
+    }
+    /* (8c) tuple copy bodies: re-home each heap element field. */
+    for (int i = 0; i < g_ntuptypes; i++) {
+        if (!type_is_heap(T_TUP_BASE + i)) continue;
+        TupType *tt = &g_tuptypes[i];
+        fprintf(o, "static HierTup%d hier_tup%d_copy(Arena *a, HierTup%d v) {\n", i, i, i);
+        for (int j = 0; j < tt->n; j++)
+            if (type_is_heap(tt->elems[j]))
+                fprintf(o, "    v._%d = %s;\n", j, copy_into(tt->elems[j], "a", sfmt("v._%d", j)));
+        fprintf(o, "    return v;\n}\n\n");
     }
     /* (9) enum copy + eq bodies. copy allocates a fresh payload per tag and
      * deep-copies its fields (so two enum values never share a payload); eq
