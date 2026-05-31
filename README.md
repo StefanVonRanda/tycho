@@ -123,7 +123,8 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 `int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), string-keyed maps
 (`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
-no-`null` story), and user-defined `struct`s.
+no-`null` story), user-defined `struct`s, and user-defined `enum`s (sum types /
+tagged unions, including recursive ones — ASTs).
 
 ### Structs
 
@@ -320,6 +321,44 @@ or an array element (`[Option(int)]` — a list of optionals; a `None` element
 takes its type from the others, so the first cannot be a bare `None`). *Not
 yet:* comparing two options with `==` (match on them instead — though structs
 that *contain* options compare fine).
+
+### Enums (sum types)
+
+An `enum` is a value that is exactly one of several named **variants**, each
+with a payload tuple of zero or more types — Hier's tagged union / algebraic
+data type. `Option(T)` is the built-in special case; an `enum` is the
+user-defined general one, and `match` works on both. Variants may be recursive
+(an enum carrying itself), which makes it an AST:
+
+```
+enum Expr:
+    Num(float)
+    Add(Expr, Expr)      # recursive: a variant carrying the enum itself
+    Neg(Expr)
+
+fn eval(e: Expr) -> float:
+    match e:              # exhaustive — every variant must have an arm
+        Num(v):
+            return v
+        Add(l, r):
+            return eval(l) + eval(r)
+        Neg(x):
+            return -eval(x)
+
+fn main():
+    e := Mul(Add(Num(2.0), Num(3.0)), Neg(Num(4.0)))   # -20.0
+    print(str(eval(e)) + "\n")
+```
+
+You build a value by naming the variant (`Num(3.0)`, or a bare `Red` for a
+payload-less variant) and take it apart with an **exhaustive `match`** — every
+variant needs an arm, and each arm binds the payload (`Add(l, r)`). An enum
+value is a small value-semantic descriptor whose payload is arena-allocated, so
+even a recursive enum is finite (no infinite type) and copying one is a **deep
+copy of the whole tree**; `==` compares structurally. Variant names are global
+(no `Enum.Variant` qualification). An enum may be a struct field, an array
+element (`[Expr]`), and so on. *Not yet:* generic/parameterised enums (besides
+the built-in `Option(T)`).
 
 ### Declarations and assignment
 

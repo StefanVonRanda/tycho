@@ -1,0 +1,31 @@
+enum Expr:
+    Num(float)
+    Add(Expr, Expr)
+    Mul(Expr, Expr)
+    Neg(Expr)
+
+fn eval(e: Expr) -> float:
+    match e:
+        Num(v):
+            return v
+        Add(l, r):
+            return eval(l) + eval(r)
+        Mul(l, r):
+            return eval(l) * eval(r)
+        Neg(x):
+            return -eval(x)
+
+fn main():
+    # (2 + 3) * -(4)  =  -20
+    e := Mul(Add(Num(2.0), Num(3.0)), Neg(Num(4.0)))
+    print("result=" + str(eval(e)) + "\n")
+    # a simple constant
+    print("c=" + str(eval(Num(7.5))) + "\n")
+    # value semantics: deep-copy an Expr, the copy is independent
+    a := Add(Num(1.0), Num(2.0))
+    b := a
+    print("a=" + str(eval(a)) + " b=" + str(eval(b)) + "\n")
+    # structural equality over the tree
+    c := Add(Num(1.0), Num(2.0))
+    if a == c:
+        print("trees-equal\n")

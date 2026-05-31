@@ -67,7 +67,7 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
@@ -107,6 +107,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
+    if (!strcmp(s, "enum"))   return TK_ENUM;
     if (!strcmp(s, "inout"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
@@ -294,6 +295,7 @@ static int struct_find(const char *name) {
  * emit order. */
 #define T_ARRC_BASE 1024
 #define T_OPT_BASE  4096   /* defined here so IS_ARRC's upper bound can reference it */
+#define T_ENUM_BASE 8192   /* user sum types, above the Option range */
 typedef struct { Type elem; } ArrType;
 static ArrType g_arrtypes[256];
 static int g_narrtypes = 0;
@@ -322,7 +324,7 @@ static Type arr_elem(Type arr) {
 typedef struct { Type inner; } OptType;
 static OptType g_opttypes[256];
 static int g_nopttypes = 0;
-#define IS_OPT(t)  ((t) >= T_OPT_BASE)
+#define IS_OPT(t)  ((t) >= T_OPT_BASE && (t) < T_ENUM_BASE)   /* enums sit above */
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
     for (int i = 0; i < g_nopttypes; i++)
@@ -332,6 +334,33 @@ static Type opt_of(Type inner) {                 /* find-or-create Option(inner)
     return T_OPT_BASE + g_nopttypes++;
 }
 static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
+
+/* User sum types (enums): one or more named variants, each with a payload tuple
+ * of 0+ types. A value is a small descriptor { int tag; void *payload } — the
+ * payload (the active variant's fields) is arena-allocated, so even a recursive
+ * enum (an AST: Add(Expr, Expr)) is finite, the same way arrays/strings are.
+ * Variant names are globally unique, so a constructor or match arm names the
+ * variant directly with no qualification. */
+typedef struct { char *name; Type payload[8]; int npayload; } Variant;
+typedef struct { char *name; Variant variants[64]; int nvariants; int line; } EnumDef;
+static EnumDef g_enums[64];
+static int g_nenums = 0;
+#define IS_ENUM(t)    ((t) >= T_ENUM_BASE)
+#define ENUM_ID(t)    ((int)((t) - T_ENUM_BASE))
+#define ENUM_TYPE(id) (T_ENUM_BASE + (id))
+static int enum_find(const char *name) {
+    for (int i = 0; i < g_nenums; i++)
+        if (!strcmp(g_enums[i].name, name)) return i;
+    return -1;
+}
+/* find a variant by its (globally unique) name: returns its enum id, and writes
+ * the variant index through *vi. -1 if not a known variant. */
+static int variant_find(const char *vname, int *vi) {
+    for (int e = 0; e < g_nenums; e++)
+        for (int v = 0; v < g_enums[e].nvariants; v++)
+            if (!strcmp(g_enums[e].variants[v].name, vname)) { if (vi) *vi = v; return e; }
+    return -1;
+}
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
@@ -351,6 +380,12 @@ static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
 static int type_is_heap(Type t) {
     if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
+    if (IS_ENUM(t)) {   /* heap iff any variant carries a payload (an arena ptr) */
+        EnumDef *ed = &g_enums[ENUM_ID(t)];
+        for (int i = 0; i < ed->nvariants; i++)
+            if (ed->variants[i].npayload > 0) return 1;
+        return 0;
+    }
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
         for (int i = 0; i < sd->nfields; i++)
@@ -365,6 +400,7 @@ static const char *c_type(Type t) {
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t))   return sfmt("HierArrC%d ", ARRC_ID(t));
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
+    if (IS_ENUM(t))   return sfmt("E_%s ", g_enums[ENUM_ID(t)].name);
     switch (t) {
         case T_INT:          return "long ";
         case T_FLOAT:        return "double ";
@@ -382,6 +418,7 @@ static const char *type_name(Type t) {
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
+    if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
     switch (t) {
         case T_NONE:         return "None";
         case T_INT:          return "int";
@@ -436,6 +473,9 @@ typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
                S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH } StmtKind;
 
 typedef struct Stmt Stmt;
+/* one arm of a `match`: a variant name (Some/None or an enum variant), the
+ * names it binds from the payload, and its block. */
+typedef struct { char *variant; char *binds[8]; int nbinds; Stmt **body; int nbody; int line; } MatchArm;
 struct Stmt {
     StmtKind kind;
     int      line;
@@ -443,11 +483,12 @@ struct Stmt {
     Type     decl_type;    /* S_DECL resolved type */
     int      typed_decl;   /* S_DECL: had an explicit type annotation */
     Type     annot;        /* explicit annotation when typed_decl */
-    Expr    *expr;         /* value / condition / return / S_INDEXSET rhs */
+    Expr    *expr;         /* value / condition / return / S_INDEXSET rhs / match scrutinee */
     Expr    *target;       /* S_INDEXSET lvalue (an E_INDEX) */
     Expr    *r_start, *r_stop, *r_step;  /* S_FORRANGE; r_step NULL means 1 */
     Stmt   **body; int nbody;
     Stmt   **els;  int nels;
+    MatchArm *arms; int narms;           /* S_MATCH */
 };
 
 typedef struct { char *name; Type type; int is_inout; } Param;
@@ -505,11 +546,12 @@ static Type parse_type(Parser *ps) {
         if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
         return opt_of(inner);
     }
-    if (t->kind == TK_IDENT) {           /* a struct name */
+    if (t->kind == TK_IDENT) {           /* a struct or enum name */
         int sid = struct_find(t->text);
-        if (sid < 0) die_at(t->line, "unknown type '%s'", t->text);
-        ps->p++;
-        return STRUCT_TYPE(sid);
+        if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }
+        int eid = enum_find(t->text);
+        if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
+        die_at(t->line, "unknown type '%s'", t->text);
     }
     switch (t->kind) {
         case TK_KW_INT:    ps->p++; return T_INT;
@@ -779,38 +821,33 @@ static Stmt *parse_stmt(Parser *ps) {
     if (t->kind == TK_MATCH) {
         ps->p++;
         Stmt *s = new_stmt(S_MATCH, t->line);
-        s->expr = parse_expr(ps);                 /* the Option being matched */
+        s->expr = parse_expr(ps);                 /* the Option/enum being matched */
         eat(ps, TK_COLON, "':' before the match arms");
         eat(ps, TK_NEWLINE, "newline");
         eat(ps, TK_INDENT, "indented match arms");
-        int have_some = 0, have_none = 0;
+        int cap = 0;
+        /* each arm: `Variant(b0, b1, ...):` or `Variant:`, then a block.
+         * Exhaustiveness/arity are checked against the scrutinee in the resolver. */
         while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
-            Tok *arm = cur(ps);
-            if (arm->kind != TK_IDENT) die_at(arm->line, "a match arm is `Some(name):` or `None:`");
-            ps->p++;
-            if (!strcmp(arm->text, "Some")) {
-                if (have_some) die_at(arm->line, "duplicate Some arm");
-                eat(ps, TK_LPAREN, "'(' after Some");
-                Tok *bind = eat(ps, TK_IDENT, "a name to bind the Some value");
+            if (accept(ps, TK_NEWLINE)) continue;
+            Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
+            if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)realloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
+            MatchArm *arm = &s->arms[s->narms++];
+            arm->variant = vn->text; arm->nbinds = 0; arm->line = vn->line;
+            if (accept(ps, TK_LPAREN)) {
+                while (!at(ps, TK_RPAREN)) {
+                    if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
+                    arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+                    if (!accept(ps, TK_COMMA)) break;
+                }
                 eat(ps, TK_RPAREN, "')'");
-                eat(ps, TK_COLON, "':' after the arm");
-                eat(ps, TK_NEWLINE, "newline");
-                s->name = bind->text;
-                s->body = parse_block(ps, &s->nbody);
-                have_some = 1;
-            } else if (!strcmp(arm->text, "None")) {
-                if (have_none) die_at(arm->line, "duplicate None arm");
-                eat(ps, TK_COLON, "':' after None");
-                eat(ps, TK_NEWLINE, "newline");
-                s->els = parse_block(ps, &s->nels);
-                have_none = 1;
-            } else {
-                die_at(arm->line, "a match arm is `Some(name):` or `None:`");
             }
+            eat(ps, TK_COLON, "':' after the arm pattern");
+            eat(ps, TK_NEWLINE, "newline");
+            arm->body = parse_block(ps, &arm->nbody);
         }
         eat(ps, TK_DEDENT, "end of the match arms");
-        if (!have_some || !have_none)
-            die_at(t->line, "match on an Option must cover both Some and None");
+        if (s->narms == 0) die_at(t->line, "match needs at least one arm");
         return s;
     }
     if (t->kind == TK_IF) {
@@ -987,12 +1024,52 @@ static void parse_struct(Parser *ps) {
     if (sd->nfields == 0) die_at(nameT->line, "a struct needs at least one field");
 }
 
+static void parse_enum(Parser *ps) {
+    eat(ps, TK_ENUM, "'enum'");
+    Tok *nameT = eat(ps, TK_IDENT, "an enum name");
+    if (struct_find(nameT->text) >= 0 || enum_find(nameT->text) >= 0)
+        die_at(nameT->line, "'%s' is already defined", nameT->text);
+    if (g_nenums >= 64) die_at(nameT->line, "too many enums");
+    eat(ps, TK_COLON, "':' before the variants");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_INDENT, "an indented variant list");
+    EnumDef *ed = &g_enums[g_nenums];
+    ed->name = nameT->text;
+    ed->nvariants = 0;
+    ed->line = nameT->line;
+    g_nenums++;   /* register early so a variant payload can be this enum (recursion) */
+    while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+        if (accept(ps, TK_NEWLINE)) continue;
+        Tok *vn = eat(ps, TK_IDENT, "a variant name");
+        if (ed->nvariants >= 64) die_at(vn->line, "too many variants (max 64)");
+        int dup;
+        if (variant_find(vn->text, &dup) >= 0)
+            die_at(vn->line, "variant name '%s' is already used — variant names are global", vn->text);
+        Variant *var = &ed->variants[ed->nvariants];
+        var->name = vn->text;
+        var->npayload = 0;
+        if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
+            while (!at(ps, TK_RPAREN)) {
+                if (var->npayload >= 8) die_at(vn->line, "too many payload fields (max 8)");
+                var->payload[var->npayload++] = parse_type(ps);
+                if (!accept(ps, TK_COMMA)) break;
+            }
+            eat(ps, TK_RPAREN, "')'");
+        }
+        ed->nvariants++;
+        eat(ps, TK_NEWLINE, "newline");
+    }
+    eat(ps, TK_DEDENT, "dedent");
+    if (ed->nvariants == 0) die_at(nameT->line, "an enum needs at least one variant");
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0 };
     ProcVec out = {0};
     while (!at(&ps, TK_EOF)) {
         if (accept(&ps, TK_NEWLINE)) continue;
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
+        if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         Proc *pr = parse_fn(&ps);
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
@@ -1094,9 +1171,15 @@ static Type resolve_expr(Expr *e) {
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
             Type t;
-            if (!vars_find(e->sval, &t))
-                die_at(e->line, "unknown variable '%s'", e->sval);
-            return e->type = t;
+            if (vars_find(e->sval, &t)) return e->type = t;
+            int evi, eid = variant_find(e->sval, &evi);   /* a payload-less enum variant? */
+            if (eid >= 0) {
+                if (g_enums[eid].variants[evi].npayload != 0)
+                    die_at(e->line, "%s carries a payload — write %s(...)", e->sval, e->sval);
+                e->kind = E_CALL; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;   /* 0-arg constructor */
+                return e->type = ENUM_TYPE(eid);
+            }
+            die_at(e->line, "unknown variable '%s'", e->sval);
         }
         case E_ARRLIT: {
             if (e->op == TK_COLON) {           /* map literal ["k": v, ...] */
@@ -1167,6 +1250,23 @@ static Type resolve_expr(Expr *e) {
                 }
                 e->kind = E_STRUCTLIT;          /* reinterpret for codegen */
                 return e->type = STRUCT_TYPE(sid);
+            }
+            /* a call whose name is an enum variant is a constructor */
+            {
+                int evi, eid = variant_find(e->sval, &evi);
+                if (eid >= 0) {
+                    Variant *var = &g_enums[eid].variants[evi];
+                    if (e->nargs != var->npayload)
+                        die_at(e->line, "%s takes %d payload value(s), got %d", var->name, var->npayload, e->nargs);
+                    for (int i = 0; i < e->nargs; i++) {
+                        Type at_ = resolve_exp(e->args[i], var->payload[i]);   /* coerces a None */
+                        if (at_ != var->payload[i])
+                            die_at(e->line, "%s payload %d is %s, got %s", var->name, i + 1,
+                                   type_name(var->payload[i]), type_name(at_));
+                    }
+                    e->op = TK_ENUM; e->ival = evi;   /* mark as an enum ctor; carry the variant index */
+                    return e->type = ENUM_TYPE(eid);
+                }
             }
             /* str is polymorphic (int or float); to_int/to_float convert
              * between the two (no implicit mixing exists). Handled inline so
@@ -1431,13 +1531,53 @@ static void resolve_stmt(Stmt *s, Type ret) {
         }
         case S_MATCH: {
             Type st = resolve_expr(s->expr);
-            if (!IS_OPT(st))
-                die_at(s->line, "match expects an Option value, got %s", type_name(st));
-            int m = vars_mark();
-            vars_push(s->name, opt_inner(st), 1);   /* Some(name): name is the inner value */
-            resolve_block(s->body, s->nbody, ret);
-            vars_restore(m);                         /* the binding is scoped to the Some arm */
-            resolve_block(s->els, s->nels, ret);
+            if (IS_OPT(st)) {
+                Type inner = opt_inner(st);
+                int some = 0, none = 0;
+                for (int i = 0; i < s->narms; i++) {
+                    MatchArm *arm = &s->arms[i];
+                    int m = vars_mark();
+                    if (!strcmp(arm->variant, "Some")) {
+                        if (some) die_at(arm->line, "duplicate Some arm");
+                        if (arm->nbinds != 1) die_at(arm->line, "Some(x) binds exactly one value");
+                        vars_push(arm->binds[0], inner, 1); some = 1;
+                    } else if (!strcmp(arm->variant, "None")) {
+                        if (none) die_at(arm->line, "duplicate None arm");
+                        if (arm->nbinds != 0) die_at(arm->line, "None binds nothing");
+                        none = 1;
+                    } else {
+                        die_at(arm->line, "an Option's arms are Some(x) and None, not '%s'", arm->variant);
+                    }
+                    resolve_block(arm->body, arm->nbody, ret);
+                    vars_restore(m);
+                }
+                if (!some || !none) die_at(s->line, "match on an Option must cover both Some and None");
+            } else if (IS_ENUM(st)) {
+                EnumDef *ed = &g_enums[ENUM_ID(st)];
+                int covered[64] = {0};
+                for (int i = 0; i < s->narms; i++) {
+                    MatchArm *arm = &s->arms[i];
+                    int vi = -1;
+                    for (int v = 0; v < ed->nvariants; v++)
+                        if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
+                    if (vi < 0) die_at(arm->line, "'%s' is not a variant of %s", arm->variant, ed->name);
+                    if (covered[vi]) die_at(arm->line, "duplicate arm for %s", arm->variant);
+                    covered[vi] = 1;
+                    Variant *var = &ed->variants[vi];
+                    if (arm->nbinds != var->npayload)
+                        die_at(arm->line, "%s binds %d value(s), got %d", var->name, var->npayload, arm->nbinds);
+                    int m = vars_mark();
+                    for (int b = 0; b < arm->nbinds; b++) vars_push(arm->binds[b], var->payload[b], 1);
+                    resolve_block(arm->body, arm->nbody, ret);
+                    vars_restore(m);
+                }
+                for (int v = 0; v < ed->nvariants; v++)
+                    if (!covered[v])
+                        die_at(s->line, "non-exhaustive match: missing variant %s of %s",
+                               ed->variants[v].name, ed->name);
+            } else {
+                die_at(s->line, "match expects an Option or enum value, got %s", type_name(st));
+            }
             break;
         }
         case S_WHILE: {
@@ -1724,6 +1864,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
         default:
             if (IS_OPT(t))
                 return type_is_heap(t) ? sfmt("hier_opt%d_copy(%s, %s)", OPT_ID(t), arena, val) : val;
+            if (IS_ENUM(t))
+                return type_is_heap(t) ? sfmt("hier_copy_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, arena, val) : val;
             if (IS_ARRC(t))
                 return sfmt("hier_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
             if (IS_STRUCT(t) && type_is_heap(t))
@@ -1752,6 +1894,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
     if (is_map(t))           return sfmt("hier_map_%s_eq(%s, %s)", map_fn(t), a, b);
     if (IS_ARRC(t))          return sfmt("hier_arr_C%d_eq(%s, %s)", ARRC_ID(t), a, b);
+    if (IS_ENUM(t))          return sfmt("hier_eq_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, a, b);
     if (IS_OPT(t)) {         /* same tag, and equal values when both present */
         Type in = opt_inner(t);
         return sfmt("((%s).has == (%s).has && (!(%s).has || %s))",
@@ -1762,6 +1905,20 @@ static char *gen_eq(Type t, const char *a, const char *b) {
 }
 
 static char *gen_call(Expr *e, const char *arena) {
+    if (e->op == TK_ENUM) {   /* enum constructor: descriptor { tag, payload } */
+        int eid = ENUM_ID(e->type), vi = (int)e->ival;
+        Variant *var = &g_enums[eid].variants[vi];
+        const char *en = g_enums[eid].name;
+        if (var->npayload == 0)
+            return sfmt("((E_%s){ %d, 0 })", en, vi);
+        /* arena-allocate the variant's payload struct and deep-copy each field */
+        char *out = sfmt("({ E_%s_%s *_p = (E_%s_%s *)arena_alloc(%s, sizeof(E_%s_%s));",
+                         en, var->name, en, var->name, arena, en, var->name);
+        for (int i = 0; i < var->npayload; i++)
+            out = sfmt("%s _p->f%d = %s;", out, i,
+                       copy_into(var->payload[i], arena, gen_expr(e->args[i], arena)));
+        return sfmt("%s (E_%s){ %d, _p }; })", out, en, vi);
+    }
     if (!strcmp(e->sval, "len")) {
         char *a = gen_expr(e->args[0], arena);
         if (e->args[0]->type == T_STRING)
@@ -2265,7 +2422,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n", c_type(ret), v, rf);
                 }
-            } else if ((IS_STRUCT(ret) || IS_OPT(ret)) && type_is_heap(ret)) {
+            } else if ((IS_STRUCT(ret) || IS_OPT(ret) || IS_ENUM(ret)) && type_is_heap(ret)) {
                 /* promote up. A heap struct/Option built from a *place* is
                  * deep-copied into the caller's arena; a fresh literal/call is
                  * built directly there (construction re-homes any heap value).
@@ -2320,36 +2477,69 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_MATCH: {
-            int oid = g_blk++;
+            int mid = g_blk++;
             char *scrut = gen_expr(s->expr, scope);
-            Type inner = opt_inner(s->expr->type);
+            Type st = s->expr->type;
             indent(o, ind); fprintf(o, "{\n");
-            indent(o, ind + 1); fprintf(o, "%s_opt%d = %s;\n", c_type(s->expr->type), oid, scrut);
-            indent(o, ind + 1); fprintf(o, "if (_opt%d.has) {\n", oid);
-            /* Some(name): a child arena, then bind name to the option's value,
-             * deep-copied in so it is an independent local (like any binding). */
-            int bid = g_blk++;
-            indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
-            char *bs = sfmt("&_b%d", bid);
-            char *val = sfmt("_opt%d.val", oid);
-            indent(o, ind + 2);
-            fprintf(o, "%sh_%s = %s;\n", c_type(inner), s->name, copy_into(inner, bs, val));
-            int m = cv_mark();
-            cv_push(s->name, bs);
-            ascope_push(bs);
-            gen_block(o, s->body, s->nbody, ind + 2, bs, ret);
-            g_nascope--;
-            cv_restore(m);
-            indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
-            indent(o, ind + 1); fprintf(o, "} else {\n");
-            int eid = g_blk++;
-            indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eid, scope);
-            char *es = sfmt("&_b%d", eid);
-            ascope_push(es);
-            gen_block(o, s->els, s->nels, ind + 2, es, ret);
-            g_nascope--;
-            indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eid);
-            indent(o, ind + 1); fprintf(o, "}\n");
+            indent(o, ind + 1); fprintf(o, "%s_m%d = %s;\n", c_type(st), mid, scrut);
+            if (IS_OPT(st)) {
+                Type inner = opt_inner(st);
+                MatchArm *some = NULL, *none = NULL;
+                for (int i = 0; i < s->narms; i++)
+                    if (!strcmp(s->arms[i].variant, "Some")) some = &s->arms[i];
+                    else none = &s->arms[i];
+                indent(o, ind + 1); fprintf(o, "if (_m%d.has) {\n", mid);
+                int bid = g_blk++;
+                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
+                char *bs = sfmt("&_b%d", bid);
+                indent(o, ind + 2);
+                fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
+                        copy_into(inner, bs, sfmt("_m%d.val", mid)));
+                int m = cv_mark(); cv_push(some->binds[0], bs); ascope_push(bs);
+                gen_block(o, some->body, some->nbody, ind + 2, bs, ret);
+                g_nascope--; cv_restore(m);
+                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                indent(o, ind + 1); fprintf(o, "} else {\n");
+                int eb = g_blk++;
+                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eb, scope);
+                ascope_push(sfmt("&_b%d", eb));
+                gen_block(o, none->body, none->nbody, ind + 2, sfmt("&_b%d", eb), ret);
+                g_nascope--;
+                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
+                indent(o, ind + 1); fprintf(o, "}\n");
+            } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
+                EnumDef *ed = &g_enums[ENUM_ID(st)];
+                const char *en = ed->name;
+                for (int i = 0; i < s->narms; i++) {
+                    MatchArm *arm = &s->arms[i];
+                    int vi = 0;
+                    for (int v = 0; v < ed->nvariants; v++)
+                        if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
+                    Variant *var = &ed->variants[vi];
+                    indent(o, ind + 1);
+                    fprintf(o, "%sif (_m%d.tag == %d) {\n", i ? "else " : "", mid, vi);
+                    int bid = g_blk++;
+                    indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
+                    char *bs = sfmt("&_b%d", bid);
+                    int m = cv_mark();
+                    if (var->npayload > 0) {
+                        indent(o, ind + 2);
+                        fprintf(o, "E_%s_%s *_p%d = (E_%s_%s *)_m%d.payload;\n",
+                                en, var->name, bid, en, var->name, mid);
+                        for (int b = 0; b < arm->nbinds; b++) {
+                            indent(o, ind + 2);
+                            fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), arm->binds[b],
+                                    copy_into(var->payload[b], bs, sfmt("_p%d->f%d", bid, b)));
+                            cv_push(arm->binds[b], bs);
+                        }
+                    }
+                    ascope_push(bs);
+                    gen_block(o, arm->body, arm->nbody, ind + 2, bs, ret);
+                    g_nascope--; cv_restore(m);
+                    indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                    indent(o, ind + 1); fprintf(o, "}\n");
+                }
+            }
             indent(o, ind); fprintf(o, "}\n");
             break;
         }
@@ -2592,14 +2782,29 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_narrtypes; i++)           /* (2) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
+    for (int i = 0; i < g_nenums; i++)              /* (2b) enum descriptors: fixed { tag, ptr } */
+        fprintf(o, "typedef struct { int tag; void *payload; } E_%s;\n", g_enums[i].name);
     fputs("\n", o);
     /* (3) struct bodies + Option typedefs in containment order (infinite types
-     * are rejected here). */
+     * are rejected here). Enum descriptors above are complete, so a struct/Option
+     * may embed an enum by value (it's only 2 words). */
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
     g_emit_line = 0;
     for (int i = 0; i < g_nstructs; i++)  emit_aggregate(o, STRUCT_TYPE(i));
     for (int i = 0; i < g_nopttypes; i++) emit_aggregate(o, T_OPT_BASE + i);
+    /* (3b) enum payload structs: one per variant-with-payload, holding its
+     * fields by value (structs/options/arrays/enum-descriptors all emitted
+     * above). The payload is heap-allocated, so recursive enums stay finite. */
+    for (int i = 0; i < g_nenums; i++)
+        for (int v = 0; v < g_enums[i].nvariants; v++) {
+            Variant *var = &g_enums[i].variants[v];
+            if (var->npayload == 0) continue;
+            fprintf(o, "typedef struct {");
+            for (int f = 0; f < var->npayload; f++)
+                fprintf(o, " %sf%d;", c_type(var->payload[f]), f);
+            fprintf(o, " } E_%s_%s;\n", g_enums[i].name, var->name);
+        }
     fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
         const char *nm = g_structs[i].name;
@@ -2610,6 +2815,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner))
             fprintf(o, "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v);\n", i, i, i);
+    for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
+        const char *en = g_enums[i].name;
+        if (type_is_heap(ENUM_TYPE(i)))
+            fprintf(o, "static E_%s hier_copy_E_%s(Arena *a, E_%s v);\n", en, en, en);
+        fprintf(o, "static int hier_eq_E_%s(E_%s a, E_%s b);\n", en, en, en);
+    }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
@@ -2701,6 +2912,42 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v) {\n"
                 "    if (v.has) v.val = %s;\n"
                 "    return v;\n}\n\n", i, i, i, copy_into(it, "a", "v.val"));
+    }
+    /* (9) enum copy + eq bodies. copy allocates a fresh payload per tag and
+     * deep-copies its fields (so two enum values never share a payload); eq
+     * compares the tag, then the active variant's fields. Recurse via
+     * copy_into / gen_eq — all prototyped, so recursive enums (ASTs) work. */
+    for (int i = 0; i < g_nenums; i++) {
+        EnumDef *ed = &g_enums[i];
+        const char *en = ed->name;
+        if (type_is_heap(ENUM_TYPE(i))) {
+            fprintf(o, "static E_%s hier_copy_E_%s(Arena *a, E_%s v) {\n", en, en, en);
+            fprintf(o, "    E_%s r = v;\n", en);
+            for (int v2 = 0; v2 < ed->nvariants; v2++) {
+                Variant *var = &ed->variants[v2];
+                if (var->npayload == 0) continue;
+                fprintf(o, "    if (v.tag == %d) {\n", v2);
+                fprintf(o, "        E_%s_%s *s = (E_%s_%s *)v.payload, *d = (E_%s_%s *)arena_alloc(a, sizeof *d);\n",
+                        en, var->name, en, var->name, en, var->name);
+                for (int f = 0; f < var->npayload; f++)
+                    fprintf(o, "        d->f%d = %s;\n", f, copy_into(var->payload[f], "a", sfmt("s->f%d", f)));
+                fprintf(o, "        r.payload = d;\n    }\n");
+            }
+            fprintf(o, "    return r;\n}\n");
+        }
+        fprintf(o, "static int hier_eq_E_%s(E_%s a, E_%s b) {\n", en, en, en);
+        fprintf(o, "    if (a.tag != b.tag) return 0;\n");
+        for (int v2 = 0; v2 < ed->nvariants; v2++) {
+            Variant *var = &ed->variants[v2];
+            if (var->npayload == 0) continue;
+            fprintf(o, "    if (a.tag == %d) { E_%s_%s *x = (E_%s_%s *)a.payload, *y = (E_%s_%s *)b.payload; return ",
+                    v2, en, var->name, en, var->name, en, var->name);
+            for (int f = 0; f < var->npayload; f++)
+                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("x->f%d", f), sfmt("y->f%d", f)),
+                        f + 1 < var->npayload ? " && " : "");
+            fprintf(o, "; }\n");
+        }
+        fprintf(o, "    return 1;\n}\n\n");
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
