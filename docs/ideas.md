@@ -134,8 +134,17 @@ cluster of languages, and the differences are the interesting part:
    keeps its owning copy, so the write can't reach through. This is the
    Perceus tree-rewrite case: it drops a `match`→reconstruct pass (the
    `examples/optimize.hi` optimizer, `tests/match_reuse.hi`) from O(n²) to
-   O(n) copying. Still open: construction-arg moves (`t := (a, b)` with
-   `a`/`b` dead), and extending the borrow to `Option`/`Result` arms.
+   O(n) copying. ✅ *Third step done: construction-arg moves.* Building a
+   heap aggregate (enum payload, Option/Result body, tuple, struct, or array
+   literal) from a uniquely-owned dead local now hands off its buffer instead
+   of deep-copying it — `t := (a, b)` with `a`/`b` dead stores their buffers
+   directly (`can_move_from`, the same predicate as `b := a`), and a fresh
+   temporary arg is stored without a copy too (it already owns its bytes in
+   the target arena). A reused/aliased source still deep-copies, so value
+   semantics holds (`tests/ctor_move.hi`; `bench/ctor_move` guards ~126 MB
+   moved vs ~187 MB copied). Still open: extending the payload borrow to
+   `Option`/`Result` match arms, and a loop-carried move for the in-loop
+   self-rebuild (`t = Pair(t, x)`), which would make the comb *build* O(n).
 9. **SOA arrays** (Odin/Jai) — `#soa [N]Struct` cache-friendly layout; fits the
    value+arena model and the performance narrative.
 

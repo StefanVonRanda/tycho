@@ -2350,6 +2350,22 @@ static int is_place(Expr *e) {
         || e->kind == E_TUPIDX || e->kind == E_SLICE;   /* a slice aliases its source; binding it copies */
 }
 
+/* --- construction-arg move ----------------------------------------------
+ * Materialize `arg` as a heap field/element of a fresh aggregate (an enum
+ * payload, Option/Result body, tuple, struct, or array literal) allocated in
+ * `arena`. A deep copy is needed ONLY when the arg is an aliasing place
+ * (variable/field/element/slice) that is NOT a movable dead local: a fresh
+ * temporary already owns its bytes in `arena`, and a uniquely-owned dead
+ * local is handed off (the same move as `b := a`, can_move_from). So
+ * `t := Pair(a, b)` with `a`/`b` dead stores their buffers directly instead
+ * of copying — the FBIP reconstruction reuse on the construction side. */
+static char *arg_into(Type t, const char *arena, Expr *arg) {
+    char *v = gen_expr(arg, arena);
+    if (type_is_heap(t) && is_place(arg) && !can_move_from(arg, arena))
+        v = copy_into(t, arena, v);
+    return v;
+}
+
 /* C expression that is nonzero iff the two operands of type `t` are equal by
  * *value* — the mirror of copy_into. int/bool compare directly; strings by
  * byte; arrays element-wise; structs field-wise via a generated hier_eq_S_X.
@@ -2398,7 +2414,7 @@ static char *gen_call(Expr *e, const char *arena) {
                          en, var->name, en, var->name, arena, en, var->name);
         for (int i = 0; i < var->npayload; i++)
             out = sfmt("%s _p->f%d = %s;", out, i,
-                       copy_into(var->payload[i], arena, gen_expr(e->args[i], arena)));
+                       arg_into(var->payload[i], arena, e->args[i]));
         return sfmt("%s (E_%s){ %d, _p }; })", out, en, vi);
     }
     if (!strcmp(e->sval, "len")) {
@@ -2546,20 +2562,15 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_STR:  return sfmt("\"%s\"", e->sval);
         case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */
         case E_SOME: {
-            Type inner = opt_inner(e->type);
-            char *v = gen_expr(e->lhs, arena);   /* deep-copy the value into the option */
-            return sfmt("(%s){ 1, %s }", c_type(e->type), copy_into(inner, arena, v));
+            Type inner = opt_inner(e->type);   /* move/copy the value into the option */
+            return sfmt("(%s){ 1, %s }", c_type(e->type), arg_into(inner, arena, e->lhs));
         }
-        case E_OK: {   /* designated init: errv auto-zeroes, dodging -Wmissing-field-initializers */
-            char *v = gen_expr(e->lhs, arena);
+        case E_OK:    /* designated init: errv auto-zeroes, dodging -Wmissing-field-initializers */
             return sfmt("(%s){ .ok = 1, .okv = %s }", c_type(e->type),
-                        copy_into(res_ok(e->type), arena, v));
-        }
-        case E_ERR: {
-            char *v = gen_expr(e->lhs, arena);
+                        arg_into(res_ok(e->type), arena, e->lhs));
+        case E_ERR:
             return sfmt("(%s){ .ok = 0, .errv = %s }", c_type(e->type),
-                        copy_into(res_err(e->type), arena, v));
-        }
+                        arg_into(res_err(e->type), arena, e->lhs));
         case E_ORRETURN: {
             /* ({ Tmp _or = <src>; if (!_or.ok) { promote err to _parent, free
              * the live arenas, return Err from the enclosing fn; } _or.okv; })
@@ -2576,10 +2587,7 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_TUPLE: {   /* (e1, ..., en): positional struct literal; heap places deep-copied in */
             char *out = sfmt("(%s){ ", c_type(e->type));
             for (int i = 0; i < e->nargs; i++) {
-                Type et = tup_elem(e->type, i);
-                char *a = gen_expr(e->args[i], arena);
-                if (type_is_heap(et) && is_place(e->args[i]))
-                    a = copy_into(et, arena, a);
+                char *a = arg_into(tup_elem(e->type, i), arena, e->args[i]);
                 out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
             }
             return sfmt("%s }", out);
@@ -2646,7 +2654,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                              c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
                 out = sfmt("%s _l%d.data[%d] = %s;", out, id, i,
-                           copy_into(elem, arena, gen_expr(e->args[i], arena)));
+                           arg_into(elem, arena, e->args[i]));
             return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
         }
         case E_FIELD: {
@@ -2661,10 +2669,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             StructDef *sd = &g_structs[STRUCT_ID(e->type)];
             char *out = sfmt("((S_%s){ ", sd->name);
             for (int i = 0; i < e->nargs; i++) {
-                char *a = gen_expr(e->args[i], arena);
-                Type ft = sd->fields[i].type;
-                if (type_is_heap(ft) && is_place(e->args[i]))
-                    a = copy_into(ft, arena, a);
+                char *a = arg_into(sd->fields[i].type, arena, e->args[i]);
                 out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
             }
             return sfmt("%s })", out);

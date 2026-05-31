@@ -23,6 +23,11 @@
 #                             local (`dup := big`), so only one ~64 MB buffer is
 #                             live; reverting to a copy makes it ~187 MB
 #                             (measured), so the 160 MB bound catches it.
+#   ctor_move     peak RSS  — construction-arg move elides the deep copy of a
+#                             dead local placed INTO an aggregate (`t := (big,
+#                             0)`); one buffer (~126 MB) vs two when copied
+#                             (~187 MB measured). Guards the constructor path
+#                             the `move` bench (a decl) does not.
 #
 # Each program's output is also checked (a bench must compute the right answer).
 # Exit status: 0 iff every bench passes. Bounds are intentionally generous;
@@ -74,6 +79,7 @@ run_bench loop_scratch 8              rss  32768  KB
 run_bench map_accum    40000          rss  65536  KB
 run_bench memo         1134903170     time 1000   ms
 run_bench move         31999996000000 rss  163840 KB
+run_bench ctor_move    31999996000000 rss  163840 KB
 run_bench treewalk     3603000        time 1000   ms
 
 echo "-----------------------------------------------------------"
