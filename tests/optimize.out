@@ -1,0 +1,8 @@
+before: (((((2 + 3) * x) + (y * 0)) + (z - z)) + (0 + (4 * 1)))
+before_size=19
+after:  ((5 * x) + 4)
+after_size=5
+orig_intact: (((((2 + 3) * x) + (y * 0)) + (z - z)) + (0 + (4 * 1)))
+orig_size=19
+idempotent
+const: ((6 + 4) * (8 - 5)) => 30
