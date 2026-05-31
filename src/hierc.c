@@ -2358,12 +2358,40 @@ static int is_place(Expr *e) {
  * temporary already owns its bytes in `arena`, and a uniquely-owned dead
  * local is handed off (the same move as `b := a`, can_move_from). So
  * `t := Pair(a, b)` with `a`/`b` dead stores their buffers directly instead
- * of copying — the FBIP reconstruction reuse on the construction side. */
+ * of copying — the FBIP reconstruction reuse on the construction side.
+ *
+ * g_self_move_name additionally enables a LOOP-CARRIED self-move: in a
+ * self-rebuild `t = Pair(t, x)` the old `t` is read once and immediately
+ * overwritten, so it is dead at the rebind even inside a loop (the
+ * constructor analog of the `acc = acc + e` / `m = map_set(m, ...)` loop
+ * accumulators). The single occurrence of the target name is handed off
+ * rather than copied, turning an O(n^2) build into O(n). The gate
+ * (self_rebuild_move) requires the name to occur exactly once in the RHS and
+ * to be a same-arena local, so the move is unique and same-lifetime. */
+static const char *g_self_move_name = NULL;
 static char *arg_into(Type t, const char *arena, Expr *arg) {
     char *v = gen_expr(arg, arena);
-    if (type_is_heap(t) && is_place(arg) && !can_move_from(arg, arena))
-        v = copy_into(t, arena, v);
+    if (type_is_heap(t) && is_place(arg)) {
+        int self_move = g_self_move_name && arg->kind == E_IDENT
+            && !strcmp(arg->sval, g_self_move_name);
+        if (!self_move && !can_move_from(arg, arena))
+            v = copy_into(t, arena, v);
+    }
     return v;
+}
+
+/* `t = C(..., t, ...)` — a self-rebuild of a heap aggregate. The old t is read
+ * once in the RHS and immediately replaced, so handing off its buffer (rather
+ * than deep-copying it) is sound even in a loop. Gate: the target is a tracked
+ * same-arena local (not a borrowed/inout param), the RHS is a heap value, and
+ * the name occurs EXACTLY once in the RHS — so the moved read is the only use,
+ * and nothing else can observe the handed-off buffer. */
+static int self_rebuild_move(Stmt *s) {
+    const char *nm = s->name;
+    if (is_inout_param(nm)) return 0;
+    if (!cv_arena(nm)) return 0;
+    if (!type_is_heap(s->expr->type)) return 0;
+    return count_reads_e(s->expr, nm) == 1;
 }
 
 /* C expression that is nonzero iff the two operands of type `t` are equal by
@@ -2881,7 +2909,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 fprintf(o, "hier_map_%s_del(%s, %s);\n", map_fn(s->expr->type), mp, k);
                 break;
             }
+            /* a self-rebuild `t = C(..., t, ...)` hands off t's buffer into
+             * the new aggregate instead of copying it, even inside a loop. */
+            if (self_rebuild_move(s)) g_self_move_name = s->name;
             char *v = gen_expr(s->expr, owner);
+            g_self_move_name = NULL;
             /* a heap *place* is only an alias into some (possibly inner,
              * soon-to-collapse) scope; deep-copy it into the target's arena
              * so it survives. A literal/call/concat result is already freshly

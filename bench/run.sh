@@ -14,6 +14,10 @@
 #   memo          wall time — inout memo keeps fib O(n); an exponential
 #                             regression blows the bound (instant vs seconds;
 #                             bound 1000 ms).
+#   comb_build    peak RSS  — the loop-carried self-rebuild move keeps building
+#                             a comb (`t = Pair(t, Leaf)`) O(n) memory; reverting
+#                             to the per-step deep-copy makes it O(n^2) (measured
+#                             ~2 MB vs ~368 MB at n=4000), bound 64 MB.
 #   treewalk      wall time — match-arm payload borrow keeps a match->recurse
 #                             tree pass O(n)/traversal; reverting to per-binding
 #                             deep-copy makes a comb O(n^2) (measured ~57 ms
@@ -80,6 +84,7 @@ run_bench map_accum    40000          rss  65536  KB
 run_bench memo         1134903170     time 1000   ms
 run_bench move         31999996000000 rss  163840 KB
 run_bench ctor_move    31999996000000 rss  163840 KB
+run_bench comb_build   4001           rss  65536  KB
 run_bench treewalk     3603000        time 1000   ms
 
 echo "-----------------------------------------------------------"
