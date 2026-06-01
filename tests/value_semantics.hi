@@ -29,6 +29,10 @@ fn ok_items(xs: [int]) -> Result([int], string):
 fn first_items(b: Box) -> [int]:
     return b.items
 
+# inout: the mutation SHOULD reach the caller (that is the contract).
+fn bump_first(b: inout Box):
+    b.items[0] = 100
+
 fn main():
     # 1. in-place string accumulator: a mid-loop snapshot must FREEZE, not
     #    track the accumulator's subsequent in-place growth.
@@ -105,3 +109,17 @@ fn main():
     got := first_items(bx)
     got[0] = 99
     print("9 bx.items[0]=" + str(bx.items[0]) + " got[0]=" + str(got[0]) + " (expect 7 99)\n")
+
+    # 10. projection write mutates the element in place; binding an element to a
+    #     local then copies it (value semantics) -- the local must be independent.
+    boxes := [Box([1], "x")]
+    push(boxes, Box([2], "y"))
+    boxes[0].items[0] = 50
+    snapb := boxes[0]
+    snapb.items[0] = 77
+    print("10 boxes=" + str(boxes[0].items[0]) + " snapb=" + str(snapb.items[0]) + " (expect 50 77)\n")
+
+    # 11. inout: the mutation reaches the caller (the intended direction).
+    bxi := Box([9], "i")
+    bump_first(&bxi)
+    print("11 bxi=" + str(bxi.items[0]) + " (expect 100)\n")
