@@ -509,6 +509,14 @@ fixpoint.
         fields — `(x, 7)` then mutating `x` leaves `t.0` intact). Cleared
         `tuples` and `ctor_move` (the move-vs-copy optimization is invisible to
         output, so deep-copy-always is correct).
-      Remaining failures (3): `slices`, `float_maps` (`[string: float]`, a
-      second map type), and one more.
+      - **3K**: enums (bare no-payload variants) + slices (26 → 28/29). A bare
+        identifier that names a no-payload variant (`Green`, `LParen`) is now a
+        constructor: `type_of`/`gen_expr` for `EVar` check `is_variant` →
+        `mk_<V>()`. Slices `xs[lo:hi]` (+ `xs[lo:]`, `xs[:hi]`, `xs[:]`) parse to
+        `ESlice` and emit `Arr_T_slice(a, lo, hi)` = a fresh owning sub-array
+        (`from(a.data+lo, hi-lo)`); the alias-vs-copy distinction is invisible
+        to output, so copy-always is correct (`mid := xs[1:4]` stays independent
+        of later `xs` mutation). Cleared `enums` and `slices`.
+      Remaining failure (1): `float_maps` — `[string: float]`, a second map
+      type, would require monomorphizing the map over its value type.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

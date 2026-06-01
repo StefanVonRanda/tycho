@@ -228,6 +228,7 @@ enum Expr:
     EArrEmpty(string)        # empty typed array `[]int`
     EMapEmpty(string, string) # empty typed map `[]string: int` (key, value types)
     ETuple([Expr])           # tuple literal `(a, b, ...)` / `return a, b`
+    ESlice(Expr, Expr, Expr) # `base[lo:hi]` sub-array (owning copy)
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
 
 enum Stmt:
@@ -392,11 +393,29 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
                 die("parse: expected a field name or index after '.'")
             e = EField(e, toks[pos].text)
             pos = pos + 1
-        else:                                    # index: a[i]
+        else:                                    # index a[i]  or  slice a[lo:hi]
             pos = pos + 1
-            idx := parse_expr(toks, &pos)
-            expect(toks, &pos, TRBracket)
-            e = EIndex(e, idx)
+            lenargs := []Expr
+            push(lenargs, e)
+            if toks[pos].kind == TColon:         # a[:hi] / a[:]
+                pos = pos + 1
+                hi := ECall("len", lenargs)
+                if toks[pos].kind != TRBracket:
+                    hi = parse_expr(toks, &pos)
+                expect(toks, &pos, TRBracket)
+                e = ESlice(e, EInt("0"), hi)
+            else:
+                idx := parse_expr(toks, &pos)
+                if toks[pos].kind == TColon:     # a[lo:hi] / a[lo:]
+                    pos = pos + 1
+                    hi := ECall("len", lenargs)
+                    if toks[pos].kind != TRBracket:
+                        hi = parse_expr(toks, &pos)
+                    expect(toks, &pos, TRBracket)
+                    e = ESlice(e, idx, hi)
+                else:
+                    expect(toks, &pos, TRBracket)
+                    e = EIndex(e, idx)
     return e
 
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
@@ -1142,6 +1161,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EVar(name):
             if name == "None":
                 return "Option()"
+            if is_variant(ctx, name):            # bare no-payload variant (e.g. Green)
+                return variant_enum(ctx, name)
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(ctx, vt)
         EField(base, fld):
@@ -1169,6 +1190,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 out = out + type_of(elems[j], names, types, ctx)
                 j = j + 1
             return out + ")"
+        ESlice(base, lo, hi):
+            return type_of(base, names, types, ctx)   # same array type
         EAddr(inner):
             return type_of(inner, names, types, ctx)
         EBin(op, l, r):
@@ -1213,6 +1236,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EVar(name):
             if name == "None":
                 return "hnone()"
+            if is_variant(ctx, name):            # bare no-payload variant -> constructor call
+                return "mk_" + name + "()"
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + name + ")"
             return name
@@ -1240,6 +1265,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 out = out + gen_rhs(elems[j], names, types, ctx)
                 j = j + 1
             return out + "}"
+        ESlice(base, lo, hi):
+            bt := type_of(base, names, types, ctx)
+            return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
@@ -1341,6 +1369,8 @@ fn is_place(e: Expr) -> bool:
             return false
         ETuple(es):
             return false
+        ESlice(b, lo, hi):
+            return false
         EAddr(inner):
             return false
 
@@ -1369,6 +1399,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         EMapEmpty(k, v):
             return false
         ETuple(es):
+            return false
+        ESlice(b, lo, hi):
             return false
         EAddr(x):
             return false
@@ -1438,6 +1470,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 EMapEmpty(k, v):
                     return deflt
                 ETuple(es):
+                    return deflt
+                ESlice(b, lo, hi):
                     return deflt
                 EAddr(x):
                     return deflt
@@ -1796,6 +1830,7 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
+    out = out + "static " + nm + " " + nm + "_slice(" + nm + " a, long lo, long hi) { return " + nm + "_from(a.data + lo, hi - lo); }\n"
     if et == "int" or et == "float" or et == "str" or is_enum(ctx, et) or is_struct(ctx, et):   # element has a usable eq
         out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
@@ -1905,6 +1940,10 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EIndex(b, idx):
             collect_expr(&acc, b, names, types, ctx)
             collect_expr(&acc, idx, names, types, ctx)
+        ESlice(b, lo, hi):
+            collect_expr(&acc, b, names, types, ctx)
+            collect_expr(&acc, lo, names, types, ctx)
+            collect_expr(&acc, hi, names, types, ctx)
         EAddr(inner):
             collect_expr(&acc, inner, names, types, ctx)
         EInt(t):
