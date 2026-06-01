@@ -1,0 +1,28 @@
+# Tuple reassignment `a, b = f()` (assign existing vars) and mutable tuple
+# elements `t.0 = v`. Self-hosting in both compilers.
+fn minmax(a: int, b: int) -> (int, int):
+    if a < b:
+        return a, b
+    return b, a
+
+fn main():
+    lo := 0
+    hi := 0
+    lo, hi = minmax(7, 3)
+    print("minmax: " + str(lo) + " " + str(hi) + "\n")   # 3 7
+
+    # rotate three vars via multi-assign in a loop
+    a := 1
+    b := 2
+    c := 3
+    i := 0
+    for i < 2:
+        a, b, c = (b, c, a)
+        i = i + 1
+    print("rotate: " + str(a) + " " + str(b) + " " + str(c) + "\n")   # 3 1 2
+
+    # mutable tuple elements
+    t := (10, 20, 30)
+    t.0 = 99
+    t.2 = t.0 + t.1
+    print("tup: " + str(t.0) + " " + str(t.1) + " " + str(t.2) + "\n")   # 99 20 119

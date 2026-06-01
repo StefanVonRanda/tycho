@@ -589,7 +589,7 @@ struct Expr {
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
-               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL } StmtKind;
+               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN } StmtKind;
 
 typedef struct Stmt Stmt;
 /* one arm of a `match`: a variant name (Some/None or an enum variant), the
@@ -1119,8 +1119,9 @@ static Stmt *parse_stmt(Parser *ps) {
         return s;
     }
 
-    /* destructuring decl `a, b := f()` — an identifier immediately followed by
-     * a comma. Decl form only (`:=`); the RHS must yield a tuple. */
+    /* destructuring `a, b := f()` (decl, new vars) or `a, b = f()` (assign to
+     * existing vars) — an identifier immediately followed by a comma. The RHS
+     * must yield a tuple. */
     if (t->kind == TK_IDENT && peek(ps, 1)->kind == TK_COMMA) {
         Stmt *s = new_stmt(S_MDECL, t->line);
         s->names[s->nnames++] = eat(ps, TK_IDENT, "a name")->text;
@@ -1128,7 +1129,10 @@ static Stmt *parse_stmt(Parser *ps) {
             if (s->nnames >= 8) die_at(t->line, "at most 8 destructuring targets");
             s->names[s->nnames++] = eat(ps, TK_IDENT, "a name in the destructuring list")->text;
         }
-        eat(ps, TK_COLONEQ, "':=' (destructuring binds new variables; use `:=`)");
+        if (!accept(ps, TK_COLONEQ)) {   /* `=` -> reassign existing vars */
+            eat(ps, TK_EQ, "':=' (new vars) or '=' (existing vars)");
+            s->kind = S_MASSIGN;
+        }
         s->expr = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
         return s;
@@ -1169,7 +1173,7 @@ static Stmt *parse_stmt(Parser *ps) {
     /* expression statement, or an index-assignment `xs[i] = v` */
     Expr *e = parse_expr(ps);
     if (accept(ps, TK_EQ)) {
-        if (e->kind != E_INDEX && e->kind != E_FIELD)
+        if (e->kind != E_INDEX && e->kind != E_FIELD && e->kind != E_TUPIDX)
             die_at(t->line, "cannot assign to this expression");
         Stmt *s = new_stmt(e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line);
         s->target = e;
@@ -1420,6 +1424,7 @@ static Type g_fn_ret = T_VOID;   /* return type of the proc currently being reso
 static int is_lvalue(Expr *e) {
     if (e->kind == E_IDENT) return 1;
     if (e->kind == E_FIELD) return is_lvalue(e->lhs);
+    if (e->kind == E_TUPIDX) return is_lvalue(e->lhs);   /* t.0 = v: a tuple element is a place */
     if (e->kind == E_INDEX) return (IS_ARRC(e->lhs->type) || IS_SOA(e->lhs->type)) && is_lvalue(e->lhs);
     return 0;
 }
@@ -1887,6 +1892,23 @@ static void resolve_stmt(Stmt *s, Type ret) {
                         die_at(s->line, "duplicate name '%s' in the destructuring list", s->names[i]);
                 s->mtypes[i] = tup_elem(rt, i);
                 vars_push(s->names[i], s->mtypes[i], 1);
+            }
+            break;
+        }
+        case S_MASSIGN: {   /* a, b = f() — assign a tuple's elements to EXISTING vars */
+            Type rt = resolve_expr(s->expr);
+            if (!IS_TUP(rt))
+                die_at(s->line, "the right side of a multi-assign must be a tuple, got %s", type_name(rt));
+            if (tup_n(rt) != s->nnames)
+                die_at(s->line, "assigning %d name(s) from a %d-element tuple", s->nnames, tup_n(rt));
+            for (int i = 0; i < s->nnames; i++) {
+                Type vt;
+                if (!vars_find(s->names[i], &vt))
+                    die_at(s->line, "assignment to unknown variable '%s' (use ':=' to declare)", s->names[i]);
+                s->mtypes[i] = tup_elem(rt, i);
+                if (s->mtypes[i] != vt)
+                    die_at(s->line, "cannot assign %s to '%s' of type %s",
+                           type_name(s->mtypes[i]), s->names[i], type_name(vt));
             }
             break;
         }
@@ -2981,6 +3003,8 @@ static char *gen_lvalue(Expr *e, const char *arena) {
         }
         return sfmt("((%s).f_%s)", gen_lvalue(e->lhs, arena), e->sval);
     }
+    if (e->kind == E_TUPIDX)
+        return sfmt("((%s)._%ld)", gen_lvalue(e->lhs, arena), e->ival);
     if (e->kind == E_INDEX)
         return sfmt("(*hier_arr_C%d_ptr(&(%s), %s))",
                     ARRC_ID(e->lhs->type), gen_lvalue(e->lhs, arena),
@@ -3043,6 +3067,25 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind);
                 fprintf(o, "%sh_%s = _mt%d._%d;\n", c_type(s->mtypes[i]), s->names[i], id, i);
                 cv_push(s->names[i], scope);
+            }
+            break;
+        }
+        case S_MASSIGN: {   /* a, b = f() — build the tuple, assign each element to its existing var */
+            int id = g_blk++;
+            Type tt = s->expr->type;
+            char *v = gen_expr(s->expr, scope);
+            indent(o, ind);
+            fprintf(o, "%s_mt%d = %s;\n", c_type(tt), id, v);
+            for (int i = 0; i < s->nnames; i++) {
+                const char *owner = cv_arena(s->names[i]);
+                if (!owner) owner = scope;
+                char *ev = sfmt("_mt%d._%d", id, i);
+                if (type_is_heap(s->mtypes[i])) ev = copy_into(s->mtypes[i], owner, ev);
+                indent(o, ind);
+                if (is_inout_param(s->names[i]))
+                    fprintf(o, "(*h_%s) = %s;\n", s->names[i], ev);
+                else
+                    fprintf(o, "h_%s = %s;\n", s->names[i], ev);
             }
             break;
         }
@@ -3158,7 +3201,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * new bytes must go there too (not the current block scope, which
              * may collapse first); a heap *place* RHS is also deep-copied. */
             Expr *root = s->target;
-            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            while (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX) root = root->lhs;
             /* heap field's new bytes go in the struct's owning arena — the
              * carried _ina_ arena if the root is a heap inout param. */
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;

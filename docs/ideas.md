@@ -98,8 +98,9 @@ cluster of languages, and the differences are the interesting part:
    destructures it (decl-only), and a tuple is also storable, indexable (`t.0`),
    literal-constructible (`(1, 2)`), passable, comparable, and deep-copied by
    value. Went beyond the Go/Odin "boundary-only" framing because first-class
-   tuples compose with value semantics for free. Still open: `a, b = f()`
-   re-assignment and mutable elements (`t.0 = v`).
+   tuples compose with value semantics for free. `a, b = f()` reassignment (to
+   existing vars) and mutable elements (`t.0 = v`) are supported too, both
+   self-hosting (`tests/tuple_assign.hi`).
 
 ### Tier 3 — planned in the design doc / data-oriented perf
 

@@ -246,6 +246,7 @@ enum Stmt:
     STypedDecl(string, string, Expr)   # `name : Type = expr` (annotation fixes the type)
     SOrReturn(string, Expr)  # `name := result_expr or_return` (unwrap Ok or propagate Err)
     SDestructure([string], Expr)       # `a, b := tuple_expr`
+    SMultiAssign([string], Expr)       # `a, b = tuple_expr` (assign existing vars)
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
 
 struct Param:
@@ -588,8 +589,11 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
                     die("parse: expected a name in destructure")
                 push(names, toks[pos].text)
                 pos = pos + 1
-            expect(toks, &pos, TWalrus)
-            return SDestructure(names, parse_expr(toks, &pos))
+            if toks[pos].kind == TWalrus:        # `:=` declares new vars
+                pos = pos + 1
+                return SDestructure(names, parse_expr(toks, &pos))
+            expect(toks, &pos, TEq)              # `=` assigns existing vars
+            return SMultiAssign(names, parse_expr(toks, &pos))
         if toks[pos].kind == TWalrus:
             pos = pos + 1
             rhs := parse_expr(toks, &pos)
@@ -610,9 +614,9 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
             for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
                 if toks[pos].kind == TDot:
                     pos = pos + 1
-                    if toks[pos].kind != TIdent:
-                        die("parse: expected a field name after '.'")
-                    lv = EField(lv, toks[pos].text)
+                    if toks[pos].kind != TIdent and toks[pos].kind != TInt:
+                        die("parse: expected a field name or tuple index after '.'")
+                    lv = EField(lv, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
                     pos = pos + 1
                 else:
                     pos = pos + 1
@@ -1707,6 +1711,15 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 push(types, parts[j])
                 j = j + 1
             return code
+        SMultiAssign(mnames, e):                  # a, b = tuple_expr (existing vars)
+            tt := type_of(e, names, types, ctx)
+            tmp := "_ma_" + mnames[0]
+            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            j := 0
+            for j < len(mnames):
+                code = code + "    " + mnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
+                j = j + 1
+            return code
         SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
             rty := type_of(e, names, types, ctx)
             tmp := "_or_" + name
@@ -2321,6 +2334,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                 push(names, dnames[j])
                 push(types, parts[j])
                 j = j + 1
+        SMultiAssign(mnames, e):                  # vars already exist; just collect the RHS
+            collect_expr(&acc, e, names, types, ctx)
         SIf(c, tb, eb):
             collect_expr(&acc, c, names, types, ctx)
             collect_block(&acc, tb, names, types, ctx)
