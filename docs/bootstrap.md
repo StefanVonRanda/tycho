@@ -259,6 +259,24 @@ fixpoint.
       (arith, vars, control, functions, strings, loops) passing `make bootstrap`
       differentially against the C compiler. Deferred to Stage 2: the counting
       `for i in range()` form, string variables, and a real type system.
-- [ ] **Stage 2** — grow to cover `examples/*.hi`
+- [ ] **Stage 2** — grow to cover `examples/*.hi`. In progress:
+      - **2A** (commit eb2fdef): the counting `for i in range(...)` form.
+      - **2B**: string-typed variables, parameters, and return types — the
+        leap from untyped (`long` everything) to a real int/str distinction.
+        hierc0 now threads a type environment (two parallel `names`/`types`
+        arrays + a `[Sig]` table of function return types) and emits
+        **type-directed** C: `str` → `char*`/`sc(...)`, `int` → `long`/`+`.
+        The syntactic int-vs-string codegen split (`gen_iexpr`/`gen_sexpr`) is
+        gone — one `gen_expr`+`type_of` infers context. Block scoping is via
+        by-value env arrays (inner decls don't leak). Unary minus added
+        (`-E` → `(0 - E)`). Fixtures `strvars.hi`/`strfn.hi` pass `make
+        bootstrap`; `examples/accumulate.hi` now matches the C compiler
+        end-to-end. State-threading ergonomics finding: `inout [T]` works, but
+        a borrowed (by-value) array param must be **copied** before it can be
+        passed as `inout` — the compiler enforces this ("copy it first"), so
+        `gen_block` copies its env arrays locally. `input()` deferred
+        (stdin-dependent, untestable in the differential harness).
+      - Next gaps for `examples/*.hi`: bare call-statements (`countdown(5)` —
+        `demo.hi`), then structs, arrays+`push`, enums+`match`.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

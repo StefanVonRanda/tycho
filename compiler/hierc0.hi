@@ -189,11 +189,20 @@ enum Stmt:
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
     SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
 
+struct Param:
+    name: string
+    ty: string                # "int" | "str"
+
 struct Func:
     name: string
     params: [string]
-    is_void: bool
+    ptypes: [string]          # parallel to params: "int" | "str"
+    ret: string               # "int" | "str" | "void"
     body: [Stmt]
+
+struct Sig:                   # collected up front, for typing calls
+    name: string
+    ret: string
 
 # --------------------------------------------------------------- parser ----
 
@@ -209,7 +218,13 @@ fn expect_ident(toks: [Token], pos: inout int, name: string):
 
 fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     t := toks[pos]
-    if t.kind == TInt:
+    if t.kind == TStr:
+        pos = pos + 1
+        return EStr(t.text)
+    elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
+        pos = pos + 1
+        return EBin("-", EInt("0"), parse_atom(toks, &pos))
+    elif t.kind == TInt:
         pos = pos + 1
         return EInt(t.text)
     elif t.kind == TIdent:
@@ -263,32 +278,6 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
         return EBin(op, l, r)
     return l
 
-# string expression (print position only): literal / str(IEXPR) joined by '+'
-fn parse_satom(toks: [Token], pos: inout int) -> Expr:
-    t := toks[pos]
-    if t.kind == TStr:
-        pos = pos + 1
-        return EStr(t.text)
-    elif t.kind == TIdent and t.text == "str":
-        pos = pos + 1
-        expect(toks, &pos, TLParen)
-        e := parse_expr(toks, &pos)
-        expect(toks, &pos, TRParen)
-        args := []Expr
-        push(args, e)
-        return ECall("str", args)
-    else:
-        die("parse: expected a string literal or str(...)")
-        return EStr("")
-
-fn parse_sexpr(toks: [Token], pos: inout int) -> Expr:
-    l := parse_satom(toks, &pos)
-    for toks[pos].kind == TPlus:
-        pos = pos + 1
-        r := parse_satom(toks, &pos)
-        l = EBin("+", l, r)
-    return l
-
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
     expect(toks, &pos, TNewline)
@@ -326,7 +315,7 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
     if t.kind == TIdent and t.text == "print":
         pos = pos + 1
         expect(toks, &pos, TLParen)
-        e := parse_sexpr(toks, &pos)
+        e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e)
     elif t.kind == TIdent and t.text == "return":
@@ -382,14 +371,27 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         die("parse: expected a statement")
         return SReturn(EInt("0"))
 
-fn parse_param(toks: [Token], pos: inout int) -> string:
+fn parse_type(toks: [Token], pos: inout int) -> string:
+    if toks[pos].kind != TIdent:
+        die("parse: expected a type")
+    name := toks[pos].text
+    pos = pos + 1
+    if name == "int":
+        return "int"
+    elif name == "string":
+        return "str"
+    else:
+        die("parse: unsupported type (only int/string)")
+        return "int"
+
+fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
         die("parse: expected a parameter name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
-    expect_ident(toks, &pos, "int")
-    return name
+    ty := parse_type(toks, &pos)
+    return Param(name, ty)
 
 fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "fn")
@@ -399,20 +401,24 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     pos = pos + 1
     expect(toks, &pos, TLParen)
     params := []string
+    ptypes := []string
     if toks[pos].kind != TRParen:
-        push(params, parse_param(toks, &pos))
+        p := parse_param(toks, &pos)
+        push(params, p.name)
+        push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
-            push(params, parse_param(toks, &pos))
+            p2 := parse_param(toks, &pos)
+            push(params, p2.name)
+            push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
-    is_void := true
+    ret := "void"
     if toks[pos].kind == TArrow:
         pos = pos + 1
-        expect_ident(toks, &pos, "int")
-        is_void = false
+        ret = parse_type(toks, &pos)
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
-    return Func(name, params, is_void, body)
+    return Func(name, params, ptypes, ret, body)
 
 fn parse_program(toks: [Token], pos: inout int) -> [Func]:
     funcs := []Func
@@ -424,74 +430,131 @@ fn parse_program(toks: [Token], pos: inout int) -> [Func]:
     return funcs
 
 # -------------------------------------------------------------- codegen ----
-# gen_iexpr: integer context.  gen_sexpr: string context (print/str only).
+# Type-directed: each expression's C form follows its inferred type
+# ("int" -> long, "str" -> char*).  Variable types are threaded as two parallel
+# arrays (names/types); function return types come from `sigs`.
 
-fn gen_args(args: [Expr]) -> string:
+fn var_type(names: [string], types: [string], name: string) -> string:
+    i := len(names) - 1                          # newest-first (shadowing)
+    for i >= 0:
+        if names[i] == name:
+            return types[i]
+        i = i - 1
+    die("type: unknown variable")
+    return "int"
+
+fn sig_ret(sigs: [Sig], name: string) -> string:
+    if name == "str":
+        return "str"
+    if name == "input":
+        return "str"
+    i := 0
+    for i < len(sigs):
+        if sigs[i].name == name:
+            return sigs[i].ret
+        i = i + 1
+    die("type: unknown function")
+    return "int"
+
+fn type_of(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
+    match e:
+        EInt(t):
+            return "int"
+        EStr(s):
+            return "str"
+        EVar(name):
+            return var_type(names, types, name)
+        EBin(op, l, r):
+            if op == "+":
+                if type_of(l, names, types, sigs) == "str" or type_of(r, names, types, sigs) == "str":
+                    return "str"
+                return "int"
+            return "int"                          # - *  and comparisons -> int
+        ECall(name, args):
+            return sig_ret(sigs, name)
+
+fn gen_args(args: [Expr], names: [string], types: [string], sigs: [Sig]) -> string:
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_iexpr(args[i])
+        out = out + gen_expr(args[i], names, types, sigs)
         i = i + 1
     return out
 
-fn gen_iexpr(e: Expr) -> string:
+fn gen_expr(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
     match e:
         EInt(t):
             return t
         EStr(s):
-            die("codegen: string in an integer context")
-            return "0"
+            return "\"" + s + "\""
         EVar(name):
             return name
         EBin(op, l, r):
-            return "(" + gen_iexpr(l) + " " + op + " " + gen_iexpr(r) + ")"
+            if op == "+" and type_of(e, names, types, sigs) == "str":
+                return "sc(" + gen_expr(l, names, types, sigs) + ", " + gen_expr(r, names, types, sigs) + ")"
+            return "(" + gen_expr(l, names, types, sigs) + " " + op + " " + gen_expr(r, names, types, sigs) + ")"
         ECall(name, args):
-            return name + "(" + gen_args(args) + ")"
+            if name == "str":
+                return "i2s(" + gen_expr(args[0], names, types, sigs) + ")"
+            if name == "input":
+                die("codegen: input() not supported yet")
+                return ""
+            return name + "(" + gen_args(args, names, types, sigs) + ")"
 
-fn gen_sexpr(e: Expr) -> string:
-    match e:
-        EStr(s):
-            return "\"" + s + "\""
-        EBin(op, l, r):
-            return "sc(" + gen_sexpr(l) + ", " + gen_sexpr(r) + ")"
-        ECall(name, args):
-            return "i2s(" + gen_iexpr(args[0]) + ")"
-        EInt(t):
-            die("codegen: bare int in a string context")
-            return "\"\""
-        EVar(name):
-            die("codegen: bare variable in a string context")
-            return "\"\""
-
-fn gen_block(stmts: [Stmt]) -> string:
+# names/types are passed BY VALUE so a block's decls never escape to sibling
+# or outer scopes (matching C/Hier block scoping).
+fn gen_block(stmts: [Stmt], names: [string], types: [string], sigs: [Sig]) -> string:
     out := ""
+    ns := names                                  # local mutable copies; decls
+    ts := types                                  # added here stay block-local
     i := 0
     for i < len(stmts):
-        out = out + gen_stmt(stmts[i])
+        out = out + gen_stmt(stmts[i], &ns, &ts, sigs)
         i = i + 1
     return out
 
-fn gen_stmt(s: Stmt) -> string:
+fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], sigs: [Sig]) -> string:
     match s:
         SDecl(name, e):
-            return "    long " + name + " = " + gen_iexpr(e) + ";\n"
+            ty := type_of(e, names, types, sigs)
+            cty := "long "
+            if ty == "str":
+                cty = "char* "
+            code := "    " + cty + name + " = " + gen_expr(e, names, types, sigs) + ";\n"
+            push(names, name)                     # in scope for later stmts
+            push(types, ty)
+            return code
         SAssign(name, e):
-            return "    " + name + " = " + gen_iexpr(e) + ";\n"
+            return "    " + name + " = " + gen_expr(e, names, types, sigs) + ";\n"
         SPrint(e):
-            return "    fputs(" + gen_sexpr(e) + ", stdout);\n"
+            if type_of(e, names, types, sigs) != "str":
+                die("codegen: print expects a string")
+            return "    fputs(" + gen_expr(e, names, types, sigs) + ", stdout);\n"
         SReturn(e):
-            return "    return " + gen_iexpr(e) + ";\n"
+            return "    return " + gen_expr(e, names, types, sigs) + ";\n"
         SIf(cond, then_body, else_body):
-            out := "    if (" + gen_iexpr(cond) + ") {\n" + gen_block(then_body) + "    }"
+            out := "    if (" + gen_expr(cond, names, types, sigs) + ") {\n" + gen_block(then_body, names, types, sigs) + "    }"
             if len(else_body) > 0:
-                out = out + " else {\n" + gen_block(else_body) + "    }"
+                out = out + " else {\n" + gen_block(else_body, names, types, sigs) + "    }"
             return out + "\n"
         SWhile(cond, body):
-            return "    while (" + gen_iexpr(cond) + ") {\n" + gen_block(body) + "    }\n"
+            return "    while (" + gen_expr(cond, names, types, sigs) + ") {\n" + gen_block(body, names, types, sigs) + "    }\n"
         SForRange(name, start, stop, step, body):
-            return "    for (long " + name + " = " + gen_iexpr(start) + "; " + name + " < " + gen_iexpr(stop) + "; " + name + " += " + gen_iexpr(step) + ") {\n" + gen_block(body) + "    }\n"
+            header := "    for (long " + name + " = " + gen_expr(start, names, types, sigs) + "; " + name + " < " + gen_expr(stop, names, types, sigs) + "; " + name + " += " + gen_expr(step, names, types, sigs) + ") {\n"
+            bn := names                           # loop var is scoped to body
+            bt := types
+            push(bn, name)
+            push(bt, "int")
+            return header + gen_block(body, bn, bt, sigs) + "    }\n"
+
+fn ret_cty(ret: string) -> string:
+    if ret == "void":
+        return "void "
+    if ret == "str":
+        return "char* "
+    return "long "
 
 fn gen_params(f: Func) -> string:
     if len(f.params) == 0:
@@ -501,23 +564,30 @@ fn gen_params(f: Func) -> string:
     for i < len(f.params):
         if i > 0:
             out = out + ", "
-        out = out + "long " + f.params[i]
+        cty := "long "
+        if f.ptypes[i] == "str":
+            cty = "char* "
+        out = out + cty + f.params[i]
         i = i + 1
     return out
 
-fn gen_proto(f: Func) -> string:
-    rt := "long "
-    if f.is_void:
-        rt = "void "
-    return rt + f.name + "(" + gen_params(f) + ");\n"
+fn seed_env(f: Func, names: inout [string], types: inout [string]):
+    i := 0
+    for i < len(f.params):
+        push(names, f.params[i])
+        push(types, f.ptypes[i])
+        i = i + 1
 
-fn gen_func(f: Func) -> string:
+fn gen_proto(f: Func) -> string:
+    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ");\n"
+
+fn gen_func(f: Func, sigs: [Sig]) -> string:
+    names := []string
+    types := []string
+    seed_env(f, &names, &types)
     if f.name == "main":
-        return "int main(void) {\n" + gen_block(f.body) + "    return 0;\n}\n"
-    rt := "long "
-    if f.is_void:
-        rt = "void "
-    return rt + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body) + "}\n"
+        return "int main(void) {\n" + gen_block(f.body, names, types, sigs) + "    return 0;\n}\n"
+    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body, names, types, sigs) + "}\n"
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
@@ -530,14 +600,19 @@ fn main():
     toks := lex(src)
     pos := 0
     funcs := parse_program(toks, &pos)
-    out := preamble()
+    sigs := []Sig
     i := 0
+    for i < len(funcs):
+        push(sigs, Sig(funcs[i].name, funcs[i].ret))
+        i = i + 1
+    out := preamble()
+    i = 0
     for i < len(funcs):
         if funcs[i].name != "main":
             out = out + gen_proto(funcs[i])
         i = i + 1
     i = 0
     for i < len(funcs):
-        out = out + gen_func(funcs[i])
+        out = out + gen_func(funcs[i], sigs)
         i = i + 1
     print(out)
