@@ -336,6 +336,11 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        if name == "soa":                        # soa []Struct : empty SOA literal
+            expect(toks, &pos, TLBracket)
+            expect(toks, &pos, TRBracket)
+            st := parse_type(toks, &pos)
+            return EArrEmpty("soa[" + st + "]")
         if name == "true":
             return EInt("1")
         if name == "false":
@@ -660,6 +665,12 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
             return "{" + inner + ":" + v + "}"
         expect(toks, &pos, TRBracket)
         return "[" + inner + "]"
+    if toks[pos].kind == TIdent and toks[pos].text == "soa":   # soa [Struct]
+        pos = pos + 1
+        expect(toks, &pos, TLBracket)
+        st := parse_type(toks, &pos)
+        expect(toks, &pos, TRBracket)
+        return "soa[" + st + "]"
     if toks[pos].kind != TIdent:
         die("parse: expected a type")
     name := toks[pos].text
@@ -926,6 +937,13 @@ fn is_array(ty: string) -> bool:
 fn elem_ty(ty: string) -> string:               # "[T]" -> "T"
     return substr(ty, 1, len(ty) - 1)
 
+# SOA arrays: `soa [Struct]` is encoded "soa[Struct]" (one growable buffer per
+# struct field + a shared len/cap, instead of an array of records).
+fn is_soa(ty: string) -> bool:
+    return len(ty) > 4 and substr(ty, 0, 4) == "soa["
+fn soa_struct(ty: string) -> string:            # "soa[Struct]" -> "Struct"
+    return substr(ty, 4, len(ty) - 1)
+
 fn is_map(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 123          # "{str:V}"  (V = int or float)
 
@@ -1031,6 +1049,8 @@ fn mangle(ty: string) -> string:
         return "tup_" + tup_suffix(ty)
     if is_map(ty):
         return "map_str_" + map_val(ty)
+    if is_soa(ty):
+        return "soa_" + soa_struct(ty)
     return ty                                    # int/str/float/struct/enum/newtype: already valid
 
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
@@ -1073,6 +1093,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "HResult "
     if is_tuple(ty):
         return "Tup_" + tup_suffix(ty) + " "
+    if is_soa(ty):                                # soa [Struct] -> Soa_Struct
+        return "Soa_" + soa_struct(ty) + " "
     if is_enum(ctx, ty):                          # enum value -> pointer to node
         return ty + "* "
     return ty + " "                              # struct type: its own typedef
@@ -1198,10 +1220,14 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             bt := type_of(base, names, types, ctx)
             if bt == "str":
                 return "int"                      # s[i] is the byte value (ord)
+            if is_soa(bt):
+                return soa_struct(bt)             # soa element -> the struct
             return substr(bt, 1, len(bt) - 1)     # else array element type
         EArrLit(elems):
             return "[" + type_of(elems[0], names, types, ctx) + "]"
         EArrEmpty(ety):
+            if is_soa(ety):                       # `soa []Struct` carries the full soa type
+                return ety
             return "[" + ety + "]"
         EMapEmpty(kty, vty):
             return "{" + kty + ":" + vty + "}"
@@ -1271,6 +1297,80 @@ fn gen_store_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> s
         i = i + 1
     return out
 
+# index of field `fld` in struct `sname` (the soa buffer is f<index>).
+fn soa_field_index(ctx: Ctx, sname: string, fld: string) -> int:
+    si := 0
+    for si < len(ctx.structs):
+        if ctx.structs[si].name == sname:
+            j := 0
+            for j < len(ctx.structs[si].fields):
+                if ctx.structs[si].fields[j].name == fld:
+                    return j
+                j = j + 1
+        si = si + 1
+    return 0
+
+# If `base` is `soa[i]`, the C for `base.fld` is the field buffer slot
+# `(soa).fN[i]` -- a real lvalue, so it serves BOTH read and write. Else "".
+# (Hier has no wildcard match, so every Expr arm is listed.)
+fn soa_field_access(ctx: Ctx, base: Expr, fld: string, names: [string], types: [string]) -> string:
+    match base:
+        EIndex(sb, ix):
+            sbt := type_of(sb, names, types, ctx)
+            if is_soa(sbt):
+                fi := soa_field_index(ctx, soa_struct(sbt), fld)
+                return "(" + gen_expr(sb, names, types, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, ctx) + "]"
+            return ""
+        EInt(t):
+            return ""
+        EFloat(f):
+            return ""
+        EStr(s):
+            return ""
+        EVar(n):
+            return ""
+        EBin(o, l, r):
+            return ""
+        ECall(nm, a):
+            return ""
+        EField(b, f):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+        EAddr(x):
+            return ""
+
+# gather a whole struct value from the soa's field buffers at index `ix`.
+# (param is `basec` not `sc` — hierc0 emits user names un-prefixed and `sc` is
+# the runtime string-concat function, so a `sc` local would shadow it.)
+fn gen_soa_gather(ctx: Ctx, ty: string, basec: string, ix: string) -> string:
+    sn := soa_struct(ty)
+    si := 0
+    for si < len(ctx.structs):
+        if ctx.structs[si].name == sn:
+            flds := ctx.structs[si].fields
+            out := "(" + sn + "){"
+            i := 0
+            for i < len(flds):
+                if i > 0:
+                    out = out + ","
+                out = out + " (" + basec + ").f" + str(i) + "[" + ix + "]"
+                i = i + 1
+            return out + " }"
+        si = si + 1
+    die("codegen: soa gather of unknown struct")
+    return ""
+
 fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -1288,17 +1388,25 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "(*" + name + ")"
             return name
         EField(base, fld):
+            sf := soa_field_access(ctx, base, fld, names, types)   # soa[i].f -> (soa).fN[i]
+            if sf != "":
+                return sf
             if is_tuple(type_of(base, names, types, ctx)):   # tuple index t.0 -> t.f0
                 return gen_expr(base, names, types, ctx) + ".f" + fld
             return gen_expr(base, names, types, ctx) + "." + fld
         EIndex(base, idx):
-            if type_of(base, names, types, ctx) == "str":   # s[i] -> the byte as an int
+            bt := type_of(base, names, types, ctx)
+            if bt == "str":                                 # s[i] -> the byte as an int
                 return "((long)(unsigned char)" + gen_expr(base, names, types, ctx) + "[" + gen_expr(idx, names, types, ctx) + "])"
+            if is_soa(bt):                                  # soa[i] -> gather a struct value
+                return gen_soa_gather(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(idx, names, types, ctx))
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
             return "Arr_" + mangle(et) + "_from((" + cty(ctx, et) + "[]){" + gen_store_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
+            if is_soa(ety):                       # empty soa: zeroed descriptor
+                return "(" + cty(ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
             return "map_str_" + vty + "_new()"
@@ -1341,7 +1449,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
-                et := elem_ty(type_of(args[0], names, types, ctx))
+                at := type_of(args[0], names, types, ctx)
+                if is_soa(at):                    # soa push: grow each field buffer + scatter
+                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                et := elem_ty(at)
                 return "Arr_" + mangle(et) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
@@ -1905,6 +2016,40 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
+# SOA family for `soa [Struct]`: one growable buffer per struct field (f0, f1,
+# ...) + a shared len/cap, instead of an array of records. Naive (realloc/leak)
+# like the Arr families. push grows each buffer and scatters the struct's fields.
+fn gen_soa(ctx: Ctx, ty: string) -> string:
+    sn := soa_struct(ty)
+    nm := "Soa_" + sn
+    si := 0
+    for si < len(ctx.structs):
+        if ctx.structs[si].name == sn:
+            flds := ctx.structs[si].fields
+            out := "typedef struct {"
+            i := 0
+            for i < len(flds):
+                out = out + " " + cty(ctx, flds[i].ty) + "* f" + str(i) + ";"
+                i = i + 1
+            out = out + " long len; long cap; } " + nm + ";\n"
+            out = out + "static void " + nm + "_push(" + nm + "* s, " + sn + " v) {\n"
+            out = out + "    if (s->len == s->cap) { s->cap = s->cap ? s->cap * 2 : 4;\n"
+            i = 0
+            for i < len(flds):
+                ct := cty(ctx, flds[i].ty)
+                out = out + "        s->f" + str(i) + " = realloc(s->f" + str(i) + ", sizeof(" + ct + ") * s->cap);\n"
+                i = i + 1
+            out = out + "    }\n"
+            i = 0
+            for i < len(flds):
+                out = out + "    s->f" + str(i) + "[s->len] = v." + flds[i].name + ";\n"
+                i = i + 1
+            out = out + "    s->len = s->len + 1;\n}\n"
+            return out
+        si = si + 1
+    die("codegen: soa of unknown struct")
+    return ""
+
 # Runtime that depends on Arr_str (so it is emitted after the array families,
 # not in the preamble): split a string on a separator into a [string].
 fn gen_strlib() -> string:
@@ -1979,6 +2124,9 @@ fn note_arr_types(acc: inout [string], ty: string):
     elif is_result(b):
         note_arr_types(&acc, result_ok(b))
         note_arr_types(&acc, result_err(b))
+    elif is_soa(b):                              # collect the soa family (Soa_<Struct>)
+        if not has_str(acc, b):
+            push(acc, b)
     elif is_tuple(b):
         if not has_str(acc, b):
             push(acc, b)
@@ -2217,7 +2365,7 @@ fn main():
         i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_tuple(ets[i]) and not is_map(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
             out = out + gen_arr_type(ctx, ets[i])
         i = i + 1
     i = 0                                        # map struct(s), one per value type used
@@ -2248,8 +2396,13 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_tuple(ets[i]) and not is_map(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
             out = out + gen_arr_fns(ctx, ets[i])
+        i = i + 1
+    i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
+    for i < len(ets):
+        if is_soa(ets[i]):
+            out = out + gen_soa(ctx, ets[i])
         i = i + 1
     i = 0                                        # shared hash + per-value-type map families
     has_map := false
