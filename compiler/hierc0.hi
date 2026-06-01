@@ -2,15 +2,17 @@
 # self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout.
 #
 # Subset: one or more `fn name(p: int, ...) -> int:` / `fn main():`, whose
-# indented bodies have `x := EXPR`, `x = EXPR`, `print(str(EXPR))`, `return
-# EXPR`, and `if`/`elif`/`else`. EXPR = integer arithmetic (`+ - *`, parens,
-# vars, int literals), comparisons (`== < >`), and calls `f(args)`. Validated
+# indented bodies have `x := EXPR`, `x = EXPR`, `print(SEXPR)`, `return EXPR`,
+# and `if`/`elif`/`else`. EXPR = integer arithmetic (`+ - *`, parens, vars, int
+# literals, calls `f(args)`) and comparisons (`== < >`). SEXPR (string, only in
+# print position) = string literals and `str(EXPR)` joined by `+`. Validated
 # DIFFERENTIALLY against the C compiler by `make bootstrap`.
 
 # ---------------------------------------------------------------- lexer ----
 
 enum Tok:
     TInt
+    TStr
     TIdent
     TPlus
     TMinus
@@ -52,6 +54,17 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         for i < n and src[i] != 10:
             i = i + 1
         return i
+    elif c == 34:                                # string literal "..."
+        start := i + 1
+        i = i + 1
+        for i < n and src[i] != 34:
+            if src[i] == 92:                     # backslash escapes the next char
+                i = i + 1
+            i = i + 1
+        if i >= n:
+            die("lex: unterminated string")
+        push(toks, Token(TStr, substr(src, start, i)))
+        return i + 1                             # consume closing quote
     elif is_digit(c):
         start := i
         for i < n and is_digit(src[i]):
@@ -162,21 +175,22 @@ fn lex(src: string) -> [Token]:
 
 enum Expr:
     EInt(string)
+    EStr(string)              # string literal (raw content, escapes preserved)
     EVar(string)
     EBin(string, Expr, Expr)
-    ECall(string, [Expr])     # f(args) — user function call
+    ECall(string, [Expr])
 
 enum Stmt:
     SDecl(string, Expr)
     SAssign(string, Expr)
-    SPrint(Expr)
+    SPrint(Expr)             # the Expr is a string expression
     SReturn(Expr)
     SIf(Expr, [Stmt], [Stmt])
 
 struct Func:
     name: string
-    params: [string]          # parameter names (all int in the subset)
-    is_void: bool             # no `-> int`
+    params: [string]
+    is_void: bool
     body: [Stmt]
 
 # --------------------------------------------------------------- parser ----
@@ -199,7 +213,7 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
-        if toks[pos].kind == TLParen:        # a call f(args)
+        if toks[pos].kind == TLParen:
             pos = pos + 1
             args := []Expr
             if toks[pos].kind != TRParen:
@@ -247,6 +261,32 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
         return EBin(op, l, r)
     return l
 
+# string expression (print position only): literal / str(IEXPR) joined by '+'
+fn parse_satom(toks: [Token], pos: inout int) -> Expr:
+    t := toks[pos]
+    if t.kind == TStr:
+        pos = pos + 1
+        return EStr(t.text)
+    elif t.kind == TIdent and t.text == "str":
+        pos = pos + 1
+        expect(toks, &pos, TLParen)
+        e := parse_expr(toks, &pos)
+        expect(toks, &pos, TRParen)
+        args := []Expr
+        push(args, e)
+        return ECall("str", args)
+    else:
+        die("parse: expected a string literal or str(...)")
+        return EStr("")
+
+fn parse_sexpr(toks: [Token], pos: inout int) -> Expr:
+    l := parse_satom(toks, &pos)
+    for toks[pos].kind == TPlus:
+        pos = pos + 1
+        r := parse_satom(toks, &pos)
+        l = EBin("+", l, r)
+    return l
+
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
     expect(toks, &pos, TNewline)
@@ -284,10 +324,7 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
     if t.kind == TIdent and t.text == "print":
         pos = pos + 1
         expect(toks, &pos, TLParen)
-        expect_ident(toks, &pos, "str")
-        expect(toks, &pos, TLParen)
-        e := parse_expr(toks, &pos)
-        expect(toks, &pos, TRParen)
+        e := parse_sexpr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e)
     elif t.kind == TIdent and t.text == "return":
@@ -311,10 +348,10 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
             return SAssign(name, parse_expr(toks, &pos))
         else:
             die("parse: expected ':=' or '='")
-            return SPrint(EInt("0"))
+            return SReturn(EInt("0"))
     else:
         die("parse: expected a statement")
-        return SPrint(EInt("0"))
+        return SReturn(EInt("0"))
 
 fn parse_param(toks: [Token], pos: inout int) -> string:
     if toks[pos].kind != TIdent:
@@ -358,6 +395,7 @@ fn parse_program(toks: [Token], pos: inout int) -> [Func]:
     return funcs
 
 # -------------------------------------------------------------- codegen ----
+# gen_iexpr: integer context.  gen_sexpr: string context (print/str only).
 
 fn gen_args(args: [Expr]) -> string:
     out := ""
@@ -365,20 +403,38 @@ fn gen_args(args: [Expr]) -> string:
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_expr(args[i])
+        out = out + gen_iexpr(args[i])
         i = i + 1
     return out
 
-fn gen_expr(e: Expr) -> string:
+fn gen_iexpr(e: Expr) -> string:
     match e:
         EInt(t):
             return t
+        EStr(s):
+            die("codegen: string in an integer context")
+            return "0"
         EVar(name):
             return name
         EBin(op, l, r):
-            return "(" + gen_expr(l) + " " + op + " " + gen_expr(r) + ")"
+            return "(" + gen_iexpr(l) + " " + op + " " + gen_iexpr(r) + ")"
         ECall(name, args):
             return name + "(" + gen_args(args) + ")"
+
+fn gen_sexpr(e: Expr) -> string:
+    match e:
+        EStr(s):
+            return "\"" + s + "\""
+        EBin(op, l, r):
+            return "sc(" + gen_sexpr(l) + ", " + gen_sexpr(r) + ")"
+        ECall(name, args):
+            return "i2s(" + gen_iexpr(args[0]) + ")"
+        EInt(t):
+            die("codegen: bare int in a string context")
+            return "\"\""
+        EVar(name):
+            die("codegen: bare variable in a string context")
+            return "\"\""
 
 fn gen_block(stmts: [Stmt]) -> string:
     out := ""
@@ -391,15 +447,15 @@ fn gen_block(stmts: [Stmt]) -> string:
 fn gen_stmt(s: Stmt) -> string:
     match s:
         SDecl(name, e):
-            return "    long " + name + " = " + gen_expr(e) + ";\n"
+            return "    long " + name + " = " + gen_iexpr(e) + ";\n"
         SAssign(name, e):
-            return "    " + name + " = " + gen_expr(e) + ";\n"
+            return "    " + name + " = " + gen_iexpr(e) + ";\n"
         SPrint(e):
-            return "    printf(\"%ld\", " + gen_expr(e) + ");\n"
+            return "    fputs(" + gen_sexpr(e) + ", stdout);\n"
         SReturn(e):
-            return "    return " + gen_expr(e) + ";\n"
+            return "    return " + gen_iexpr(e) + ";\n"
         SIf(cond, then_body, else_body):
-            out := "    if (" + gen_expr(cond) + ") {\n" + gen_block(then_body) + "    }"
+            out := "    if (" + gen_iexpr(cond) + ") {\n" + gen_block(then_body) + "    }"
             if len(else_body) > 0:
                 out = out + " else {\n" + gen_block(else_body) + "    }"
             return out + "\n"
@@ -430,12 +486,18 @@ fn gen_func(f: Func) -> string:
         rt = "void "
     return rt + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body) + "}\n"
 
+fn preamble() -> string:
+    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+    out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
+    out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
+    return out
+
 fn main():
     src := read_all()
     toks := lex(src)
     pos := 0
     funcs := parse_program(toks, &pos)
-    out := "#include <stdio.h>\n"
+    out := preamble()
     i := 0
     for i < len(funcs):
         if funcs[i].name != "main":
