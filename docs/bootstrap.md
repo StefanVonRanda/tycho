@@ -443,8 +443,15 @@ fixpoint.
         for elements with a usable equality — int/float/str/enum). Cleared
         `floats`, `float_arrays`, `logic` and one more — 6 → 10/29. Deferred:
         `float_maps` (a second map type, `[string: float]`).
-      Remaining test failures bucket into: Option/Result + `or_return`, tuples,
-      newtypes, slices, projections, enum-array equality (`recursive_enum_array`),
-      `die`, `float_maps`, and parser gaps (`enums`, `enum_calc`, `maps`,
-      `match_reuse`, `io_builtins`, `aggregates` nested arrays).
+      - **3C**: struct/enum-element arrays + array-field equality (10 → 11/29).
+        `collect_elem_types` now seeds every struct and enum name, so a
+        literal-only `[Struct]`/`[Enum]` (which no annotation scan would catch)
+        still gets its `Arr_T` family. `eq_field` gained an array case
+        (`Arr_T_eq`), fixing `recursive_enum_array` (an enum whose payload is
+        `[Tree]`). Unused seeded families are harmless dead statics.
+      Remaining failures: Option/Result + `or_return` (6: `options`, `results`,
+      `option_fields`, `option_arrays`, `optres_borrow`, `or_return`), tuples,
+      newtypes, slices, `die`, `float_maps`, `io_builtins`, `enums`/`maps`/
+      `match_reuse`/`ctor_move` (parser gaps), and `aggregates`/`projections`
+      (nested arrays `[][int]` — need element-name mangling + a literal walker).
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

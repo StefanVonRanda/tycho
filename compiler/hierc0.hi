@@ -1269,9 +1269,11 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
 fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
         return "strcmp(" + a + ", " + b + ") == 0"
+    if is_array(ty):
+        return "Arr_" + elem_ty(ty) + "_eq(" + a + ", " + b + ")"
     if is_enum(ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
-    return "(" + a + " == " + b + ")"            # int/bool by value
+    return "(" + a + " == " + b + ")"            # int/bool/float by value
 
 fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
     out := "struct " + ed.name + " {\n    int tag;\n"
@@ -1421,7 +1423,16 @@ fn collect_elem_types(prog: Program) -> [string]:
     acc := []string
     push(acc, "int")
     push(acc, "str")
-    i := 0
+    push(acc, "float")
+    i := 0                                       # seed every struct/enum name so a
+    for i < len(prog.structs):                   # literal-only [Struct]/[Enum] (no annotation
+        push(acc, prog.structs[i].name)          # to scan) still gets its Arr_T family
+        i = i + 1
+    i = 0
+    for i < len(prog.enums):
+        push(acc, prog.enums[i].name)
+        i = i + 1
+    i = 0
     for i < len(prog.funcs):
         f := prog.funcs[i]
         j := 0
