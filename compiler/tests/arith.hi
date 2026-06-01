@@ -1,0 +1,7 @@
+fn main():
+    x := 2 + 3 * 4
+    y := (x - 5) * 2
+    print(str(x))
+    print(str(y))
+    z := x + y
+    print(str(z))

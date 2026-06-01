@@ -1,6 +1,0 @@
-fn add(a, b) -> int:
-    return a + b * 2
-
-fn main():
-    x := 42
-    print(str(x == add(1, 2)))

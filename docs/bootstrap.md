@@ -238,7 +238,13 @@ fixpoint.
       `die` error convention (135b4ff); `while` already exists as `for <cond>:`
       (tests/while_loop.hi). The language can now express a source-to-source
       compiler.
-- [ ] **Stage 1** — subset compiler `compiler/hierc0.hi`
+- [~] **Stage 1** — subset compiler `compiler/hierc0.hi` (IN PROGRESS). Lexer +
+      recursive-descent parser → AST enums + C codegen all working end-to-end:
+      `fn main():` with a flat body of `:=`/`=`/`print(str(EXPR))` over integer
+      arithmetic (`+ - *`, parens, vars) compiles to C that matches the C
+      compiler's output, validated differentially by `make bootstrap`. Still to
+      add: user functions + params, `if`/`elif`/`else` (needs INDENT/DEDENT in
+      the lexer), comparisons, strings — toward the full Stage-1 subset.
 - [ ] **Stage 2** — grow to cover `examples/*.hi`
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

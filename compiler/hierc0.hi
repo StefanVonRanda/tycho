@@ -1,8 +1,13 @@
 # hierc0 — a compiler for a SUBSET of Hier, written in Hier. Stage 1 of the
-# self-hosting bootstrap (see docs/bootstrap.md). Source -> C, stdin -> stdout.
+# self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout:
+#   ./hierc0 < prog.hi > prog.c && cc prog.c -o prog
 #
-# Increment 1A: the lexer. `main` dumps the token stream so it can be validated
-# against a golden before the parser/codegen are built on top of it.
+# Subset (increment 1B/1C): `fn main():` with a flat body of `x := EXPR`,
+# `x = EXPR`, and `print(str(EXPR))`, where EXPR is integer arithmetic over
+# int literals, variables, `+ - *`, and parentheses. Validated DIFFERENTIALLY
+# against the C compiler: cc(hierc0(P)) and cc(hierc(P)) must print the same.
+
+# ---------------------------------------------------------------- lexer ----
 
 enum Tok:
     TInt
@@ -28,10 +33,10 @@ struct Token:
     text: string
 
 fn is_digit(c: int) -> bool:
-    return c >= 48 and c <= 57                       # '0'..'9'
+    return c >= 48 and c <= 57
 
 fn is_alpha(c: int) -> bool:
-    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95   # a-z A-Z _
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
 
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
@@ -42,12 +47,12 @@ fn lex(src: string) -> [Token]:
     i := 0
     for i < n:
         c := src[i]
-        if c == 32 or c == 9:                        # space / tab
+        if c == 32 or c == 9:
             i = i + 1
-        elif c == 35:                                # '#' comment to end of line
+        elif c == 35:
             for i < n and src[i] != 10:
                 i = i + 1
-        elif c == 10:                                # newline
+        elif c == 10:
             push(toks, Token(TNewline, ""))
             i = i + 1
         elif is_digit(c):
@@ -63,7 +68,7 @@ fn lex(src: string) -> [Token]:
         elif c == 43:
             push(toks, Token(TPlus, "+"))
             i = i + 1
-        elif c == 45:                                # '-' or '->'
+        elif c == 45:
             if i + 1 < n and src[i + 1] == 62:
                 push(toks, Token(TArrow, "->"))
                 i = i + 2
@@ -82,14 +87,14 @@ fn lex(src: string) -> [Token]:
         elif c == 44:
             push(toks, Token(TComma, ","))
             i = i + 1
-        elif c == 58:                                # ':' or ':='
+        elif c == 58:
             if i + 1 < n and src[i + 1] == 61:
                 push(toks, Token(TWalrus, ":="))
                 i = i + 2
             else:
                 push(toks, Token(TColon, ":"))
                 i = i + 1
-        elif c == 61:                                # '=' or '=='
+        elif c == 61:
             if i + 1 < n and src[i + 1] == 61:
                 push(toks, Token(TEqEq, "=="))
                 i = i + 2
@@ -107,51 +112,131 @@ fn lex(src: string) -> [Token]:
     push(toks, Token(TEof, ""))
     return toks
 
-fn tok_name(k: Tok) -> string:
-    match k:
-        TInt:
-            return "INT"
-        TIdent:
-            return "IDENT"
-        TPlus:
-            return "PLUS"
-        TMinus:
-            return "MINUS"
-        TStar:
-            return "STAR"
-        TLParen:
-            return "LPAREN"
-        TRParen:
-            return "RPAREN"
-        TComma:
-            return "COMMA"
-        TColon:
-            return "COLON"
-        TArrow:
-            return "ARROW"
-        TWalrus:
-            return "WALRUS"
-        TEq:
-            return "EQ"
-        TEqEq:
-            return "EQEQ"
-        TLt:
-            return "LT"
-        TGt:
-            return "GT"
-        TNewline:
-            return "NEWLINE"
-        TEof:
-            return "EOF"
+# ------------------------------------------------------------------ AST ----
+
+enum Expr:
+    EInt(string)              # literal text, emitted verbatim into C
+    EVar(string)
+    EBin(string, Expr, Expr)  # op ("+"/"-"/"*"), lhs, rhs
+
+enum Stmt:
+    SDecl(string, Expr)       # x := EXPR
+    SAssign(string, Expr)     # x = EXPR
+    SPrint(Expr)              # print(str(EXPR))
+
+# --------------------------------------------------------------- parser ----
+
+fn expect(toks: [Token], pos: inout int, k: Tok):
+    if toks[pos].kind != k:
+        die("parse: unexpected token")
+    pos = pos + 1
+
+fn expect_ident(toks: [Token], pos: inout int, name: string):
+    if toks[pos].kind != TIdent or toks[pos].text != name:
+        die("parse: expected '" + name + "'")
+    pos = pos + 1
+
+fn parse_atom(toks: [Token], pos: inout int) -> Expr:
+    t := toks[pos]
+    if t.kind == TInt:
+        pos = pos + 1
+        return EInt(t.text)
+    elif t.kind == TIdent:
+        pos = pos + 1
+        return EVar(t.text)
+    elif t.kind == TLParen:
+        pos = pos + 1
+        e := parse_expr(toks, &pos)
+        expect(toks, &pos, TRParen)
+        return e
+    else:
+        die("parse: expected an atom")
+        return EInt("0")
+
+fn parse_mul(toks: [Token], pos: inout int) -> Expr:
+    l := parse_atom(toks, &pos)
+    for toks[pos].kind == TStar:
+        op := toks[pos].text
+        pos = pos + 1
+        r := parse_atom(toks, &pos)
+        l = EBin(op, l, r)
+    return l
+
+fn parse_add(toks: [Token], pos: inout int) -> Expr:
+    l := parse_mul(toks, &pos)
+    for toks[pos].kind == TPlus or toks[pos].kind == TMinus:
+        op := toks[pos].text
+        pos = pos + 1
+        r := parse_mul(toks, &pos)
+        l = EBin(op, l, r)
+    return l
+
+fn parse_expr(toks: [Token], pos: inout int) -> Expr:
+    return parse_add(toks, &pos)
+
+fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
+    t := toks[pos]
+    if t.kind == TIdent and t.text == "print":
+        pos = pos + 1
+        expect(toks, &pos, TLParen)
+        expect_ident(toks, &pos, "str")
+        expect(toks, &pos, TLParen)
+        e := parse_expr(toks, &pos)
+        expect(toks, &pos, TRParen)
+        expect(toks, &pos, TRParen)
+        return SPrint(e)
+    elif t.kind == TIdent:
+        name := t.text
+        pos = pos + 1
+        if toks[pos].kind == TWalrus:
+            pos = pos + 1
+            return SDecl(name, parse_expr(toks, &pos))
+        elif toks[pos].kind == TEq:
+            pos = pos + 1
+            return SAssign(name, parse_expr(toks, &pos))
+        else:
+            die("parse: expected ':=' or '='")
+            return SPrint(EInt("0"))
+    else:
+        die("parse: expected a statement")
+        return SPrint(EInt("0"))
+
+# -------------------------------------------------------------- codegen ----
+
+fn gen_expr(e: Expr) -> string:
+    match e:
+        EInt(t):
+            return t
+        EVar(name):
+            return name
+        EBin(op, l, r):
+            return "(" + gen_expr(l) + " " + op + " " + gen_expr(r) + ")"
+
+fn gen_stmt(s: Stmt) -> string:
+    match s:
+        SDecl(name, e):
+            return "    long " + name + " = " + gen_expr(e) + ";\n"
+        SAssign(name, e):
+            return "    " + name + " = " + gen_expr(e) + ";\n"
+        SPrint(e):
+            return "    printf(\"%ld\", " + gen_expr(e) + ");\n"
 
 fn main():
     src := read_all()
     toks := lex(src)
-    i := 0
-    for i < len(toks):
-        t := toks[i]
-        if t.kind == TInt or t.kind == TIdent:
-            print(tok_name(t.kind) + " " + t.text + "\n")
+    pos := 0
+    expect_ident(toks, &pos, "fn")          # fn main ( ) :
+    expect_ident(toks, &pos, "main")
+    expect(toks, &pos, TLParen)
+    expect(toks, &pos, TRParen)
+    expect(toks, &pos, TColon)
+    expect(toks, &pos, TNewline)
+    out := "#include <stdio.h>\nint main(void) {\n"
+    for toks[pos].kind != TEof:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
         else:
-            print(tok_name(t.kind) + "\n")
-        i = i + 1
+            out = out + gen_stmt(parse_stmt(toks, &pos))
+            expect(toks, &pos, TNewline)
+    out = out + "    return 0;\n}\n"
+    print(out)
