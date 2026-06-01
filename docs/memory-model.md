@@ -126,6 +126,37 @@ Then resume the arena spine (MM-1 below) for the heap types append can't cover.
 
 ## Stages
 
+### Arena spine — sub-step log
+
+- **✅ S1 (commit cc9aa27): threading scaffolding, sound, frees nothing.**
+  Arena runtime in the preamble; every fn takes `Arena* _parent` + opens
+  `Arena _scope = arena_child(_parent)`; main builds `_root`; user calls thread
+  `&_scope`; return-slot `{ T _ret = e; arena_free(&_scope); return _ret; }`
+  (T from `Ctx.rettype`). Allocators still malloc → `arena_free` reclaims
+  nothing → no UAF. fixpoint B≡C + 57/57. This is the *threading* spine; the
+  sub-steps below fill the arenas.
+
+- **S2 (next, the large body): redirect allocations onto arenas.** Confirmed
+  there is NO sound partial here — a `_scope` string stored into a still-malloc'd
+  container that outlives the scope dangles, so strings and their containers must
+  migrate together. Required, all at once:
+  1. Thread an `owner` arena param through `gen_expr`/`gen_rhs` (default
+     `&_scope`; mechanical but touches every call site).
+  2. `owner_arena_of(var)`: param → `_parent` (caller-owned/borrowed), local →
+     `&_scope` (one scope per fn until MM-5 adds per-block).
+  3. Every allocator (`sc`/`i2s`/`f2s`/`substr`/`scopy`/`hi_*`/`hbox`,
+     `Arr_*_from/copy/push`, `Map_*`, struct copy, tuple) takes `Arena*` +
+     `arena_alloc`.
+  4. **Arena-aware recursive copies**: container copy must re-allocate NESTED
+     heap (strings, inner arrays/maps/structs) into the target arena — today's
+     shallow pointer-copy is UAF once memory is freed.
+  5. Store sites (`push`, `map_set`, index/field assign) build the value into
+     `owner_arena_of(container)`; returns build into `_parent`.
+  Verify each increment with fixpoint + ASan on the self-emitted C (the oracle
+  that caught the S1-era and accumulator bugs). Skip the move-on-last-use /
+  return-elision *optimizations* (always-copy is sound, just slower) — those are
+  MM-6.
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
