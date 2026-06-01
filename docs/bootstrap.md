@@ -339,10 +339,24 @@ fixpoint.
         modifier. Fixtures `inout.hi` (inout int + pure-value struct) and
         `memo.hi` (shared `inout [int]`, recursive) pass; both examples match
         the C compiler end-to-end.
-      - Next gaps for `examples/*.hi`: non-int array element types (`[string]`)
-        and deep struct copy for heap-bearing fields — these unblock
-        `collect.hi` (`inout [string]`), `context.hi` (struct w/ string+`[int]`
-        fields, snapshot isolation), and `records.hi`. Then `substr`
+      - **2H**: generic array element types. The single hardcoded `IntArr`
+        runtime is replaced by **monomorphized** `Arr_<T>` families — one
+        `new`/`from`/`copy`/`push` set per element type the program uses, with
+        a `CTY* data` buffer (deep-copy on assign = value semantics). Element
+        types are collected from annotations (param/return/field/payload) plus
+        a seed of `int`/`str` (covers every array literal seen in practice);
+        families are emitted after enum forward typedefs and before struct
+        bodies that embed them. `cty`/`push`/index/literal/`gen_rhs` all key off
+        the element type. Element types must be word-sized (int/bool/str/enum-
+        pointer); `[struct-by-value]` is still pending. Also added bare
+        `return` (void). Fixture `strarrays.hi` (= `collect.hi`: `inout
+        [string]`, string push/index, recursive accumulation) passes;
+        `collect.hi` matches the C compiler end-to-end. (GCC-14 note: array
+        `_from` takes a non-const element pointer — `char**`→`const char**` is
+        a hard error under the default `-Wincompatible-pointer-types`.)
+      - Next gaps for `examples/*.hi`: deep struct copy for heap-bearing fields
+        (`context.hi`, `records.hi` — string/`[T]` struct fields need
+        value-semantic copy, currently a C shallow copy), `substr`
         (`accumulate_big.hi`), `input()` (`hello.hi`), maps (`wordcount.hi`,
         `words.hi`), `Option`/`Result` + `or_return`, tuples.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)

@@ -222,6 +222,7 @@ enum Stmt:
     SFieldAssign(Expr, Expr) # `lvalue = rhs`, lvalue an EField path
     SPrint(Expr)             # the Expr is a string expression
     SReturn(Expr)
+    SReturnVoid              # bare `return` (no value)
     SIf(Expr, [Stmt], [Stmt])
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
     SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
@@ -447,6 +448,8 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SPrint(e)
     elif t.kind == TIdent and t.text == "return":
         pos = pos + 1
+        if toks[pos].kind == TNewline:           # bare `return` (void)
+            return SReturnVoid
         return SReturn(parse_expr(toks, &pos))
     elif t.kind == TIdent and t.text == "if":
         pos = pos + 1
@@ -762,6 +765,12 @@ fn base_ty(ty: string) -> string:
         return substr(ty, 1, len(ty))
     return ty
 
+fn is_array(ty: string) -> bool:
+    return len(ty) > 0 and ty[0] == 91           # "[T]"
+
+fn elem_ty(ty: string) -> string:               # "[T]" -> "T"
+    return substr(ty, 1, len(ty) - 1)
+
 fn cty(ctx: Ctx, ty: string) -> string:
     if is_inout(ty):                              # inout T -> pointer to T's C type
         inner := cty(ctx, base_ty(ty))           # ends with a space
@@ -770,8 +779,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "long "
     if ty == "str":
         return "char* "
-    if len(ty) > 0 and ty[0] == 91:              # "[...]" array type -> IntArr
-        return "IntArr "
+    if is_array(ty):                              # [T] -> the monomorphized Arr_T
+        return "Arr_" + elem_ty(ty) + " "
     if is_enum(ctx, ty):                          # enum value -> pointer to node
         return ty + "* "
     return ty + " "                              # struct type: its own typedef
@@ -840,7 +849,7 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             bt := type_of(base, names, types, ctx)
             return substr(bt, 1, len(bt) - 1)
         EArrLit(elems):
-            return "[int]"
+            return "[" + type_of(elems[0], names, types, ctx) + "]"
         EArrEmpty(ety):
             return "[" + ety + "]"
         EAddr(inner):
@@ -879,9 +888,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EIndex(base, idx):
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
-            return "iarr_from((long[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+            et := type_of(elems[0], names, types, ctx)
+            return "Arr_" + et + "_from((" + cty(ctx, et) + "[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
-            return "iarr_new()"
+            return "Arr_" + ety + "_new()"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
@@ -892,7 +902,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
-                return "iarr_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                et := elem_ty(type_of(args[0], names, types, ctx))
+                return "Arr_" + et + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "len":
                 return gen_expr(args[0], names, types, ctx) + ".len"
             if name == "str":
@@ -936,8 +947,9 @@ fn is_place(e: Expr) -> bool:
 # results) already own their buffer; scalars/strings need no copy.
 fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     code := gen_expr(e, names, types, ctx)
-    if type_of(e, names, types, ctx) == "[int]" and is_place(e):
-        return "iarr_copy(" + code + ")"
+    ty := type_of(e, names, types, ctx)
+    if is_array(ty) and is_place(e):
+        return "Arr_" + elem_ty(ty) + "_copy(" + code + ")"
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -970,6 +982,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return "    fputs(" + gen_expr(e, names, types, ctx) + ", stdout);\n"
         SReturn(e):
             return "    return " + gen_expr(e, names, types, ctx) + ";\n"
+        SReturnVoid:
+            return "    return;\n"
         SExpr(e):
             return "    " + gen_expr(e, names, types, ctx) + ";\n"
         SIf(cond, then_body, else_body):
@@ -1122,12 +1136,70 @@ fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
-    out = out + "typedef struct { long* data; long len; long cap; } IntArr;\n"
-    out = out + "static IntArr iarr_new(void) { IntArr a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
-    out = out + "static IntArr iarr_from(const long* s, long n) { IntArr a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(long) * n) : 0; if (n) memcpy(a.data, s, sizeof(long) * n); return a; }\n"
-    out = out + "static IntArr iarr_copy(IntArr a) { return iarr_from(a.data, a.len); }\n"
-    out = out + "static void iarr_push(IntArr* a, long v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(long) * a->cap); } a->data[a->len++] = v; }\n"
     return out
+
+# One monomorphized value-array family per element type T: Arr_T holds a
+# CTY* buffer; copy is a deep copy (value semantics). Element types must be
+# word-sized (int/bool/str/enum-pointer); [struct-by-value] is not yet handled.
+fn gen_arr_family(ctx: Ctx, et: string) -> string:
+    nm := "Arr_" + et
+    ct := cty(ctx, et)                           # element C type, trailing space
+    out := "typedef struct { " + ct + "* data; long len; long cap; } " + nm + ";\n"
+    out = out + "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
+    out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
+    out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
+    out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
+    return out
+
+fn has_str(xs: [string], s: string) -> bool:
+    i := 0
+    for i < len(xs):
+        if xs[i] == s:
+            return true
+        i = i + 1
+    return false
+
+# If `ty` is an array type, record its element type for monomorphization.
+fn note_elem(acc: inout [string], ty: string):
+    b := base_ty(ty)
+    if is_array(b):
+        et := elem_ty(b)
+        if not has_str(acc, et):
+            push(acc, et)
+
+# Element types needing an Arr_T family: int/str (cover every literal seen in
+# practice) plus every array element type that appears in an annotation.
+fn collect_elem_types(prog: Program) -> [string]:
+    acc := []string
+    push(acc, "int")
+    push(acc, "str")
+    i := 0
+    for i < len(prog.funcs):
+        f := prog.funcs[i]
+        j := 0
+        for j < len(f.ptypes):
+            note_elem(&acc, f.ptypes[j])
+            j = j + 1
+        note_elem(&acc, f.ret)
+        i = i + 1
+    i = 0
+    for i < len(prog.structs):
+        j := 0
+        for j < len(prog.structs[i].fields):
+            note_elem(&acc, prog.structs[i].fields[j].ty)
+            j = j + 1
+        i = i + 1
+    i = 0
+    for i < len(prog.enums):
+        j := 0
+        for j < len(prog.enums[i].variants):
+            k := 0
+            for k < len(prog.enums[i].variants[j].ptypes):
+                note_elem(&acc, prog.enums[i].variants[j].ptypes[k])
+                k = k + 1
+            j = j + 1
+        i = i + 1
+    return acc
 
 fn main():
     src := read_all()
@@ -1141,10 +1213,15 @@ fn main():
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
     ctx := Ctx(sigs, prog.structs, prog.enums)
+    ets := collect_elem_types(prog)
     out := preamble()
     i = 0                                        # enums: forward typedefs ...
     for i < len(prog.enums):
         out = out + "typedef struct " + prog.enums[i].name + " " + prog.enums[i].name + ";\n"
+        i = i + 1
+    i = 0                                        # monomorphized array families (after enum
+    for i < len(ets):                            # forward decls, before struct bodies that use them)
+        out = out + gen_arr_family(ctx, ets[i])
         i = i + 1
     i = 0                                        # ... eq prototypes (mutual recursion) ...
     for i < len(prog.enums):
