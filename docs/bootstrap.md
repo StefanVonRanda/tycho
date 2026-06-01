@@ -327,8 +327,23 @@ fixpoint.
         indented comment as a block's first line emits a stray `NEWLINE` before
         the `INDENT`; block openers now skip blank/comment lines via
         `open_block` (this was a real hierc0 lexer/parser bug, fixed here).
-      - Next gaps for `examples/*.hi`: `Option`/`Result` + `or_return`, tuples,
-        maps, and non-int array element types (`[string]`, struct string
-        fields — `examples/records.hi`, `wordcount.hi`, `words.hi`).
+      - **2G**: `inout` parameters (+ the `<= >= !=` comparison operators
+        `examples/memo.hi` needs). An `inout T` param is a C pointer; its env
+        type is marked with a leading `&` (so the base type still drives all
+        type logic). `gen_expr(EVar)` derefs (`(*n)`) when the var is inout, so
+        field access, indexing, `push`, and assignment all compose with no
+        extra cases (`(*s).sum`, `(*memo).data[n]`, `iarr_push(&(*memo), v)`).
+        Call-site `&place` parses to `EAddr` → `&(gen_expr(place))`; since
+        `&(*p) == p`, passing an inout param onward (`fib(n-1, &memo)`) Just
+        Works. `cty` emits the pointer; `parse_param` reads the `inout`
+        modifier. Fixtures `inout.hi` (inout int + pure-value struct) and
+        `memo.hi` (shared `inout [int]`, recursive) pass; both examples match
+        the C compiler end-to-end.
+      - Next gaps for `examples/*.hi`: non-int array element types (`[string]`)
+        and deep struct copy for heap-bearing fields — these unblock
+        `collect.hi` (`inout [string]`), `context.hi` (struct w/ string+`[int]`
+        fields, snapshot isolation), and `records.hi`. Then `substr`
+        (`accumulate_big.hi`), `input()` (`hello.hi`), maps (`wordcount.hi`,
+        `words.hi`), `Option`/`Result` + `or_return`, tuples.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

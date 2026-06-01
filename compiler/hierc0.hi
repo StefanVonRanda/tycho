@@ -30,6 +30,10 @@ enum Tok:
     TEqEq
     TLt
     TGt
+    TLe
+    TGe
+    TNe
+    TAmp
     TNewline
     TIndent
     TDedent
@@ -123,10 +127,25 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         push(toks, Token(TEq, "="))
         return i + 1
     elif c == 60:
+        if i + 1 < n and src[i + 1] == 61:
+            push(toks, Token(TLe, "<="))
+            return i + 2
         push(toks, Token(TLt, "<"))
         return i + 1
     elif c == 62:
+        if i + 1 < n and src[i + 1] == 61:
+            push(toks, Token(TGe, ">="))
+            return i + 2
         push(toks, Token(TGt, ">"))
+        return i + 1
+    elif c == 33:
+        if i + 1 < n and src[i + 1] == 61:
+            push(toks, Token(TNe, "!="))
+            return i + 2
+        die("lex: '!' must be part of '!='")
+        return i + 1
+    elif c == 38:
+        push(toks, Token(TAmp, "&"))
         return i + 1
     else:
         die("lex: unexpected character")
@@ -195,6 +214,7 @@ enum Expr:
     EIndex(Expr, Expr)       # array index `base[idx]`
     EArrLit([Expr])          # array literal `[1, 2, 3]` (int elements)
     EArrEmpty(string)        # empty typed array `[]int`
+    EAddr(Expr)              # `&place` at a call site (pass to an inout param)
 
 enum Stmt:
     SDecl(string, Expr)
@@ -280,6 +300,9 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
         pos = pos + 1
         return EBin("-", EInt("0"), parse_atom(toks, &pos))
+    elif t.kind == TAmp:                         # &place : pass to an inout param
+        pos = pos + 1
+        return EAddr(parse_postfix(toks, &pos))
     elif t.kind == TInt:
         pos = pos + 1
         return EInt(t.text)
@@ -360,7 +383,7 @@ fn parse_add(toks: [Token], pos: inout int) -> Expr:
 fn parse_cmp(toks: [Token], pos: inout int) -> Expr:
     l := parse_add(toks, &pos)
     k := toks[pos].kind
-    if k == TEqEq or k == TLt or k == TGt:
+    if k == TEqEq or k == TLt or k == TGt or k == TLe or k == TGe or k == TNe:
         op := toks[pos].text
         pos = pos + 1
         r := parse_add(toks, &pos)
@@ -528,8 +551,10 @@ fn parse_param(toks: [Token], pos: inout int) -> Param:
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
-    ty := parse_type(toks, &pos)
-    return Param(name, ty)
+    if toks[pos].kind == TIdent and toks[pos].text == "inout":
+        pos = pos + 1
+        return Param(name, "&" + parse_type(toks, &pos))   # inout marker
+    return Param(name, parse_type(toks, &pos))
 
 fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "fn")
@@ -727,7 +752,20 @@ fn variant_ptypes(ctx: Ctx, vname: string) -> [string]:
     die("type: unknown variant")
     return []string
 
+# An inout parameter's type is marked with a leading '&'. The base type drives
+# all type logic; the marker only affects C codegen (pointer + deref).
+fn is_inout(ty: string) -> bool:
+    return len(ty) > 0 and ty[0] == 38
+
+fn base_ty(ty: string) -> string:
+    if is_inout(ty):
+        return substr(ty, 1, len(ty))
+    return ty
+
 fn cty(ctx: Ctx, ty: string) -> string:
+    if is_inout(ty):                              # inout T -> pointer to T's C type
+        inner := cty(ctx, base_ty(ty))           # ends with a space
+        return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
         return "long "
     if ty == "str":
@@ -795,7 +833,7 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EStr(s):
             return "str"
         EVar(name):
-            return var_type(names, types, name)
+            return base_ty(var_type(names, types, name))
         EField(base, fld):
             return field_type(ctx, type_of(base, names, types, ctx), fld)
         EIndex(base, idx):                        # element type: strip [ ] off "[int]"
@@ -805,6 +843,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "[int]"
         EArrEmpty(ety):
             return "[" + ety + "]"
+        EAddr(inner):
+            return type_of(inner, names, types, ctx)
         EBin(op, l, r):
             if op == "+":
                 if type_of(l, names, types, ctx) == "str" or type_of(r, names, types, ctx) == "str":
@@ -831,6 +871,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EStr(s):
             return "\"" + s + "\""
         EVar(name):
+            if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
+                return "(*" + name + ")"
             return name
         EField(base, fld):
             return gen_expr(base, names, types, ctx) + "." + fld
@@ -840,6 +882,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "iarr_from((long[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
             return "iarr_new()"
+        EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
+            return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
             if op == "+" and type_of(e, names, types, ctx) == "str":
                 return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
@@ -884,6 +928,8 @@ fn is_place(e: Expr) -> bool:
             return false
         EArrEmpty(t):
             return false
+        EAddr(inner):
+            return false
 
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
 # binding is independent (Hier value semantics). Fresh arrays (literals, call
@@ -915,7 +961,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             push(types, ty)
             return code
         SAssign(name, e):
-            return "    " + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            return "    " + gen_expr(EVar(name), names, types, ctx) + " = " + gen_rhs(e, names, types, ctx) + ";\n"
         SFieldAssign(lv, rhs):
             return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_rhs(rhs, names, types, ctx) + ";\n"
         SPrint(e):
