@@ -494,6 +494,21 @@ fixpoint.
         Cleared `aggregates` (nested arrays + `[P]==`), `projections` (nested
         index-set, projected field/array mutation, `&arr[i].x`), `option_arrays`
         (`[Option(int)]`/`[Option(Point)]`).
-      Remaining failures (6): `tuples`, `slices`, `float_maps` (2nd map type),
-      and parser gaps in `maps`, `match_reuse`, `ctor_move`.
+      - **3I**: maps complete + match_reuse (23 → 25/29). `parse_type` accepts
+        the `[K: V]` map annotation; added `map_del`/`map_has` runtime; `gen_rhs`
+        deep-copies a map bound from a place (so an in-place `map_set`
+        accumulator can't reach a snapshot). `match_reuse` already passed after
+        the optional-payload-parens fix.
+      - **3J**: tuples (25 → 26/29). Monomorphized `Tup_<parts>` structs (like
+        the array families), collected by element type — including a body walker
+        that now **threads the var env** so `type_of` resolves variables inside
+        tuple literals (`t := (a, b)`). Covers tuple types `(T, U, …)`, literals
+        `(a, b)`, `return a, b`, numeric field access `t.0`, destructuring
+        `a, b := f()`, tuple params/args, deep-copy on bind, and element-wise
+        `==`. Tuple construction deep-copies place elements (a tuple owns its
+        fields — `(x, 7)` then mutating `x` leaves `t.0` intact). Cleared
+        `tuples` and `ctor_move` (the move-vs-copy optimization is invisible to
+        output, so deep-copy-always is correct).
+      Remaining failures (3): `slices`, `float_maps` (`[string: float]`, a
+      second map type), and one more.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

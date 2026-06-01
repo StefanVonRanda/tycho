@@ -227,6 +227,7 @@ enum Expr:
     EArrLit([Expr])          # array literal `[1, 2, 3]` (int elements)
     EArrEmpty(string)        # empty typed array `[]int`
     EMapEmpty(string, string) # empty typed map `[]string: int` (key, value types)
+    ETuple([Expr])           # tuple literal `(a, b, ...)` / `return a, b`
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
 
 enum Stmt:
@@ -242,6 +243,7 @@ enum Stmt:
     SExpr(Expr)              # bare expression statement, e.g. a call `f(x)`
     STypedDecl(string, string, Expr)   # `name : Type = expr` (annotation fixes the type)
     SOrReturn(string, Expr)  # `name := result_expr or_return` (unwrap Ok or propagate Err)
+    SDestructure([string], Expr)       # `a, b := tuple_expr`
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
 
 struct Param:
@@ -350,6 +352,14 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TLParen:
         pos = pos + 1
         e := parse_expr(toks, &pos)
+        if toks[pos].kind == TComma:             # tuple literal (a, b, ...)
+            elems := []Expr
+            push(elems, e)
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(elems, parse_expr(toks, &pos))
+            expect(toks, &pos, TRParen)
+            return ETuple(elems)
         expect(toks, &pos, TRParen)
         return e
     elif t.kind == TLBracket:
@@ -376,10 +386,10 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
 fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
     e := parse_atom(toks, &pos)
     for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
-        if toks[pos].kind == TDot:               # field access: a.b
+        if toks[pos].kind == TDot:               # field access: a.b  /  tuple index: a.0
             pos = pos + 1
-            if toks[pos].kind != TIdent:
-                die("parse: expected a field name after '.'")
+            if toks[pos].kind != TIdent and toks[pos].kind != TInt:
+                die("parse: expected a field name or index after '.'")
             e = EField(e, toks[pos].text)
             pos = pos + 1
         else:                                    # index: a[i]
@@ -482,7 +492,15 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         pos = pos + 1
         if toks[pos].kind == TNewline:           # bare `return` (void)
             return SReturnVoid
-        return SReturn(parse_expr(toks, &pos))
+        re := parse_expr(toks, &pos)
+        if toks[pos].kind == TComma:             # `return a, b` builds a tuple
+            elems := []Expr
+            push(elems, re)
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(elems, parse_expr(toks, &pos))
+            return SReturn(ETuple(elems))
+        return SReturn(re)
     elif t.kind == TIdent and t.text == "if":
         pos = pos + 1
         cond := parse_expr(toks, &pos)
@@ -522,6 +540,17 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        if toks[pos].kind == TComma:             # destructure: a, b := tuple_expr
+            names := []string
+            push(names, name)
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                if toks[pos].kind != TIdent:
+                    die("parse: expected a name in destructure")
+                push(names, toks[pos].text)
+                pos = pos + 1
+            expect(toks, &pos, TWalrus)
+            return SDestructure(names, parse_expr(toks, &pos))
         if toks[pos].kind == TWalrus:
             pos = pos + 1
             rhs := parse_expr(toks, &pos)
@@ -571,6 +600,22 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SReturn(EInt("0"))
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
+    if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
+        pos = pos + 1
+        parts := []string
+        push(parts, parse_type(toks, &pos))
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            push(parts, parse_type(toks, &pos))
+        expect(toks, &pos, TRParen)
+        out := "("
+        i := 0
+        for i < len(parts):
+            if i > 0:
+                out = out + ","
+            out = out + parts[i]
+            i = i + 1
+        return out + ")"
     if toks[pos].kind == TLBracket:              # [T] array  or  [K: V] map
         pos = pos + 1
         inner := parse_type(toks, &pos)
@@ -891,8 +936,41 @@ fn result_err(ty: string) -> string:               # "Result(T,E)" -> "E"
     inner := substr(ty, 7, len(ty) - 1)
     return substr(inner, top_comma(inner) + 1, len(inner))
 
+fn is_tuple(ty: string) -> bool:
+    return len(ty) > 0 and ty[0] == 40           # "(T,U,...)"
+
+fn tuple_parts(ty: string) -> [string]:          # depth-aware split of the inner types
+    inner := substr(ty, 1, len(ty) - 1)
+    parts := []string
+    depth := 0
+    start := 0
+    i := 0
+    for i < len(inner):
+        c := inner[i]
+        if c == 40 or c == 91 or c == 123:
+            depth = depth + 1
+        elif c == 41 or c == 93 or c == 125:
+            depth = depth - 1
+        elif c == 44 and depth == 0:
+            push(parts, substr(inner, start, i))
+            start = i + 1
+        i = i + 1
+    push(parts, substr(inner, start, len(inner)))
+    return parts
+
+fn tup_suffix(ty: string) -> string:             # parts mangled, joined by "_"
+    parts := tuple_parts(ty)
+    out := ""
+    i := 0
+    for i < len(parts):
+        if i > 0:
+            out = out + "_"
+        out = out + mangle(parts[i])
+        i = i + 1
+    return out
+
 # A valid C identifier suffix for an element type, so composite element types
-# (nested arrays, Option/Result elements) get legal `Arr_<mangle>` family names.
+# (nested arrays, Option/Result/tuple elements) get legal `Arr_<mangle>` names.
 fn mangle(ty: string) -> string:
     if is_array(ty):
         return "arr_" + mangle(elem_ty(ty))
@@ -900,6 +978,8 @@ fn mangle(ty: string) -> string:
         return "opt_" + mangle(option_inner(ty))
     if is_result(ty):
         return "res_" + mangle(result_ok(ty)) + "_" + mangle(result_err(ty))
+    if is_tuple(ty):
+        return "tup_" + tup_suffix(ty)
     if is_map(ty):
         return "map_str_int"
     return ty                                    # int/str/float/struct/enum/newtype: already valid
@@ -948,6 +1028,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "HOption "
     if is_result(ty):
         return "HResult "
+    if is_tuple(ty):
+        return "Tup_" + tup_suffix(ty) + " "
     if is_enum(ctx, ty):                          # enum value -> pointer to node
         return ty + "* "
     return ty + " "                              # struct type: its own typedef
@@ -1063,8 +1145,10 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(ctx, vt)
         EField(base, fld):
-            ft := field_type(ctx, type_of(base, names, types, ctx), fld)
-            return resolve_nt(ctx, ft)
+            bt := type_of(base, names, types, ctx)
+            if is_tuple(bt):                      # tuple index t.0 -> the i-th part type
+                return tuple_parts(bt)[fld[0] - 48]
+            return resolve_nt(ctx, field_type(ctx, bt, fld))
         EIndex(base, idx):
             bt := type_of(base, names, types, ctx)
             if bt == "str":
@@ -1076,6 +1160,15 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "[" + ety + "]"
         EMapEmpty(kty, vty):
             return "{" + kty + ":" + vty + "}"
+        ETuple(elems):
+            out := "("
+            j := 0
+            for j < len(elems):
+                if j > 0:
+                    out = out + ","
+                out = out + type_of(elems[j], names, types, ctx)
+                j = j + 1
+            return out + ")"
         EAddr(inner):
             return type_of(inner, names, types, ctx)
         EBin(op, l, r):
@@ -1124,6 +1217,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "(*" + name + ")"
             return name
         EField(base, fld):
+            if is_tuple(type_of(base, names, types, ctx)):   # tuple index t.0 -> t.f0
+                return gen_expr(base, names, types, ctx) + ".f" + fld
             return gen_expr(base, names, types, ctx) + "." + fld
         EIndex(base, idx):
             if type_of(base, names, types, ctx) == "str":   # s[i] -> the byte as an int
@@ -1136,6 +1231,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
             return "map_str_int_new()"
+        ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
+            out := "(Tup_" + tup_suffix(type_of(e, names, types, ctx)) + "){"
+            j := 0
+            for j < len(elems):
+                if j > 0:
+                    out = out + ", "
+                out = out + gen_rhs(elems[j], names, types, ctx)
+                j = j + 1
+            return out + "}"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
@@ -1149,6 +1253,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "Arr_" + mangle(elem_ty(type_of(l, names, types, ctx))) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             if op == "==" and is_struct(ctx, type_of(l, names, types, ctx)):   # structural struct equality
                 return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            if op == "==" and is_tuple(type_of(l, names, types, ctx)):   # element-wise tuple equality
+                return "Tup_" + tup_suffix(type_of(l, names, types, ctx)) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -1233,6 +1339,8 @@ fn is_place(e: Expr) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        ETuple(es):
+            return false
         EAddr(inner):
             return false
 
@@ -1260,6 +1368,8 @@ fn is_evar(e: Expr, name: string) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        ETuple(es):
+            return false
         EAddr(x):
             return false
 
@@ -1275,6 +1385,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return ty + "_copy(" + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
         return "map_str_int_copy(" + code + ")"
+    if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
+        return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -1325,6 +1437,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                     return deflt
                 EMapEmpty(k, v):
                     return deflt
+                ETuple(es):
+                    return deflt
                 EAddr(x):
                     return deflt
         SFieldAssign(lv, rhs):
@@ -1343,6 +1457,18 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)
             push(types, ty)
+            return code
+        SDestructure(dnames, e):                  # a, b := tuple_expr
+            tt := type_of(e, names, types, ctx)
+            parts := tuple_parts(tt)
+            tmp := "_d_" + dnames[0]
+            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            j := 0
+            for j < len(dnames):
+                code = code + "    " + cty(ctx, parts[j]) + dnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
+                push(names, dnames[j])
+                push(types, parts[j])
+                j = j + 1
             return code
         SOrReturn(name, e):                       # unwrap Ok, or propagate Err upward
             rty := type_of(e, names, types, ctx)
@@ -1510,6 +1636,44 @@ fn gen_struct_eq(ctx: Ctx, sd: StructDef) -> string:
             j = j + 1
     return out + "; }\n"
 
+# A tuple is an anonymous struct with positional fields f0, f1, ...
+fn gen_tuple_struct(ctx: Ctx, ty: string) -> string:
+    parts := tuple_parts(ty)
+    out := "typedef struct { "
+    i := 0
+    for i < len(parts):
+        out = out + cty(ctx, parts[i]) + "f" + str(i) + "; "
+        i = i + 1
+    return out + "} Tup_" + tup_suffix(ty) + ";\n"
+
+fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
+    nm := "Tup_" + tup_suffix(ty)
+    parts := tuple_parts(ty)
+    out := "static " + nm + " " + nm + "_copy(" + nm + " s) {\n    " + nm + " r = s;\n"
+    i := 0
+    for i < len(parts):
+        p := parts[i]
+        if p == "str":
+            out = out + "    r.f" + str(i) + " = sc(s.f" + str(i) + ", \"\");\n"
+        elif is_array(p):
+            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(s.f" + str(i) + ");\n"
+        elif is_struct(ctx, p) and struct_is_heap(ctx, p):
+            out = out + "    r.f" + str(i) + " = " + p + "_copy(s.f" + str(i) + ");\n"
+        i = i + 1
+    return out + "    return r;\n}\n"
+
+fn gen_tuple_eq(ctx: Ctx, ty: string) -> string:
+    nm := "Tup_" + tup_suffix(ty)
+    parts := tuple_parts(ty)
+    out := "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { return "
+    i := 0
+    for i < len(parts):
+        if i > 0:
+            out = out + " && "
+        out = out + eq_field(ctx, parts[i], "a.f" + str(i), "b.f" + str(i))
+        i = i + 1
+    return out + "; }\n"
+
 fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
         return "strcmp(" + a + ", " + b + ") == 0"
@@ -1519,6 +1683,8 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
         return ty + "_eq(" + a + ", " + b + ")"
     if is_struct(ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
+    if is_tuple(ty):
+        return "Tup_" + tup_suffix(ty) + "_eq(" + a + ", " + b + ")"
     if is_option(ty):                            # tags equal, and (if Some) payloads equal
         ct := cty(ctx, option_inner(ty))
         pa := "*(" + ct + "*)(" + a + ".val)"
@@ -1695,36 +1861,52 @@ fn note_arr_types(acc: inout [string], ty: string):
     elif is_result(b):
         note_arr_types(&acc, result_ok(b))
         note_arr_types(&acc, result_err(b))
+    elif is_tuple(b):
+        if not has_str(acc, b):
+            push(acc, b)
+        parts := tuple_parts(b)
+        i := 0
+        for i < len(parts):
+            note_arr_types(&acc, parts[i])
+            i = i + 1
 
 # Walk an expression collecting composite array element types from literals
 # (array literals / empty arrays that no annotation would reveal).
-fn collect_expr(acc: inout [string], e: Expr, ctx: Ctx):
+# The body walkers thread the var env (names/types), mirroring gen, so that
+# type_of resolves variables inside tuple/array literals (e.g. t := (a, b)).
+fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], ctx: Ctx):
     match e:
         EArrLit(elems):
-            note_arr_types(&acc, type_of(e, []string, []string, ctx))
+            note_arr_types(&acc, type_of(e, names, types, ctx))
             j := 0
             for j < len(elems):
-                collect_expr(&acc, elems[j], ctx)
+                collect_expr(&acc, elems[j], names, types, ctx)
                 j = j + 1
         EArrEmpty(ety):
             note_arr_types(&acc, "[" + ety + "]")
         EMapEmpty(k, v):
             j := 0
+        ETuple(elems):
+            note_arr_types(&acc, type_of(e, names, types, ctx))
+            j := 0
+            for j < len(elems):
+                collect_expr(&acc, elems[j], names, types, ctx)
+                j = j + 1
         EBin(op, l, r):
-            collect_expr(&acc, l, ctx)
-            collect_expr(&acc, r, ctx)
+            collect_expr(&acc, l, names, types, ctx)
+            collect_expr(&acc, r, names, types, ctx)
         ECall(nm, args):
             j := 0
             for j < len(args):
-                collect_expr(&acc, args[j], ctx)
+                collect_expr(&acc, args[j], names, types, ctx)
                 j = j + 1
         EField(b, f):
-            collect_expr(&acc, b, ctx)
+            collect_expr(&acc, b, names, types, ctx)
         EIndex(b, idx):
-            collect_expr(&acc, b, ctx)
-            collect_expr(&acc, idx, ctx)
+            collect_expr(&acc, b, names, types, ctx)
+            collect_expr(&acc, idx, names, types, ctx)
         EAddr(inner):
-            collect_expr(&acc, inner, ctx)
+            collect_expr(&acc, inner, names, types, ctx)
         EInt(t):
             j := 0
         EFloat(f):
@@ -1734,51 +1916,73 @@ fn collect_expr(acc: inout [string], e: Expr, ctx: Ctx):
         EVar(n):
             j := 0
 
-fn collect_block(acc: inout [string], stmts: [Stmt], ctx: Ctx):
+fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], ctx: Ctx):
+    ns := names
+    ts := types
     i := 0
     for i < len(stmts):
-        collect_stmt(&acc, stmts[i], ctx)
+        collect_stmt(&acc, stmts[i], &ns, &ts, ctx)
         i = i + 1
 
-fn collect_stmt(acc: inout [string], s: Stmt, ctx: Ctx):
+fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], ctx: Ctx):
     match s:
         SDecl(n, e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
+            ty := type_of(e, names, types, ctx)
+            push(names, n)
+            push(types, ty)
         SAssign(n, e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
         SFieldAssign(lv, rhs):
-            collect_expr(&acc, lv, ctx)
-            collect_expr(&acc, rhs, ctx)
+            collect_expr(&acc, lv, names, types, ctx)
+            collect_expr(&acc, rhs, names, types, ctx)
         SPrint(e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
         SReturn(e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
         SReturnVoid:
             j := 0
         SExpr(e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
         STypedDecl(n, t, e):
             note_arr_types(&acc, t)
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
+            push(names, n)
+            push(types, t)
         SOrReturn(n, e):
-            collect_expr(&acc, e, ctx)
+            collect_expr(&acc, e, names, types, ctx)
+            ty := result_ok(type_of(e, names, types, ctx))
+            push(names, n)
+            push(types, ty)
+        SDestructure(dnames, e):
+            collect_expr(&acc, e, names, types, ctx)
+            parts := tuple_parts(type_of(e, names, types, ctx))
+            j := 0
+            for j < len(dnames):
+                push(names, dnames[j])
+                push(types, parts[j])
+                j = j + 1
         SIf(c, tb, eb):
-            collect_expr(&acc, c, ctx)
-            collect_block(&acc, tb, ctx)
-            collect_block(&acc, eb, ctx)
+            collect_expr(&acc, c, names, types, ctx)
+            collect_block(&acc, tb, names, types, ctx)
+            collect_block(&acc, eb, names, types, ctx)
         SWhile(c, body):
-            collect_expr(&acc, c, ctx)
-            collect_block(&acc, body, ctx)
+            collect_expr(&acc, c, names, types, ctx)
+            collect_block(&acc, body, names, types, ctx)
         SForRange(n, a, b, st, body):
-            collect_expr(&acc, a, ctx)
-            collect_expr(&acc, b, ctx)
-            collect_expr(&acc, st, ctx)
-            collect_block(&acc, body, ctx)
+            collect_expr(&acc, a, names, types, ctx)
+            collect_expr(&acc, b, names, types, ctx)
+            collect_expr(&acc, st, names, types, ctx)
+            bn := names
+            bt := types
+            push(bn, n)
+            push(bt, "int")
+            collect_block(&acc, body, bn, bt, ctx)
         SMatch(subj, variants, allbinds, bodies):
-            collect_expr(&acc, subj, ctx)
+            collect_expr(&acc, subj, names, types, ctx)
             j := 0
             for j < len(bodies):
-                collect_block(&acc, bodies[j], ctx)
+                collect_block(&acc, bodies[j], names, types, ctx)
                 j = j + 1
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
@@ -1804,7 +2008,14 @@ fn collect_elem_types(prog: Program, ctx: Ctx) -> [string]:
             note_arr_types(&acc, f.ptypes[j])
             j = j + 1
         note_arr_types(&acc, f.ret)
-        collect_block(&acc, f.body, ctx)         # composite element types from literals
+        en := []string                           # seed the body walk with the params
+        et := []string
+        k := 0
+        for k < len(f.params):
+            push(en, f.params[k])
+            push(et, f.ptypes[k])
+            k = k + 1
+        collect_block(&acc, f.body, en, et, ctx)   # composite types from literals
         i = i + 1
     i = 0
     for i < len(prog.structs):
@@ -1851,9 +2062,15 @@ fn main():
         i = i + 1
     i = 0                                        # 2. array/map STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        out = out + gen_arr_type(ctx, ets[i])
+        if not is_tuple(ets[i]):
+            out = out + gen_arr_type(ctx, ets[i])
         i = i + 1
     out = out + gen_map_type()
+    i = 0                                        # 2b. tuple struct bodies (may embed Arr_T, now complete)
+    for i < len(ets):
+        if is_tuple(ets[i]):
+            out = out + gen_tuple_struct(ctx, ets[i])
+        i = i + 1
     i = 0                                        # 3. enum + struct eq prototypes (mutual recursion)
     for i < len(prog.enums):
         out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
@@ -1872,10 +2089,17 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array/map/str FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        out = out + gen_arr_fns(ctx, ets[i])
+        if not is_tuple(ets[i]):
+            out = out + gen_arr_fns(ctx, ets[i])
         i = i + 1
     out = out + gen_maplib()
     out = out + gen_strlib()
+    i = 0                                        # 6b. tuple copy + equality (may call array fns above)
+    for i < len(ets):
+        if is_tuple(ets[i]):
+            out = out + gen_tuple_copy(ctx, ets[i])
+            out = out + gen_tuple_eq(ctx, ets[i])
+        i = i + 1
     i = 0                                        # 7. enum constructors + equality
     for i < len(prog.enums):
         out = out + gen_enum_ctors(prog.enums[i], ctx)
