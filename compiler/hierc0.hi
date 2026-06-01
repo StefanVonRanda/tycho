@@ -1307,18 +1307,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
+            lt := type_of(l, names, types, ctx)
             if op == "+" and type_of(e, names, types, ctx) == "str":
                 return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
-            if op == "==" and is_enum(ctx, type_of(l, names, types, ctx)):
-                return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
-            if is_cmp(op) and type_of(l, names, types, ctx) == "str":   # lexicographic string compare
+            if is_cmp(op) and lt == "str":        # lexicographic string compare (== / != / < ...)
                 return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
-            if op == "==" and is_array(type_of(l, names, types, ctx)):   # element-wise array equality
-                return "Arr_" + mangle(elem_ty(type_of(l, names, types, ctx))) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
-            if op == "==" and is_struct(ctx, type_of(l, names, types, ctx)):   # structural struct equality
-                return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
-            if op == "==" and is_tuple(type_of(l, names, types, ctx)):   # element-wise tuple equality
-                return "Tup_" + tup_suffix(type_of(l, names, types, ctx)) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            # == / != on a structural type (enum/struct/tuple/array/Option/Result):
+            # use the generated structural eq; negate for !=. (Enums are boxed
+            # pointers, so a raw `!=` would compare addresses, not values.)
+            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt)):
+                eqx := eq_field(ctx, lt, gen_expr(l, names, types, ctx), gen_expr(r, names, types, ctx))
+                if op == "!=":
+                    return "(!(" + eqx + "))"
+                return eqx
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -1572,9 +1573,9 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return header + gen_block(body, bn, bt, ctx) + "    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, ctx)
-            sc := gen_expr(subj, names, types, ctx)   # subj is a simple place / pure call
+            scu := gen_expr(subj, names, types, ctx)   # subj is a simple place / pure call
             if is_option(sty) or is_result(sty):
-                return gen_match_optres(ctx, sty, sc, variants, allbinds, bodies, names, types)
+                return gen_match_optres(ctx, sty, scu, variants, allbinds, bodies, names, types)
             out := ""
             i := 0
             for i < len(variants):
@@ -1584,12 +1585,12 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 kw := " else if ("
                 if i == 0:
                     kw = "    if ("
-                out = out + kw + sc + "->tag == " + str(variant_tag(ctx, vname)) + ") {\n"
+                out = out + kw + scu + "->tag == " + str(variant_tag(ctx, vname)) + ") {\n"
                 bn := names                       # arm bindings are scoped to the arm
                 bt := types
                 j := 0
                 for j < len(binds):
-                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + sc + "->" + vname + "_" + str(j) + ";\n"
+                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + scu + "->" + vname + "_" + str(j) + ";\n"
                     push(bn, binds[j])
                     push(bt, pts[j])
                     j = j + 1
@@ -1644,7 +1645,7 @@ fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
 # A bound payload is read back from the box: `T x = *(T*)(scrut.val)` (Some),
 # `.ok`/`.err` for Result. `sc` is re-evaluated per use; scrutinees are places
 # or pure calls in practice (no temp/counter needed).
-fn gen_match_optres(ctx: Ctx, sty: string, sc: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
+fn gen_match_optres(ctx: Ctx, sty: string, scu: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
     out := ""
     i := 0
     for i < len(variants):
@@ -1656,7 +1657,7 @@ fn gen_match_optres(ctx: Ctx, sty: string, sc: string, variants: [string], allbi
         kw := " else if ("
         if i == 0:
             kw = "    if ("
-        out = out + kw + sc + ".tag == " + str(tag) + ") {\n"
+        out = out + kw + scu +".tag == " + str(tag) + ") {\n"
         bn := names
         bt := types
         if len(binds) > 0:
@@ -1670,7 +1671,7 @@ fn gen_match_optres(ctx: Ctx, sty: string, sc: string, variants: [string], allbi
                     bty = result_err(sty)
                     fld = "err"
             ct := cty(ctx, bty)
-            out = out + "    " + ct + binds[0] + " = *(" + ct + "*)(" + sc + "." + fld + ");\n"
+            out = out + "    " + ct + binds[0] + " = *(" + ct + "*)(" + scu +"." + fld + ");\n"
             push(bn, binds[0])
             push(bt, bty)
         out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
@@ -1863,7 +1864,9 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(ctx: Ctx, et: string) -> string:
-    return "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } Arr_" + mangle(et) + ";\n"
+    nm := "Arr_" + mangle(et)                    # typedef + an _eq forward decl, so
+    out := "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } " + nm + ";\n"
+    return out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"   # cross-refs resolve any order
 
 fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
@@ -1873,8 +1876,9 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
     out = out + "static " + nm + " " + nm + "_slice(" + nm + " a, long lo, long hi) { return " + nm + "_from(a.data + lo, hi - lo); }\n"
-    if et == "int" or et == "float" or et == "str" or is_enum(ctx, et) or is_struct(ctx, et):   # element has a usable eq
-        out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
+    # _eq for every element type (eq_field handles scalar/str/enum/struct/array/
+    # option/result); the gen_arr_type forward decl lets composite eq cross-ref.
+    out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
 # Runtime that depends on Arr_str (so it is emitted after the array families,

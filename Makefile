@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bootstrap image static clean
+.PHONY: all demo test test-update bench bootstrap fixpoint image static clean
 
 all: hierc
 
@@ -57,6 +57,11 @@ bench: hierc
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
 bootstrap: hierc
 	@sh compiler/run.sh
+
+# Stage 4 self-host fixpoint: A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi;
+# assert B==C (byte-identical self-emission) and B matches the C compiler.
+fixpoint: hierc
+	@sh compiler/fixpoint.sh
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .

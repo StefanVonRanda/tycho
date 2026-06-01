@@ -539,8 +539,10 @@ fixpoint.
         behaviourally identical but not performance-identical. Closing that gap
         (and the surfaced `src/hierc.c` transient-arena bug from 3E) is the
         remaining work before the Stage 4 self-host fixpoint.
-- [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler. **Scoped
-      (not started).** First concrete attempt: hierc0 **parses** its own ~2250-line
+- [x] **Stage 4** — fixpoint bootstrap (B ≡ C). **DONE: hierc0 is self-hosting.**
+      `make fixpoint` builds A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi and
+      asserts B≡C byte-identical (+ B matches the C compiler on all 45 tests/
+      examples). History below. First concrete attempt: hierc0 **parses** its own ~2250-line
       source fine but **dies in codegen** ("unknown variable"). Root cause traced
       to a **C-compiler arena-placement bug** (`src/hierc.c`), the same family as
       the 3E `resolve_nt` finding: hierc0's `SMatch` arm-binding push-loop
@@ -578,16 +580,33 @@ fixpoint.
          `_parent`; `return param` deep-copies like any borrowed place. Verified:
          `make test` 45/45, hierc0 self-compiles (exit 0, **ASan/UBSan clean**),
          and hierc0's `resolve_nt` `+ ""` workaround is **removed**.
-      1b. **Make hierc0's *output* self-hostable (hierc0 codegen gaps, not the C
-         compiler).** Pushing to the fixpoint showed hierc0's self-emitted C does
-         not yet compile, for two reasons: (i) hierc0 emits **unprefixed** user
-         variable names, so a user var named `sc`/`len`/`str`/… collides with the
-         emitted runtime helper of the same name (the C compiler namespaces all
-         user names `h_`; hierc0 must too). (ii) hierc0 doesn't emit `Arr_T_eq`
-         for **composite element types** (`[[string]]`, `[[Stmt]]`) that a
-         generated enum/struct/tuple `_eq` calls (e.g. `Arr_arr_str_eq`
-         undeclared) — the `_eq`-emission guard skips non-scalar elements. These
-         are the next concrete hierc0 fixes before B can even build.
+      1b. **✅ DONE — hierc0 codegen gaps that blocked its *output* from
+         compiling/running.** Three fixes: (i) hierc0's own scrutinee variable
+         `sc` collided with the emitted runtime `sc()` concat helper (hierc0
+         emits user names unprefixed) — renamed the variable `scu` (a fuller fix
+         would namespace all emitted user names `h_`, deferred). (ii) `Arr_T_eq`
+         is now emitted for *every* element type (composite included), with
+         forward prototypes from `gen_arr_type`, so `_eq` cross-references
+         resolve in any order (`Arr_arr_str_eq` etc.). (iii) **the real blocker:**
+         hierc0 only routed `==` through the generated structural `_eq`; `!=` on
+         a boxed-pointer enum/struct/tuple/array fell through to a raw C `!=`,
+         comparing addresses → always true. The parser is full of `kind != T…`,
+         so every `expect`/`expect_ident` died. Fixed by routing both `==` and
+         `!=` on structural types through `eq_field` (negating for `!=`). The
+         fixtures never used enum `!=`, which is why self-hosting was the test
+         that found it.
+
+      **✅ STAGE 4 COMPLETE — self-hosting fixpoint reached.** `make fixpoint`
+      (compiler/fixpoint.sh) runs the 3-stage build: A = `hierc·hierc0.hi`,
+      B = A·hierc0.hi, C = B·hierc0.hi, and asserts **B ≡ C byte-identical**
+      (hierc0 reproduces itself exactly, ~3660 lines of emitted C) plus B
+      reproduces the C compiler's golden output across all 45 `tests/`+
+      `examples/`. The C compiler is no longer on the correctness-critical path
+      for hierc0's subset; it remains for features hierc0 doesn't yet cover and
+      for the optimized memory-model codegen (hierc0 emits correct-but-naive
+      malloc/value-copy C — orthogonal to the fixpoint, as predicted). Optional
+      next: namespace emitted user identifiers (`h_`) for robustness, and close
+      the perf gap so a self-hosted compiler is fast.
       2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
          compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
          compiler's golden output across `tests/`+`examples/`.
