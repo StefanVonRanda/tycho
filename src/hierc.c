@@ -1319,8 +1319,8 @@ static void parse_typedecl(Parser *ps) {
     if (g_nnewtypes >= 128) die_at(nameT->line, "too many newtypes");
     eat(ps, TK_EQ, "'=' in a type declaration");
     Type under = parse_type(ps);
-    if (under != T_INT && under != T_FLOAT)
-        die_at(nameT->line, "a newtype's underlying type must be int or float (got %s)", type_name(under));
+    if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL)
+        die_at(nameT->line, "a newtype's underlying type must be int, float, string, or bool (got %s)", type_name(under));
     eat(ps, TK_NEWLINE, "newline");
     g_newtypes[g_nnewtypes].name = nameT->text;
     g_newtypes[g_nnewtypes].under = under;
@@ -1634,6 +1634,20 @@ static Type resolve_expr(Expr *e) {
                 if (at_ != T_FLOAT && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
                     die_at(e->line, "to_int(x) takes a float (truncates toward zero) or an int newtype");
                 return e->type = T_INT;
+            }
+            if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype -> string */
+                if (e->nargs != 1) die_at(e->line, "to_str(x) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                if (!(IS_NEWTYPE(at_) && nt_under(at_) == T_STRING))
+                    die_at(e->line, "to_str(x) takes a string newtype");
+                return e->type = T_STRING;
+            }
+            if (!strcmp(e->sval, "to_bool")) {   /* unwrap a bool newtype -> bool */
+                if (e->nargs != 1) die_at(e->line, "to_bool(x) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                if (!(IS_NEWTYPE(at_) && nt_under(at_) == T_BOOL))
+                    die_at(e->line, "to_bool(x) takes a bool newtype");
+                return e->type = T_BOOL;
             }
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
@@ -2661,6 +2675,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool"))   /* zero-cost newtype unwrap */
+        return gen_expr(e->args[0], arena);
     /* user proc: first arg is the destination arena for its return. A heap
      * inout parameter takes TWO C args: the value's owning arena, then the
      * &pointer — so an allocating mutation in the callee lands where the
@@ -2915,7 +2931,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return e->op == TK_EQEQ ? eq : sfmt("(!%s)", eq);
             }
             /* ordering on strings is lexicographic via strcmp */
-            if (is_cmp(e->op) && e->lhs->type == T_STRING)
+            if (is_cmp(e->op) && base_of(e->lhs->type) == T_STRING)   /* string or a string newtype */
                 return sfmt("(strcmp(%s, %s) %s 0)", l, r, op_str(e->op));
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }

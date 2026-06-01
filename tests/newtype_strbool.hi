@@ -1,0 +1,24 @@
+# Newtypes over string and bool (distinct, zero-cost): wrap with Name(x), unwrap
+# with to_str / to_bool, compare/order. Self-hosting in both compilers.
+type UserId = string
+type Active = bool
+
+fn label(id: UserId) -> string:                   # a UserId param stays distinct
+    return "user:" + to_str(id)
+
+fn main():
+    a := UserId("alice")
+    b := UserId("bob")
+    print(label(a) + " " + label(b) + "\n")        # user:alice user:bob
+    print(to_str(a) + "\n")                         # alice
+    if a == UserId("alice"):
+        print("a==alice\n")
+    if a < b:                                        # ordering sees through to string
+        print("alice<bob\n")
+    act := Active(true)
+    off := Active(false)
+    if to_bool(act):
+        print("act on\n")
+    if to_bool(off):
+        print("BUG\n")
+    print("\n")

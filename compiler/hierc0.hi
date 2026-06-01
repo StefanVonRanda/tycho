@@ -1180,6 +1180,10 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "float"
     if name == "to_int":
         return "int"
+    if name == "to_str":                          # unwrap a string newtype
+        return "str"
+    if name == "to_bool":                         # unwrap a bool newtype (bool is int)
+        return "int"
     if name == "read_all":
         return "str"
     if name == "die":
@@ -1493,6 +1497,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "((double)(" + gen_expr(args[0], names, types, ctx) + "))"
             if name == "to_int":
                 return "((long)(" + gen_expr(args[0], names, types, ctx) + "))"
+            if name == "to_str" or name == "to_bool":   # zero-cost newtype unwrap
+                return gen_expr(args[0], names, types, ctx)
             if name == "substr":
                 return "substr(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "find":

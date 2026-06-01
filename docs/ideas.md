@@ -119,8 +119,11 @@ cluster of languages, and the differences are the interesting part:
    all delegate to the underlying, so it is genuinely zero-cost (a `Meters` *is*
    a `double` in the C). `Meters(x)` wraps (identity at runtime), `to_int`/
    `to_float` unwrap. Arithmetic/ordering/`str` are allowed only between two of
-   the SAME newtype — units can't be mixed with each other or the base. Scoped
-   to `int`/`float` underlying; `string`/`bool`/aggregate underlying deferred.
+   the SAME newtype — units can't be mixed with each other or the base. Now also
+   over **`string` and `bool`** underlying: `type UserId = string` /
+   `type Active = bool`, unwrapped with `to_str` / `to_bool`, with `==` and
+   (string) ordering seeing through to the base — self-hosting
+   (`tests/newtype_strbool.hi`). Aggregate underlying still deferred.
 8. **Generalized reuse analysis (Perceus/FBIP).** ✅ *First step done:
    move-on-last-use.* `b := a` / `b = a` elides the deep copy and hands off
    `a`'s buffer when `a` is a uniquely-owned local read exactly once (last use on
