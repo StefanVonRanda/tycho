@@ -1,0 +1,52 @@
+# Distinct newtypes: zero-cost type safety. `type Meters = float` is a new type,
+# incompatible with float and with other newtypes, but with the same runtime rep.
+# Arithmetic/ordering/str work between two values of the SAME newtype; mixing is
+# a compile error. Construct with Meters(x); unwrap with to_int / to_float.
+
+type Meters = float
+type Seconds = float
+type UserId = int
+
+fn area(w: Meters, h: Meters) -> Meters:
+    return w * h
+
+fn speed(d: Meters, t: Seconds) -> float:
+    return to_float(d) / to_float(t)      # unwrap both to raw float
+
+struct Account:
+    id: UserId
+    balance: Meters
+
+fn main():
+    w := Meters(3.0)
+    h := Meters(4.0)
+    print("area=" + str(area(w, h)) + "\n")     # 12
+
+    # arithmetic and ordering stay typed
+    if w < h:
+        print("w<h\n")
+    print("total=" + str(w + h) + "\n")         # 7
+    print("neg=" + str(-w) + "\n")              # -3
+
+    # cross-unit raw computation via explicit unwrap
+    print("speed=" + str(speed(Meters(100.0), Seconds(10.0))) + "\n")   # 10
+
+    # int newtype as an id: construct, compare, unwrap
+    u1 := UserId(42)
+    u2 := UserId(42)
+    u3 := UserId(7)
+    if u1 == u2:
+        print("same-user\n")
+    if u1 == u3:
+        print("BUG: distinct ids equal\n")
+    print("raw=" + str(to_int(u1) + 1) + "\n")  # unwrap, then int math -> 43
+
+    # newtype struct field, and a newtype array
+    acc := Account(UserId(1), Meters(50.0))
+    print("acc_id=" + str(to_int(acc.id)) + " bal=" + str(acc.balance) + "\n")
+
+    ms := [Meters(1.0), Meters(2.0), Meters(3.0)]
+    s := Meters(0.0)
+    for i in range(len(ms)):
+        s = s + ms[i]
+    print("sum=" + str(s) + "\n")               # 6

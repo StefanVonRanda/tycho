@@ -449,9 +449,18 @@ fixpoint.
         still gets its `Arr_T` family. `eq_field` gained an array case
         (`Arr_T_eq`), fixing `recursive_enum_array` (an enum whose payload is
         `[Tree]`). Unused seeded families are harmless dead statics.
-      Remaining failures: Option/Result + `or_return` (6: `options`, `results`,
-      `option_fields`, `option_arrays`, `optres_borrow`, `or_return`), tuples,
-      newtypes, slices, `die`, `float_maps`, `io_builtins`, `enums`/`maps`/
-      `match_reuse`/`ctor_move` (parser gaps), and `aggregates`/`projections`
-      (nested arrays `[][int]` — need element-name mangling + a literal walker).
+      - **3D**: `die()` + `read_all()` builtins (11 → 13/29). `die(msg)` →
+        stderr + `exit(1)`; `read_all()` slurps stdin. `die.hi` is a fixture
+        (die never fires); `io_builtins.hi` is sweep-only (reads stdin).
+      - **3E**: newtypes (`type X = U`) — zero-cost, resolved to the underlying
+        type in codegen (`is_newtype`/`resolve_nt`, a `Ctx.newtypes` table);
+        `X(v)` is identity. 13 → 14/29. **Surfaced a real C-compiler bug**
+        (dogfooding): a function that takes the heap-bearing `Ctx` by value AND
+        returns one of its string *parameters* gets an empty string back — a
+        transient-arena reuse bug. `resolve_nt` returns `ty + ""` (a fresh copy)
+        to dodge it; the underlying bug remains to be fixed in `src/hierc.c`.
+        (Functions returning a *field* of the by-value struct are unaffected.)
+      Remaining failures: Option/Result + `or_return` (6), tuples, slices,
+      `float_maps`, `enums`/`maps`/`match_reuse`/`ctor_move` (parser gaps), and
+      `aggregates`/`projections` (nested arrays `[][int]`).
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

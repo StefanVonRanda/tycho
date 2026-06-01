@@ -280,11 +280,15 @@ struct Ctx:
     sigs: [Sig]
     structs: [StructDef]
     enums: [EnumDef]
+    ntnames: [string]         # newtype names, parallel to ntunder
+    ntunder: [string]         # each newtype's underlying type
 
 struct Program:
     structs: [StructDef]
     enums: [EnumDef]
     funcs: [Func]
+    ntnames: [string]
+    ntunder: [string]
 
 # --------------------------------------------------------------- parser ----
 
@@ -707,10 +711,21 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
     pos = pos + 1                                # consume TDedent
     return EnumDef(name, variants)
 
+fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Underlying`
+    expect_ident(toks, &pos, "type")
+    if toks[pos].kind != TIdent:
+        die("parse: expected a newtype name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TEq)
+    return Param(name, parse_type(toks, &pos))
+
 fn parse_program(toks: [Token], pos: inout int) -> Program:
     structs := []StructDef
     enums := []EnumDef
     funcs := []Func
+    ntnames := []string
+    ntunder := []string
     for toks[pos].kind != TEof:
         if toks[pos].kind == TNewline:
             pos = pos + 1
@@ -718,9 +733,13 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
             push(structs, parse_struct(toks, &pos))
         elif toks[pos].kind == TIdent and toks[pos].text == "enum":
             push(enums, parse_enum(toks, &pos))
+        elif toks[pos].kind == TIdent and toks[pos].text == "type":
+            nt := parse_newtype(toks, &pos)
+            push(ntnames, nt.name)
+            push(ntunder, nt.ty)
         else:
             push(funcs, parse_func(toks, &pos))
-    return Program(structs, enums, funcs)
+    return Program(structs, enums, funcs, ntnames, ntunder)
 
 # -------------------------------------------------------------- codegen ----
 # Type-directed: each expression's C form follows its inferred type. A type is
@@ -805,7 +824,33 @@ fn is_map(ty: string) -> bool:
 fn is_cmp(op: string) -> bool:
     return op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">="
 
+# Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
+# the C compiler already did), so codegen resolves them to the underlying type.
+fn is_newtype(ctx: Ctx, name: string) -> bool:
+    i := 0
+    for i < len(ctx.ntnames):
+        if ctx.ntnames[i] == name:
+            return true
+        i = i + 1
+    return false
+
+# NOTE: the `+ ""` forces a fresh copy of the result. Returning the bare string
+# PARAMETER `ty` from this function — which also takes the heap-bearing `Ctx` by
+# value — triggers a C-compiler transient-arena bug (the returned param string
+# comes back empty). Surfaced by dogfooding; worked around here, to be fixed in
+# src/hierc.c separately. (Functions returning a FIELD of the by-value struct,
+# e.g. field_type/variant_enum, are unaffected.)
+fn resolve_nt(ctx: Ctx, ty: string) -> string:
+    i := 0
+    for i < len(ctx.ntnames):
+        if ctx.ntnames[i] == ty:
+            return resolve_nt(ctx, ctx.ntunder[i]) + ""
+        i = i + 1
+    return ty + ""
+
 fn cty(ctx: Ctx, ty: string) -> string:
+    if is_newtype(ctx, ty):
+        return cty(ctx, resolve_nt(ctx, ty))
     if is_inout(ty):                              # inout T -> pointer to T's C type
         inner := cty(ctx, base_ty(ty))           # ends with a space
         return substr(inner, 0, len(inner) - 1) + "* "
@@ -904,6 +949,8 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "int"
     if name == "input":
         return "str"
+    if is_newtype(ctx, name):                     # X(v) constructor -> the newtype
+        return name
     if is_variant(ctx, name):                     # enum construction yields its enum
         return variant_enum(ctx, name)
     if is_struct(ctx, name):                      # construction yields the struct
@@ -925,9 +972,11 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EStr(s):
             return "str"
         EVar(name):
-            return base_ty(var_type(names, types, name))
+            vt := base_ty(var_type(names, types, name))
+            return resolve_nt(ctx, vt)
         EField(base, fld):
-            return field_type(ctx, type_of(base, names, types, ctx), fld)
+            ft := field_type(ctx, type_of(base, names, types, ctx), fld)
+            return resolve_nt(ctx, ft)
         EIndex(base, idx):
             bt := type_of(base, names, types, ctx)
             if bt == "str":
@@ -954,7 +1003,7 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         ECall(name, args):
             if name == "map_set":                 # map_set returns its first arg's map type
                 return type_of(args[0], names, types, ctx)
-            return sig_ret(ctx, name)
+            return resolve_nt(ctx, sig_ret(ctx, name))
 
 fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
     out := ""
@@ -1039,6 +1088,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
+            if is_newtype(ctx, name):             # X(v) is zero-cost: identity
+                return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
                 return "mk_" + name + "(" + gen_args(args, names, types, ctx) + ")"
             if is_struct(ctx, name):              # struct construction -> compound literal
@@ -1481,7 +1532,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder)
     ets := collect_elem_types(prog)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
