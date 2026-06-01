@@ -206,6 +206,7 @@ enum Stmt:
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
     SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
     SExpr(Expr)              # bare expression statement, e.g. a call `f(x)`
+    SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
 
 struct Param:
     name: string
@@ -230,15 +231,25 @@ struct StructDef:
     name: string
     fields: [Field]
 
-# Read-only typing/codegen context, threaded by value: function return types
-# and struct definitions. (The mutable per-block var env stays as the separate
-# names/types arrays.) This is the `Ctx` docs/bootstrap.md anticipated.
+struct Variant:
+    name: string
+    ptypes: [string]          # payload types: "int"/"str"/struct/enum names
+
+struct EnumDef:
+    name: string
+    variants: [Variant]
+
+# Read-only typing/codegen context, threaded by value: function return types,
+# struct layouts, and enum definitions. (The mutable per-block var env stays as
+# the separate names/types arrays.) This is the `Ctx` docs/bootstrap.md wanted.
 struct Ctx:
     sigs: [Sig]
     structs: [StructDef]
+    enums: [EnumDef]
 
 struct Program:
     structs: [StructDef]
+    enums: [EnumDef]
     funcs: [Func]
 
 # --------------------------------------------------------------- parser ----
@@ -252,6 +263,14 @@ fn expect_ident(toks: [Token], pos: inout int, name: string):
     if toks[pos].kind != TIdent or toks[pos].text != name:
         die("parse: expected a keyword")
     pos = pos + 1
+
+# Open an indented block: a newline, then any number of blank/comment-only
+# lines (each a stray NEWLINE), then the INDENT.
+fn open_block(toks: [Token], pos: inout int):
+    expect(toks, &pos, TNewline)
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    expect(toks, &pos, TIndent)
 
 fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     t := toks[pos]
@@ -267,6 +286,10 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        if name == "true":
+            return EInt("1")
+        if name == "false":
+            return EInt("0")
         if toks[pos].kind == TLParen:
             pos = pos + 1
             args := []Expr
@@ -334,7 +357,7 @@ fn parse_add(toks: [Token], pos: inout int) -> Expr:
         l = EBin(op, l, r)
     return l
 
-fn parse_expr(toks: [Token], pos: inout int) -> Expr:
+fn parse_cmp(toks: [Token], pos: inout int) -> Expr:
     l := parse_add(toks, &pos)
     k := toks[pos].kind
     if k == TEqEq or k == TLt or k == TGt:
@@ -344,10 +367,25 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
         return EBin(op, l, r)
     return l
 
+fn parse_and(toks: [Token], pos: inout int) -> Expr:
+    l := parse_cmp(toks, &pos)
+    for toks[pos].kind == TIdent and toks[pos].text == "and":
+        pos = pos + 1
+        r := parse_cmp(toks, &pos)
+        l = EBin("&&", l, r)
+    return l
+
+fn parse_expr(toks: [Token], pos: inout int) -> Expr:
+    l := parse_and(toks, &pos)
+    for toks[pos].kind == TIdent and toks[pos].text == "or":
+        pos = pos + 1
+        r := parse_and(toks, &pos)
+        l = EBin("||", l, r)
+    return l
+
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
-    expect(toks, &pos, TNewline)
-    expect(toks, &pos, TIndent)
+    open_block(toks, &pos)
     for toks[pos].kind != TDedent:
         if toks[pos].kind == TNewline:
             pos = pos + 1
@@ -421,6 +459,8 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         expect(toks, &pos, TColon)
         body := parse_block(toks, &pos)
         return SWhile(cond, body)
+    elif t.kind == TIdent and t.text == "match":
+        return parse_match(toks, &pos)
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -475,10 +515,12 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
     pos = pos + 1
     if name == "int":
         return "int"
+    elif name == "bool":
+        return "int"                             # bool is represented as long 0/1
     elif name == "string":
         return "str"
     else:
-        return name                              # a struct type name
+        return name                              # a struct or enum type name
 
 fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
@@ -523,8 +565,7 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
-    expect(toks, &pos, TNewline)
-    expect(toks, &pos, TIndent)
+    open_block(toks, &pos)
     fields := []Field
     for toks[pos].kind != TDedent:
         if toks[pos].kind == TNewline:
@@ -542,17 +583,88 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     pos = pos + 1                                # consume TDedent
     return StructDef(name, fields)
 
+fn parse_match(toks: [Token], pos: inout int) -> Stmt:
+    expect_ident(toks, &pos, "match")
+    subj := parse_expr(toks, &pos)
+    expect(toks, &pos, TColon)
+    open_block(toks, &pos)
+    variants := []string
+    allbinds := [][string]
+    bodies := [][Stmt]
+    for toks[pos].kind != TDedent:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        else:
+            if toks[pos].kind != TIdent:
+                die("parse: expected a variant name in match arm")
+            push(variants, toks[pos].text)
+            pos = pos + 1
+            binds := []string
+            expect(toks, &pos, TLParen)
+            if toks[pos].kind != TRParen:
+                if toks[pos].kind != TIdent:
+                    die("parse: expected a binding name")
+                push(binds, toks[pos].text)
+                pos = pos + 1
+                for toks[pos].kind == TComma:
+                    pos = pos + 1
+                    if toks[pos].kind != TIdent:
+                        die("parse: expected a binding name")
+                    push(binds, toks[pos].text)
+                    pos = pos + 1
+            expect(toks, &pos, TRParen)
+            expect(toks, &pos, TColon)
+            push(allbinds, binds)
+            push(bodies, parse_block(toks, &pos))
+    pos = pos + 1                                # consume TDedent
+    return SMatch(subj, variants, allbinds, bodies)
+
+fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
+    expect_ident(toks, &pos, "enum")
+    if toks[pos].kind != TIdent:
+        die("parse: expected an enum name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TColon)
+    open_block(toks, &pos)
+    variants := []Variant
+    for toks[pos].kind != TDedent:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        else:
+            if toks[pos].kind != TIdent:
+                die("parse: expected a variant name")
+            vname := toks[pos].text
+            pos = pos + 1
+            ptypes := []string
+            if toks[pos].kind == TLParen:
+                pos = pos + 1
+                if toks[pos].kind != TRParen:
+                    push(ptypes, parse_type(toks, &pos))
+                    for toks[pos].kind == TComma:
+                        pos = pos + 1
+                        push(ptypes, parse_type(toks, &pos))
+                expect(toks, &pos, TRParen)
+            push(variants, Variant(vname, ptypes))
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+    pos = pos + 1                                # consume TDedent
+    return EnumDef(name, variants)
+
 fn parse_program(toks: [Token], pos: inout int) -> Program:
     structs := []StructDef
+    enums := []EnumDef
     funcs := []Func
     for toks[pos].kind != TEof:
         if toks[pos].kind == TNewline:
             pos = pos + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "struct":
             push(structs, parse_struct(toks, &pos))
+        elif toks[pos].kind == TIdent and toks[pos].text == "enum":
+            push(enums, parse_enum(toks, &pos))
         else:
             push(funcs, parse_func(toks, &pos))
-    return Program(structs, funcs)
+    return Program(structs, enums, funcs)
 
 # -------------------------------------------------------------- codegen ----
 # Type-directed: each expression's C form follows its inferred type. A type is
@@ -560,13 +672,70 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
 # mutable per-block var env is the names/types arrays; function return types
 # and struct layouts come from the read-only `ctx`.
 
-fn cty(ty: string) -> string:
+fn is_enum(ctx: Ctx, name: string) -> bool:
+    i := 0
+    for i < len(ctx.enums):
+        if ctx.enums[i].name == name:
+            return true
+        i = i + 1
+    return false
+
+fn is_variant(ctx: Ctx, name: string) -> bool:
+    i := 0
+    for i < len(ctx.enums):
+        j := 0
+        for j < len(ctx.enums[i].variants):
+            if ctx.enums[i].variants[j].name == name:
+                return true
+            j = j + 1
+        i = i + 1
+    return false
+
+fn variant_enum(ctx: Ctx, vname: string) -> string:
+    i := 0
+    for i < len(ctx.enums):
+        j := 0
+        for j < len(ctx.enums[i].variants):
+            if ctx.enums[i].variants[j].name == vname:
+                return ctx.enums[i].name
+            j = j + 1
+        i = i + 1
+    die("type: unknown variant")
+    return "int"
+
+fn variant_tag(ctx: Ctx, vname: string) -> int:
+    i := 0
+    for i < len(ctx.enums):
+        j := 0
+        for j < len(ctx.enums[i].variants):
+            if ctx.enums[i].variants[j].name == vname:
+                return j
+            j = j + 1
+        i = i + 1
+    die("type: unknown variant")
+    return 0
+
+fn variant_ptypes(ctx: Ctx, vname: string) -> [string]:
+    i := 0
+    for i < len(ctx.enums):
+        j := 0
+        for j < len(ctx.enums[i].variants):
+            if ctx.enums[i].variants[j].name == vname:
+                return ctx.enums[i].variants[j].ptypes
+            j = j + 1
+        i = i + 1
+    die("type: unknown variant")
+    return []string
+
+fn cty(ctx: Ctx, ty: string) -> string:
     if ty == "int":
         return "long "
     if ty == "str":
         return "char* "
     if len(ty) > 0 and ty[0] == 91:              # "[...]" array type -> IntArr
         return "IntArr "
+    if is_enum(ctx, ty):                          # enum value -> pointer to node
+        return ty + "* "
     return ty + " "                              # struct type: its own typedef
 
 fn var_type(names: [string], types: [string], name: string) -> string:
@@ -607,6 +776,8 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "int"
     if name == "input":
         return "str"
+    if is_variant(ctx, name):                     # enum construction yields its enum
+        return variant_enum(ctx, name)
     if is_struct(ctx, name):                      # construction yields the struct
         return name
     i := 0
@@ -672,6 +843,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EBin(op, l, r):
             if op == "+" and type_of(e, names, types, ctx) == "str":
                 return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            if op == "==" and is_enum(ctx, type_of(l, names, types, ctx)):
+                return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -683,6 +856,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "input":
                 die("codegen: input() not supported yet")
                 return ""
+            if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
+                return "mk_" + name + "(" + gen_args(args, names, types, ctx) + ")"
             if is_struct(ctx, name):              # struct construction -> compound literal
                 return "(" + name + "){" + gen_args(args, names, types, ctx) + "}"
             return name + "(" + gen_args(args, names, types, ctx) + ")"
@@ -735,7 +910,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
     match s:
         SDecl(name, e):
             ty := type_of(e, names, types, ctx)
-            code := "    " + cty(ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
@@ -765,13 +940,36 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             push(bn, name)
             push(bt, "int")
             return header + gen_block(body, bn, bt, ctx) + "    }\n"
+        SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
+            sc := gen_expr(subj, names, types, ctx)   # subj is a simple place in practice
+            out := ""
+            i := 0
+            for i < len(variants):
+                vname := variants[i]
+                binds := allbinds[i]
+                pts := variant_ptypes(ctx, vname)
+                kw := " else if ("
+                if i == 0:
+                    kw = "    if ("
+                out = out + kw + sc + "->tag == " + str(variant_tag(ctx, vname)) + ") {\n"
+                bn := names                       # arm bindings are scoped to the arm
+                bt := types
+                j := 0
+                for j < len(binds):
+                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + sc + "->" + vname + "_" + str(j) + ";\n"
+                    push(bn, binds[j])
+                    push(bt, pts[j])
+                    j = j + 1
+                out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
+                i = i + 1
+            return out + "\n"
 
-fn ret_cty(ret: string) -> string:
+fn ret_cty(ctx: Ctx, ret: string) -> string:
     if ret == "void":
         return "void "
-    return cty(ret)
+    return cty(ctx, ret)
 
-fn gen_params(f: Func) -> string:
+fn gen_params(f: Func, ctx: Ctx) -> string:
     if len(f.params) == 0:
         return "void"
     out := ""
@@ -779,7 +977,7 @@ fn gen_params(f: Func) -> string:
     for i < len(f.params):
         if i > 0:
             out = out + ", "
-        out = out + cty(f.ptypes[i]) + f.params[i]
+        out = out + cty(ctx, f.ptypes[i]) + f.params[i]
         i = i + 1
     return out
 
@@ -790,8 +988,8 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
         push(types, f.ptypes[i])
         i = i + 1
 
-fn gen_proto(f: Func) -> string:
-    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ");\n"
+fn gen_proto(f: Func, ctx: Ctx) -> string:
+    return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ");\n"
 
 fn gen_func(f: Func, ctx: Ctx) -> string:
     names := []string
@@ -799,15 +997,80 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
     seed_env(f, &names, &types)
     if f.name == "main":
         return "int main(void) {\n" + gen_block(f.body, names, types, ctx) + "    return 0;\n}\n"
-    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body, names, types, ctx) + "}\n"
+    return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ") {\n" + gen_block(f.body, names, types, ctx) + "}\n"
 
-fn gen_struct(sd: StructDef) -> string:
+fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
     out := "typedef struct {\n"
     i := 0
     for i < len(sd.fields):
-        out = out + "    " + cty(sd.fields[i].ty) + sd.fields[i].name + ";\n"
+        out = out + "    " + cty(ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
         i = i + 1
     return out + "} " + sd.name + ";\n"
+
+fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
+    if ty == "str":
+        return "strcmp(" + a + ", " + b + ") == 0"
+    if is_enum(ctx, ty):
+        return ty + "_eq(" + a + ", " + b + ")"
+    return "(" + a + " == " + b + ")"            # int/bool by value
+
+fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
+    out := "struct " + ed.name + " {\n    int tag;\n"
+    i := 0
+    for i < len(ed.variants):
+        v := ed.variants[i]
+        j := 0
+        for j < len(v.ptypes):
+            out = out + "    " + cty(ctx, v.ptypes[j]) + v.name + "_" + str(j) + ";\n"
+            j = j + 1
+        i = i + 1
+    return out + "};\n"
+
+fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
+    out := ""
+    i := 0
+    for i < len(ed.variants):
+        v := ed.variants[i]
+        params := "void"
+        if len(v.ptypes) > 0:
+            params = ""
+            j := 0
+            for j < len(v.ptypes):
+                if j > 0:
+                    params = params + ", "
+                params = params + cty(ctx, v.ptypes[j]) + "f" + str(j)
+                j = j + 1
+        out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
+        out = out + "    " + ed.name + "* n = malloc(sizeof(" + ed.name + "));\n"
+        out = out + "    n->tag = " + str(i) + ";\n"
+        j := 0
+        for j < len(v.ptypes):
+            out = out + "    n->" + v.name + "_" + str(j) + " = f" + str(j) + ";\n"
+            j = j + 1
+        out = out + "    return n;\n}\n"
+        i = i + 1
+    return out
+
+fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
+    out := "static int " + ed.name + "_eq(" + ed.name + "* a, " + ed.name + "* b) {\n"
+    out = out + "    if (a->tag != b->tag) return 0;\n"
+    i := 0
+    for i < len(ed.variants):
+        v := ed.variants[i]
+        out = out + "    if (a->tag == " + str(i) + ") return "
+        if len(v.ptypes) == 0:
+            out = out + "1"
+        else:
+            j := 0
+            for j < len(v.ptypes):
+                if j > 0:
+                    out = out + " && "
+                fld := v.name + "_" + str(j)
+                out = out + eq_field(ctx, v.ptypes[j], "a->" + fld, "b->" + fld)
+                j = j + 1
+        out = out + ";\n"
+        i = i + 1
+    return out + "    return 0;\n}\n"
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
@@ -831,16 +1094,36 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs)
+    ctx := Ctx(sigs, prog.structs, prog.enums)
     out := preamble()
+    i = 0                                        # enums: forward typedefs ...
+    for i < len(prog.enums):
+        out = out + "typedef struct " + prog.enums[i].name + " " + prog.enums[i].name + ";\n"
+        i = i + 1
+    i = 0                                        # ... eq prototypes (mutual recursion) ...
+    for i < len(prog.enums):
+        out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
+        i = i + 1
+    i = 0                                        # ... struct bodies ...
+    for i < len(prog.enums):
+        out = out + gen_enum_decl(prog.enums[i], ctx)
+        i = i + 1
+    i = 0                                        # ... constructors ...
+    for i < len(prog.enums):
+        out = out + gen_enum_ctors(prog.enums[i], ctx)
+        i = i + 1
+    i = 0                                        # ... and equality.
+    for i < len(prog.enums):
+        out = out + gen_enum_eq(prog.enums[i], ctx)
+        i = i + 1
     i = 0
-    for i < len(prog.structs):                   # typedefs first, in source order
-        out = out + gen_struct(prog.structs[i])
+    for i < len(prog.structs):                   # struct typedefs, in source order
+        out = out + gen_struct(prog.structs[i], ctx)
         i = i + 1
     i = 0
     for i < len(funcs):
         if funcs[i].name != "main":
-            out = out + gen_proto(funcs[i])
+            out = out + gen_proto(funcs[i], ctx)
         i = i + 1
     i = 0
     for i < len(funcs):

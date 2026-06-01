@@ -305,8 +305,30 @@ fixpoint.
         leaked, not freed — acceptable for now (the C compiler uses arenas;
         correctness first). Fixture `arrays.hi` passes; `examples/arrays.hi`
         and `examples/array_fns.hi` match the C compiler end-to-end.
-      - Next gaps for `examples/*.hi`: enums + `match`, then `Option`/`Result`
-        + `or_return`, tuples, maps. (String arrays / non-int element types
-        also still pending — only `[int]` is supported so far.)
+      - **2F**: enums + `match` (and the `bool`/`true`/`false`/`and`/`or` that
+        `examples/optimize.hi` needs). Recursive `enum` decls with payloads;
+        construction `Add(l, r)`; `match subj:` with payload-binding arms;
+        structural `==` on enum values. C model: an enum value is a pointer to
+        a heap node (`EnumName*`) — a flat tagged struct with one field per
+        variant payload (`Variant_i`), recursive payloads as pointers.
+        Construction → `mk_Variant(...)`; `match` → a tag-dispatch if-chain
+        binding payload fields; `==` → a generated recursive `EnumName_eq`.
+        Enums are immutable in Hier (matched, never field-assigned), so
+        pointer-sharing is observationally identical to value semantics — no
+        deep copy needed. `bool` maps to `long` 0/1; `and`/`or` → `&&`/`||`
+        (new precedence layers below comparison). `Ctx` gained an `enums`
+        table. Fixture `optimize.hi` (a full constant-folding pass) passes;
+        the example matches the C compiler end-to-end.
+      - Two language/compiler facts learned and locked in: (1) the C compiler
+        resolves type names in source order — no cross-type forward refs — so
+        `match` arms are stored as parallel arrays in the `SMatch` payload
+        rather than a `MatchArm` struct (which would cycle with `Stmt`); nested
+        arrays `[[T]]` and the empty-literal form `[][T]` both work. (2) An
+        indented comment as a block's first line emits a stray `NEWLINE` before
+        the `INDENT`; block openers now skip blank/comment lines via
+        `open_block` (this was a real hierc0 lexer/parser bug, fixed here).
+      - Next gaps for `examples/*.hi`: `Option`/`Result` + `or_return`, tuples,
+        maps, and non-int array element types (`[string]`, struct string
+        fields — `examples/records.hi`, `wordcount.hi`, `words.hi`).
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
