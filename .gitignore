@@ -20,3 +20,4 @@
 # ...but the recorded test-suite goldens ARE tracked (expected output, not a
 # build artifact). Must come after the broad *.out rule above.
 !/tests/*.out
+.koka/
