@@ -1,11 +1,11 @@
 # hierc0 — a compiler for a SUBSET of Hier, written in Hier. Stage 1 of the
 # self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout.
 #
-# Subset: `fn main():` whose body has `x := EXPR`, `x = EXPR`,
-# `print(str(EXPR))`, and `if/elif/else` over EXPR = integer arithmetic
-# (`+ - *`, parens, vars, int literals) and comparisons (`== < >`). Blocks are
-# indentation-delimited (INDENT/DEDENT). Validated DIFFERENTIALLY against the C
-# compiler by `make bootstrap`.
+# Subset: one or more `fn name(p: int, ...) -> int:` / `fn main():`, whose
+# indented bodies have `x := EXPR`, `x = EXPR`, `print(str(EXPR))`, `return
+# EXPR`, and `if`/`elif`/`else`. EXPR = integer arithmetic (`+ - *`, parens,
+# vars, int literals), comparisons (`== < >`), and calls `f(args)`. Validated
+# DIFFERENTIALLY against the C compiler by `make bootstrap`.
 
 # ---------------------------------------------------------------- lexer ----
 
@@ -43,14 +43,12 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
-# scan one mid-line token starting at src[i]; returns the new index. Appends to
-# toks. at_bol handling is done in lex(); this never sees a line-start.
 fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
     n := len(src)
     c := src[i]
     if c == 32 or c == 9:
         return i + 1
-    elif c == 35:                                # comment to end of line
+    elif c == 35:
         for i < n and src[i] != 10:
             i = i + 1
         return i
@@ -111,7 +109,7 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
 
 fn lex(src: string) -> [Token]:
     toks := []Token
-    stack := []int                               # indent stack, sp = logical size
+    stack := []int
     push(stack, 0)
     sp := 1
     n := len(src)
@@ -119,19 +117,19 @@ fn lex(src: string) -> [Token]:
     at_bol := true
     for i < n:
         if at_bol:
-            ind := 0                              # measure leading spaces
+            ind := 0
             for i < n and src[i] == 32:
                 ind = ind + 1
                 i = i + 1
             if i >= n:
                 at_bol = false
-            elif src[i] == 10:                    # blank line
+            elif src[i] == 10:
                 push(toks, Token(TNewline, ""))
                 i = i + 1
-            elif src[i] == 35:                    # comment-only line
+            elif src[i] == 35:
                 for i < n and src[i] != 10:
                     i = i + 1
-            elif ind > stack[sp - 1]:             # INDENT
+            elif ind > stack[sp - 1]:
                 if sp < len(stack):
                     stack[sp] = ind
                 else:
@@ -139,7 +137,7 @@ fn lex(src: string) -> [Token]:
                 sp = sp + 1
                 push(toks, Token(TIndent, ""))
                 at_bol = false
-            else:                                 # same or DEDENT(s)
+            else:
                 for sp > 1 and stack[sp - 1] > ind:
                     sp = sp - 1
                     push(toks, Token(TDedent, ""))
@@ -147,14 +145,14 @@ fn lex(src: string) -> [Token]:
                     die("lex: inconsistent indentation")
                 at_bol = false
         else:
-            if src[i] == 10:                      # newline ends the logical line
+            if src[i] == 10:
                 push(toks, Token(TNewline, ""))
                 i = i + 1
                 at_bol = true
             else:
                 i = scan_token(src, i, &toks)
-    push(toks, Token(TNewline, ""))              # close the last line
-    for sp > 1:                                   # unwind open blocks at EOF
+    push(toks, Token(TNewline, ""))
+    for sp > 1:
         sp = sp - 1
         push(toks, Token(TDedent, ""))
     push(toks, Token(TEof, ""))
@@ -166,12 +164,20 @@ enum Expr:
     EInt(string)
     EVar(string)
     EBin(string, Expr, Expr)
+    ECall(string, [Expr])     # f(args) — user function call
 
 enum Stmt:
     SDecl(string, Expr)
     SAssign(string, Expr)
     SPrint(Expr)
-    SIf(Expr, [Stmt], [Stmt])                    # cond, then-body, else-body
+    SReturn(Expr)
+    SIf(Expr, [Stmt], [Stmt])
+
+struct Func:
+    name: string
+    params: [string]          # parameter names (all int in the subset)
+    is_void: bool             # no `-> int`
+    body: [Stmt]
 
 # --------------------------------------------------------------- parser ----
 
@@ -191,8 +197,19 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
         pos = pos + 1
         return EInt(t.text)
     elif t.kind == TIdent:
+        name := t.text
         pos = pos + 1
-        return EVar(t.text)
+        if toks[pos].kind == TLParen:        # a call f(args)
+            pos = pos + 1
+            args := []Expr
+            if toks[pos].kind != TRParen:
+                push(args, parse_expr(toks, &pos))
+                for toks[pos].kind == TComma:
+                    pos = pos + 1
+                    push(args, parse_expr(toks, &pos))
+            expect(toks, &pos, TRParen)
+            return ECall(name, args)
+        return EVar(name)
     elif t.kind == TLParen:
         pos = pos + 1
         e := parse_expr(toks, &pos)
@@ -239,11 +256,9 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
             pos = pos + 1
         else:
             push(stmts, parse_stmt(toks, &pos))
-            # a simple statement ends in NEWLINE; a compound one (if) is already
-            # terminated by its block's DEDENT, so consume a NEWLINE only if present
             if toks[pos].kind == TNewline:
                 pos = pos + 1
-    pos = pos + 1                                 # consume DEDENT
+    pos = pos + 1
     return stmts
 
 fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
@@ -275,6 +290,9 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         expect(toks, &pos, TRParen)
         expect(toks, &pos, TRParen)
         return SPrint(e)
+    elif t.kind == TIdent and t.text == "return":
+        pos = pos + 1
+        return SReturn(parse_expr(toks, &pos))
     elif t.kind == TIdent and t.text == "if":
         pos = pos + 1
         cond := parse_expr(toks, &pos)
@@ -298,7 +316,58 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         die("parse: expected a statement")
         return SPrint(EInt("0"))
 
+fn parse_param(toks: [Token], pos: inout int) -> string:
+    if toks[pos].kind != TIdent:
+        die("parse: expected a parameter name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TColon)
+    expect_ident(toks, &pos, "int")
+    return name
+
+fn parse_func(toks: [Token], pos: inout int) -> Func:
+    expect_ident(toks, &pos, "fn")
+    if toks[pos].kind != TIdent:
+        die("parse: expected a function name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TLParen)
+    params := []string
+    if toks[pos].kind != TRParen:
+        push(params, parse_param(toks, &pos))
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            push(params, parse_param(toks, &pos))
+    expect(toks, &pos, TRParen)
+    is_void := true
+    if toks[pos].kind == TArrow:
+        pos = pos + 1
+        expect_ident(toks, &pos, "int")
+        is_void = false
+    expect(toks, &pos, TColon)
+    body := parse_block(toks, &pos)
+    return Func(name, params, is_void, body)
+
+fn parse_program(toks: [Token], pos: inout int) -> [Func]:
+    funcs := []Func
+    for toks[pos].kind != TEof:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        else:
+            push(funcs, parse_func(toks, &pos))
+    return funcs
+
 # -------------------------------------------------------------- codegen ----
+
+fn gen_args(args: [Expr]) -> string:
+    out := ""
+    i := 0
+    for i < len(args):
+        if i > 0:
+            out = out + ", "
+        out = out + gen_expr(args[i])
+        i = i + 1
+    return out
 
 fn gen_expr(e: Expr) -> string:
     match e:
@@ -308,6 +377,8 @@ fn gen_expr(e: Expr) -> string:
             return name
         EBin(op, l, r):
             return "(" + gen_expr(l) + " " + op + " " + gen_expr(r) + ")"
+        ECall(name, args):
+            return name + "(" + gen_args(args) + ")"
 
 fn gen_block(stmts: [Stmt]) -> string:
     out := ""
@@ -325,21 +396,53 @@ fn gen_stmt(s: Stmt) -> string:
             return "    " + name + " = " + gen_expr(e) + ";\n"
         SPrint(e):
             return "    printf(\"%ld\", " + gen_expr(e) + ");\n"
+        SReturn(e):
+            return "    return " + gen_expr(e) + ";\n"
         SIf(cond, then_body, else_body):
             out := "    if (" + gen_expr(cond) + ") {\n" + gen_block(then_body) + "    }"
             if len(else_body) > 0:
                 out = out + " else {\n" + gen_block(else_body) + "    }"
             return out + "\n"
 
+fn gen_params(f: Func) -> string:
+    if len(f.params) == 0:
+        return "void"
+    out := ""
+    i := 0
+    for i < len(f.params):
+        if i > 0:
+            out = out + ", "
+        out = out + "long " + f.params[i]
+        i = i + 1
+    return out
+
+fn gen_proto(f: Func) -> string:
+    rt := "long "
+    if f.is_void:
+        rt = "void "
+    return rt + f.name + "(" + gen_params(f) + ");\n"
+
+fn gen_func(f: Func) -> string:
+    if f.name == "main":
+        return "int main(void) {\n" + gen_block(f.body) + "    return 0;\n}\n"
+    rt := "long "
+    if f.is_void:
+        rt = "void "
+    return rt + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body) + "}\n"
+
 fn main():
     src := read_all()
     toks := lex(src)
     pos := 0
-    expect_ident(toks, &pos, "fn")
-    expect_ident(toks, &pos, "main")
-    expect(toks, &pos, TLParen)
-    expect(toks, &pos, TRParen)
-    expect(toks, &pos, TColon)
-    body := parse_block(toks, &pos)
-    out := "#include <stdio.h>\nint main(void) {\n" + gen_block(body) + "    return 0;\n}\n"
+    funcs := parse_program(toks, &pos)
+    out := "#include <stdio.h>\n"
+    i := 0
+    for i < len(funcs):
+        if funcs[i].name != "main":
+            out = out + gen_proto(funcs[i])
+        i = i + 1
+    i = 0
+    for i < len(funcs):
+        out = out + gen_func(funcs[i])
+        i = i + 1
     print(out)
