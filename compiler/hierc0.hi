@@ -1543,7 +1543,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 die("codegen: print expects a string")
             return "    fputs(" + gen_expr(e, names, types, ctx) + ", stdout);\n"
         SReturn(e):
-            return "    return " + gen_expr(e, names, types, ctx) + ";\n"
+            # deep-copy a returned heap PLACE (a field/element/variable): the
+            # return value outlives the callee, so it must not alias the source's
+            # buffer (`return b.items` then the caller mutates the result must not
+            # reach b). gen_rhs copies is_place array/struct/map/tuple; fresh
+            # values / scalars / strings pass through. (tests/value_semantics.hi
+            # probe 9; the C compiler does this via return-promotion.)
+            return "    return " + gen_rhs(e, names, types, ctx) + ";\n"
         SReturnVoid:
             return "    return;\n"
         SExpr(e):

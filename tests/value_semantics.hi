@@ -12,8 +12,22 @@ struct Box:
     items: [int]
     tag: string
 
+enum Wrap:
+    W([int])
+
 fn wrap(xs: [int], t: string) -> Box:
     return Box(xs, t)
+
+fn rewrap(xs: [int]) -> Wrap:
+    return W(xs)
+
+fn ok_items(xs: [int]) -> Result([int], string):
+    return Ok(xs)
+
+# returns a place (a struct's array field): must deep-copy, else the returned
+# value aliases the source struct's buffer.
+fn first_items(b: Box) -> [int]:
+    return b.items
 
 fn main():
     # 1. in-place string accumulator: a mid-loop snapshot must FREEZE, not
@@ -62,3 +76,32 @@ fn main():
     nested := [inner, inner]
     inner[0] = 99
     print("6 nested[0][0]=" + str(nested[0][0]) + " inner[0]=" + str(inner[0]) + " (expect 1 99)\n")
+
+    # 7. enum payload: W(a) stores a's array; mutating a after must not reach it.
+    a7 := [3, 4]
+    w := rewrap(a7)
+    a7[0] = 99
+    wv := 0
+    match w:
+        W(v):
+            wv = v[0]
+    print("7 W payload=" + str(wv) + " a7=" + str(a7[0]) + " (expect 3 99)\n")
+
+    # 8. Result Ok payload: same, through the Ok(...) box.
+    a8 := [5, 6]
+    r := ok_items(a8)
+    a8[0] = 99
+    rv := 0
+    match r:
+        Ok(v):
+            rv = v[0]
+        Err(e):
+            rv = 0 - 1
+    print("8 Ok payload=" + str(rv) + " a8=" + str(a8[0]) + " (expect 5 99)\n")
+
+    # 9. return path: returning a place field must deep-copy, so mutating the
+    #    returned value can't reach the source struct.
+    bx := Box([7, 8], "r")
+    got := first_items(bx)
+    got[0] = 99
+    print("9 bx.items[0]=" + str(bx.items[0]) + " got[0]=" + str(got[0]) + " (expect 7 99)\n")
