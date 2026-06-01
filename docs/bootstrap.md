@@ -483,7 +483,17 @@ fixpoint.
         `Some`, `Point_eq` on the boxed payloads). `Arr_T_eq` now also emits for
         struct elements. Cleared `option_fields` (struct `==` recursing through
         Option fields). `aggregates` is now blocked only by nested arrays.
-      Remaining failures: tuples, slices, `float_maps`, nested/Option-element
-      arrays (`projections`, `option_arrays`, `aggregates`), and `maps`/
-      `match_reuse`/`ctor_move`/`enums` parser gaps.
+      - **3H**: composite array element types (20 → 23/29). Array family names
+        are now `Arr_<mangle(elem)>` where `mangle` turns any element type into a
+        valid C identifier (`[int]`→`arr_int`, `Option(int)`→`opt_int`,
+        `Result(T,E)`→`res_..`), applied at every `Arr_` site. Element-type
+        collection became recursive (`note_arr_types`) and now also **walks
+        function bodies** (`collect_expr`/`collect_stmt`/`collect_block`) to find
+        composite element types that appear only in literals (e.g. `grid :=
+        [[1,2,3],…]` → `[int]`; `[Some(Point(1,2)), None]` → `Option(Point)`).
+        Cleared `aggregates` (nested arrays + `[P]==`), `projections` (nested
+        index-set, projected field/array mutation, `&arr[i].x`), `option_arrays`
+        (`[Option(int)]`/`[Option(Point)]`).
+      Remaining failures (6): `tuples`, `slices`, `float_maps` (2nd map type),
+      and parser gaps in `maps`, `match_reuse`, `ctor_move`.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

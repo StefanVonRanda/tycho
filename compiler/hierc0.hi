@@ -886,6 +886,19 @@ fn result_err(ty: string) -> string:               # "Result(T,E)" -> "E"
     inner := substr(ty, 7, len(ty) - 1)
     return substr(inner, top_comma(inner) + 1, len(inner))
 
+# A valid C identifier suffix for an element type, so composite element types
+# (nested arrays, Option/Result elements) get legal `Arr_<mangle>` family names.
+fn mangle(ty: string) -> string:
+    if is_array(ty):
+        return "arr_" + mangle(elem_ty(ty))
+    if is_option(ty):
+        return "opt_" + mangle(option_inner(ty))
+    if is_result(ty):
+        return "res_" + mangle(result_ok(ty)) + "_" + mangle(result_err(ty))
+    if is_map(ty):
+        return "map_str_int"
+    return ty                                    # int/str/float/struct/enum/newtype: already valid
+
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
 # the C compiler already did), so codegen resolves them to the underlying type.
 fn is_newtype(ctx: Ctx, name: string) -> bool:
@@ -923,7 +936,7 @@ fn cty(ctx: Ctx, ty: string) -> string:
     if ty == "str":
         return "char* "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
-        return "Arr_" + elem_ty(ty) + " "
+        return "Arr_" + mangle(elem_ty(ty)) + " "
     if is_map(ty):                                # {str:int} -> Map_str_int
         return "Map_str_int "
     if is_option(ty):
@@ -1111,9 +1124,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
-            return "Arr_" + et + "_from((" + cty(ctx, et) + "[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+            return "Arr_" + mangle(et) + "_from((" + cty(ctx, et) + "[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
-            return "Arr_" + ety + "_new()"
+            return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
             return "map_str_int_new()"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
@@ -1126,14 +1139,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if is_cmp(op) and type_of(l, names, types, ctx) == "str":   # lexicographic string compare
                 return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
             if op == "==" and is_array(type_of(l, names, types, ctx)):   # element-wise array equality
-                return "Arr_" + elem_ty(type_of(l, names, types, ctx)) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+                return "Arr_" + mangle(elem_ty(type_of(l, names, types, ctx))) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             if op == "==" and is_struct(ctx, type_of(l, names, types, ctx)):   # structural struct equality
                 return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
                 et := elem_ty(type_of(args[0], names, types, ctx))
-                return "Arr_" + et + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return "Arr_" + mangle(et) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
@@ -1246,7 +1259,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     code := gen_expr(e, names, types, ctx)
     ty := type_of(e, names, types, ctx)
     if is_array(ty) and is_place(e):
-        return "Arr_" + elem_ty(ty) + "_copy(" + code + ")"
+        return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + code + ")"
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
         return ty + "_copy(" + code + ")"
     return code
@@ -1461,7 +1474,7 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
         if f.ty == "str":
             out = out + "    r." + f.name + " = sc(s." + f.name + ", \"\");\n"
         elif is_array(f.ty):
-            out = out + "    r." + f.name + " = Arr_" + elem_ty(f.ty) + "_copy(s." + f.name + ");\n"
+            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(s." + f.name + ");\n"
         elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
             out = out + "    r." + f.name + " = " + f.ty + "_copy(s." + f.name + ");\n"
         i = i + 1
@@ -1488,7 +1501,7 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
         return "strcmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
-        return "Arr_" + elem_ty(ty) + "_eq(" + a + ", " + b + ")"
+        return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
     if is_enum(ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
     if is_struct(ctx, ty):
@@ -1595,10 +1608,10 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(ctx: Ctx, et: string) -> string:
-    return "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } Arr_" + et + ";\n"
+    return "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } Arr_" + mangle(et) + ";\n"
 
 fn gen_arr_fns(ctx: Ctx, et: string) -> string:
-    nm := "Arr_" + et
+    nm := "Arr_" + mangle(et)
     ct := cty(ctx, et)                           # element C type, trailing space
     out := "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
     out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
@@ -1653,17 +1666,109 @@ fn has_str(xs: [string], s: string) -> bool:
         i = i + 1
     return false
 
-# If `ty` is an array type, record its element type for monomorphization.
-fn note_elem(acc: inout [string], ty: string):
+# Record the array element types a type needs, recursively (so [[int]] also
+# pulls in [int], and Option/Result element types are descended into).
+fn note_arr_types(acc: inout [string], ty: string):
     b := base_ty(ty)
     if is_array(b):
         et := elem_ty(b)
         if not has_str(acc, et):
             push(acc, et)
+        note_arr_types(&acc, et)
+    elif is_option(b):
+        note_arr_types(&acc, option_inner(b))
+    elif is_result(b):
+        note_arr_types(&acc, result_ok(b))
+        note_arr_types(&acc, result_err(b))
+
+# Walk an expression collecting composite array element types from literals
+# (array literals / empty arrays that no annotation would reveal).
+fn collect_expr(acc: inout [string], e: Expr, ctx: Ctx):
+    match e:
+        EArrLit(elems):
+            note_arr_types(&acc, type_of(e, []string, []string, ctx))
+            j := 0
+            for j < len(elems):
+                collect_expr(&acc, elems[j], ctx)
+                j = j + 1
+        EArrEmpty(ety):
+            note_arr_types(&acc, "[" + ety + "]")
+        EMapEmpty(k, v):
+            j := 0
+        EBin(op, l, r):
+            collect_expr(&acc, l, ctx)
+            collect_expr(&acc, r, ctx)
+        ECall(nm, args):
+            j := 0
+            for j < len(args):
+                collect_expr(&acc, args[j], ctx)
+                j = j + 1
+        EField(b, f):
+            collect_expr(&acc, b, ctx)
+        EIndex(b, idx):
+            collect_expr(&acc, b, ctx)
+            collect_expr(&acc, idx, ctx)
+        EAddr(inner):
+            collect_expr(&acc, inner, ctx)
+        EInt(t):
+            j := 0
+        EFloat(f):
+            j := 0
+        EStr(s):
+            j := 0
+        EVar(n):
+            j := 0
+
+fn collect_block(acc: inout [string], stmts: [Stmt], ctx: Ctx):
+    i := 0
+    for i < len(stmts):
+        collect_stmt(&acc, stmts[i], ctx)
+        i = i + 1
+
+fn collect_stmt(acc: inout [string], s: Stmt, ctx: Ctx):
+    match s:
+        SDecl(n, e):
+            collect_expr(&acc, e, ctx)
+        SAssign(n, e):
+            collect_expr(&acc, e, ctx)
+        SFieldAssign(lv, rhs):
+            collect_expr(&acc, lv, ctx)
+            collect_expr(&acc, rhs, ctx)
+        SPrint(e):
+            collect_expr(&acc, e, ctx)
+        SReturn(e):
+            collect_expr(&acc, e, ctx)
+        SReturnVoid:
+            j := 0
+        SExpr(e):
+            collect_expr(&acc, e, ctx)
+        STypedDecl(n, t, e):
+            note_arr_types(&acc, t)
+            collect_expr(&acc, e, ctx)
+        SOrReturn(n, e):
+            collect_expr(&acc, e, ctx)
+        SIf(c, tb, eb):
+            collect_expr(&acc, c, ctx)
+            collect_block(&acc, tb, ctx)
+            collect_block(&acc, eb, ctx)
+        SWhile(c, body):
+            collect_expr(&acc, c, ctx)
+            collect_block(&acc, body, ctx)
+        SForRange(n, a, b, st, body):
+            collect_expr(&acc, a, ctx)
+            collect_expr(&acc, b, ctx)
+            collect_expr(&acc, st, ctx)
+            collect_block(&acc, body, ctx)
+        SMatch(subj, variants, allbinds, bodies):
+            collect_expr(&acc, subj, ctx)
+            j := 0
+            for j < len(bodies):
+                collect_block(&acc, bodies[j], ctx)
+                j = j + 1
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
 # practice) plus every array element type that appears in an annotation.
-fn collect_elem_types(prog: Program) -> [string]:
+fn collect_elem_types(prog: Program, ctx: Ctx) -> [string]:
     acc := []string
     push(acc, "int")
     push(acc, "str")
@@ -1681,15 +1786,16 @@ fn collect_elem_types(prog: Program) -> [string]:
         f := prog.funcs[i]
         j := 0
         for j < len(f.ptypes):
-            note_elem(&acc, f.ptypes[j])
+            note_arr_types(&acc, f.ptypes[j])
             j = j + 1
-        note_elem(&acc, f.ret)
+        note_arr_types(&acc, f.ret)
+        collect_block(&acc, f.body, ctx)         # composite element types from literals
         i = i + 1
     i = 0
     for i < len(prog.structs):
         j := 0
         for j < len(prog.structs[i].fields):
-            note_elem(&acc, prog.structs[i].fields[j].ty)
+            note_arr_types(&acc, prog.structs[i].fields[j].ty)
             j = j + 1
         i = i + 1
     i = 0
@@ -1698,7 +1804,7 @@ fn collect_elem_types(prog: Program) -> [string]:
         for j < len(prog.enums[i].variants):
             k := 0
             for k < len(prog.enums[i].variants[j].ptypes):
-                note_elem(&acc, prog.enums[i].variants[j].ptypes[k])
+                note_arr_types(&acc, prog.enums[i].variants[j].ptypes[k])
                 k = k + 1
             j = j + 1
         i = i + 1
@@ -1716,7 +1822,7 @@ fn main():
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
     ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder)
-    ets := collect_elem_types(prog)
+    ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
     # supporting arrays-of-structs, recursive structs, and mutual struct/enum refs:
