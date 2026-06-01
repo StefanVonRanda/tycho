@@ -131,3 +131,16 @@ allocation-heavy, deeply-recursive workload to within ~26%, with bounded memory.
 
 The borrow-iff-not-mutated rule (step 2) is the same predicate already proven on
 match-arm payloads through Stages 2–4 and the self-host fixpoint.
+
+**Prong-B is complete — stop here.** A merged gprof profile (30 runs) of A
+self-compiling shows the entire arena memory model is now **~6%** of run time:
+`arena_child` ~2%, `arena_alloc` ~2%, `hier_str_copy` ~2%. The remaining cost is
+*algorithmic, in hierc0's own source and identical in A and B* — not the memory
+model: `is_variant` (a doubly-nested linear scan over all enum variants, called
+per identifier in codegen) is **33%**, and the bounded-array index gets it drives
+are another **29%**. The two further prong-B ideas once noted here —
+stack-allocating small transients and compact node representations — target
+`arena_alloc` and the deep-copies, i.e. ~2% each; the profile shows eliminating
+them entirely would save ~1–2 ms of 49 ms, so they were dropped as high-risk,
+near-zero-reward. Any future self-compile speedup belongs in hierc0's algorithms
+(e.g. a variant→enum lookup built once), which is orthogonal to the arena thesis.
