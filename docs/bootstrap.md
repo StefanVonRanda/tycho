@@ -433,8 +433,18 @@ fixpoint.
         emit a named `struct N {…}` body. `recursive_structs.hi` passes (6/29).
         Still pending for `aggregates.hi`: nested arrays `[[int]]` (needs element-
         type name mangling) and whole-array `==`.
-      Remaining test failures bucket into: floats (scalar type), Option/Result +
-      `or_return`, tuples, newtypes, slices, projections, enum-array equality
-      (`recursive_enum_array`), `die`, and assorted parser gaps (`enums`,
-      `enum_calc`, `logic`, `maps`, `match_reuse`, `io_builtins`).
+      - **3B**: `float` scalar + `[float]` arrays + `/` + `not` + array `==`.
+        Lexer gains `D.D` float literals and `/`; `float` → C `double`; floats
+        emit verbatim (round-trip); arithmetic `+ - * /` promotes to float when
+        either operand is float (int `/` stays integer division). `str(float)`
+        → `f2s` mirroring `runtime/hier_rt.c`'s `%.15g`+`.0` format; `to_float`/
+        `to_int` → casts. `not X` parses to `(X == 0)` (a precedence layer below
+        `and`). Whole-array `==` generates `Arr_T_eq` (element-wise; emitted only
+        for elements with a usable equality — int/float/str/enum). Cleared
+        `floats`, `float_arrays`, `logic` and one more — 6 → 10/29. Deferred:
+        `float_maps` (a second map type, `[string: float]`).
+      Remaining test failures bucket into: Option/Result + `or_return`, tuples,
+      newtypes, slices, projections, enum-array equality (`recursive_enum_array`),
+      `die`, `float_maps`, and parser gaps (`enums`, `enum_calc`, `maps`,
+      `match_reuse`, `io_builtins`, `aggregates` nested arrays).
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

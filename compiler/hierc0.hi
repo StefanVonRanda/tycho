@@ -12,11 +12,13 @@
 
 enum Tok:
     TInt
+    TFloat
     TStr
     TIdent
     TPlus
     TMinus
     TStar
+    TSlash
     TLParen
     TRParen
     TLBracket
@@ -76,6 +78,12 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         start := i
         for i < n and is_digit(src[i]):
             i = i + 1
+        if i < n and src[i] == 46 and i + 1 < n and is_digit(src[i + 1]):   # D.D float
+            i = i + 1
+            for i < n and is_digit(src[i]):
+                i = i + 1
+            push(toks, Token(TFloat, substr(src, start, i)))
+            return i
         push(toks, Token(TInt, substr(src, start, i)))
         return i
     elif is_alpha(c):
@@ -95,6 +103,9 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         return i + 1
     elif c == 42:
         push(toks, Token(TStar, "*"))
+        return i + 1
+    elif c == 47:
+        push(toks, Token(TSlash, "/"))
         return i + 1
     elif c == 40:
         push(toks, Token(TLParen, "("))
@@ -206,6 +217,7 @@ fn lex(src: string) -> [Token]:
 
 enum Expr:
     EInt(string)
+    EFloat(string)            # float literal, emitted verbatim (round-trips as a double)
     EStr(string)              # string literal (raw content, escapes preserved)
     EVar(string)
     EBin(string, Expr, Expr)
@@ -308,6 +320,9 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TInt:
         pos = pos + 1
         return EInt(t.text)
+    elif t.kind == TFloat:
+        pos = pos + 1
+        return EFloat(t.text)
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -370,7 +385,7 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
 
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
     l := parse_postfix(toks, &pos)
-    for toks[pos].kind == TStar:
+    for toks[pos].kind == TStar or toks[pos].kind == TSlash:
         op := toks[pos].text
         pos = pos + 1
         r := parse_postfix(toks, &pos)
@@ -396,11 +411,17 @@ fn parse_cmp(toks: [Token], pos: inout int) -> Expr:
         return EBin(op, l, r)
     return l
 
+fn parse_not(toks: [Token], pos: inout int) -> Expr:
+    if toks[pos].kind == TIdent and toks[pos].text == "not":
+        pos = pos + 1
+        return EBin("==", parse_not(toks, &pos), EInt("0"))   # logical not: (X == 0)
+    return parse_cmp(toks, &pos)
+
 fn parse_and(toks: [Token], pos: inout int) -> Expr:
-    l := parse_cmp(toks, &pos)
+    l := parse_not(toks, &pos)
     for toks[pos].kind == TIdent and toks[pos].text == "and":
         pos = pos + 1
-        r := parse_cmp(toks, &pos)
+        r := parse_not(toks, &pos)
         l = EBin("&&", l, r)
     return l
 
@@ -548,6 +569,8 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
         return "int"
     elif name == "bool":
         return "int"                             # bool is represented as long 0/1
+    elif name == "float":
+        return "float"
     elif name == "string":
         return "str"
     else:
@@ -788,6 +811,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
         return "long "
+    if ty == "float":
+        return "double "
     if ty == "str":
         return "char* "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
@@ -867,6 +892,10 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "int"
     if name == "find":
         return "int"
+    if name == "to_float":
+        return "float"
+    if name == "to_int":
+        return "int"
     if name == "len":
         return "int"
     if name == "input":
@@ -887,6 +916,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return "int"
+        EFloat(f):
+            return "float"
         EStr(s):
             return "str"
         EVar(name):
@@ -907,11 +938,15 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EAddr(inner):
             return type_of(inner, names, types, ctx)
         EBin(op, l, r):
-            if op == "+":
-                if type_of(l, names, types, ctx) == "str" or type_of(r, names, types, ctx) == "str":
-                    return "str"
+            lt := type_of(l, names, types, ctx)
+            rt := type_of(r, names, types, ctx)
+            if op == "+" and (lt == "str" or rt == "str"):
+                return "str"
+            if op == "+" or op == "-" or op == "*" or op == "/":
+                if lt == "float" or rt == "float":
+                    return "float"
                 return "int"
-            return "int"                          # - *  and comparisons -> int
+            return "int"                          # comparisons, &&, || -> int (bool)
         ECall(name, args):
             if name == "map_set":                 # map_set returns its first arg's map type
                 return type_of(args[0], names, types, ctx)
@@ -931,6 +966,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return t
+        EFloat(f):
+            return f
         EStr(s):
             return "\"" + s + "\""
         EVar(name):
@@ -959,6 +996,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             if is_cmp(op) and type_of(l, names, types, ctx) == "str":   # lexicographic string compare
                 return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
+            if op == "==" and is_array(type_of(l, names, types, ctx)):   # element-wise array equality
+                return "Arr_" + elem_ty(type_of(l, names, types, ctx)) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -969,7 +1008,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
                 return gen_expr(args[0], names, types, ctx) + ".len"
             if name == "str":
+                if type_of(args[0], names, types, ctx) == "float":
+                    return "f2s(" + gen_expr(args[0], names, types, ctx) + ")"
                 return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "to_float":
+                return "((double)(" + gen_expr(args[0], names, types, ctx) + "))"
+            if name == "to_int":
+                return "((long)(" + gen_expr(args[0], names, types, ctx) + "))"
             if name == "substr":
                 return "substr(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "find":
@@ -1004,6 +1049,8 @@ fn is_place(e: Expr) -> bool:
             return true
         EInt(t):
             return false
+        EFloat(f):
+            return false
         EStr(s):
             return false
         EBin(o, l, r):
@@ -1024,6 +1071,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         EVar(n):
             return n == name
         EInt(t):
+            return false
+        EFloat(f):
             return false
         EStr(s):
             return false
@@ -1085,6 +1134,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                         return "    map_str_int_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
+                    return deflt
+                EFloat(f):
                     return deflt
                 EStr(s):
                     return deflt
@@ -1284,6 +1335,7 @@ fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
+    out = out + "static char* f2s(double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = malloc(m + 1); memcpy(r, t, m + 1); return r; }\n"
     out = out + "static char* substr(const char* s, long a, long b) { long n = b - a; char* r = malloc(n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
     out = out + "static char* hi_input(void) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
@@ -1306,6 +1358,8 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
+    if et == "int" or et == "float" or et == "str" or is_enum(ctx, et):   # element has a usable eq
+        out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
 # Runtime that depends on Arr_str (so it is emitted after the array families,

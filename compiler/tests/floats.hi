@@ -1,0 +1,26 @@
+struct Vec:
+    x: float
+    y: float
+
+fn mag2(v: Vec) -> float:
+    return v.x * v.x + v.y * v.y
+
+fn avg(xs: [int]) -> float:
+    total := 0
+    for i in range(len(xs)):
+        total = total + xs[i]
+    return to_float(total) / to_float(len(xs))
+
+fn main():
+    pi := 3.14159
+    print("pi=" + str(pi) + " 2pi=" + str(pi * 2.0) + "\n")
+    print("truediv=" + str(7.0 / 2.0) + "\n")          # 3.5
+    print("intdiv=" + str(7 / 2) + "\n")               # 1
+    print("neg=" + str(-pi) + "\n")
+    print("whole=" + str(4.0) + "\n")                  # 4.0 not 4
+    if 1.5 < 2.5 and not (1.0 > 2.0):
+        print("cmp-ok\n")
+    v := Vec(3.0, 4.0)
+    print("mag2=" + str(mag2(v)) + "\n")               # 25.0
+    print("avg=" + str(avg([1, 2, 3, 4])) + "\n")      # 2.5
+    print("trunc=" + str(to_int(3.9)) + "\n")          # 3
