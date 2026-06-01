@@ -896,6 +896,10 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "float"
     if name == "to_int":
         return "int"
+    if name == "read_all":
+        return "str"
+    if name == "die":
+        return "int"
     if name == "len":
         return "int"
     if name == "input":
@@ -1029,6 +1033,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "map_str_int_keys(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "chr":
                 return "hi_chr(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "die":
+                return "hi_die(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "read_all":
+                return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
@@ -1342,6 +1350,8 @@ fn preamble() -> string:
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
     out = out + "static char* hi_input(void) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
     out = out + "static char* hi_chr(long n) { char* r = malloc(2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
+    out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
+    out = out + "static char* hi_read_all(void) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
     return out
 
 # One monomorphized value-array family per element type T: Arr_T holds a

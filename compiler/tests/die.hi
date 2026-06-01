@@ -1,0 +1,22 @@
+# Stage 0 error convention: die(msg) prints to stderr and exits non-zero.
+# Here every die sits in an untaken path, so the program runs to completion.
+
+# die in a fall-through branch (function ends in a normal return)
+fn checked(n: int) -> int:
+    if n < 0:
+        die("checked: negative input")
+    return n * 2
+
+# die as the ELSE branch with no trailing return — the defensive fallback
+# covers the (never-reached) fall-through; this is the shape a compiler's
+# "expected X or die" sites take.
+fn must_pos(n: int) -> int:
+    if n > 0:
+        return n
+    else:
+        die("must_pos: non-positive")
+
+fn main():
+    print(str(checked(5)) + "\n")        # 10
+    print(str(checked(0)) + "\n")        # 0
+    print(str(must_pos(7)) + "\n")       # 7
