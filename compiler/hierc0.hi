@@ -571,9 +571,14 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SReturn(EInt("0"))
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
-    if toks[pos].kind == TLBracket:              # array type [T]
+    if toks[pos].kind == TLBracket:              # [T] array  or  [K: V] map
         pos = pos + 1
         inner := parse_type(toks, &pos)
+        if toks[pos].kind == TColon:
+            pos = pos + 1
+            v := parse_type(toks, &pos)
+            expect(toks, &pos, TRBracket)
+            return "{" + inner + ":" + v + "}"
         expect(toks, &pos, TRBracket)
         return "[" + inner + "]"
     if toks[pos].kind != TIdent:
@@ -1014,6 +1019,8 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "[str]"
     if name == "map_get":
         return "int"
+    if name == "map_has":
+        return "int"
     if name == "find":
         return "int"
     if name == "to_float":
@@ -1082,7 +1089,7 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "int"
             return "int"                          # comparisons, &&, || -> int (bool)
         ECall(name, args):
-            if name == "map_set":                 # map_set returns its first arg's map type
+            if name == "map_set" or name == "map_del":   # return the first arg's map type
                 return type_of(args[0], names, types, ctx)
             if name == "Some":
                 return "Option(" + type_of(args[0], names, types, ctx) + ")"
@@ -1171,6 +1178,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "map_str_int_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
                 return "map_str_int_keys(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "map_del":
+                return "map_str_int_del(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+            if name == "map_has":
+                return "map_str_int_has(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "chr":
                 return "hi_chr(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "die":
@@ -1262,6 +1273,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + code + ")"
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
         return ty + "_copy(" + code + ")"
+    if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
+        return "map_str_int_copy(" + code + ")"
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -1655,6 +1668,8 @@ fn gen_maplib() -> string:
     out = out + "static Map_str_int map_str_int_copy(Map_str_int m) { Map_str_int r = msi_with_cap(m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) map_str_int_put(&r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static Map_str_int map_str_int_set(Map_str_int m, char* k, long v) { Map_str_int r = map_str_int_copy(m); map_str_int_put(&r, k, v); return r; }\n"
     out = out + "static long map_str_int_get(Map_str_int m, char* k, long def) { if (m.cap == 0) return def; long s = msi_slot(m, k); return m.keys[s] ? m.vals[s] : def; }\n"
+    out = out + "static int map_str_int_has(Map_str_int m, char* k) { if (m.cap == 0) return 0; long s = msi_slot(m, k); return m.keys[s] != 0; }\n"
+    out = out + "static Map_str_int map_str_int_del(Map_str_int m, char* k) { Map_str_int r = map_str_int_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) map_str_int_put(&r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static Arr_str map_str_int_keys(Map_str_int m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(&r, m.keys[i]); return r; }\n"
     return out
 

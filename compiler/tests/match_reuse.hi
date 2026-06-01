@@ -1,0 +1,60 @@
+# Match-arm payload borrow (deep-copy elision) + its safety guard.
+#   - read-only / by-value bindings borrow the scrutinee's payload (no copy):
+#     total() and left() recurse over a tree without per-level subtree copies.
+#   - a binding MUTATED in the arm (push) must keep its owning deep copy, so
+#     the mutation cannot reach through into the scrutinee (value semantics).
+
+enum Tree:
+    Leaf(int)
+    Pair(Tree, Tree)
+
+fn total(t: Tree) -> int:
+    match t:
+        Leaf(v):
+            return v
+        Pair(a, b):                 # a, b read-only -> borrowed, no copy
+            return total(a) + total(b)
+
+fn left(t: Tree) -> Tree:
+    match t:
+        Leaf(v):
+            return Leaf(v)
+        Pair(a, b):                 # a borrowed, then returned -> promoted copy
+            return a
+
+enum IntBox:
+    Nums([int])
+    Nothing
+
+fn grow_and_len(x: IntBox) -> int:
+    match x:
+        Nums(ns):                   # ns is push'd -> MUST deep-copy, not borrow
+            push(ns, 7)
+            return len(ns)
+        Nothing:
+            return 0
+
+fn main():
+    t := Pair(Pair(Leaf(1), Leaf(2)), Leaf(3))
+    print("total=" + str(total(t)) + "\n")              # 6
+    snap := t                                           # deep-copy snapshot
+    lt := left(t)                                       # pull out a subtree (copy)
+    print("left_total=" + str(total(lt)) + "\n")        # 3
+    print("total_again=" + str(total(t)) + "\n")        # 6 (t intact)
+    if t == snap:
+        print("tree-stable\n")
+
+    # a mutated array payload must not reach through the scrutinee
+    box := Nums([10, 20, 30])
+    boxsnap := box
+    print("grown=" + str(grow_and_len(box)) + "\n")     # 4 (pushed into a copy)
+    match box:
+        Nums(ns):
+            print("box_len=" + str(len(ns)) + "\n")     # 3, NOT 4
+        Nothing:
+            print("none\n")
+    match boxsnap:
+        Nums(ns):
+            print("snap_len=" + str(len(ns)) + "\n")    # 3
+        Nothing:
+            print("none\n")
