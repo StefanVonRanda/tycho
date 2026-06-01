@@ -87,8 +87,10 @@ cluster of languages, and the differences are the interesting part:
    hold. The ergonomic half landed too: `v := expr or_return` unwraps an `Ok` or
    propagates the `Err` from the enclosing `Result(_, E)`-returning function
    (postfix operator, lowered to a statement-expression that promotes the err
-   payload into the caller's arena before freeing the live scopes). Still open:
-   `or_return` for `Option` (None-propagation) — currently `Result`-only.
+   payload into the caller's arena before freeing the live scopes). `or_return`
+   works on `Option` too: `v := opt or_return` unwraps `Some(v)`, else
+   short-circuits the enclosing `Option`-returning function with `None`
+   (`tests/or_return_option.hi`). Self-hosting in both compilers.
 
 5. **Multiple return values** (Odin/Go/Jai). ✅ *Implemented, as first-class
    tuples.* `(T1, ..., Tn)` is a real anonymous-product value type (interned per

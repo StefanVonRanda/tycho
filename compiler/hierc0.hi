@@ -1707,10 +1707,18 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 push(types, parts[j])
                 j = j + 1
             return code
-        SOrReturn(name, e):                       # unwrap Ok, or propagate Err upward
+        SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
             rty := type_of(e, names, types, ctx)
-            ct := cty(ctx, result_ok(rty))
             tmp := "_or_" + name
+            if is_option(rty):                    # Option: unwrap Some, else return None
+                cto := cty(ctx, option_inner(rty))
+                oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+                oc = oc + "    if (" + tmp + ".tag == 0) return hnone();\n"
+                oc = oc + "    " + cto + name + " = *(" + cto + "*)(" + tmp + ".val);\n"
+                push(names, name)
+                push(types, option_inner(rty))
+                return oc
+            ct := cty(ctx, result_ok(rty))
             code := "    HResult " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
             code = code + "    if (" + tmp + ".tag == 0) return " + tmp + ";\n"
             code = code + "    " + ct + name + " = *(" + ct + "*)(" + tmp + ".ok);\n"
@@ -2297,7 +2305,12 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             push(types, t)
         SOrReturn(n, e):
             collect_expr(&acc, e, names, types, ctx)
-            ty := result_ok(type_of(e, names, types, ctx))
+            ety := type_of(e, names, types, ctx)
+            ty := ""
+            if is_option(ety):                    # Option or_return binds the inner type
+                ty = option_inner(ety)
+            else:
+                ty = result_ok(ety)               # (result_ok on a non-Result substrs out of range)
             push(names, n)
             push(types, ty)
         SDestructure(dnames, e):

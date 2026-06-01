@@ -1462,10 +1462,16 @@ static Type resolve_expr(Expr *e) {
                 die_at(e->line, "tuple index %ld out of range (the tuple has %d elements)", e->ival, tup_n(bt));
             return e->type = tup_elem(bt, (int)e->ival);
         }
-        case E_ORRETURN: {   /* unwrap Ok(v) to v, or short-circuit the enclosing fn with Err(e) */
+        case E_ORRETURN: {   /* unwrap Ok(v)/Some(v) to v, or short-circuit the enclosing fn with Err(e)/None */
             Type rt = resolve_expr(e->lhs);
+            if (IS_OPT(rt)) {   /* Option: unwrap Some, else propagate None from an Option-returning fn */
+                if (!IS_OPT(g_fn_ret))
+                    die_at(e->line, "or_return on an Option requires the enclosing function to return "
+                           "an Option, but it returns %s", type_name(g_fn_ret));
+                return e->type = opt_inner(rt);
+            }
             if (!IS_RES(rt))
-                die_at(e->line, "or_return applies to a Result value, got %s", type_name(rt));
+                die_at(e->line, "or_return applies to a Result or Option value, got %s", type_name(rt));
             if (!IS_RES(g_fn_ret))
                 die_at(e->line, "or_return requires the enclosing function to return a Result, "
                        "but it returns %s", type_name(g_fn_ret));
@@ -2711,8 +2717,12 @@ static char *gen_expr(Expr *e, const char *arena) {
              * are about to free), exactly like the S_RETURN promotion. */
             int id = g_blk++;
             char *v = gen_expr(e->lhs, arena);
-            char *promote = copy_into(res_err(g_gen_ret), "_parent", sfmt("_or%d.errv", id));
             char *rf = return_frees();
+            if (IS_OPT(e->lhs->type)) {   /* unwrap Some(x) to x, else return None from the enclosing fn */
+                return sfmt("({ %s_or%d = %s; if (!_or%d.has) { %s return (%s){0}; } _or%d.val; })",
+                            c_type(e->lhs->type), id, v, id, rf, c_type(g_gen_ret), id);
+            }
+            char *promote = copy_into(res_err(g_gen_ret), "_parent", sfmt("_or%d.errv", id));
             return sfmt("({ %s_or%d = %s; if (!_or%d.ok) { %s_rr%d = (%s){ .ok = 0, .errv = %s }; %s return _rr%d; } _or%d.okv; })",
                         c_type(e->lhs->type), id, v, id,
                         c_type(g_gen_ret), id, c_type(g_gen_ret), promote, rf, id, id);
