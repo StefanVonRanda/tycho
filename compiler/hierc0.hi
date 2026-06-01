@@ -1144,6 +1144,8 @@ fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
                     return true
                 if is_array(ft):
                     return true
+                if is_soa(ft):                   # a soa field owns heap buffers
+                    return true
                 if is_struct(ctx, ft) and struct_is_heap(ctx, ft):
                     return true
                 j = j + 1
@@ -1371,6 +1373,23 @@ fn gen_soa_gather(ctx: Ctx, ty: string, basec: string, ix: string) -> string:
     die("codegen: soa gather of unknown struct")
     return ""
 
+# soa sub-range [lo:hi]: offset every field buffer by lo (len hi-lo, cap 0).
+fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) -> string:
+    sn := soa_struct(ty)
+    si := 0
+    for si < len(ctx.structs):
+        if ctx.structs[si].name == sn:
+            flds := ctx.structs[si].fields
+            out := "(Soa_" + sn + "){"
+            i := 0
+            for i < len(flds):
+                out = out + " (" + basec + ").f" + str(i) + " + (" + loc + "),"
+                i = i + 1
+            return out + " (" + hic + ") - (" + loc + "), 0 }"
+        si = si + 1
+    die("codegen: soa slice of unknown struct")
+    return ""
+
 fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -1429,6 +1448,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return out + "}"
         ESlice(base, lo, hi):
             bt := type_of(base, names, types, ctx)
+            if is_soa(bt):
+                return gen_soa_slice(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(lo, names, types, ctx), gen_expr(hi, names, types, ctx))
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
@@ -1441,7 +1462,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
-            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt)):
+            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt)):
                 eqx := eq_field(ctx, lt, gen_expr(l, names, types, ctx), gen_expr(r, names, types, ctx))
                 if op == "!=":
                     return "(!(" + eqx + "))"
@@ -1538,7 +1559,7 @@ fn is_place(e: Expr) -> bool:
         ETuple(es):
             return false
         ESlice(b, lo, hi):
-            return false
+            return true                          # a slice aliases its source; binding it copies
         EAddr(inner):
             return false
 
@@ -1589,6 +1610,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return mfam(ty) + "_copy(" + code + ")"
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
         return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
+    if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
+        return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -1826,6 +1849,8 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
             out = out + "    r." + f.name + " = sc(s." + f.name + ", \"\");\n"
         elif is_array(f.ty):
             out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(s." + f.name + ");\n"
+        elif is_soa(f.ty):
+            out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
         elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
             out = out + "    r." + f.name + " = " + f.ty + "_copy(s." + f.name + ");\n"
         i = i + 1
@@ -1897,6 +1922,8 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
         return ty + "_eq(" + a + ", " + b + ")"
     if is_tuple(ty):
         return "Tup_" + tup_suffix(ty) + "_eq(" + a + ", " + b + ")"
+    if is_soa(ty):
+        return "Soa_" + soa_struct(ty) + "_eq(" + a + ", " + b + ")"
     if is_option(ty):                            # tags equal, and (if Some) payloads equal
         ct := cty(ctx, option_inner(ty))
         pa := "*(" + ct + "*)(" + a + ".val)"
@@ -2016,10 +2043,10 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
-# SOA family for `soa [Struct]`: one growable buffer per struct field (f0, f1,
-# ...) + a shared len/cap, instead of an array of records. Naive (realloc/leak)
-# like the Arr families. push grows each buffer and scatters the struct's fields.
-fn gen_soa(ctx: Ctx, ty: string) -> string:
+# SOA typedef + helper forward decls — emitted BEFORE struct bodies so a struct
+# may embed a soa by value, and before struct copy/eq so they can call the soa
+# helpers. (Bodies are gen_soa, emitted after struct bodies for sizeof.)
+fn gen_soa_decl(ctx: Ctx, ty: string) -> string:
     sn := soa_struct(ty)
     nm := "Soa_" + sn
     si := 0
@@ -2032,9 +2059,26 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
                 out = out + " " + cty(ctx, flds[i].ty) + "* f" + str(i) + ";"
                 i = i + 1
             out = out + " long len; long cap; } " + nm + ";\n"
-            out = out + "static void " + nm + "_push(" + nm + "* s, " + sn + " v) {\n"
+            out = out + "static void " + nm + "_push(" + nm + "* s, " + sn + " v);\n"
+            out = out + "static " + nm + " " + nm + "_copy(" + nm + " s);\n"
+            out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
+            return out
+        si = si + 1
+    return ""
+
+# SOA family for `soa [Struct]`: one growable buffer per struct field (f0, f1,
+# ...) + a shared len/cap, instead of an array of records. Naive (realloc/leak)
+# like the Arr families. push grows each buffer and scatters the struct's fields.
+fn gen_soa(ctx: Ctx, ty: string) -> string:
+    sn := soa_struct(ty)
+    nm := "Soa_" + sn
+    si := 0
+    for si < len(ctx.structs):
+        if ctx.structs[si].name == sn:
+            flds := ctx.structs[si].fields       # typedef + decls emitted by gen_soa_decl (early)
+            out := "static void " + nm + "_push(" + nm + "* s, " + sn + " v) {\n"
             out = out + "    if (s->len == s->cap) { s->cap = s->cap ? s->cap * 2 : 4;\n"
-            i = 0
+            i := 0
             for i < len(flds):
                 ct := cty(ctx, flds[i].ty)
                 out = out + "        s->f" + str(i) + " = realloc(s->f" + str(i) + ", sizeof(" + ct + ") * s->cap);\n"
@@ -2045,6 +2089,25 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
                 out = out + "    s->f" + str(i) + "[s->len] = v." + flds[i].name + ";\n"
                 i = i + 1
             out = out + "    s->len = s->len + 1;\n}\n"
+            # copy: deep-copy each field buffer (value semantics on bind/pass/return)
+            out = out + "static " + nm + " " + nm + "_copy(" + nm + " s) {\n"
+            out = out + "    " + nm + " r; r.len = s.len; r.cap = s.len;\n"
+            i = 0
+            for i < len(flds):
+                ct := cty(ctx, flds[i].ty)
+                out = out + "    r.f" + str(i) + " = s.len ? malloc(sizeof(" + ct + ") * s.len) : 0;\n"
+                out = out + "    for (long j = 0; j < s.len; j = j + 1) r.f" + str(i) + "[j] = s.f" + str(i) + "[j];\n"
+                i = i + 1
+            out = out + "    return r;\n}\n"
+            # structural eq: same length + every field equal elementwise
+            out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) {\n"
+            out = out + "    if (a.len != b.len) return 0;\n"
+            out = out + "    for (long j = 0; j < a.len; j = j + 1) {\n"
+            i = 0
+            for i < len(flds):
+                out = out + "        if (!(" + eq_field(ctx, flds[i].ty, "a.f" + str(i) + "[j]", "b.f" + str(i) + "[j]") + ")) return 0;\n"
+                i = i + 1
+            out = out + "    }\n    return 1;\n}\n"
             return out
         si = si + 1
     die("codegen: soa of unknown struct")
@@ -2367,6 +2430,11 @@ fn main():
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
         if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
             out = out + gen_arr_type(ctx, ets[i])
+        i = i + 1
+    i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
+    for i < len(ets):                            #     bodies, so a struct may embed a soa by value)
+        if is_soa(ets[i]):
+            out = out + gen_soa_decl(ctx, ets[i])
         i = i + 1
     i = 0                                        # map struct(s), one per value type used
     for i < len(ets):

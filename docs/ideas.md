@@ -175,12 +175,11 @@ cluster of languages, and the differences are the interesting part:
    is rejected — copy first with `local := ps`). A soa can also be a struct
    field — copying the struct deep-copies its soa (value semantics through the
    nesting); the soa typedef is forward-emitted so a struct may embed it by
-   value. (`tests/soa.hi`.) The **core** (empty, push, len, field read/write,
-   gather) is also implemented in hierc0's own naive-codegen self-hosting subset
-   and verified through the fixpoint differential (`tests/soa_basic.hi`). Still
-   open in hierc0: pass/return-by-value, `==`, slices, nesting — so the full
-   `tests/soa.hi` stays skipped in the fixpoint differential (`soa_basic.hi` is
-   not).
+   value. (`tests/soa.hi`.) **SOA fully self-hosts**: hierc0's own naive codegen
+   implements the entire feature (empty, push, len, field read/write, gather,
+   pass/return-by-value, `==`, slices, nesting), so the full `tests/soa.hi`
+   compiles byte-identically under hierc0 and runs in the fixpoint differential
+   with no skip (`tests/soa_basic.hi` is the minimal core subset).
 
 ### Tier 4 — large or philosophy-divergent (note, don't rush)
 
