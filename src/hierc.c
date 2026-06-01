@@ -2015,6 +2015,7 @@ static void resolve_program(ProcVec *prog) {
         Proc *pr = prog->v[i];
         if (sig_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
+        if (g_nsigs >= 256) die_at(pr->line, "too many functions (max 256 including builtins)");
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         if (pr->nparams > 8) die_at(pr->line, "too many parameters (max 8)");
