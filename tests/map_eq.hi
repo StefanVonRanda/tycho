@@ -1,0 +1,20 @@
+# Structural map equality (== / !=): same length + every key equal by value,
+# including maps nested in structs. Self-hosting in both compilers.
+struct Counts:
+    m: [string: int]
+    tag: int
+
+fn yn(b: bool) -> string:
+    if b:
+        return "T"
+    return "F"
+
+fn main():
+    m1 := ["a": 1, "b": 2]
+    m2 := ["b": 2, "a": 1]                        # same pairs, different insert order
+    m3 := ["a": 1, "b": 3]
+    print("maps: " + yn(m1 == m2) + yn(m1 == m3) + yn(m1 != m3) + "\n")   # T F T
+    c1 := Counts(["x": 5], 1)
+    c2 := Counts(["x": 5], 1)
+    c3 := Counts(["x": 6], 1)
+    print("structs: " + yn(c1 == c2) + yn(c1 == c3) + "\n")               # T F

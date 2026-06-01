@@ -1472,7 +1472,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
-            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt)):
+            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt) or is_map(lt)):
                 eqx := eq_field(ctx, lt, gen_expr(l, names, types, ctx), gen_expr(r, names, types, ctx))
                 if op == "!=":
                     return "(!(" + eqx + "))"
@@ -1951,6 +1951,8 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
         return ty + "_eq(" + a + ", " + b + ")"
     if is_tuple(ty):
         return "Tup_" + tup_suffix(ty) + "_eq(" + a + ", " + b + ")"
+    if is_map(ty):
+        return "map_str_" + map_val(ty) + "_eq(" + a + ", " + b + ")"
     if is_soa(ty):
         return "Soa_" + soa_struct(ty) + "_eq(" + a + ", " + b + ")"
     if is_option(ty):                            # tags equal, and (if Some) payloads equal
@@ -2192,6 +2194,9 @@ fn gen_map_fns(v: string) -> string:
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
     out = out + "static " + M + " " + f + "_del(" + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static Arr_str " + f + "_keys(" + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(&r, m.keys[i]); return r; }\n"
+    # structural equality: same length, and every live key in a present in b with
+    # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
+    out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.keys[i] != 0) { long t = " + s + "_slot(b, a.keys[i]); if (b.keys[t] == 0 || b.vals[t] != a.vals[i]) return 0; } return 1; }\n"
     return out
 
 fn has_str(xs: [string], s: string) -> bool:
