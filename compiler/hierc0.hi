@@ -291,6 +291,7 @@ struct Ctx:
     ntunder: [string]         # each newtype's underlying type
     vparams: [string]         # current func's NON-inout param names (map accum guard)
     saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
+    rettype: string           # current func's Hier return type (for the return-slot _scope free)
 
 struct Program:
     structs: [StructDef]
@@ -1540,7 +1541,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "mk_" + name + "(" + gen_store_args(args, names, types, ctx) + ")"
             if is_struct(ctx, name):              # struct construction -> compound literal
                 return "(" + name + "){" + gen_store_args(args, names, types, ctx) + "}"
-            return name + "(" + gen_args(args, names, types, ctx) + ")"
+            if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
+                return name + "(&_scope)"
+            return name + "(&_scope, " + gen_args(args, names, types, ctx) + ")"
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -1736,9 +1739,12 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             # reach b). gen_rhs copies is_place array/struct/map/tuple; fresh
             # values / scalars / strings pass through. (tests/value_semantics.hi
             # probe 9; the C compiler does this via return-promotion.)
-            return "    return " + gen_rhs(e, names, types, ctx) + ";\n"
+            # return-slot: evaluate into _ret, free this scope, then return _ret.
+            # (S1: the value is still malloc'd, so the free reclaims nothing; later
+            # sub-steps build the return value in _parent so this stays sound.)
+            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, ctx) + "; arena_free(&_scope); return _ret; }\n"
         SReturnVoid:
-            return "    return;\n"
+            return "    arena_free(&_scope); return;\n"
         SExpr(e):
             return "    " + gen_expr(e, names, types, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
@@ -1837,14 +1843,10 @@ fn ret_cty(ctx: Ctx, ret: string) -> string:
     return cty(ctx, ret)
 
 fn gen_params(f: Func, ctx: Ctx) -> string:
-    if len(f.params) == 0:
-        return "void"
-    out := ""
+    out := "Arena* _parent"                       # every fn threads the caller's arena
     i := 0
     for i < len(f.params):
-        if i > 0:
-            out = out + ", "
-        out = out + cty(ctx, f.ptypes[i]) + f.params[i]
+        out = out + ", " + cty(ctx, f.ptypes[i]) + f.params[i]
         i = i + 1
     return out
 
@@ -2038,10 +2040,16 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums)
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret)
     if f.name == "main":
-        return "int main(void) {\n" + gen_block(f.body, names, types, fctx) + "    return 0;\n}\n"
-    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n" + gen_block(f.body, names, types, fctx) + "}\n"
+        # root arena + a child scope; the scope parents every top-level call.
+        return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
+    # open a child scope from the caller's arena; void funcs free it on fall-through
+    # (every `return` frees it via the return-slot in gen_stmt).
+    tail := ""
+    if f.ret == "void":
+        tail = "    arena_free(&_scope);\n"
+    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n    Arena _scope = arena_child(_parent);\n" + gen_block(f.body, names, types, fctx) + tail + "}\n"
 
 fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
@@ -2255,6 +2263,16 @@ fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+    # Block-list arena: arena_child carves a fresh block list from the parent's
+    # block size; arena_free returns every block. Allocations are 8-byte aligned.
+    # (S1 of the memory-model port: threading scaffolding. Allocators still malloc
+    # until later sub-steps redirect them, so arena_alloc is defined but unused.)
+    out = out + "typedef struct ABlk { struct ABlk* next; size_t used, cap; char* mem; } ABlk;\n"
+    out = out + "typedef struct { ABlk* head; size_t blocksz; } Arena;\n"
+    out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; return a; }\n"
+    out = out + "static Arena arena_child(Arena* p) { return arena_new(p->blocksz); }\n"
+    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
+    out = out + "static void arena_free(Arena* a) { ABlk* b = a->head; while (b) { ABlk* nx = b->next; free(b->mem); free(b); b = nx; } a->head = 0; }\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
     out = out + "static char* scopy(const char* s) { size_t n = strlen(s) + 1; char* r = malloc(n); memcpy(r, s, n); return r; }\n"
@@ -2679,7 +2697,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "")
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
