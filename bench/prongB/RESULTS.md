@@ -193,8 +193,16 @@ never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
   it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
   Hier win on both axes and binary-trees to a Hier win on time. The wall-time
   gap to Koka is closed (Hier now leads on both workloads' time).
-- Remaining Hier improvement target: a **compact node representation** —
-  Koka's tighter cell layout is the sole reason it still holds the memory lead
-  on binary-trees (14 vs 33 MB) and ties on tree-rewrite. This is the same
-  target prong-B's compiler profiling deprioritized for the *self-compile*
-  workload (where it was ~2% of time), but it is the live lever here.
+- **Compact node representation: DONE** (commit 0667eec) — an enum value is now
+  a pointer to one `{ tag; union of variant fields }` cell (one allocation per
+  node, fields inline, nullary variants share a static singleton) instead of a
+  `{tag, void* payload}` descriptor + a separately-allocated payload. With
+  8-byte arena alignment a `Tree` node dropped 32→24 B, cutting binary-trees
+  33→25 MB.
+- Remaining binary-trees memory gap (Hier 25 MB vs Koka 14 MB) is **structural,
+  not node width**: Koka's Perceus frees the depth-19 *stretch* tree the instant
+  its refcount hits zero, so only the long-lived tree is retained; the arena
+  holds the stretch tree until its scope exits. The only further node-level
+  lever is pointer-tagging the tag word (24→16 B/node, ~25→~17 MB) — risky
+  (fragile tagged pointers vs the current safe singletons), and it still would
+  not reach Koka's 14 MB, since the gap is the retained stretch tree.
