@@ -460,7 +460,24 @@ fixpoint.
         transient-arena reuse bug. `resolve_nt` returns `ty + ""` (a fresh copy)
         to dodge it; the underlying bug remains to be fixed in `src/hierc.c`.
         (Functions returning a *field* of the by-value struct are unaffected.)
-      Remaining failures: Option/Result + `or_return` (6), tuples, slices,
-      `float_maps`, `enums`/`maps`/`match_reuse`/`ctor_move` (parser gaps), and
-      `aggregates`/`projections` (nested arrays `[][int]`).
+      - **3F**: Option/Result + `or_return` (14 → 19/29). Designed around a
+        **uniform boxed** representation — `HOption {tag; void* val}` /
+        `HResult {tag; void* ok, err}`, single C types, not monomorphized. A
+        `Some(x)`/`Ok(v)`/`Err(e)` boxes its payload (`hbox(sizeof(T),(T[]){x})`
+        with `T = typeof(arg)`), so **construction never needs context typing**;
+        `None` is type-free (`hnone()`). The only T-dependent site is the match
+        arm, where T comes from the scrutinee's static type. `match` branches on
+        `is_option`/`is_result` to a value-type dispatch reading the box
+        (`*(T*)(scrut.val)`). Borrow-vs-copy falls out free: a `Some(xs)` binding
+        copies the value-struct (own len, shared buffer), so a `push` into it
+        can't reach the scrutinee. Added the `name : Type = expr` typed decl and
+        the `or_return` postfix (unwrap Ok / propagate Err via the uniform
+        HResult). Also made match-arm payload parens optional (`None:`). Cleared
+        `options`, `results`, `or_return`, `optres_borrow` (+ a no-payload enum
+        test). Deferred: `option_fields` (needs struct `==`), `option_arrays`
+        (needs `[Option(...)]` element-name mangling).
+      Remaining failures: tuples, slices, `float_maps`, struct `==`
+      (`option_fields`, `aggregates`), nested/Option-element arrays
+      (`projections`, `option_arrays`, `aggregates`), and `maps`/`match_reuse`/
+      `ctor_move`/`enums` parser gaps.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

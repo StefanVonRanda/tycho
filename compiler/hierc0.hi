@@ -240,6 +240,8 @@ enum Stmt:
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
     SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
     SExpr(Expr)              # bare expression statement, e.g. a call `f(x)`
+    STypedDecl(string, string, Expr)   # `name : Type = expr` (annotation fixes the type)
+    SOrReturn(string, Expr)  # `name := result_expr or_return` (unwrap Ok or propagate Err)
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
 
 struct Param:
@@ -522,7 +524,16 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         pos = pos + 1
         if toks[pos].kind == TWalrus:
             pos = pos + 1
-            return SDecl(name, parse_expr(toks, &pos))
+            rhs := parse_expr(toks, &pos)
+            if toks[pos].kind == TIdent and toks[pos].text == "or_return":
+                pos = pos + 1
+                return SOrReturn(name, rhs)
+            return SDecl(name, rhs)
+        elif toks[pos].kind == TColon:           # `name : Type = expr` typed decl
+            pos = pos + 1
+            ty := parse_type(toks, &pos)
+            expect(toks, &pos, TEq)
+            return STypedDecl(name, ty, parse_expr(toks, &pos))
         elif toks[pos].kind == TEq:
             pos = pos + 1
             return SAssign(name, parse_expr(toks, &pos))
@@ -577,6 +588,18 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
         return "float"
     elif name == "string":
         return "str"
+    elif name == "Option":
+        expect(toks, &pos, TLParen)
+        t := parse_type(toks, &pos)
+        expect(toks, &pos, TRParen)
+        return "Option(" + t + ")"
+    elif name == "Result":
+        expect(toks, &pos, TLParen)
+        t := parse_type(toks, &pos)
+        expect(toks, &pos, TComma)
+        e := parse_type(toks, &pos)
+        expect(toks, &pos, TRParen)
+        return "Result(" + t + "," + e + ")"
     else:
         return name                              # a struct or enum type name
 
@@ -660,19 +683,20 @@ fn parse_match(toks: [Token], pos: inout int) -> Stmt:
             push(variants, toks[pos].text)
             pos = pos + 1
             binds := []string
-            expect(toks, &pos, TLParen)
-            if toks[pos].kind != TRParen:
-                if toks[pos].kind != TIdent:
-                    die("parse: expected a binding name")
-                push(binds, toks[pos].text)
+            if toks[pos].kind == TLParen:        # payload list is optional (e.g. `None:`)
                 pos = pos + 1
-                for toks[pos].kind == TComma:
-                    pos = pos + 1
+                if toks[pos].kind != TRParen:
                     if toks[pos].kind != TIdent:
                         die("parse: expected a binding name")
                     push(binds, toks[pos].text)
                     pos = pos + 1
-            expect(toks, &pos, TRParen)
+                    for toks[pos].kind == TComma:
+                        pos = pos + 1
+                        if toks[pos].kind != TIdent:
+                            die("parse: expected a binding name")
+                        push(binds, toks[pos].text)
+                        pos = pos + 1
+                expect(toks, &pos, TRParen)
             expect(toks, &pos, TColon)
             push(allbinds, binds)
             push(bodies, parse_block(toks, &pos))
@@ -824,6 +848,44 @@ fn is_map(ty: string) -> bool:
 fn is_cmp(op: string) -> bool:
     return op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">="
 
+# Option(T)/Result(T,E) types are stored as their normalized source string.
+fn has_prefix(s: string, p: string) -> bool:
+    if len(s) < len(p):
+        return false
+    return substr(s, 0, len(p)) == p
+
+fn is_option(ty: string) -> bool:
+    return has_prefix(ty, "Option(")
+
+fn is_result(ty: string) -> bool:
+    return has_prefix(ty, "Result(")
+
+fn option_inner(ty: string) -> string:            # "Option(T)" -> "T"
+    return substr(ty, 7, len(ty) - 1)
+
+# index of the top-level comma in a Result inner "T,E" (depth-aware over ()[])
+fn top_comma(s: string) -> int:
+    depth := 0
+    i := 0
+    for i < len(s):
+        c := s[i]
+        if c == 40 or c == 91:
+            depth = depth + 1
+        elif c == 41 or c == 93:
+            depth = depth - 1
+        elif c == 44 and depth == 0:
+            return i
+        i = i + 1
+    return -1
+
+fn result_ok(ty: string) -> string:               # "Result(T,E)" -> "T"
+    inner := substr(ty, 7, len(ty) - 1)
+    return substr(inner, 0, top_comma(inner))
+
+fn result_err(ty: string) -> string:               # "Result(T,E)" -> "E"
+    inner := substr(ty, 7, len(ty) - 1)
+    return substr(inner, top_comma(inner) + 1, len(inner))
+
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
 # the C compiler already did), so codegen resolves them to the underlying type.
 fn is_newtype(ctx: Ctx, name: string) -> bool:
@@ -864,6 +926,10 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "Arr_" + elem_ty(ty) + " "
     if is_map(ty):                                # {str:int} -> Map_str_int
         return "Map_str_int "
+    if is_option(ty):
+        return "HOption "
+    if is_result(ty):
+        return "HResult "
     if is_enum(ctx, ty):                          # enum value -> pointer to node
         return ty + "* "
     return ty + " "                              # struct type: its own typedef
@@ -972,6 +1038,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EStr(s):
             return "str"
         EVar(name):
+            if name == "None":
+                return "Option()"
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(ctx, vt)
         EField(base, fld):
@@ -1003,6 +1071,12 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         ECall(name, args):
             if name == "map_set":                 # map_set returns its first arg's map type
                 return type_of(args[0], names, types, ctx)
+            if name == "Some":
+                return "Option(" + type_of(args[0], names, types, ctx) + ")"
+            if name == "Ok":
+                return "Result(" + type_of(args[0], names, types, ctx) + ",)"
+            if name == "Err":
+                return "Result(," + type_of(args[0], names, types, ctx) + ")"
             return resolve_nt(ctx, sig_ret(ctx, name))
 
 fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
@@ -1024,6 +1098,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EStr(s):
             return "\"" + s + "\""
         EVar(name):
+            if name == "None":
+                return "hnone()"
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + name + ")"
             return name
@@ -1088,6 +1164,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
+            if name == "Some":                    # box the payload (type known from the arg)
+                ct := cty(ctx, type_of(args[0], names, types, ctx))
+                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
+            if name == "Ok":
+                ct := cty(ctx, type_of(args[0], names, types, ctx))
+                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
+            if name == "Err":
+                ce := cty(ctx, type_of(args[0], names, types, ctx))
+                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
             if is_newtype(ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
@@ -1226,6 +1311,21 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return "    return;\n"
         SExpr(e):
             return "    " + gen_expr(e, names, types, ctx) + ";\n"
+        STypedDecl(name, ty, e):                  # annotation fixes the var's type
+            code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            push(names, name)
+            push(types, ty)
+            return code
+        SOrReturn(name, e):                       # unwrap Ok, or propagate Err upward
+            rty := type_of(e, names, types, ctx)
+            ct := cty(ctx, result_ok(rty))
+            tmp := "_or_" + name
+            code := "    HResult " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            code = code + "    if (" + tmp + ".tag == 0) return " + tmp + ";\n"
+            code = code + "    " + ct + name + " = *(" + ct + "*)(" + tmp + ".ok);\n"
+            push(names, name)
+            push(types, result_ok(rty))
+            return code
         SIf(cond, then_body, else_body):
             out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + gen_block(then_body, names, types, ctx) + "    }"
             if len(else_body) > 0:
@@ -1241,7 +1341,10 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             push(bt, "int")
             return header + gen_block(body, bn, bt, ctx) + "    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
-            sc := gen_expr(subj, names, types, ctx)   # subj is a simple place in practice
+            sty := type_of(subj, names, types, ctx)
+            sc := gen_expr(subj, names, types, ctx)   # subj is a simple place / pure call
+            if is_option(sty) or is_result(sty):
+                return gen_match_optres(ctx, sty, sc, variants, allbinds, bodies, names, types)
             out := ""
             i := 0
             for i < len(variants):
@@ -1306,6 +1409,43 @@ fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
         out = out + "    " + cty(ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
         i = i + 1
     return out + "};\n"
+
+# Match over a boxed Option/Result value. Some/Ok -> tag 1, None/Err -> tag 0.
+# A bound payload is read back from the box: `T x = *(T*)(scrut.val)` (Some),
+# `.ok`/`.err` for Result. `sc` is re-evaluated per use; scrutinees are places
+# or pure calls in practice (no temp/counter needed).
+fn gen_match_optres(ctx: Ctx, sty: string, sc: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
+    out := ""
+    i := 0
+    for i < len(variants):
+        vname := variants[i]
+        binds := allbinds[i]
+        tag := 0
+        if vname == "Some" or vname == "Ok":
+            tag = 1
+        kw := " else if ("
+        if i == 0:
+            kw = "    if ("
+        out = out + kw + sc + ".tag == " + str(tag) + ") {\n"
+        bn := names
+        bt := types
+        if len(binds) > 0:
+            bty := option_inner(sty)
+            fld := "val"
+            if is_result(sty):
+                if vname == "Ok":
+                    bty = result_ok(sty)
+                    fld = "ok"
+                else:
+                    bty = result_err(sty)
+                    fld = "err"
+            ct := cty(ctx, bty)
+            out = out + "    " + ct + binds[0] + " = *(" + ct + "*)(" + sc + "." + fld + ");\n"
+            push(bn, binds[0])
+            push(bt, bty)
+        out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
+        i = i + 1
+    return out + "\n"
 
 # Deep copy for a heap-bearing struct: shallow-copy scalars, then dup each
 # heap field (string -> fresh bytes, array -> Arr_T_copy, nested heap struct ->
@@ -1403,6 +1543,13 @@ fn preamble() -> string:
     out = out + "static char* hi_chr(long n) { char* r = malloc(2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static char* hi_read_all(void) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
+    out = out + "typedef struct { int tag; void* val; } HOption;\n"
+    out = out + "typedef struct { int tag; void* ok; void* err; } HResult;\n"
+    out = out + "static void* hbox(unsigned long n, void* src) { void* p = malloc(n); memcpy(p, src, n); return p; }\n"
+    out = out + "static HOption hsome(void* v) { HOption o; o.tag = 1; o.val = v; return o; }\n"
+    out = out + "static HOption hnone(void) { HOption o; o.tag = 0; o.val = 0; return o; }\n"
+    out = out + "static HResult hok(void* v) { HResult r; r.tag = 1; r.ok = v; r.err = 0; return r; }\n"
+    out = out + "static HResult herr(void* v) { HResult r; r.tag = 0; r.ok = 0; r.err = v; return r; }\n"
     return out
 
 # One monomorphized value-array family per element type T: Arr_T holds a

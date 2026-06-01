@@ -1,0 +1,66 @@
+# or_return: unwrap an Ok in place, or short-circuit the enclosing function by
+# returning its Err. The enclosing fn must return Result(_, E) with the same E.
+
+fn parse_digit(c: string) -> Result(int, string):
+    if c == "1":
+        return Ok(1)
+    if c == "2":
+        return Ok(2)
+    return Err("not a digit: " + c)
+
+# chain: each or_return binds the Ok int, or propagates the Err upward
+fn add_two(a: string, b: string) -> Result(int, string):
+    x := parse_digit(a) or_return
+    y := parse_digit(b) or_return
+    return Ok(x + y)
+
+# heap ok-type: the Ok payload owns a buffer, propagated/yielded the same way
+fn first_two(xs: [int]) -> Result([int], string):
+    if len(xs) < 2:
+        return Err("too short")
+    r := []int
+    push(r, xs[0])
+    push(r, xs[1])
+    return Ok(r)
+
+fn doubled_head(xs: [int]) -> Result([int], string):
+    h := first_two(xs) or_return
+    out := []int
+    for i in range(len(h)):
+        push(out, h[i] * 2)
+    return Ok(out)
+
+# or_return inside a nested block: the short-circuit must free the if-block
+# arena too, not just _scope
+fn pick(flag: bool, a: string) -> Result(int, string):
+    if flag:
+        v := parse_digit(a) or_return
+        return Ok(v * 10)
+    return Ok(0)
+
+fn show(r: Result(int, string)) -> string:
+    match r:
+        Ok(v):
+            return "ok:" + str(v)
+        Err(e):
+            return "err:" + e
+
+fn main():
+    print(show(add_two("1", "2")) + "\n")    # ok:3
+    print(show(add_two("1", "9")) + "\n")    # err: second arg propagates
+    print(show(add_two("7", "2")) + "\n")    # err: first arg propagates
+
+    match doubled_head([5, 6, 7]):
+        Ok(ys):
+            print("doubled=" + str(ys[0]) + "," + str(ys[1]) + "\n")
+        Err(e):
+            print("err:" + e + "\n")
+    match doubled_head([5]):
+        Ok(ys):
+            print("len=" + str(len(ys)) + "\n")
+        Err(e):
+            print("short_err=" + e + "\n")
+
+    print(show(pick(true, "2")) + "\n")      # ok:20
+    print(show(pick(true, "x")) + "\n")      # err propagates out of the if
+    print(show(pick(false, "x")) + "\n")     # ok:0

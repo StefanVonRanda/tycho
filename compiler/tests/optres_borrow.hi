@@ -1,0 +1,36 @@
+# Match-arm payload borrow extended to Option/Result. A read-only Some/Ok/Err
+# binding borrows the scrutinee's value (no deep copy); a binding mutated in
+# the arm (push) keeps its owning copy so the write can't reach the scrutinee.
+
+fn first_or_zero(o: Option([int])) -> int:
+    match o:
+        Some(xs):
+            return xs[0]            # read-only -> borrow
+        None:
+            return 0
+
+fn grow_ok(r: Result([int], string)) -> int:
+    match r:
+        Ok(xs):
+            push(xs, 99)            # MUTATED -> deep copy, not borrow
+            return len(xs)
+        Err(e):
+            return 0
+
+fn main():
+    o := Some([10, 20, 30])
+    print("first=" + str(first_or_zero(o)) + "\n")        # 10
+
+    r : Result([int], string) = Ok([1, 2, 3])
+    rsnap := r
+    print("grown=" + str(grow_ok(r)) + "\n")              # 4 (push into a copy)
+    match r:
+        Ok(xs):
+            print("r_len=" + str(len(xs)) + "\n")          # 3, NOT 4
+        Err(e):
+            print("err\n")
+    match rsnap:
+        Ok(xs):
+            print("snap_len=" + str(len(xs)) + "\n")       # 3
+        Err(e):
+            print("err\n")
