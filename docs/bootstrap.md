@@ -246,8 +246,12 @@ fixpoint.
       output matches the C compiler. Dogfooding already paid off: it surfaced a
       real C-compiler bug (recursive enum with an array-of-itself payload emitted
       its type after the array typedef that used it — fixed, commit d8b3934,
-      `tests/recursive_enum_array.hi`). Still to add: user functions + params +
-      calls, then strings — toward the full Stage-1 subset.
+      `tests/recursive_enum_array.hi`). User functions, typed int params, calls,
+      and `return` now work too (commit 429d6d1) — `compiler/tests/functions.hi`
+      compiles a recursive fib and nested calls, matching the C compiler. ~340
+      lines of Hier. Last Stage-1 piece: string literals + concat, which needs
+      hierc0 to emit the embedded Hier runtime (hier_str_*) instead of plain
+      stdio.
 - [ ] **Stage 2** — grow to cover `examples/*.hi`
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
