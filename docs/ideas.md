@@ -158,8 +158,17 @@ cluster of languages, and the differences are the interesting part:
    fully realized — reuse is proven from value semantics + lexical arenas
    across binds, destructures, constructions, and loop-carried rebuilds, with
    no reference counts.
-9. **SOA arrays** (Odin/Jai) — `#soa [N]Struct` cache-friendly layout; fits the
-   value+arena model and the performance narrative.
+9. **SOA arrays** (Odin/Jai) — ✅ *Foundational core implemented.* `soa [Point]`
+   is a struct-of-arrays: one growable arena buffer per struct field + a shared
+   len/cap, instead of an array of records — cache-friendly when a loop touches
+   one field across all elements. (`#soa` is impossible — `#` is the comment
+   char; the type is `soa [Struct]`, an empty value `soa []Struct`, matching the
+   `[int]`/`[]int` convention.) Core ops: empty literal, `push` (grows each
+   field buffer in the arena + scatters, deep-copying heap fields), `len`, field
+   read `a[i].f`, field write `a[i].f = v` — all bounds-checked like the AoS
+   arrays (`tests/soa.hi`). Still open: whole-element gather `p := a[i]`, `==`,
+   slices, pass/return-by-value, nesting, and SOA in hierc0's self-hosting
+   subset (so `soa.hi` is skipped in the fixpoint differential for now).
 
 ### Tier 4 — large or philosophy-divergent (note, don't rush)
 

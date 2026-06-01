@@ -425,7 +425,8 @@ static Type tup_elem(Type t, int i) { return g_tuptypes[TUP_ID(t)].elems[i]; }
 typedef struct { char *name; Type under; } NewtypeDef;
 static NewtypeDef g_newtypes[128];
 static int g_nnewtypes = 0;
-#define IS_NEWTYPE(t)  ((t) >= T_NT_BASE)
+#define T_SOA_BASE  28672  /* struct-of-arrays types `soa [Struct]`, above newtypes */
+#define IS_NEWTYPE(t)  ((t) >= T_NT_BASE && (t) < T_SOA_BASE)
 #define NT_ID(t)       ((int)((t) - T_NT_BASE))
 #define NT_TYPE(id)    (T_NT_BASE + (id))
 static int newtype_find(const char *name) {
@@ -436,6 +437,24 @@ static int newtype_find(const char *name) {
 static Type nt_under(Type t) { return g_newtypes[NT_ID(t)].under; }
 /* the underlying type seen through any newtype (else the type itself) */
 static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
+
+/* SOA arrays: `soa [Struct]` is stored struct-of-arrays — one growable arena
+ * buffer per struct field plus a shared len/cap — instead of one array of
+ * records. Cache-friendly when a loop touches one field across all elements.
+ * Interned per element struct type (a value is by-value, like the AoS arrays). */
+typedef struct { Type st; } SoaType;            /* st = the element struct type */
+static SoaType g_soatypes[256];
+static int g_nsoatypes = 0;
+#define IS_SOA(t)   ((t) >= T_SOA_BASE)
+#define SOA_ID(t)   ((int)((t) - T_SOA_BASE))
+static Type soa_of(Type st) {                   /* find-or-create soa [st] */
+    for (int i = 0; i < g_nsoatypes; i++)
+        if (g_soatypes[i].st == st) return T_SOA_BASE + i;
+    if (g_nsoatypes >= 256) { fprintf(stderr, "hierc: too many soa types\n"); exit(1); }
+    g_soatypes[g_nsoatypes].st = st;
+    return T_SOA_BASE + g_nsoatypes++;
+}
+static Type soa_struct(Type t) { return g_soatypes[SOA_ID(t)].st; }
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
@@ -454,6 +473,7 @@ static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
  * a field's struct type is fully known here — no cycles, recursion ends. */
 static int type_is_heap(Type t) {
     if (IS_NEWTYPE(t)) return type_is_heap(nt_under(t));   /* same rep as its base */
+    if (IS_SOA(t)) return 1;                               /* holds heap field-array pointers */
     if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_RES(t)) return type_is_heap(res_ok(t)) || type_is_heap(res_err(t));
@@ -485,6 +505,7 @@ static const char *c_type(Type t) {
     if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
+    if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
         case T_INT:          return "long ";
         case T_FLOAT:        return "double ";
@@ -510,6 +531,7 @@ static const char *type_name(Type t) {
         return sfmt("%s)", s);
     }
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
+    if (IS_SOA(t))    return sfmt("soa [%s]", type_name(soa_struct(t)));
     switch (t) {
         case T_NONE:         return "None";
         case T_OK_PARTIAL:   return "Ok(...)";
@@ -622,6 +644,14 @@ static int accept(Parser *ps, TokKind k) {
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
+    if (t->kind == TK_IDENT && !strcmp(t->text, "soa")) {   /* soa [Struct] */
+        ps->p++;
+        eat(ps, TK_LBRACKET, "'[' after soa");
+        Type el = parse_type(ps);
+        eat(ps, TK_RBRACKET, "']'");
+        if (!IS_STRUCT(el)) die_at(t->line, "soa requires a struct element type, e.g. soa [Point]");
+        return soa_of(el);
+    }
     if (t->kind == TK_LPAREN) {          /* tuple type (T1, ..., Tn), n >= 2 */
         ps->p++;
         Type elems[8]; int n = 0;
@@ -774,6 +804,15 @@ static Expr *parse_primary(Parser *ps) {
     }
     if (t->kind == TK_IDENT) {
         ps->p++;
+        if (!strcmp(t->text, "soa")) {     /* soa []Struct : an empty SOA literal */
+            eat(ps, TK_LBRACKET, "'[' after soa");
+            eat(ps, TK_RBRACKET, "']' (an empty soa literal is `soa []Struct`)");
+            Type el = parse_type(ps);
+            if (!IS_STRUCT(el)) die_at(t->line, "soa requires a struct element type, e.g. soa []Point");
+            Expr *e = new_expr(E_ARRLIT, t->line);
+            e->ival = soa_of(el);          /* empty: type carried to the resolver */
+            return e;
+        }
         if (!strcmp(t->text, "None"))      /* the bare None literal */
             return new_expr(E_NONE, t->line);
         if (!strcmp(t->text, "Some")) {    /* Some(value) */
@@ -1381,7 +1420,7 @@ static Type g_fn_ret = T_VOID;   /* return type of the proc currently being reso
 static int is_lvalue(Expr *e) {
     if (e->kind == E_IDENT) return 1;
     if (e->kind == E_FIELD) return is_lvalue(e->lhs);
-    if (e->kind == E_INDEX) return IS_ARRC(e->lhs->type) && is_lvalue(e->lhs);
+    if (e->kind == E_INDEX) return (IS_ARRC(e->lhs->type) || IS_SOA(e->lhs->type)) && is_lvalue(e->lhs);
     return 0;
 }
 
@@ -1483,6 +1522,7 @@ static Type resolve_expr(Expr *e) {
             if (resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "index must be int");
             if (is_array(bt)) return e->type = arr_elem(bt);   /* array element */
+            if (IS_SOA(bt)) return e->type = soa_struct(bt);   /* soa element (only valid under .field) */
             if (bt == T_STRING) return e->type = T_INT;        /* string byte */
             die_at(e->line, "can only index an array or a string");
         }
@@ -1587,8 +1627,8 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (!is_array(at_) && at_ != T_STRING && !is_map(at_))
-                    die_at(e->line, "len(...) takes an array, a string, or a map");
+                if (!is_array(at_) && at_ != T_STRING && !is_map(at_) && !IS_SOA(at_))
+                    die_at(e->line, "len(...) takes an array, a string, a map, or a soa");
                 return e->type = T_INT;
             }
             /* map builtins ([string: int] or [string: float]). The value type
@@ -1647,8 +1687,8 @@ static Type resolve_expr(Expr *e) {
                 if (root->kind != E_IDENT)
                     die_at(e->line, "push's first argument must be an array variable or field");
                 Type arrt = resolve_expr(e->args[0]);
-                if (!is_array(arrt))
-                    die_at(e->line, "push's first argument must be an array");
+                if (!is_array(arrt) && !IS_SOA(arrt))
+                    die_at(e->line, "push's first argument must be an array or soa");
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot push through this expression — the array must be a "
                                     "variable, field, or composite-array element");
@@ -1659,7 +1699,7 @@ static Type resolve_expr(Expr *e) {
                 if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
-                Type want = arr_elem(arrt);
+                Type want = IS_SOA(arrt) ? soa_struct(arrt) : arr_elem(arrt);
                 if (resolve_exp(e->args[1], want) != want)   /* coerces a None value */
                     die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
@@ -2365,6 +2405,11 @@ static char *copy_into(Type t, const char *arena, char *val) {
                 return sfmt("hier_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("hier_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
+            if (IS_SOA(t)) {   /* foundational core: no whole-soa copy/pass/return yet */
+                fprintf(stderr, "hierc: a soa value cannot yet be copied, passed, or returned "
+                                "by value -- the current core supports push and a[i].field in place\n");
+                exit(1);
+            }
             return val;   /* int/bool/float/pure struct: nothing to re-home */
     }
 }
@@ -2550,6 +2595,8 @@ static char *gen_call(Expr *e, const char *arena) {
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_lvalue(e->args[0], arena);   /* lvalue so a projected `arr[i].xs` is the buffer slot */
         char *v = gen_expr(e->args[1], arena);
+        if (IS_SOA(e->args[0]->type))   /* struct-of-arrays push: grow each field buffer + scatter */
+            return sfmt("Soa%d_push(%s, &(%s), %s)", SOA_ID(e->args[0]->type), owner, arr, v);
         /* push has the same (owner, &arr, v) shape for every element type */
         return sfmt("hier_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
     }
@@ -2687,6 +2734,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
         case E_CALL: return gen_call(e, arena);
         case E_INDEX: {
+            if (IS_SOA(e->lhs->type))   /* bare a[i] gather not in the core; a[i].field is handled in E_FIELD */
+                die_at(e->line, "a soa element `a[i]` cannot be read as a whole value yet — use a[i].field");
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING)
@@ -2716,6 +2765,8 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_ARRLIT: {
             /* GNU statement-expression so a literal is a single value */
             int id = g_blk++;
+            if (IS_SOA(e->type))   /* empty soa literal `soa []Struct` (core supports empty only) */
+                return sfmt("(Soa%d){0}", SOA_ID(e->type));
             if (is_map(e->type)) {
                 /* map literal: build empty in `arena`, then put each pair. The
                  * runtime put copies the key bytes into `arena`. args interleave
@@ -2742,6 +2793,18 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
         }
         case E_FIELD: {
+            if (e->lhs->kind == E_INDEX && IS_SOA(e->lhs->lhs->type)) {
+                /* soa element field: index the contiguous field buffer, bounds-
+                 * checked via Soa<id>_bound. This is a plain array subscript, so
+                 * it is also a valid lvalue for `a[i].field = v` (S_FIELDSET). */
+                Type st = soa_struct(e->lhs->lhs->type);
+                StructDef *sd = &g_structs[STRUCT_ID(st)];
+                int fi = 0; while (fi < sd->nfields && strcmp(sd->fields[fi].name, e->sval)) fi++;
+                char *sl = gen_lvalue(e->lhs->lhs, arena);   /* the soa place (a variable/field) */
+                char *ix = gen_expr(e->lhs->rhs, arena);
+                return sfmt("((%s).f%d[Soa%d_bound(&(%s), %s)])",
+                            sl, fi, SOA_ID(e->lhs->lhs->type), sl, ix);
+            }
             char *b = gen_expr(e->lhs, arena);
             return sfmt("((%s).f_%s)", b, e->sval);
         }
@@ -2850,8 +2913,18 @@ static char *return_frees(void) {
  * with no pointer ever surfaced in Hier. Only ARRC bases are projected
  * (is_lvalue guarantees it); other kinds fall back to gen_expr. */
 static char *gen_lvalue(Expr *e, const char *arena) {
-    if (e->kind == E_FIELD)
+    if (e->kind == E_FIELD) {
+        if (e->lhs->kind == E_INDEX && IS_SOA(e->lhs->lhs->type)) {   /* soa[i].field place */
+            Type st = soa_struct(e->lhs->lhs->type);
+            StructDef *sd = &g_structs[STRUCT_ID(st)];
+            int fi = 0; while (fi < sd->nfields && strcmp(sd->fields[fi].name, e->sval)) fi++;
+            char *sl = gen_lvalue(e->lhs->lhs, arena);
+            char *ix = gen_expr(e->lhs->rhs, arena);
+            return sfmt("((%s).f%d[Soa%d_bound(&(%s), %s)])",
+                        sl, fi, SOA_ID(e->lhs->lhs->type), sl, ix);
+        }
         return sfmt("((%s).f_%s)", gen_lvalue(e->lhs, arena), e->sval);
+    }
     if (e->kind == E_INDEX)
         return sfmt("(*hier_arr_C%d_ptr(&(%s), %s))",
                     ARRC_ID(e->lhs->type), gen_lvalue(e->lhs, arena),
@@ -3731,6 +3804,34 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
+    }
+    /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
+     * field (named f<idx>) plus a shared len/cap. push grows every buffer in the
+     * arena (arenas never realloc — allocate bigger + copy, like the AoS push)
+     * and scatters the struct's fields, deep-copying heap fields via copy_into.
+     * Emitted after struct bodies (S_<name> is complete) and before fn bodies. */
+    for (int i = 0; i < g_nsoatypes; i++) {
+        StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
+        const char *sn = sd->name;
+        fprintf(o, "typedef struct {");
+        for (int f = 0; f < sd->nfields; f++)
+            fprintf(o, " %s*f%d;", c_type(sd->fields[f].type), f);
+        fprintf(o, " long len; long cap; } Soa%d;\n", i);
+        fprintf(o, "static long Soa%d_bound(Soa%d *s, long i) { if (i < 0 || i >= s->len) { "
+                   "fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, s->len); exit(1); } return i; }\n", i, i);
+        fprintf(o, "static void Soa%d_push(Arena *a, Soa%d *s, S_%s v) {\n", i, i, sn);
+        fprintf(o, "    if (s->len == s->cap) {\n        long nc = s->cap ? s->cap * 2 : 4;\n");
+        for (int f = 0; f < sd->nfields; f++) {
+            const char *ct = c_type(sd->fields[f].type);
+            fprintf(o, "        %s*n%d = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); "
+                       "for (long i = 0; i < s->len; i++) n%d[i] = s->f%d[i]; s->f%d = n%d;\n",
+                    ct, f, ct, ct, f, f, f, f);
+        }
+        fprintf(o, "        s->cap = nc;\n    }\n");
+        for (int f = 0; f < sd->nfields; f++)
+            fprintf(o, "    s->f%d[s->len] = %s;\n", f,
+                    copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
+        fprintf(o, "    s->len++;\n}\n\n");
     }
     /* (8) Option copy bodies (typedefs already emitted in step 3). A copy fn is
      * emitted only for a heap-valued Option; it re-homes the value when present.

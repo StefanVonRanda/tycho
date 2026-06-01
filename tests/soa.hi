@@ -1,0 +1,48 @@
+# SOA arrays (struct-of-arrays), foundational core: `soa [Struct]` is stored as
+# one growable arena buffer per field + a shared len/cap, instead of an array of
+# records. Core ops: empty literal `soa []Struct`, push, len, field read
+# `a[i].f`, field write `a[i].f = v`. Bounds-checked like the AoS arrays.
+# Deterministic, so the differential harness asserts native and ASan/UBSan
+# builds agree byte-for-byte. (Whole-element gather `p := a[i]`, ==, slices, and
+# pass/return-by-value are deferred to later increments.)
+
+struct Particle:
+    x: int
+    y: int
+    vx: int
+    vy: int
+
+fn main():
+    ps := soa []Particle
+    i := 0
+    for i < 5:
+        push(ps, Particle(i, i * 10, 1, 2))
+        i = i + 1
+    print("len=" + str(len(ps)) + "\n")          # 5
+
+    # field-wise update across all elements (the cache-win access pattern):
+    # advance each particle by its velocity, twice.
+    step := 0
+    for step < 2:
+        i = 0
+        for i < len(ps):
+            ps[i].x = ps[i].x + ps[i].vx
+            ps[i].y = ps[i].y + ps[i].vy
+            i = i + 1
+        step = step + 1
+
+    # read back x and y for each element
+    i = 0
+    sx := 0
+    sy := 0
+    for i < len(ps):
+        sx = sx + ps[i].x
+        sy = sy + ps[i].y
+        i = i + 1
+    # x: each started i, +1 twice -> i+2; sum over i=0..4 = 10 + 5*2 = 20
+    # y: each started i*10, +2 twice -> i*10+4; sum = 100 + 5*4 = 120
+    print("sumx=" + str(sx) + " sumy=" + str(sy) + "\n")   # 20 120
+
+    # a direct field write to one element
+    ps[2].x = 999
+    print("ps2x=" + str(ps[2].x) + " ps0x=" + str(ps[0].x) + "\n")   # 999 2

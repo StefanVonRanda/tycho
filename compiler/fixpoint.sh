@@ -23,6 +23,10 @@ echo "ok   B == C : hierc0 reproduces itself byte-identically ($(wc -l <"$T/cA.c
 fail=0
 for f in tests/*.hi examples/*.hi; do
     nm=$(basename "$f")
+    # soa.hi exercises SOA arrays — a C-compiler feature not yet in hierc0's
+    # self-hosting subset, so B (hierc0) cannot compile it. (make test still
+    # runs it under ASan/UBSan.) The first test outside hierc0's coverage.
+    case "$nm" in soa.hi) continue;; esac
     ./hierc "$f" -o "$T/ref" >/dev/null 2>&1 || continue
     ref="$("$T/ref" </dev/null 2>/dev/null)"
     "$T/B" < "$f" > "$T/g.c" 2>/dev/null && $CC -O2 -o "$T/g" "$T/g.c" 2>/dev/null \
