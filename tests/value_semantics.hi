@@ -1,0 +1,64 @@
+# Adversarial value-semantics sweep — extends the borrow audit (tests/
+# borrow_alias.hi) to the rest of the copy-elision / reuse chain. Every
+# optimization that elides a deep copy (move-on-last-use, construction-arg
+# move, in-place string/map accumulators) is sound ONLY when its source is
+# provably dead or read-only. Each probe below forces a situation the
+# optimization must NOT mistake for safe: a value is aliased/snapshotted, then
+# one side is mutated, and BOTH sides are observed. The golden is the value-
+# semantics-correct answer; a guard that elides a copy it shouldn't prints the
+# corrupted value instead. Runs under ASan+UBSan via the differential harness.
+
+struct Box:
+    items: [int]
+    tag: string
+
+fn wrap(xs: [int], t: string) -> Box:
+    return Box(xs, t)
+
+fn main():
+    # 1. in-place string accumulator: a mid-loop snapshot must FREEZE, not
+    #    track the accumulator's subsequent in-place growth.
+    acc := ""
+    saved := ""
+    for i in range(1, 5):
+        acc = acc + str(i)
+        if i == 2:
+            saved = acc
+    print("1 acc=" + acc + " saved=" + saved + " (expect acc=1234 saved=12)\n")
+
+    # 2. in-place map accumulator: same, for map_set put-in-place.
+    counts := []string: int
+    snap := []string: int
+    for i in range(1, 4):
+        counts = map_set(counts, "k", i)
+        if i == 2:
+            snap = counts
+    print("2 counts=" + str(map_get(counts, "k", 0)) + " snap=" + str(map_get(snap, "k", 0)) + " (expect counts=3 snap=2)\n")
+
+    # 3. construction-arg move: mutating the source array after it was built
+    #    into Box must not change the stored value (move only if source dead).
+    a := [1, 2, 3]
+    t := wrap(a, "t")
+    a[0] = 99
+    print("3 t=" + str(t.items[0]) + " a=" + str(a[0]) + " (expect t=1 a=99)\n")
+
+    # 4. heap-struct value copy: `d := b1` is an independent deep copy; mutating
+    #    d's array element and string field must not touch b1.
+    b1 := Box([5, 6], "orig")
+    d := b1
+    d.items[0] = 77
+    d.tag = "changed"
+    print("4 b1=" + str(b1.items[0]) + " b1.tag=" + b1.tag + " (expect 5 orig)\n")
+
+    # 5. move-on-last-use guard: e is read AFTER `f := e`, so f must be a copy.
+    e := [10, 20]
+    f := e
+    f[0] = 88
+    print("5 e=" + str(e[0]) + " f=" + str(f[0]) + " (expect e=10 f=88)\n")
+
+    # 6. array literal stores its elements: `[inner, inner]` must deep-copy a
+    #    heap place element, so mutating the source after doesn't reach the array.
+    inner := [1, 2]
+    nested := [inner, inner]
+    inner[0] = 99
+    print("6 nested[0][0]=" + str(nested[0][0]) + " inner[0]=" + str(inner[0]) + " (expect 1 99)\n")

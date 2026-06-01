@@ -1253,6 +1253,24 @@ fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
         i = i + 1
     return out
 
+# Like gen_args, but for CONSTRUCTION (struct/enum/array literal): the argument
+# value is STORED in the aggregate and outlives the expression, so a heap place
+# argument must be deep-copied for value semantics — else the stored field
+# aliases the source's buffer, and mutating the source later corrupts the stored
+# value (`a := [..]; t := Box(a, ..); a[0] = 9` must leave t untouched). gen_rhs
+# copies only is_place heap args; fresh values / scalars / strings pass through.
+# Mirrors the tuple path (gen_rhs per element) and the C compiler's per-field
+# copy_into. (Found by tests/value_semantics.hi probe 3.)
+fn gen_store_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+    out := ""
+    i := 0
+    for i < len(args):
+        if i > 0:
+            out = out + ", "
+        out = out + gen_rhs(args[i], names, types, ctx)
+        i = i + 1
+    return out
+
 fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -1279,7 +1297,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
-            return "Arr_" + mangle(et) + "_from((" + cty(ctx, et) + "[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+            return "Arr_" + mangle(et) + "_from((" + cty(ctx, et) + "[]){" + gen_store_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
@@ -1361,21 +1379,21 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
-            if name == "Some":                    # box the payload (type known from the arg)
+            if name == "Some":                    # box the payload (deep-copy a place: it is stored)
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
+                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
             if name == "Ok":
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
+                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
             if name == "Err":
                 ce := cty(ctx, type_of(args[0], names, types, ctx))
-                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_expr(args[0], names, types, ctx) + "}))"
+                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
             if is_newtype(ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
-                return "mk_" + name + "(" + gen_args(args, names, types, ctx) + ")"
+                return "mk_" + name + "(" + gen_store_args(args, names, types, ctx) + ")"
             if is_struct(ctx, name):              # struct construction -> compound literal
-                return "(" + name + "){" + gen_args(args, names, types, ctx) + "}"
+                return "(" + name + "){" + gen_store_args(args, names, types, ctx) + "}"
             return name + "(" + gen_args(args, names, types, ctx) + ")"
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
