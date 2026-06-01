@@ -80,9 +80,11 @@ i.e. ord, `substr`, `split`, `find`, `+`, `len`, in-place append).
 
 **Soft / workarounds:**
 
-- **No `while`** — only `for ... in range`. The `S_WHILE` codegen node already
-  exists; only the keyword/parse is missing, so adding it is cheap. Otherwise
-  use recursion. Decide in Stage 0.
+- ~~No `while`~~ — **a `while` loop already exists**, spelled `for <cond>:`
+  (the condition-form `for`; `for i < n:` loops while the condition holds). The
+  earlier audit was wrong: the construct was there, just not under the `while`
+  keyword. Verified and locked by `tests/while_loop.hi` (incl. a string scan,
+  the lexer pattern). No new feature needed.
 - **`/` is float division**; no int `//` or `%`. Compilers need little
   arithmetic; add if a pass requires it.
 - **`str(bool)` unsupported** (`str` takes int/float only). Trivial add if
@@ -232,7 +234,10 @@ fixpoint.
 
 ## Status
 
-- [ ] **Stage 0** — enabling builtins (`read_all`, `chr`, error convention)
+- [x] **Stage 0** — enabling builtins: `read_all` + `chr` (commit 96444f6),
+      `die` error convention (135b4ff); `while` already exists as `for <cond>:`
+      (tests/while_loop.hi). The language can now express a source-to-source
+      compiler.
 - [ ] **Stage 1** — subset compiler `compiler/hierc0.hi`
 - [ ] **Stage 2** — grow to cover `examples/*.hi`
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
