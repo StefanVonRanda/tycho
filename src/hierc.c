@@ -3393,8 +3393,20 @@ static void gen_proc(FILE *o, Proc *pr) {
         Type pt = pr->params[i].type;
         /* an inout struct is a pointer to the caller's value — must NOT be
          * deep-copied (the whole point is to mutate the caller's). Only
-         * by-value heap struct params are copied for independence. */
-        if (IS_STRUCT(pt) && type_is_heap(pt) && !pr->params[i].is_inout) {
+         * by-value heap struct params are copied for independence.
+         *
+         * ...and only when the body actually MUTATES the param. A read-only
+         * heap struct param (the common case — e.g. the Ctx symbol table
+         * threaded through nearly every function) can borrow the caller's
+         * value directly: the caller outlives the call, the shallow C-by-value
+         * copy aliases the caller's heap fields, and with no mutation that
+         * aliasing is unobservable. A `return param` still deep-copies into
+         * _parent via the return path, so borrowing never dangles. This is the
+         * same borrow-iff-not-mutated rule already used for match-arm payloads.
+         * Eliminates the per-call full-context deep copy (gprof: 72.7k
+         * hier_copy_S_Ctx, the dominant residual cost). */
+        if (IS_STRUCT(pt) && type_is_heap(pt) && !pr->params[i].is_inout
+            && block_mutates(pr->body, pr->nbody, pr->params[i].name)) {
             indent(o, 1);
             fprintf(o, "h_%s = hier_copy_S_%s(&_scope, h_%s);\n",
                     pr->params[i].name, g_structs[STRUCT_ID(pt)].name, pr->params[i].name);
