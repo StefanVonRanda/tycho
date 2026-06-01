@@ -368,8 +368,13 @@ fixpoint.
         index-write through a value-copied struct's array field (`b.items[0] =
         99` leaves `a.items[0] == 1`) plus nested-struct and array-field
         isolation — verified differentially and by quoted output.
-      - Next gaps for `examples/*.hi`: `substr` (`accumulate_big.hi`),
-        `input()` (`hello.hi`), maps (`wordcount.hi`, `words.hi`),
-        `Option`/`Result` + `or_return`, tuples, `[struct-by-value]` arrays.
+      - **2J**: `substr` builtin (`substr(s,a,b)` → a self-contained C helper)
+        and string-aware `len` (`len(str)` → `strlen`, `len(arr)` → `.len`).
+        Fixture `accumulate_big.hi` passes (the O(n) in-place append is
+        invisible — hierc0's `sc`-based concat is O(n^2) but produces identical
+        output; 50000-char build completes fine).
+      - Next gaps for `examples/*.hi`: maps (`wordcount.hi`, `words.hi`),
+        `input()` (`hello.hi`), `Option`/`Result` + `or_return`, tuples,
+        `[struct-by-value]` arrays.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

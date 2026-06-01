@@ -840,6 +840,8 @@ fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
 fn sig_ret(ctx: Ctx, name: string) -> string:
     if name == "str":
         return "str"
+    if name == "substr":
+        return "str"
     if name == "len":
         return "int"
     if name == "input":
@@ -926,9 +928,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 et := elem_ty(type_of(args[0], names, types, ctx))
                 return "Arr_" + et + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "len":
+                if type_of(args[0], names, types, ctx) == "str":
+                    return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
                 return gen_expr(args[0], names, types, ctx) + ".len"
             if name == "str":
                 return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "substr":
+                return "substr(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "input":
                 die("codegen: input() not supported yet")
                 return ""
@@ -1177,6 +1183,7 @@ fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
+    out = out + "static char* substr(const char* s, long a, long b) { long n = b - a; char* r = malloc(n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     return out
 
 # One monomorphized value-array family per element type T: Arr_T holds a
