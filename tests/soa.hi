@@ -35,6 +35,16 @@ fn yn(b: bool) -> string:
         return "T"
     return "F"
 
+# a soa param is a read-only borrow; to mutate, copy it first (`local := ps`).
+# The returned copy is independent of the caller's soa (value semantics).
+fn doubled_x(ps: soa [Particle]) -> soa [Particle]:
+    local := ps
+    i := 0
+    for i < len(local):
+        local[i].x = local[i].x * 2
+        i = i + 1
+    return local
+
 fn main():
     ps := soa []Particle
     i := 0
@@ -92,3 +102,9 @@ fn main():
     print("slice len=" + str(len(sl)) + " sl0.x=" + str(sl[0].x) + " sl1.y=" + str(sl[1].y) + "\n")  # 2 1 4
     sl[0].x = 0 - 1
     print("slice indep: sl0.x=" + str(sl[0].x) + " q1.x=" + str(q[1].x) + "\n")   # -1 1
+
+    # read-only soa param: doubled_x copies then mutates the copy; the caller's
+    # soa is untouched (sound zero-copy borrow + copy-on-`:=`).
+    base := make_soa(3)
+    dbl := doubled_x(base)
+    print("borrow base1.x=" + str(base[1].x) + " dbl1.x=" + str(dbl[1].x) + "\n")   # 1 2

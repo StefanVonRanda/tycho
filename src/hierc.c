@@ -2087,9 +2087,12 @@ static void resolve_program(ProcVec *prog) {
          * mutable locals (a struct field-set rebinds only the local copy). */
         for (int j = 0; j < pr->nparams; j++) {
             Type pt = pr->params[j].type;
-            /* arrays and maps are read-only borrows EXCEPT an inout one, which
-             * is a by-pointer share the callee may mutate in place. */
-            int mutable = (!is_array(pt) && !is_map(pt))
+            /* arrays, maps, and soa are read-only borrows (they shallow-share
+             * the caller's buffers, so in-place mutation would reach through),
+             * EXCEPT an inout one, which is a by-pointer share the callee may
+             * mutate in place. To mutate a borrowed container, copy it first
+             * (`local := param`). */
+            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt))
                           || pr->params[j].is_inout;
             vars_push(pr->params[j].name, pt, mutable);
         }

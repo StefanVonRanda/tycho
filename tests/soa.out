@@ -7,3 +7,4 @@ q.len=4 q2.x=2 q2.y=4
 eq q==r: T q!=mk3: T
 slice len=2 sl0.x=1 sl1.y=4
 slice indep: sl0.x=-1 q1.x=1
+borrow base1.x=1 dbl1.x=2
