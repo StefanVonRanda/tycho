@@ -280,7 +280,18 @@ fixpoint.
         effect, no assignment). New `SExpr(Expr)` stmt; parsed when a leading
         ident is followed by `(`, emitted as `EXPR;`. Fixture `calls.hi`
         passes; `examples/demo.hi` now matches the C compiler end-to-end.
-      - Next gaps for `examples/*.hi`: structs (construction, field access,
-        value-copy assignment), arrays+`push`, then enums+`match`.
+      - **2D**: structs — `struct Name:` decls (parsed at top level into a
+        `Program` of structs+funcs), positional construction `Point(1, 2)`
+        (emitted as a C compound literal `(Point){1, 2}`), nested field access
+        `r.lo.x` (new `.`/`TDot` token, `EField` parsed as a postfix chain),
+        field assignment `r.lo.x = 100` (new `SFieldAssign`), and value-copy
+        assignment `d := a` (C struct copy). The type system grew beyond
+        int/str: a type is now `"int"`/`"str"`/a struct name, and the read-only
+        `sigs` thread became a proper `Ctx { sigs, structs }` (the struct table
+        types field accesses and distinguishes construction from calls).
+        Fixture `structs.hi` passes; `examples/structs.hi` matches the C
+        compiler end-to-end.
+      - Next gaps for `examples/*.hi`: arrays + `push` + indexing, then
+        enums + `match`, then `Option`/`Result` + `or_return`, tuples, maps.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

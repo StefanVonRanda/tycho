@@ -21,6 +21,7 @@ enum Tok:
     TRParen
     TComma
     TColon
+    TDot
     TArrow
     TWalrus
     TEq
@@ -97,6 +98,9 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         return i + 1
     elif c == 44:
         push(toks, Token(TComma, ","))
+        return i + 1
+    elif c == 46:
+        push(toks, Token(TDot, "."))
         return i + 1
     elif c == 58:
         if i + 1 < n and src[i + 1] == 61:
@@ -178,11 +182,13 @@ enum Expr:
     EStr(string)              # string literal (raw content, escapes preserved)
     EVar(string)
     EBin(string, Expr, Expr)
-    ECall(string, [Expr])
+    ECall(string, [Expr])    # function call OR struct construction `Point(1,2)`
+    EField(Expr, string)     # field access `base.field` (nests: `r.lo.x`)
 
 enum Stmt:
     SDecl(string, Expr)
     SAssign(string, Expr)
+    SFieldAssign(Expr, Expr) # `lvalue = rhs`, lvalue an EField path
     SPrint(Expr)             # the Expr is a string expression
     SReturn(Expr)
     SIf(Expr, [Stmt], [Stmt])
@@ -204,6 +210,25 @@ struct Func:
 struct Sig:                   # collected up front, for typing calls
     name: string
     ret: string
+
+struct Field:
+    name: string
+    ty: string                # "int" | "str" | a struct name
+
+struct StructDef:
+    name: string
+    fields: [Field]
+
+# Read-only typing/codegen context, threaded by value: function return types
+# and struct definitions. (The mutable per-block var env stays as the separate
+# names/types arrays.) This is the `Ctx` docs/bootstrap.md anticipated.
+struct Ctx:
+    sigs: [Sig]
+    structs: [StructDef]
+
+struct Program:
+    structs: [StructDef]
+    funcs: [Func]
 
 # --------------------------------------------------------------- parser ----
 
@@ -251,12 +276,23 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
         die("parse: expected an atom")
         return EInt("0")
 
+fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
+    e := parse_atom(toks, &pos)
+    for toks[pos].kind == TDot:                  # field access chain: a.b.c
+        pos = pos + 1
+        if toks[pos].kind != TIdent:
+            die("parse: expected a field name after '.'")
+        fld := toks[pos].text
+        pos = pos + 1
+        e = EField(e, fld)
+    return e
+
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
-    l := parse_atom(toks, &pos)
+    l := parse_postfix(toks, &pos)
     for toks[pos].kind == TStar:
         op := toks[pos].text
         pos = pos + 1
-        r := parse_atom(toks, &pos)
+        r := parse_postfix(toks, &pos)
         l = EBin(op, l, r)
     return l
 
@@ -365,6 +401,16 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         elif toks[pos].kind == TEq:
             pos = pos + 1
             return SAssign(name, parse_expr(toks, &pos))
+        elif toks[pos].kind == TDot:             # field assignment: a.b.c = rhs
+            lv := EVar(name)
+            for toks[pos].kind == TDot:
+                pos = pos + 1
+                if toks[pos].kind != TIdent:
+                    die("parse: expected a field name after '.'")
+                lv = EField(lv, toks[pos].text)
+                pos = pos + 1
+            expect(toks, &pos, TEq)
+            return SFieldAssign(lv, parse_expr(toks, &pos))
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
             pos = pos + 1
             args := []Expr
@@ -392,8 +438,7 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
     elif name == "string":
         return "str"
     else:
-        die("parse: unsupported type (only int/string)")
-        return "int"
+        return name                              # a struct type name
 
 fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
@@ -431,19 +476,56 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     body := parse_block(toks, &pos)
     return Func(name, params, ptypes, ret, body)
 
-fn parse_program(toks: [Token], pos: inout int) -> [Func]:
+fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
+    expect_ident(toks, &pos, "struct")
+    if toks[pos].kind != TIdent:
+        die("parse: expected a struct name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TColon)
+    expect(toks, &pos, TNewline)
+    expect(toks, &pos, TIndent)
+    fields := []Field
+    for toks[pos].kind != TDedent:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        else:
+            if toks[pos].kind != TIdent:
+                die("parse: expected a field name")
+            fname := toks[pos].text
+            pos = pos + 1
+            expect(toks, &pos, TColon)
+            fty := parse_type(toks, &pos)
+            push(fields, Field(fname, fty))
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+    pos = pos + 1                                # consume TDedent
+    return StructDef(name, fields)
+
+fn parse_program(toks: [Token], pos: inout int) -> Program:
+    structs := []StructDef
     funcs := []Func
     for toks[pos].kind != TEof:
         if toks[pos].kind == TNewline:
             pos = pos + 1
+        elif toks[pos].kind == TIdent and toks[pos].text == "struct":
+            push(structs, parse_struct(toks, &pos))
         else:
             push(funcs, parse_func(toks, &pos))
-    return funcs
+    return Program(structs, funcs)
 
 # -------------------------------------------------------------- codegen ----
-# Type-directed: each expression's C form follows its inferred type
-# ("int" -> long, "str" -> char*).  Variable types are threaded as two parallel
-# arrays (names/types); function return types come from `sigs`.
+# Type-directed: each expression's C form follows its inferred type. A type is
+# "int" (-> long), "str" (-> char*), or a struct name (-> that typedef). The
+# mutable per-block var env is the names/types arrays; function return types
+# and struct layouts come from the read-only `ctx`.
+
+fn cty(ty: string) -> string:
+    if ty == "int":
+        return "long "
+    if ty == "str":
+        return "char* "
+    return ty + " "                              # struct type: its own typedef
 
 fn var_type(names: [string], types: [string], name: string) -> string:
     i := len(names) - 1                          # newest-first (shadowing)
@@ -454,20 +536,44 @@ fn var_type(names: [string], types: [string], name: string) -> string:
     die("type: unknown variable")
     return "int"
 
-fn sig_ret(sigs: [Sig], name: string) -> string:
+fn is_struct(ctx: Ctx, name: string) -> bool:
+    i := 0
+    for i < len(ctx.structs):
+        if ctx.structs[i].name == name:
+            return true
+        i = i + 1
+    return false
+
+fn field_type(ctx: Ctx, sname: string, fld: string) -> string:
+    i := 0
+    for i < len(ctx.structs):
+        if ctx.structs[i].name == sname:
+            j := 0
+            for j < len(ctx.structs[i].fields):
+                if ctx.structs[i].fields[j].name == fld:
+                    return ctx.structs[i].fields[j].ty
+                j = j + 1
+            die("type: no such field")
+        i = i + 1
+    die("type: field access on a non-struct")
+    return "int"
+
+fn sig_ret(ctx: Ctx, name: string) -> string:
     if name == "str":
         return "str"
     if name == "input":
         return "str"
+    if is_struct(ctx, name):                      # construction yields the struct
+        return name
     i := 0
-    for i < len(sigs):
-        if sigs[i].name == name:
-            return sigs[i].ret
+    for i < len(ctx.sigs):
+        if ctx.sigs[i].name == name:
+            return ctx.sigs[i].ret
         i = i + 1
     die("type: unknown function")
     return "int"
 
-fn type_of(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
+fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return "int"
@@ -475,26 +581,28 @@ fn type_of(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
             return "str"
         EVar(name):
             return var_type(names, types, name)
+        EField(base, fld):
+            return field_type(ctx, type_of(base, names, types, ctx), fld)
         EBin(op, l, r):
             if op == "+":
-                if type_of(l, names, types, sigs) == "str" or type_of(r, names, types, sigs) == "str":
+                if type_of(l, names, types, ctx) == "str" or type_of(r, names, types, ctx) == "str":
                     return "str"
                 return "int"
             return "int"                          # - *  and comparisons -> int
         ECall(name, args):
-            return sig_ret(sigs, name)
+            return sig_ret(ctx, name)
 
-fn gen_args(args: [Expr], names: [string], types: [string], sigs: [Sig]) -> string:
+fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_expr(args[i], names, types, sigs)
+        out = out + gen_expr(args[i], names, types, ctx)
         i = i + 1
     return out
 
-fn gen_expr(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
+fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return t
@@ -502,72 +610,73 @@ fn gen_expr(e: Expr, names: [string], types: [string], sigs: [Sig]) -> string:
             return "\"" + s + "\""
         EVar(name):
             return name
+        EField(base, fld):
+            return gen_expr(base, names, types, ctx) + "." + fld
         EBin(op, l, r):
-            if op == "+" and type_of(e, names, types, sigs) == "str":
-                return "sc(" + gen_expr(l, names, types, sigs) + ", " + gen_expr(r, names, types, sigs) + ")"
-            return "(" + gen_expr(l, names, types, sigs) + " " + op + " " + gen_expr(r, names, types, sigs) + ")"
+            if op == "+" and type_of(e, names, types, ctx) == "str":
+                return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
+            if is_struct(ctx, name):              # struct construction -> compound literal
+                return "(" + name + "){" + gen_args(args, names, types, ctx) + "}"
             if name == "str":
-                return "i2s(" + gen_expr(args[0], names, types, sigs) + ")"
+                return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "input":
                 die("codegen: input() not supported yet")
                 return ""
-            return name + "(" + gen_args(args, names, types, sigs) + ")"
+            return name + "(" + gen_args(args, names, types, ctx) + ")"
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
 # or outer scopes (matching C/Hier block scoping).
-fn gen_block(stmts: [Stmt], names: [string], types: [string], sigs: [Sig]) -> string:
+fn gen_block(stmts: [Stmt], names: [string], types: [string], ctx: Ctx) -> string:
     out := ""
     ns := names                                  # local mutable copies; decls
     ts := types                                  # added here stay block-local
     i := 0
     for i < len(stmts):
-        out = out + gen_stmt(stmts[i], &ns, &ts, sigs)
+        out = out + gen_stmt(stmts[i], &ns, &ts, ctx)
         i = i + 1
     return out
 
-fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], sigs: [Sig]) -> string:
+fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> string:
     match s:
         SDecl(name, e):
-            ty := type_of(e, names, types, sigs)
-            cty := "long "
-            if ty == "str":
-                cty = "char* "
-            code := "    " + cty + name + " = " + gen_expr(e, names, types, sigs) + ";\n"
+            ty := type_of(e, names, types, ctx)
+            code := "    " + cty(ty) + name + " = " + gen_expr(e, names, types, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
         SAssign(name, e):
-            return "    " + name + " = " + gen_expr(e, names, types, sigs) + ";\n"
+            return "    " + name + " = " + gen_expr(e, names, types, ctx) + ";\n"
+        SFieldAssign(lv, rhs):
+            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_expr(rhs, names, types, ctx) + ";\n"
         SPrint(e):
-            if type_of(e, names, types, sigs) != "str":
+            if type_of(e, names, types, ctx) != "str":
                 die("codegen: print expects a string")
-            return "    fputs(" + gen_expr(e, names, types, sigs) + ", stdout);\n"
+            return "    fputs(" + gen_expr(e, names, types, ctx) + ", stdout);\n"
         SReturn(e):
-            return "    return " + gen_expr(e, names, types, sigs) + ";\n"
+            return "    return " + gen_expr(e, names, types, ctx) + ";\n"
         SExpr(e):
-            return "    " + gen_expr(e, names, types, sigs) + ";\n"
+            return "    " + gen_expr(e, names, types, ctx) + ";\n"
         SIf(cond, then_body, else_body):
-            out := "    if (" + gen_expr(cond, names, types, sigs) + ") {\n" + gen_block(then_body, names, types, sigs) + "    }"
+            out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + gen_block(then_body, names, types, ctx) + "    }"
             if len(else_body) > 0:
-                out = out + " else {\n" + gen_block(else_body, names, types, sigs) + "    }"
+                out = out + " else {\n" + gen_block(else_body, names, types, ctx) + "    }"
             return out + "\n"
         SWhile(cond, body):
-            return "    while (" + gen_expr(cond, names, types, sigs) + ") {\n" + gen_block(body, names, types, sigs) + "    }\n"
+            return "    while (" + gen_expr(cond, names, types, ctx) + ") {\n" + gen_block(body, names, types, ctx) + "    }\n"
         SForRange(name, start, stop, step, body):
-            header := "    for (long " + name + " = " + gen_expr(start, names, types, sigs) + "; " + name + " < " + gen_expr(stop, names, types, sigs) + "; " + name + " += " + gen_expr(step, names, types, sigs) + ") {\n"
+            header := "    for (long " + name + " = " + gen_expr(start, names, types, ctx) + "; " + name + " < " + gen_expr(stop, names, types, ctx) + "; " + name + " += " + gen_expr(step, names, types, ctx) + ") {\n"
             bn := names                           # loop var is scoped to body
             bt := types
             push(bn, name)
             push(bt, "int")
-            return header + gen_block(body, bn, bt, sigs) + "    }\n"
+            return header + gen_block(body, bn, bt, ctx) + "    }\n"
 
 fn ret_cty(ret: string) -> string:
     if ret == "void":
         return "void "
-    if ret == "str":
-        return "char* "
-    return "long "
+    return cty(ret)
 
 fn gen_params(f: Func) -> string:
     if len(f.params) == 0:
@@ -577,10 +686,7 @@ fn gen_params(f: Func) -> string:
     for i < len(f.params):
         if i > 0:
             out = out + ", "
-        cty := "long "
-        if f.ptypes[i] == "str":
-            cty = "char* "
-        out = out + cty + f.params[i]
+        out = out + cty(f.ptypes[i]) + f.params[i]
         i = i + 1
     return out
 
@@ -594,13 +700,21 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
 fn gen_proto(f: Func) -> string:
     return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ");\n"
 
-fn gen_func(f: Func, sigs: [Sig]) -> string:
+fn gen_func(f: Func, ctx: Ctx) -> string:
     names := []string
     types := []string
     seed_env(f, &names, &types)
     if f.name == "main":
-        return "int main(void) {\n" + gen_block(f.body, names, types, sigs) + "    return 0;\n}\n"
-    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body, names, types, sigs) + "}\n"
+        return "int main(void) {\n" + gen_block(f.body, names, types, ctx) + "    return 0;\n}\n"
+    return ret_cty(f.ret) + f.name + "(" + gen_params(f) + ") {\n" + gen_block(f.body, names, types, ctx) + "}\n"
+
+fn gen_struct(sd: StructDef) -> string:
+    out := "typedef struct {\n"
+    i := 0
+    for i < len(sd.fields):
+        out = out + "    " + cty(sd.fields[i].ty) + sd.fields[i].name + ";\n"
+        i = i + 1
+    return out + "} " + sd.name + ";\n"
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
@@ -612,13 +726,19 @@ fn main():
     src := read_all()
     toks := lex(src)
     pos := 0
-    funcs := parse_program(toks, &pos)
+    prog := parse_program(toks, &pos)
+    funcs := prog.funcs
     sigs := []Sig
     i := 0
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
+    ctx := Ctx(sigs, prog.structs)
     out := preamble()
+    i = 0
+    for i < len(prog.structs):                   # typedefs first, in source order
+        out = out + gen_struct(prog.structs[i])
+        i = i + 1
     i = 0
     for i < len(funcs):
         if funcs[i].name != "main":
@@ -626,6 +746,6 @@ fn main():
         i = i + 1
     i = 0
     for i < len(funcs):
-        out = out + gen_func(funcs[i], sigs)
+        out = out + gen_func(funcs[i], ctx)
         i = i + 1
     print(out)
