@@ -415,5 +415,26 @@ fixpoint.
         `Option`/`Result` + `or_return`, tuples, float, `[struct-by-value]`
         arrays, non-`{str:int}` maps, map delete. These move into Stage 3
         (full feature parity over `tests/*.hi`).
-- [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
+- [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`). In progress;
+      baseline at start was 6/29 `tests/*.hi` golden-identical through hierc0
+      (the 5 already-covered scalar/control tests plus, after the first fix,
+      `recursive_structs`). Increments:
+      - **3A**: aggregate type ordering. Arrays-of-structs (`[P]`) and recursive
+        structs (`struct Node { kids: [Node] }`) emitted broken C because the
+        monomorphized `Arr_T` referenced an element struct not yet declared, and
+        structs weren't forward-declared. Fixed by staging the C emission so
+        every type is complete before use: (1) forward-declare all struct/enum
+        tags; (2) emit array/map **struct bodies** (element types appear only as
+        pointers here); (3) enum eq prototypes; (4) user struct bodies (array
+        fields now use the complete `Arr_T`); (5) enum bodies; (6) array/map/str
+        **functions** (need element bodies complete for `sizeof`/by-value moves);
+        (7) ctors/eq; (8) struct copies; (9) protos/funcs. `gen_arr_family` and
+        `gen_maplib` were split into type-def vs function halves, and structs now
+        emit a named `struct N {…}` body. `recursive_structs.hi` passes (6/29).
+        Still pending for `aggregates.hi`: nested arrays `[[int]]` (needs element-
+        type name mangling) and whole-array `==`.
+      Remaining test failures bucket into: floats (scalar type), Option/Result +
+      `or_return`, tuples, newtypes, slices, projections, enum-array equality
+      (`recursive_enum_array`), `die`, and assorted parser gaps (`enums`,
+      `enum_calc`, `logic`, `maps`, `match_reuse`, `io_builtins`).
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

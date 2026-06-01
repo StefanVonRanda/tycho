@@ -1190,12 +1190,12 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
     return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ") {\n" + gen_block(f.body, names, types, ctx) + "}\n"
 
 fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
-    out := "typedef struct {\n"
+    out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
     i := 0
     for i < len(sd.fields):
         out = out + "    " + cty(ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
         i = i + 1
-    return out + "} " + sd.name + ";\n"
+    return out + "};\n"
 
 # Deep copy for a heap-bearing struct: shallow-copy scalars, then dup each
 # heap field (string -> fresh bytes, array -> Arr_T_copy, nested heap struct ->
@@ -1291,13 +1291,18 @@ fn preamble() -> string:
     return out
 
 # One monomorphized value-array family per element type T: Arr_T holds a
-# CTY* buffer; copy is a deep copy (value semantics). Element types must be
-# word-sized (int/bool/str/enum-pointer); [struct-by-value] is not yet handled.
-fn gen_arr_family(ctx: Ctx, et: string) -> string:
+# CTY* buffer; copy is a deep copy (value semantics). The struct definition is
+# split from the functions so the element struct's full body can be emitted in
+# between (the functions need sizeof(T) / by-value assignment, but the Arr_T
+# struct itself only needs T as a pointer — this is what lets [P] and recursive
+# structs like `struct Node { kids: [Node] }` compile).
+fn gen_arr_type(ctx: Ctx, et: string) -> string:
+    return "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } Arr_" + et + ";\n"
+
+fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     nm := "Arr_" + et
     ct := cty(ctx, et)                           # element C type, trailing space
-    out := "typedef struct { " + ct + "* data; long len; long cap; } " + nm + ";\n"
-    out = out + "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
+    out := "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
     out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
@@ -1325,9 +1330,11 @@ fn gen_strlib() -> string:
 # value semantics, keys() in bucket order. No tombstones (the subset has no
 # map delete). Mirroring it byte-for-byte is what makes keys()-order match.
 # Depends on Arr_str.
+fn gen_map_type() -> string:
+    return "typedef struct { char** keys; long* vals; long len; long cap; } Map_str_int;\n"
+
 fn gen_maplib() -> string:
-    out := "typedef struct { char** keys; long* vals; long len; long cap; } Map_str_int;\n"
-    out = out + "static unsigned long msi_hash(const char* s) { unsigned long h = 1469598103934665603UL; for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; } return h; }\n"
+    out := "static unsigned long msi_hash(const char* s) { unsigned long h = 1469598103934665603UL; for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; } return h; }\n"
     out = out + "static Map_str_int msi_with_cap(long cap) { Map_str_int m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = malloc(sizeof(char*) * c); m.vals = malloc(sizeof(long) * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
     out = out + "static Map_str_int map_str_int_new(void) { return msi_with_cap(0); }\n"
     out = out + "static long msi_slot(Map_str_int m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(msi_hash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
@@ -1402,42 +1409,53 @@ fn main():
     ctx := Ctx(sigs, prog.structs, prog.enums)
     ets := collect_elem_types(prog)
     out := preamble()
-    i = 0                                        # enums: forward typedefs ...
+    # Emission order is carefully staged so every C type is complete before use,
+    # supporting arrays-of-structs, recursive structs, and mutual struct/enum refs:
+    i = 0                                        # 1a. forward-declare struct tags
+    for i < len(prog.structs):
+        out = out + "typedef struct " + prog.structs[i].name + " " + prog.structs[i].name + ";\n"
+        i = i + 1
+    i = 0                                        # 1b. forward-declare enum tags
     for i < len(prog.enums):
         out = out + "typedef struct " + prog.enums[i].name + " " + prog.enums[i].name + ";\n"
         i = i + 1
-    i = 0                                        # monomorphized array families (after enum
-    for i < len(ets):                            # forward decls, before struct bodies that use them)
-        out = out + gen_arr_family(ctx, ets[i])
+    i = 0                                        # 2. array/map STRUCT bodies (element types
+    for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
+        out = out + gen_arr_type(ctx, ets[i])
         i = i + 1
-    out = out + gen_strlib()                     # split() etc. — depends on Arr_str
-    out = out + gen_maplib()                     # Map_str_int — depends on Arr_str
-    i = 0                                        # ... eq prototypes (mutual recursion) ...
+    out = out + gen_map_type()
+    i = 0                                        # 3. enum eq prototypes (mutual recursion)
     for i < len(prog.enums):
         out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
         i = i + 1
-    i = 0                                        # ... struct bodies ...
+    i = 0                                        # 4. user struct bodies (source order; array fields
+    for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
+        out = out + gen_struct(prog.structs[i], ctx)
+        i = i + 1
+    i = 0                                        # 5. enum struct bodies (payloads may be value structs)
     for i < len(prog.enums):
         out = out + gen_enum_decl(prog.enums[i], ctx)
         i = i + 1
-    i = 0                                        # ... constructors ...
+    i = 0                                        # 6. array/map/str FUNCTIONS (need element bodies
+    for i < len(ets):                            #    complete for sizeof / by-value moves)
+        out = out + gen_arr_fns(ctx, ets[i])
+        i = i + 1
+    out = out + gen_maplib()
+    out = out + gen_strlib()
+    i = 0                                        # 7. enum constructors + equality
     for i < len(prog.enums):
         out = out + gen_enum_ctors(prog.enums[i], ctx)
         i = i + 1
-    i = 0                                        # ... and equality.
+    i = 0
     for i < len(prog.enums):
         out = out + gen_enum_eq(prog.enums[i], ctx)
         i = i + 1
-    i = 0
-    for i < len(prog.structs):                   # struct typedefs, in source order
-        out = out + gen_struct(prog.structs[i], ctx)
-        i = i + 1
-    i = 0                                        # deep-copy fns for heap-bearing structs
+    i = 0                                        # 8. deep-copy fns for heap-bearing structs
     for i < len(prog.structs):
         if struct_is_heap(ctx, prog.structs[i].name):
             out = out + gen_struct_copy(ctx, prog.structs[i])
         i = i + 1
-    i = 0
+    i = 0                                        # 9. prototypes
     for i < len(funcs):
         if funcs[i].name != "main":
             out = out + gen_proto(funcs[i], ctx)
