@@ -842,6 +842,8 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "str"
     if name == "substr":
         return "str"
+    if name == "split":
+        return "[str]"
     if name == "len":
         return "int"
     if name == "input":
@@ -935,6 +937,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "substr":
                 return "substr(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+            if name == "split":
+                return "hi_split(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "input":
                 die("codegen: input() not supported yet")
                 return ""
@@ -1199,6 +1203,22 @@ fn gen_arr_family(ctx: Ctx, et: string) -> string:
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
     return out
 
+# Runtime that depends on Arr_str (so it is emitted after the array families,
+# not in the preamble): split a string on a separator into a [string].
+fn gen_strlib() -> string:
+    out := "static Arr_str hi_split(const char* s, const char* sep) {\n"
+    out = out + "    Arr_str r = Arr_str_new();\n"
+    out = out + "    long n = strlen(s), sl = strlen(sep);\n"
+    out = out + "    if (sl == 0) { Arr_str_push(&r, substr(s, 0, n)); return r; }\n"
+    out = out + "    long start = 0, i = 0;\n"
+    out = out + "    while (i + sl <= n) {\n"
+    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(&r, substr(s, start, i)); i += sl; start = i; }\n"
+    out = out + "        else i = i + 1;\n"
+    out = out + "    }\n"
+    out = out + "    Arr_str_push(&r, substr(s, start, n));\n"
+    out = out + "    return r;\n}\n"
+    return out
+
 fn has_str(xs: [string], s: string) -> bool:
     i := 0
     for i < len(xs):
@@ -1271,6 +1291,7 @@ fn main():
     for i < len(ets):                            # forward decls, before struct bodies that use them)
         out = out + gen_arr_family(ctx, ets[i])
         i = i + 1
+    out = out + gen_strlib()                     # split() etc. — depends on Arr_str
     i = 0                                        # ... eq prototypes (mutual recursion) ...
     for i < len(prog.enums):
         out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"

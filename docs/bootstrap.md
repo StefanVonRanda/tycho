@@ -373,8 +373,12 @@ fixpoint.
         Fixture `accumulate_big.hi` passes (the O(n) in-place append is
         invisible — hierc0's `sc`-based concat is O(n^2) but produces identical
         output; 50000-char build completes fine).
-      - Next gaps for `examples/*.hi`: maps (`wordcount.hi`, `words.hi`),
-        `input()` (`hello.hi`), `Option`/`Result` + `or_return`, tuples,
+      - **2K**: `split(s, sep) -> [string]` builtin. Because it returns an
+        `Arr_str`, its runtime (`hi_split`) is emitted *after* the array
+        families (not in the preamble); `str` is always in the seed set so
+        `Arr_str` is always present. Fixture `words.hi` passes.
+      - Next gaps for `examples/*.hi`: maps (`wordcount.hi`), `input()`
+        (`hello.hi`), `Option`/`Result` + `or_return`, tuples,
         `[struct-by-value]` arrays.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
