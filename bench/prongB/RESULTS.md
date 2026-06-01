@@ -148,13 +148,47 @@ refcount decrements. The remaining Hier target is the compact node
 representation (Koka's tighter cell layout is why it ties on memory despite
 Hier's O(1) reclaim).
 
+## Third workload: array-pipeline (flat, non-tree)
+
+The first two workloads are tree-shaped (pointer-structured). This one is a
+**flat-array pipeline**: build one `[N]int` (N = 100 000), then 200 times build
+a fresh mapped array of N ints, sum it, and discard — checksumming. Pure
+allocate-and-discard of *contiguous* data, no pointer structure.
+`arr_pipeline.{hi,c,rs,go}`, `arrpipeline.kk`. Byte-identical output (411c91a9):
+
+| language               | peak RSS | wall time |
+| ---------------------- | -------: | --------: |
+| C (malloc/free)        |     3 MB |     24 ms |
+| Rust (Vec)             |     3 MB |     24 ms |
+| Go (GC)                |     6 MB |     57 ms |
+| **Hier** (arena arrays)|  **6 MB** | **135 ms** |
+| Koka (Perceus list)    |    17 MB |    368 ms |
+
+**The picture flips from the tree workloads — and it's the point.** On flat
+arrays Hier's arena-backed arrays are genuine *contiguous* buffers (a `[int]`
+is a `{data, len, cap}` over one malloc'd run, like C/Rust), so Hier is the
+**lowest-memory and fastest of the non-C/Rust options here, and beats Koka by
+~3× memory and ~2.7× time**. Koka is *worst* on this workload: it has no flat
+array in its core, so the idiomatic `list<int>` is a linked list — cons-cell
+overhead plus pointer-chasing — exactly the data-layout tax that the tree
+workloads reward and a flat pipeline punishes. C and Rust win outright (no
+bounds-check, no arena bookkeeping); Hier trails them ~5× on time (per-element
+bounds-checked push + grow + the per-pass arena reset) but stays C-class on the
+memory *model* (contiguous, no GC, no per-element refcount).
+
+Net across all three: the value-semantic implicit-arena model is **uniformly
+systems-grade** — it wins or ties the lowest tier on memory in two of three
+workloads, never loses badly, and which of {Hier, Koka} leads depends on
+data shape (trees favour Perceus reuse; flat arrays favour real arrays). It is
+never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
+
 ## Caveats / TODO
 
 - Single machine, single run; numbers are representative, not averaged.
 - Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
-- Two workloads now; both are tree-shaped. A non-tree workload (e.g. a
-  string/array pipeline) would round out the picture.
+- Three workloads now: two tree-shaped, one flat-array — the non-tree gap is
+  filled. A string-heavy pipeline could add a further axis.
 - **Block-retaining `arena_reset` for loop scratch: DONE** (commit 4b18b89) —
   it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
   Hier win on both axes and binary-trees to a Hier win on time. The wall-time
