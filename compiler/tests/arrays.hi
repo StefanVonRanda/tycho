@@ -1,0 +1,42 @@
+# Stage 2E: [int] arrays — literal, empty-typed, push, len, index read/write,
+# value-semantic copy, and arrays across function boundaries.
+fn make_squares(n: int) -> [int]:
+    r := []int
+    for i in range(n):
+        push(r, i * i)
+    return r
+
+fn sum(a: [int]) -> int:
+    total := 0
+    for i in range(len(a)):
+        total = total + a[i]
+    return total
+
+fn doubled(a: [int]) -> [int]:
+    b := a                         # value-semantic copy
+    for i in range(len(b)):
+        b[i] = b[i] * 2
+    return b
+
+fn main():
+    xs := [10, 20, 30]
+    push(xs, 40)
+    push(xs, 50)
+    print("len = " + str(len(xs)) + "\n")
+
+    s := 0
+    for i in range(len(xs)):
+        s = s + xs[i]
+    print("sum = " + str(s) + "\n")
+
+    xs[0] = 99
+    print("xs[0] = " + str(xs[0]) + "\n")
+
+    ys := xs                       # independent copy
+    push(ys, 7)
+    print("len xs = " + str(len(xs)) + ", len ys = " + str(len(ys)) + "\n")
+
+    sq := make_squares(5)
+    print("squares sum = " + str(sum(sq)) + "\n")
+    d := doubled(sq)
+    print("doubled[2] = " + str(d[2]) + ", original[2] = " + str(sq[2]) + "\n")

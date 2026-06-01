@@ -19,6 +19,8 @@ enum Tok:
     TStar
     TLParen
     TRParen
+    TLBracket
+    TRBracket
     TComma
     TColon
     TDot
@@ -95,6 +97,12 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         return i + 1
     elif c == 41:
         push(toks, Token(TRParen, ")"))
+        return i + 1
+    elif c == 91:
+        push(toks, Token(TLBracket, "["))
+        return i + 1
+    elif c == 93:
+        push(toks, Token(TRBracket, "]"))
         return i + 1
     elif c == 44:
         push(toks, Token(TComma, ","))
@@ -184,6 +192,9 @@ enum Expr:
     EBin(string, Expr, Expr)
     ECall(string, [Expr])    # function call OR struct construction `Point(1,2)`
     EField(Expr, string)     # field access `base.field` (nests: `r.lo.x`)
+    EIndex(Expr, Expr)       # array index `base[idx]`
+    EArrLit([Expr])          # array literal `[1, 2, 3]` (int elements)
+    EArrEmpty(string)        # empty typed array `[]int`
 
 enum Stmt:
     SDecl(string, Expr)
@@ -272,19 +283,37 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return e
+    elif t.kind == TLBracket:
+        pos = pos + 1
+        if toks[pos].kind == TRBracket:          # []T : empty typed array
+            pos = pos + 1
+            ety := parse_type(toks, &pos)
+            return EArrEmpty(ety)
+        elems := []Expr                          # [e0, e1, ...] : literal
+        push(elems, parse_expr(toks, &pos))
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            push(elems, parse_expr(toks, &pos))
+        expect(toks, &pos, TRBracket)
+        return EArrLit(elems)
     else:
         die("parse: expected an atom")
         return EInt("0")
 
 fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
     e := parse_atom(toks, &pos)
-    for toks[pos].kind == TDot:                  # field access chain: a.b.c
-        pos = pos + 1
-        if toks[pos].kind != TIdent:
-            die("parse: expected a field name after '.'")
-        fld := toks[pos].text
-        pos = pos + 1
-        e = EField(e, fld)
+    for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+        if toks[pos].kind == TDot:               # field access: a.b
+            pos = pos + 1
+            if toks[pos].kind != TIdent:
+                die("parse: expected a field name after '.'")
+            e = EField(e, toks[pos].text)
+            pos = pos + 1
+        else:                                    # index: a[i]
+            pos = pos + 1
+            idx := parse_expr(toks, &pos)
+            expect(toks, &pos, TRBracket)
+            e = EIndex(e, idx)
     return e
 
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
@@ -401,14 +430,20 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         elif toks[pos].kind == TEq:
             pos = pos + 1
             return SAssign(name, parse_expr(toks, &pos))
-        elif toks[pos].kind == TDot:             # field assignment: a.b.c = rhs
-            lv := EVar(name)
-            for toks[pos].kind == TDot:
-                pos = pos + 1
-                if toks[pos].kind != TIdent:
-                    die("parse: expected a field name after '.'")
-                lv = EField(lv, toks[pos].text)
-                pos = pos + 1
+        elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+            lv := EVar(name)                     # place assignment: a.b[i].c = rhs
+            for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+                if toks[pos].kind == TDot:
+                    pos = pos + 1
+                    if toks[pos].kind != TIdent:
+                        die("parse: expected a field name after '.'")
+                    lv = EField(lv, toks[pos].text)
+                    pos = pos + 1
+                else:
+                    pos = pos + 1
+                    idx := parse_expr(toks, &pos)
+                    expect(toks, &pos, TRBracket)
+                    lv = EIndex(lv, idx)
             expect(toks, &pos, TEq)
             return SFieldAssign(lv, parse_expr(toks, &pos))
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
@@ -429,6 +464,11 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SReturn(EInt("0"))
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
+    if toks[pos].kind == TLBracket:              # array type [T]
+        pos = pos + 1
+        inner := parse_type(toks, &pos)
+        expect(toks, &pos, TRBracket)
+        return "[" + inner + "]"
     if toks[pos].kind != TIdent:
         die("parse: expected a type")
     name := toks[pos].text
@@ -525,6 +565,8 @@ fn cty(ty: string) -> string:
         return "long "
     if ty == "str":
         return "char* "
+    if len(ty) > 0 and ty[0] == 91:              # "[...]" array type -> IntArr
+        return "IntArr "
     return ty + " "                              # struct type: its own typedef
 
 fn var_type(names: [string], types: [string], name: string) -> string:
@@ -561,6 +603,8 @@ fn field_type(ctx: Ctx, sname: string, fld: string) -> string:
 fn sig_ret(ctx: Ctx, name: string) -> string:
     if name == "str":
         return "str"
+    if name == "len":
+        return "int"
     if name == "input":
         return "str"
     if is_struct(ctx, name):                      # construction yields the struct
@@ -583,6 +627,13 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return var_type(names, types, name)
         EField(base, fld):
             return field_type(ctx, type_of(base, names, types, ctx), fld)
+        EIndex(base, idx):                        # element type: strip [ ] off "[int]"
+            bt := type_of(base, names, types, ctx)
+            return substr(bt, 1, len(bt) - 1)
+        EArrLit(elems):
+            return "[int]"
+        EArrEmpty(ety):
+            return "[" + ety + "]"
         EBin(op, l, r):
             if op == "+":
                 if type_of(l, names, types, ctx) == "str" or type_of(r, names, types, ctx) == "str":
@@ -612,19 +663,61 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return name
         EField(base, fld):
             return gen_expr(base, names, types, ctx) + "." + fld
+        EIndex(base, idx):
+            return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
+        EArrLit(elems):
+            return "iarr_from((long[]){" + gen_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+        EArrEmpty(ety):
+            return "iarr_new()"
         EBin(op, l, r):
             if op == "+" and type_of(e, names, types, ctx) == "str":
                 return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
-            if is_struct(ctx, name):              # struct construction -> compound literal
-                return "(" + name + "){" + gen_args(args, names, types, ctx) + "}"
+            if name == "push":                    # push(arr, v): mutate in place
+                return "iarr_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+            if name == "len":
+                return gen_expr(args[0], names, types, ctx) + ".len"
             if name == "str":
                 return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "input":
                 die("codegen: input() not supported yet")
                 return ""
+            if is_struct(ctx, name):              # struct construction -> compound literal
+                return "(" + name + "){" + gen_args(args, names, types, ctx) + "}"
             return name + "(" + gen_args(args, names, types, ctx) + ")"
+
+# Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
+# place needs a value-semantic deep copy so the two bindings stay independent.
+fn is_place(e: Expr) -> bool:
+    match e:
+        EVar(n):
+            return true
+        EField(b, f):
+            return true
+        EIndex(b, i):
+            return true
+        EInt(t):
+            return false
+        EStr(s):
+            return false
+        EBin(o, l, r):
+            return false
+        ECall(n, a):
+            return false
+        EArrLit(es):
+            return false
+        EArrEmpty(t):
+            return false
+
+# RHS of a whole-value binding: deep-copy an array read from a place so the new
+# binding is independent (Hier value semantics). Fresh arrays (literals, call
+# results) already own their buffer; scalars/strings need no copy.
+fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+    code := gen_expr(e, names, types, ctx)
+    if type_of(e, names, types, ctx) == "[int]" and is_place(e):
+        return "iarr_copy(" + code + ")"
+    return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
 # or outer scopes (matching C/Hier block scoping).
@@ -642,14 +735,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
     match s:
         SDecl(name, e):
             ty := type_of(e, names, types, ctx)
-            code := "    " + cty(ty) + name + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            code := "    " + cty(ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
         SAssign(name, e):
-            return "    " + name + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            return "    " + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
         SFieldAssign(lv, rhs):
-            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_expr(rhs, names, types, ctx) + ";\n"
+            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_rhs(rhs, names, types, ctx) + ";\n"
         SPrint(e):
             if type_of(e, names, types, ctx) != "str":
                 die("codegen: print expects a string")
@@ -720,6 +813,11 @@ fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
+    out = out + "typedef struct { long* data; long len; long cap; } IntArr;\n"
+    out = out + "static IntArr iarr_new(void) { IntArr a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
+    out = out + "static IntArr iarr_from(const long* s, long n) { IntArr a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(long) * n) : 0; if (n) memcpy(a.data, s, sizeof(long) * n); return a; }\n"
+    out = out + "static IntArr iarr_copy(IntArr a) { return iarr_from(a.data, a.len); }\n"
+    out = out + "static void iarr_push(IntArr* a, long v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(long) * a->cap); } a->data[a->len++] = v; }\n"
     return out
 
 fn main():

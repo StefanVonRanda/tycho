@@ -291,7 +291,22 @@ fixpoint.
         types field accesses and distinguishes construction from calls).
         Fixture `structs.hi` passes; `examples/structs.hi` matches the C
         compiler end-to-end.
-      - Next gaps for `examples/*.hi`: arrays + `push` + indexing, then
-        enums + `match`, then `Option`/`Result` + `or_return`, tuples, maps.
+      - **2E**: `[int]` arrays — literals `[1, 2, 3]`, empty typed `[]int`,
+        `push`/`len` builtins, index read/write `xs[i]`, `[int]` as a
+        var/param/return type, and value-semantic copy. New `[`/`]` tokens,
+        `EIndex`/`EArrLit`/`EArrEmpty` exprs, `parse_type` handles `[T]`.
+        Codegen targets a small runtime struct `IntArr {data,len,cap}` with
+        `iarr_new`/`iarr_from`/`iarr_copy`/`iarr_push` emitted in the preamble;
+        `[1,2,3]` → `iarr_from((long[]){1,2,3}, 3)`, `xs[i]` → `xs.data[i]`,
+        `len(xs)` → `xs.len`, `push(xs,v)` → `iarr_push(&xs, v)`. Value
+        semantics: a whole-array binding read FROM a place (`ys := xs`,
+        `b := a`) is deep-copied (`gen_rhs`/`is_place` → `iarr_copy`); fresh
+        arrays (literals, call results) already own their buffer. Memory is
+        leaked, not freed — acceptable for now (the C compiler uses arenas;
+        correctness first). Fixture `arrays.hi` passes; `examples/arrays.hi`
+        and `examples/array_fns.hi` match the C compiler end-to-end.
+      - Next gaps for `examples/*.hi`: enums + `match`, then `Option`/`Result`
+        + `or_return`, tuples, maps. (String arrays / non-int element types
+        also still pending — only `[int]` is supported so far.)
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
