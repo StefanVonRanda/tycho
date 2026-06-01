@@ -1499,9 +1499,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, ctx)
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
-                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
                 et := elem_ty(at)
-                return "Arr_" + mangle(et) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return "Arr_" + mangle(et) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
@@ -1741,7 +1741,9 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 EAddr(x):
                     return deflt
         SFieldAssign(lv, rhs):
-            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_rhs(rhs, names, types, ctx) + ";\n"
+            # storing into a (malloc) struct field / array element: the value must
+            # be malloc'd (owner "0"), not left in _scope which frees at return.
+            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_rhs(rhs, names, types, with_owner(ctx, "0")) + ";\n"
         SPrint(e):
             if type_of(e, names, types, ctx) != "str":
                 die("codegen: print expects a string")
@@ -2061,7 +2063,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "0")
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope")
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
