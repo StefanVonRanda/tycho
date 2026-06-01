@@ -176,6 +176,37 @@ char *hier_input(Arena *a) {
     return buf;
 }
 
+/* read ALL of stdin into one string (the whole source file), newlines and all.
+ * Unlike hier_input (one line, can't tell EOF from a blank line), this is what
+ * a source-to-source tool needs: `hierc-hier < src.hi > out.c`. */
+char *hier_read_all(Arena *a) {
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)arena_alloc(a, cap);
+    int c;
+    while ((c = getchar()) != EOF) {
+        if (len + 1 >= cap) {
+            size_t ncap = cap * 2;
+            char *nb = (char *)arena_alloc(a, ncap);
+            memcpy(nb, buf, len);
+            buf = nb;
+            cap = ncap;
+        }
+        buf[len++] = (char)c;
+    }
+    buf[len] = '\0';
+    return buf;
+}
+
+/* chr(n): the one-byte string for code point n (0..255) — the inverse of the
+ * `s[i] -> int` byte read. n==0 yields the empty string (strings are
+ * NUL-terminated), which is fine: codegen never emits a NUL byte. */
+char *hier_chr(Arena *a, long n) {
+    char *r = (char *)arena_alloc(a, 2);
+    r[0] = (char)(n & 0xff);
+    r[1] = '\0';
+    return r;
+}
+
 char *hier_int_to_str(Arena *a, long n) {
     char tmp[32];
     int m = snprintf(tmp, sizeof tmp, "%ld", n);

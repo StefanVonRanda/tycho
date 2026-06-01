@@ -1324,6 +1324,8 @@ static void register_builtins(void) {
      * params and nparams). All builtins are by-value (no inout). */
     g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="input",  .ret=T_STRING,       .params={ 0 },                       .nparams=0, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="read_all",.ret=T_STRING,      .params={ 0 },                       .nparams=0, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="substr", .ret=T_STRING,       .params={ T_STRING, T_INT, T_INT },  .nparams=3, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
@@ -2527,6 +2529,12 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "input")) {
         return sfmt("hier_input(%s)", arena);
+    }
+    if (!strcmp(e->sval, "read_all")) {
+        return sfmt("hier_read_all(%s)", arena);
+    }
+    if (!strcmp(e->sval, "chr")) {
+        return sfmt("hier_chr(%s, %s)", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "str")) {
         char *a = gen_expr(e->args[0], arena);
