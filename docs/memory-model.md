@@ -184,6 +184,26 @@ Then resume the arena spine (MM-1 below) for the heap types append can't cover.
   so weigh against the container migrations (MM-2..4) which are the bigger wins
   and the same coupled-difficulty class.
 
+- **✅ S2.2 (a850736): sound returns + store-copy foundation.** ECall passes
+  `ctx.owner` as the callee's parent (a returned tail-call lands in `_parent`,
+  not the freed `_scope` — fixed a real self-compile UAF); callee guards a NULL
+  parent (`_scope = _parent ? arena_child(_parent) : arena_new(0)`); construction
+  store-sites force owner `0` so a container built inside a return never holds a
+  freed-scope pointer; returns build in `_parent`. Memory-neutral; enables S2.3.
+
+- **✅ S2.3 (29c881a): locals-flip — STRINGS FULLY ON ARENA.** Default owner
+  `"0"`→`"&_scope"`: local/transient string allocations live in the scope arena,
+  freed at function return. Store-copy completed at `push` (array+soa) and
+  `SFieldAssign`. self-compile ASan-clean + fixpoint B≡C + 57/57. Batch workload
+  733MB→10MB (~73×). **String migration done** (transient/local/returned on
+  arena; stored strings malloc-copied; accumulator buffers stay malloc by
+  necessity). Wins so far: accumulator 464×, print 42×, locals 73×.
+
+  Remaining: MM-2/3/4 migrate the COMPOUND types (arrays/maps/structs/tuples/
+  boxes) onto arenas — same coupled pattern (allocators take `Arena*`, copies
+  become recursive arena-aware, store-sites already force owner 0), now on a
+  proven foundation. Then MM-5 per-block arenas, MM-6 the move/borrow opts.
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
