@@ -539,4 +539,47 @@ fixpoint.
         behaviourally identical but not performance-identical. Closing that gap
         (and the surfaced `src/hierc.c` transient-arena bug from 3E) is the
         remaining work before the Stage 4 self-host fixpoint.
-- [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
+- [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler. **Scoped
+      (not started).** First concrete attempt: hierc0 **parses** its own ~2250-line
+      source fine but **dies in codegen** ("unknown variable"). Root cause traced
+      to a **C-compiler arena-placement bug** (`src/hierc.c`), the same family as
+      the 3E `resolve_nt` finding: hierc0's `SMatch` arm-binding push-loop
+      (`bn := names; push(bn, bind)`) is logically correct, but the binary the C
+      compiler produces *loses the pushes at runtime* — an array's `push`-growth
+      is allocated in a too-short-lived child arena. Minimal reducer (the C
+      compiler runs it correctly → 10; hierc0-built-by-cc gets it wrong):
+      ```
+      enum E: A(int, int) ; B
+      fn f(x: E) -> int:
+          match x:
+              A(p, q):
+                  r := p + q      # a local decl in the arm body...
+                  return r + p    # ...then a payload binding -> "unknown variable"
+              B: return 0
+      ```
+      (Confirmed Hier is block-scoped = arena-scoped: the emitted C wraps every
+      block in `Arena _scope = arena_child(_parent); … arena_free(&_scope)`.)
+
+      **Critical-path work, in order:**
+      1. **Fix the `src/hierc.c` arena/value-semantics bug(s)** that corrupt
+         hierc0's own execution (the push-into-outer-array-from-a-loop/match-arm
+         case, and the 3E by-value-`Ctx` string-return case). This is the gate —
+         until the C compiler runs hierc0 correctly, nothing downstream works.
+         Remove hierc0's `resolve_nt` `+ ""` workaround once fixed.
+      2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
+         compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
+         compiler's golden output across `tests/`+`examples/`.
+      3. **Raise the C compiler's fixed-size caps** (`g_enums[64]`,
+         `g_structs[128]`, `g_cv[1024]`, `indent_stack[256]`, the arr/opt/res type
+         tables `[256]`) so the large `hierc0.hi` fits, and check self-compile
+         time/memory.
+      4. **The 3-stage fixpoint:** B = A·hierc0.hi, C = B·hierc0.hi, assert
+         **B ≡ C** byte-identical, then archive the C compiler.
+
+      **Key clarifier:** the B≡C fixpoint does **not** require hierc0 to reproduce
+      the C compiler's *optimized* memory-model codegen (arena placement, FBIP
+      reuse, borrow elision). B and C both run the *same* hierc0 logic on the same
+      input, so they emit identical C and are byte-identical regardless of how
+      naive that C is. hierc0's straightforward malloc/value-copy output only
+      affects the *performance* of the self-hosted compiler, not the fixpoint —
+      so the optimization work is **orthogonal** to (and can follow) self-hosting.
