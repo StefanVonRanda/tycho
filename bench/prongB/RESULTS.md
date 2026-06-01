@@ -29,44 +29,54 @@ Run it: `sh bench/prongB/run.sh` (needs `cc`; uses `rustc`/`go` if present).
 ## Results
 
 Representative single run, one machine (gcc 15.2, rustc 1.93, go 1.26,
-koka 3.2.3), peak RSS via `bench/peakrss.c`:
+koka 3.2.3), peak RSS via `bench/peakrss.c`. **Re-measured after the arena
+tuning (block pool + block-retaining `arena_reset`, commit 4b18b89)** — the
+exact loop-scratch fast path this doc previously flagged as a TODO. Only the
+Hier rows changed (same machine; C/Rust/Go/Koka are unchanged), isolating the
+effect of that compiler change:
 
-| language               | peak RSS | wall time |
-| ---------------------- | -------: | --------: |
-| Koka (Perceus RC+reuse)|    14 MB |    271 ms |
-| **Hier** (idiomatic)   |  **33 MB** | **400 ms** |
-| Hier (loop-scoped)     |    33 MB |    399 ms |
-| C (malloc/free)        |    33 MB |    784 ms |
-| Rust (Box)             |    33 MB |    840 ms |
-| Go (GC)                |    37 MB |   1537 ms |
+| language               | peak RSS | wall time | (was, pre-tuning) |
+| ---------------------- | -------: | --------: | ----------------: |
+| Koka (Perceus RC+reuse)|    14 MB |    278 ms | 14 MB / 271 ms |
+| **Hier** (loop-scoped) |  **33 MB** | **197 ms** | 33 MB / 399 ms |
+| Hier (idiomatic)       |    33 MB |    263 ms | 33 MB / 400 ms |
+| C (malloc/free)        |    33 MB |    788 ms | 33 MB / 784 ms |
+| Rust (Box)             |    33 MB |    863 ms | 33 MB / 840 ms |
+| Go (GC)                |    36 MB |   1524 ms | 37 MB / 1537 ms |
 
-(Before the transient-placement compiler fix, the idiomatic Hier row was
-153 MB / 765 ms — see below. Both Hier forms are now identical and C-class.)
+The block-retaining reset cut Hier's binary-trees time roughly in half
+(scoped 399→197 ms, idiomatic 400→263 ms): each iteration's scratch arena now
+keeps its block and rewinds it instead of returning it to the OS and
+re-`malloc`ing next iteration. **Hier is now faster than Koka on wall time
+here** (197 ms vs 278 ms); Koka still wins peak memory (14 MB vs 33 MB).
 
 ## What this shows
 
 **The implicit-arena model is genuinely systems-grade.** Hier matches C and
 Rust on peak memory (33 MB) and *beats hand-written `malloc`/`free` C on wall
-time* (400 ms vs 784 ms), with Rust close behind C and Go ~2x slower. The
-reason is exactly the thesis: each iteration's tree is bump-allocated into
-the loop's scratch arena and reclaimed by a single `arena_reset` (free a
-short block list), so Hier pays neither C's per-node `free` traversal, nor
-Rust's recursive `Drop`, nor Go's GC. Value semantics + lexical arenas, no
-reference counts, no GC — and it lands at the C end of the spectrum.
+time by ~3-4x* (197 ms vs 788 ms), with Rust close behind C and Go ~2x slower
+than C. The reason is exactly the thesis: each iteration's tree is
+bump-allocated into the loop's scratch arena and reclaimed by a single
+`arena_reset` (now an O(1) block rewind), so Hier pays neither C's per-node
+`free` traversal, nor Rust's recursive `Drop`, nor Go's GC. Value semantics +
+lexical arenas, no reference counts, no GC — and it lands at the *fast* end of
+the spectrum.
 
-**Koka (Perceus) wins this particular benchmark — honestly.** At 14 MB /
-271 ms it is both lower-memory and faster than Hier here. binary-trees is
-almost pure allocate-and-immediately-discard, which is the best case for
-reference-counting-with-reuse: Perceus frees each short-lived tree the instant
-its count hits zero (so only the one long-lived tree is ever retained), and
-Koka's node layout is tighter than Hier's tagged `{tag, payload-ptr}` cell.
-Hier instead keeps a whole iteration's tree in the scratch arena until the
-next reset, and carries 64 KB-block overhead. The gap is not the arena model
-failing — Hier is still C-class with no GC and no per-object refcount traffic
-— but it marks two concrete improvement targets: a more compact node
-representation, and tighter arena block sizing. (Where Hier's *reuse* wins —
-in-place rewrite, the `bench/treewalk`/`comb_build` cases — is a workload
-binary-trees does not exercise; see the tree-rewrite TODO below.)
+**Hier now also edges Koka on wall time here, while Koka keeps the memory
+crown.** At 14 MB Koka is less than half Hier's 33 MB peak, but at 278 ms it is
+now slower than Hier's loop-scoped 197 ms (and ~matches the idiomatic 263 ms).
+binary-trees is almost pure allocate-and-immediately-discard — the best case
+for reference-counting-with-reuse: Perceus frees each short-lived tree the
+instant its count hits zero (so only the one long-lived tree is ever retained)
+and its node layout is tighter than Hier's tagged `{tag, payload-ptr}` cell,
+which is why Koka holds the memory lead. Hier keeps a whole iteration's tree in
+the scratch arena until the next reset, and carries 64 KB-block overhead — so
+the one remaining target on this workload is a more compact node representation
+(and tighter block sizing). The arena model is not failing here at all: it is
+C-class memory and now best-in-class time, with no GC and no per-object
+refcount traffic. (Where Hier's *reuse* wins outright — in-place rewrite, the
+`bench/treewalk`/`comb_build` cases, and the tree-rewrite workload below — is a
+shape binary-trees does not exercise.)
 
 **The idiomatic form is now C-class too (compiler fix landed).** Originally
 it cost 153 MB: in `sum = sum + check(make(d))` the transient tree from
@@ -102,26 +112,29 @@ O(1); a refcounting system decrements every node of the dropped result.
 
 `maptree.{hi,c,rs,go}`, `maptree.kk`. Same byte-identical output (26214400):
 
-| language               | peak RSS | wall time |
-| ---------------------- | -------: | --------: |
-| Koka (Perceus RC+reuse)|     7 MB |    184 ms |
-| **Hier** (arenas)      |  **7 MB** | **379 ms** |
-| Rust (Box)             |     9 MB |    409 ms |
-| C (malloc/free)        |    13 MB |    531 ms |
-| Go (GC)                |    21 MB |    845 ms |
+| language               | peak RSS | wall time | (was, pre-tuning) |
+| ---------------------- | -------: | --------: | ----------------: |
+| **Hier** (arenas)      |  **7 MB** | **116 ms** | 7 MB / 379 ms |
+| Koka (Perceus RC+reuse)|     7 MB |    183 ms | 7 MB / 184 ms |
+| Rust (Box)             |     9 MB |    432 ms | 9 MB / 409 ms |
+| C (malloc/free)        |    13 MB |    585 ms | 13 MB / 531 ms |
+| Go (GC)                |    21 MB |    840 ms | 21 MB / 845 ms |
 
-Here Hier is the **lowest-memory** of all (tied with Koka at 7 MB) and second
-on time, beating Rust, C, and Go on both axes — a better showing than
-binary-trees, because the rewrite result is a transient the arena frees in
-O(1) rather than node-by-node. Koka still wins wall time (184 ms): its Perceus
-**reuse** turns each iteration's allocate-then-drop into a free-list hit (the
-dropped tree's cells are reused in place for the next map, so no fresh
-allocation), and its node layout is tighter. Hier bump-allocates a fresh
-result each iteration and `arena_reset` returns the blocks to the OS — so the
-next iteration re-`malloc`s them. Two concrete Hier targets, the same as
-binary-trees flagged: a compact node representation, and an `arena_reset` that
-*retains* blocks for reuse instead of freeing them (the loop-scratch fast
-path).
+**Hier now wins this workload outright — lowest memory AND fastest.** At
+7 MB / 116 ms it is tied for lowest peak (with Koka) and faster than every
+other language including Koka (183 ms). This is the result the block-retaining
+`arena_reset` was meant to produce, and it flipped the prior outcome: the doc
+above previously noted "Koka still wins wall time (184 ms) … Hier
+bump-allocates a fresh result each iteration and `arena_reset` returns the
+blocks to the OS — so the next iteration re-`malloc`s them," and named "an
+`arena_reset` that *retains* blocks for reuse" as the fix. With that fix
+landed (4b18b89), Hier's per-iteration rewrite cost dropped 379→116 ms: the
+loop's scratch arena keeps its block and rewinds it (`off=0`), so each map
+re-fills the same memory with zero allocator traffic — the arena analogue of
+Perceus's in-place reuse, but as a single pointer reset rather than per-cell
+refcount decrements. The remaining Hier target is the compact node
+representation (Koka's tighter cell layout is why it ties on memory despite
+Hier's O(1) reclaim).
 
 ## Caveats / TODO
 
@@ -130,6 +143,12 @@ path).
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
 - Two workloads now; both are tree-shaped. A non-tree workload (e.g. a
   string/array pipeline) would round out the picture.
-- Hier improvement targets surfaced here: compact node representation;
-  block-retaining `arena_reset` for loop scratch; both would narrow the
-  wall-time gap to Koka.
+- **Block-retaining `arena_reset` for loop scratch: DONE** (commit 4b18b89) —
+  it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
+  Hier win on both axes and binary-trees to a Hier win on time. The wall-time
+  gap to Koka is closed (Hier now leads on both workloads' time).
+- Remaining Hier improvement target: a **compact node representation** —
+  Koka's tighter cell layout is the sole reason it still holds the memory lead
+  on binary-trees (14 vs 33 MB) and ties on tree-rewrite. This is the same
+  target prong-B's compiler profiling deprioritized for the *self-compile*
+  workload (where it was ~2% of time), but it is the live lever here.
