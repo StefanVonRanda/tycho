@@ -3135,25 +3135,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_IF: {
-            int id = g_blk++;
+            /* prong-B: no child arena for if/else blocks. Block transients fall
+             * back to the enclosing `scope`, which always outlives the block, so
+             * this only lengthens their lifetime (no early-free). Escaping values
+             * already promote to _parent/target arena independent of any _bN.
+             * Eliminates ~70% of arena_child/free churn (the if/match blocks). */
             char *c = gen_expr(s->expr, scope);
             indent(o, ind); fprintf(o, "if (%s) {\n", c);
-            indent(o, ind + 1); fprintf(o, "Arena _b%d = arena_child(%s);\n", id, scope);
-            char *bs = sfmt("&_b%d", id);
-            ascope_push(bs);   /* a return inside the block must free _bN too */
-            gen_block(o, s->body, s->nbody, ind + 1, bs, ret);
-            g_nascope--;
-            indent(o, ind + 1); fprintf(o, "arena_free(&_b%d);\n", id);
+            gen_block(o, s->body, s->nbody, ind + 1, scope, ret);
             indent(o, ind); fprintf(o, "}");
             if (s->els) {
-                int eid = g_blk++;
                 fprintf(o, " else {\n");
-                indent(o, ind + 1); fprintf(o, "Arena _b%d = arena_child(%s);\n", eid, scope);
-                char *es = sfmt("&_b%d", eid);
-                ascope_push(es);
-                gen_block(o, s->els, s->nels, ind + 1, es, ret);
-                g_nascope--;
-                indent(o, ind + 1); fprintf(o, "arena_free(&_b%d);\n", eid);
+                gen_block(o, s->els, s->nels, ind + 1, scope, ret);
                 indent(o, ind); fprintf(o, "}\n");
             } else {
                 fprintf(o, "\n");
@@ -3173,26 +3166,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     if (!strcmp(s->arms[i].variant, "Some")) some = &s->arms[i];
                     else none = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.has) {\n", mid);
-                int bid = g_blk++;
-                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
-                char *bs = sfmt("&_b%d", bid);
                 indent(o, ind + 2);
                 int sborrow = type_is_heap(inner)
                     && !block_mutates(some->body, some->nbody, some->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
                         sborrow ? sfmt("_m%d.val", mid)
-                                : copy_into(inner, bs, sfmt("_m%d.val", mid)));
-                int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : bs); ascope_push(bs);
-                gen_block(o, some->body, some->nbody, ind + 2, bs, ret);
-                g_nascope--; cv_restore(m);
-                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                                : copy_into(inner, scope, sfmt("_m%d.val", mid)));
+                int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : scope);
+                gen_block(o, some->body, some->nbody, ind + 2, scope, ret);
+                cv_restore(m);
                 indent(o, ind + 1); fprintf(o, "} else {\n");
-                int eb = g_blk++;
-                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eb, scope);
-                ascope_push(sfmt("&_b%d", eb));
-                gen_block(o, none->body, none->nbody, ind + 2, sfmt("&_b%d", eb), ret);
-                g_nascope--;
-                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
+                gen_block(o, none->body, none->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else if (IS_RES(st)) {   /* Ok(x) -> .okv / Err(e) -> .errv, tag is .ok */
                 Type okt = res_ok(st), errt = res_err(st);
@@ -3201,33 +3185,25 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     if (!strcmp(s->arms[i].variant, "Ok")) okarm = &s->arms[i];
                     else errarm = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.ok) {\n", mid);
-                int bid = g_blk++;
-                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
-                char *bs = sfmt("&_b%d", bid);
                 indent(o, ind + 2);
                 int okborrow = type_is_heap(okt)
                     && !block_mutates(okarm->body, okarm->nbody, okarm->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
                         okborrow ? sfmt("_m%d.okv", mid)
-                                 : copy_into(okt, bs, sfmt("_m%d.okv", mid)));
-                int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : bs); ascope_push(bs);
-                gen_block(o, okarm->body, okarm->nbody, ind + 2, bs, ret);
-                g_nascope--; cv_restore(m);
-                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                                 : copy_into(okt, scope, sfmt("_m%d.okv", mid)));
+                int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : scope);
+                gen_block(o, okarm->body, okarm->nbody, ind + 2, scope, ret);
+                cv_restore(m);
                 indent(o, ind + 1); fprintf(o, "} else {\n");
-                int eb = g_blk++;
-                indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", eb, scope);
-                char *es = sfmt("&_b%d", eb);
                 indent(o, ind + 2);
                 int errborrow = type_is_heap(errt)
                     && !block_mutates(errarm->body, errarm->nbody, errarm->binds[0]);
                 fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
                         errborrow ? sfmt("_m%d.errv", mid)
-                                  : copy_into(errt, es, sfmt("_m%d.errv", mid)));
-                int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : es); ascope_push(es);
-                gen_block(o, errarm->body, errarm->nbody, ind + 2, es, ret);
-                g_nascope--; cv_restore(m2);
-                indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", eb);
+                                  : copy_into(errt, scope, sfmt("_m%d.errv", mid)));
+                int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : scope);
+                gen_block(o, errarm->body, errarm->nbody, ind + 2, scope, ret);
+                cv_restore(m2);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
@@ -3240,9 +3216,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     Variant *var = &ed->variants[vi];
                     indent(o, ind + 1);
                     fprintf(o, "%sif (_m%d.tag == %d) {\n", i ? "else " : "", mid, vi);
-                    int bid = g_blk++;
-                    indent(o, ind + 2); fprintf(o, "Arena _b%d = arena_child(%s);\n", bid, scope);
-                    char *bs = sfmt("&_b%d", bid);
+                    int bid = g_blk++;   /* names the payload pointer _p<bid> */
                     int m = cv_mark();
                     if (var->npayload > 0) {
                         indent(o, ind + 2);
@@ -3257,16 +3231,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                                 && !block_mutates(arm->body, arm->nbody, arm->binds[b]);
                             indent(o, ind + 2);
                             fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), arm->binds[b],
-                                    borrow ? field : copy_into(var->payload[b], bs, field));
+                                    borrow ? field : copy_into(var->payload[b], scope, field));
                             /* a borrowed binding owns no arena (like a param):
                              * NULL keeps move-on-last-use from handing it off. */
-                            cv_push(arm->binds[b], borrow ? NULL : bs);
+                            cv_push(arm->binds[b], borrow ? NULL : scope);
                         }
                     }
-                    ascope_push(bs);
-                    gen_block(o, arm->body, arm->nbody, ind + 2, bs, ret);
-                    g_nascope--; cv_restore(m);
-                    indent(o, ind + 2); fprintf(o, "arena_free(&_b%d);\n", bid);
+                    gen_block(o, arm->body, arm->nbody, ind + 2, scope, ret);
+                    cv_restore(m);
                     indent(o, ind + 1); fprintf(o, "}\n");
                 }
             }
