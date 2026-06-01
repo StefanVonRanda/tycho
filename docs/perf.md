@@ -21,7 +21,7 @@ codegen/memory-model difference.
 |---|---|
 | `hierc` (hand-written C) | ~10 |
 | **B** = hierc0, naive codegen | ~40 |
-| **A** = hierc0, arena codegen | ~520 |
+| **A** = hierc0, arena codegen | ~49 (was ~520 before the arena tuning + prong-B codegen work below) |
 
 ## (2) Generated-code runtime/memory, by workload pattern
 
@@ -83,13 +83,51 @@ Generated-code benchmarks are unchanged or slightly better (`accumulate_big`
 1.07 → 0.59 ms; `memo`/`optimize` ~equal; peak RSS steady at ~11 MB). `make
 test` / `bootstrap` / `fixpoint` stay green.
 
-**Residual gap.** Arena codegen is still ~6× slower than naive-leak on the
-compiler workload (231 ms vs ~39 ms). That remainder is the *inherent* cost of
-bounded memory: per-call arena management plus the value-semantics return/bind
-deep-copies the arena model performs and the leak-everything model skips.
-Closing it further is deeper codegen work — e.g. not creating a child arena for
-scopes that allocate nothing or whose values don't escape, stack-allocating
-small transients, and more compact node representations (the rest of prong-B).
-The pool/retain-reset changes are pure runtime and risk-free (behaviour
-identical, verified by the full suite); the codegen-level work is the next, more
-involved step.
+**Residual gap (after the pool).** Arena codegen was still ~6× slower than
+naive-leak on the compiler workload (231 ms vs ~39 ms). That remainder turned
+out to be almost entirely the value-semantics deep-copies the arena model
+performs and the leak-everything model skips — *not* arena bookkeeping (the pool
+already made `arena_child`/`free` O(1)). See the codegen work below.
+
+## Codegen-level arena work (prong-B, src/hierc.c)
+
+Two codegen changes, in order. Each was verified by `make test` (45 programs,
+byte-identical output vs the reference compiler, under
+`-fsanitize=address,undefined`), `make bootstrap`, `make fixpoint` (B≡C), and
+`make bench`.
+
+**Step 1 — elide child arenas for if/match blocks.** if/else/match-arm blocks
+created a child arena (`_b%d = arena_child(scope)`) freed at block end. But the
+enclosing `scope` always outlives the block, so block transients can fall back
+to it with no early-free, and escaping values already promote to `_parent`
+independent of any `_bN`. Removing them dropped `arena_child` in A's emission of
+hierc0.hi from **722 → 219** (the 503 `_b` arenas). *Wall-clock and RSS were
+unchanged* — the pool had already made those ops nearly free. The value: smaller
+emitted C / fewer runtime ops per program, and it isolated the real cost.
+
+**Step 2 — borrow read-only heap struct params instead of deep-copying.** This
+was the real lever. Heap-bearing by-value struct params were unconditionally
+deep-copied into the callee `_scope` on entry (for independence under
+mutation). Gating that copy on `block_mutates(body, param)` — copy only if the
+body mutates the param, else borrow the caller's value (caller outlives the
+call; unmutated aliasing is unobservable; `return param` still deep-copies via
+the return path) — removed the dominant cost: the `Ctx` symbol table cloned on
+every call.
+
+| metric (A self-compiling hierc0.hi) | before step 2 | after |
+|---|---|---|
+| `hier_copy_S_Ctx` calls | 72,686 | **0** |
+| `hier_str_copy` calls | 27.8 M | 186 k (149× fewer) |
+| `arena_alloc` calls | 31 M | 387 k (80× fewer) |
+| wall-clock | 232 ms | **49 ms (4.7×)** |
+| peak RSS | 11.8 MB | 11.5 MB |
+
+**Net result.** The arena model's overhead vs naive-leak on the compiler
+workload drops from **~6× to ~1.26×** (49 ms vs ~39 ms) — while holding peak
+memory at **11.5 MB** against the naive version's unbounded growth. Combined
+with the grow-in-place win (`accumulate_big` 239× / 56×), the value-semantic
+implicit-arena model now matches a leak-everything allocator on a real,
+allocation-heavy, deeply-recursive workload to within ~26%, with bounded memory.
+
+The borrow-iff-not-mutated rule (step 2) is the same predicate already proven on
+match-arm payloads through Stages 2–4 and the self-host fixpoint.
