@@ -1,0 +1,29 @@
+# Transient-placement guard (peak RSS). A heap value built only to be folded
+# into a scalar accumulator declared OUTSIDE the loop (`sum = sum + check(
+# make(14))`) must be reclaimed each iteration, not retained in sum's (outer)
+# arena. With the fix the per-iteration tree lives in the loop scratch and is
+# reset every iteration, so RSS is flat; without it, every tree accumulates in
+# sum's arena -> O(iters * treesize). The bound sits far below the accumulated
+# size.
+
+enum Tree:
+    Leaf
+    Node(Tree, Tree)
+
+fn make(d: int) -> Tree:
+    if d == 0:
+        return Leaf
+    return Node(make(d - 1), make(d - 1))
+
+fn check(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 1
+        Node(l, r):
+            return 1 + check(l) + check(r)
+
+fn main():
+    sum := 0
+    for i in range(400):
+        sum = sum + check(make(14))    # transient tree -> int; must reclaim
+    print(str(sum) + "\n")             # 400 * 32767 nodes = 13106800

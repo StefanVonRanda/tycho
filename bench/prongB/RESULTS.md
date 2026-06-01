@@ -33,11 +33,14 @@ peak RSS via `bench/peakrss.c`:
 
 | language               | peak RSS | wall time |
 | ---------------------- | -------: | --------: |
-| **Hier** (loop-scoped) |  **33 MB** | **409 ms** |
+| **Hier** (idiomatic)   |  **33 MB** | **419 ms** |
+| Hier (loop-scoped)     |    33 MB |    400 ms |
 | C (malloc/free)        |    33 MB |    794 ms |
 | Rust (Box)             |    33 MB |    844 ms |
 | Go (GC)                |    36 MB |   1508 ms |
-| Hier (idiomatic nest)  |   153 MB |    765 ms |
+
+(Before the transient-placement compiler fix, the idiomatic Hier row was
+153 MB / 765 ms — see below. Both Hier forms are now identical and C-class.)
 
 ## What this shows
 
@@ -50,21 +53,22 @@ Hier pays neither C's per-node `free` traversal, nor Rust's recursive
 `Drop`, nor Go's GC. Value semantics + lexical arenas, no reference counts,
 no GC — and it lands at the C end of the spectrum.
 
-**The 153 MB idiomatic row is a compiler arena-placement gap, not a model
-limit.** In `sum = sum + check(make(d))` the transient tree from `make(d)`
-does not escape the statement — `check` returns an `int` — but it is
-allocated in the assignment target's arena, and `sum` lives in the *outer*
-depth-loop, so the trees accumulate across the whole inner loop and are only
-reclaimed when the outer scope resets. Binding the transient to an
-inner-loop local (`t := make(d)`) puts it in the inner scratch, reset every
-iteration, and the cost collapses to the C-class 33 MB / 409 ms row above —
-a one-line source change with identical output.
+**The idiomatic form is now C-class too (compiler fix landed).** Originally
+it cost 153 MB: in `sum = sum + check(make(d))` the transient tree from
+`make(d)` does not escape the statement — `check` returns an `int` — but it
+was allocated in the assignment target's arena, and `sum` lives in the
+*outer* depth-loop, so the trees accumulated across the whole inner loop and
+were reclaimed only when the outer scope reset. The fix: when an
+assignment's result is non-heap (a scalar), nothing heap escapes the
+statement, so the RHS — and its heap transients — is built in the *current*
+scope (the innermost loop scratch, reset every iteration) instead of the
+target's arena. `bench/transient` guards it (~1 MB with the fix vs ~201 MB
+without). No source change needed: the idiomatic `check(make(d))` now lands
+at 33 MB on its own.
 
-The proper fix is in the compiler: a heap sub-expression whose allocation
-does not flow into the stored value (or into any value outliving the current
-scope) should be allocated in the *current* (innermost loop scratch) arena,
-not the assignment target's. That would make the idiomatic form C-class
-automatically. Tracked as the next fundamentals task.
+Still open (the harder half): when the target IS heap, transients that don't
+flow into the stored value should likewise stay in the current scope — that
+needs sub-expression escape analysis, not just the result's type.
 
 ## Caveats / TODO
 

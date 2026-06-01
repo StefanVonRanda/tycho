@@ -2912,7 +2912,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* a self-rebuild `t = C(..., t, ...)` hands off t's buffer into
              * the new aggregate instead of copying it, even inside a loop. */
             if (self_rebuild_move(s)) g_self_move_name = s->name;
-            char *v = gen_expr(s->expr, owner);
+            /* If the result is non-heap (a scalar), nothing heap escapes this
+             * statement, so any heap TRANSIENT in the RHS — e.g. a tree built
+             * only to be folded to an int in `sum = sum + check(make(d))` —
+             * should be reclaimed with the CURRENT scope, not retained in the
+             * target's (possibly outer-loop) arena. Build it in `scope`; the
+             * scalar lands in the C variable and needs no arena. */
+            const char *rhs_arena = type_is_heap(s->expr->type) ? owner : scope;
+            char *v = gen_expr(s->expr, rhs_arena);
             g_self_move_name = NULL;
             /* a heap *place* is only an alias into some (possibly inner,
              * soon-to-collapse) scope; deep-copy it into the target's arena

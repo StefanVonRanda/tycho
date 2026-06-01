@@ -14,6 +14,11 @@
 #   memo          wall time — inout memo keeps fib O(n); an exponential
 #                             regression blows the bound (instant vs seconds;
 #                             bound 1000 ms).
+#   transient     peak RSS  — a heap value folded into a scalar accumulator
+#                             (`sum = sum + check(make(14))`) is reclaimed each
+#                             iteration in the loop scratch, not retained in the
+#                             accumulator's outer arena (measured ~1 MB vs
+#                             ~201 MB), bound 32 MB.
 #   comb_build    peak RSS  — the loop-carried self-rebuild move keeps building
 #                             a comb (`t = Pair(t, Leaf)`) O(n) memory; reverting
 #                             to the per-step deep-copy makes it O(n^2) (measured
@@ -85,6 +90,7 @@ run_bench memo         1134903170     time 1000   ms
 run_bench move         31999996000000 rss  163840 KB
 run_bench ctor_move    31999996000000 rss  163840 KB
 run_bench comb_build   4001           rss  65536  KB
+run_bench transient    13106800       rss  32768  KB
 run_bench treewalk     3603000        time 1000   ms
 
 echo "-----------------------------------------------------------"
