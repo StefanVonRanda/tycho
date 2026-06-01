@@ -182,13 +182,52 @@ workloads, never loses badly, and which of {Hier, Koka} leads depends on
 data shape (trees favour Perceus reuse; flat arrays favour real arrays). It is
 never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
 
+## Fourth workload: string-pipeline (string-heavy)
+
+Build M = 4000 strings, each K = 256 digit-chars, by concatenation; hash each
+(sum of byte codes); checksum. Stresses string *building* and per-character
+work. `string_pipe.{hi,c,rs,go}`, `stringpipe.kk`. Byte-identical (67f39fca):
+
+| language               | peak RSS | wall time |
+| ---------------------- | -------: | --------: |
+| C (growable buffer)    |     1 MB |      2 ms |
+| Rust (String)          |     1 MB |      2 ms |
+| Go (strings.Builder)   |     3 MB |      6 ms |
+| Koka (Perceus string)  |     2 MB |     17 ms |
+| **Hier** (`s = s + c`) |  **1 MB** | **33 ms** |
+
+**Hier is tied for lowest memory but slowest on time — and both follow from the
+model.** The obvious value-semantic code `s = s + str(d)` compiles to an
+*in-place append* (the accumulator optimization, `bench/append`), so building a
+256-char string is O(n), not the O(n²)-with-garbage that naive immutable-string
+concatenation would cost — Hier matches C/Rust at 1 MB and beats Go's GC churn,
+with no explicit Builder. The time cost is the flip side of the same coin: Hier
+has no single-`char` type, so each `str(d)` allocates a one-char string that the
+append then copies (~1M tiny arena allocations + bounds-checked byte reads),
+where C/Rust/Go write a raw byte. So on tiny-piece string work the memory model
+stays C-class while raw per-op throughput trails — a real and honest profile.
+
+## Summary across four workloads
+
+| workload \ Hier rank | memory | time |
+| -------------------- | ------ | ---- |
+| binary-trees (tree)  | 2nd (25 MB; Koka 14) | 1st |
+| tree-rewrite (tree)  | 1st (tie, 7 MB)      | 1st |
+| array-pipeline (flat)| 1st (tie w/ C/Rust)  | 4th (beats Koka) |
+| string-pipeline      | 1st (tie w/ C/Rust)  | 5th |
+
+The value-semantic implicit-arena model is **lowest-or-tied on memory in three
+of four workloads and never the GC/refcount tier**, with time ranging from
+best-in-class (trees) to trailing C/Rust on per-op-heavy flat/string work. No
+GC, no reference counts — just lexical arenas and value semantics.
+
 ## Caveats / TODO
 
 - Single machine, single run; numbers are representative, not averaged.
 - Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
-- Three workloads now: two tree-shaped, one flat-array — the non-tree gap is
-  filled. A string-heavy pipeline could add a further axis.
+- Four workloads now: two tree-shaped, one flat-array, one string-heavy. The
+  axes (pointer-structured / contiguous / character) are covered.
 - **Block-retaining `arena_reset` for loop scratch: DONE** (commit 4b18b89) —
   it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
   Hier win on both axes and binary-trees to a Hier win on time. The wall-time

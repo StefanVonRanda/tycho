@@ -54,6 +54,7 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
 workload "binary-trees (allocate / discard)"     binary_trees binarytrees
 workload "tree-rewrite (map a persistent tree)"   maptree      maptree
 workload "array-pipeline (flat-array passes)"     arr_pipeline arrpipeline
+workload "string-pipeline (build + hash strings)" string_pipe  stringpipe
 
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && echo "all outputs identical within each workload" || { echo "OUTPUT MISMATCH"; exit 1; }

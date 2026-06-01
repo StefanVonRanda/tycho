@@ -1,0 +1,20 @@
+# string-pipeline benchmark, Hier — string-heavy. Build M strings, each K
+# digit-chars, by concatenation; hash each (sum of byte codes); checksum.
+# Hier's `s = s + c` compiles to an in-place append (the accumulator opt), so
+# the obvious value-semantic code is O(n) per string, no Builder needed.
+fn main():
+    m := 4000
+    kk := 256
+    p := 1000003
+    checksum := 0
+    for j in range(m):
+        s := ""
+        for i in range(kk):
+            d := (i + j) - ((i + j) / 10) * 10
+            s = s + str(d)
+        h := 0
+        for i in range(len(s)):
+            h = h + s[i]
+        ck := checksum + h
+        checksum = ck - (ck / p) * p
+    print(str(checksum) + "\n")
