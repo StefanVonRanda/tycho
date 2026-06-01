@@ -19,6 +19,11 @@
 #                             iteration in the loop scratch, not retained in the
 #                             accumulator's outer arena (measured ~1 MB vs
 #                             ~201 MB), bound 32 MB.
+#   heap_transient peak RSS — even when the accumulator is HEAP (a string), a
+#                             big transient that is only a call ARGUMENT (the
+#                             tree in `describe(check(make(14)))`) is reclaimed
+#                             in the loop scratch, not retained in the
+#                             accumulator's arena (~2 MB vs ~201 MB), bound 32 MB.
 #   comb_build    peak RSS  — the loop-carried self-rebuild move keeps building
 #                             a comb (`t = Pair(t, Leaf)`) O(n) memory; reverting
 #                             to the per-step deep-copy makes it O(n^2) (measured
@@ -91,6 +96,7 @@ run_bench move         31999996000000 rss  163840 KB
 run_bench ctor_move    31999996000000 rss  163840 KB
 run_bench comb_build   4001           rss  65536  KB
 run_bench transient    13106800       rss  32768  KB
+run_bench heap_transient t32767        rss  32768  KB
 run_bench treewalk     3603000        time 1000   ms
 
 echo "-----------------------------------------------------------"

@@ -66,9 +66,15 @@ target's arena. `bench/transient` guards it (~1 MB with the fix vs ~201 MB
 without). No source change needed: the idiomatic `check(make(d))` now lands
 at 33 MB on its own.
 
-Still open (the harder half): when the target IS heap, transients that don't
-flow into the stored value should likewise stay in the current scope — that
-needs sub-expression escape analysis, not just the result's type.
+The heap-target half is handled too (second fix landed): a user function
+call's *arguments* are transients — value semantics guarantees the call's
+return value is freshly owned and never aliases an argument — so they are now
+built in the current scope regardless of where the result goes. Even with a
+heap accumulator, `acc = describe(check(make(d)))` keeps the big `make(d)`
+tree (a call argument) in the loop scratch (`bench/heap_transient`: ~2 MB vs
+~201 MB). What remains is narrower: a transient feeding a *constructor* field
+genuinely escapes into the stored value (correctly kept), and binop operands
+could also be scoped — minor next to the call-argument case.
 
 ## Caveats / TODO
 

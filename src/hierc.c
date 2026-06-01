@@ -2140,6 +2140,13 @@ static char *owner_arena_of(const char *root) {
  * value semantics + lexical arenas, not reference counts. */
 static Stmt **g_proc_body; static int g_proc_nbody;   /* current proc body, for the read-count scan */
 static int g_loop_depth = 0;                           /* lexical loop nesting at the current codegen point */
+/* The current statement's scope arena. A user function call's ARGUMENTS are
+ * transients consumed by the callee — value semantics guarantees the call's
+ * return value is freshly owned in _parent and never aliases an argument — so
+ * they are allocated here (the innermost loop scratch, reset every iteration)
+ * rather than in the result arena, which may live in an outer scope. Set at
+ * the top of every gen_stmt; the result arena is still threaded explicitly. */
+static const char *g_cur_scope = "&_scope";
 
 static int count_reads_e(Expr *e, const char *nm) {
     if (!e) return 0;
@@ -2540,7 +2547,10 @@ static char *gen_call(Expr *e, const char *arena) {
     Sig *cs = sig_find(e->sval);
     char *out = sfmt("h_%s(%s", e->sval, arena);
     for (int i = 0; i < e->nargs; i++) {
-        char *a = gen_expr(e->args[i], arena);
+        /* arguments are transients (the callee's return value is independently
+         * owned in _parent — never an alias of an arg), so build them in the
+         * current scope, not the result arena which may be an outer scope. */
+        char *a = gen_expr(e->args[i], g_cur_scope);
         if (cs && i < cs->nparams && cs->inout[i] && type_is_heap(cs->params[i])
             && e->args[i]->kind == E_ADDR) {
             Expr *root = e->args[i]->lhs;
@@ -2804,6 +2814,11 @@ static char *gen_lvalue(Expr *e, const char *arena) {
 }
 
 static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
+    /* call arguments in this statement's expressions are transients owned by
+     * the current scope (see g_cur_scope). Set before generating any expr;
+     * the current statement's expressions are always emitted before recursing
+     * into nested blocks, so a nested gen_stmt re-setting this is harmless. */
+    g_cur_scope = scope;
     switch (s->kind) {
         case S_DECL: {
             /* return-slot optimization: a function-top-level heap local that
