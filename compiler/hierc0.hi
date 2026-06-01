@@ -1,0 +1,157 @@
+# hierc0 — a compiler for a SUBSET of Hier, written in Hier. Stage 1 of the
+# self-hosting bootstrap (see docs/bootstrap.md). Source -> C, stdin -> stdout.
+#
+# Increment 1A: the lexer. `main` dumps the token stream so it can be validated
+# against a golden before the parser/codegen are built on top of it.
+
+enum Tok:
+    TInt
+    TIdent
+    TPlus
+    TMinus
+    TStar
+    TLParen
+    TRParen
+    TComma
+    TColon
+    TArrow
+    TWalrus
+    TEq
+    TEqEq
+    TLt
+    TGt
+    TNewline
+    TEof
+
+struct Token:
+    kind: Tok
+    text: string
+
+fn is_digit(c: int) -> bool:
+    return c >= 48 and c <= 57                       # '0'..'9'
+
+fn is_alpha(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95   # a-z A-Z _
+
+fn is_alnum(c: int) -> bool:
+    return is_alpha(c) or is_digit(c)
+
+fn lex(src: string) -> [Token]:
+    toks := []Token
+    n := len(src)
+    i := 0
+    for i < n:
+        c := src[i]
+        if c == 32 or c == 9:                        # space / tab
+            i = i + 1
+        elif c == 35:                                # '#' comment to end of line
+            for i < n and src[i] != 10:
+                i = i + 1
+        elif c == 10:                                # newline
+            push(toks, Token(TNewline, ""))
+            i = i + 1
+        elif is_digit(c):
+            start := i
+            for i < n and is_digit(src[i]):
+                i = i + 1
+            push(toks, Token(TInt, substr(src, start, i)))
+        elif is_alpha(c):
+            start := i
+            for i < n and is_alnum(src[i]):
+                i = i + 1
+            push(toks, Token(TIdent, substr(src, start, i)))
+        elif c == 43:
+            push(toks, Token(TPlus, "+"))
+            i = i + 1
+        elif c == 45:                                # '-' or '->'
+            if i + 1 < n and src[i + 1] == 62:
+                push(toks, Token(TArrow, "->"))
+                i = i + 2
+            else:
+                push(toks, Token(TMinus, "-"))
+                i = i + 1
+        elif c == 42:
+            push(toks, Token(TStar, "*"))
+            i = i + 1
+        elif c == 40:
+            push(toks, Token(TLParen, "("))
+            i = i + 1
+        elif c == 41:
+            push(toks, Token(TRParen, ")"))
+            i = i + 1
+        elif c == 44:
+            push(toks, Token(TComma, ","))
+            i = i + 1
+        elif c == 58:                                # ':' or ':='
+            if i + 1 < n and src[i + 1] == 61:
+                push(toks, Token(TWalrus, ":="))
+                i = i + 2
+            else:
+                push(toks, Token(TColon, ":"))
+                i = i + 1
+        elif c == 61:                                # '=' or '=='
+            if i + 1 < n and src[i + 1] == 61:
+                push(toks, Token(TEqEq, "=="))
+                i = i + 2
+            else:
+                push(toks, Token(TEq, "="))
+                i = i + 1
+        elif c == 60:
+            push(toks, Token(TLt, "<"))
+            i = i + 1
+        elif c == 62:
+            push(toks, Token(TGt, ">"))
+            i = i + 1
+        else:
+            die("lex: unexpected character")
+    push(toks, Token(TEof, ""))
+    return toks
+
+fn tok_name(k: Tok) -> string:
+    match k:
+        TInt:
+            return "INT"
+        TIdent:
+            return "IDENT"
+        TPlus:
+            return "PLUS"
+        TMinus:
+            return "MINUS"
+        TStar:
+            return "STAR"
+        TLParen:
+            return "LPAREN"
+        TRParen:
+            return "RPAREN"
+        TComma:
+            return "COMMA"
+        TColon:
+            return "COLON"
+        TArrow:
+            return "ARROW"
+        TWalrus:
+            return "WALRUS"
+        TEq:
+            return "EQ"
+        TEqEq:
+            return "EQEQ"
+        TLt:
+            return "LT"
+        TGt:
+            return "GT"
+        TNewline:
+            return "NEWLINE"
+        TEof:
+            return "EOF"
+
+fn main():
+    src := read_all()
+    toks := lex(src)
+    i := 0
+    for i < len(toks):
+        t := toks[i]
+        if t.kind == TInt or t.kind == TIdent:
+            print(tok_name(t.kind) + " " + t.text + "\n")
+        else:
+            print(tok_name(t.kind) + "\n")
+        i = i + 1

@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench image static clean
+.PHONY: all demo test test-update bench bootstrap image static clean
 
 all: hierc
 
@@ -52,6 +52,11 @@ test-update: hierc
 # stays linear, the inout memo stays O(n)). See bench/run.sh.
 bench: hierc
 	@sh bench/run.sh
+
+# Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
+# and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
+bootstrap: hierc
+	@sh compiler/run.sh
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .
