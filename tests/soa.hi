@@ -30,6 +30,11 @@ fn make_soa(n: int) -> soa [Particle]:
         i = i + 1
     return r
 
+fn yn(b: bool) -> string:
+    if b:
+        return "T"
+    return "F"
+
 fn main():
     ps := soa []Particle
     i := 0
@@ -77,3 +82,13 @@ fn main():
     # build and return a soa from a function; read it back
     q := make_soa(4)
     print("q.len=" + str(len(q)) + " q2.x=" + str(q[2].x) + " q2.y=" + str(q[2].y) + "\n")  # 4 2 4
+
+    # structural equality: same length + every field equal elementwise
+    r := make_soa(4)
+    print("eq q==r: " + yn(q == r) + " q!=mk3: " + yn(q != make_soa(3)) + "\n")   # T T
+
+    # slice: a sub-range view, copied on bind so it is independent of the source
+    sl := q[1:3]
+    print("slice len=" + str(len(sl)) + " sl0.x=" + str(sl[0].x) + " sl1.y=" + str(sl[1].y) + "\n")  # 2 1 4
+    sl[0].x = 0 - 1
+    print("slice indep: sl0.x=" + str(sl[0].x) + " q1.x=" + str(q[1].x) + "\n")   # -1 1

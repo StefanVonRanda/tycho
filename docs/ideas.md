@@ -168,9 +168,11 @@ cluster of languages, and the differences are the interesting part:
    read `a[i].f`, field write `a[i].f = v` — all bounds-checked like the AoS
    arrays. Plus whole-element gather `p := a[i]` (assembles an independent struct
    value) and pass/return-by-value (deep-copied per field — value semantics
-   hold). (`tests/soa.hi`.) Still open: `==`, slices, nesting (soa of soa /
-   struct fields), borrowing a soa param read-only without the per-call copy,
-   and SOA in hierc0's self-hosting subset (so `soa.hi` is skipped in the
+   hold), structural `==`/`!=` (length + every field elementwise), and slices
+   `a[lo:hi]` (a bounds-checked view that offsets each field pointer, copied on
+   store like array slices). (`tests/soa.hi`.) Still open: nesting (soa of soa /
+   soa as a struct field), borrowing a soa param read-only without the per-call
+   copy, and SOA in hierc0's self-hosting subset (so `soa.hi` is skipped in the
    fixpoint differential for now).
 
 ### Tier 4 — large or philosophy-divergent (note, don't rush)

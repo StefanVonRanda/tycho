@@ -1526,10 +1526,10 @@ static Type resolve_expr(Expr *e) {
             if (bt == T_STRING) return e->type = T_INT;        /* string byte */
             die_at(e->line, "can only index an array or a string");
         }
-        case E_SLICE: {   /* xs[a:b] — a sub-range of the same array type */
+        case E_SLICE: {   /* xs[a:b] — a sub-range of the same array (or soa) type */
             Type bt = resolve_expr(e->lhs);
-            if (!is_array(bt))
-                die_at(e->line, "can only slice an array (a string sub-range is substr(s, a, b))");
+            if (!is_array(bt) && !IS_SOA(bt))
+                die_at(e->line, "can only slice an array or soa (a string sub-range is substr(s, a, b))");
             if (e->rhs && resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "slice start must be int");
             if (e->nargs && resolve_expr(e->args[0]) != T_INT)
@@ -2511,6 +2511,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
         return sfmt("%s)", s);
     }
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
+    if (IS_SOA(t))           return sfmt("Soa%d_eq(%s, %s)", SOA_ID(t), a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
@@ -2754,6 +2755,28 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_SLICE: {
+            if (IS_SOA(e->lhs->type)) {
+                /* soa sub-range: offset every field pointer by lo, len = hi-lo,
+                 * cap = 0 (non-growable view aliasing the source buffers). Like
+                 * the array slice, is_place(E_SLICE) deep-copies it on any store. */
+                int id = g_blk++;
+                int sid = SOA_ID(e->lhs->type);
+                StructDef *sd = &g_structs[STRUCT_ID(soa_struct(e->lhs->type))];
+                char *a  = gen_expr(e->lhs, arena);
+                char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
+                char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("_sv%d.len", id);
+                char *fs = NULL;
+                for (int f = 0; f < sd->nfields; f++)
+                    fs = fs ? sfmt("%s, _sv%d.f%d + _lo%d", fs, id, f, id)
+                            : sfmt("_sv%d.f%d + _lo%d", id, f, id);
+                return sfmt("({ Soa%d _sv%d = %s; long _lo%d = %s, _hi%d = %s; "
+                            "if (_lo%d < 0 || _hi%d > _sv%d.len || _lo%d > _hi%d) { "
+                            "fprintf(stderr, \"hier: slice [%%ld:%%ld] out of bounds (len %%ld)\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
+                            "(Soa%d){ %s, _hi%d - _lo%d, 0 }; })",
+                            sid, id, a, id, lo, id, hi,
+                            id, id, id, id, id, id, id, id,
+                            sid, fs, id, id);
+            }
             /* A bounds-checked sub-range descriptor { data + lo, hi - lo, 0 }.
              * cap = 0 marks it non-growable; the data pointer ALIASES the source
              * buffer, so this is a zero-copy view — but is_place(E_SLICE) makes
@@ -3854,7 +3877,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    for (long i = 0; i < s.len; i++) r.f%d[i] = %s;\n", f,
                     copy_into(sd->fields[f].type, "a", sfmt("s.f%d[i]", f)));
         }
-        fprintf(o, "    return r;\n}\n\n");
+        fprintf(o, "    return r;\n}\n");
+        /* structural equality: same length, then every field equal elementwise */
+        fprintf(o, "static int Soa%d_eq(Soa%d a, Soa%d b) {\n", i, i, i);
+        fprintf(o, "    if (a.len != b.len) return 0;\n");
+        char *conj = NULL;
+        for (int f = 0; f < sd->nfields; f++) {
+            char *fe = gen_eq(sd->fields[f].type, sfmt("a.f%d[i]", f), sfmt("b.f%d[i]", f));
+            conj = conj ? sfmt("%s && %s", conj, fe) : fe;
+        }
+        fprintf(o, "    for (long i = 0; i < a.len; i++) if (!(%s)) return 0;\n", conj);
+        fprintf(o, "    return 1;\n}\n\n");
     }
     /* (8) Option copy bodies (typedefs already emitted in step 3). A copy fn is
      * emitted only for a heap-valued Option; it re-homes the value when present.
