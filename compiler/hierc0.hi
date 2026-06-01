@@ -1302,12 +1302,19 @@ fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
 # Mirrors the tuple path (gen_rhs per element) and the C compiler's per-field
 # copy_into. (Found by tests/value_semantics.hi probe 3.)
 fn gen_store_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+    # Values STORED into a container (array-literal / struct / enum / tuple
+    # fields) must be malloc'd (owner "0"), not built in the ambient owner: a
+    # construction inside a `return` expr has owner=_parent, and the constructed
+    # container would then hold _parent-arena string pointers that dangle once the
+    # caller's scope frees. Forcing "0" keeps stored strings immortal. (Outside a
+    # return, owner is already "0", so this is a no-op there.)
+    sctx := with_owner(ctx, "0")
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_rhs(args[i], names, types, ctx)
+        out = out + gen_rhs(args[i], names, types, sctx)
         i = i + 1
     return out
 
@@ -1452,7 +1459,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             out := f + "_new()"
             j := 0
             for j < len(keys):
-                out = f + "_set(" + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_expr(vals[j], names, types, ctx) + ")"
+                out = f + "_set(" + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_rhs(vals[j], names, types, with_owner(ctx, "0")) + ")"
                 j = j + 1
             return out
         ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
@@ -1461,7 +1468,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             for j < len(elems):
                 if j > 0:
                     out = out + ", "
-                out = out + gen_rhs(elems[j], names, types, ctx)
+                out = out + gen_rhs(elems[j], names, types, with_owner(ctx, "0"))   # tuple owns malloc'd fields (see gen_store_args)
                 j = j + 1
             return out + "}"
         ESlice(base, lo, hi):
@@ -1516,7 +1523,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "split":
                 return "hi_split(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_set":
-                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_rhs(args[2], names, types, with_owner(ctx, "0")) + ")"
             if name == "map_get":
                 return mfam(type_of(args[0], names, types, ctx)) + "_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
@@ -1535,13 +1542,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_input()"
             if name == "Some":                    # box the payload (deep-copy a place: it is stored)
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
+                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if name == "Ok":
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
+                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if name == "Err":
                 ce := cty(ctx, type_of(args[0], names, types, ctx))
-                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
+                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if is_newtype(ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
@@ -1549,8 +1556,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if is_struct(ctx, name):              # struct construction -> compound literal
                 return "(" + name + "){" + gen_store_args(args, names, types, ctx) + "}"
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
-                return name + "(&_scope)"
-            return name + "(&_scope, " + gen_args(args, names, types, ctx) + ")"
+                return name + "(" + ctx.owner + ")"
+            return name + "(" + ctx.owner + ", " + gen_args(args, names, types, ctx) + ")"
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -1751,7 +1758,12 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             # return-slot: evaluate into _ret, free this scope, then return _ret.
             # (S1: the value is still malloc'd, so the free reclaims nothing; later
             # sub-steps build the return value in _parent so this stays sound.)
-            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, ctx) + "; arena_free(&_scope); return _ret; }\n"
+            # build the return value in _parent (the caller's arena, which outlives
+            # _scope), then free _scope. Any string the value reaches is either built
+            # in _parent here or, if stored into a constructed container, forced to
+            # malloc by the store sites (gen_store_args/ETuple/map_set/hbox) — so the
+            # returned value never points into the freed _scope.
+            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, with_owner(ctx, "_parent")) + "; arena_free(&_scope); return _ret; }\n"
         SReturnVoid:
             return "    arena_free(&_scope); return;\n"
         SExpr(e):
@@ -2058,7 +2070,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
     tail := ""
     if f.ret == "void":
         tail = "    arena_free(&_scope);\n"
-    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n    Arena _scope = arena_child(_parent);\n" + gen_block(f.body, names, types, fctx) + tail + "}\n"
+    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, fctx) + tail + "}\n"
 
 fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
