@@ -1,0 +1,13 @@
+# A by-value map param is the caller's value: `m = map_set(m,...)` inside the
+# callee must NOT mutate the caller's table. Regression for the hierc0 map
+# accumulator, which used to grow a map param in place (shared-table bug).
+fn bump(c: [string: int]) -> int:
+    c = map_set(c, "k", 999)
+    c = map_set(c, "n", 7)
+    return map_get(c, "k", 0)
+
+fn main():
+    base := ["k": 1]
+    r := bump(base)
+    # caller's "k" stays 1; the new "n" never appears in the caller
+    print(str(map_get(base, "k", 0)) + " " + str(r) + " " + str(map_get(base, "n", -1)) + "\n")

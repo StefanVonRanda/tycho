@@ -289,6 +289,7 @@ struct Ctx:
     enums: [EnumDef]
     ntnames: [string]         # newtype names, parallel to ntunder
     ntunder: [string]         # each newtype's underlying type
+    vparams: [string]         # current func's NON-inout param names (map accum guard)
 
 struct Program:
     structs: [StructDef]
@@ -1665,15 +1666,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             lhs := gen_expr(EVar(name), names, types, ctx)
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
-                # KNOWN LIMITATION: if `name` is a by-value MAP PARAM, this
-                # in-place put mutates the caller's shared table (value-semantics
-                # violation; the C compiler is correct here). Not fixed because
-                # hierc0 has no globals to track params, and a pure-copy fallback
-                # rehashes -> different keys() order -> diverges from the C
-                # compiler on map-building fixtures (wordcount). Local map
-                # accumulators (the common case) are sound: they own their table.
+                # A by-value map PARAM must NOT take the in-place put: it shares
+                # the caller's table, so mutating it in place is a value-semantics
+                # violation. ctx.vparams holds this func's non-inout params; for
+                # those we fall through to `deflt` (pure map_set = deep-copy+put),
+                # matching the C compiler (src/hierc.c:3556 drops non-inout params
+                # from accums). Locals and inout map params still grow in place.
                 ECall(fname, args):
-                    if fname == "map_set" and is_evar(args[0], name):
+                    if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
                         return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
@@ -1838,9 +1838,22 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
     names := []string
     types := []string
     seed_env(f, &names, &types)
+    # Record this func's NON-inout param names so the map accumulator pass skips
+    # the in-place put on a by-value map param (it would mutate the caller's
+    # shared table). Mirrors the C compiler dropping non-inout params from accums
+    # (src/hierc.c:3556). Inout map params are left in (in-place is the wanted
+    # mutation). The pure-set fallback rehashes the same way the C compiler does,
+    # so key order stays identical (no wordcount divergence).
+    vparams := []string
+    pi := 0
+    for pi < len(f.params):
+        if not is_inout(f.ptypes[pi]):
+            push(vparams, f.params[pi])
+        pi = pi + 1
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams)
     if f.name == "main":
-        return "int main(void) {\n" + gen_block(f.body, names, types, ctx) + "    return 0;\n}\n"
-    return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ") {\n" + gen_block(f.body, names, types, ctx) + "}\n"
+        return "int main(void) {\n" + gen_block(f.body, names, types, fctx) + "    return 0;\n}\n"
+    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n" + gen_block(f.body, names, types, fctx) + "}\n"
 
 fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
@@ -2476,7 +2489,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
