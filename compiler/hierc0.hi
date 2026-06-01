@@ -1,11 +1,11 @@
 # hierc0 — a compiler for a SUBSET of Hier, written in Hier. Stage 1 of the
-# self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout:
-#   ./hierc0 < prog.hi > prog.c && cc prog.c -o prog
+# self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout.
 #
-# Subset (increment 1B/1C): `fn main():` with a flat body of `x := EXPR`,
-# `x = EXPR`, and `print(str(EXPR))`, where EXPR is integer arithmetic over
-# int literals, variables, `+ - *`, and parentheses. Validated DIFFERENTIALLY
-# against the C compiler: cc(hierc0(P)) and cc(hierc(P)) must print the same.
+# Subset: `fn main():` whose body has `x := EXPR`, `x = EXPR`,
+# `print(str(EXPR))`, and `if/elif/else` over EXPR = integer arithmetic
+# (`+ - *`, parens, vars, int literals) and comparisons (`== < >`). Blocks are
+# indentation-delimited (INDENT/DEDENT). Validated DIFFERENTIALLY against the C
+# compiler by `make bootstrap`.
 
 # ---------------------------------------------------------------- lexer ----
 
@@ -26,6 +26,8 @@ enum Tok:
     TLt
     TGt
     TNewline
+    TIndent
+    TDedent
     TEof
 
 struct Token:
@@ -41,88 +43,135 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
+# scan one mid-line token starting at src[i]; returns the new index. Appends to
+# toks. at_bol handling is done in lex(); this never sees a line-start.
+fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
+    n := len(src)
+    c := src[i]
+    if c == 32 or c == 9:
+        return i + 1
+    elif c == 35:                                # comment to end of line
+        for i < n and src[i] != 10:
+            i = i + 1
+        return i
+    elif is_digit(c):
+        start := i
+        for i < n and is_digit(src[i]):
+            i = i + 1
+        push(toks, Token(TInt, substr(src, start, i)))
+        return i
+    elif is_alpha(c):
+        start := i
+        for i < n and is_alnum(src[i]):
+            i = i + 1
+        push(toks, Token(TIdent, substr(src, start, i)))
+        return i
+    elif c == 43:
+        push(toks, Token(TPlus, "+"))
+        return i + 1
+    elif c == 45:
+        if i + 1 < n and src[i + 1] == 62:
+            push(toks, Token(TArrow, "->"))
+            return i + 2
+        push(toks, Token(TMinus, "-"))
+        return i + 1
+    elif c == 42:
+        push(toks, Token(TStar, "*"))
+        return i + 1
+    elif c == 40:
+        push(toks, Token(TLParen, "("))
+        return i + 1
+    elif c == 41:
+        push(toks, Token(TRParen, ")"))
+        return i + 1
+    elif c == 44:
+        push(toks, Token(TComma, ","))
+        return i + 1
+    elif c == 58:
+        if i + 1 < n and src[i + 1] == 61:
+            push(toks, Token(TWalrus, ":="))
+            return i + 2
+        push(toks, Token(TColon, ":"))
+        return i + 1
+    elif c == 61:
+        if i + 1 < n and src[i + 1] == 61:
+            push(toks, Token(TEqEq, "=="))
+            return i + 2
+        push(toks, Token(TEq, "="))
+        return i + 1
+    elif c == 60:
+        push(toks, Token(TLt, "<"))
+        return i + 1
+    elif c == 62:
+        push(toks, Token(TGt, ">"))
+        return i + 1
+    else:
+        die("lex: unexpected character")
+        return i + 1
+
 fn lex(src: string) -> [Token]:
     toks := []Token
+    stack := []int                               # indent stack, sp = logical size
+    push(stack, 0)
+    sp := 1
     n := len(src)
     i := 0
+    at_bol := true
     for i < n:
-        c := src[i]
-        if c == 32 or c == 9:
-            i = i + 1
-        elif c == 35:
-            for i < n and src[i] != 10:
+        if at_bol:
+            ind := 0                              # measure leading spaces
+            for i < n and src[i] == 32:
+                ind = ind + 1
                 i = i + 1
-        elif c == 10:
-            push(toks, Token(TNewline, ""))
-            i = i + 1
-        elif is_digit(c):
-            start := i
-            for i < n and is_digit(src[i]):
+            if i >= n:
+                at_bol = false
+            elif src[i] == 10:                    # blank line
+                push(toks, Token(TNewline, ""))
                 i = i + 1
-            push(toks, Token(TInt, substr(src, start, i)))
-        elif is_alpha(c):
-            start := i
-            for i < n and is_alnum(src[i]):
-                i = i + 1
-            push(toks, Token(TIdent, substr(src, start, i)))
-        elif c == 43:
-            push(toks, Token(TPlus, "+"))
-            i = i + 1
-        elif c == 45:
-            if i + 1 < n and src[i + 1] == 62:
-                push(toks, Token(TArrow, "->"))
-                i = i + 2
-            else:
-                push(toks, Token(TMinus, "-"))
-                i = i + 1
-        elif c == 42:
-            push(toks, Token(TStar, "*"))
-            i = i + 1
-        elif c == 40:
-            push(toks, Token(TLParen, "("))
-            i = i + 1
-        elif c == 41:
-            push(toks, Token(TRParen, ")"))
-            i = i + 1
-        elif c == 44:
-            push(toks, Token(TComma, ","))
-            i = i + 1
-        elif c == 58:
-            if i + 1 < n and src[i + 1] == 61:
-                push(toks, Token(TWalrus, ":="))
-                i = i + 2
-            else:
-                push(toks, Token(TColon, ":"))
-                i = i + 1
-        elif c == 61:
-            if i + 1 < n and src[i + 1] == 61:
-                push(toks, Token(TEqEq, "=="))
-                i = i + 2
-            else:
-                push(toks, Token(TEq, "="))
-                i = i + 1
-        elif c == 60:
-            push(toks, Token(TLt, "<"))
-            i = i + 1
-        elif c == 62:
-            push(toks, Token(TGt, ">"))
-            i = i + 1
+            elif src[i] == 35:                    # comment-only line
+                for i < n and src[i] != 10:
+                    i = i + 1
+            elif ind > stack[sp - 1]:             # INDENT
+                if sp < len(stack):
+                    stack[sp] = ind
+                else:
+                    push(stack, ind)
+                sp = sp + 1
+                push(toks, Token(TIndent, ""))
+                at_bol = false
+            else:                                 # same or DEDENT(s)
+                for sp > 1 and stack[sp - 1] > ind:
+                    sp = sp - 1
+                    push(toks, Token(TDedent, ""))
+                if stack[sp - 1] != ind:
+                    die("lex: inconsistent indentation")
+                at_bol = false
         else:
-            die("lex: unexpected character")
+            if src[i] == 10:                      # newline ends the logical line
+                push(toks, Token(TNewline, ""))
+                i = i + 1
+                at_bol = true
+            else:
+                i = scan_token(src, i, &toks)
+    push(toks, Token(TNewline, ""))              # close the last line
+    for sp > 1:                                   # unwind open blocks at EOF
+        sp = sp - 1
+        push(toks, Token(TDedent, ""))
     push(toks, Token(TEof, ""))
     return toks
 
 # ------------------------------------------------------------------ AST ----
 
 enum Expr:
-    EInt(string)              # literal text, emitted verbatim into C
+    EInt(string)
     EVar(string)
-    EBin(string, Expr, Expr)  # op ("+"/"-"/"*"), lhs, rhs
+    EBin(string, Expr, Expr)
 
 enum Stmt:
-    SDecl(string, Expr)       # x := EXPR
-    SAssign(string, Expr)     # x = EXPR
-    SPrint(Expr)              # print(str(EXPR))
+    SDecl(string, Expr)
+    SAssign(string, Expr)
+    SPrint(Expr)
+    SIf(Expr, [Stmt], [Stmt])                    # cond, then-body, else-body
 
 # --------------------------------------------------------------- parser ----
 
@@ -133,7 +182,7 @@ fn expect(toks: [Token], pos: inout int, k: Tok):
 
 fn expect_ident(toks: [Token], pos: inout int, name: string):
     if toks[pos].kind != TIdent or toks[pos].text != name:
-        die("parse: expected '" + name + "'")
+        die("parse: expected a keyword")
     pos = pos + 1
 
 fn parse_atom(toks: [Token], pos: inout int) -> Expr:
@@ -172,7 +221,48 @@ fn parse_add(toks: [Token], pos: inout int) -> Expr:
     return l
 
 fn parse_expr(toks: [Token], pos: inout int) -> Expr:
-    return parse_add(toks, &pos)
+    l := parse_add(toks, &pos)
+    k := toks[pos].kind
+    if k == TEqEq or k == TLt or k == TGt:
+        op := toks[pos].text
+        pos = pos + 1
+        r := parse_add(toks, &pos)
+        return EBin(op, l, r)
+    return l
+
+fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
+    stmts := []Stmt
+    expect(toks, &pos, TNewline)
+    expect(toks, &pos, TIndent)
+    for toks[pos].kind != TDedent:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        else:
+            push(stmts, parse_stmt(toks, &pos))
+            # a simple statement ends in NEWLINE; a compound one (if) is already
+            # terminated by its block's DEDENT, so consume a NEWLINE only if present
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+    pos = pos + 1                                 # consume DEDENT
+    return stmts
+
+fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
+    t := toks[pos]
+    if t.kind == TIdent and t.text == "elif":
+        pos = pos + 1
+        cond := parse_expr(toks, &pos)
+        expect(toks, &pos, TColon)
+        then_body := parse_block(toks, &pos)
+        rest := parse_else(toks, &pos)
+        inner := []Stmt
+        push(inner, SIf(cond, then_body, rest))
+        return inner
+    elif t.kind == TIdent and t.text == "else":
+        pos = pos + 1
+        expect(toks, &pos, TColon)
+        return parse_block(toks, &pos)
+    else:
+        return []Stmt
 
 fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
     t := toks[pos]
@@ -185,6 +275,13 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         expect(toks, &pos, TRParen)
         expect(toks, &pos, TRParen)
         return SPrint(e)
+    elif t.kind == TIdent and t.text == "if":
+        pos = pos + 1
+        cond := parse_expr(toks, &pos)
+        expect(toks, &pos, TColon)
+        then_body := parse_block(toks, &pos)
+        else_body := parse_else(toks, &pos)
+        return SIf(cond, then_body, else_body)
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -212,6 +309,14 @@ fn gen_expr(e: Expr) -> string:
         EBin(op, l, r):
             return "(" + gen_expr(l) + " " + op + " " + gen_expr(r) + ")"
 
+fn gen_block(stmts: [Stmt]) -> string:
+    out := ""
+    i := 0
+    for i < len(stmts):
+        out = out + gen_stmt(stmts[i])
+        i = i + 1
+    return out
+
 fn gen_stmt(s: Stmt) -> string:
     match s:
         SDecl(name, e):
@@ -220,23 +325,21 @@ fn gen_stmt(s: Stmt) -> string:
             return "    " + name + " = " + gen_expr(e) + ";\n"
         SPrint(e):
             return "    printf(\"%ld\", " + gen_expr(e) + ");\n"
+        SIf(cond, then_body, else_body):
+            out := "    if (" + gen_expr(cond) + ") {\n" + gen_block(then_body) + "    }"
+            if len(else_body) > 0:
+                out = out + " else {\n" + gen_block(else_body) + "    }"
+            return out + "\n"
 
 fn main():
     src := read_all()
     toks := lex(src)
     pos := 0
-    expect_ident(toks, &pos, "fn")          # fn main ( ) :
+    expect_ident(toks, &pos, "fn")
     expect_ident(toks, &pos, "main")
     expect(toks, &pos, TLParen)
     expect(toks, &pos, TRParen)
     expect(toks, &pos, TColon)
-    expect(toks, &pos, TNewline)
-    out := "#include <stdio.h>\nint main(void) {\n"
-    for toks[pos].kind != TEof:
-        if toks[pos].kind == TNewline:
-            pos = pos + 1
-        else:
-            out = out + gen_stmt(parse_stmt(toks, &pos))
-            expect(toks, &pos, TNewline)
-    out = out + "    return 0;\n}\n"
+    body := parse_block(toks, &pos)
+    out := "#include <stdio.h>\nint main(void) {\n" + gen_block(body) + "    return 0;\n}\n"
     print(out)
