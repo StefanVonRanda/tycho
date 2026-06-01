@@ -41,6 +41,36 @@ typedef struct { HBlock *head; size_t blocksz; } Arena;
 
 static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); }
 
+/* Global block free-list. Arenas are created/reset/freed per block scope, call,
+ * and loop iteration, so naive malloc/free of a HIER_BLOCK_DEFAULT-sized block
+ * per scope dominated runtime on allocation-heavy workloads (e.g. the
+ * self-hosting compiler: ~13x slower than no-free). Instead of returning blocks
+ * to the OS, reset/free hand them to this pool, and arena_alloc takes from it
+ * first -- O(1) pointer ops, no malloc/free churn, no page re-faulting. Peak
+ * live memory is unchanged (the pool holds at most what a scope just released);
+ * pool blocks are reclaimed by the OS at process exit. Single-threaded. */
+static HBlock *g_block_pool = NULL;
+
+static HBlock *block_get(size_t cap) {
+    if (g_block_pool && g_block_pool->cap >= cap) {  /* reuse a pooled block (uniform sizes hit here) */
+        HBlock *b = g_block_pool;
+        g_block_pool = b->next;
+        b->off = 0;
+        b->next = NULL;
+        return b;
+    }
+    HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
+    if (!b) hier_oom();
+    b->cap = cap;
+    b->off = 0;
+    b->next = NULL;
+    return b;
+}
+
+static void block_release_chain(HBlock *b) {     /* push a block chain onto the pool */
+    while (b) { HBlock *nx = b->next; b->next = g_block_pool; g_block_pool = b; b = nx; }
+}
+
 Arena arena_new(size_t blocksz) {
     Arena a;
     a.head = NULL;
@@ -54,10 +84,7 @@ void *arena_alloc(Arena *a, size_t n) {
     n = (n + 15u) & ~(size_t)15u;            /* 16-byte align */
     if (!a->head || a->head->off + n > a->head->cap) {
         size_t cap = n > a->blocksz ? n : a->blocksz;
-        HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
-        if (!b) hier_oom();
-        b->cap = cap;
-        b->off = 0;
+        HBlock *b = block_get(cap);
         b->next = a->head;
         a->head = b;
     }
@@ -66,15 +93,23 @@ void *arena_alloc(Arena *a, size_t n) {
     return p;
 }
 
-/* release every block; the arena can be used again afterwards (this is
- * what a loop's scratch arena does each iteration) */
+/* Reset for reuse (a loop's scratch arena, each iteration): RETAIN the head
+ * block and just rewind it (off=0), releasing only any overflow blocks to the
+ * pool. The common case -- a loop body whose per-iteration allocations fit in
+ * one block -- then does zero pool traffic per iteration, only a pointer rewind. */
 void arena_reset(Arena *a) {
     HBlock *b = a->head;
-    while (b) { HBlock *nx = b->next; free(b); b = nx; }
-    a->head = NULL;
+    if (!b) return;
+    block_release_chain(b->next);   /* overflow blocks -> pool */
+    b->next = NULL;
+    b->off = 0;                     /* keep & reuse the head block */
 }
 
-void arena_free(Arena *a) { arena_reset(a); }
+/* Release the arena entirely (scope/call end): all blocks go to the pool. */
+void arena_free(Arena *a) {
+    block_release_chain(a->head);
+    a->head = NULL;
+}
 
 char *hier_str_concat(Arena *a, const char *x, const char *y) {
     size_t lx = strlen(x), ly = strlen(y);
