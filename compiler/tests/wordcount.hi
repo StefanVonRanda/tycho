@@ -1,0 +1,20 @@
+# Word frequency count: split a line into words, tally them in a [string: int]
+# map, then iterate the map's keys to print each distinct word and its count.
+# Shows the whole map surface: literal/empty, the map_set accumulator idiom,
+# map_get with a default, keys() for iteration, and len().
+
+fn main():
+    text := "the cat sat on the mat the cat ran"
+    words := split(text, " ")
+
+    counts := []string: int
+    for i in range(len(words)):
+        w := words[i]
+        counts = map_set(counts, w, map_get(counts, w, 0) + 1)
+
+    ks := keys(counts)
+    for i in range(len(ks)):
+        w := ks[i]
+        print(w + ": " + str(map_get(counts, w, 0)) + "\n")
+
+    print("distinct words: " + str(len(counts)) + "\n")

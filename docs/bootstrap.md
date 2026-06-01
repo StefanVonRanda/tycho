@@ -377,8 +377,28 @@ fixpoint.
         `Arr_str`, its runtime (`hi_split`) is emitted *after* the array
         families (not in the preamble); `str` is always in the seed set so
         `Arr_str` is always present. Fixture `words.hi` passes.
-      - Next gaps for `examples/*.hi`: maps (`wordcount.hi`), `input()`
-        (`hello.hi`), `Option`/`Result` + `or_return`, tuples,
-        `[struct-by-value]` arrays.
+      - **2L**: `[string: int]` maps — empty literal `[]string: int`,
+        `map_set`/`map_get`/`keys`/`len`. The internal type is `"{str:int}"`
+        (distinct from array `"[...]"`); only this one map type is supported.
+        The emitted `Map_str_int` runtime is a **faithful byte-for-byte mirror**
+        of the C runtime's open-addressing table (`runtime/hier_rt.c`): FNV-1a
+        hash, power-of-2 capacity (min 8), linear probing, rehash past 1/2
+        load, deep-copy value semantics, `keys()` in bucket order. Matching the
+        layout exactly is what makes `keys()` iteration order byte-identical —
+        and that required reproducing the compiler's **accumulator rewrite**:
+        `x = map_set(x, k, v)` (uniquely-owned map) becomes an in-place
+        `map_str_int_put(&x, …)`, not a copy-then-set, because pure-set
+        produces a different final bucket layout (verified empirically — the
+        order diverged until the rewrite was added). hierc0 applies the rewrite
+        on the syntactic self-assignment pattern (assumes unique ownership; no
+        example aliases a map). Fixture `wordcount.hi` passes with identical key
+        order. (No tombstones — the subset has no map delete.)
+      - **Stage 2 status: all non-stdin `examples/*.hi` now compile through
+        hierc0 with golden-identical output.** Remaining: `hello.hi` needs
+        `input()` (stdin-dependent, untestable in the differential harness).
+        Language features still unimplemented (no example exercises them yet):
+        `Option`/`Result` + `or_return`, tuples, float, `[struct-by-value]`
+        arrays, non-`{str:int}` maps, map delete. These move into Stage 3
+        (full feature parity over `tests/*.hi`).
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
