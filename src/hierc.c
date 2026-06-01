@@ -3541,11 +3541,18 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_ntuptypes; i++)           /* tuple tags too */
         fprintf(o, "typedef struct HierTup%d_ HierTup%d;\n", i, i);
     fputs("\n", o);
-    for (int i = 0; i < g_narrtypes; i++)           /* (2) composite-array typedefs */
+    /* (2) enum descriptors FIRST: a fixed { tag, ptr }, depends on nothing. They
+     * must precede the composite-array typedefs below, because a `[Enum]` array
+     * holds `E_Foo *data` and E_Foo is an anonymous-struct typedef that cannot
+     * be forward-declared (unlike the struct/Option/Result/tuple tags above) —
+     * so it has to be a complete type at the point the array typedef uses it.
+     * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
+     * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
+    for (int i = 0; i < g_nenums; i++)
+        fprintf(o, "typedef struct { int tag; void *payload; } E_%s;\n", g_enums[i].name);
+    for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
-    for (int i = 0; i < g_nenums; i++)              /* (2b) enum descriptors: fixed { tag, ptr } */
-        fprintf(o, "typedef struct { int tag; void *payload; } E_%s;\n", g_enums[i].name);
     fputs("\n", o);
     /* (3) struct bodies + Option typedefs in containment order (infinite types
      * are rejected here). Enum descriptors above are complete, so a struct/Option
