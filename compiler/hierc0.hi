@@ -227,6 +227,7 @@ enum Expr:
     EArrLit([Expr])          # array literal `[1, 2, 3]` (int elements)
     EArrEmpty(string)        # empty typed array `[]int`
     EMapEmpty(string, string) # empty typed map `[]string: int` (key, value types)
+    EMapLit([Expr], [Expr])  # non-empty map literal `[k0: v0, k1: v1]` (keys, vals)
     ETuple([Expr])           # tuple literal `(a, b, ...)` / `return a, b`
     ESlice(Expr, Expr, Expr) # `base[lo:hi]` sub-array (owning copy)
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
@@ -373,8 +374,22 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                 vty := parse_type(toks, &pos)
                 return EMapEmpty(kty, vty)
             return EArrEmpty(kty)
-        elems := []Expr                          # [e0, e1, ...] : literal
-        push(elems, parse_expr(toks, &pos))
+        first := parse_expr(toks, &pos)
+        if toks[pos].kind == TColon:             # [k0: v0, k1: v1] : map literal
+            keys := []Expr
+            vals := []Expr
+            pos = pos + 1
+            push(keys, first)
+            push(vals, parse_expr(toks, &pos))
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(keys, parse_expr(toks, &pos))
+                expect(toks, &pos, TColon)
+                push(vals, parse_expr(toks, &pos))
+            expect(toks, &pos, TRBracket)
+            return EMapLit(keys, vals)
+        elems := []Expr                          # [e0, e1, ...] : array literal
+        push(elems, first)
         for toks[pos].kind == TComma:
             pos = pos + 1
             push(elems, parse_expr(toks, &pos))
@@ -912,7 +927,22 @@ fn elem_ty(ty: string) -> string:               # "[T]" -> "T"
     return substr(ty, 1, len(ty) - 1)
 
 fn is_map(ty: string) -> bool:
-    return len(ty) > 0 and ty[0] == 123          # "{K:V}"  (only {str:int} supported)
+    return len(ty) > 0 and ty[0] == 123          # "{str:V}"  (V = int or float)
+
+fn map_val(ty: string) -> string:               # "{str:V}" -> "V"
+    inner := substr(ty, 1, len(ty) - 1)
+    i := 0
+    for i < len(inner):
+        if inner[i] == 58:                       # first ':' (key is always str)
+            return substr(inner, i + 1, len(inner))
+        i = i + 1
+    return "int"
+
+fn mstruct(ty: string) -> string:                # map C struct name
+    return "Map_str_" + map_val(ty)
+
+fn mfam(ty: string) -> string:                   # map runtime function prefix
+    return "map_str_" + map_val(ty)
 
 fn is_cmp(op: string) -> bool:
     return op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">="
@@ -1000,7 +1030,7 @@ fn mangle(ty: string) -> string:
     if is_tuple(ty):
         return "tup_" + tup_suffix(ty)
     if is_map(ty):
-        return "map_str_int"
+        return "map_str_" + map_val(ty)
     return ty                                    # int/str/float/struct/enum/newtype: already valid
 
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
@@ -1041,8 +1071,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "char* "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
         return "Arr_" + mangle(elem_ty(ty)) + " "
-    if is_map(ty):                                # {str:int} -> Map_str_int
-        return "Map_str_int "
+    if is_map(ty):                                # {str:V} -> Map_str_V
+        return mstruct(ty) + " "
     if is_option(ty):
         return "HOption "
     if is_result(ty):
@@ -1181,6 +1211,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "[" + ety + "]"
         EMapEmpty(kty, vty):
             return "{" + kty + ":" + vty + "}"
+        EMapLit(keys, vals):
+            return "{str:" + type_of(vals[0], names, types, ctx) + "}"
         ETuple(elems):
             out := "("
             j := 0
@@ -1207,6 +1239,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         ECall(name, args):
             if name == "map_set" or name == "map_del":   # return the first arg's map type
                 return type_of(args[0], names, types, ctx)
+            if name == "map_get":                 # returns the map's value type
+                return map_val(type_of(args[0], names, types, ctx))
             if name == "Some":
                 return "Option(" + type_of(args[0], names, types, ctx) + ")"
             if name == "Ok":
@@ -1255,7 +1289,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EArrEmpty(ety):
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
-            return "map_str_int_new()"
+            return "map_str_" + vty + "_new()"
+        EMapLit(keys, vals):                      # chain of _set onto a fresh map
+            f := mfam(type_of(e, names, types, ctx))
+            out := f + "_new()"
+            j := 0
+            for j < len(keys):
+                out = f + "_set(" + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_expr(vals[j], names, types, ctx) + ")"
+                j = j + 1
+            return out
         ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
             out := "(Tup_" + tup_suffix(type_of(e, names, types, ctx)) + "){"
             j := 0
@@ -1307,15 +1349,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "split":
                 return "hi_split(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_set":
-                return "map_str_int_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "map_get":
-                return "map_str_int_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
-                return "map_str_int_keys(" + gen_expr(args[0], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_keys(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "map_del":
-                return "map_str_int_del(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_del(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_has":
-                return "map_str_int_has(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_has(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "chr":
                 return "hi_chr(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "die":
@@ -1367,6 +1409,8 @@ fn is_place(e: Expr) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        EMapLit(ks, vs):
+            return false
         ETuple(es):
             return false
         ESlice(b, lo, hi):
@@ -1398,6 +1442,8 @@ fn is_evar(e: Expr, name: string) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        EMapLit(ks, vs):
+            return false
         ETuple(es):
             return false
         ESlice(b, lo, hi):
@@ -1416,7 +1462,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
         return ty + "_copy(" + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
-        return "map_str_int_copy(" + code + ")"
+        return mfam(ty) + "_copy(" + code + ")"
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
         return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
     return code
@@ -1447,7 +1493,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name):
-                        return "    map_str_int_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
+                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
                     return deflt
@@ -1468,6 +1514,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 EArrEmpty(t):
                     return deflt
                 EMapEmpty(k, v):
+                    return deflt
+                EMapLit(ks, vs):
                     return deflt
                 ETuple(es):
                     return deflt
@@ -1857,21 +1905,34 @@ fn gen_strlib() -> string:
 # value semantics, keys() in bucket order. No tombstones (the subset has no
 # map delete). Mirroring it byte-for-byte is what makes keys()-order match.
 # Depends on Arr_str.
-fn gen_map_type() -> string:
-    return "typedef struct { char** keys; long* vals; long len; long cap; } Map_str_int;\n"
+fn gen_mhash() -> string:                        # shared FNV-1a hash (value-independent)
+    return "static unsigned long mhash(const char* s) { unsigned long h = 1469598103934665603UL; for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; } return h; }\n"
 
-fn gen_maplib() -> string:
-    out := "static unsigned long msi_hash(const char* s) { unsigned long h = 1469598103934665603UL; for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; } return h; }\n"
-    out = out + "static Map_str_int msi_with_cap(long cap) { Map_str_int m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = malloc(sizeof(char*) * c); m.vals = malloc(sizeof(long) * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
-    out = out + "static Map_str_int map_str_int_new(void) { return msi_with_cap(0); }\n"
-    out = out + "static long msi_slot(Map_str_int m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(msi_hash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
-    out = out + "static void map_str_int_put(Map_str_int* m, char* k, long v) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; Map_str_int n = msi_with_cap(nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long s = msi_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; } *m = n; } long s = msi_slot(*m, k); if (m->keys[s] == 0) { m->keys[s] = sc(k, \"\"); m->len++; } m->vals[s] = v; }\n"
-    out = out + "static Map_str_int map_str_int_copy(Map_str_int m) { Map_str_int r = msi_with_cap(m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) map_str_int_put(&r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static Map_str_int map_str_int_set(Map_str_int m, char* k, long v) { Map_str_int r = map_str_int_copy(m); map_str_int_put(&r, k, v); return r; }\n"
-    out = out + "static long map_str_int_get(Map_str_int m, char* k, long def) { if (m.cap == 0) return def; long s = msi_slot(m, k); return m.keys[s] ? m.vals[s] : def; }\n"
-    out = out + "static int map_str_int_has(Map_str_int m, char* k) { if (m.cap == 0) return 0; long s = msi_slot(m, k); return m.keys[s] != 0; }\n"
-    out = out + "static Map_str_int map_str_int_del(Map_str_int m, char* k) { Map_str_int r = map_str_int_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) map_str_int_put(&r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static Arr_str map_str_int_keys(Map_str_int m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(&r, m.keys[i]); return r; }\n"
+fn gen_map_type(v: string) -> string:
+    cv := "long"
+    if v == "float":
+        cv = "double"
+    return "typedef struct { char** keys; " + cv + "* vals; long len; long cap; } Map_str_" + v + ";\n"
+
+# Map family monomorphized over the value type v (int/float). The C value type
+# cv is long/double; key hashing/probing is value-independent (shared mhash).
+fn gen_map_fns(v: string) -> string:
+    cv := "long"
+    if v == "float":
+        cv = "double"
+    M := "Map_str_" + v
+    f := "map_str_" + v
+    s := "ms_" + v
+    out := "static " + M + " " + s + "_cap(long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = malloc(sizeof(char*) * c); m.vals = malloc(sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
+    out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0); }\n"
+    out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
+    out = out + "static void " + f + "_put(" + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(k, \"\"); m->len++; } m->vals[t] = val; }\n"
+    out = out + "static " + M + " " + f + "_copy(" + M + " m) { " + M + " r = " + s + "_cap(m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
+    out = out + "static " + M + " " + f + "_set(" + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(m); " + f + "_put(&r, k, val); return r; }\n"
+    out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
+    out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
+    out = out + "static " + M + " " + f + "_del(" + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
+    out = out + "static Arr_str " + f + "_keys(" + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(&r, m.keys[i]); return r; }\n"
     return out
 
 fn has_str(xs: [string], s: string) -> bool:
@@ -1904,6 +1965,10 @@ fn note_arr_types(acc: inout [string], ty: string):
         for i < len(parts):
             note_arr_types(&acc, parts[i])
             i = i + 1
+    elif is_map(b):
+        if not has_str(acc, b):
+            push(acc, b)
+        note_arr_types(&acc, map_val(b))
 
 # Walk an expression collecting composite array element types from literals
 # (array literals / empty arrays that no annotation would reveal).
@@ -1920,7 +1985,14 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EArrEmpty(ety):
             note_arr_types(&acc, "[" + ety + "]")
         EMapEmpty(k, v):
+            note_arr_types(&acc, "{" + k + ":" + v + "}")
+        EMapLit(keys, vals):
+            note_arr_types(&acc, type_of(e, names, types, ctx))
             j := 0
+            for j < len(vals):
+                collect_expr(&acc, keys[j], names, types, ctx)
+                collect_expr(&acc, vals[j], names, types, ctx)
+                j = j + 1
         ETuple(elems):
             note_arr_types(&acc, type_of(e, names, types, ctx))
             j := 0
@@ -2099,12 +2171,16 @@ fn main():
     for i < len(prog.enums):
         out = out + "typedef struct " + prog.enums[i].name + " " + prog.enums[i].name + ";\n"
         i = i + 1
-    i = 0                                        # 2. array/map STRUCT bodies (element types
+    i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_tuple(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]):
             out = out + gen_arr_type(ctx, ets[i])
         i = i + 1
-    out = out + gen_map_type()
+    i = 0                                        # map struct(s), one per value type used
+    for i < len(ets):
+        if is_map(ets[i]):
+            out = out + gen_map_type(map_val(ets[i]))
+        i = i + 1
     i = 0                                        # 2b. tuple struct bodies (may embed Arr_T, now complete)
     for i < len(ets):
         if is_tuple(ets[i]):
@@ -2126,12 +2202,24 @@ fn main():
     for i < len(prog.enums):
         out = out + gen_enum_decl(prog.enums[i], ctx)
         i = i + 1
-    i = 0                                        # 6. array/map/str FUNCTIONS (need element bodies
+    i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_tuple(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]):
             out = out + gen_arr_fns(ctx, ets[i])
         i = i + 1
-    out = out + gen_maplib()
+    i = 0                                        # shared hash + per-value-type map families
+    has_map := false
+    for i < len(ets):
+        if is_map(ets[i]):
+            has_map = true
+        i = i + 1
+    if has_map:
+        out = out + gen_mhash()
+    i = 0
+    for i < len(ets):
+        if is_map(ets[i]):
+            out = out + gen_map_fns(map_val(ets[i]))
+        i = i + 1
     out = out + gen_strlib()
     i = 0                                        # 6b. tuple copy + equality (may call array fns above)
     for i < len(ets):

@@ -415,7 +415,10 @@ fixpoint.
         `Option`/`Result` + `or_return`, tuples, float, `[struct-by-value]`
         arrays, non-`{str:int}` maps, map delete. These move into Stage 3
         (full feature parity over `tests/*.hi`).
-- [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`). In progress;
+- [x] **Stage 3** — feature-complete front-end. **Complete: all 29 `tests/*.hi`
+      and all 16 `examples/*.hi` compile through hierc0 with golden-identical
+      output.** (Behavioural parity, not yet the optimized memory-model codegen
+      — see 3L.) History below;
       baseline at start was 6/29 `tests/*.hi` golden-identical through hierc0
       (the 5 already-covered scalar/control tests plus, after the first fix,
       `recursive_structs`). Increments:
@@ -517,6 +520,23 @@ fixpoint.
         (`from(a.data+lo, hi-lo)`); the alias-vs-copy distinction is invisible
         to output, so copy-always is correct (`mid := xs[1:4]` stays independent
         of later `xs` mutation). Cleared `enums` and `slices`.
-      Remaining failure (1): `float_maps` — `[string: float]`, a second map
-      type, would require monomorphizing the map over its value type.
+      - **3L**: `float_maps` — monomorphized the map over its value type
+        (29/29). The map runtime is now generated per value type (`Map_str_int`,
+        `Map_str_float`; `cv` = long/double) with a shared FNV `mhash`; `cty`
+        and every map builtin/accumulator/copy site dispatch via `mfam`/`mstruct`
+        keyed on the map's value type. Also added **non-empty map literals**
+        `[k0: v0, k1: v1]` (`EMapLit`, emitted as a chain of `_set` onto a fresh
+        map). Map value types are collected (annotations + literals) and each
+        used family is emitted; the int-map families keep identical names/layout
+        so `wordcount`/`maps` stay byte-identical.
+      - **Stage 3 done.** **All 29 `tests/*.hi` and all 16 `examples/*.hi`
+        compile through hierc0 with golden-identical output** (43 bootstrap
+        fixtures green; `hello`/`io_builtins` verified via the differential
+        sweep with redirected stdin). hierc0 is ~2250 lines of Hier and is a
+        complete, drop-in alternative front-end. It does NOT yet reproduce the C
+        compiler's memory-model codegen (arena placement, FBIP reuse, borrow
+        elision) — it emits straightforward malloc/value-copy C that is
+        behaviourally identical but not performance-identical. Closing that gap
+        (and the surfaced `src/hierc.c` transient-arena bug from 3E) is the
+        remaining work before the Stage 4 self-host fixpoint.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
