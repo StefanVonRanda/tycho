@@ -290,6 +290,7 @@ struct Ctx:
     ntnames: [string]         # newtype names, parallel to ntunder
     ntunder: [string]         # each newtype's underlying type
     vparams: [string]         # current func's NON-inout param names (map accum guard)
+    saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
 
 struct Program:
     structs: [StructDef]
@@ -1640,6 +1641,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
+    if ty == "str" and is_place(e):              # copy a string bound from a place, so an
+        return "scopy(" + code + ")"             # in-place-appended accumulator's snapshot stays independent
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -1658,12 +1661,28 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
     match s:
         SDecl(name, e):
             ty := type_of(e, names, types, ctx)
+            if has_str(ctx.saccums, name):        # string accumulator: heap buffer + len/cap sidecars
+                code := "    char* " + name + " = scopy(" + gen_expr(e, names, types, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                push(names, name)
+                push(types, ty)
+                return code
             code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
         SAssign(name, e):
             lhs := gen_expr(EVar(name), names, types, ctx)
+            if has_str(ctx.saccums, name):        # string accumulator
+                pieces := sacc_pieces(e, name)
+                if len(pieces) > 0:               # s = s + p1 + ... -> in-place append each piece
+                    aout := ""
+                    k := 0
+                    for k < len(pieces):
+                        aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
+                        k = k + 1
+                    return aout
+                # plain reassign of an accumulator: heap-ify + resync the sidecars
+                return "    " + name + " = scopy(" + gen_expr(e, names, types, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
@@ -1723,6 +1742,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
         SExpr(e):
             return "    " + gen_expr(e, names, types, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
+            if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
+                code := "    char* " + name + " = scopy(" + gen_expr(e, names, types, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                push(names, name)
+                push(types, ty)
+                return code
             code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)
             push(types, ty)
@@ -1834,6 +1858,152 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
 fn gen_proto(f: Func, ctx: Ctx) -> string:
     return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ");\n"
 
+# Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
+# A non-'+' binop or any leaf is one whole piece. So `a + b + c` -> [a, b, c]
+# but `(a - b) + c` -> [(a-b), c].
+fn plus_flatten(e: Expr, out: inout [Expr]):
+    match e:
+        EBin(op, l, r):
+            if op == "+":
+                plus_flatten(l, &out)
+                push(out, r)
+            else:
+                push(out, e)
+        EInt(t):
+            push(out, e)
+        EFloat(f):
+            push(out, e)
+        EStr(s):
+            push(out, e)
+        EVar(n):
+            push(out, e)
+        ECall(nm, args):
+            push(out, e)
+        EField(b, fl):
+            push(out, e)
+        EIndex(b, ix):
+            push(out, e)
+        EArrLit(es):
+            push(out, e)
+        EArrEmpty(t):
+            push(out, e)
+        EMapEmpty(k, v):
+            push(out, e)
+        EMapLit(ks, vs):
+            push(out, e)
+        ETuple(es):
+            push(out, e)
+        ESlice(b, lo, hi):
+            push(out, e)
+        EAddr(x):
+            push(out, e)
+
+# If `e` is `name + p1 + p2 + ...` (an all-'+' chain whose leftmost leaf is the
+# variable `name`), return the appended pieces [p1, p2, ...]; else []. Used both
+# to DETECT a string self-append accumulator and to emit its in-place appends.
+fn sacc_pieces(e: Expr, name: string) -> [Expr]:
+    ps := []Expr
+    plus_flatten(e, &ps)
+    if len(ps) < 2:
+        return []Expr
+    if not is_evar(ps[0], name):
+        return []Expr
+    return ps[1:]
+
+# Collect string locals that are self-append accumulators (`s = s + ...`). These
+# get a growing heap buffer + len/cap sidecars and in-place hi_append instead of
+# the O(n^2) sc()-rebuild. Threads the var env (like collect_stmt) so the type
+# guard `var_type == "str"` is accurate; a non-str `c = c + 1` is never flagged.
+# Match arms bind payloads as "" (unknown) — at worst an arm-local accumulator is
+# missed (stays the safe pure-concat path); a false positive is impossible.
+fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], ctx: Ctx):
+    ns := names
+    ts := types
+    i := 0
+    for i < len(stmts):
+        sacc_stmt(&acc, stmts[i], &ns, &ts, ctx)
+        i = i + 1
+
+fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], ctx: Ctx):
+    match s:
+        SDecl(n, e):
+            dty := type_of(e, names, types, ctx)   # compute BEFORE pushing n (keep names/types in sync)
+            push(names, n)
+            push(types, dty)
+        SAssign(n, e):
+            if var_type(names, types, n) == "str":
+                if len(sacc_pieces(e, n)) > 0:
+                    push(acc, n)
+        SFieldAssign(lv, rhs):
+            i := 0
+        SPrint(e):
+            i := 0
+        SReturn(e):
+            i := 0
+        SReturnVoid:
+            i := 0
+        SExpr(e):
+            i := 0
+        STypedDecl(n, t, e):
+            push(names, n)
+            push(types, t)
+        SOrReturn(n, e):
+            ety := type_of(e, names, types, ctx)
+            ty := ""
+            if is_option(ety):
+                ty = option_inner(ety)
+            else:
+                ty = result_ok(ety)
+            push(names, n)
+            push(types, ty)
+        SDestructure(dn, e):
+            parts := tuple_parts(type_of(e, names, types, ctx))
+            i := 0
+            for i < len(dn):
+                push(names, dn[i])
+                push(types, parts[i])
+                i = i + 1
+        SMultiAssign(mn, e):
+            i := 0
+        SIf(c, tb, eb):
+            sacc_block(&acc, tb, names, types, ctx)
+            sacc_block(&acc, eb, names, types, ctx)
+        SWhile(c, body):
+            sacc_block(&acc, body, names, types, ctx)
+        SForRange(n, a, b, st, body):
+            bn := names
+            bt := types
+            push(bn, n)
+            push(bt, "int")
+            sacc_block(&acc, body, bn, bt, ctx)
+        SMatch(subj, variants, allbinds, bodies):
+            sty := type_of(subj, names, types, ctx)
+            j := 0
+            for j < len(bodies):
+                bn := names                       # bind arm payloads with PROPER types so
+                bt := types                       # type_of resolves in the arm (mirror collect_stmt)
+                binds := allbinds[j]
+                if is_option(sty):
+                    if len(binds) > 0:
+                        push(bn, binds[0])
+                        push(bt, option_inner(sty))
+                elif is_result(sty):
+                    if len(binds) > 0:
+                        push(bn, binds[0])
+                        if variants[j] == "Ok":
+                            push(bt, result_ok(sty))
+                        else:
+                            push(bt, result_err(sty))
+                else:
+                    pts := variant_ptypes(ctx, variants[j])
+                    k := 0
+                    for k < len(binds):
+                        push(bn, binds[k])
+                        push(bt, pts[k])
+                        k = k + 1
+                sacc_block(&acc, bodies[j], bn, bt, ctx)
+                j = j + 1
+
 fn gen_func(f: Func, ctx: Ctx) -> string:
     names := []string
     types := []string
@@ -1850,7 +2020,25 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not is_inout(f.ptypes[pi]):
             push(vparams, f.params[pi])
         pi = pi + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams)
+    # String self-append accumulators (locals only — a param has no SDecl, so no
+    # sidecars; like the C compiler dropping non-inout params from accums).
+    raw := []string
+    sn := names
+    st := types
+    sacc_block(&raw, f.body, sn, st, ctx)
+    saccums := []string
+    si := 0
+    for si < len(raw):
+        isp := false
+        pj := 0
+        for pj < len(f.params):
+            if f.params[pj] == raw[si]:
+                isp = true
+            pj = pj + 1
+        if not isp:
+            push(saccums, raw[si])
+        si = si + 1
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums)
     if f.name == "main":
         return "int main(void) {\n" + gen_block(f.body, names, types, fctx) + "    return 0;\n}\n"
     return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n" + gen_block(f.body, names, types, fctx) + "}\n"
@@ -2069,6 +2257,8 @@ fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
+    out = out + "static char* scopy(const char* s) { size_t n = strlen(s) + 1; char* r = malloc(n); memcpy(r, s, n); return r; }\n"
+    out = out + "static void hi_append(char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; *s = (char*)realloc(*s, (size_t)nc); *cap = nc; } memcpy(*s + *len, e, (size_t)le + 1); *len += le; }\n"
     out = out + "static char* f2s(double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = malloc(m + 1); memcpy(r, t, m + 1); return r; }\n"
     out = out + "static char* substr(const char* s, long a, long b) { long n = b - a; char* r = malloc(n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
@@ -2489,7 +2679,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

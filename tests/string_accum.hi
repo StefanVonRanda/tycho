@@ -1,0 +1,21 @@
+# String-append accumulator: `s = s + e` grows s's buffer in place (O(n), not
+# the O(n^2) sc()-rebuild). Soundness regression: a snapshot `b := s` must
+# deep-copy, so a later in-place append to s leaves the snapshot untouched.
+fn build(n: int) -> string:
+    out := ""
+    i := 0
+    for i < n:
+        out = out + str(i) + ","
+        i = i + 1
+    return out
+
+fn main():
+    s := build(5)
+    snap := s              # snapshot: must be independent of later appends to s
+    s = s + "TAIL"
+    print(s + "\n")        # 0,1,2,3,4,TAIL
+    print(snap + "\n")     # 0,1,2,3,4,   (unchanged)
+    # plain reassign of an accumulator then append again (sidecar resync)
+    s = "x"
+    s = s + "y" + "z"
+    print(s + "\n")        # xyz

@@ -67,6 +67,18 @@ a `_scope`-allocated string stored into a still-malloc'd container (array
 field, struct field) that escapes would dangle — so "strings on arena"
 entangles with escape analysis from day one. Not a clean increment.
 
+**✅ DONE (string accumulator).** Implemented in `compiler/hierc0.hi`:
+`scopy`/`hi_append` runtime, `gen_rhs` string copy-on-place-bind (snapshot
+safety), a `sacc_scan` pass (threaded via `Ctx.saccums`), heap-ify+sidecars at
+SDecl/STypedDecl, in-place `hi_append` / sidecar-resync at SAssign. Two bugs
+found+fixed via the fixpoint+ASan (both env-desync in the scan, not the
+accumulator: SDecl pushed the name before computing `type_of` → parallel
+arrays desynced → `type_of` substr crash; SMatch typed arm binds `""` instead
+of the real payload types → same crash). Verified: `make fixpoint` B≡C green,
+`make test` 57/57 (`tests/string_accum.hi` covers snapshot independence +
+resync), and a 30 000-iter string build dropped from **4638 MB / 1937 ms to
+10 MB / 3 ms** (≈464× memory, ≈645× time). Arena spine (below) is next.
+
 The genuinely self-contained, high-leverage first win is the **string-append
 accumulator** — the C compiler has it (`is_self_append` → `hier_str_append`),
 hierc0 LACKS it. Today hierc0 emits `out = out + x` as `out = sc(out, x)`:
