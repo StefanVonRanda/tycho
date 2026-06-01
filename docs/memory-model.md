@@ -157,6 +157,33 @@ Then resume the arena spine (MM-1 below) for the heap types append can't cover.
   return-elision *optimizations* (always-copy is sound, just slower) — those are
   MM-6.
 
+- **✅ S2.1 (commit 8407340): transient arena for print args.** owner-plumbing
+  established: string allocators take a leading `Arena*` (NULL→malloc via
+  `amem`, the safe fallback for un-migrated contexts); `Ctx.owner` (default `"0"`)
+  + `with_owner()`; `print(e)` builds temporaries in a per-statement `_t` arena
+  freed after `fputs`. Sound because print args don't escape. Internal runtime
+  callers that stay malloc (hi_split substrs, struct-copy/map-key `sc`) pass `0`;
+  the accumulator's `scopy` stays `0` (realloc-grown buffer must be malloc).
+  fixpoint B≡C + 57/57 + ASan clean; print-heavy 2M-iter loop 421MB→10MB (~42×).
+
+- **S2.2 (next, intricate/high-risk): returns→`_parent` + exhaustive store-copy.**
+  FINDING: no more cleanly-safe flips remain — print was the only context whose
+  values provably don't escape. Returns escape: `return P("a"+s, n)` builds a
+  string into `_parent` that the caller can store long-term → UAF. So returns-flip
+  is sound ONLY together with forcing EVERY container-store to copy strings into
+  the container's arena (= `0`/malloc while containers are still malloc), at all
+  of: `push` value, `map_set`/map-literal value, `gen_store_args`
+  (struct/enum/tuple fields — needs per-field TYPE to know which args are str),
+  `hbox` payloads (Some/Ok/Err), `SFieldAssign`/index-assign rhs. Rule: at a
+  string store, emit `scopy(0, <value built with owner 0>)` → stored strings are
+  malloc/immortal regardless of the ambient owner, making returns→`_parent` safe.
+  One missed site = UAF in the self-hosting compiler, so this needs exhaustive
+  per-site coverage + ASan on the self-compile + an adversarial probe
+  (return-string-then-store-into-param-array). Modest benefit (frees returned
+  non-accumulator string churn; accumulators already minimize the dominant cost),
+  so weigh against the container migrations (MM-2..4) which are the bigger wins
+  and the same coupled-difficulty class.
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
