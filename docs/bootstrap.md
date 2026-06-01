@@ -259,7 +259,11 @@ fixpoint.
       (arith, vars, control, functions, strings, loops) passing `make bootstrap`
       differentially against the C compiler. Deferred to Stage 2: the counting
       `for i in range()` form, string variables, and a real type system.
-- [ ] **Stage 2** — grow to cover `examples/*.hi`. In progress:
+- [x] **Stage 2** — grow to cover `examples/*.hi`. **Complete: all 16
+      `examples/*.hi` compile through hierc0 with golden-identical output**
+      (15 verified in `make bootstrap`; `hello.hi` verified manually with piped
+      stdin — it can't be a harness fixture because the runner gives binaries no
+      stdin and `input()` would block). Increments:
       - **2A** (commit eb2fdef): the counting `for i in range(...)` form.
       - **2B**: string-typed variables, parameters, and return types — the
         leap from untyped (`long` everything) to a real int/str distinction.
@@ -393,9 +397,20 @@ fixpoint.
         on the syntactic self-assignment pattern (assumes unique ownership; no
         example aliases a map). Fixture `wordcount.hi` passes with identical key
         order. (No tombstones — the subset has no map delete.)
-      - **Stage 2 status: all non-stdin `examples/*.hi` now compile through
-        hierc0 with golden-identical output.** Remaining: `hello.hi` needs
-        `input()` (stdin-dependent, untestable in the differential harness).
+      - **2M**: the remaining string builtins + I/O. `find(s, sub) -> int`
+        (`strstr`), string indexing `s[i] -> int` (the byte/ord, vs array
+        `.data[i]`), lexicographic string comparison (`<`/`<=`/`==`/… on
+        strings → `strcmp(a,b) OP 0`), and `input()` / `chr()` faithfully
+        mirroring `runtime/hier_rt.c` (`input` reads a line, `""` on EOF; `chr`
+        is a one-byte string). Fixture `strops.hi` (= `examples/strings.hi`:
+        find/index/substr/ordering) passes; `examples/hello.hi` matches with
+        piped stdin (`echo Ada | … → "what is your name: hello Ada"`).
+      - **Stage 2 done.** 23 bootstrap fixtures green; every `examples/*.hi`
+        is golden-identical through hierc0. hierc0 is now ~700 lines of Hier
+        covering: functions/recursion/`inout`, int/bool/string scalars,
+        structs (+deep copy), `[T]` arrays (monomorphized), `{str:int}` maps
+        (FNV table, byte-identical key order), enums + `match`, the full
+        operator set, and string/array/map builtins.
         Language features still unimplemented (no example exercises them yet):
         `Option`/`Result` + `or_return`, tuples, float, `[struct-by-value]`
         arrays, non-`{str:int}` maps, map delete. These move into Stage 3

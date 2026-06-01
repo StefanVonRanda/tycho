@@ -779,6 +779,9 @@ fn elem_ty(ty: string) -> string:               # "[T]" -> "T"
 fn is_map(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 123          # "{K:V}"  (only {str:int} supported)
 
+fn is_cmp(op: string) -> bool:
+    return op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">="
+
 fn cty(ctx: Ctx, ty: string) -> string:
     if is_inout(ty):                              # inout T -> pointer to T's C type
         inner := cty(ctx, base_ty(ty))           # ends with a space
@@ -852,11 +855,17 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "str"
     if name == "substr":
         return "str"
+    if name == "chr":
+        return "str"
+    if name == "input":
+        return "str"
     if name == "split":
         return "[str]"
     if name == "keys":
         return "[str]"
     if name == "map_get":
+        return "int"
+    if name == "find":
         return "int"
     if name == "len":
         return "int"
@@ -884,9 +893,11 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return base_ty(var_type(names, types, name))
         EField(base, fld):
             return field_type(ctx, type_of(base, names, types, ctx), fld)
-        EIndex(base, idx):                        # element type: strip [ ] off "[int]"
+        EIndex(base, idx):
             bt := type_of(base, names, types, ctx)
-            return substr(bt, 1, len(bt) - 1)
+            if bt == "str":
+                return "int"                      # s[i] is the byte value (ord)
+            return substr(bt, 1, len(bt) - 1)     # else array element type
         EArrLit(elems):
             return "[" + type_of(elems[0], names, types, ctx) + "]"
         EArrEmpty(ety):
@@ -929,6 +940,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EField(base, fld):
             return gen_expr(base, names, types, ctx) + "." + fld
         EIndex(base, idx):
+            if type_of(base, names, types, ctx) == "str":   # s[i] -> the byte as an int
+                return "((long)(unsigned char)" + gen_expr(base, names, types, ctx) + "[" + gen_expr(idx, names, types, ctx) + "])"
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
@@ -944,6 +957,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "sc(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             if op == "==" and is_enum(ctx, type_of(l, names, types, ctx)):
                 return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            if is_cmp(op) and type_of(l, names, types, ctx) == "str":   # lexicographic string compare
+                return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -957,6 +972,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "i2s(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "substr":
                 return "substr(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+            if name == "find":
+                return "hi_find(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "split":
                 return "hi_split(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_set":
@@ -965,9 +982,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "map_str_int_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
                 return "map_str_int_keys(" + gen_expr(args[0], names, types, ctx) + ")"
+            if name == "chr":
+                return "hi_chr(" + gen_expr(args[0], names, types, ctx) + ")"
             if name == "input":
-                die("codegen: input() not supported yet")
-                return ""
+                return "hi_input()"
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
                 return "mk_" + name + "(" + gen_args(args, names, types, ctx) + ")"
             if is_struct(ctx, name):              # struct construction -> compound literal
@@ -1267,6 +1285,9 @@ fn preamble() -> string:
     out = out + "static char* sc(const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = malloc(la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
     out = out + "static char* i2s(long n) { char* r = malloc(24); snprintf(r, 24, \"%ld\", n); return r; }\n"
     out = out + "static char* substr(const char* s, long a, long b) { long n = b - a; char* r = malloc(n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
+    out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
+    out = out + "static char* hi_input(void) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
+    out = out + "static char* hi_chr(long n) { char* r = malloc(2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
     return out
 
 # One monomorphized value-array family per element type T: Arr_T holds a

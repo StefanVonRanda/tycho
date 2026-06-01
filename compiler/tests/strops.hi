@@ -1,0 +1,20 @@
+# String builtins: len, indexing, substr, find, ordering, concat.
+
+fn first_word(s: string) -> string:
+    i := find(s, " ")
+    if i < 0:
+        return s
+    else:
+        return substr(s, 0, i)        # returned slice is promoted to caller's arena
+
+fn main():
+    s := "hierarchical arenas"
+    print("len: " + str(len(s)) + "\n")           # byte length
+    print("s[0] as int: " + str(s[0]) + "\n")     # 'h' -> 104, bounds-checked
+    print("first 4: " + substr(s, 0, 4) + "\n")   # "hier"
+    print("find 'arena': " + str(find(s, "arena")) + "\n")
+    print("first word: " + first_word(s) + "\n")
+
+    # ordering is lexicographic on strings
+    if "apple" < "banana":
+        print("apple < banana\n")
