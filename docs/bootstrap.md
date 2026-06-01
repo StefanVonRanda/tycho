@@ -276,7 +276,11 @@ fixpoint.
         passed as `inout` — the compiler enforces this ("copy it first"), so
         `gen_block` copies its env arrays locally. `input()` deferred
         (stdin-dependent, untestable in the differential harness).
-      - Next gaps for `examples/*.hi`: bare call-statements (`countdown(5)` —
-        `demo.hi`), then structs, arrays+`push`, enums+`match`.
+      - **2C**: bare call-statements (`countdown(5)` — a call invoked for its
+        effect, no assignment). New `SExpr(Expr)` stmt; parsed when a leading
+        ident is followed by `(`, emitted as `EXPR;`. Fixture `calls.hi`
+        passes; `examples/demo.hi` now matches the C compiler end-to-end.
+      - Next gaps for `examples/*.hi`: structs (construction, field access,
+        value-copy assignment), arrays+`push`, then enums+`match`.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

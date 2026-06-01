@@ -188,6 +188,7 @@ enum Stmt:
     SIf(Expr, [Stmt], [Stmt])
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
     SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
+    SExpr(Expr)              # bare expression statement, e.g. a call `f(x)`
 
 struct Param:
     name: string
@@ -364,8 +365,18 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         elif toks[pos].kind == TEq:
             pos = pos + 1
             return SAssign(name, parse_expr(toks, &pos))
+        elif toks[pos].kind == TLParen:          # bare call statement: f(args)
+            pos = pos + 1
+            args := []Expr
+            if toks[pos].kind != TRParen:
+                push(args, parse_expr(toks, &pos))
+                for toks[pos].kind == TComma:
+                    pos = pos + 1
+                    push(args, parse_expr(toks, &pos))
+            expect(toks, &pos, TRParen)
+            return SExpr(ECall(name, args))
         else:
-            die("parse: expected ':=' or '='")
+            die("parse: expected ':=', '=', or '('")
             return SReturn(EInt("0"))
     else:
         die("parse: expected a statement")
@@ -534,6 +545,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], sigs: [Sig]) 
             return "    fputs(" + gen_expr(e, names, types, sigs) + ", stdout);\n"
         SReturn(e):
             return "    return " + gen_expr(e, names, types, sigs) + ";\n"
+        SExpr(e):
+            return "    " + gen_expr(e, names, types, sigs) + ";\n"
         SIf(cond, then_body, else_body):
             out := "    if (" + gen_expr(cond, names, types, sigs) + ") {\n" + gen_block(then_body, names, types, sigs) + "    }"
             if len(else_body) > 0:
