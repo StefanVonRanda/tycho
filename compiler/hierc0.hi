@@ -1608,6 +1608,21 @@ fn is_evar(e: Expr, name: string) -> bool:
         EAddr(x):
             return false
 
+# Deep-copy a C expression `code` of Hier type `ty` (value semantics for a bind
+# whose value may be mutated). Copies the mutable heap containers; scalars,
+# strings (immutable), and enum/option/result (immutable) are share-safe.
+fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
+    rt := resolve_nt(ctx, ty)
+    if is_array(rt):
+        return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + code + ")"
+    if is_map(rt):
+        return mfam(rt) + "_copy(" + code + ")"
+    if is_tuple(rt):
+        return "Tup_" + tup_suffix(rt) + "_copy(" + code + ")"
+    if is_struct(ctx, rt) and struct_is_heap(ctx, rt):
+        return rt + "_copy(" + code + ")"
+    return code
+
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
 # binding is independent (Hier value semantics). Fresh arrays (literals, call
 # results) already own their buffer; scalars/strings need no copy.
@@ -1777,7 +1792,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 bt := types
                 j := 0
                 for j < len(binds):
-                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + scu + "->" + vname + "_" + str(j) + ";\n"
+                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + cp_typed(ctx, pts[j], scu + "->" + vname + "_" + str(j)) + ";\n"
                     push(bn, binds[j])
                     push(bt, pts[j])
                     j = j + 1
@@ -1858,7 +1873,7 @@ fn gen_match_optres(ctx: Ctx, sty: string, scu: string, variants: [string], allb
                     bty = result_err(sty)
                     fld = "err"
             ct := cty(ctx, bty)
-            out = out + "    " + ct + binds[0] + " = *(" + ct + "*)(" + scu +"." + fld + ");\n"
+            out = out + "    " + ct + binds[0] + " = " + cp_typed(ctx, bty, "*(" + ct + "*)(" + scu + "." + fld + ")") + ";\n"
             push(bn, binds[0])
             push(bt, bty)
         out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
