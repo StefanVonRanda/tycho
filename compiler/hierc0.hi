@@ -186,6 +186,7 @@ enum Stmt:
     SPrint(Expr)             # the Expr is a string expression
     SReturn(Expr)
     SIf(Expr, [Stmt], [Stmt])
+    SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
 
 struct Func:
     name: string
@@ -337,6 +338,12 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         then_body := parse_block(toks, &pos)
         else_body := parse_else(toks, &pos)
         return SIf(cond, then_body, else_body)
+    elif t.kind == TIdent and t.text == "for":
+        pos = pos + 1
+        cond := parse_expr(toks, &pos)
+        expect(toks, &pos, TColon)
+        body := parse_block(toks, &pos)
+        return SWhile(cond, body)
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -459,6 +466,8 @@ fn gen_stmt(s: Stmt) -> string:
             if len(else_body) > 0:
                 out = out + " else {\n" + gen_block(else_body) + "    }"
             return out + "\n"
+        SWhile(cond, body):
+            return "    while (" + gen_iexpr(cond) + ") {\n" + gen_block(body) + "    }\n"
 
 fn gen_params(f: Func) -> string:
     if len(f.params) == 0:
