@@ -1665,6 +1665,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             lhs := gen_expr(EVar(name), names, types, ctx)
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
+                # KNOWN LIMITATION: if `name` is a by-value MAP PARAM, this
+                # in-place put mutates the caller's shared table (value-semantics
+                # violation; the C compiler is correct here). Not fixed because
+                # hierc0 has no globals to track params, and a pure-copy fallback
+                # rehashes -> different keys() order -> diverges from the C
+                # compiler on map-building fixtures (wordcount). Local map
+                # accumulators (the common case) are sound: they own their table.
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name):
                         return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
