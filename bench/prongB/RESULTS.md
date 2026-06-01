@@ -35,20 +35,32 @@ exact loop-scratch fast path this doc previously flagged as a TODO. Only the
 Hier rows changed (same machine; C/Rust/Go/Koka are unchanged), isolating the
 effect of that compiler change:
 
-| language               | peak RSS | wall time | (was, pre-tuning) |
-| ---------------------- | -------: | --------: | ----------------: |
-| Koka (Perceus RC+reuse)|    14 MB |    278 ms | 14 MB / 271 ms |
-| **Hier** (loop-scoped) |  **33 MB** | **197 ms** | 33 MB / 399 ms |
-| Hier (idiomatic)       |    33 MB |    263 ms | 33 MB / 400 ms |
-| C (malloc/free)        |    33 MB |    788 ms | 33 MB / 784 ms |
-| Rust (Box)             |    33 MB |    863 ms | 33 MB / 840 ms |
-| Go (GC)                |    36 MB |   1524 ms | 37 MB / 1537 ms |
+| language               | peak RSS | wall time | (was) |
+| ---------------------- | -------: | --------: | ----: |
+| Koka (Perceus RC+reuse)|    14 MB |    268 ms | 14 MB |
+| **Hier** (loop-scoped) |  **25 MB** | **202 ms** | 33 MB / 399 ms |
+| Hier (idiomatic)       |    25 MB |    206 ms | 33 MB / 400 ms |
+| C (malloc/free)        |    33 MB |    804 ms | 33 MB |
+| Rust (Box)             |    33 MB |    879 ms | 33 MB |
+| Go (GC)                |    33 MB |   1528 ms | 36 MB |
 
-The block-retaining reset cut Hier's binary-trees time roughly in half
-(scoped 399→197 ms, idiomatic 400→263 ms): each iteration's scratch arena now
-keeps its block and rewinds it instead of returning it to the OS and
-re-`malloc`ing next iteration. **Hier is now faster than Koka on wall time
-here** (197 ms vs 278 ms); Koka still wins peak memory (14 MB vs 33 MB).
+Two compiler changes moved Hier here. **(a) Block-retaining `arena_reset`**
+(4b18b89) cut time ~2× (scoped 399→197 ms): each iteration's scratch arena
+keeps its block and rewinds it instead of re-`malloc`ing. **(b) Compact node
+representation + 8-byte arena alignment** cut peak memory 33→25 MB: an enum
+value is now a pointer to a single `{ tag; union of variant fields }` cell (one
+allocation per node, fields inline, nullary variants share a static singleton),
+replacing the old `{tag, void* payload}` descriptor + separately-allocated
+payload. A `Tree` node drops 32→24 B — but only realized once arena alignment
+went 16→8 B (Hier's max type alignment is 8: long/double/pointer), since 24 B
+rounds back to 32 under 16 B alignment.
+
+**Hier now beats hand-written `malloc`/`free` C, Rust, and Go on BOTH axes** of
+binary-trees: lower memory (25 vs 33 MB) and ~4× faster. It is faster than Koka
+on wall time (202 vs 268 ms); Koka keeps the memory lead (14 MB) because Perceus
+frees the depth-19 stretch tree the instant its refcount hits zero, while the
+arena holds it until scope exit — a structural difference, not node width. The
+compact-node change closed ~42% of the memory gap to Koka (19→11 MB).
 
 ## What this shows
 

@@ -484,7 +484,7 @@ static const char *c_type(Type t) {
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
     if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
-    if (IS_ENUM(t))   return sfmt("E_%s ", g_enums[ENUM_ID(t)].name);
+    if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     switch (t) {
         case T_INT:          return "long ";
         case T_FLOAT:        return "double ";
@@ -2480,14 +2480,14 @@ static char *gen_call(Expr *e, const char *arena) {
         Variant *var = &g_enums[eid].variants[vi];
         const char *en = g_enums[eid].name;
         if (var->npayload == 0)
-            return sfmt("((E_%s){ %d, 0 })", en, vi);
-        /* arena-allocate the variant's payload struct and deep-copy each field */
-        char *out = sfmt("({ E_%s_%s *_p = (E_%s_%s *)arena_alloc(%s, sizeof(E_%s_%s));",
-                         en, var->name, en, var->name, arena, en, var->name);
+            return sfmt("(&_sing_%s_%d)", en, vi);   /* shared singleton: no allocation */
+        /* arena-allocate one tagged cell; set tag + the variant's fields inline */
+        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, sizeof(E_%s)); _p->tag = %d;",
+                         en, en, arena, en, vi);
         for (int i = 0; i < var->npayload; i++)
-            out = sfmt("%s _p->f%d = %s;", out, i,
+            out = sfmt("%s _p->u.%s.f%d = %s;", out, var->name, i,
                        arg_into(var->payload[i], arena, e->args[i]));
-        return sfmt("%s (E_%s){ %d, _p }; })", out, en, vi);
+        return sfmt("%s _p; })", out);
     }
     if (!strcmp(e->sval, "len")) {
         char *a = gen_expr(e->args[0], arena);
@@ -3234,13 +3234,13 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
                     Variant *var = &ed->variants[vi];
                     indent(o, ind + 1);
-                    fprintf(o, "%sif (_m%d.tag == %d) {\n", i ? "else " : "", mid, vi);
+                    fprintf(o, "%sif (_m%d->tag == %d) {\n", i ? "else " : "", mid, vi);
                     int bid = g_blk++;   /* names the payload pointer _p<bid> */
                     int m = cv_mark();
                     if (var->npayload > 0) {
                         indent(o, ind + 2);
-                        fprintf(o, "E_%s_%s *_p%d = (E_%s_%s *)_m%d.payload;\n",
-                                en, var->name, bid, en, var->name, mid);
+                        fprintf(o, "E_%s_%s *_p%d = &_m%d->u.%s;\n",
+                                en, var->name, bid, mid, var->name);
                         for (int b = 0; b < arm->nbinds; b++) {
                             char *field = sfmt("_p%d->f%d", bid, b);
                             /* borrow the scrutinee's payload instead of deep-
@@ -3573,8 +3573,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * so it has to be a complete type at the point the array typedef uses it.
      * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
-    for (int i = 0; i < g_nenums; i++)
-        fprintf(o, "typedef struct { int tag; void *payload; } E_%s;\n", g_enums[i].name);
+    for (int i = 0; i < g_nenums; i++)              /* forward-declare cells; a value is E_<name>* */
+        fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
@@ -3603,6 +3603,28 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o, " %sf%d;", c_type(var->payload[f]), f);
             fprintf(o, " } E_%s_%s;\n", g_enums[i].name, var->name);
         }
+    /* (3c) enum cell bodies: a value is a pointer to { int tag; union of the
+     * payload-bearing variants' field structs }. One allocation per node, fields
+     * inline (no separate payload alloc, no void* indirection). Nullary variants
+     * carry no fields and share a static singleton cell — zero per-node alloc and
+     * dispatch stays a uniform v->tag. */
+    for (int i = 0; i < g_nenums; i++) {
+        EnumDef *ed = &g_enums[i];
+        int has_payload = 0;
+        for (int v = 0; v < ed->nvariants; v++) if (ed->variants[v].npayload) has_payload = 1;
+        fprintf(o, "struct E_%s { int tag;", ed->name);
+        if (has_payload) {
+            fprintf(o, " union {");
+            for (int v = 0; v < ed->nvariants; v++)
+                if (ed->variants[v].npayload)
+                    fprintf(o, " E_%s_%s %s;", ed->name, ed->variants[v].name, ed->variants[v].name);
+            fprintf(o, " } u;");
+        }
+        fprintf(o, " };\n");
+        for (int v = 0; v < ed->nvariants; v++)         /* shared singleton per nullary variant */
+            if (ed->variants[v].npayload == 0)
+                fprintf(o, "static E_%s _sing_%s_%d = { %d };\n", ed->name, ed->name, v, v);
+    }
     fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
         const char *nm = g_structs[i].name;
@@ -3622,8 +3644,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
         const char *en = g_enums[i].name;
         if (type_is_heap(ENUM_TYPE(i)))
-            fprintf(o, "static E_%s hier_copy_E_%s(Arena *a, E_%s v);\n", en, en, en);
-        fprintf(o, "static int hier_eq_E_%s(E_%s a, E_%s b);\n", en, en, en);
+            fprintf(o, "static E_%s *hier_copy_E_%s(Arena *a, E_%s *v);\n", en, en, en);
+        fprintf(o, "static int hier_eq_E_%s(E_%s *a, E_%s *b);\n", en, en, en);
     }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         const char *ct = c_type(g_arrtypes[i].elem);
@@ -3752,29 +3774,27 @@ static void gen_program(FILE *o, ProcVec *prog) {
         EnumDef *ed = &g_enums[i];
         const char *en = ed->name;
         if (type_is_heap(ENUM_TYPE(i))) {
-            fprintf(o, "static E_%s hier_copy_E_%s(Arena *a, E_%s v) {\n", en, en, en);
-            fprintf(o, "    E_%s r = v;\n", en);
+            fprintf(o, "static E_%s *hier_copy_E_%s(Arena *a, E_%s *v) {\n", en, en, en);
             for (int v2 = 0; v2 < ed->nvariants; v2++) {
                 Variant *var = &ed->variants[v2];
                 if (var->npayload == 0) continue;
-                fprintf(o, "    if (v.tag == %d) {\n", v2);
-                fprintf(o, "        E_%s_%s *s = (E_%s_%s *)v.payload, *d = (E_%s_%s *)arena_alloc(a, sizeof *d);\n",
-                        en, var->name, en, var->name, en, var->name);
+                fprintf(o, "    if (v->tag == %d) {\n", v2);
+                fprintf(o, "        E_%s *d = (E_%s *)arena_alloc(a, sizeof *d); d->tag = %d;\n", en, en, v2);
                 for (int f = 0; f < var->npayload; f++)
-                    fprintf(o, "        d->f%d = %s;\n", f, copy_into(var->payload[f], "a", sfmt("s->f%d", f)));
-                fprintf(o, "        r.payload = d;\n    }\n");
+                    fprintf(o, "        d->u.%s.f%d = %s;\n", var->name, f,
+                            copy_into(var->payload[f], "a", sfmt("v->u.%s.f%d", var->name, f)));
+                fprintf(o, "        return d;\n    }\n");
             }
-            fprintf(o, "    return r;\n}\n");
+            fprintf(o, "    return v;\n}\n");   /* nullary variant: shared static singleton, immutable */
         }
-        fprintf(o, "static int hier_eq_E_%s(E_%s a, E_%s b) {\n", en, en, en);
-        fprintf(o, "    if (a.tag != b.tag) return 0;\n");
+        fprintf(o, "static int hier_eq_E_%s(E_%s *a, E_%s *b) {\n", en, en, en);
+        fprintf(o, "    if (a->tag != b->tag) return 0;\n");
         for (int v2 = 0; v2 < ed->nvariants; v2++) {
             Variant *var = &ed->variants[v2];
             if (var->npayload == 0) continue;
-            fprintf(o, "    if (a.tag == %d) { E_%s_%s *x = (E_%s_%s *)a.payload, *y = (E_%s_%s *)b.payload; return ",
-                    v2, en, var->name, en, var->name, en, var->name);
+            fprintf(o, "    if (a->tag == %d) { return ", v2);
             for (int f = 0; f < var->npayload; f++)
-                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("x->f%d", f), sfmt("y->f%d", f)),
+                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("a->u.%s.f%d", var->name, f), sfmt("b->u.%s.f%d", var->name, f)),
                         f + 1 < var->npayload ? " && " : "");
             fprintf(o, "; }\n");
         }

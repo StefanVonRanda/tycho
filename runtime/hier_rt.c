@@ -81,7 +81,7 @@ Arena arena_new(size_t blocksz) {
 Arena arena_child(Arena *parent) { return arena_new(parent->blocksz); }
 
 void *arena_alloc(Arena *a, size_t n) {
-    n = (n + 15u) & ~(size_t)15u;            /* 16-byte align */
+    n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Hier types: long/double/ptr) */
     if (!a->head || a->head->off + n > a->head->cap) {
         size_t cap = n > a->blocksz ? n : a->blocksz;
         HBlock *b = block_get(cap);
