@@ -187,6 +187,7 @@ enum Stmt:
     SReturn(Expr)
     SIf(Expr, [Stmt], [Stmt])
     SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
+    SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
 
 struct Func:
     name: string
@@ -340,7 +341,28 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SIf(cond, then_body, else_body)
     elif t.kind == TIdent and t.text == "for":
         pos = pos + 1
-        cond := parse_expr(toks, &pos)
+        if toks[pos].kind == TIdent and toks[pos + 1].kind == TIdent and toks[pos + 1].text == "in":
+            varname := toks[pos].text       # counting form: for i in range(...)
+            pos = pos + 1
+            expect_ident(toks, &pos, "in")
+            expect_ident(toks, &pos, "range")
+            expect(toks, &pos, TLParen)
+            a1 := parse_expr(toks, &pos)
+            start := EInt("0")              # range(n): 0..n
+            stop := a1
+            step := EInt("1")
+            if toks[pos].kind == TComma:    # range(a, b[, c])
+                pos = pos + 1
+                start = a1
+                stop = parse_expr(toks, &pos)
+                if toks[pos].kind == TComma:
+                    pos = pos + 1
+                    step = parse_expr(toks, &pos)
+            expect(toks, &pos, TRParen)
+            expect(toks, &pos, TColon)
+            body := parse_block(toks, &pos)
+            return SForRange(varname, start, stop, step, body)
+        cond := parse_expr(toks, &pos)      # condition form: for COND:
         expect(toks, &pos, TColon)
         body := parse_block(toks, &pos)
         return SWhile(cond, body)
@@ -468,6 +490,8 @@ fn gen_stmt(s: Stmt) -> string:
             return out + "\n"
         SWhile(cond, body):
             return "    while (" + gen_iexpr(cond) + ") {\n" + gen_block(body) + "    }\n"
+        SForRange(name, start, stop, step, body):
+            return "    for (long " + name + " = " + gen_iexpr(start) + "; " + name + " < " + gen_iexpr(stop) + "; " + name + " += " + gen_iexpr(step) + ") {\n" + gen_block(body) + "    }\n"
 
 fn gen_params(f: Func) -> string:
     if len(f.params) == 0:
