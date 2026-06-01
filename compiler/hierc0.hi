@@ -1127,6 +1127,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
             if op == "==" and is_array(type_of(l, names, types, ctx)):   # element-wise array equality
                 return "Arr_" + elem_ty(type_of(l, names, types, ctx)) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            if op == "==" and is_struct(ctx, type_of(l, names, types, ctx)):   # structural struct equality
+                return type_of(l, names, types, ctx) + "_eq(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
@@ -1465,6 +1467,23 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
         i = i + 1
     return out + "    return r;\n}\n"
 
+# Structural equality for a struct: AND of per-field equality (recurses through
+# nested structs, arrays, enums, and Option/Result fields via eq_field).
+fn gen_struct_eq(ctx: Ctx, sd: StructDef) -> string:
+    nm := sd.name
+    out := "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { return "
+    if len(sd.fields) == 0:
+        out = out + "1"
+    else:
+        j := 0
+        for j < len(sd.fields):
+            if j > 0:
+                out = out + " && "
+            f := sd.fields[j]
+            out = out + eq_field(ctx, f.ty, "a." + f.name, "b." + f.name)
+            j = j + 1
+    return out + "; }\n"
+
 fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
         return "strcmp(" + a + ", " + b + ") == 0"
@@ -1472,6 +1491,23 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
         return "Arr_" + elem_ty(ty) + "_eq(" + a + ", " + b + ")"
     if is_enum(ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
+    if is_struct(ctx, ty):
+        return ty + "_eq(" + a + ", " + b + ")"
+    if is_option(ty):                            # tags equal, and (if Some) payloads equal
+        ct := cty(ctx, option_inner(ty))
+        pa := "*(" + ct + "*)(" + a + ".val)"
+        pb := "*(" + ct + "*)(" + b + ".val)"
+        return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 0 || " + eq_field(ctx, option_inner(ty), pa, pb) + "))"
+    if is_result(ty):
+        ct := cty(ctx, result_ok(ty))
+        ce := cty(ctx, result_err(ty))
+        oa := "*(" + ct + "*)(" + a + ".ok)"
+        ob := "*(" + ct + "*)(" + b + ".ok)"
+        ea := "*(" + ce + "*)(" + a + ".err)"
+        eb := "*(" + ce + "*)(" + b + ".err)"
+        okeq := eq_field(ctx, result_ok(ty), oa, ob)
+        ereq := eq_field(ctx, result_err(ty), ea, eb)
+        return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 1 ? " + okeq + " : " + ereq + "))"
     return "(" + a + " == " + b + ")"            # int/bool/float by value
 
 fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
@@ -1568,7 +1604,7 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
-    if et == "int" or et == "float" or et == "str" or is_enum(ctx, et):   # element has a usable eq
+    if et == "int" or et == "float" or et == "str" or is_enum(ctx, et) or is_struct(ctx, et):   # element has a usable eq
         out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
@@ -1697,9 +1733,13 @@ fn main():
         out = out + gen_arr_type(ctx, ets[i])
         i = i + 1
     out = out + gen_map_type()
-    i = 0                                        # 3. enum eq prototypes (mutual recursion)
+    i = 0                                        # 3. enum + struct eq prototypes (mutual recursion)
     for i < len(prog.enums):
         out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
+        i = i + 1
+    i = 0
+    for i < len(prog.structs):
+        out = out + "static int " + prog.structs[i].name + "_eq(" + prog.structs[i].name + " a, " + prog.structs[i].name + " b);\n"
         i = i + 1
     i = 0                                        # 4. user struct bodies (source order; array fields
     for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
@@ -1723,8 +1763,9 @@ fn main():
     for i < len(prog.enums):
         out = out + gen_enum_eq(prog.enums[i], ctx)
         i = i + 1
-    i = 0                                        # 8. deep-copy fns for heap-bearing structs
+    i = 0                                        # 8. struct equality + deep-copy fns
     for i < len(prog.structs):
+        out = out + gen_struct_eq(ctx, prog.structs[i])
         if struct_is_heap(ctx, prog.structs[i].name):
             out = out + gen_struct_copy(ctx, prog.structs[i])
         i = i + 1

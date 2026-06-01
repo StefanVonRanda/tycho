@@ -476,8 +476,14 @@ fixpoint.
         `options`, `results`, `or_return`, `optres_borrow` (+ a no-payload enum
         test). Deferred: `option_fields` (needs struct `==`), `option_arrays`
         (needs `[Option(...)]` element-name mangling).
-      Remaining failures: tuples, slices, `float_maps`, struct `==`
-      (`option_fields`, `aggregates`), nested/Option-element arrays
-      (`projections`, `option_arrays`, `aggregates`), and `maps`/`match_reuse`/
-      `ctor_move`/`enums` parser gaps.
+      - **3G**: structural struct `==` (19 → 20/29). A `StructName_eq` is
+        generated per struct (AND of per-field equality), with prototypes up
+        front for mutual recursion; `eq_field` gained struct / Option / Result
+        cases (recursing — e.g. an `Option(Point)` field compares tags then, if
+        `Some`, `Point_eq` on the boxed payloads). `Arr_T_eq` now also emits for
+        struct elements. Cleared `option_fields` (struct `==` recursing through
+        Option fields). `aggregates` is now blocked only by nested arrays.
+      Remaining failures: tuples, slices, `float_maps`, nested/Option-element
+      arrays (`projections`, `option_arrays`, `aggregates`), and `maps`/
+      `match_reuse`/`ctor_move`/`enums` parser gaps.
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
