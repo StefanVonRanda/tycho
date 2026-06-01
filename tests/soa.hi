@@ -12,6 +12,24 @@ struct Particle:
     vx: int
     vy: int
 
+# pass a soa BY VALUE (read-only); sums a field across all elements
+fn total_vx(ps: soa [Particle]) -> int:
+    i := 0
+    t := 0
+    for i < len(ps):
+        t = t + ps[i].vx
+        i = i + 1
+    return t
+
+# build and RETURN a soa from a function
+fn make_soa(n: int) -> soa [Particle]:
+    r := soa []Particle
+    i := 0
+    for i < n:
+        push(r, Particle(i, i * 2, i + 1, i + 3))
+        i = i + 1
+    return r
+
 fn main():
     ps := soa []Particle
     i := 0
@@ -46,3 +64,16 @@ fn main():
     # a direct field write to one element
     ps[2].x = 999
     print("ps2x=" + str(ps[2].x) + " ps0x=" + str(ps[0].x) + "\n")   # 999 2
+
+    # whole-element gather: p := ps[i] is an independent struct copy; mutating
+    # it must not touch the soa.
+    p := ps[0]
+    p.x = 0 - 7
+    print("gather: p.x=" + str(p.x) + " ps0.x=" + str(ps[0].x) + "\n")   # -7 2
+
+    # pass a soa by value (read-only) to a function
+    print("total_vx=" + str(total_vx(ps)) + "\n")                       # 5*1 = 5
+
+    # build and return a soa from a function; read it back
+    q := make_soa(4)
+    print("q.len=" + str(len(q)) + " q2.x=" + str(q[2].x) + " q2.y=" + str(q[2].y) + "\n")  # 4 2 4

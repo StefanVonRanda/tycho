@@ -1,3 +1,6 @@
 len=5
 sumx=20 sumy=120
 ps2x=999 ps0x=2
+gather: p.x=-7 ps0.x=2
+total_vx=5
+q.len=4 q2.x=2 q2.y=4

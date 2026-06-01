@@ -2405,11 +2405,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
                 return sfmt("hier_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("hier_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
-            if (IS_SOA(t)) {   /* foundational core: no whole-soa copy/pass/return yet */
-                fprintf(stderr, "hierc: a soa value cannot yet be copied, passed, or returned "
-                                "by value -- the current core supports push and a[i].field in place\n");
-                exit(1);
-            }
+            if (IS_SOA(t))   /* deep-copy each field buffer into `arena` */
+                return sfmt("Soa%d_copy(%s, %s)", SOA_ID(t), arena, val);
             return val;   /* int/bool/float/pure struct: nothing to re-home */
     }
 }
@@ -2734,8 +2731,22 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
         case E_CALL: return gen_call(e, arena);
         case E_INDEX: {
-            if (IS_SOA(e->lhs->type))   /* bare a[i] gather not in the core; a[i].field is handled in E_FIELD */
-                die_at(e->line, "a soa element `a[i]` cannot be read as a whole value yet — use a[i].field");
+            if (IS_SOA(e->lhs->type)) {
+                /* gather: assemble a struct value from the field buffers at i,
+                 * bounds-checked once. The struct's fields are read shallowly;
+                 * binding/passing/returning it deep-copies via is_place (so a
+                 * heap field stays independent — value semantics). */
+                int id = g_blk++;
+                StructDef *sd = &g_structs[STRUCT_ID(soa_struct(e->lhs->type))];
+                int sid = SOA_ID(e->lhs->type);
+                char *sl = gen_lvalue(e->lhs, arena);
+                char *ix = gen_expr(e->rhs, arena);
+                char *out = sfmt("({ Soa%d *_g%d = &(%s); long _gi%d = Soa%d_bound(_g%d, %s); (S_%s){ ",
+                                 sid, id, sl, id, sid, id, ix, sd->name);
+                for (int f = 0; f < sd->nfields; f++)
+                    out = sfmt("%s%s_g%d->f%d[_gi%d]", out, f ? ", " : "", id, f, id);
+                return sfmt("%s }; })", out);
+            }
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING)
@@ -3831,7 +3842,19 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int f = 0; f < sd->nfields; f++)
             fprintf(o, "    s->f%d[s->len] = %s;\n", f,
                     copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
-        fprintf(o, "    s->len++;\n}\n\n");
+        fprintf(o, "    s->len++;\n}\n");
+        /* deep-copy a soa value (value semantics on bind/pass/return): each
+         * field buffer is reallocated in the target arena and its elements
+         * copied (deep for heap fields via copy_into). */
+        fprintf(o, "static Soa%d Soa%d_copy(Arena *a, Soa%d s) {\n", i, i, i);
+        fprintf(o, "    Soa%d r; r.len = s.len; r.cap = s.len;\n", i);
+        for (int f = 0; f < sd->nfields; f++) {
+            const char *ct = c_type(sd->fields[f].type);
+            fprintf(o, "    r.f%d = s.len ? (%s*)arena_alloc(a, (size_t)s.len * sizeof(%s)) : 0;\n", f, ct, ct);
+            fprintf(o, "    for (long i = 0; i < s.len; i++) r.f%d[i] = %s;\n", f,
+                    copy_into(sd->fields[f].type, "a", sfmt("s.f%d[i]", f)));
+        }
+        fprintf(o, "    return r;\n}\n\n");
     }
     /* (8) Option copy bodies (typedefs already emitted in step 3). A copy fn is
      * emitted only for a heap-valued Option; it re-homes the value when present.

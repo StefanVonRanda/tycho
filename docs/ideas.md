@@ -166,9 +166,12 @@ cluster of languages, and the differences are the interesting part:
    `[int]`/`[]int` convention.) Core ops: empty literal, `push` (grows each
    field buffer in the arena + scatters, deep-copying heap fields), `len`, field
    read `a[i].f`, field write `a[i].f = v` — all bounds-checked like the AoS
-   arrays (`tests/soa.hi`). Still open: whole-element gather `p := a[i]`, `==`,
-   slices, pass/return-by-value, nesting, and SOA in hierc0's self-hosting
-   subset (so `soa.hi` is skipped in the fixpoint differential for now).
+   arrays. Plus whole-element gather `p := a[i]` (assembles an independent struct
+   value) and pass/return-by-value (deep-copied per field — value semantics
+   hold). (`tests/soa.hi`.) Still open: `==`, slices, nesting (soa of soa /
+   struct fields), borrowing a soa param read-only without the per-call copy,
+   and SOA in hierc0's self-hosting subset (so `soa.hi` is skipped in the
+   fixpoint differential for now).
 
 ### Tier 4 — large or philosophy-divergent (note, don't rush)
 
