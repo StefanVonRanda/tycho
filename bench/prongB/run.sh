@@ -10,6 +10,7 @@
 #   c           C, manual malloc/free per node
 #   rust        Rust, Box-owned enum, RAII drop
 #   go          Go, pointer structs, garbage collected
+#   koka        Koka, Perceus reference counting + reuse (the direct rival)
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 HIERC=./hierc
@@ -26,6 +27,9 @@ $HIERC "$D/binary_trees_scoped.hi" --emit-c -o "$T/hiers"  >/dev/null 2>&1 && $C
 $CC -O2 -o "$T/c" "$D/binary_trees.c"
 command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/rs" "$D/binary_trees.rs" 2>/dev/null
 if command -v go >/dev/null 2>&1; then cp "$D/binary_trees.go" "$T/" && ( cd "$T" && go build -o go binary_trees.go 2>/dev/null ); fi
+# koka writes its build tree under --builddir; keep it out of the repo. koka -o
+# does not set +x, so chmod after.
+if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.koka" -o "$T/koka" "$D/binarytrees.kk" >/dev/null 2>&1 && chmod +x "$T/koka"; fi
 
 ref=""; fail=0
 printf '%-12s %10s %8s   %s\n' lang peakRSS time output
@@ -44,5 +48,6 @@ run hier_scoped hiers
 run c           c
 run rust        rs
 run go          go
+run koka        koka
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && echo "all outputs identical" || { echo "OUTPUT MISMATCH"; exit 1; }

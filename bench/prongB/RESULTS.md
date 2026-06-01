@@ -28,30 +28,45 @@ Run it: `sh bench/prongB/run.sh` (needs `cc`; uses `rustc`/`go` if present).
 
 ## Results
 
-Representative single run, one machine (gcc 15.2, rustc 1.93, go 1.26),
-peak RSS via `bench/peakrss.c`:
+Representative single run, one machine (gcc 15.2, rustc 1.93, go 1.26,
+koka 3.2.3), peak RSS via `bench/peakrss.c`:
 
 | language               | peak RSS | wall time |
 | ---------------------- | -------: | --------: |
-| **Hier** (idiomatic)   |  **33 MB** | **419 ms** |
-| Hier (loop-scoped)     |    33 MB |    400 ms |
-| C (malloc/free)        |    33 MB |    794 ms |
-| Rust (Box)             |    33 MB |    844 ms |
-| Go (GC)                |    36 MB |   1508 ms |
+| Koka (Perceus RC+reuse)|    14 MB |    271 ms |
+| **Hier** (idiomatic)   |  **33 MB** | **400 ms** |
+| Hier (loop-scoped)     |    33 MB |    399 ms |
+| C (malloc/free)        |    33 MB |    784 ms |
+| Rust (Box)             |    33 MB |    840 ms |
+| Go (GC)                |    37 MB |   1537 ms |
 
 (Before the transient-placement compiler fix, the idiomatic Hier row was
 153 MB / 765 ms — see below. Both Hier forms are now identical and C-class.)
 
 ## What this shows
 
-**The implicit-arena model is genuinely systems-grade.** Loop-scoped Hier
-matches C and Rust on peak memory (33 MB) and is the *fastest of all on wall
-time* — faster than hand-written `malloc`/`free` C. The reason is exactly
-the thesis: each iteration's tree is bump-allocated into the loop's scratch
-arena and reclaimed by a single `arena_reset` (free a short block list), so
-Hier pays neither C's per-node `free` traversal, nor Rust's recursive
-`Drop`, nor Go's GC. Value semantics + lexical arenas, no reference counts,
-no GC — and it lands at the C end of the spectrum.
+**The implicit-arena model is genuinely systems-grade.** Hier matches C and
+Rust on peak memory (33 MB) and *beats hand-written `malloc`/`free` C on wall
+time* (400 ms vs 784 ms), with Rust close behind C and Go ~2x slower. The
+reason is exactly the thesis: each iteration's tree is bump-allocated into
+the loop's scratch arena and reclaimed by a single `arena_reset` (free a
+short block list), so Hier pays neither C's per-node `free` traversal, nor
+Rust's recursive `Drop`, nor Go's GC. Value semantics + lexical arenas, no
+reference counts, no GC — and it lands at the C end of the spectrum.
+
+**Koka (Perceus) wins this particular benchmark — honestly.** At 14 MB /
+271 ms it is both lower-memory and faster than Hier here. binary-trees is
+almost pure allocate-and-immediately-discard, which is the best case for
+reference-counting-with-reuse: Perceus frees each short-lived tree the instant
+its count hits zero (so only the one long-lived tree is ever retained), and
+Koka's node layout is tighter than Hier's tagged `{tag, payload-ptr}` cell.
+Hier instead keeps a whole iteration's tree in the scratch arena until the
+next reset, and carries 64 KB-block overhead. The gap is not the arena model
+failing — Hier is still C-class with no GC and no per-object refcount traffic
+— but it marks two concrete improvement targets: a more compact node
+representation, and tighter arena block sizing. (Where Hier's *reuse* wins —
+in-place rewrite, the `bench/treewalk`/`comb_build` cases — is a workload
+binary-trees does not exercise; see the tree-rewrite TODO below.)
 
 **The idiomatic form is now C-class too (compiler fix landed).** Originally
 it cost 153 MB: in `sum = sum + check(make(d))` the transient tree from
@@ -79,9 +94,9 @@ could also be scoped — minor next to the call-argument case.
 ## Caveats / TODO
 
 - Single machine, single run; numbers are representative, not averaged.
-- **Koka (Perceus reference-counting + reuse) is the most direct rival** —
-  same FBIP idea via runtime refcounts instead of arenas — but it is not
-  installed here. Adding it is the missing comparison.
-- One workload. binary-trees stresses allocate/reclaim; a tree-*rewrite*
+- Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
+  backend with NDEBUG; debug *symbols* only, which don't affect runtime).
+- One workload. binary-trees stresses allocate/reclaim — Perceus's best case
+  and not where Hier's *reuse* (in-place rewrite) shows. A tree-*rewrite*
   workload (closer to `examples/optimize.hi`, exercising the match-arm
   borrow + construction reuse) is a worthwhile second data point.
