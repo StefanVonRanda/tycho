@@ -1,0 +1,54 @@
+# Soundness regression test for the borrow-read-only-heap-struct-param
+# optimization (src/hierc.c, param_aliased). A heap-bearing struct passed BY
+# VALUE must obey value semantics: nothing the callee does can mutate the
+# caller's value. Each fn below reaches for the param's interior through an
+# alias that does NOT name the param in a mutation position, so block_mutates
+# alone would wrongly borrow it. The expected column is the value-semantics
+# answer; a regression prints the corrupted value instead.
+
+struct Box:
+    items: [int]
+    tag: string
+
+# whole-struct bind, then mutate the alias's array element
+fn alias_whole(b: Box) -> int:
+    local := b
+    local.items[0] = 999
+    return local.items[0]
+
+# chained alias: b -> x -> y, then mutate y
+fn alias_chain(b: Box) -> int:
+    x := b
+    y := x
+    y.items[0] = 888
+    return y.items[0]
+
+# pre-declared local, then `=` whole-assign the param, then mutate
+fn alias_assign(b: Box) -> int:
+    acc := b
+    acc = b
+    acc.items[1] = 555
+    return acc.items[1]
+
+# alias the whole struct, then set its string field (heap field replace)
+fn alias_tag(b: Box) -> string:
+    local := b
+    local.tag = "MUTATED"
+    return local.tag
+
+fn main():
+    b1 := Box([1, 2, 3], "one")
+    w := alias_whole(b1)
+    print("alias_whole:  b1.items[0] = " + str(b1.items[0]) + " (expect 1)\n")
+
+    b2 := Box([1, 2, 3], "two")
+    c := alias_chain(b2)
+    print("alias_chain:  b2.items[0] = " + str(b2.items[0]) + " (expect 1)\n")
+
+    b3 := Box([1, 2, 3], "three")
+    a := alias_assign(b3)
+    print("alias_assign: b3.items[1] = " + str(b3.items[1]) + " (expect 2)\n")
+
+    b4 := Box([1, 2, 3], "four")
+    t := alias_tag(b4)
+    print("alias_tag:    b4.tag = " + b4.tag + " (expect four)\n")

@@ -2108,6 +2108,23 @@ static int is_inout_param(const char *name) {
     return 0;
 }
 
+/* names of ALL the current proc's params. A by-value param is a logical value
+ * copy whose underlying heap buffer belongs to the caller (a borrowed
+ * array/map/string/struct) or is a _scope deep-copy; either way the codegen
+ * must NEVER hand off (move) that buffer to another name, because for a borrowed
+ * param the buffer is the CALLER's — a move + later mutation of the destination
+ * would corrupt the caller (a value-semantics violation). can_move_from rejects
+ * any param. This makes explicit the "NULL = a param" intent the cv_arena scheme
+ * documents but no longer enforces (params are tracked as same-arena _scope
+ * locals, which otherwise look movable). Reset per proc. */
+static const char *g_param[8];
+static int g_nparam = 0;
+static int is_param(const char *name) {
+    for (int i = 0; i < g_nparam; i++)
+        if (!strcmp(g_param[i], name)) return 1;
+    return 0;
+}
+
 /* HEAP inout params additionally carry their value's owning arena as a hidden
  * C parameter `_ina_<name>`. Any allocating mutation of the param (a [string]
  * element copy, a heap struct field copy, an array regrow/push) must allocate
@@ -2173,6 +2190,7 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
  * the destination lives in arena `owner`? See the conditions above. */
 static int can_move_from(Expr *rhs, const char *owner) {
     if (rhs->kind != E_IDENT || !type_is_heap(rhs->type)) return 0;
+    if (is_param(rhs->sval)) return 0;   /* never move a param's buffer (caller-owned) */
     if (g_loop_depth != 0) return 0;
     const char *a = cv_arena(rhs->sval);
     if (!a || strcmp(a, owner) != 0) return 0;        /* not a same-arena local (NULL = a param) */
@@ -3362,6 +3380,10 @@ static void gen_proc(FILE *o, Proc *pr) {
             if (type_is_heap(pr->params[i].type))
                 g_heap_inout[g_nheap_inout++] = pr->params[i].name;
         }
+    /* register ALL params so can_move_from never hands off a param's buffer */
+    g_nparam = 0;
+    for (int i = 0; i < pr->nparams; i++)
+        g_param[g_nparam++] = pr->params[i].name;
     /* a reassigned param must land in this proc's scope to outlive any
      * inner block; the incoming pointer itself is borrowed from the caller.
      * EXCEPT a returned `string` parameter: its bytes already live in the
