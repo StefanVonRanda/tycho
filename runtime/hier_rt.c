@@ -207,6 +207,14 @@ char *hier_chr(Arena *a, long n) {
     return r;
 }
 
+/* die(msg): the error path for a Hier-written compiler (and any tool) — print
+ * to stderr and exit non-zero. Never returns; declared T_VOID, so a non-void
+ * function that dies in a branch still gets its defensive fallback return. */
+void hier_die(const char *msg) {
+    fprintf(stderr, "%s\n", msg);
+    exit(1);
+}
+
 char *hier_int_to_str(Arena *a, long n) {
     char tmp[32];
     int m = snprintf(tmp, sizeof tmp, "%ld", n);
