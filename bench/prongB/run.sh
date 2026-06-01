@@ -1,16 +1,14 @@
 #!/bin/sh
-# Prong B — head-to-head memory benchmark. The same binary-trees program
-# (Computer Language Benchmarks Game) in Hier, C, Rust, and Go, built at -O,
-# run under bench/peakrss (peak RSS + wall time). All five binaries must print
-# byte-identical output (the cross-language correctness check). See RESULTS.md.
+# Prong B — head-to-head memory benchmarks. Two workloads, the same program in
+# Hier, C, Rust, Go, and Koka, built at -O and run under bench/peakrss (peak
+# RSS + wall time). Every binary in a workload must print byte-identical output
+# (the cross-language correctness check). See RESULTS.md.
 #
-#   hier        Hier, idiomatic `check(make(d))` (transient charged to the
-#               outer loop's arena — see RESULTS.md)
-#   hier_scoped Hier, transient bound to an inner-loop local `t := make(d)`
-#   c           C, manual malloc/free per node
-#   rust        Rust, Box-owned enum, RAII drop
-#   go          Go, pointer structs, garbage collected
-#   koka        Koka, Perceus reference counting + reuse (the direct rival)
+#   binary-trees  allocate a sea of short-lived trees + one long-lived, checksum
+#   tree-rewrite  map-rewrite a persistent tree many times, checksum each result
+#
+# Languages: Hier (implicit arenas), C (manual malloc/free), Rust (Box/RAII),
+# Go (GC), Koka (Perceus reference counting + reuse — the direct rival).
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 HIERC=./hierc
@@ -21,33 +19,40 @@ CC="${CC:-cc}"
 $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2; }
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 
-# build
-$HIERC "$D/binary_trees.hi"        --emit-c -o "$T/hier"   >/dev/null 2>&1 && $CC -O2 -o "$T/hier"   "$T/hier.c"
-$HIERC "$D/binary_trees_scoped.hi" --emit-c -o "$T/hiers"  >/dev/null 2>&1 && $CC -O2 -o "$T/hiers"  "$T/hiers.c"
-$CC -O2 -o "$T/c" "$D/binary_trees.c"
-command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/rs" "$D/binary_trees.rs" 2>/dev/null
-if command -v go >/dev/null 2>&1; then cp "$D/binary_trees.go" "$T/" && ( cd "$T" && go build -o go binary_trees.go 2>/dev/null ); fi
-# koka writes its build tree under --builddir; keep it out of the repo. koka -o
-# does not set +x, so chmod after.
-if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.koka" -o "$T/koka" "$D/binarytrees.kk" >/dev/null 2>&1 && chmod +x "$T/koka"; fi
-
-ref=""; fail=0
-printf '%-12s %10s %8s   %s\n' lang peakRSS time output
-run() {
-    name="$1"; bin="$2"
-    [ -x "$T/$bin" ] || { printf '%-12s %10s   (not built)\n' "$name" "-"; return; }
-    "$T/peakrss" "$T/$bin" > "$T/$bin.out" 2> "$T/$bin.m"
-    read rss ms < "$T/$bin.m"; kb="$(to_kb "$rss")"
-    h="$(md5sum < "$T/$bin.out" | cut -c1-8)"
+fail=0; ref=""
+run_one() {                                   # <label> <binary>
+    lbl="$1"; bin="$2"
+    [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
+    "$T/peakrss" "$bin" > "$T/out" 2> "$T/m"
+    read rss ms < "$T/m"; kb="$(to_kb "$rss")"
+    h="$(md5sum < "$T/out" | cut -c1-8)"
     [ -z "$ref" ] && ref="$h"
     [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
-    printf '%-12s %8dMB %6dms   %s %s\n' "$name" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
+    printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
 }
-run hier        hier
-run hier_scoped hiers
-run c           c
-run rust        rs
-run go          go
-run koka        koka
+
+workload() {                                  # <title> <hi/c/rs/go base> <kk base>
+    title="$1"; b="$2"; kk="$3"; ref=""
+    echo "== $title =="
+    printf '%-12s %10s %8s   %s\n' lang peakRSS time output
+    $HIERC "$D/$b.hi" --emit-c -o "$T/w_hier" >/dev/null 2>&1 && $CC -O2 -o "$T/w_hier" "$T/w_hier.c"
+    run_one hier "$T/w_hier"
+    if [ -f "$D/${b}_scoped.hi" ]; then
+        $HIERC "$D/${b}_scoped.hi" --emit-c -o "$T/w_hiers" >/dev/null 2>&1 && $CC -O2 -o "$T/w_hiers" "$T/w_hiers.c"
+        run_one hier_scoped "$T/w_hiers"
+    fi
+    $CC -O2 -o "$T/w_c" "$D/$b.c" 2>/dev/null; run_one c "$T/w_c"
+    command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/w_rs" "$D/$b.rs" 2>/dev/null
+    run_one rust "$T/w_rs"
+    if command -v go >/dev/null 2>&1; then cp "$D/$b.go" "$T/w.go" && ( cd "$T" && go build -o w_go w.go 2>/dev/null ); fi
+    run_one go "$T/w_go"
+    if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.koka" -o "$T/w_koka" "$D/$kk.kk" >/dev/null 2>&1 && chmod +x "$T/w_koka"; fi
+    run_one koka "$T/w_koka"
+    echo
+}
+
+workload "binary-trees (allocate / discard)"     binary_trees binarytrees
+workload "tree-rewrite (map a persistent tree)"   maptree      maptree
+
 echo "-----------------------------------------------------------"
-[ "$fail" -eq 0 ] && echo "all outputs identical" || { echo "OUTPUT MISMATCH"; exit 1; }
+[ "$fail" -eq 0 ] && echo "all outputs identical within each workload" || { echo "OUTPUT MISMATCH"; exit 1; }

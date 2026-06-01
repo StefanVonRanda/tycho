@@ -91,12 +91,45 @@ tree (a call argument) in the loop scratch (`bench/heap_transient`: ~2 MB vs
 genuinely escapes into the stored value (correctly kept), and binop operands
 could also be scoped — minor next to the call-argument case.
 
+## Second workload: tree-rewrite (map a persistent tree)
+
+binary-trees is pure allocate-and-discard. The second workload is a
+destructure→reconstruct *rewrite*: build one persistent tree (depth 16), then
+200 times map every node to a fresh tree and checksum it, discarding each
+result. This is the shape `examples/optimize.hi` runs, and it stresses
+*reclamation of a transient rewrite result*: Hier resets the loop scratch in
+O(1); a refcounting system decrements every node of the dropped result.
+
+`maptree.{hi,c,rs,go}`, `maptree.kk`. Same byte-identical output (26214400):
+
+| language               | peak RSS | wall time |
+| ---------------------- | -------: | --------: |
+| Koka (Perceus RC+reuse)|     7 MB |    184 ms |
+| **Hier** (arenas)      |  **7 MB** | **379 ms** |
+| Rust (Box)             |     9 MB |    409 ms |
+| C (malloc/free)        |    13 MB |    531 ms |
+| Go (GC)                |    21 MB |    845 ms |
+
+Here Hier is the **lowest-memory** of all (tied with Koka at 7 MB) and second
+on time, beating Rust, C, and Go on both axes — a better showing than
+binary-trees, because the rewrite result is a transient the arena frees in
+O(1) rather than node-by-node. Koka still wins wall time (184 ms): its Perceus
+**reuse** turns each iteration's allocate-then-drop into a free-list hit (the
+dropped tree's cells are reused in place for the next map, so no fresh
+allocation), and its node layout is tighter. Hier bump-allocates a fresh
+result each iteration and `arena_reset` returns the blocks to the OS — so the
+next iteration re-`malloc`s them. Two concrete Hier targets, the same as
+binary-trees flagged: a compact node representation, and an `arena_reset` that
+*retains* blocks for reuse instead of freeing them (the loop-scratch fast
+path).
+
 ## Caveats / TODO
 
 - Single machine, single run; numbers are representative, not averaged.
 - Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
-- One workload. binary-trees stresses allocate/reclaim — Perceus's best case
-  and not where Hier's *reuse* (in-place rewrite) shows. A tree-*rewrite*
-  workload (closer to `examples/optimize.hi`, exercising the match-arm
-  borrow + construction reuse) is a worthwhile second data point.
+- Two workloads now; both are tree-shaped. A non-tree workload (e.g. a
+  string/array pipeline) would round out the picture.
+- Hier improvement targets surfaced here: compact node representation;
+  block-retaining `arena_reset` for loop scratch; both would narrow the
+  wall-time gap to Koka.
