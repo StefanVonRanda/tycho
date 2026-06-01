@@ -59,6 +59,59 @@ The only cross-cutting, irreducible piece is the **threading spine** (MM-1):
 once any user fn takes `Arena *_parent`, every caller must pass one and every
 allocation in that fn must route an arena — you cannot half-thread it.
 
+## REVISED first increment (do this BEFORE the arena spine)
+
+Deeper analysis (2026-06-01) shows the arena spine is NOT a sound *small*
+first step: freeing `_scope` is only safe if nothing live points into it, but
+a `_scope`-allocated string stored into a still-malloc'd container (array
+field, struct field) that escapes would dangle — so "strings on arena"
+entangles with escape analysis from day one. Not a clean increment.
+
+The genuinely self-contained, high-leverage first win is the **string-append
+accumulator** — the C compiler has it (`is_self_append` → `hier_str_append`),
+hierc0 LACKS it. Today hierc0 emits `out = out + x` as `out = sc(out, x)`:
+O(n²) time and a fresh leaked buffer every step. This is hierc0's OWN dominant
+cost (its codegen is one giant `out = out + …` string build). Fixing it is
+pure malloc/realloc — **no arena threading needed** — yet it converts O(n²)→
+O(n) and collapses N leaked buffers into one growing buffer. Memory + perf win.
+
+**Soundness prerequisite (verified by reading `gen_rhs`):** hierc0 deep-copies
+arrays/structs/maps/tuples/soa on a place-bind (`b := x`) but does NOT copy
+strings (`b := s` → `char* b = s`, pointer share — safe today only because
+strings are immutable). In-place append MUTATES the buffer, so a snapshot
+`b := acc` must first deep-copy. Therefore this increment MUST also add a
+string case to `gen_rhs`: `is str and is_place(e)` → `scopy(code)`. (Identical
+output — strings immutable — so fixpoint stays green; it just unblocks
+in-place mutation. Same soundness pattern as the map accumulator, Stage 3I.)
+
+**Implementation sketch (all in `compiler/hierc0.hi`):**
+1. `preamble()`: add `scopy(const char*)` (heap dup) and
+   `hi_append(char** s, long* len, long* cap, const char* e)` (realloc-grow,
+   doubling, keeps NUL terminator so plain reads still work).
+2. `gen_rhs`: `if ty == "str" and is_place(e): return "scopy(" + code + ")"`.
+3. New `sacc_scan(body) -> [string]`: recursively collect every local `n`
+   with a stmt `SAssign(n, <+chain whose leftmost leaf is EVar(n)>)`. Must
+   recurse into SIf/SWhile/SForRange/SMatch bodies (mirror `collect_stmt`).
+   Helper `sacc_target(e)`: leftmost-descend an all-`+` EBin chain, return the
+   leaf var name or "".
+4. `Ctx` gains `saccums: [string]`; `gen_func` computes it via `sacc_scan(f.body)`
+   and threads it (like the new `vparams`).
+5. SDecl / STypedDecl of an accumulator string: heap-ify the init
+   (`char* n = scopy(<init>);`) + sidecars `long _len_n = strlen(n);
+   long _cap_n = _len_n + 1;`.
+6. SAssign to an accumulator: if RHS is `n + …` → emit one
+   `hi_append(&n, &_len_n, &_cap_n, <piece>)` per appended piece (left→right);
+   else (plain reassign `n = expr`) RESYNC: `n = scopy(<expr>); _len_n =
+   strlen(n); _cap_n = _len_n + 1;` (keeps sidecars consistent across mixed use).
+7. Verify: `make fixpoint` (oracle for soundness — a snapshot bug diverges
+   B from the C compiler), `make test` 45/45, and `bench/peakrss` time+RSS on
+   a string-build workload (e.g. `examples/accumulate.hi` / `accumulate_big`)
+   showing the O(n²)→O(n) drop. Watch `s = s + f(s)` (RHS reads s): sequential
+   appends differ from full-concat pre-eval — no current fixture does it, but
+   if fixpoint diverges, pre-evaluate pieces into temps first.
+
+Then resume the arena spine (MM-1 below) for the heap types append can't cover.
+
 ## Stages
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
