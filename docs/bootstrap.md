@@ -354,10 +354,22 @@ fixpoint.
         `collect.hi` matches the C compiler end-to-end. (GCC-14 note: array
         `_from` takes a non-const element pointer — `char**`→`const char**` is
         a hard error under the default `-Wincompatible-pointer-types`.)
-      - Next gaps for `examples/*.hi`: deep struct copy for heap-bearing fields
-        (`context.hi`, `records.hi` — string/`[T]` struct fields need
-        value-semantic copy, currently a C shallow copy), `substr`
-        (`accumulate_big.hi`), `input()` (`hello.hi`), maps (`wordcount.hi`,
-        `words.hi`), `Option`/`Result` + `or_return`, tuples.
+      - **2I**: deep struct copy for heap-bearing fields. A per-struct
+        `StructName_copy` is generated for any struct that owns heap memory (a
+        string, array, or nested heap struct field): it shallow-copies scalars
+        then dups each heap field (`sc(x,"")` for strings, `Arr_T_copy` for
+        arrays, the nested struct's `_copy` recursively). `gen_rhs` applies it
+        when a heap struct is bound from a place (`snap := ctx`, `u := t`),
+        mirroring the array rule; pure-scalar structs (Point/Stats) keep C's
+        shallow copy (already deep for scalars). Notably `context.hi` and
+        `records.hi` already *passed* under shallow copy — neither observes the
+        difference (strings immutable; `push` updates the owner struct's own
+        length). So a dedicated fixture `heapcopy.hi` exercises it directly: an
+        index-write through a value-copied struct's array field (`b.items[0] =
+        99` leaves `a.items[0] == 1`) plus nested-struct and array-field
+        isolation — verified differentially and by quoted output.
+      - Next gaps for `examples/*.hi`: `substr` (`accumulate_big.hi`),
+        `input()` (`hello.hi`), maps (`wordcount.hi`, `words.hi`),
+        `Option`/`Result` + `or_return`, tuples, `[struct-by-value]` arrays.
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler

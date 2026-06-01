@@ -1,0 +1,30 @@
+# Stage 2I: deep struct copy. This exercises the shallow-vs-deep difference
+# directly: b is a value copy of a, so mutating b's array CONTENTS (an in-place
+# index write through the shared-looking buffer) must NOT affect a. Also a
+# nested heap struct (Team.members) and a string field.
+struct Box:
+    items: [int]
+
+struct Person:
+    name: string
+    age: int
+
+struct Team:
+    lead: Person
+    members: [string]
+
+fn main():
+    a := Box([1, 2, 3])
+    b := a                 # value copy
+    b.items[0] = 99        # mutate b's buffer contents
+    push(b.items, 4)
+    print("a[0] = " + str(a.items[0]) + "\n")            # 1  (isolated)
+    print("b[0] = " + str(b.items[0]) + "\n")            # 99
+    print("a len = " + str(len(a.items)) + ", b len = " + str(len(b.items)) + "\n")  # 3, 4
+
+    t := Team(Person("Ada", 36), ["x", "y"])
+    u := t                 # deep copy at every nesting level
+    u.lead.age = 99
+    push(u.members, "z")
+    print("t.lead.age = " + str(t.lead.age) + ", u.lead.age = " + str(u.lead.age) + "\n")  # 36, 99
+    print("t members = " + str(len(t.members)) + ", u members = " + str(len(u.members)) + "\n")  # 2, 3

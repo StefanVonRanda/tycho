@@ -816,6 +816,27 @@ fn field_type(ctx: Ctx, sname: string, fld: string) -> string:
     die("type: field access on a non-struct")
     return "int"
 
+# A struct is "heap-bearing" if any field owns heap memory (a string, an array,
+# or a nested heap-bearing struct) and so needs a deep copy on value binding.
+# Enum fields are immutable pointers — shared sharing is observationally safe.
+fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
+    i := 0
+    for i < len(ctx.structs):
+        if ctx.structs[i].name == sname:
+            j := 0
+            for j < len(ctx.structs[i].fields):
+                ft := ctx.structs[i].fields[j].ty
+                if ft == "str":
+                    return true
+                if is_array(ft):
+                    return true
+                if is_struct(ctx, ft) and struct_is_heap(ctx, ft):
+                    return true
+                j = j + 1
+            return false
+        i = i + 1
+    return false
+
 fn sig_ret(ctx: Ctx, name: string) -> string:
     if name == "str":
         return "str"
@@ -950,6 +971,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     ty := type_of(e, names, types, ctx)
     if is_array(ty) and is_place(e):
         return "Arr_" + elem_ty(ty) + "_copy(" + code + ")"
+    if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
+        return ty + "_copy(" + code + ")"
     return code
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
@@ -1066,6 +1089,24 @@ fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
         out = out + "    " + cty(ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
         i = i + 1
     return out + "} " + sd.name + ";\n"
+
+# Deep copy for a heap-bearing struct: shallow-copy scalars, then dup each
+# heap field (string -> fresh bytes, array -> Arr_T_copy, nested heap struct ->
+# its own _copy). Source-order emission gives nested copiers before their users.
+fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
+    nm := sd.name
+    out := "static " + nm + " " + nm + "_copy(" + nm + " s) {\n    " + nm + " r = s;\n"
+    i := 0
+    for i < len(sd.fields):
+        f := sd.fields[i]
+        if f.ty == "str":
+            out = out + "    r." + f.name + " = sc(s." + f.name + ", \"\");\n"
+        elif is_array(f.ty):
+            out = out + "    r." + f.name + " = Arr_" + elem_ty(f.ty) + "_copy(s." + f.name + ");\n"
+        elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
+            out = out + "    r." + f.name + " = " + f.ty + "_copy(s." + f.name + ");\n"
+        i = i + 1
+    return out + "    return r;\n}\n"
 
 fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
@@ -1242,6 +1283,11 @@ fn main():
     i = 0
     for i < len(prog.structs):                   # struct typedefs, in source order
         out = out + gen_struct(prog.structs[i], ctx)
+        i = i + 1
+    i = 0                                        # deep-copy fns for heap-bearing structs
+    for i < len(prog.structs):
+        if struct_is_heap(ctx, prog.structs[i].name):
+            out = out + gen_struct_copy(ctx, prog.structs[i])
         i = i + 1
     i = 0
     for i < len(funcs):
