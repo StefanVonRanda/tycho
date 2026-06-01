@@ -238,7 +238,7 @@ fixpoint.
       `die` error convention (135b4ff); `while` already exists as `for <cond>:`
       (tests/while_loop.hi). The language can now express a source-to-source
       compiler.
-- [~] **Stage 1** — subset compiler `compiler/hierc0.hi` (IN PROGRESS). Lexer
+- [x] **Stage 1** — subset compiler `compiler/hierc0.hi`. Lexer
       (incl. INDENT/DEDENT) + recursive-descent parser → AST enums + C codegen,
       validated differentially by `make bootstrap`. Compiles `fn main():` whose
       indented body has `:=`/`=`/`print(str(EXPR))` and `if`/`elif`/`else` over
@@ -248,10 +248,17 @@ fixpoint.
       its type after the array typedef that used it — fixed, commit d8b3934,
       `tests/recursive_enum_array.hi`). User functions, typed int params, calls,
       and `return` now work too (commit 429d6d1) — `compiler/tests/functions.hi`
-      compiles a recursive fib and nested calls, matching the C compiler. ~340
-      lines of Hier. Last Stage-1 piece: string literals + concat, which needs
-      hierc0 to emit the embedded Hier runtime (hier_str_*) instead of plain
-      stdio.
+      compiles a recursive fib and nested calls, matching the C compiler.
+      Strings landed too (commit 69280d6) via context-directed parsing —
+      `print(...)` parses a string expression (literals + `str(EXPR)` joined by
+      `+`), so no type inference is needed; hierc0 emits a tiny self-contained
+      string runtime (sc/i2s). And the `for COND:` while loop (commit d8cad4a).
+      **Stage 1 is essentially done**: hierc0 (~400 lines of Hier) compiles a
+      genuinely usable subset — functions, recursion, if/elif/else, while loops,
+      integer arithmetic + comparisons, and string output — with six fixtures
+      (arith, vars, control, functions, strings, loops) passing `make bootstrap`
+      differentially against the C compiler. Deferred to Stage 2: the counting
+      `for i in range()` form, string variables, and a real type system.
 - [ ] **Stage 2** — grow to cover `examples/*.hi`
 - [ ] **Stage 3** — feature-complete front-end (all `tests/*.hi`)
 - [ ] **Stage 4** — fixpoint bootstrap (B ≡ C), retire the C compiler
