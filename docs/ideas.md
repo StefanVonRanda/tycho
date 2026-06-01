@@ -109,7 +109,8 @@ cluster of languages, and the differences are the interesting part:
    any bind/return/push deep-copy it into an owning array — so it can never be
    stored while aliasing. No borrow checker; the one added rule rejects a slice
    of `xs` alongside an `inout` of `xs` in one call. Works on every array type
-   and composes. Strings still use `substr` (a copy).
+   and composes. **Strings slice too:** `s[a:b]` (and `s[a:]`/`s[:b]`/`s[:]`) is
+   a fresh substring — sugar over `substr` — and self-hosts (`tests/string_slice.hi`).
 7. **`distinct` newtypes** — ✅ *Implemented.* `type Meters = float` is a named
    type interned in its own band; `c_type`/`type_is_heap`/`copy_into`/`gen_eq`
    all delegate to the underlying, so it is genuinely zero-cost (a `Meters` *is*

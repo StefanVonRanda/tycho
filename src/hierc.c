@@ -1526,14 +1526,15 @@ static Type resolve_expr(Expr *e) {
             if (bt == T_STRING) return e->type = T_INT;        /* string byte */
             die_at(e->line, "can only index an array or a string");
         }
-        case E_SLICE: {   /* xs[a:b] — a sub-range of the same array (or soa) type */
+        case E_SLICE: {   /* xs[a:b] — a sub-range of the same array/soa type; s[a:b] -> a substring */
             Type bt = resolve_expr(e->lhs);
-            if (!is_array(bt) && !IS_SOA(bt))
-                die_at(e->line, "can only slice an array or soa (a string sub-range is substr(s, a, b))");
             if (e->rhs && resolve_expr(e->rhs) != T_INT)
                 die_at(e->line, "slice start must be int");
             if (e->nargs && resolve_expr(e->args[0]) != T_INT)
                 die_at(e->line, "slice end must be int");
+            if (bt == T_STRING) return e->type = T_STRING;   /* a string slice is a fresh substring */
+            if (!is_array(bt) && !IS_SOA(bt))
+                die_at(e->line, "can only slice an array, soa, or string");
             return e->type = bt;
         }
         case E_FIELD: {
@@ -2758,6 +2759,14 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_SLICE: {
+            if (e->lhs->type == T_STRING) {   /* s[a:b] -> a fresh substring (substr) */
+                int id = g_blk++;
+                char *s  = gen_expr(e->lhs, arena);
+                char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
+                char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("(long)strlen(_ss%d)", id);
+                return sfmt("({ const char *_ss%d = %s; hier_str_substr(%s, _ss%d, %s, %s); })",
+                            id, s, arena, id, lo, hi);
+            }
             if (IS_SOA(e->lhs->type)) {
                 /* soa sub-range: offset every field pointer by lo, len = hi-lo,
                  * cap = 0 (non-growable view aliasing the source buffers). Like

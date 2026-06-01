@@ -1448,6 +1448,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return out + "}"
         ESlice(base, lo, hi):
             bt := type_of(base, names, types, ctx)
+            if bt == "str":                       # s[a:b] -> a fresh substring
+                return "substr(" + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
             if is_soa(bt):
                 return gen_soa_slice(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(lo, names, types, ctx), gen_expr(hi, names, types, ctx))
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
