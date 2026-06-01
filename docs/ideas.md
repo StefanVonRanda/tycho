@@ -172,9 +172,11 @@ cluster of languages, and the differences are the interesting part:
    `a[lo:hi]` (a bounds-checked view that offsets each field pointer, copied on
    store like array slices). A soa param is a read-only zero-copy borrow (it
    shallow-shares the caller's buffers, like array/map params; in-place mutation
-   is rejected — copy first with `local := ps`). (`tests/soa.hi`.) Still open:
-   nesting (soa of soa / soa as a struct field) and SOA in hierc0's self-hosting
-   subset (so `soa.hi` is skipped in the fixpoint differential for now).
+   is rejected — copy first with `local := ps`). A soa can also be a struct
+   field — copying the struct deep-copies its soa (value semantics through the
+   nesting); the soa typedef is forward-emitted so a struct may embed it by
+   value. (`tests/soa.hi`.) Still open: SOA in hierc0's self-hosting subset (so
+   `soa.hi` is skipped in the fixpoint differential for now).
 
 ### Tier 4 — large or philosophy-divergent (note, don't rush)
 

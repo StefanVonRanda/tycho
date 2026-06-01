@@ -3688,6 +3688,19 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
+    /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
+     * Members are pointers, so the element struct's tag forward-decl above is
+     * enough — this can precede struct bodies, letting a struct embed a soa by
+     * value. The push/copy/eq BODIES (which need sizeof field types) stay later. */
+    for (int i = 0; i < g_nsoatypes; i++) {
+        StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
+        fprintf(o, "typedef struct {");
+        for (int f = 0; f < sd->nfields; f++)
+            fprintf(o, " %s*f%d;", c_type(sd->fields[f].type), f);
+        fprintf(o, " long len; long cap; } Soa%d;\n", i);
+        fprintf(o, "static long Soa%d_bound(Soa%d *s, long i) { if (i < 0 || i >= s->len) { "
+                   "fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, s->len); exit(1); } return i; }\n", i, i);
+    }
     fputs("\n", o);
     /* (3) struct bodies + Option typedefs in containment order (infinite types
      * are rejected here). Enum descriptors above are complete, so a struct/Option
@@ -3756,6 +3769,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (type_is_heap(ENUM_TYPE(i)))
             fprintf(o, "static E_%s *hier_copy_E_%s(Arena *a, E_%s *v);\n", en, en, en);
         fprintf(o, "static int hier_eq_E_%s(E_%s *a, E_%s *b);\n", en, en, en);
+    }
+    for (int i = 0; i < g_nsoatypes; i++) {         /* (4) soa op prototypes (bodies are late) */
+        const char *sn = g_structs[STRUCT_ID(g_soatypes[i].st)].name;
+        fprintf(o, "static void Soa%d_push(Arena*, Soa%d*, S_%s);\n", i, i, sn);
+        fprintf(o, "static Soa%d Soa%d_copy(Arena*, Soa%d);\n", i, i, i);
+        fprintf(o, "static int Soa%d_eq(Soa%d, Soa%d);\n", i, i, i);
     }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         const char *ct = c_type(g_arrtypes[i].elem);
@@ -3849,13 +3868,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * Emitted after struct bodies (S_<name> is complete) and before fn bodies. */
     for (int i = 0; i < g_nsoatypes; i++) {
         StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
-        const char *sn = sd->name;
-        fprintf(o, "typedef struct {");
-        for (int f = 0; f < sd->nfields; f++)
-            fprintf(o, " %s*f%d;", c_type(sd->fields[f].type), f);
-        fprintf(o, " long len; long cap; } Soa%d;\n", i);
-        fprintf(o, "static long Soa%d_bound(Soa%d *s, long i) { if (i < 0 || i >= s->len) { "
-                   "fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, s->len); exit(1); } return i; }\n", i, i);
+        const char *sn = sd->name;   /* typedef + Soa<id>_bound were emitted early (2c) */
         fprintf(o, "static void Soa%d_push(Arena *a, Soa%d *s, S_%s v) {\n", i, i, sn);
         fprintf(o, "    if (s->len == s->cap) {\n        long nc = s->cap ? s->cap * 2 : 4;\n");
         for (int f = 0; f < sd->nfields; f++) {

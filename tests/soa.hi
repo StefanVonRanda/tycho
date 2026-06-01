@@ -12,6 +12,11 @@ struct Particle:
     vx: int
     vy: int
 
+# nesting: a soa as a struct field
+struct Bag:
+    items: soa [Particle]
+    label: int
+
 # pass a soa BY VALUE (read-only); sums a field across all elements
 fn total_vx(ps: soa [Particle]) -> int:
     i := 0
@@ -108,3 +113,10 @@ fn main():
     base := make_soa(3)
     dbl := doubled_x(base)
     print("borrow base1.x=" + str(base[1].x) + " dbl1.x=" + str(dbl[1].x) + "\n")   # 1 2
+
+    # nesting: a soa as a struct field; copying the struct deep-copies the soa,
+    # so the two structs' soas are independent (value semantics through nesting).
+    bag := Bag(make_soa(2), 7)
+    bag2 := bag
+    bag2.items[0].x = 0 - 9
+    print("nest bag0.x=" + str(bag.items[0].x) + " bag2_0.x=" + str(bag2.items[0].x) + " label=" + str(bag.label) + "\n")  # 0 -9 7
