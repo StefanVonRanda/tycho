@@ -1043,19 +1043,13 @@ fn is_newtype(ctx: Ctx, name: string) -> bool:
         i = i + 1
     return false
 
-# NOTE: the `+ ""` forces a fresh copy of the result. Returning the bare string
-# PARAMETER `ty` from this function — which also takes the heap-bearing `Ctx` by
-# value — triggers a C-compiler transient-arena bug (the returned param string
-# comes back empty). Surfaced by dogfooding; worked around here, to be fixed in
-# src/hierc.c separately. (Functions returning a FIELD of the by-value struct,
-# e.g. field_type/variant_enum, are unaffected.)
 fn resolve_nt(ctx: Ctx, ty: string) -> string:
     i := 0
     for i < len(ctx.ntnames):
         if ctx.ntnames[i] == ty:
-            return resolve_nt(ctx, ctx.ntunder[i]) + ""
+            return resolve_nt(ctx, ctx.ntunder[i])
         i = i + 1
-    return ty + ""
+    return ty
 
 fn cty(ctx: Ctx, ty: string) -> string:
     if is_newtype(ctx, ty):
@@ -2091,9 +2085,31 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             collect_block(&acc, body, bn, bt, ctx)
         SMatch(subj, variants, allbinds, bodies):
             collect_expr(&acc, subj, names, types, ctx)
+            sty := type_of(subj, names, types, ctx)
             j := 0
             for j < len(bodies):
-                collect_block(&acc, bodies[j], names, types, ctx)
+                bn := names                       # bind arm payloads so type_of resolves them
+                bt := types                       # in the arm body (mirrors gen_stmt's match)
+                binds := allbinds[j]
+                if is_option(sty):
+                    if len(binds) > 0:
+                        push(bn, binds[0])
+                        push(bt, option_inner(sty))
+                elif is_result(sty):
+                    if len(binds) > 0:
+                        push(bn, binds[0])
+                        if variants[j] == "Ok":
+                            push(bt, result_ok(sty))
+                        else:
+                            push(bt, result_err(sty))
+                else:
+                    pts := variant_ptypes(ctx, variants[j])
+                    k := 0
+                    for k < len(binds):
+                        push(bn, binds[k])
+                        push(bt, pts[k])
+                        k = k + 1
+                collect_block(&acc, bodies[j], bn, bt, ctx)
                 j = j + 1
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in

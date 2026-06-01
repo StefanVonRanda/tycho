@@ -2360,6 +2360,21 @@ static int is_place(Expr *e) {
         || e->kind == E_TUPIDX || e->kind == E_SLICE;   /* a slice aliases its source; binding it copies */
 }
 
+/* A heap return value must be deep-copied into the caller's arena when it READS
+ * existing storage (a variable, field, element, tuple slot, or slice) that
+ * lives in this scope OR in a by-value parameter's deep-copied arena -- i.e.
+ * memory freed when this scope ends. A bare local proven to live in _parent
+ * (the return-slot optimization) is exempt; fresh-producing exprs (call, concat,
+ * literal, construction) already build in the target arena, so they need no
+ * copy. NOTE: field/element reads of a by-value heap-STRUCT param (e.g.
+ * `return ctx.field`) alias the callee's copy and MUST be promoted -- the
+ * earlier `E_IDENT`-only test missed these (use-after-free; surfaced by the
+ * self-hosting hierc0, whose field_type/sig_ret/resolve_nt return Ctx fields). */
+static int ret_must_copy(Expr *e) {
+    if (e->kind == E_IDENT) return !cv_in_parent(e->sval);
+    return is_place(e);
+}
+
 /* --- construction-arg move ----------------------------------------------
  * Materialize `arg` as a heap field/element of a fresh aggregate (an enum
  * payload, Option/Result body, tuple, struct, or array literal) allocated in
@@ -3028,7 +3043,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * only a pointer into this scope, so deep-copy it into the
                  * caller's arena before freeing this scope — UNLESS the
                  * return-slot optimization already built it in _parent. */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ char *_ret = hier_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
@@ -3040,7 +3055,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * in the caller's arena; a borrowed/local variable is
                  * deep-copied into it — UNLESS the return-slot optimization
                  * already built it in _parent (then it's a no-op move). */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ HierArrInt _ret = hier_arr_int_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
@@ -3049,7 +3064,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 }
             } else if (ret == T_ARRAY_FLOAT) {
                 /* promote up, exactly like [int] (a buffer of value words). */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ HierArrFloat _ret = hier_arr_float_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
@@ -3061,7 +3076,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * directly in the caller's arena; a bare variable is
                  * deep-copied (buffer + every element) into it — UNLESS the
                  * return-slot optimization already built it in _parent. */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ HierArrStr _ret = hier_arr_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
                 } else {
@@ -3071,7 +3086,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else if (IS_ARRC(ret)) {
                 /* composite array ([Struct]/[[T]]): promote like the others; the
                  * generated copy deep-copies the buffer and every element. */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
                                             c_type(ret), copy_into(ret, "_parent", v), rf);
@@ -3084,7 +3099,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * is only a value whose tables live in this scope, so deep-copy
                  * into the caller's arena before freeing — UNLESS the return-slot
                  * optimization already built it in _parent (then a no-op move). */
-                if (s->expr->kind == E_IDENT && !cv_in_parent(s->expr->sval)) {
+                if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ %s_ret = hier_map_%s_copy(_parent, %s); %s return _ret; }\n", c_type(ret), map_fn(ret), v, rf);
                 } else {
@@ -3386,13 +3401,16 @@ static void gen_proc(FILE *o, Proc *pr) {
      * _parent — always memory-safe, at most mild retention. Strings only:
      * arrays are mutable (aliasing would break value semantics) and heap
      * structs are deep-copied into _scope on entry (bytes not in _parent). */
-    for (int i = 0; i < pr->nparams; i++) {
-        const char *pa = "&_scope";
-        if (pr->params[i].type == T_STRING && !pr->params[i].is_inout
-            && name_escapes(pr->params[i].name))
-            pa = "_parent";
-        cv_push(pr->params[i].name, pa);
-    }
+    /* Every parameter borrows the caller's bytes; its value does NOT live in
+     * this proc's _parent. (An earlier optimization marked a returned string
+     * param as _parent to skip the deep copy at return -- UNSOUND: the return
+     * value outlives the call, but the caller frequently passes the arg in a
+     * transient arena it frees right after the call, leaving the returned
+     * pointer dangling. Surfaced by self-hosting hierc0's resolve_nt, which
+     * returns its `ty` param. So: never mark a param _parent; `return param`
+     * deep-copies into _parent like any other borrowed place.) */
+    for (int i = 0; i < pr->nparams; i++)
+        cv_push(pr->params[i].name, "&_scope");
     /* Structs are passed by value, but C copies them shallowly — a heap field
      * (string/array) still points at the caller's bytes. Deep-copy heap-
      * bearing struct params into this scope so the parameter is a truly

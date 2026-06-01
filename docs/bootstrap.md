@@ -561,11 +561,33 @@ fixpoint.
       block in `Arena _scope = arena_child(_parent); … arena_free(&_scope)`.)
 
       **Critical-path work, in order:**
-      1. **Fix the `src/hierc.c` arena/value-semantics bug(s)** that corrupt
-         hierc0's own execution (the push-into-outer-array-from-a-loop/match-arm
-         case, and the 3E by-value-`Ctx` string-return case). This is the gate —
-         until the C compiler runs hierc0 correctly, nothing downstream works.
-         Remove hierc0's `resolve_nt` `+ ""` workaround once fixed.
+      1. **✅ DONE — fixed the `src/hierc.c` return-promotion bug** that corrupted
+         hierc0's own execution. Two related root causes, both found via ASan on
+         the self-emitted C and both in the return-value-promotion codegen:
+         (a) a heap return whose expression was a *place-read other than a bare
+         variable* (`return ctx.field` / `arr[i]` / `t.0`) was assumed
+         fresh-in-`_parent` and not deep-copied — but a field/element of a
+         by-value heap-struct param aliases the callee's `_scope` copy →
+         use-after-free. Fix: a `ret_must_copy()` helper deep-copies any
+         place-read return (IDENT-not-in-`_parent`, FIELD, INDEX, TUPIDX), used
+         by all six scalar-heap return branches. (b) a non-inout **string param
+         that was returned by name** was unsoundly marked as living in `_parent`
+         (skipping the copy) — but the caller often passes the arg in a transient
+         arena it frees right after the call, so the returned pointer dangles
+         (this was the 3E `resolve_nt` symptom). Fix: never mark a param
+         `_parent`; `return param` deep-copies like any borrowed place. Verified:
+         `make test` 45/45, hierc0 self-compiles (exit 0, **ASan/UBSan clean**),
+         and hierc0's `resolve_nt` `+ ""` workaround is **removed**.
+      1b. **Make hierc0's *output* self-hostable (hierc0 codegen gaps, not the C
+         compiler).** Pushing to the fixpoint showed hierc0's self-emitted C does
+         not yet compile, for two reasons: (i) hierc0 emits **unprefixed** user
+         variable names, so a user var named `sc`/`len`/`str`/… collides with the
+         emitted runtime helper of the same name (the C compiler namespaces all
+         user names `h_`; hierc0 must too). (ii) hierc0 doesn't emit `Arr_T_eq`
+         for **composite element types** (`[[string]]`, `[[Stmt]]`) that a
+         generated enum/struct/tuple `_eq` calls (e.g. `Arr_arr_str_eq`
+         undeclared) — the `_eq`-emission guard skips non-scalar elements. These
+         are the next concrete hierc0 fixes before B can even build.
       2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
          compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
          compiler's golden output across `tests/`+`examples/`.
