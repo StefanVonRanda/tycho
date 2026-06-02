@@ -2857,16 +2857,21 @@ fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
-    # Block-list arena: arena_child carves a fresh block list from the parent's
-    # block size; arena_free returns every block. Allocations are 8-byte aligned.
-    # (S1 of the memory-model port: threading scaffolding. Allocators still malloc
-    # until later sub-steps redirect them, so arena_alloc is defined but unused.)
+    # Block-list arena, 8-byte aligned. A process-global block FREE-LIST (g_pool)
+    # makes the per-scope/per-loop-iteration arena_child/free O(1) pointer ops:
+    # arena_free hands blocks to the pool (not the OS) and arena_alloc takes from
+    # it first, so allocation-heavy/deeply-recursive workloads (the self-compile)
+    # stop paying malloc/free per scope. Peak live memory is unchanged (the pool
+    # holds at most what a scope just released; reclaimed by the OS at exit).
     out = out + "typedef struct ABlk { struct ABlk* next; size_t used, cap; char* mem; } ABlk;\n"
     out = out + "typedef struct { ABlk* head; size_t blocksz; } Arena;\n"
+    out = out + "static ABlk* g_pool = 0;\n"
+    out = out + "static ABlk* blk_get(size_t cap) { if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; return b; }\n"
+    out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
     out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; return a; }\n"
     out = out + "static Arena arena_child(Arena* p) { return arena_new(p->blocksz); }\n"
-    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
-    out = out + "static void arena_free(Arena* a) { ABlk* b = a->head; while (b) { ABlk* nx = b->next; free(b->mem); free(b); b = nx; } a->head = 0; }\n"
+    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
+    out = out + "static void arena_free(Arena* a) { blk_release(a->head); a->head = 0; }\n"
     # String allocators take an arena; a NULL arena means malloc (the safe
     # fallback for not-yet-migrated contexts). owner-threading (ctx.owner) flips
     # provably-safe contexts (e.g. print args) to a real arena. hi_append is NOT
