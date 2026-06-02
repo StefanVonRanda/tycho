@@ -1,0 +1,10 @@
+# Exercises the filesystem/IO builtins. Paths are relative to the repo root
+# (the test harness runs binaries from there); list_dir prints a count (not
+# names) so it is order-independent; args() prints its length only (the binary
+# path in args()[0] is not portable).
+fn main():
+    print("read=" + read_file("tests/iobuiltins.data"))       # io-builtins-ok
+    print("missing=" + str(len(read_file("tests/nope.absent"))) + "\n")   # 0
+    d := list_dir("tests/iobuiltins.dir")
+    print("dir_entries=" + str(len(d)) + "\n")                 # 2
+    print("nargs=" + str(len(args())) + "\n")                  # 1 (harness passes none)

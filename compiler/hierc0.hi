@@ -934,7 +934,7 @@ struct Mctx:
     variants: [string]
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "die" or name == "len" or name == "push" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "list_dir" or name == "args" or name == "die" or name == "len" or name == "push" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -1605,6 +1605,12 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "int"
     if name == "read_all":
         return "str"
+    if name == "read_file":
+        return "str"
+    if name == "list_dir":
+        return "[str]"
+    if name == "args":
+        return "[str]"
     if name == "die":
         return "int"
     if name == "len":
@@ -2057,6 +2063,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_die(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "read_all":
                 return "hi_read_all()"
+            if name == "read_file":
+                return "hi_read_file(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "list_dir":
+                return "hi_list_dir(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "args":
+                return "hi_args(" + ctx.owner + ")"
             if name == "input":
                 return "hi_input()"
             if name == "Some":                    # box the payload in the SAME arena as the box, so a
@@ -3073,7 +3085,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
-        return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
+        return "int main(int argc, char **argv) {\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
     # open a child scope from the caller's arena; void funcs free it on fall-through
     # (every `return` frees it via the return-slot in gen_stmt).
     tail := ""
@@ -3335,7 +3347,7 @@ fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     return out + "    return 0;\n}\n"
 
 fn preamble() -> string:
-    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <dirent.h>\n"
     # Block-list arena, 8-byte aligned. A process-global block FREE-LIST (g_pool)
     # makes the per-scope/per-loop-iteration arena_child/free O(1) pointer ops:
     # arena_free hands blocks to the pool (not the OS) and arena_alloc takes from
@@ -3369,6 +3381,8 @@ fn preamble() -> string:
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = amem(ar, 2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static char* hi_read_all(void) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
+    out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); b[len] = 0; return b; }\n"
+    out = out + "static int hi_argc = 0;\nstatic char** hi_argv = 0;\n"
     out = out + "typedef struct { int tag; void* val; } HOption;\n"
     out = out + "typedef struct { int tag; void* ok; void* err; } HResult;\n"
     out = out + "static void* hbox(Arena* ar, unsigned long n, void* src) { void* p = amem(ar, n); memcpy(p, src, n); return p; }\n"
@@ -3503,6 +3517,19 @@ fn gen_strlib() -> string:
     out = out + "        else i = i + 1;\n"
     out = out + "    }\n"
     out = out + "    Arr_str_push(ar, &r, substr(ar, s, start, n));\n"
+    out = out + "    return r;\n}\n"
+    out = out + "static Arr_str hi_list_dir(Arena* ar, const char* path) {\n"
+    out = out + "    Arr_str r = Arr_str_new();\n"
+    out = out + "    DIR* d = opendir(path); if (!d) return r;\n"
+    out = out + "    struct dirent* de;\n"
+    out = out + "    while ((de = readdir(d)) != 0) {\n"
+    out = out + "        if (de->d_name[0] == '.' && (de->d_name[1] == 0 || (de->d_name[1] == '.' && de->d_name[2] == 0))) continue;\n"
+    out = out + "        Arr_str_push(ar, &r, de->d_name);\n"
+    out = out + "    }\n"
+    out = out + "    closedir(d);\n    return r;\n}\n"
+    out = out + "static Arr_str hi_args(Arena* ar) {\n"
+    out = out + "    Arr_str r = Arr_str_new();\n"
+    out = out + "    for (int i = 0; i < hi_argc; i++) Arr_str_push(ar, &r, hi_argv[i]);\n"
     out = out + "    return r;\n}\n"
     return out
 

@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
 
@@ -271,6 +272,33 @@ char *hier_read_all(Arena *a) {
     buf[len] = '\0';
     return buf;
 }
+
+/* read_file(path): the whole file as a string, or "" if it can't be opened. */
+char *hier_read_file(Arena *a, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return hier_str_copy(a, "");
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)arena_alloc(a, cap);
+    size_t n;
+    while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
+        len += n;
+        if (len == cap) {
+            size_t ncap = cap * 2;
+            char *nb = (char *)arena_alloc(a, ncap);
+            memcpy(nb, buf, len);
+            buf = nb;
+            cap = ncap;
+        }
+    }
+    fclose(f);
+    buf[len] = '\0';
+    return buf;
+}
+
+/* args(): the program's argv as a string array (args()[0] is the program name).
+ * The emitted `main` stashes argc/argv here. */
+static int    hier_argc = 0;
+static char **hier_argv = NULL;
 
 /* chr(n): the one-byte string for code point n (0..255) — the inverse of the
  * `s[i] -> int` byte read. n==0 yields the empty string (strings are
@@ -518,6 +546,31 @@ HierArrStr hier_str_split(Arena *a, const char *s, const char *sep) {
         hier_arr_str_push(a, &r, field);
         start = hit + seplen;
     }
+    return r;
+}
+
+/* list_dir(path): the directory's entries (excluding "." and ".."), or an empty
+ * array if it can't be opened. Order is the filesystem's (sort if you need it). */
+HierArrStr hier_list_dir(Arena *a, const char *path) {
+    HierArrStr r = hier_arr_str_with_cap(a, 8);
+    DIR *d = opendir(path);
+    if (!d) return r;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.' &&
+            (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+            continue;   /* skip "." and ".." */
+        hier_arr_str_push(a, &r, de->d_name);
+    }
+    closedir(d);
+    return r;
+}
+
+/* args(): the program's command-line arguments as a string array. */
+HierArrStr hier_args(Arena *a) {
+    HierArrStr r = hier_arr_str_with_cap(a, hier_argc > 0 ? hier_argc : 1);
+    for (int i = 0; i < hier_argc; i++)
+        hier_arr_str_push(a, &r, hier_argv[i]);
     return r;
 }
 

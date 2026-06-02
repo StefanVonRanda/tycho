@@ -1525,6 +1525,9 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="substr", .ret=T_STRING,       .params={ T_STRING, T_INT, T_INT },  .nparams=3, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="split",  .ret=T_ARRAY_STRING, .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="read_file",.ret=T_STRING,     .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="list_dir",.ret=T_ARRAY_STRING, .params={ T_STRING },               .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="args",   .ret=T_ARRAY_STRING, .params={ 0 },                       .nparams=0, .builtin=1 };
 }
 
 /* ---------------------------------------------------- variable scoping */
@@ -2897,6 +2900,15 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "read_all")) {
         return sfmt("hier_read_all(%s)", arena);
+    }
+    if (!strcmp(e->sval, "read_file")) {
+        return sfmt("hier_read_file(%s, %s)", arena, gen_expr(e->args[0], arena));
+    }
+    if (!strcmp(e->sval, "list_dir")) {
+        return sfmt("hier_list_dir(%s, %s)", arena, gen_expr(e->args[0], arena));
+    }
+    if (!strcmp(e->sval, "args")) {
+        return sfmt("hier_args(%s)", arena);
     }
     if (!strcmp(e->sval, "chr")) {
         return sfmt("hier_chr(%s, %s)", arena, gen_expr(e->args[0], arena));
@@ -4324,7 +4336,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
     for (int i = 0; i < prog->n; i++) gen_proc(o, prog->v[i]);
-    fputs("int main(void) {\n", o);
+    fputs("int main(int argc, char **argv) {\n", o);
+    fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);
     fputs("    h_main(&_root);\n", o);
     fputs("    arena_free(&_root);\n", o);

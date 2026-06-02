@@ -655,6 +655,9 @@ scoped to the loop. The condition form takes any `bool` expression.
 | `map_has(m, k)` | `([string: int], string) -> bool` | Whether key `k` is present. |
 | `map_del(m, k)` | `([string: int], string) -> [string: int]` | Returns a new map without key `k` (no-op if absent); pure. The `m = map_del(m, …)` self-rebind deletes in place. |
 | `keys(m)` | `[string: int] -> [string]` | The live keys as a `[string]` (unspecified order); index it to iterate the map. |
+| `read_file(path)` | `string -> string` | The whole file as a string, or `""` if it can't be opened. |
+| `list_dir(path)` | `string -> [string]` | Directory entries excluding `.`/`..` (filesystem order — sort if needed); empty if it can't be opened. |
+| `args()` | `-> [string]` | The process's command-line arguments; `args()[0]` is the program name. |
 
 String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
 `substr`, and `find` are all byte-oriented (not Unicode-aware).
