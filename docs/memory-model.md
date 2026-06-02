@@ -365,7 +365,7 @@ per-iteration transients eagerly instead of holding them to function return.
   optimization) for the rarest element type. Deliberately deferred (low reward,
   highest blast radius); the bulk heap is O(1) and every common element type is
   closed.
-- ✅ MM-6g (commit pending): INOUT CONTAINER HOME-ARENA THREADING. An
+- ✅ MM-6g (75d85e4): INOUT CONTAINER HOME-ARENA THREADING. An
   `inout [T]` / `inout {…}` / `inout soa` param now carries a hidden
   `Arena* _ina_<name>` (its array/map/soa lives in the CALLER's arena), and
   `owner_arena_of` returns `_ina_<name>` for it instead of `"0"` — so a `push`/
@@ -384,6 +384,41 @@ per-iteration transients eagerly instead of holding them to function return.
   so the self-compile exercises it pervasively) + 57/57 ASan/UBSan + a callee
   filling a caller-owned per-iteration `inout [int]` 200k×200: **798MB → 1.4MB
   (~582×)** (bench/inout_fill.hi, now a perf guard).
+
+### MM-7 — enums on arena (the recursive AST) + transient placement
+
+The prong-B head-to-head (bench/prongB) exposed that hierc0 was 50–170× worse than
+the C compiler on recursive-enum tree workloads (binary-trees 2 GB, tree-rewrite
+1.2 GB), because two things were never migrated: enum NODES stayed malloc-immortal,
+and transient values inherit the enclosing statement's owner (function scope).
+
+- ✅ MM-7a (commit pending): ENUM NODES ARE NOW ARENA VALUE TYPES. `mk_<Variant>`
+  takes a leading `Arena*` and `amem`s the node (both call sites pass `ctx.owner`;
+  payload args inherit the ambient arena via `gen_store_args_owner`, so nested
+  children co-locate — a `return Node(make(d-1),make(d-1))` builds the whole tree
+  in `_parent`). A generated recursive `<Enum>_copy(Arena*, <Enum>*)` (using the
+  new `cp_field` full-type dispatch) deep-copies a node tree into a target arena;
+  it's wired into every ESCAPE point — `gen_rhs` place-bind (return/store/outer-
+  assign), `gen_struct_copy`/`gen_tuple_copy` members, `elem_copy_expr` (`[Enum]`
+  elements) — and forward-declared (step 5c) so the mutually-recursive copy fns
+  resolve in any order. Match-arm payload bindings KEEP borrowing (`cp_typed`
+  unchanged), so the O(n) tree-walk opt (bench/treewalk) is preserved — deep-copy
+  happens only when an enum crosses an arena boundary. SOUND by the same invariant
+  as MM-6e (struct/tuple): every cross-arena move is a copy point; construction in
+  the ambient owner is at-least-as-live. Verified: fixpoint B≡C (6577 → 6853 lines
+  C — hierc0 IS enums: Expr/Stmt/Token built/copied/returned/stored everywhere, the
+  strongest possible oracle) + 57/57 ASan/UBSan + treewalk still O(n). FOUNDATIONAL
+  / memory-neutral ALONE: the tree-workload win needs MM-7b — the transient
+  `make(d)` tree still inherits `ctx.owner = &_scope` (the accumulator `sum`'s home)
+  in `sum = sum + check(make(d))`, so trees pile up in function scope until return.
+- MM-7b (next): TRANSIENT PLACEMENT. When an assignment/decl LHS is SCALAR
+  (int/float/bool), the whole RHS value is transient (no heap escapes a scalar
+  result), so evaluate it in a per-statement `_t` arena (like `print`) and free it
+  after — building the `make(d)` tree in `_t`, freed per statement. Unblocked by
+  MM-7a (enums are now deep-copied on escape, so placing them in a freeable `_t` is
+  sound). Closes binary-trees / tree-rewrite. (Does NOT fix arr_pipeline — that's
+  the MM-6a per-block coarseness: a heap array declared in an outer block but grown
+  in a nested loop routes to `&_scope`; needs per-var block depth.)
 - move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
