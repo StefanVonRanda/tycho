@@ -2,7 +2,7 @@
 # Bootstrap test harness for hierc0 — the subset compiler written in Hier
 # (Stage 1 of docs/bootstrap.md). Validates hierc0 DIFFERENTIALLY against the C
 # compiler: for each fixture P, cc(hierc0(P)) and the C hierc's binary must
-# print identically. hierc0 reads source on stdin and writes C to stdout.
+# print identically. hierc0 reads source on stdin (or a path arg) -> C on stdout.
 set -u
 cd "$(dirname "$0")/.."
 [ -x ./hierc ] || { echo "run 'make' first"; exit 2; }

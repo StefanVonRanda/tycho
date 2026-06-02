@@ -43,6 +43,13 @@ for d in tests/pkg/*/; do
     else
         echo "FAIL pkg_$nm (hierc0 could not compile the bundle)"; fail=1
     fi
+    # Standalone driver: B compiles the package directly from disk (read_file /
+    # list_dir / args — no `hierc --bundle` middleman) and must match too.
+    if "$T/B" "$entry" > "$T/sd.c" 2>/dev/null && $CC -O2 -o "$T/sd" "$T/sd.c" 2>/dev/null; then
+        [ "$ref" = "$("$T/sd" </dev/null 2>/dev/null)" ] || { echo "FAIL pkg_$nm (standalone hierc0 <path> differs)"; fail=1; }
+    else
+        echo "FAIL pkg_$nm (standalone hierc0 could not compile the package)"; fail=1
+    fi
 done
 # Dogfood (Stage E): split hierc0.hi itself into a two-package program
 # (compiler/pkg-split.sh -> `main` importing `rt`) and prove the SELF-HOSTED

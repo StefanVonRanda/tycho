@@ -1,5 +1,9 @@
 # hierc0 — a compiler for a SUBSET of Hier, written in Hier. Stage 1 of the
-# self-hosting bootstrap (docs/bootstrap.md). Source -> C, stdin -> stdout.
+# self-hosting bootstrap (docs/bootstrap.md). Emits C to stdout. With no
+# argument it reads source on stdin; `hierc0 path/to/main.hi` compiles that file
+# directly, and if the file declares a `package` it walks the whole package
+# (imports included) from disk via the read_file/list_dir/args builtins — a
+# standalone driver, no `hierc --bundle` needed.
 #
 # Subset: one or more `fn name(p: int, ...) -> int:` / `fn main():`, whose
 # indented bodies have `x := EXPR`, `x = EXPR`, `print(SEXPR)`, `return EXPR`,
@@ -3818,8 +3822,154 @@ fn collect_elem_types(prog: Program, dc: Decls, ctx: Ctx) -> [string]:
         i = i + 1
     return acc
 
+# ---- standalone package driver -------------------------------------------
+# With the filesystem builtins (read_file/list_dir/args) hierc0 can compile a
+# package program directly from disk — `hierc0 path/to/main.hi` — instead of
+# being fed `hierc --bundle ... | hierc0`. bundle() reproduces that bundler in
+# Hier: it walks the import graph (dependencies first, deduped/cycle-safe via
+# `seen`), concatenates each package's .hi files (sorted for determinism), and
+# rewrites the ENTRY package's header to `package main` so it keeps the empty
+# mangling prefix. No argument => read stdin (the bootstrap path, unchanged).
+
+fn has_suffix(s: string, suf: string) -> bool:
+    ls := len(s)
+    lf := len(suf)
+    if ls < lf:
+        return false
+    return substr(s, ls - lf, ls) == suf
+
+fn str_lt(a: string, b: string) -> bool:           # byte-wise less-than (no string < in Hier)
+    i := 0
+    la := len(a)
+    lb := len(b)
+    for i < la and i < lb:
+        if a[i] < b[i]:
+            return true
+        if a[i] > b[i]:
+            return false
+        i = i + 1
+    return la < lb
+
+fn insert_sorted(sorted: [string], v: string) -> [string]:   # no array index-set: rebuild
+    out := []string
+    placed := false
+    i := 0
+    for i < len(sorted):
+        if not placed and str_lt(v, sorted[i]):
+            push(out, v)
+            placed = true
+        push(out, sorted[i])
+        i = i + 1
+    if not placed:
+        push(out, v)
+    return out
+
+fn sort_strs(xs: [string]) -> [string]:            # insertion sort (file lists are small)
+    out := []string
+    i := 0
+    for i < len(xs):
+        out = insert_sorted(out, xs[i])
+        i = i + 1
+    return out
+
+fn dir_of(path: string) -> string:                 # "a/b/main.hi" -> "a/b" ; no slash -> "."
+    i := len(path) - 1
+    for i >= 0:
+        if path[i] == 47:
+            return substr(path, 0, i)
+        i = i - 1
+    return "."
+
+fn rewrite_header(content: string) -> string:      # the leading `package X` line -> `package main`
+    start := -1
+    if has_prefix(content, "package "):
+        start = 0
+    else:
+        idx := find(content, "\npackage ")
+        if idx >= 0:
+            start = idx + 1
+    if start < 0:
+        return content
+    e := start
+    for e < len(content) and content[e] != 10:
+        e = e + 1
+    return substr(content, 0, start) + "package main" + substr(content, e, len(content))
+
+fn scan_imports(toks: [Token]) -> [string]:        # the file header's import paths (no full parse)
+    out := []string
+    i := 0
+    for toks[i].kind == TNewline:
+        i = i + 1
+    if toks[i].kind == TIdent and toks[i].text == "package":
+        i = i + 1
+        if toks[i].kind == TIdent:
+            i = i + 1
+    running := true
+    for running:
+        for toks[i].kind == TNewline:
+            i = i + 1
+        if toks[i].kind == TIdent and toks[i].text == "import":
+            i = i + 1
+            if toks[i].kind == TIdent:
+                i = i + 1
+            if toks[i].kind == TStr:
+                push(out, toks[i].text)
+                i = i + 1
+        else:
+            running = false
+    return out
+
+fn is_package(toks: [Token]) -> bool:              # does the source open with a `package` decl?
+    i := 0
+    for toks[i].kind == TNewline:
+        i = i + 1
+    return toks[i].kind == TIdent and toks[i].text == "package"
+
+fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
+    k := 0
+    for k < len(seen):
+        if seen[k] == dir:
+            return ""                              # already merged (shared dep / cycle)
+        k = k + 1
+    push(seen, dir)
+    all := list_dir(dir)
+    files := []string
+    fi := 0
+    for fi < len(all):
+        if has_suffix(all[fi], ".hi"):
+            push(files, all[fi])
+        fi = fi + 1
+    files = sort_strs(files)
+    out := ""
+    fj := 0                                         # dependencies first (post-order)
+    for fj < len(files):
+        imps := scan_imports(lex(read_file(dir + "/" + files[fj])))
+        ij := 0
+        for ij < len(imps):
+            out = out + bundle(dir + "/" + imps[ij], false, &seen)
+            ij = ij + 1
+        fj = fj + 1
+    fk := 0                                         # then this package's files
+    for fk < len(files):
+        c := read_file(dir + "/" + files[fk])
+        if is_entry:
+            c = rewrite_header(c)
+        out = out + c + "\n"
+        fk = fk + 1
+    return out
+
 fn main():
-    src := read_all()
+    a := args()
+    src := ""
+    if len(a) > 1:                                  # `hierc0 path` : compile that file or package
+        content := read_file(a[1])
+        if is_package(lex(content)):
+            seen := []string
+            src = bundle(dir_of(a[1]), true, &seen)
+        else:
+            src = content
+    else:                                           # no argument : read stdin (the bootstrap path)
+        src = read_all()
     toks := lex(src)
     pos := 0
     prog := parse_program(toks, &pos)
