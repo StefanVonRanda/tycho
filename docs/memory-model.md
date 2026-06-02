@@ -232,6 +232,50 @@ elements stay malloc via the existing store-copy, so copies stay shallow):
   fixpoint B≡C + 57/57 + an array-build-and-discard RSS delta.
 This is the project's biggest/riskiest increment; do it as its own focused pass.
 
+### Core spine COMPLETE (MM-1..MM-4) — all heap types arena-managed at function scope
+
+Status: every heap type is now allocated in an arena (the value's owner) and
+freed at function return; values that escape (return/store) are copied to a
+longer-lived arena. Sound model: default owner `&_scope`, returns `_parent`,
+container stores `0`/malloc, print `_t`. owner_arena_of: local container
+`&_scope`, inout container `0`/malloc (its home arena isn't threaded — see
+below). Wins (each verified self-compile ASan-clean + fixpoint B≡C + test 57/57):
+MM-0 accumulator 464x, S2.1 print 42x, S2.3 locals 73x, MM-2 arrays 31x,
+MM-3 maps 3.7x, MM-4 structs/tuples/boxes 1.67x. Enum nodes stay malloc (the
+recursive AST). Commits: ef68daa, cc9aa27, 8407340, a850736, 29c881a, 5438dc3,
+dfbf2d2, 605085c.
+
+### MM-5 (per-block arenas) — design + finding
+Open `Arena _bN = arena_child(<enclosing>)` per if/while/for block; in-block
+fresh allocations → `&_bN`; free `_bN` at block exit. Frees per-iteration
+transients eagerly instead of holding them to function return.
+- BLOCKER: needs escape analysis. A loop body mixes transients (free per
+  iteration) with escaping values — accumulators, the array being push'd across
+  iterations, assignments to OUTER-scope vars — which must allocate in the
+  enclosing scope, not `_bN`, or they dangle when `_bN` frees. hierc0 has no
+  per-var home-scope tracking (only inout-vs-local). Plan: track the env length
+  at block entry; a var at index < entry_len is "outer"; an SAssign to an outer
+  var builds its RHS in that var's home scope (thread a parallel var-scope
+  stack), everything else in `_bN`. A return inside a block uses `_parent`.
+- Risk: HIGH (UAF in the self-hoster if escape is mis-analyzed). Benefit:
+  MARGINAL (function-scope freeing already bounds memory at each return;
+  per-block only helps a single long-running function with per-iteration churn).
+  Verify via self-compile ASan + fixpoint + a loop-churn RSS delta.
+
+### MM-6 (optimizations) — banked refinements
+- Container ELEMENTS still malloc (option-A): strings in arrays, array/map
+  values, map keys leak. Freeing them = push elements into the container's arena
+  + make container copy RECURSIVE (deep arena-aware). Biggest remaining win
+  (e.g. map keys were the 139MB residual in MM-3).
+- Struct/tuple CONSTRUCTION fields go to malloc (gen_store_args owner 0). Letting
+  them inherit ctx.owner frees local construction (array-literal ELEMENTS must
+  stay owner 0 — shallow Arr_copy needs immortal elements — so split the
+  arraylit vs struct/tuple paths in gen_store_args).
+- Inout container home-arena threading (a `_ina_`-style extra param) so pushes
+  into inout arrays/maps arena-free instead of malloc-leak (owner_arena_of
+  inout -> "0" today).
+- move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
