@@ -204,6 +204,34 @@ Then resume the arena spine (MM-1 below) for the heap types append can't cover.
   become recursive arena-aware, store-sites already force owner 0), now on a
   proven foundation. Then MM-5 per-block arenas, MM-6 the move/borrow opts.
 
+### MM-2 (next: arrays on arena) — design + coupling finding
+
+Arrays are MORE coupled than strings. Plan (option A — buffers on arena,
+elements stay malloc via the existing store-copy, so copies stay shallow):
+- Array runtime (`gen_arr_fns`): `_from`/`_copy`/`_slice` take a leading
+  `Arena*` and `amem(ar, …)` the buffer; `_push` takes `Arena*` and ARENA-GROWS
+  (realloc is impossible on arena memory) — on `len==cap`, `amem(ar, 2*cap)` +
+  memcpy, leaving the old buffer dead (reclaimed at arena_free; doubling ⇒ O(2n)).
+  `_new` stays empty/no-buffer. `_eq` unchanged.
+- Need `owner_arena_of(place, names, types)`: an inout-param array → `"_parent"`
+  (its buffer is the caller's), else local → `"&_scope"`. `push` grows in
+  `owner_arena_of(args[0]'s root var)`, NOT `ctx.owner`; from/copy/slice/literal
+  use `ctx.owner`. A root-var helper is needed for nested places (`s.items`).
+- COUPLING: `Arr_*_copy(ar, …)` is called inside `StructName_copy`,
+  map copy, and `Soa_*_copy` (struct/map/soa fields that are arrays). Giving
+  `_copy` an arena param forces those copy fns to take `Arena*` too — so MM-2
+  drags in struct/map/soa copy (part of MM-4) for their copy paths. `hi_split`
+  (returns `Arr_str`) also gains an `Arena*` and threads it to its internal
+  `Arr_str_new/push`; `split` emission passes `ctx.owner`.
+- Soundness: container ELEMENTS are already malloc (store-copy forces owner 0),
+  so array copies stay SHALLOW (element pointers) — no recursive deep-copy
+  needed. Only the buffer moves to the arena. (Frees the buffer per scope;
+  heap elements still leak — a later refinement could push elements into the
+  array's arena + deep-copy, but that needs the recursive copy.)
+- Verify: self-compile ASan (hierc0 is array-heavy — token/node lists) +
+  fixpoint B≡C + 57/57 + an array-build-and-discard RSS delta.
+This is the project's biggest/riskiest increment; do it as its own focused pass.
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
