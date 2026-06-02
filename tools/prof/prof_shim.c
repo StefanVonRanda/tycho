@@ -23,7 +23,7 @@
 #include <stdio.h>
 
 #define CAP (1u << 23)
-#define NW 5                                 /* RIP + 4 stack words (caller candidates) */
+#define NW 8     /* RIP + 3 RSP words (leaf-call return addr) + 3 frame-pointer-chain returns */
 static unsigned long pcs[CAP][NW];
 static volatile unsigned long npc = 0;
 
@@ -32,9 +32,19 @@ static void on_prof(int sig, siginfo_t *si, void *uc) {
     if (npc >= CAP) return;
     ucontext_t *c = (ucontext_t *)uc;
     unsigned long *sp = (unsigned long *)c->uc_mcontext.gregs[REG_RSP];
+    unsigned long bp  = (unsigned long)c->uc_mcontext.gregs[REG_RBP];
     unsigned long i = npc++;
     pcs[i][0] = (unsigned long)c->uc_mcontext.gregs[REG_RIP];
-    for (int k = 0; k < NW - 1; k++) pcs[i][k + 1] = sp ? sp[k] : 0;
+    /* a true-leaf libc call (memcpy/strlen) leaves its caller's return addr near
+     * RSP; a libc call WITH a frame (malloc) needs the saved-RBP chain to reach
+     * the hier function. Capture both; resolution takes the first that's ours. */
+    for (int k = 0; k < 3; k++) pcs[i][1 + k] = (sp ? sp[k] : 0);
+    for (int k = 0; k < 3; k++) {
+        if (!bp || (bp & 7) || bp < (unsigned long)sp) { pcs[i][4 + k] = 0; continue; }
+        pcs[i][4 + k] = ((unsigned long *)bp)[1];        /* return address at [rbp+8] */
+        unsigned long nb = ((unsigned long *)bp)[0];      /* saved rbp */
+        if (nb <= bp) bp = 0; else bp = nb;
+    }
 }
 
 __attribute__((constructor)) static void prof_start(void) {
