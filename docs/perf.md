@@ -172,11 +172,32 @@ match-arm payloads through Stages 2–4 and the self-host fixpoint.
 self-compiling shows the entire arena memory model is now **~6%** of run time:
 `arena_child` ~2%, `arena_alloc` ~2%, `hier_str_copy` ~2%. The remaining cost is
 *algorithmic, in hierc0's own source and identical in A and B* — not the memory
-model: `is_variant` (a doubly-nested linear scan over all enum variants, called
-per identifier in codegen) is **33%**, and the bounded-array index gets it drives
-are another **29%**. The two further prong-B ideas once noted here —
-stack-allocating small transients and compact node representations — target
-`arena_alloc` and the deep-copies, i.e. ~2% each; the profile shows eliminating
-them entirely would save ~1–2 ms of 49 ms, so they were dropped as high-risk,
-near-zero-reward. Any future self-compile speedup belongs in hierc0's algorithms
-(e.g. a variant→enum lookup built once), which is orthogonal to the arena thesis.
+model.
+
+> **CORRECTION (2026-06, measured).** An earlier version of this paragraph
+> claimed `is_variant` (the enum-variant scan) was **33%** of self-compile and a
+> "bounded-array index" path another **29%**, citing a gprof profile, and
+> suggested "a variant→enum lookup built once" as the win. **Both the claim and
+> the profile it rests on are wrong — `is_variant` is *not* a real bottleneck.**
+> Proven two ways: (1) replacing all four variant lookups with an O(1)
+> `{string:int}` map threaded through `Ctx` — which a fresh `gprof` confirms
+> *removes* the 25% `is_variant` line entirely — changed `-O2` wall-clock by
+> **0%** (126.3 → 126.9 ms, best of 15); (2) the reason is a **gprof `mcount`
+> artifact**: `is_variant` is a tiny branch-predicted loop called **1.3M times**,
+> and gprof's per-call instrumentation overhead (only present in the `-pg` build,
+> not under `-O2`) is charged to it, manufacturing a fake 25–33%. The same
+> artifact inflates every other call-heavy tiny function in that profile
+> (`count_str_occ` 397k calls, the `hier_arr_*_get` bounds-checks). **Lesson: do
+> not trust gprof self-times for functions with huge call counts; trust `-O2`
+> wall-clock deltas.** The variant-map change was reverted (no real win, and it
+> adds the first map to the self-host source).
+>
+> The genuine `-O2` cost is **memory traffic** — accurate gprof *call counts*
+> (which are not distorted): ~1.7M `arena_alloc`, ~1.3M `hier_str_copy`, ~2.1M
+> bounded-array gets per self-compile — i.e. the volume of small string
+> allocations the string-building codegen does, plus value-semantic copies. No
+> single function dominates; there is no cheap lever. Pinpointing the real
+> hotspot needs a **sampling** profiler (`perf`), which is unavailable here
+> (`perf_event_paranoid=3`, no root). So a self-compile speedup remains open and
+> un-targeted — it is *not* the enum scan, and the self-compile is already fast
+> enough (sub-50 ms class) that this is low priority against soundness work.
