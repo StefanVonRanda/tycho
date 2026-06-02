@@ -136,10 +136,22 @@ replicated directly. Instead:
   package-independent hierc0 codegen bug — tuple struct bodies were emitted
   before user struct bodies — now corrected.)
 
-### Stage E — dogfood: split `hierc0.hi` into packages
-- Split the ~3.5k-line compiler into `lexer`/`parser`/`typecheck`/`codegen`/`main`.
-- The real proof: hierc0 (now multi-package) self-compiles the multi-package source
-  **byte-identical** (B≡C still holds).
+### Stage E — dogfood: split `hierc0.hi` into packages ✅ DONE
+`compiler/pkg-split.sh` splits the self-hosted compiler into a two-package
+program — `rt` (the pure C-runtime/string emitters: `preamble`, `gen_strlib`,
+`gen_mhash`, `gen_map_type`, `gen_map_fns` — leaf functions, primitive
+signatures, no compiler types, no calls back into `main`) and `main` (the rest,
+`import "rt"`). The split is **generated from `hierc0.hi` by function name**
+(drift-proof — always the current compiler, just repackaged), so there is no
+3.9k-line duplicate to maintain.
+- **The proof** (`make fixpoint`): the C compiler builds the split; the split
+  compiler compiling its own `hierc --bundle` stream is a **fixed point (E≡F)**;
+  and the multi-package compiler emits **byte-identical C to the single-file
+  compiler** on every fixture (repackaging changes no output).
+- This is the narrowest clean cut (a one-way `main → rt` boundary, 5 qualified
+  call sites). A finer `lexer`/`parser`/`typecheck`/`codegen` decomposition is
+  mechanical — it would move the shared `Tok`/AST vocabulary into a common
+  package and qualify it at hundreds of use sites — but needs no new capability.
 
 ## Test-harness change ✅ DONE
 `tests/pkg/<name>/` = one package program (entry `main.hi`, golden
