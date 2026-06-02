@@ -121,6 +121,7 @@ run_bench strarr_build 3              rss  32768  KB
 run_bench nestarr_build 11            rss  32768  KB
 run_bench structarr_build 3           rss  32768  KB
 run_bench optarr_build  3             rss  32768  KB
+run_bench optstr_build  3             rss  32768  KB
 run_bench inout_fill   200            rss  32768  KB
 run_bench instruct_fill 200           rss  32768  KB
 run_bench loop_scratch 8              rss  32768  KB

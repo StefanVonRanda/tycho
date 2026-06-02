@@ -1692,15 +1692,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
-            if name == "Some":                    # box the payload (deep-copy a place: it is stored)
-                ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+            if name == "Some":                    # box the payload in the SAME arena as the box, so a
+                ct := cty(ctx, type_of(args[0], names, types, ctx))   # heap payload frees with it instead of
+                return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"   # leaking at owner-0 (every copy path deep-copies via box_payload)
             if name == "Ok":
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hok(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+                return "hok(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
             if name == "Err":
                 ce := cty(ctx, type_of(args[0], names, types, ctx))
-                return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+                return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
             if is_newtype(ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(ar, ...); node
@@ -1787,6 +1787,18 @@ fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
         return true
     return is_struct(ctx, et) and struct_is_heap(ctx, et)   # only heap structs have a _copy fn
 
+# The 3rd arg to hbox for an option/result payload of Hier type `ty`, whose boxed
+# value sits at `*(<ct>*)valptr`. A HEAP payload (str/array/struct/nested option…)
+# is deep-copied into `ar` so it frees with the box instead of leaking at owner-0
+# (the [Option(str)]/[Result([int],_)] element residual); a scalar payload's bytes
+# live inside the box already, so a shallow re-box (the raw pointer) is sound.
+# Mirrors hierc's hier_optN_copy (`if (v.has) v.val = hier_str_copy(a, v.val)`).
+fn box_payload(ctx: Ctx, ty: string, ar: string, valptr: string) -> string:
+    ct := cty(ctx, ty)
+    if elem_deepcopy(ctx, ty):
+        return "(" + ct + "[]){" + cp_field(ctx, ty, ar, "(*(" + ct + "*)(" + valptr + "))") + "}"
+    return valptr
+
 # The C expression that deep-copies one element of type `et` (from `src`) into
 # arena `ar`. Only called for elem_deepcopy types: str copies its bytes; a
 # nested array / tuple / heap struct recurses through its own _copy (re-homing
@@ -1800,13 +1812,13 @@ fn elem_copy_expr(ctx: Ctx, et: string, ar: string, src: string) -> string:
         return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(et):
         return "Tup_" + tup_suffix(et) + "_copy(" + ar + ", " + src + ")"
-    if is_option(et):                                # re-box the payload into `ar` (its bytes
-        ict := cty(ctx, option_inner(et))            # are shared/immortal, so a shallow re-box is
-        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + src + ".val)) : hnone())"   # sound; gives the copy an independent box)
+    if is_option(et):                                # re-box the payload into `ar`; box_payload
+        ict := cty(ctx, option_inner(et))            # deep-copies a HEAP inner (else shallow re-box)
+        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(ctx, option_inner(et), ar, src + ".val") + ")) : hnone())"
     if is_result(et):
         oct := cty(ctx, result_ok(et))
         ect := cty(ctx, result_err(et))
-        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + src + ".ok)) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + src + ".err)))"
+        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(ctx, result_ok(et), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(ctx, result_err(et), ar, src + ".err") + ")))"
     return et + "_copy(" + ar + ", " + src + ")"           # heap struct OR enum: <T>_copy
 
 # Deep-copy a value of Hier type `ty` from `src` into arena `ar` (the C expr) —
@@ -1828,11 +1840,11 @@ fn cp_field(ctx: Ctx, ty: string, ar: string, src: string) -> string:
         return rt + "_copy(" + ar + ", " + src + ")"
     if is_option(rt):
         ict := cty(ctx, option_inner(rt))
-        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + src + ".val)) : hnone())"
+        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(ctx, option_inner(rt), ar, src + ".val") + ")) : hnone())"
     if is_result(rt):
         oct := cty(ctx, result_ok(rt))
         ect := cty(ctx, result_err(rt))
-        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + src + ".ok)) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + src + ".err)))"
+        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(ctx, result_ok(rt), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(ctx, result_err(rt), ar, src + ".err") + ")))"
     if is_soa(rt):
         return "Soa_" + soa_struct(rt) + "_copy(" + src + ")"
     return src                                              # scalar / bool / non-heap struct

@@ -39,14 +39,15 @@ class Gen:
     # ---- types ---------------------------------------------------------
     def types_simple(self):
         ts = ["int", "string", "float", "[int]", "[string]", "[float]", "Option(int)",
-              "(int, string)", "{string:int}", "{string:float}", "[Option(int)]"]
+              "Option(string)", "(int, string)", "{string:int}", "{string:float}",
+              "[Option(int)]", "[Option(string)]"]
         ts += list(self.structs.keys())
         ts += list(self.newtypes.keys())
         return ts
 
     def is_heap(self, t):
         return (t == "string" or t.startswith("[") or t.startswith("(") or t.startswith("{")
-                or t == "Option(int)" or t.startswith("Result(")
+                or t.startswith("Option(") or t.startswith("Result(")
                 or t in self.structs or t in self.enums)
 
     # ---- expressions (type-directed) -----------------------------------
@@ -80,12 +81,13 @@ class Gen:
         elif t.startswith("["):
             el = t[1:-1]
             def mkel(j):                                    # first option-array elem must be Some (None infers its type)
-                if el == "Option(int)" and j > 0 and self.r.random() < 0.4:
+                if el.startswith("Option(") and j > 0 and self.r.random() < 0.4:
                     return "None"
                 return self.gen_expr(el, env, 2)
             choices.append(("lit", lambda: "[" + ", ".join(mkel(j) for j in range(self.r.randint(1,3))) + "]"))
-        elif t == "Option(int)":
-            choices.append(("some", lambda: "Some(" + self.gen_expr("int", env, 2) + ")"))
+        elif t.startswith("Option("):
+            inner = t[7:-1]                                  # "int" or "string" (heap payload)
+            choices.append(("some", lambda: "Some(" + self.gen_expr(inner, env, 2) + ")"))
         elif t == "(int, string)":
             choices.append(("tup", lambda: "(" + self.gen_expr("int", env, 2) + ", " + self.gen_expr("string", env, 2) + ")"))
         elif t == "{string:int}" or t == "{string:float}":
@@ -106,6 +108,7 @@ class Gen:
         if t == "float": return "1.0"
         if t == "string": return '"x"'
         if t == "Option(int)": return "Some(0)"
+        if t == "Option(string)": return 'Some("x")'
         if t == "(int, string)": return '(0, "x")'
         if t == "{string:int}": return '["k0": 0]'
         if t == "{string:float}": return '["k0": 0.0]'
@@ -140,10 +143,12 @@ class Gen:
             i = self.fresh("i")
             self.emit(ind, "for " + i + " in range(len(" + name + ")):")
             self.emit(ind+1, "acc = acc + len(" + name + "[" + i + "])")
-        elif t == "Option(int)":
+        elif t.startswith("Option(") and t.endswith(")"):
+            inner = t[7:-1]                                  # "int" or "string"
+            contrib = "x" if inner == "int" else "len(x)"
             self.emit(ind, "match " + name + ":")
             self.emit(ind+1, "Some(x):")
-            self.emit(ind+2, "acc = acc + x")
+            self.emit(ind+2, "acc = acc + " + contrib)
             self.emit(ind+1, "None:")
             self.emit(ind+2, "acc = acc + 0")
         elif t == "(int, string)":
@@ -167,12 +172,14 @@ class Gen:
             self.emit(ind+3, "acc = acc + " + xs + "[" + ii + "]")
             self.emit(ind+1, "Err(" + er + "):")
             self.emit(ind+2, "acc = acc + len(" + er + ")")
-        elif t == "[Option(int)]":
+        elif t.startswith("[Option(") and t.endswith(")]"):
+            inner = t[8:-2]                                  # "int" or "string"
+            contrib = "x" if inner == "int" else "len(x)"
             ii = self.fresh("i")
             self.emit(ind, "for " + ii + " in range(len(" + name + ")):")
             self.emit(ind+1, "match " + name + "[" + ii + "]:")
             self.emit(ind+2, "Some(x):")
-            self.emit(ind+3, "acc = acc + x")
+            self.emit(ind+3, "acc = acc + " + contrib)
             self.emit(ind+2, "None:")
             self.emit(ind+3, "acc = acc + 0")
         elif t in self.structs:

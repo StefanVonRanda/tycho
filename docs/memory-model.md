@@ -355,16 +355,25 @@ per-iteration transients eagerly instead of holding them to function return.
   + 57/57 ASan/UBSan (`tests/option_arrays.hi` is in `compiler/tests/`, so the
   fixpoint differential covers `[Option]`) + loop-local `[Option(int)]` build 1M
   iters **62MB → 1.4MB (~45×)** (bench/optarr_build.hi, now a perf guard).
-- Remaining (last) element residual: HEAP-PAYLOAD option/result elements
-  (`[Option(str)]`, `[Result([int],_)]`) leak the payload at construction. Closing
-  it means making options first-class deep-copied value types: `Some/Ok/Err`
-  payload inherits the ambient owner (like struct/tuple in MM-6e) AND every copy
-  path that today treats options as immutable/share-safe (gen_struct_copy,
-  gen_tuple_copy, cp_typed/gen_rhs, the return path) gains an option/result
-  deep-copy — a cross-cutting change to a working subsystem (+ the optres_borrow
-  optimization) for the rarest element type. Deliberately deferred (low reward,
-  highest blast radius); the bulk heap is O(1) and every common element type is
-  closed.
+- ✅ MM-7f: HEAP-PAYLOAD option/result elements (`[Option(str)]`,
+  `[Result([int],_)]`) — the last residual, now CLOSED. Previously `Some/Ok/Err`
+  built their payload at owner-0 (malloc/immortal) and every copy path re-boxed
+  the payload POINTER shallowly, so a heap payload (string/array/…) leaked at
+  construction. The fix makes options first-class deep-copied value types,
+  mirroring hierc's `hier_optN_copy` (`if (v.has) v.val = hier_str_copy(a, v.val)`)
+  in three coordinated changes: (1) a `box_payload(ctx, ty, ar, valptr)` helper
+  deep-copies a HEAP payload into `ar` (scalar payloads keep the shallow re-box);
+  (2) `elem_copy_expr` + `cp_field` use it, so every container/field copy
+  (array-element, struct/tuple/enum field) deep-copies the payload; (3) `Some`/
+  `Ok`/`Err` construction builds the payload in the box's arena (`ctx.owner`)
+  instead of owner-0. (1)+(2) and (3) are complementary: arena-owned payloads need
+  the deep-copy on cross-arena moves, or they'd UAF. Verified: fixpoint B≡C +
+  60/60 ASan/UBSan + a loop-local `[Option(str)]` build (`bench/optstr_build.hi`):
+  hierc0 **245 → 11 MB at 4M iters (now flat, == hierc)**, LSan zero-leak; and a
+  **1200-seed differential campaign** with the fuzzer extended to generate
+  `Option(string)`/`[Option(string)]` heap-payload options (the UAF check for the
+  arena-owned-payload change) — `ok=1200 skip=0 FAIL=0`. hierc0 now has **no known
+  memory gap vs hierc** — every element type, common and rare, is closed.
 - ✅ MM-6g (75d85e4): INOUT CONTAINER HOME-ARENA THREADING. An
   `inout [T]` / `inout {…}` / `inout soa` param now carries a hidden
   `Arena* _ina_<name>` (its array/map/soa lives in the CALLER's arena), and
@@ -396,11 +405,12 @@ per-iteration transients eagerly instead of holding them to function return.
   fixpoint differential exercises it via `examples/inout.hi`/`context.hi` +
   `tests/value_semantics.hi`, all in `compiler/tests/`) + 57/57 ASan/UBSan + a
   callee filling an `inout Bag`'s `[int]` field 200k×200: **798MB → 1.4MB (~582×)**
-  (bench/instruct_fill.hi, now a perf guard). The one remaining residual —
-  HEAP-PAYLOAD option arrays (`[Option(str)]`) — stays DEFERRED: no test or the
-  compiler uses one (the leak is unreachable in practice), and closing it is a
-  high-blast-radius change to the working option subsystem with zero oracle
-  coverage — a bad trade.
+  (bench/instruct_fill.hi, now a perf guard). The one-time remaining residual —
+  HEAP-PAYLOAD option arrays (`[Option(str)]`) — was later CLOSED in **MM-7f**
+  (see above): a `[Option(string)]` repro showed it was reachable (hierc0 leaked
+  ~60MB/1M iters where hierc stayed flat), so the option payload was made a
+  first-class deep-copied value (mirroring hierc), verified by fixpoint + LSan +
+  a 1200-seed option-heap fuzz campaign. hierc0 now has no known memory gap.
 
 ### MM-7 — enums on arena (the recursive AST) + transient placement
 
