@@ -1447,7 +1447,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
-            return "Arr_" + mangle(et) + "_from((" + cty(ctx, et) + "[]){" + gen_store_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+            return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(ctx, et) + "[]){" + gen_store_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
             if is_soa(ety):                       # empty soa: zeroed descriptor
                 return "(" + cty(ctx, ety) + "){0}"
@@ -1477,7 +1477,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "substr(" + ctx.owner + ", " + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
             if is_soa(bt):
                 return gen_soa_slice(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(lo, names, types, ctx), gen_expr(hi, names, types, ctx))
-            return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
+            return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, ctx)
         EBin(op, l, r):
@@ -1501,7 +1501,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
                     return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
                 et := elem_ty(at)
-                return "Arr_" + mangle(et) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
+                return "Arr_" + mangle(et) + "_push(" + owner_arena_of(args[0], names, types) + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
@@ -1521,13 +1521,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "find":
                 return "hi_find(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "split":
-                return "hi_split(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_set":
                 return mfam(type_of(args[0], names, types, ctx)) + "_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_rhs(args[2], names, types, with_owner(ctx, "0")) + ")"
             if name == "map_get":
                 return mfam(type_of(args[0], names, types, ctx)) + "_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
-                return mfam(type_of(args[0], names, types, ctx)) + "_keys(" + gen_expr(args[0], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
             if name == "map_del":
                 return mfam(type_of(args[0], names, types, ctx)) + "_del(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_has":
@@ -1558,6 +1558,57 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return name + "(" + ctx.owner + ")"
             return name + "(" + ctx.owner + ", " + gen_args(args, names, types, ctx) + ")"
+
+# Root variable of a place expression (`s.items[i]` -> `s`), or "" if not a
+# place rooted in a variable. Used to find which arena a container lives in.
+fn root_var(e: Expr) -> string:
+    match e:
+        EVar(n):
+            return n
+        EField(b, f):
+            return root_var(b)
+        EIndex(b, i):
+            return root_var(b)
+        EAddr(x):
+            return root_var(x)
+        EInt(t):
+            return ""
+        EFloat(f):
+            return ""
+        EStr(s):
+            return ""
+        EBin(o, l, r):
+            return ""
+        ECall(n, a):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+
+# The arena a container place lives in: an inout-param container is the caller's
+# (its buffer must grow in _parent so it survives the call); a local lives in
+# this function's _scope. (One scope per function until MM-5 adds per-block.)
+fn owner_arena_of(e: Expr, names: [string], types: [string]) -> string:
+    # A local container grows in this function's _scope (freed at return). An
+    # inout-param container's true home arena lives further up the inout chain
+    # than `_parent` (the C compiler threads a separate `_ina_` arena for it);
+    # hierc0 doesn't, so growing it in `_parent` would land in a too-short-lived
+    # scope (heap-use-after-free, caught by ASan on the self-compile). Grow it in
+    # malloc ("0") instead — immortal, never dangles. (Inout arrays then leak,
+    # their pre-MM-2 behavior; threading the home arena is a later refinement.)
+    rv := root_var(e)
+    if rv != "" and is_inout(var_type(names, types, rv)):
+        return "0"
+    return "&_scope"
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -1633,7 +1684,7 @@ fn is_evar(e: Expr, name: string) -> bool:
 fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
     rt := resolve_nt(ctx, ty)
     if is_array(rt):
-        return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + code + ")"
+        return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(rt):
         return mfam(rt) + "_copy(" + code + ")"
     if is_tuple(rt):
@@ -1649,7 +1700,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     code := gen_expr(e, names, types, ctx)
     ty := type_of(e, names, types, ctx)
     if is_array(ty) and is_place(e):
-        return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + code + ")"
+        return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
         return ty + "_copy(" + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
@@ -2131,7 +2182,7 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
         if f.ty == "str":
             out = out + "    r." + f.name + " = sc(0, s." + f.name + ", \"\");\n"
         elif is_array(f.ty):
-            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(s." + f.name + ");\n"
+            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(0, s." + f.name + ");\n"
         elif is_soa(f.ty):
             out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
         elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
@@ -2176,7 +2227,7 @@ fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
         if p == "str":
             out = out + "    r.f" + str(i) + " = sc(0, s.f" + str(i) + ", \"\");\n"
         elif is_array(p):
-            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(0, s.f" + str(i) + ");\n"
         elif is_struct(ctx, p) and struct_is_heap(ctx, p):
             out = out + "    r.f" + str(i) + " = " + p + "_copy(s.f" + str(i) + ");\n"
         i = i + 1
@@ -2336,10 +2387,14 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
     ct := cty(ctx, et)                           # element C type, trailing space
     out := "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
-    out = out + "static " + nm + " " + nm + "_from(" + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? malloc(sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
-    out = out + "static " + nm + " " + nm + "_copy(" + nm + " a) { return " + nm + "_from(a.data, a.len); }\n"
-    out = out + "static void " + nm + "_push(" + nm + "* a, " + ct + "v) { if (a->len == a->cap) { a->cap = a->cap ? a->cap * 2 : 4; a->data = realloc(a->data, sizeof(" + ct + ") * a->cap); } a->data[a->len++] = v; }\n"
-    out = out + "static " + nm + " " + nm + "_slice(" + nm + " a, long lo, long hi) { return " + nm + "_from(a.data + lo, hi - lo); }\n"
+    # buffer lives in arena `ar` (NULL=malloc). push ARENA-GROWS (no realloc on
+    # arena memory): allocate a doubled buffer and copy; the old one is dead and
+    # reclaimed at arena_free. Elements are malloc'd by the store-copy at every
+    # store site, so copy/slice stay SHALLOW (element pointers) and remain valid.
+    out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
+    out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
+    out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
+    out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
     # _eq for every element type (eq_field handles scalar/str/enum/struct/array/
     # option/result); the gen_arr_type forward decl lets composite eq cross-ref.
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
@@ -2418,16 +2473,18 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
 # Runtime that depends on Arr_str (so it is emitted after the array families,
 # not in the preamble): split a string on a separator into a [string].
 fn gen_strlib() -> string:
-    out := "static Arr_str hi_split(const char* s, const char* sep) {\n"
+    # buffer in `ar` (the result's owner); substrings malloc'd (0) so the array
+    # can be shallow-copied/returned without dangling element pointers.
+    out := "static Arr_str hi_split(Arena* ar, const char* s, const char* sep) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
     out = out + "    long n = strlen(s), sl = strlen(sep);\n"
-    out = out + "    if (sl == 0) { Arr_str_push(&r, substr(0, s, 0, n)); return r; }\n"
+    out = out + "    if (sl == 0) { Arr_str_push(ar, &r, substr(0, s, 0, n)); return r; }\n"
     out = out + "    long start = 0, i = 0;\n"
     out = out + "    while (i + sl <= n) {\n"
-    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(&r, substr(0, s, start, i)); i += sl; start = i; }\n"
+    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(ar, &r, substr(0, s, start, i)); i += sl; start = i; }\n"
     out = out + "        else i = i + 1;\n"
     out = out + "    }\n"
-    out = out + "    Arr_str_push(&r, substr(0, s, start, n));\n"
+    out = out + "    Arr_str_push(ar, &r, substr(0, s, start, n));\n"
     out = out + "    return r;\n}\n"
     return out
 
@@ -2464,7 +2521,7 @@ fn gen_map_fns(v: string) -> string:
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
     out = out + "static " + M + " " + f + "_del(" + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static Arr_str " + f + "_keys(" + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(&r, m.keys[i]); return r; }\n"
+    out = out + "static Arr_str " + f + "_keys(Arena* ar, " + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(ar, &r, m.keys[i]); return r; }\n"
     # structural equality: same length, and every live key in a present in b with
     # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
     out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.keys[i] != 0) { long t = " + s + "_slot(b, a.keys[i]); if (b.keys[t] == 0 || b.vals[t] != a.vals[i]) return 0; } return 1; }\n"
