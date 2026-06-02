@@ -1,0 +1,6 @@
+package main
+import g "geom"
+
+fn main():
+    r := g.add(g.Point(3, 4), g.Point(1, 2))
+    print("sum=(" + str(r.x) + "," + str(r.y) + ")\n")   # (4,6)

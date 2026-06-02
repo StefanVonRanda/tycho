@@ -1,0 +1,7 @@
+package main
+import "geom"
+
+fn main():
+    c := geom.Red                # bare qualified variant value
+    d := geom.default()
+    print(geom.name(c) + " " + geom.name(d) + " " + geom.name(geom.Blue) + "\n")   # red green blue

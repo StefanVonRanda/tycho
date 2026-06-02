@@ -918,60 +918,124 @@ fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Under
 # keep the empty prefix, so their output is unchanged. Mangling runs ONLY when a
 # `package` decl was seen, so a normal single-file compile (incl. hierc0.hi
 # itself) is byte-identical. Qualified references arrive from the parser as
-# dotted `pkg.name` strings; they become `pkg__name`.
+# dotted `pkg.name` strings; they become `<realpkg>__name` (`realpkg` resolves an
+# import alias to the package's true name).
+#
+# Mctx is the read-only resolution table built once per program in pass 1 of
+# parse_program: `prefix` is the current def's package prefix; `aliasn`/`aliasp`
+# map an import alias to its package name; `pkgs` is every usable qualifier
+# (package names + aliases); `variants` is every mangled variant name (so a bare
+# `Red`/`pkg.Red` payload-less variant value resolves).
+struct Mctx:
+    prefix: string
+    aliasn: [string]
+    aliasp: [string]
+    pkgs: [string]
+    variants: [string]
 
 fn is_builtin_call(name: string) -> bool:
     return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "die" or name == "len" or name == "push" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
-fn dot_to_dunder(s: string) -> string:
-    idx := find(s, ".")
-    return substr(s, 0, idx) + "__" + substr(s, idx + 1, len(s))
+fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
+    i := 0
+    for i < len(m.aliasn):
+        if m.aliasn[i] == qual:
+            return m.aliasp[i]
+        i = i + 1
+    return qual
 
-fn mangle_ref(prefix: string, name: string) -> string:
+fn mangle_dotted(m: Mctx, s: string) -> string:        # "g.add" -> "<realpkg(g)>__add"
+    idx := find(s, ".")
+    return resolve_pkg(m, substr(s, 0, idx)) + "__" + substr(s, idx + 1, len(s))
+
+fn is_pkg_ref(m: Mctx, name: string) -> bool:          # is `name` a package name or import alias?
+    i := 0
+    for i < len(m.pkgs):
+        if m.pkgs[i] == name:
+            return true
+        i = i + 1
+    return false
+
+fn is_known_variant(m: Mctx, mn: string) -> bool:      # is `mn` (already mangled) a declared variant?
+    i := 0
+    for i < len(m.variants):
+        if m.variants[i] == mn:
+            return true
+        i = i + 1
+    return false
+
+fn mangle_ref(m: Mctx, name: string) -> string:
     if find(name, ".") >= 0:
-        return dot_to_dunder(name)
+        return mangle_dotted(m, name)
     if is_builtin_call(name):
         return name
-    return prefix + name
+    return m.prefix + name
 
-fn mangle_type(prefix: string, ty: string) -> string:
+# Mangle a comma-separated type list (tuple / Result element types), splitting on
+# TOP-LEVEL commas only so nested `[..]`/`(..)`/`{..}` are left intact.
+fn mangle_type_list(m: Mctx, s: string) -> string:
+    out := ""
+    part := ""
+    depth := 0
+    i := 0
+    for i < len(s):
+        ch := substr(s, i, i + 1)
+        if ch == "(" or ch == "[" or ch == "{":
+            depth = depth + 1
+            part = part + ch
+        elif ch == ")" or ch == "]" or ch == "}":
+            depth = depth - 1
+            part = part + ch
+        elif ch == "," and depth == 0:
+            if len(out) > 0:
+                out = out + ","
+            out = out + mangle_type(m, part)
+            part = ""
+        else:
+            part = part + ch
+        i = i + 1
+    if len(out) > 0:
+        out = out + ","
+    return out + mangle_type(m, part)
+
+fn mangle_type(m: Mctx, ty: string) -> string:
     if has_prefix(ty, "&"):
-        return "&" + mangle_type(prefix, substr(ty, 1, len(ty)))
+        return "&" + mangle_type(m, substr(ty, 1, len(ty)))
     if has_prefix(ty, "soa["):
-        return "soa[" + mangle_type(prefix, substr(ty, 4, len(ty) - 1)) + "]"
+        return "soa[" + mangle_type(m, substr(ty, 4, len(ty) - 1)) + "]"
     if has_prefix(ty, "["):
-        return "[" + mangle_type(prefix, substr(ty, 1, len(ty) - 1)) + "]"
+        return "[" + mangle_type(m, substr(ty, 1, len(ty) - 1)) + "]"
     if has_prefix(ty, "Option("):
-        return "Option(" + mangle_type(prefix, substr(ty, 7, len(ty) - 1)) + ")"
+        return "Option(" + mangle_type(m, substr(ty, 7, len(ty) - 1)) + ")"
+    if has_prefix(ty, "Result("):
+        return "Result(" + mangle_type_list(m, substr(ty, 7, len(ty) - 1)) + ")"
     if has_prefix(ty, "{"):
         return ty                  # map [str: int/float]: value is primitive, never a package type
     if has_prefix(ty, "("):
-        return ty                  # tuple: cross-package tuple elements not mangled yet (none in fixtures)
-    if has_prefix(ty, "Result("):
-        return ty                  # Result: cross-package args not mangled yet (none in fixtures)
+        return "(" + mangle_type_list(m, substr(ty, 1, len(ty) - 1)) + ")"
     if ty == "int" or ty == "float" or ty == "str" or ty == "void":
         return ty
     if find(ty, ".") >= 0:
-        return dot_to_dunder(ty)
-    return prefix + ty
+        return mangle_dotted(m, ty)
+    return m.prefix + ty
 
-fn mangle_types(prefix: string, tys: [string]) -> [string]:
+fn mangle_types(m: Mctx, tys: [string]) -> [string]:
     out := []string
     i := 0
     for i < len(tys):
-        push(out, mangle_type(prefix, tys[i]))
+        push(out, mangle_type(m, tys[i]))
         i = i + 1
     return out
 
-fn mangle_args(prefix: string, es: [Expr]) -> [Expr]:
+fn mangle_args(m: Mctx, es: [Expr]) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
-        push(out, mangle_expr(prefix, es[i]))
+        push(out, mangle_expr(m, es[i]))
         i = i + 1
     return out
 
-fn mangle_expr(prefix: string, e: Expr) -> Expr:
+fn mangle_expr(m: Mctx, e: Expr) -> Expr:
     match e:
         EInt(s):
             return EInt(s)
@@ -982,119 +1046,148 @@ fn mangle_expr(prefix: string, e: Expr) -> Expr:
         EStr(s):
             return EStr(s)
         EVar(s):
+            if is_known_variant(m, m.prefix + s):   # a bare payload-less variant value in this package
+                return EVar(m.prefix + s)
             return EVar(s)
         EBin(op, l, r):
-            return EBin(op, mangle_expr(prefix, l), mangle_expr(prefix, r))
+            return EBin(op, mangle_expr(m, l), mangle_expr(m, r))
         ECall(nm, a):
-            return ECall(mangle_ref(prefix, nm), mangle_args(prefix, a))
+            return ECall(mangle_ref(m, nm), mangle_args(m, a))
         EField(b, f):
-            return EField(mangle_expr(prefix, b), f)
+            bn := evar_name(b)
+            # `pkg.Variant` (no parens) parses as a field access; if `pkg` is an
+            # imported package and `pkg.Variant` names a real variant, it is a
+            # qualified payload-less variant VALUE, not a struct field read.
+            if bn != "" and is_pkg_ref(m, bn) and is_known_variant(m, resolve_pkg(m, bn) + "__" + f):
+                return EVar(resolve_pkg(m, bn) + "__" + f)
+            return EField(mangle_expr(m, b), f)
         EIndex(b, ix):
-            return EIndex(mangle_expr(prefix, b), mangle_expr(prefix, ix))
+            return EIndex(mangle_expr(m, b), mangle_expr(m, ix))
         EArrLit(es):
-            return EArrLit(mangle_args(prefix, es))
+            return EArrLit(mangle_args(m, es))
         EArrEmpty(ty):
-            return EArrEmpty(mangle_type(prefix, ty))
+            return EArrEmpty(mangle_type(m, ty))
         EMapEmpty(k, v):
             return EMapEmpty(k, v)
         EMapLit(ks, vs):
-            return EMapLit(mangle_args(prefix, ks), mangle_args(prefix, vs))
+            return EMapLit(mangle_args(m, ks), mangle_args(m, vs))
         ETuple(es):
-            return ETuple(mangle_args(prefix, es))
+            return ETuple(mangle_args(m, es))
         ESlice(b, lo, hi):
-            return ESlice(mangle_expr(prefix, b), mangle_expr(prefix, lo), mangle_expr(prefix, hi))
+            return ESlice(mangle_expr(m, b), mangle_expr(m, lo), mangle_expr(m, hi))
         EAddr(x):
-            return EAddr(mangle_expr(prefix, x))
+            return EAddr(mangle_expr(m, x))
 
-fn mangle_block(prefix: string, ss: [Stmt]) -> [Stmt]:
+fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
     out := []Stmt
     i := 0
     for i < len(ss):
-        push(out, mangle_stmt(prefix, ss[i]))
+        push(out, mangle_stmt(m, ss[i]))
         i = i + 1
     return out
 
-fn mangle_arm(prefix: string, v: string) -> string:
+fn mangle_arm(m: Mctx, v: string) -> string:
     if find(v, ".") >= 0:
-        return dot_to_dunder(v)
+        return mangle_dotted(m, v)
     if v == "Some" or v == "None" or v == "Ok" or v == "Err":
         return v
-    return prefix + v
+    return m.prefix + v
 
-fn mangle_variants(prefix: string, vs: [string]) -> [string]:
+fn mangle_variants(m: Mctx, vs: [string]) -> [string]:
     out := []string
     i := 0
     for i < len(vs):
-        push(out, mangle_arm(prefix, vs[i]))
+        push(out, mangle_arm(m, vs[i]))
         i = i + 1
     return out
 
-fn mangle_bodies(prefix: string, bs: [[Stmt]]) -> [[Stmt]]:
+fn mangle_bodies(m: Mctx, bs: [[Stmt]]) -> [[Stmt]]:
     out := [][Stmt]
     i := 0
     for i < len(bs):
-        push(out, mangle_block(prefix, bs[i]))
+        push(out, mangle_block(m, bs[i]))
         i = i + 1
     return out
 
-fn mangle_stmt(prefix: string, s: Stmt) -> Stmt:
+fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
     match s:
         SDecl(n, e):
-            return SDecl(n, mangle_expr(prefix, e))
+            return SDecl(n, mangle_expr(m, e))
         SAssign(n, e):
-            return SAssign(n, mangle_expr(prefix, e))
+            return SAssign(n, mangle_expr(m, e))
         SFieldAssign(lv, r):
-            return SFieldAssign(mangle_expr(prefix, lv), mangle_expr(prefix, r))
+            return SFieldAssign(mangle_expr(m, lv), mangle_expr(m, r))
         SPrint(e):
-            return SPrint(mangle_expr(prefix, e))
+            return SPrint(mangle_expr(m, e))
         SReturn(e):
-            return SReturn(mangle_expr(prefix, e))
+            return SReturn(mangle_expr(m, e))
         SReturnVoid:
             return SReturnVoid
         SIf(c, t, el):
-            return SIf(mangle_expr(prefix, c), mangle_block(prefix, t), mangle_block(prefix, el))
+            return SIf(mangle_expr(m, c), mangle_block(m, t), mangle_block(m, el))
         SWhile(c, b):
-            return SWhile(mangle_expr(prefix, c), mangle_block(prefix, b))
+            return SWhile(mangle_expr(m, c), mangle_block(m, b))
         SForRange(v, a, b, st, body):
-            return SForRange(v, mangle_expr(prefix, a), mangle_expr(prefix, b), mangle_expr(prefix, st), mangle_block(prefix, body))
+            return SForRange(v, mangle_expr(m, a), mangle_expr(m, b), mangle_expr(m, st), mangle_block(m, body))
         SExpr(e):
-            return SExpr(mangle_expr(prefix, e))
+            return SExpr(mangle_expr(m, e))
         STypedDecl(n, ty, e):
-            return STypedDecl(n, mangle_type(prefix, ty), mangle_expr(prefix, e))
+            return STypedDecl(n, mangle_type(m, ty), mangle_expr(m, e))
         SOrReturn(n, e):
-            return SOrReturn(n, mangle_expr(prefix, e))
+            return SOrReturn(n, mangle_expr(m, e))
         SDestructure(ns, e):
-            return SDestructure(ns, mangle_expr(prefix, e))
+            return SDestructure(ns, mangle_expr(m, e))
         SMultiAssign(ns, e):
-            return SMultiAssign(ns, mangle_expr(prefix, e))
+            return SMultiAssign(ns, mangle_expr(m, e))
         SMatch(subj, vars, binds, bodies):
-            return SMatch(mangle_expr(prefix, subj), mangle_variants(prefix, vars), binds, mangle_bodies(prefix, bodies))
+            return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, mangle_bodies(m, bodies))
 
-fn mangle_func(prefix: string, f: Func) -> Func:
-    return Func(prefix + f.name, f.params, mangle_types(prefix, f.ptypes), mangle_type(prefix, f.ret), mangle_block(prefix, f.body))
+fn mangle_func(m: Mctx, f: Func) -> Func:
+    return Func(m.prefix + f.name, f.params, mangle_types(m, f.ptypes), mangle_type(m, f.ret), mangle_block(m, f.body))
 
-fn mangle_struct(prefix: string, sd: StructDef) -> StructDef:
+fn mangle_struct(m: Mctx, sd: StructDef) -> StructDef:
     fs := []Field
     i := 0
     for i < len(sd.fields):
-        push(fs, Field(sd.fields[i].name, mangle_type(prefix, sd.fields[i].ty)))
+        push(fs, Field(sd.fields[i].name, mangle_type(m, sd.fields[i].ty)))
         i = i + 1
-    return StructDef(prefix + sd.name, fs)
+    return StructDef(m.prefix + sd.name, fs)
 
-fn mangle_enum(prefix: string, ed: EnumDef) -> EnumDef:
+fn mangle_enum(m: Mctx, ed: EnumDef) -> EnumDef:
     vs := []Variant
     i := 0
     for i < len(ed.variants):
-        push(vs, Variant(prefix + ed.variants[i].name, mangle_types(prefix, ed.variants[i].ptypes)))
+        push(vs, Variant(m.prefix + ed.variants[i].name, mangle_types(m, ed.variants[i].ptypes)))
         i = i + 1
-    return EnumDef(prefix + ed.name, vs)
+    return EnumDef(m.prefix + ed.name, vs)
+
+fn path_last(path: string) -> string:                  # "math/geom" -> "geom"
+    out := path
+    j := 0
+    for j < len(path):
+        if substr(path, j, j + 1) == "/":
+            out = substr(path, j + 1, len(path))
+        j = j + 1
+    return out
 
 fn parse_program(toks: [Token], pos: inout int) -> Program:
-    structs := []StructDef
-    enums := []EnumDef
-    funcs := []Func
-    ntnames := []string
-    ntunder := []string
+    # Pass 1: parse every def, recording its package prefix, and collect the
+    # package / alias / variant tables. Two passes are needed because a qualified
+    # or bare reference may name a package, alias, or variant declared later in
+    # the stream (mangling can't run until all of them are known).
+    rstructs := []StructDef
+    spfx := []string
+    renums := []EnumDef
+    epfx := []string
+    rfuncs := []Func
+    fpfx := []string
+    rntn := []string
+    rntu := []string
+    npfx := []string
+    pkgs := []string
+    aliasn := []string
+    aliasp := []string
+    variants := []string
     curpfx := ""
     sawpkg := false
     for toks[pos].kind != TEof:
@@ -1109,34 +1202,81 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
                 curpfx = ""
             else:
                 curpfx = pname + "__"
+                push(pkgs, pname)
             for toks[pos].kind != TNewline and toks[pos].kind != TEof:
                 pos = pos + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "import":
-            for toks[pos].kind != TNewline and toks[pos].kind != TEof:    # resolution is done by the bundler
+            pos = pos + 1
+            alias := ""
+            if toks[pos].kind == TIdent:           # `import alias "path"`
+                alias = toks[pos].text
+                pos = pos + 1
+            if toks[pos].kind == TStr:
+                pkn := path_last(toks[pos].text)
+                pos = pos + 1
+                if alias != "":
+                    push(aliasn, alias)
+                    push(aliasp, pkn)
+                    push(pkgs, alias)
+                push(pkgs, pkn)
+            for toks[pos].kind != TNewline and toks[pos].kind != TEof:
                 pos = pos + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "struct":
-            sd := parse_struct(toks, &pos)
-            if sawpkg:
-                sd = mangle_struct(curpfx, sd)
-            push(structs, sd)
+            push(rstructs, parse_struct(toks, &pos))
+            push(spfx, curpfx)
         elif toks[pos].kind == TIdent and toks[pos].text == "enum":
             ed := parse_enum(toks, &pos)
-            if sawpkg:
-                ed = mangle_enum(curpfx, ed)
-            push(enums, ed)
+            push(renums, ed)
+            push(epfx, curpfx)
+            vi := 0
+            for vi < len(ed.variants):             # remember every variant's mangled name
+                push(variants, curpfx + ed.variants[vi].name)
+                vi = vi + 1
         elif toks[pos].kind == TIdent and toks[pos].text == "type":
             nt := parse_newtype(toks, &pos)
-            if sawpkg:
-                push(ntnames, curpfx + nt.name)
-                push(ntunder, mangle_type(curpfx, nt.ty))
-            else:
-                push(ntnames, nt.name)
-                push(ntunder, nt.ty)
+            push(rntn, nt.name)
+            push(rntu, nt.ty)
+            push(npfx, curpfx)
         else:
-            f := parse_func(toks, &pos)
-            if sawpkg:
-                f = mangle_func(curpfx, f)
-            push(funcs, f)
+            push(rfuncs, parse_func(toks, &pos))
+            push(fpfx, curpfx)
+    # Pass 2: mangle, but only if the stream actually declared packages — so a
+    # plain single-file program is returned untouched (byte-identical).
+    structs := []StructDef
+    enums := []EnumDef
+    funcs := []Func
+    ntnames := []string
+    ntunder := []string
+    si := 0
+    for si < len(rstructs):
+        if sawpkg:
+            push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants), rstructs[si]))
+        else:
+            push(structs, rstructs[si])
+        si = si + 1
+    ei := 0
+    for ei < len(renums):
+        if sawpkg:
+            push(enums, mangle_enum(Mctx(epfx[ei], aliasn, aliasp, pkgs, variants), renums[ei]))
+        else:
+            push(enums, renums[ei])
+        ei = ei + 1
+    fi := 0
+    for fi < len(rfuncs):
+        if sawpkg:
+            push(funcs, mangle_func(Mctx(fpfx[fi], aliasn, aliasp, pkgs, variants), rfuncs[fi]))
+        else:
+            push(funcs, rfuncs[fi])
+        fi = fi + 1
+    ni := 0
+    for ni < len(rntn):
+        if sawpkg:
+            push(ntnames, npfx[ni] + rntn[ni])
+            push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants), rntu[ni]))
+        else:
+            push(ntnames, rntn[ni])
+            push(ntunder, rntu[ni])
+        ni = ni + 1
     return Program(structs, enums, funcs, ntnames, ntunder)
 
 # -------------------------------------------------------------- codegen ----
@@ -3694,11 +3834,6 @@ fn main():
         if is_map(ets[i]):
             out = out + gen_map_type(map_val(ets[i]))
         i = i + 1
-    i = 0                                        # 2b. tuple struct bodies (may embed Arr_T, now complete)
-    for i < len(ets):
-        if is_tuple(ets[i]):
-            out = out + gen_tuple_struct(dc, ctx, ets[i])
-        i = i + 1
     i = 0                                        # 3. enum + struct eq prototypes (mutual recursion)
     for i < len(prog.enums):
         out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
@@ -3714,6 +3849,11 @@ fn main():
     i = 0                                        # 5. enum struct bodies (payloads may be value structs)
     for i < len(prog.enums):
         out = out + gen_enum_decl(prog.enums[i], dc, ctx)
+        i = i + 1
+    i = 0                                        # 5a. tuple struct bodies — AFTER struct/enum bodies, so a
+    for i < len(ets):                            #     tuple that embeds a struct/enum by value sees a complete type
+        if is_tuple(ets[i]):
+            out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple

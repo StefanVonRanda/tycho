@@ -1464,6 +1464,17 @@ static char *pkg_prefix_for(const char *qualifier) {
     return sfmt("%s__", pkgname);
 }
 
+/* is `name` a package this file imported (by alias or by its path's last
+ * component)? Used to read `pkg.Variant` as a qualified value, not a field. */
+static int is_imported_pkg(const char *name) {
+    for (int i = 0; i < g_nimports; i++) {
+        if (g_imports[i].alias && !strcmp(g_imports[i].alias, name)) return 1;
+        const char *p = g_imports[i].path, *slash = strrchr(p, '/');
+        if (!strcmp(slash ? slash + 1 : p, name)) return 1;
+    }
+    return 0;
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0 };
     ProcVec out = {0};
@@ -1692,6 +1703,19 @@ static Type resolve_expr(Expr *e) {
             return e->type = bt;
         }
         case E_FIELD: {
+            /* `pkg.Variant` (no parens, lhs an imported package) is a payload-less
+             * enum variant value — reinterpret as a 0-arg constructor, not a field. */
+            if (e->lhs->kind == E_IDENT && is_imported_pkg(e->lhs->sval)) {
+                char *q = sfmt("%s%s", pkg_prefix_for(e->lhs->sval), e->sval);
+                int evi, eid = variant_find(q, &evi);
+                if (eid < 0)
+                    die_at(e->line, "package '%s' has no variant '%s'", e->lhs->sval, e->sval);
+                if (g_enums[eid].variants[evi].npayload != 0)
+                    die_at(e->line, "%s.%s carries a payload — write %s.%s(...)",
+                           e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                e->kind = E_CALL; e->sval = q; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;
+                return e->type = ENUM_TYPE(eid);
+            }
             Type bt = resolve_expr(e->lhs);
             if (!IS_STRUCT(bt))
                 die_at(e->line, "'.%s' on a non-struct value", e->sval);

@@ -1,0 +1,19 @@
+package main
+import "geom"
+
+fn mk(n: int) -> (geom.Point, int):
+    return geom.Point(n, n + 1), n * 10
+
+fn checked(n: int) -> Result(geom.Point, string):
+    if n > 0:
+        return Ok(geom.Point(n, n))
+    return Err("neg")
+
+fn main():
+    p, k := mk(7)
+    r := checked(5)
+    match r:
+        Ok(q):
+            print(str(p.x) + "," + str(p.y) + "," + str(k) + " ok=" + str(q.x) + "\n")   # 7,8,70 ok=5
+        Err(e):
+            print(e + "\n")
