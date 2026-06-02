@@ -109,22 +109,38 @@ symbols (`geom__Point`, `geom__add`).
 - **Gate:** an array of a cross-package struct + a cross-package enum matched in
   `main`, clean under ASan/UBSan/LeakSanitizer.
 
-### Stage D — port to `hierc0`
-- Replicate A–C in `compiler/hierc0.hi`. The feature is additive (`hierc0.hi` is
-  still one file → its self-compilation is unchanged), so **fixpoint stays green
-  by construction**; extend the differential to cover the package examples.
+### Stage D — port to `hierc0` ✅ DONE (stream model)
+`hierc0` reads source on **stdin** and hier **has no globals** (docs/bootstrap.md),
+so the C compiler's directory-walking driver and global mangling-prefix can't be
+replicated directly. Instead:
+- **`hierc --bundle <entry>`** emits the package program's source as one
+  post-order stream (imports first; each file keeps its `package`/`import`
+  headers; the *entry* package's header is rewritten to `package main` so it
+  keeps the empty prefix regardless of its source name). Pipe it into `hierc0`.
+- **`hierc0`** mangles in a **post-parse pass** that is *dormant* unless a
+  `package` decl was seen — so a single-file compile (incl. `hierc0.hi` itself)
+  is byte-identical and **fixpoint stays green by construction**. `parse_program`
+  switches the prefix on each `package` header (`main`→"", else `name__`); a small
+  additive mangler rewrites stored names + references (codegen derives every C
+  name from the stored name, so it's untouched); three additive parser tweaks let
+  qualified refs arrive as dotted `pkg.name` strings that become `pkg__name`.
+- **Differential:** `make fixpoint` builds every `tests/pkg` fixture with the
+  Hier-built compiler from `hierc --bundle` and asserts it matches the C compiler.
+- Deferred in hierc0 (hierc has them; fixtures don't need): import aliases, bare
+  payload-less qualified variant *values*, cross-package tuple/Result elements.
 
 ### Stage E — dogfood: split `hierc0.hi` into packages
 - Split the ~3.5k-line compiler into `lexer`/`parser`/`typecheck`/`codegen`/`main`.
 - The real proof: hierc0 (now multi-package) self-compiles the multi-package source
   **byte-identical** (B≡C still holds).
 
-## Test-harness change (needed from B on)
-`make test` compiles single files; packages need a multi-file entry. Add a
-`tests/pkg/<name>/` convention (a directory = one package program, entry
-`main.hi`) and a harness branch that compiles the entry and checks output against
-a golden — same native-vs-ASan + golden discipline; the differential/fixpoint
-extends to these.
+## Test-harness change ✅ DONE
+`tests/pkg/<name>/` = one package program (entry `main.hi`, golden
+`tests/pkg/<name>.out`). `make test` compiles the entry with hierc (merging the
+directory) under the same native-vs-ASan + golden discipline; `make fixpoint`
+additionally builds each fixture with the Hier-built hierc0 from `hierc --bundle`
+and asserts it matches the C compiler. Fixtures: `multifile` (Stage A),
+`geom_demo` (B/C1), `shapes` (C2).
 
 ## Top implementation risks
 - **The `a.b` disambiguation** must run after all imports are known: parse-all →
