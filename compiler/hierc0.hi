@@ -322,6 +322,8 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     enums: [EnumDef]          # fields, so with_owner/enter_block deep-copied all of
     ntnames: [string]         # sigs/structs/enums on every owner/depth change (~37%
     ntunder: [string]         # of self-compile). hierc threads `arena` the same way.
+    sigmap: [string: int]     # function name -> index in `sigs`, built once: O(1) sig_ret
+                              # (safe to map here precisely because Decls is never rebuilt)
 
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
@@ -1249,11 +1251,9 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return variant_enum(dc, ctx, name)
     if is_struct(dc, ctx, name):                      # construction yields the struct
         return name
-    i := 0
-    for i < len(dc.sigs):
-        if dc.sigs[i].name == name:
-            return dc.sigs[i].ret
-        i = i + 1
+    si := map_get(dc.sigmap, name, -1)                # O(1) user-function lookup (was a linear scan)
+    if si >= 0:
+        return dc.sigs[si].ret
     die("type: unknown function")
     return "int"
 
@@ -2129,11 +2129,25 @@ fn compute_movables(body: [Stmt]) -> [string]:
     reads := []string
     loopreads := []string
     rd_block(&reads, &loopreads, body, false)
-    mv := []string
+    # movable = read exactly once AND never inside a loop. The old form called
+    # count_str_occ(reads, n) per element = O(reads^2); a one-pass frequency map
+    # + a loopreads set makes it O(reads). (The old `not has_str(mv, n)` guard was
+    # redundant: a name read once is pushed at most once.)
+    freq := []string: int
+    lset := []string: int
     i := 0
+    for i < len(loopreads):
+        lset = map_set(lset, loopreads[i], 1)
+        i = i + 1
+    i = 0
+    for i < len(reads):
+        freq = map_set(freq, reads[i], map_get(freq, reads[i], 0) + 1)
+        i = i + 1
+    mv := []string
+    i = 0
     for i < len(reads):
         n := reads[i]
-        if count_str_occ(reads, n) == 1 and not has_str(loopreads, n) and not has_str(mv, n):
+        if map_get(freq, n, 0) == 1 and map_get(lset, n, 0) == 0:
             push(mv, n)
         i = i + 1
     return mv
@@ -3418,11 +3432,14 @@ fn main():
     prog := parse_program(toks, &pos)
     funcs := prog.funcs
     sigs := []Sig
+    sigmap := []string: int
     i := 0
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
+        if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
+            sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap)
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()

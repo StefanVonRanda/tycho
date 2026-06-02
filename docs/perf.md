@@ -245,3 +245,17 @@ model.
 > `with_owner`/`enter_block` gone from the profile; fixpoint B≡C + 58 tests + fuzz
 > green. The new top is genuine codegen logic (`type_of` ~13%, `gen_expr` ~11%,
 > `compute_movables` ~7%, `sig_ret` ~5%) — a smaller, more-diffuse next layer.
+>
+> **Two more from that layer, both output-invariant (2026-06).** The Decls split
+> also made it safe to add O(1) lookup *maps* to the immutable `Decls` (built once,
+> never reconstructed — the per-clone copy cost that doomed an earlier such attempt
+> is gone). (1) `compute_movables` (the move-on-last-use pre-pass) was O(reads²) —
+> it called `count_str_occ(reads, n)` for every read; a one-pass frequency map +
+> loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
+> became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**; fixpoint
+> B≡C + 58 tests + fuzz green. What remains (`gen_expr`/`type_of` + a large
+> unattributed `memcpy`/`malloc` chunk) is the inherent string-building codegen —
+> hierc0 returns `sc()`-concatenated strings where hierc streams to a buffer via
+> `fprintf`, so bytes are copied once per nesting level. Eliminating that is the
+> streaming-codegen refactor (assessed large + non-uniform — wrapping patterns like
+> `EMapLit` don't stream — for a ~10–15% gain); banked, not yet done.
