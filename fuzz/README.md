@@ -37,8 +37,20 @@ Deterministic: a finding's `seed_<n>.hi` reproduces with `python3 fuzz/gen.py <n
 
 ## Coverage / extending
 
-`gen.py` currently exercises int / string / arrays / structs / recursive enums +
-`match` / `Option(int)` (+ `[Option(int)]`) / `(int, string)` tuples /
-`{string:int}` maps / `inout [int]` / returned arrays. To widen coverage, add a
-type to `types_simple()` plus its `gen_expr` (construct) and `checksum_into`
-(consume) cases, or add a statement kind in `gen_stmt`.
+`gen.py` currently exercises int / `float` / string / `char` / arrays (`[int]`,
+`[string]`, `[float]`) / structs / recursive enums + `match` / `Option(int)`
+(+ `[Option(int)]`) / `Result([int], string)` / `(int, string)` tuples /
+`{string:int}` + `{string:float}` maps / `type Nt = int` newtypes / array &
+string slices (`v[:]`, `v[0:]`, …) / `inout [int]` / returned arrays. To widen
+coverage, add a type to `types_simple()` plus its `gen_expr` (construct) and
+`checksum_into` (consume) cases, or add a statement kind in `gen_stmt`.
+
+Two oracle-safety rules the generator must keep: (1) every value must reduce
+into the `int` checksum — floats and int-newtypes via `to_int` (deterministic
+truncation, identical in both compilers since they emit the same C); (2) never
+emit a construct that can fault at runtime in a *valid* program, or hierc's own
+run faults and run.py reports a false FAIL. The live example: **array** slices
+`exit(1)` on out-of-bounds (string slices clamp), so array slices are restricted
+to whole-array forms (`[:]`, `[0:]`) whose bounds hold at any runtime length.
+
+Still uncovered: SOA arrays (`soa []Struct`) and `or_return`.
