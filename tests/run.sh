@@ -49,14 +49,12 @@ fails=""
 # note a problem (prints only); the per-program tally happens once in run_one.
 note() { echo "FAIL  $1  ($2)"; }
 
+# run_one <entry.hi> <name> <golden.out> <stdin>
 run_one() {
-    hi="$1"
-    name="$(basename "$hi" .hi)"
+    hi="$1"; name="$2"; g="$3"; in="$4"
     c="$TMP/$name.c"
     nat="$TMP/$name.native"
     san="$TMP/$name.asan"
-    in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
-    g="tests/$name.out"
     ok=1
 
     if ! "$HIERC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
@@ -102,7 +100,24 @@ run_one() {
 
 for hi in examples/*.hi tests/*.hi; do
     [ -e "$hi" ] || continue
-    run_one "$hi"
+    name="$(basename "$hi" .hi)"
+    in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
+    run_one "$hi" "$name" "tests/$name.out" "$in"
+done
+
+# Package programs: each tests/pkg/<name>/ is one multi-file package program
+# whose entry is main.hi (the compiler merges the whole directory and follows
+# its imports). Golden is tests/pkg/<name>.out — same native-vs-ASan + golden
+# discipline as single files.
+for d in tests/pkg/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    entry="$d/main.hi"
+    if [ ! -f "$entry" ]; then
+        note "pkg_$name" "no main.hi"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
+    fi
+    in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
+    run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
 done
 
 echo "-----------------------------------------"

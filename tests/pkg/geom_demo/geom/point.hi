@@ -1,0 +1,8 @@
+package geom
+
+struct Point:
+    x: int
+    y: int
+
+fn add(a: Point, b: Point) -> Point:
+    return Point(a.x + b.x, a.y + b.y)

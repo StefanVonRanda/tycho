@@ -1,0 +1,5 @@
+package multifile
+
+fn main():
+    b := Box(6, 7)
+    print("area=" + str(area(b)) + "\n")   # 42
