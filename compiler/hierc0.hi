@@ -1542,13 +1542,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "hi_input()"
             if name == "Some":                    # box the payload (deep-copy a place: it is stored)
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hsome(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+                return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if name == "Ok":
                 ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hok(hbox(sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+                return "hok(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if name == "Err":
                 ce := cty(ctx, type_of(args[0], names, types, ctx))
-                return "herr(hbox(sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
+                return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, with_owner(ctx, "0")) + "}))"
             if is_newtype(ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
@@ -1688,9 +1688,9 @@ fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
     if is_map(rt):
         return mfam(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(rt):
-        return "Tup_" + tup_suffix(rt) + "_copy(" + code + ")"
+        return "Tup_" + tup_suffix(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(ctx, rt) and struct_is_heap(ctx, rt):
-        return rt + "_copy(" + code + ")"
+        return rt + "_copy(" + ctx.owner + ", " + code + ")"
     return code
 
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
@@ -1702,11 +1702,11 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     if is_array(ty) and is_place(e):
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
-        return ty + "_copy(" + code + ")"
+        return ty + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
         return mfam(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
-        return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
+        return "Tup_" + tup_suffix(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
     if ty == "str" and is_place(e):              # copy a string bound from a place, so an
@@ -2175,18 +2175,18 @@ fn gen_match_optres(ctx: Ctx, sty: string, scu: string, variants: [string], allb
 # its own _copy). Source-order emission gives nested copiers before their users.
 fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
     nm := sd.name
-    out := "static " + nm + " " + nm + "_copy(" + nm + " s) {\n    " + nm + " r = s;\n"
+    out := "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n    " + nm + " r = s;\n"
     i := 0
     for i < len(sd.fields):
         f := sd.fields[i]
         if f.ty == "str":
-            out = out + "    r." + f.name + " = sc(0, s." + f.name + ", \"\");\n"
+            out = out + "    r." + f.name + " = sc(ar, s." + f.name + ", \"\");\n"
         elif is_array(f.ty):
-            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(0, s." + f.name + ");\n"
+            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + f.name + ");\n"
         elif is_soa(f.ty):
             out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
         elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
-            out = out + "    r." + f.name + " = " + f.ty + "_copy(s." + f.name + ");\n"
+            out = out + "    r." + f.name + " = " + f.ty + "_copy(ar, s." + f.name + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
@@ -2220,16 +2220,16 @@ fn gen_tuple_struct(ctx: Ctx, ty: string) -> string:
 fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
     nm := "Tup_" + tup_suffix(ty)
     parts := tuple_parts(ty)
-    out := "static " + nm + " " + nm + "_copy(" + nm + " s) {\n    " + nm + " r = s;\n"
+    out := "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n    " + nm + " r = s;\n"
     i := 0
     for i < len(parts):
         p := parts[i]
         if p == "str":
-            out = out + "    r.f" + str(i) + " = sc(0, s.f" + str(i) + ", \"\");\n"
+            out = out + "    r.f" + str(i) + " = sc(ar, s.f" + str(i) + ", \"\");\n"
         elif is_array(p):
-            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(0, s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_struct(ctx, p) and struct_is_heap(ctx, p):
-            out = out + "    r.f" + str(i) + " = " + p + "_copy(s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
@@ -2365,7 +2365,7 @@ fn preamble() -> string:
     out = out + "static char* hi_read_all(void) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
     out = out + "typedef struct { int tag; void* val; } HOption;\n"
     out = out + "typedef struct { int tag; void* ok; void* err; } HResult;\n"
-    out = out + "static void* hbox(unsigned long n, void* src) { void* p = malloc(n); memcpy(p, src, n); return p; }\n"
+    out = out + "static void* hbox(Arena* ar, unsigned long n, void* src) { void* p = amem(ar, n); memcpy(p, src, n); return p; }\n"
     out = out + "static HOption hsome(void* v) { HOption o; o.tag = 1; o.val = v; return o; }\n"
     out = out + "static HOption hnone(void) { HOption o; o.tag = 0; o.val = 0; return o; }\n"
     out = out + "static HResult hok(void* v) { HResult r; r.tag = 1; r.ok = v; r.err = 0; return r; }\n"
