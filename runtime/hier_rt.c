@@ -144,6 +144,34 @@ void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
     (*s)[*len] = '\0';
 }
 
+/* string + char: one-byte append, no strlen/snprintf. `c` is a byte carried in
+ * a long (Hier's char type). New buffer lives in arena `a` (cf. hier_str_concat). */
+char *hier_str_concat_char(Arena *a, const char *x, long c) {
+    size_t lx = strlen(x);
+    char *r = (char *)arena_alloc(a, lx + 2);
+    memcpy(r, x, lx);
+    r[lx] = (char)c;
+    r[lx + 1] = '\0';
+    return r;
+}
+
+/* In-place one-byte append for the accumulator `acc = acc + c` where c is a
+ * char. Same uniqueness/geometric-growth contract as hier_str_append. */
+void hier_str_append_char(Arena *a, char **s, long *len, long *cap, long c) {
+    long need = *len + 2;
+    if (need > *cap) {
+        long nc = *cap ? *cap * 2 : 16;
+        while (nc < need) nc *= 2;
+        char *nb = (char *)arena_alloc(a, (size_t)nc);
+        memcpy(nb, *s, (size_t)*len);
+        *s = nb;
+        *cap = nc;
+    }
+    (*s)[*len] = (char)c;
+    *len += 1;
+    (*s)[*len] = '\0';
+}
+
 /* value-semantic copy of a string into arena `a`. Used when a bare string
  * variable is returned or assigned to an outer scope: the variable is only
  * a pointer into a scope about to be freed, so the bytes must be copied

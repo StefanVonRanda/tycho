@@ -14,6 +14,7 @@ enum Tok:
     TInt
     TFloat
     TStr
+    TChar
     TIdent
     TPlus
     TMinus
@@ -73,6 +74,38 @@ fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
         if i >= n:
             die("lex: unterminated string")
         push(toks, Token(TStr, substr(src, start, i)))
+        return i + 1                             # consume closing quote
+    elif c == 39:                                # char literal '...' -> one byte
+        i = i + 1
+        if i >= n:
+            die("lex: unterminated char literal")
+        b := 0
+        if src[i] == 92:                         # backslash escape
+            i = i + 1
+            if i >= n:
+                die("lex: unterminated char literal")
+            e := src[i]
+            if e == 110:                         # \n
+                b = 10
+            elif e == 116:                       # \t
+                b = 9
+            elif e == 114:                       # \r
+                b = 13
+            elif e == 48:                        # \0
+                b = 0
+            elif e == 92:                        # backslash
+                b = 92
+            elif e == 39:                        # quote
+                b = 39
+            else:
+                die("lex: bad char escape (use \\n \\t \\r \\0 \\\\ \\')")
+            i = i + 1
+        else:
+            b = src[i]
+            i = i + 1
+        if i >= n or src[i] != 39:
+            die("lex: char literal must be exactly one character")
+        push(toks, Token(TChar, str(b)))
         return i + 1                             # consume closing quote
     elif is_digit(c):
         start := i
@@ -217,6 +250,7 @@ fn lex(src: string) -> [Token]:
 
 enum Expr:
     EInt(string)
+    EChar(string)             # char literal `'x'`, carried as the byte value in decimal text
     EFloat(string)            # float literal, emitted verbatim (round-trips as a double)
     EStr(string)              # string literal (raw content, escapes preserved)
     EVar(string)
@@ -340,6 +374,9 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TInt:
         pos = pos + 1
         return EInt(t.text)
+    elif t.kind == TChar:
+        pos = pos + 1
+        return EChar(t.text)
     elif t.kind == TFloat:
         pos = pos + 1
         return EFloat(t.text)
@@ -1092,6 +1129,8 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
         return "long "
+    if ty == "char":                             # one byte carried as a long
+        return "long "
     if ty == "float":
         return "double "
     if ty == "str":
@@ -1221,6 +1260,8 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return "int"
+        EChar(t):
+            return "char"
         EFloat(f):
             return "float"
         EStr(s):
@@ -1271,7 +1312,9 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             lt := type_of(l, names, types, ctx)
             rt := type_of(r, names, types, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
-                return "str"
+                return "str"                      # str + char appends one byte
+            if (op == "+" or op == "-") and (lt == "char" or rt == "char"):
+                return "char"                     # char +/- int (or char) stays a byte
             if op == "+" or op == "-" or op == "*" or op == "/":
                 if lt == "float" or rt == "float":
                     return "float"
@@ -1315,6 +1358,8 @@ fn arg_ina(arg: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EVar(n):
             return ""
         EInt(t):
+            return ""
+        EChar(t):
             return ""
         EFloat(f):
             return ""
@@ -1410,6 +1455,8 @@ fn soa_field_access(ctx: Ctx, base: Expr, fld: string, names: [string], types: [
                 return "(" + gen_expr(sb, names, types, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, ctx) + "]"
             return ""
         EInt(t):
+            return ""
+        EChar(t):
             return ""
         EFloat(f):
             return ""
@@ -1513,6 +1560,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
         EInt(t):
             return t
+        EChar(t):
+            return t
         EFloat(f):
             return f
         EStr(s):
@@ -1580,6 +1629,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EBin(op, l, r):
             lt := type_of(l, names, types, ctx)
             if op == "+" and type_of(e, names, types, ctx) == "str":
+                if type_of(r, names, types, ctx) == "char":   # str + char: append one byte
+                    return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
                 return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
             if is_cmp(op) and lt == "str":        # lexicographic string compare (== / != / < ...)
                 return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
@@ -1673,6 +1724,8 @@ fn root_var(e: Expr) -> string:
         EAddr(x):
             return root_var(x)
         EInt(t):
+            return ""
+        EChar(t):
             return ""
         EFloat(f):
             return ""
@@ -1824,6 +1877,8 @@ fn is_place(e: Expr) -> bool:
             return true
         EInt(t):
             return false
+        EChar(t):
+            return false
         EFloat(f):
             return false
         EStr(s):
@@ -1852,6 +1907,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         EVar(n):
             return n == name
         EInt(t):
+            return false
+        EChar(t):
             return false
         EFloat(f):
             return false
@@ -1909,6 +1966,8 @@ fn evar_name(e: Expr) -> string:
         EVar(n):
             return n
         EInt(t):
+            return ""
+        EChar(t):
             return ""
         EFloat(f):
             return ""
@@ -1991,6 +2050,8 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
                 rd_expr(&reads, &loopreads, es[j], inloop)
                 j = j + 1
         EInt(t):
+            j := 0
+        EChar(t):
             j := 0
         EFloat(f):
             j := 0
@@ -2143,6 +2204,8 @@ fn expr_has_call(e: Expr) -> bool:
             return any_has_call(es)
         EInt(t):
             return false
+        EChar(t):
+            return false
         EFloat(f):
             return false
         EStr(s):
@@ -2211,7 +2274,10 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                     aout := ""
                     k := 0
                     for k < len(pieces):
-                        aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
+                        if type_of(pieces[k], names, types, ctx) == "char":   # one-byte append, no strlen
+                            aout = aout + "    hi_append_char(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
+                        else:
+                            aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
                         k = k + 1
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
@@ -2229,6 +2295,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                         return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
+                    return deflt
+                EChar(t):
                     return deflt
                 EFloat(f):
                     return deflt
@@ -2438,6 +2506,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
             else:
                 push(out, e)
         EInt(t):
+            push(out, e)
+        EChar(t):
             push(out, e)
         EFloat(f):
             push(out, e)
@@ -2894,9 +2964,11 @@ fn preamble() -> string:
     # arena-based: accumulator buffers are realloc-grown, so they must be malloc.
     out = out + "static void* amem(Arena* a, size_t n) { return a ? arena_alloc(a, n) : malloc(n); }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = amem(ar, la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
+    out = out + "static char* sc_char(Arena* ar, const char* a, long c) { size_t la = strlen(a); char* r = amem(ar, la + 2); memcpy(r, a, la); r[la] = (char)c; r[la + 1] = 0; return r; }\n"
     out = out + "static char* i2s(Arena* ar, long n) { char* r = amem(ar, 24); snprintf(r, 24, \"%ld\", n); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { size_t n = strlen(s) + 1; char* r = amem(ar, n); memcpy(r, s, n); return r; }\n"
     out = out + "static void hi_append(char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; *s = (char*)realloc(*s, (size_t)nc); *cap = nc; } memcpy(*s + *len, e, (size_t)le + 1); *len += le; }\n"
+    out = out + "static void hi_append_char(char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; *s = (char*)realloc(*s, (size_t)nc); *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = amem(ar, m + 1); memcpy(r, t, m + 1); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = amem(ar, n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
@@ -3167,6 +3239,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EAddr(inner):
             collect_expr(&acc, inner, names, types, ctx)
         EInt(t):
+            j := 0
+        EChar(t):
             j := 0
         EFloat(f):
             j := 0

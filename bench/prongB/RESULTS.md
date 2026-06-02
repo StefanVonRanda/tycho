@@ -27,7 +27,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | binary-trees      | 25 MB/201 ms |  13 MB/124 ms | 33/772 ms | 33/848 ms | 35/1523 ms |    14/273 ms |
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
 | array-pipeline    |  6 MB/132 ms |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
-| string-pipeline   |  1 MB/34 ms  |   3 MB/32 ms  |   1/1 ms |   1/2 ms |    4/4 ms |     2/17 ms |
+| string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -242,24 +242,34 @@ Build M = 4000 strings, each K = 256 digit-chars, by concatenation; hash each
 (sum of byte codes); checksum. Stresses string *building* and per-character
 work. `string_pipe.{hi,c,rs,go}`, `stringpipe.kk`. Byte-identical (67f39fca):
 
-| language               | peak RSS | wall time |
-| ---------------------- | -------: | --------: |
-| C (growable buffer)    |     1 MB |      2 ms |
-| Rust (String)          |     1 MB |      2 ms |
-| Go (strings.Builder)   |     3 MB |      6 ms |
-| Koka (Perceus string)  |     2 MB |     17 ms |
-| **Hier** (`s = s + c`) |  **1 MB** | **33 ms** |
+| language                    | peak RSS | wall time |
+| --------------------------- | -------: | --------: |
+| C (growable buffer)         |     1 MB |      1 ms |
+| **Hier** (`s = s + ('0'+d)`)|  **1 MB** |  **1 ms** |
+| Rust (String)               |     2 MB |      2 ms |
+| Go (strings.Builder)        |     4 MB |      5 ms |
+| Koka (Perceus string)       |     2 MB |     17 ms |
 
-**Hier is tied for lowest memory but slowest on time — and both follow from the
-model.** The obvious value-semantic code `s = s + str(d)` compiles to an
-*in-place append* (the accumulator optimization, `bench/append`), so building a
-256-char string is O(n), not the O(n²)-with-garbage that naive immutable-string
-concatenation would cost — Hier matches C/Rust at 1 MB and beats Go's GC churn,
-with no explicit Builder. The time cost is the flip side of the same coin: Hier
-has no single-`char` type, so each `str(d)` allocates a one-char string that the
-append then copies (~1M tiny arena allocations + bounds-checked byte reads),
-where C/Rust/Go write a raw byte. So on tiny-piece string work the memory model
-stays C-class while raw per-op throughput trails — a real and honest profile.
+**Hier is now tied for best on BOTH axes — lowest memory and (with C) fastest.**
+The obvious value-semantic code `s = s + ('0' + d)` compiles to an *in-place
+append* (the accumulator optimization, `bench/append`), so building a 256-char
+string is O(n), not the O(n²)-with-garbage that naive immutable-string
+concatenation would cost. The append piece `'0' + d` is a **`char`** — one byte
+carried in a `long` — so each step is `hi_append_char`: a single-byte store into
+the growing buffer, no per-digit string allocation and no `strlen`. That is the
+exact same byte-write the C (`s[len++] = '0'+d`), Rust (`s.push(...)`), and Go
+(`b.WriteByte(...)`) versions do, so Hier now matches C's 1 MB / 1 ms.
+
+This row used to read **1 MB / 33 ms (slowest)**: before the additive `char`
+type, the only digit-to-string path was `str(d)`, which allocated a one-char
+string per digit that the append then copied (~1M tiny arena allocations +
+bounds-checked byte reads) — a per-op tax C/Rust/Go never paid. The `char` type
+(`'x'` literals, `char ± int → char`, `string + char →` in-place byte append)
+closed it: **34 → 1 ms (~21× on hierc, ~10× on hierc0)** at unchanged memory,
+with byte-identical output. The memory was already C-class (the arena bounds the
+transients); `char` removed the throughput gap, so string-pipeline joins
+tree-rewrite and array-pipeline as a workload where the model is best-or-tied on
+*both* axes.
 
 ## Summary across four workloads
 
@@ -268,12 +278,15 @@ stays C-class while raw per-op throughput trails — a real and honest profile.
 | binary-trees (tree)  | 2nd (25 MB; Koka 14) | 1st |
 | tree-rewrite (tree)  | 1st (tie, 7 MB)      | 1st |
 | array-pipeline (flat)| 1st (tie w/ C/Rust)  | 4th (beats Koka) |
-| string-pipeline      | 1st (tie w/ C/Rust)  | 5th |
+| string-pipeline      | 1st (tie w/ C/Rust)  | 1st (tie w/ C) |
 
 The value-semantic implicit-arena model is **lowest-or-tied on memory in three
 of four workloads and never the GC/refcount tier**, with time ranging from
-best-in-class (trees) to trailing C/Rust on per-op-heavy flat/string work. No
-GC, no reference counts — just lexical arenas and value semantics.
+best-in-class (trees, string-pipeline) to trailing C/Rust only on per-op-heavy
+flat-array work. No GC, no reference counts — just lexical arenas and value
+semantics. (The `char` type closed the former string-pipeline time gap; the one
+remaining sub-C/Rust workload is array-pipeline, where the cost is per-element
+bounds-checking, not the memory model.)
 
 ## Caveats / TODO
 

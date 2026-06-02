@@ -32,9 +32,13 @@ are indicative, not a rigorous benchmark suite.
 > both dropped binary-trees **38 → 13 MB, 289 → 124 ms** (now hierc's exact alloc
 > count). hierc0 now **beats hierc on both memory and time on 3 of 4 prong-B
 > workloads** ([../bench/prongB/RESULTS.md](../bench/prongB/RESULTS.md)) and is
-> best-in-class on binary-trees; the one place it trails is string-pipeline memory,
-> which pays for Hier having no `char` type (each `str(d)` allocates a one-char
-> string). The C compiler stays the reference until hierc0 outperforms it.
+> best-in-class on binary-trees. The former string-pipeline gap is now closed by
+> the additive `char` type: `'x'` literals, `char ± int → char`, and `string +
+> char` compiling to a one-byte in-place append (`hi_append_char`, no per-digit
+> string allocation) — the same byte-write C/Rust/Go do. With `s = s + ('0' + d)`,
+> string-pipeline drops **34 → 1 ms (~21× on hierc, ~10× on hierc0)** at unchanged
+> memory, tying C at 1 MB / 1 ms. The C compiler stays the reference until hierc0
+> outperforms it.
 
 Three compilers are in play:
 

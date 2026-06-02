@@ -165,7 +165,10 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 
 ### Types
 
-`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, arrays
+`int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `char` (one
+byte — `'x'` literals with `\n \t \r \0 \\ \'` escapes; `char ± int → char`;
+`string + char` appends in place without allocating, so `s = s + ('0' + d)` is a
+zero-alloc byte append), arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), string-keyed maps
 (`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the

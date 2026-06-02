@@ -61,7 +61,7 @@ static char *xstrndup(const char *s, size_t n) {
 
 typedef enum {
     TK_EOF, TK_NEWLINE, TK_INDENT, TK_DEDENT,
-    TK_IDENT, TK_INT, TK_FLOAT, TK_STR,
+    TK_IDENT, TK_INT, TK_FLOAT, TK_STR, TK_CHAR,
     TK_COLONCOLON, TK_COLONEQ, TK_COLON, TK_EQ,
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
@@ -220,6 +220,33 @@ static TokVec lex(const char *src) {
                 continue;
             }
 
+            if (c == '\'') {        /* char literal: 'x' or one escape -> one byte */
+                p++;
+                long cv;
+                if (*p == '\\') {
+                    p++;
+                    switch (*p) {
+                        case 'n':  cv = '\n'; break;
+                        case 't':  cv = '\t'; break;
+                        case 'r':  cv = '\r'; break;
+                        case '0':  cv = '\0'; break;
+                        case '\\': cv = '\\'; break;
+                        case '\'': cv = '\''; break;
+                        default: die_at(line, "unsupported char escape (use \\n \\t \\r \\0 \\\\ \\')");
+                    }
+                    p++;
+                } else if (*p && *p != '\'' && *p != '\n') {
+                    cv = (unsigned char)*p;
+                    p++;
+                } else {
+                    die_at(line, "empty or unterminated char literal");
+                }
+                if (*p != '\'') die_at(line, "char literal must be exactly one character");
+                p++;
+                tv_push(&out, (Tok){TK_CHAR, NULL, cv, line, 0});
+                continue;
+            }
+
             /* operators (two-char first) */
             char c2 = p[1];
             TokKind k; int len = 1;
@@ -273,7 +300,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
        /* Ok(v)/Err(e) each know only ONE of Result's two type params, so they
         * carry a partial sentinel (the known inner type sits on the value's lhs)
         * until context fixes the full Result type — the same trick as T_NONE. */
-       T_OK_PARTIAL, T_ERR_PARTIAL };
+       T_OK_PARTIAL, T_ERR_PARTIAL,
+       T_CHAR /* one byte; represented as `long` in C, prints as a char via string append */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -508,6 +536,7 @@ static const char *c_type(Type t) {
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
         case T_INT:          return "long ";
+        case T_CHAR:         return "long ";
         case T_FLOAT:        return "double ";
         case T_BOOL:         return "int ";
         case T_STRING:       return "char *";
@@ -568,7 +597,7 @@ static Type arr_of(Type elem) {
     return arrc_of(elem);   /* struct or array element */
 }
 
-typedef enum { E_INT, E_FLOAT, E_STR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
+typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
                E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE, E_OK, E_ERR,
                E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
@@ -730,6 +759,7 @@ static Expr *parse_expr(Parser *ps);
 static Expr *parse_primary(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_INT)  { ps->p++; Expr *e = new_expr(E_INT, t->line);  e->ival = t->ival; return e; }
+    if (t->kind == TK_CHAR) { ps->p++; Expr *e = new_expr(E_CHAR, t->line); e->ival = t->ival; return e; }
     if (t->kind == TK_FLOAT){ ps->p++; Expr *e = new_expr(E_FLOAT, t->line); e->fval = t->fval; return e; }
     if (t->kind == TK_STR)  { ps->p++; Expr *e = new_expr(E_STR, t->line);  e->sval = t->text; return e; }
     if (t->kind == TK_TRUE) { ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 1; return e; }
@@ -1432,6 +1462,7 @@ static int is_lvalue(Expr *e) {
 static Type resolve_expr(Expr *e) {
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
+        case E_CHAR: return e->type = T_CHAR;
         case E_FLOAT:return e->type = T_FLOAT;
         case E_NONE: return e->type = T_NONE;   /* concrete Option fixed by context */
         case E_SOME: {
@@ -1826,7 +1857,7 @@ static Type resolve_expr(Expr *e) {
                     /* ordering: two ints, two floats, two strings, or two values
                      * of the SAME numeric/string newtype */
                     Type b = base_of(lt);
-                    int ok = lt == rt && (b == T_INT || b == T_FLOAT || b == T_STRING);
+                    int ok = lt == rt && (b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING);
                     if (!ok)
                         die_at(e->line, "ordering compares two ints, two floats, two strings, "
                                "or two values of the same numeric newtype");
@@ -1834,15 +1865,21 @@ static Type resolve_expr(Expr *e) {
                 return e->type = T_BOOL;
             }
             if (e->op == TK_PLUS && lt == T_STRING) {
-                if (rt != T_STRING)
+                if (rt != T_STRING && rt != T_CHAR)
                     die_at(e->line, "cannot concatenate string with %s", type_name(rt));
-                return e->type = T_STRING;
+                return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
             }
             /* arithmetic: two ints or two floats (no implicit mixing — use
              * to_float/to_int). float `/` is true division; int `/` truncates.
              * Two values of the SAME numeric newtype yield that newtype, so units
              * stay typed (Meters + Meters -> Meters) and can't mix with the base. */
             if (lt == T_INT && rt == T_INT) return e->type = T_INT;
+            /* char arithmetic stays in the byte domain: char±int, int±char, char±char
+             * -> char (so `'0' + d` is a char, ready for an in-place string append). */
+            if ((e->op == TK_PLUS || e->op == TK_MINUS) &&
+                (lt == T_CHAR || rt == T_CHAR) &&
+                (lt == T_CHAR || lt == T_INT) && (rt == T_CHAR || rt == T_INT))
+                return e->type = T_CHAR;
             if (lt == T_FLOAT && rt == T_FLOAT) return e->type = T_FLOAT;
             if (lt == rt && IS_NEWTYPE(lt) && (nt_under(lt) == T_INT || nt_under(lt) == T_FLOAT))
                 return e->type = lt;
@@ -2724,6 +2761,7 @@ static const char *op_str(TokKind op) {
 static char *gen_expr(Expr *e, const char *arena) {
     switch (e->kind) {
         case E_INT:  return sfmt("%ldL", e->ival);
+        case E_CHAR: return sfmt("%ldL", e->ival);   /* a byte value carried as long */
         case E_FLOAT: {
             /* %.17g round-trips the double exactly; ensure the C literal reads
              * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is
@@ -2924,7 +2962,9 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */
             if (e->op == TK_PLUS && e->lhs->type == T_STRING)
-                return sfmt("hier_str_concat(%s, %s, %s)", arena, l, r);
+                return e->rhs->type == T_CHAR
+                    ? sfmt("hier_str_concat_char(%s, %s, %s)", arena, l, r)
+                    : sfmt("hier_str_concat(%s, %s, %s)", arena, l, r);
             /* equality dispatches by type (deep/structural); != negates it */
             if (e->op == TK_EQEQ || e->op == TK_NEQ) {
                 char *eq = gen_eq(e->lhs->type, l, r);
@@ -3123,8 +3163,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (is_accum(s->name) && is_self_append(s)) {
                 char *e = gen_expr(s->expr->rhs, owner);
                 indent(o, ind);
-                fprintf(o, "hier_str_append(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
-                        owner, s->name, s->name, s->name, e);
+                /* a char piece appends one byte in place (no strlen, no snprintf);
+                 * a string piece appends its bytes. Both grow the same buffer. */
+                if (s->expr->rhs->type == T_CHAR)
+                    fprintf(o, "hier_str_append_char(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
+                            owner, s->name, s->name, s->name, e);
+                else
+                    fprintf(o, "hier_str_append(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
+                            owner, s->name, s->name, s->name, e);
                 break;
             }
             /* in-place map accumulator: `m = map_set(m, k, v)` grows m's unique

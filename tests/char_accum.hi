@@ -1,0 +1,12 @@
+fn main():
+    s := ""
+    for i in range(10):
+        d := i - (i / 10) * 10
+        s = s + ('0' + d)
+    print(s)
+    print("\n")
+    h := 0
+    for i in range(len(s)):
+        h = h + s[i]
+    print(str(h))
+    print("\n")

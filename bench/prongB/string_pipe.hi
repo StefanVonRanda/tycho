@@ -2,6 +2,8 @@
 # digit-chars, by concatenation; hash each (sum of byte codes); checksum.
 # Hier's `s = s + c` compiles to an in-place append (the accumulator opt), so
 # the obvious value-semantic code is O(n) per string, no Builder needed.
+# `'0' + d` is a char (one byte), so the append never allocates a one-char
+# string — the same byte-append the C/Rust/Go versions do (a fair comparison).
 fn main():
     m := 4000
     kk := 256
@@ -11,7 +13,7 @@ fn main():
         s := ""
         for i in range(kk):
             d := (i + j) - ((i + j) / 10) * 10
-            s = s + str(d)
+            s = s + ('0' + d)
         h := 0
         for i in range(len(s)):
             h = h + s[i]
