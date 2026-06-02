@@ -18,6 +18,12 @@
 #                             nested-element fix the inner [int] buffers were
 #                             malloc'd and leaked (~108 MB at this N under hierc0);
 #                             bound 32 MB.
+#   structarr_buildpeak RSS  — a loop-local [Item] (Item has a string field) built
+#                             by push frees its struct elements + their string
+#                             fields per iteration. Before the struct-element fix,
+#                             struct construction built string fields with owner 0
+#                             (malloc/immortal), leaking every iteration (~184 MB
+#                             at this N under hierc0); bound 32 MB.
 #   loop_scratch  peak RSS  — loop scratch arena resets, so memory is constant
 #                             over 5M iterations (bound 32 MB).
 #   map_accum     peak RSS  — map accumulator reuses its table (pure deep-copy
@@ -102,6 +108,7 @@ run_bench() {
 run_bench append       40000          rss  32768  KB
 run_bench strarr_build 3              rss  32768  KB
 run_bench nestarr_build 11            rss  32768  KB
+run_bench structarr_build 3           rss  32768  KB
 run_bench loop_scratch 8              rss  32768  KB
 run_bench map_accum    40000          rss  65536  KB
 run_bench memo         1134903170     time 1000   ms

@@ -315,22 +315,32 @@ per-iteration transients eagerly instead of holding them to function return.
   B≡C + 57/57 ASan/UBSan-clean (`compiler/hierc0.hi` + `tests/projections.hi`
   exercise `[[…]]`) + loop-local [[int]] build 1M iters **108MB -> 1.4MB (~77×)**
   (bench/nestarr_build.hi, now a perf guard).
-- Remaining ELEMENT residuals (STRUCT / TUPLE / option-result array elements):
-  option-A still leaks these. Blocked by emission ORDERING: `Arr_*_from` bodies
-  emit (step 6) BEFORE struct/tuple copy (steps 6b/8), so deep-copying those
-  element types needs forward prototypes for `Struct_copy` / `Tup_copy` ahead of
-  the array fns (the nested-array case above did exactly this for `Arr_*_copy`;
-  extend the same trick to struct/tuple). Then `elem_copy_expr` gains struct
-  (`Struct_copy(ar,..)`) / tuple (`Tup_copy(ar,..)`) / option-result (box
-  re-box+copy) arms, with push/literal element owner = owner_arena_of (already
-  gated by `elem_deepcopy`). Verify carefully — a deep-copy bug is a UAF in paths
-  the self-compile may not cover; the fixpoint differential catches order/content
-  divergence. Diminishing returns: the bulk heap is already O(1) and array-of-
-  string / nested-array (the common cases) are closed, so this is the long tail.
-- Struct/tuple CONSTRUCTION fields go to malloc (gen_store_args owner 0). Letting
-  them inherit ctx.owner frees local construction (array-literal ELEMENTS must
-  stay owner 0 — shallow Arr_copy needs immortal elements — so split the
-  arraylit vs struct/tuple paths in gen_store_args).
+- ✅ MM-6e (commit pending): STRUCT / TUPLE ARRAY ELEMENTS now live in the array's
+  arena — and, because the leak source for these was *construction*, this also
+  closed the banked "struct/tuple construction → malloc" item. Two coupled parts:
+  (1) `elem_deepcopy` extends to heap structs (`is_struct and struct_is_heap` —
+  only heap structs have a `_copy`) and tuples; `elem_copy_expr` gains a tuple
+  (`Tup_*_copy`) and heap-struct (`StructName_copy`) arm; `_from` deep-copies via
+  them; the printer emits `Struct_copy`/`Tup_copy` FORWARD PROTOTYPES (a new
+  step 5b, before the array fns) so an `Arr_Struct_from` body can call them
+  regardless of definition order (fails CLOSED, like MM-6d). (2) struct
+  construction (`(S){...}`) and tuple literals now build their fields in the
+  AMBIENT owner (`gen_store_args_owner(.., ctx.owner)` / `gen_rhs(.., ctx)`)
+  instead of forced `0` — so a constructed element's heap fields land in the
+  array's arena and free with it. SOUND because the contexts that need
+  immortality set the ambient owner to `0` *before* building their args (enum
+  ctor via `gen_store_args`, `Some/Ok/Err` via `with_owner 0`, `SFieldAssign`),
+  so a struct/tuple nested in an enum / option-box / field-store still inherits
+  `0` (the recursive AST and option payloads stay malloc); every other escape
+  (return → `_parent`, push → the container's arena, outer assign →
+  `owner_arena_of`, bind → `gen_rhs` deep-copy) is at-least-as-live as the
+  construction. Verified: fixpoint B≡C (6384 → 6450 lines C) + 57/57 ASan/UBSan
+  (hierc0.hi is saturated with `[Token]`/`[Stmt]`/`[Func]` etc., so the
+  self-compile exercises both parts heavily) + loop-local `[Item]` (string field)
+  build 1M iters **184MB → 1.3MB (~140×)** (bench/structarr_build.hi, now a perf
+  guard). Remaining element residual: option/result (`[Option(T)]` /
+  `[Result(T,E)]`) elements — the boxed payload needs a re-box+deep-copy in
+  `elem_copy_expr`; the smallest, rarest case, banked.
 - Inout container home-arena threading (a `_ina_`-style extra param) so pushes
   into inout arrays/maps arena-free instead of malloc-leak (owner_arena_of
   inout -> "0" today).

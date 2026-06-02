@@ -1507,7 +1507,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             for j < len(elems):
                 if j > 0:
                     out = out + ", "
-                out = out + gen_rhs(elems[j], names, types, with_owner(ctx, "0"))   # tuple owns malloc'd fields (see gen_store_args)
+                out = out + gen_rhs(elems[j], names, types, ctx)   # fields inherit the ambient arena (Tup_*_copy re-homes them on any cross-arena move; enum/box/field-store set owner 0 first to keep stored tuples immortal)
                 j = j + 1
             return out + "}"
         ESlice(base, lo, hi):
@@ -1596,8 +1596,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return gen_expr(args[0], names, types, ctx)
             if is_variant(ctx, name):             # enum construction -> mk_Variant(...)
                 return "mk_" + name + "(" + gen_store_args(args, names, types, ctx) + ")"
-            if is_struct(ctx, name):              # struct construction -> compound literal
-                return "(" + name + "){" + gen_store_args(args, names, types, ctx) + "}"
+            if is_struct(ctx, name):              # struct construction -> compound literal; fields
+                return "(" + name + "){" + gen_store_args_owner(args, names, types, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return name + "(" + ctx.owner + ")"
             return name + "(" + ctx.owner + ", " + gen_args(args, names, types, ctx) + ")"
@@ -1667,16 +1667,26 @@ fn var_index(names: [string], name: string) -> int:
 fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
     if resolve_nt(ctx, et) == "str":
         return true
-    return is_array(et)
+    if is_array(et):
+        return true
+    if is_tuple(et):
+        return true
+    return is_struct(ctx, et) and struct_is_heap(ctx, et)   # only heap structs have a _copy fn
 
 # The C expression that deep-copies one element of type `et` (from `src`) into
-# arena `ar`. Only called for elem_deepcopy types: str copies its bytes, a
-# nested array recurses through the inner array's _copy (re-homing its buffer
-# and, transitively, str/array sub-elements).
+# arena `ar`. Only called for elem_deepcopy types: str copies its bytes; a
+# nested array / tuple / heap struct recurses through its own _copy (re-homing
+# its buffer and, transitively, every str/array/struct/tuple sub-element). The
+# copy fns are forward-declared (gen_arr_type for arrays; the struct/tuple copy
+# protos emitted before the array fns) so order never matters.
 fn elem_copy_expr(ctx: Ctx, et: string, ar: string, src: string) -> string:
     if resolve_nt(ctx, et) == "str":
         return "scopy(" + ar + ", " + src + ")"
-    return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
+    if is_array(et):
+        return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
+    if is_tuple(et):
+        return "Tup_" + tup_suffix(et) + "_copy(" + ar + ", " + src + ")"
+    return et + "_copy(" + ar + ", " + src + ")"           # heap struct: StructName_copy
 
 fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     rv := root_var(e)
@@ -2934,6 +2944,18 @@ fn main():
     i = 0                                        # 5. enum struct bodies (payloads may be value structs)
     for i < len(prog.enums):
         out = out + gen_enum_decl(prog.enums[i], ctx)
+        i = i + 1
+    i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
+    for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
+        sn := prog.structs[i].name               #     elements regardless of copy-fn definition order
+        if struct_is_heap(ctx, sn):
+            out = out + "static " + sn + " " + sn + "_copy(Arena* ar, " + sn + " s);\n"
+        i = i + 1
+    i = 0
+    for i < len(ets):
+        if is_tuple(ets[i]):
+            tn := "Tup_" + tup_suffix(ets[i])
+            out = out + "static " + tn + " " + tn + "_copy(Arena* ar, " + tn + " s);\n"
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
