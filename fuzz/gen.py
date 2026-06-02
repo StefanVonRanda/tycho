@@ -7,7 +7,8 @@
 # correct compilers must produce byte-identical output (the differential oracle).
 # Types covered: int, float, string, char, arrays ([int]/[string]/[float]),
 # structs, recursive enums, Option(int), Result([int], string), (int, string)
-# tuples, {string:int}/{string:float} maps, `type Nt = int` newtypes, slices.
+# tuples, {string:int}/{string:float} maps, `type Nt = int` newtypes, slices,
+# SOA core ops (soa []Struct), or_return (Ok-unwrap / Err-propagate).
 # Oracle rule: every value reduces into the int checksum (floats/newtypes via
 # to_int), and nothing is emitted that can fault at runtime in a valid program
 # (e.g. array slices use only whole-array forms, since OOB array slices exit(1)).
@@ -203,8 +204,30 @@ class Gen:
         if str_vars: kinds += ["char_append", "char_append"]
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
-        kinds += ["inout_fill", "call_ret", "result_use"]
+        kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
         k = self.r.choice(kinds)
+
+        if k == "soa_use":                          # SOA core ops (the hierc0-supported subset:
+            n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
+            s = self.fresh("sp"); kk = self.fresh("k"); g = self.fresh("g"); ii = self.fresh("i")
+            self.emit(ind, s + " := soa []SoaP")
+            self.emit(ind, "for " + kk + " in range(" + str(n) + "):")
+            self.emit(ind+1, "push(" + s + ", SoaP(" + kk + ", " + kk + " + 1))")
+            self.emit(ind, s + "[0].a = " + s + "[0].a + 1")          # scatter (n>=1 -> in bounds)
+            self.emit(ind, "for " + ii + " in range(len(" + s + ")):")
+            self.emit(ind+1, "acc = acc + " + s + "[" + ii + "].a + " + s + "[" + ii + "].b")
+            self.emit(ind, g + " := " + s + "[0]")                    # whole-element gather
+            self.emit(ind, "acc = acc + " + g + ".a")
+            return
+        if k == "orret_use":                        # or_return: helper unwraps Ok in place / propagates Err
+            r = self.fresh("r"); v = self.fresh("v"); e = self.fresh("e")
+            self.emit(ind, r + " := orret_chain(" + str(self.r.randint(-1, 4)) + ")")
+            self.emit(ind, "match " + r + ":")
+            self.emit(ind+1, "Ok(" + v + "):")
+            self.emit(ind+2, "acc = acc + " + v)
+            self.emit(ind+1, "Err(" + e + "):")
+            self.emit(ind+2, "acc = acc + len(" + e + ")")
+            return
 
         if k == "result_use":                       # bind a heap Result from a helper, then checksum both arms
             r = self.fresh("r")
@@ -325,6 +348,12 @@ class Gen:
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
         self.out += ["fn mkRes(d: int) -> Result([int], string):", "    if d < 0:", "        return Err(\"neg\")",
                      "    r := []int", "    for i in range(d):", "        push(r, (i + 1))", "    return Ok(r)", ""]
+        # SOA element struct (int fields, so it checksums) + or_return helpers.
+        self.out += ["struct SoaP:", "    a: int", "    b: int", ""]
+        self.out += ["fn orret_mk(d: int) -> Result(int, string):", "    if d < 0:", "        return Err(\"neg\")",
+                     "    return Ok(d)", ""]
+        self.out += ["fn orret_chain(d: int) -> Result(int, string):", "    x := orret_mk(d) or_return",
+                     "    y := orret_mk(d + 1) or_return", "    return Ok(x + y)", ""]
 
     def generate(self):
         for _ in range(self.r.randint(0, 2)):
