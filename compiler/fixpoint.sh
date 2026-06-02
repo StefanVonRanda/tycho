@@ -28,5 +28,21 @@ for f in tests/*.hi examples/*.hi; do
     "$T/B" < "$f" > "$T/g.c" 2>/dev/null && $CC -O2 -o "$T/g" "$T/g.c" 2>/dev/null \
         && [ "$ref" = "$("$T/g" </dev/null 2>/dev/null)" ] || { echo "FAIL $nm (B differs from the C compiler)"; fail=1; }
 done
+# Package programs (Stage D): the Hier-built compiler B builds each tests/pkg
+# fixture from `hierc --bundle <entry>` (the post-order package stream, each
+# `package` header switching B's mangling prefix) and must match the C compiler.
+for d in tests/pkg/*/; do
+    [ -d "$d" ] || continue
+    nm=$(basename "$d")
+    entry="$d/main.hi"
+    [ -f "$entry" ] || continue
+    ./hierc "$entry" -o "$T/pref" >/dev/null 2>&1 || { echo "FAIL pkg_$nm (C compiler could not build it)"; fail=1; continue; }
+    ref="$("$T/pref" </dev/null 2>/dev/null)"
+    if ./hierc "$entry" --bundle 2>/dev/null | "$T/B" > "$T/pg.c" 2>/dev/null && $CC -O2 -o "$T/pg" "$T/pg.c" 2>/dev/null; then
+        [ "$ref" = "$("$T/pg" </dev/null 2>/dev/null)" ] || { echo "FAIL pkg_$nm (B differs from the C compiler)"; fail=1; }
+    else
+        echo "FAIL pkg_$nm (hierc0 could not compile the bundle)"; fail=1
+    fi
+done
 rm -rf "$T"
-[ "$fail" -eq 0 ] && echo "fixpoint: all green (self-hosting; B==C and B matches the C compiler)" || { echo "fixpoint: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "fixpoint: all green (self-hosting; B==C; B matches the C compiler on single files + packages)" || { echo "fixpoint: FAIL"; exit 1; }

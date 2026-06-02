@@ -4477,7 +4477,26 @@ static ProcVec compile_package(const char *entry, const char *pkgname) {
  * format for the stdin-only self-hosted compiler (hierc0), whose parser switches
  * its mangling prefix on each `package` header. Same traversal/ordering as
  * merge_pkg (imports first), so hierc0 sees definitions in dependency order. */
-static void bundle_pkg(const char *dir) {
+/* Emit a file, rewriting its leading `package <name>` header line to
+ * `package main`. The entry package keeps the empty mangling prefix in hierc0
+ * (which maps `package main` -> no prefix) regardless of its source name, just
+ * as hierc gives the entry package prefix "". */
+static void emit_entry_file(const char *c) {
+    const char *line = c;
+    while (*line) {
+        const char *eol = line; while (*eol && *eol != '\n') eol++;
+        if (!strncmp(line, "package ", 8)) {
+            fwrite(c, 1, (size_t)(line - c), stdout);   /* anything before the header (comments) */
+            fputs("package main", stdout);
+            fputs(eol, stdout);                          /* the newline onward */
+            return;
+        }
+        line = *eol ? eol + 1 : eol;
+    }
+    fputs(c, stdout);   /* no header found — emit verbatim */
+}
+
+static void bundle_pkg(const char *dir, int is_entry) {
     char *key = canon_dir(dir);
     for (int i = 0; i < g_npkg_active; i++)
         if (!strcmp(g_pkg_active[i], key)) { fprintf(stderr, "hierc: import cycle at %s\n", dir); exit(1); }
@@ -4508,9 +4527,10 @@ static void bundle_pkg(const char *dir) {
         scan_imports(t.v, imp_paths, &n_imp, 256);
     }
     for (int k = 0; k < n_imp; k++)
-        bundle_pkg(sfmt("%s/%s", dir, imp_paths[k]));
+        bundle_pkg(sfmt("%s/%s", dir, imp_paths[k]), 0);   /* imported packages keep their names */
     for (int i = 0; i < nf; i++) {
-        fputs(read_file(files[i]), stdout);
+        if (is_entry) emit_entry_file(read_file(files[i]));   /* entry -> `package main` (prefix "") */
+        else          fputs(read_file(files[i]), stdout);
         fputc('\n', stdout);
     }
     g_npkg_active--;
@@ -4539,7 +4559,7 @@ int main(int argc, char **argv) {
     g_srcname = input;
 
     if (bundle) {   /* emit the package's source as one post-order stream (for hierc0) */
-        bundle_pkg(path_dir(input));
+        bundle_pkg(path_dir(input), 1);
         return 0;
     }
 
