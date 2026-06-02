@@ -1312,7 +1312,14 @@ fn gen_store_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> s
     # container would then hold _parent-arena string pointers that dangle once the
     # caller's scope frees. Forcing "0" keeps stored strings immortal. (Outside a
     # return, owner is already "0", so this is a no-op there.)
-    sctx := with_owner(ctx, "0")
+    return gen_store_args_owner(args, names, types, ctx, "0")
+
+# Like gen_store_args but with an explicit owner arena for the stored values.
+# Array literals of a deep-copied element type pass ctx.owner (the array's home
+# arena) so element temporaries are freed at scope instead of leaking; struct/
+# enum/tuple construction keeps owner "0" (immortal) via gen_store_args.
+fn gen_store_args_owner(args: [Expr], names: [string], types: [string], ctx: Ctx, owner: string) -> string:
+    sctx := with_owner(ctx, owner)
     out := ""
     i := 0
     for i < len(args):
@@ -1476,7 +1483,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, ctx)
-            return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(ctx, et) + "[]){" + gen_store_args(elems, names, types, ctx) + "}, " + str(len(elems)) + ")"
+            eo := "0"                              # deep-copied element temporaries
+            if elem_deepcopy(ctx, et):             # live in the array's arena (no leak);
+                eo = ctx.owner                     # _from re-copies them into `ar` anyway
+            return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(ctx, et) + "[]){" + gen_store_args_owner(elems, names, types, ctx, eo) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
             if is_soa(ety):                       # empty soa: zeroed descriptor
                 return "(" + cty(ctx, ety) + "){0}"
@@ -1530,7 +1540,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
                     return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
                 et := elem_ty(at)
-                return "Arr_" + mangle(et) + "_push(" + owner_arena_of(args[0], names, types, ctx) + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
+                oa := owner_arena_of(args[0], names, types, ctx)   # array's home arena (buffer + deep-copied elements)
+                vo := "0"                          # non-deep-copy elements stay immortal (owner 0);
+                if elem_deepcopy(ctx, et):         # deep-copy elements (str) live in the array's arena
+                    vo = oa
+                return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, vo)) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
@@ -1642,6 +1656,14 @@ fn var_index(names: [string], name: string) -> int:
 # _ina_ param); malloc is immortal so it never dangles. A var declared in the
 # current block (index >= block_base): the block arena, freed at block exit / per
 # loop iteration. An outer-scope local: the function _scope (outlives all blocks).
+# Does an array of element type `et` deep-copy its elements (vs shallow memcpy)?
+# True for heap element types whose copy fn is available where Arr_*_from is
+# emitted. Today: str only (scopy is in the preamble, so no ordering hazard).
+# Nested-array/struct/tuple/map/option elements stay immortal+shallow (sound,
+# as before) until their copiers are forward-declared ahead of the array fns.
+fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
+    return resolve_nt(ctx, et) == "str"
+
 fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     rv := root_var(e)
     if rv == "":
@@ -2447,7 +2469,15 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     # arena memory): allocate a doubled buffer and copy; the old one is dead and
     # reclaimed at arena_free. Elements are malloc'd by the store-copy at every
     # store site, so copy/slice stay SHALLOW (element pointers) and remain valid.
-    out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
+    if elem_deepcopy(ctx, et):
+        # heap elements live in the array's arena: _from (hence _copy/_slice)
+        # deep-copies each element into `ar`, so a copied/returned/sliced array
+        # fully owns its elements and frees them with its arena (closes the
+        # element-residual leak). push grows the buffer shallowly (same array
+        # identity, same arena) so it does NOT route through _from.
+        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; for (long i = 0; i < n; i++) a.data[i] = scopy(ar, s[i]); return a; }\n"
+    else:
+        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
     out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
@@ -2529,18 +2559,19 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
 # Runtime that depends on Arr_str (so it is emitted after the array families,
 # not in the preamble): split a string on a separator into a [string].
 fn gen_strlib() -> string:
-    # buffer in `ar` (the result's owner); substrings malloc'd (0) so the array
-    # can be shallow-copied/returned without dangling element pointers.
+    # buffer AND substrings in `ar` (the result's owner): Arr_str now deep-copies
+    # str elements on copy/return, so the substrings can live in the array's arena
+    # and free with it instead of leaking.
     out := "static Arr_str hi_split(Arena* ar, const char* s, const char* sep) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
     out = out + "    long n = strlen(s), sl = strlen(sep);\n"
-    out = out + "    if (sl == 0) { Arr_str_push(ar, &r, substr(0, s, 0, n)); return r; }\n"
+    out = out + "    if (sl == 0) { Arr_str_push(ar, &r, substr(ar, s, 0, n)); return r; }\n"
     out = out + "    long start = 0, i = 0;\n"
     out = out + "    while (i + sl <= n) {\n"
-    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(ar, &r, substr(0, s, start, i)); i += sl; start = i; }\n"
+    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(ar, &r, substr(ar, s, start, i)); i += sl; start = i; }\n"
     out = out + "        else i = i + 1;\n"
     out = out + "    }\n"
-    out = out + "    Arr_str_push(ar, &r, substr(0, s, start, n));\n"
+    out = out + "    Arr_str_push(ar, &r, substr(ar, s, start, n));\n"
     out = out + "    return r;\n}\n"
     return out
 
@@ -2577,7 +2608,7 @@ fn gen_map_fns(v: string) -> string:
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
     out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static Arr_str " + f + "_keys(Arena* ar, " + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(ar, &r, m.keys[i]); return r; }\n"
+    out = out + "static Arr_str " + f + "_keys(Arena* ar, " + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(ar, &r, scopy(ar, m.keys[i])); return r; }\n"
     # structural equality: same length, and every live key in a present in b with
     # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
     out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.keys[i] != 0) { long t = " + s + "_slot(b, a.keys[i]); if (b.keys[t] == 0 || b.vals[t] != a.vals[i]) return 0; } return 1; }\n"

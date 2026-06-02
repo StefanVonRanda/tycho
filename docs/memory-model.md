@@ -279,18 +279,36 @@ per-iteration transients eagerly instead of holding them to function return.
 ### MM-6 (optimizations) — banked refinements
 - ✅ MM-6b (f1ff194): MAP KEYS now in the map's arena (sc(ar,k) in _put; struct/
   tuple map fields deep-copy; struct_is_heap counts maps). Map memory fully O(1).
-- Remaining ELEMENT residuals (array string elements, map string VALUES):
-  option-A still leaks these. CLOSING THEM IS A DIFFERENT RISK CLASS — there is
-  no choke point like _put. Requires rewriting Arr_*_copy/_from/_slice from
-  shallow (memcpy element pointers) to RECURSIVE deep-copy: a per-element-type
-  copy loop (scalar memcpy / str scopy(ar,..) / nested array Arr_copy(ar,..) /
-  struct-element Struct_copy(ar,..) / option-result box copy), emitted only when
-  the element type is heap-bearing; plus push/literal element owner = the array's
-  arena (owner_arena_of) instead of 0; plus map _put scopy'ing str VALUES (and
-  Map_copy then deep-copies values, like keys). Verify carefully — a deep-copy
+- ✅ MM-6c (commit pending): ARRAY STRING ELEMENTS now live in the array's arena
+  and free with it. `elem_deepcopy(ctx,et)` (true for str — scopy is in the
+  preamble, so no forward-decl ordering hazard) gates: (1) `Arr_str_from` (hence
+  `_copy`/`_slice`) deep-copies each element `scopy(ar,s[i])` instead of memcpy'ing
+  the pointer, so a copied/returned/sliced [str] fully owns its strings; (2) `push`
+  builds the str value in `owner_arena_of(arr)` (co-located with the buffer) instead
+  of owner 0; (3) array-literal str elements build in `ctx.owner` (no leaked temp);
+  (4) `hi_split` substrings + `map_*_keys` results `scopy` into the result arena
+  (the latter also closes a latent return-dangle where keys aliased the map's keys).
+  push C-fn still grows the buffer shallowly (same identity/arena) — it does NOT
+  route through `_from`. Sound because Hier is value-semantic/non-aliasing: every
+  escape (return/store/bind) routes through `_copy`/`scopy` which re-homes the
+  strings into the destination arena, and a loop-local array is unreachable once
+  its element-arena frees. Verified: fixpoint B≡C + 57/57 ASan/UBSan-clean +
+  loop-local [str] build 2M iters **368MB → 1.3MB (~274×)** under hierc0
+  (bench/strarr_build.hi, now a perf guard). NOTE: "map string VALUES" in the
+  earlier residual list is moot — gen_map_type only monomorphizes int/float value
+  types, so no str-valued maps exist.
+- Remaining ELEMENT residuals (NESTED-array / struct / tuple / option-result
+  elements): option-A still leaks these. Blocked by emission ORDERING, not just
+  risk: Arr_*_from bodies emit (step 6) BEFORE struct/tuple copy (steps 6b/8), so
+  deep-copying those element types needs forward prototypes for Struct_copy /
+  Tup_copy / Arr_*_copy ahead of the array fns. Then elem_deepcopy extends to
+  those types (per-element copy loop: nested array Arr_copy(ar,..) / struct
+  Struct_copy(ar,..) / tuple Tup_copy(ar,..) / option-result box re-box+copy),
+  with push/literal element owner = owner_arena_of. Verify carefully — a deep-copy
   bug is a UAF in paths the self-compile may not cover; the fixpoint differential
   catches order/content divergence. Diminishing returns: the bulk heap is already
-  O(1), so this is the long tail.
+  O(1) and array-of-string is the dominant case (now closed), so this is the long
+  tail.
 - Struct/tuple CONSTRUCTION fields go to malloc (gen_store_args owner 0). Letting
   them inherit ctx.owner frees local construction (array-literal ELEMENTS must
   stay owner 0 — shallow Arr_copy needs immortal elements — so split the

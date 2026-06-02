@@ -1,0 +1,13 @@
+# Array-of-string element residual: each iteration builds a loop-local [str]
+# via push and discards it. With str elements living in the loop block arena
+# (and freed per iteration), this is O(1) memory. Before the element-residual
+# fix the pushed substrings were malloc'd (owner 0) and leaked every iteration
+# -> O(n) growth (hundreds of MB at this N). Asserts constant RSS.
+fn main():
+    last := 0
+    for i in range(2000000):
+        a := [str(i) + "x"]
+        push(a, str(i) + "y")
+        push(a, str(i) + "z")
+        last = len(a)
+    print(str(last) + "\n")
