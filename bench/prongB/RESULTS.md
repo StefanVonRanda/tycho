@@ -24,10 +24,10 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 
 | workload          | hier (hierc) | hier (hierc0) |        C |     Rust |  Go (GC) | Koka (Perceus) |
 | ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
-| binary-trees      | 25 MB/199 ms |  37 MB/293 ms | 33/774 ms | 33/852 ms | 37/1519 ms |    14/265 ms |
-| tree-rewrite      |  7 MB/112 ms |   9 MB/172 ms | 13/561 ms |  9/435 ms |  20/853 ms |     7/182 ms |
-| array-pipeline    |  6 MB/131 ms |    5 MB/32 ms |  3/24 ms |  3/24 ms |   6/53 ms |    17/396 ms |
-| string-pipeline   |  1 MB/32 ms  |   3 MB/53 ms  |   1/1 ms |   2/2 ms |    4/4 ms |     2/17 ms |
+| binary-trees      | 25 MB/197 ms |  37 MB/291 ms | 33/751 ms | 33/861 ms | 34/1520 ms |    14/264 ms |
+| tree-rewrite      |  7 MB/108 ms |   9 MB/164 ms | 13/586 ms |  9/419 ms |  22/854 ms |     7/184 ms |
+| array-pipeline    |  6 MB/132 ms |    5 MB/31 ms |  3/23 ms |  3/24 ms |   6/54 ms |    17/364 ms |
+| string-pipeline   |  1 MB/32 ms  |   3 MB/52 ms  |   1/2 ms |   2/2 ms |    3/4 ms |     2/16 ms |
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
