@@ -2104,6 +2104,9 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
     if is_enum(ctx, ty) and is_place(e):         # deep-copy an enum node tree escaping via a place
         return ty + "_copy(" + ctx.owner + ", " + code + ")"   # (return/store/outer-assign). match arms BORROW (cp_typed), so the O(n) tree-walk opt is unaffected.
+    if (is_option(ty) or is_result(ty)) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL option/result
+        return elem_copy_expr(ctx, ty, ctx.owner, code)     # place (var/field/elem, not the bare `None` ctor): re-box into ctx.owner
+
     if ty == "str" and is_place(e):              # copy a string bound from a place, so an
         return "scopy(" + ctx.owner + ", " + code + ")" # in-place-appended accumulator's snapshot stays independent
     return code
