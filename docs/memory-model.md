@@ -443,7 +443,25 @@ and transient values inherit the enclosing statement's owner (function scope).
   everywhere) + 57/57 ASan/UBSan + make bench within bounds. arr_pipeline under
   hierc0: **358 MB → 5 MB (~72×)**, and faster (177 → 32 ms). hierc0 is now
   competitive across ALL four prong-B workloads — no known memory gap to `hierc`.
-- move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
+- ✅ MM-7d (commit pending): MOVE-ON-LAST-USE (deep-copy elision). `b := a` over a
+  uniquely-owned local normally deep-copies; if `a` is read exactly once in the
+  whole function and that read is not in a loop (so it is its single dynamic last
+  use), `b` takes over `a`'s buffer — a move, no copy. Mirrors the C compiler's
+  `can_move_from`. A `gen_func` pre-pass (`rd_*` read-scan + `compute_movables`)
+  precomputes `Ctx.movables` (read-once, not-in-loop names, loop-context baked in);
+  `can_move`, folded into `gen_rhs`, additionally requires at the site: heap type,
+  not a param (params borrow the caller's buffer), and the source's home arena ==
+  the destination owner (lifetime match). Output-INVISIBLE when sound, so the
+  fixpoint differential + `tests/value_semantics.hi` are the soundness oracle (an
+  over-aggressive move would alias and diverge output). One bug found+fixed: bare
+  enum variants (`Leaf`) are `EVar` but not locals — `can_move` now requires the
+  name be in the env before any var lookup. Verified: fixpoint B≡C (6991 → 7318
+  lines C) + 57/57 (value_semantics green) + make bench within bounds + emitted-C
+  shows `Arr_int dup = big;` (was `..._copy(...)`). HONEST IMPACT: correct and it
+  fires, but negligible peak-RSS change (self-compile 16.5 → 16.7 MB) — the
+  per-block arena reset + transient placement already reclaim most short-lived
+  copies, so eliding them frees little; the value is reduced allocator churn and
+  codegen-feature parity with `hierc`, not a leak fix.
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.

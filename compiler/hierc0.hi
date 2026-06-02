@@ -296,6 +296,8 @@ struct Ctx:
     depth: int                # current block nesting depth (0 = function body _scope; d = block _b<d>)
     bbases: [int]             # env length at entry to each nested block (one per depth 1..depth); a var's
                               # declaration depth = deepest k with bbases[k-1] <= its env index (see var_block_depth)
+    movables: [string]        # locals read exactly once in the body and not inside a loop — move-on-last-use
+                              # candidates: a `b := a` over one of these hands off a's buffer (no deep copy)
 
 struct Program:
     structs: [StructDef]
@@ -1478,7 +1480,7 @@ fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) 
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
@@ -1488,7 +1490,7 @@ fn enter_block(ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables)
 
 # C lvalue of the current block's arena.
 fn cur_arena(ctx: Ctx) -> string:
@@ -1893,12 +1895,203 @@ fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
         return rt + "_copy(" + ctx.owner + ", " + code + ")"
     return code
 
+# --- move-on-last-use (deep-copy elision) --------------------------------
+# `b := a` normally deep-copies a heap value so the two are independent. But if
+# `a` is a uniquely-owned local read exactly once in the whole function (so this
+# read is its last use, on every path), and that read is not inside a loop (so it
+# is a single DYNAMIC read), `b` can take over `a`'s buffer — a move, no copy.
+# Mirrors the C compiler's can_move_from. Conditions baked into ctx.movables:
+# read-exactly-once + not-in-loop; the rest (heap, not a param, same arena as the
+# destination) are checked at the move site. Output-invisible when sound, so the
+# fixpoint differential catches any over-aggressive move.
+fn evar_name(e: Expr) -> string:
+    match e:
+        EVar(n):
+            return n
+        EInt(t):
+            return ""
+        EFloat(f):
+            return ""
+        EStr(s):
+            return ""
+        EBin(o, l, r):
+            return ""
+        ECall(nm, a):
+            return ""
+        EField(b, f):
+            return ""
+        EIndex(b, i):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+        EAddr(x):
+            return ""
+
+fn count_str_occ(xs: [string], s: string) -> int:
+    c := 0
+    i := 0
+    for i < len(xs):
+        if xs[i] == s:
+            c = c + 1
+        i = i + 1
+    return c
+
+# Collect every variable READ (expression occurrence), and separately those read
+# inside a loop body/condition. A name read exactly once and never in a loop is a
+# move candidate. (Decl/loop-var/assign-target NAMES are writes — not collected.)
+fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bool):
+    match e:
+        EVar(n):
+            push(reads, n)
+            if inloop:
+                push(loopreads, n)
+        EBin(o, l, r):
+            rd_expr(&reads, &loopreads, l, inloop)
+            rd_expr(&reads, &loopreads, r, inloop)
+        ECall(nm, args):
+            j := 0
+            for j < len(args):
+                rd_expr(&reads, &loopreads, args[j], inloop)
+                j = j + 1
+        EField(b, f):
+            rd_expr(&reads, &loopreads, b, inloop)
+        EIndex(b, idx):
+            rd_expr(&reads, &loopreads, b, inloop)
+            rd_expr(&reads, &loopreads, idx, inloop)
+        ESlice(b, lo, hi):
+            rd_expr(&reads, &loopreads, b, inloop)
+            rd_expr(&reads, &loopreads, lo, inloop)
+            rd_expr(&reads, &loopreads, hi, inloop)
+        EAddr(x):
+            rd_expr(&reads, &loopreads, x, inloop)
+        EArrLit(es):
+            j := 0
+            for j < len(es):
+                rd_expr(&reads, &loopreads, es[j], inloop)
+                j = j + 1
+        EMapLit(ks, vs):
+            j := 0
+            for j < len(vs):
+                rd_expr(&reads, &loopreads, ks[j], inloop)
+                rd_expr(&reads, &loopreads, vs[j], inloop)
+                j = j + 1
+        ETuple(es):
+            j := 0
+            for j < len(es):
+                rd_expr(&reads, &loopreads, es[j], inloop)
+                j = j + 1
+        EInt(t):
+            j := 0
+        EFloat(f):
+            j := 0
+        EStr(s):
+            j := 0
+        EArrEmpty(t):
+            j := 0
+        EMapEmpty(k, v):
+            j := 0
+
+fn rd_block(reads: inout [string], loopreads: inout [string], stmts: [Stmt], inloop: bool):
+    i := 0
+    for i < len(stmts):
+        rd_stmt(&reads, &loopreads, stmts[i], inloop)
+        i = i + 1
+
+fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bool):
+    match s:
+        SDecl(n, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SAssign(n, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SFieldAssign(lv, rhs):
+            rd_expr(&reads, &loopreads, lv, inloop)
+            rd_expr(&reads, &loopreads, rhs, inloop)
+        SPrint(e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SReturn(e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SReturnVoid:
+            j := 0
+        SExpr(e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        STypedDecl(n, t, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SOrReturn(n, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SDestructure(dnames, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SMultiAssign(mnames, e):
+            rd_expr(&reads, &loopreads, e, inloop)
+        SIf(c, tb, eb):
+            rd_expr(&reads, &loopreads, c, inloop)
+            rd_block(&reads, &loopreads, tb, inloop)
+            rd_block(&reads, &loopreads, eb, inloop)
+        SWhile(c, body):
+            rd_expr(&reads, &loopreads, c, true)
+            rd_block(&reads, &loopreads, body, true)
+        SForRange(n, a, b, st, body):
+            rd_expr(&reads, &loopreads, a, inloop)
+            rd_expr(&reads, &loopreads, b, inloop)
+            rd_expr(&reads, &loopreads, st, inloop)
+            rd_block(&reads, &loopreads, body, true)
+        SMatch(subj, variants, allbinds, bodies):
+            rd_expr(&reads, &loopreads, subj, inloop)
+            j := 0
+            for j < len(bodies):
+                rd_block(&reads, &loopreads, bodies[j], inloop)
+                j = j + 1
+
+fn compute_movables(body: [Stmt]) -> [string]:
+    reads := []string
+    loopreads := []string
+    rd_block(&reads, &loopreads, body, false)
+    mv := []string
+    i := 0
+    for i < len(reads):
+        n := reads[i]
+        if count_str_occ(reads, n) == 1 and not has_str(loopreads, n) and not has_str(mv, n):
+            push(mv, n)
+        i = i + 1
+    return mv
+
+# May `gen_rhs(e)` move e's buffer (return it as-is) instead of deep-copying?
+# e is a bare local var of heap type, read exactly once and not in a loop
+# (ctx.movables), not a param (params borrow the caller's buffer), and its home
+# arena equals the destination owner (so the handed-off buffer's lifetime fits).
+fn can_move(e: Expr, ty: string, names: [string], types: [string], ctx: Ctx) -> bool:
+    nm := evar_name(e)
+    if nm == "":
+        return false
+    if not has_str(ctx.movables, nm):
+        return false
+    if var_index(names, nm) < 0:                  # an EVar that is not a local (a bare enum variant
+        return false                              # like `Leaf`) — not a movable variable
+    rt := resolve_nt(ctx, ty)
+    isheap := is_array(rt) or is_map(rt) or is_tuple(rt) or is_enum(ctx, rt) or (is_struct(ctx, rt) and struct_is_heap(ctx, rt))
+    if not isheap:
+        return false
+    if has_str(ctx.vparams, nm) or is_inout(var_type(names, types, nm)):   # never move a param (borrowed)
+        return false
+    return owner_arena_of(e, names, types, ctx) == ctx.owner
+
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
 # binding is independent (Hier value semantics). Fresh arrays (literals, call
 # results) already own their buffer; scalars/strings need no copy.
 fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     code := gen_expr(e, names, types, ctx)
     ty := type_of(e, names, types, ctx)
+    if can_move(e, ty, names, types, ctx):       # move-on-last-use: hand off the buffer, elide the copy
+        return code
     if is_array(ty) and is_place(e):
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
@@ -2410,7 +2603,8 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, []int)
+    movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, []int, movables)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -3117,7 +3311,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, []int)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, []int, []string)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
