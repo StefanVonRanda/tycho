@@ -195,9 +195,24 @@ model.
 > The genuine `-O2` cost is **memory traffic** — accurate gprof *call counts*
 > (which are not distorted): ~1.7M `arena_alloc`, ~1.3M `hier_str_copy`, ~2.1M
 > bounded-array gets per self-compile — i.e. the volume of small string
-> allocations the string-building codegen does, plus value-semantic copies. No
-> single function dominates; there is no cheap lever. Pinpointing the real
-> hotspot needs a **sampling** profiler (`perf`), which is unavailable here
-> (`perf_event_paranoid=3`, no root). So a self-compile speedup remains open and
-> un-targeted — it is *not* the enum scan, and the self-compile is already fast
-> enough (sub-50 ms class) that this is low priority against soundness work.
+> allocations the string-building codegen does, plus value-semantic copies.
+>
+> **RESOLUTION (2026-06, sampling profiler built).** `perf` stays blocked
+> (`perf_event_paranoid=3`, and a "no new privileges" flag stops `sudo` even with
+> a password), and valgrind isn't installable — so a dependency-free statistical
+> CPU-time sampler was written instead (`tools/prof/`, `ITIMER_PROF`+`SIGPROF`,
+> no `mcount` artifact). It found the real hotspot in one shot, which the gprof
+> profile had completely hidden: **`scan_token` recomputed `len(src)` — a full
+> `strlen` of the whole source — once per token**, so lexing was O(tokens × len)
+> = **O(n²)**. The fix is purely algorithmic and touches no bounds-checking:
+> thread the already-known length (`lex` computes `n := len(src)` once) into
+> `scan_token` instead of recomputing it. **Self-hosted self-compile (B = hierc0
+> built by hierc0) dropped 62 → 33 ms (~1.9×)**; fixpoint B≡C + 60 tests green.
+> (Aside: this also revealed B was always ~2× faster than the "A = hierc0 built
+> by hierc" binary this doc had been timing — hierc0's codegen emits a direct
+> O(1) `s[i]` where hierc emits a `strlen`-bounds-checked `hier_str_get`; that
+> `hier_str_get` O(n²) is a separate, still-open latent cost for any *hierc*-
+> compiled program that indexes a large string in a loop.) After the fix, the
+> remaining self-compile cost is genuinely diffuse `memcpy`/`malloc` from
+> value-semantic copies (`compute_movables`/`type_of`/`sig_ret` are each <8%,
+> no dominant function) — the real floor, now that the O(n²) is gone.

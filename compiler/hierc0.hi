@@ -55,8 +55,7 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
-fn scan_token(src: string, i: int, toks: inout [Token]) -> int:
-    n := len(src)
+fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
     c := src[i]
     if c == 32 or c == 9:
         return i + 1
@@ -238,7 +237,7 @@ fn lex(src: string) -> [Token]:
                 i = i + 1
                 at_bol = true
             else:
-                i = scan_token(src, i, &toks)
+                i = scan_token(src, n, i, &toks)
     push(toks, Token(TNewline, ""))
     for sp > 1:
         sp = sp - 1
