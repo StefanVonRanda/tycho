@@ -210,9 +210,19 @@ model.
 > built by hierc0) dropped 62 → 33 ms (~1.9×)**; fixpoint B≡C + 60 tests green.
 > (Aside: this also revealed B was always ~2× faster than the "A = hierc0 built
 > by hierc" binary this doc had been timing — hierc0's codegen emits a direct
-> O(1) `s[i]` where hierc emits a `strlen`-bounds-checked `hier_str_get`; that
-> `hier_str_get` O(n²) is a separate, still-open latent cost for any *hierc*-
-> compiled program that indexes a large string in a loop.) After the fix, the
-> remaining self-compile cost is genuinely diffuse `memcpy`/`malloc` from
-> value-semantic copies (`compute_movables`/`type_of`/`sig_ret` are each <8%,
-> no dominant function) — the real floor, now that the O(n²) is gone.
+> O(1) `s[i]` where hierc emitted a `strlen`-bounds-checked `hier_str_get` that
+> was O(n) *per access* → O(n²) in a loop, for any *hierc*-compiled program
+> indexing a large string.)
+>
+> **That hierc-side O(n²) is now also fixed (length-carrying check).** hierc's
+> codegen gains a per-proc pass: a string variable that is indexed (`s[i]`) and
+> never reassigned (`block_mutates`==0, so for a string its length is invariant)
+> gets one hoisted `_slen_h_<v> = strlen(v)` sidecar at its scope entry, and its
+> index sites use a new `hier_str_get_n(s, i, len)` — the **same bounds check,
+> now O(1)** instead of re-`strlen`-ing per access. Full safety kept (verified:
+> OOB and negative indices still `exit(1)` with the bounds error). Result: the
+> hierc-built A self-compile **126 → 75 ms (~1.7×)**; `make test` 58 byte-
+> identical + ASan, fixpoint B≡C, `tests/str_index.hi` guards it with hand-
+> verifiable output. After both fixes the remaining self-compile cost is genuinely
+> diffuse `memcpy`/`malloc` from value-semantic copies
+> (`compute_movables`/`type_of`/`sig_ret` each <8%, no dominant function).

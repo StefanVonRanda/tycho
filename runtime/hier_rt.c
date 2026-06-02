@@ -201,6 +201,18 @@ long hier_str_get(const char *s, long i) {
     return (long)(unsigned char)s[i];   /* unsigned: 0..255, never negative */
 }
 
+/* Same bounds-checked byte read, but the caller passes the length — used when the
+ * codegen has hoisted strlen(s) into a sidecar for an indexed, never-reassigned
+ * string (its length is loop-invariant). Turns an O(n)-per-access bounds check
+ * into O(1), so indexing a string in a loop is O(n) not O(n^2). */
+long hier_str_get_n(const char *s, long i, long n) {
+    if (i < 0 || i >= n) {
+        fprintf(stderr, "hier: string index %ld out of bounds (len %ld)\n", i, n);
+        exit(1);
+    }
+    return (long)(unsigned char)s[i];
+}
+
 /* substring [start, end); out-of-range bounds are clamped, not an error */
 char *hier_str_substr(Arena *a, const char *s, long start, long end) {
     long n = (long)strlen(s);
