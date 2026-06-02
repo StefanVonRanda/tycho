@@ -20,5 +20,6 @@
 # ...but the recorded test-suite goldens ARE tracked (expected output, not a
 # build artifact). Must come after the broad *.out rule above.
 !/tests/*.out
-!/tests/pkg/*.out      # package-program goldens (in a subdir, so a separate un-ignore)
+# package-program goldens live in a subdir, so they need a separate un-ignore
+!/tests/pkg/*.out
 .koka/

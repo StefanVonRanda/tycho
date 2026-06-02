@@ -126,8 +126,15 @@ replicated directly. Instead:
   qualified refs arrive as dotted `pkg.name` strings that become `pkg__name`.
 - **Differential:** `make fixpoint` builds every `tests/pkg` fixture with the
   Hier-built compiler from `hierc --bundle` and asserts it matches the C compiler.
-- Deferred in hierc0 (hierc has them; fixtures don't need): import aliases, bare
-  payload-less qualified variant *values*, cross-package tuple/Result elements.
+- **Full feature parity** (no deferrals): import aliases (`import g "geom"`),
+  bare payload-less qualified variant *values* (`geom.Red`, implemented in both
+  compilers), and cross-package tuple/Result element types all work and have
+  `tests/pkg` fixtures (`alias`, `variant`, `tuple`). hierc0 carries a small
+  resolution table (`Mctx`: alias map + package set + variant set) built in a
+  two-pass `parse_program`; `mangle_type_list` mangles tuple/Result elements
+  (top-level-comma split). (Fixing the tuple case surfaced a pre-existing,
+  package-independent hierc0 codegen bug — tuple struct bodies were emitted
+  before user struct bodies — now corrected.)
 
 ### Stage E — dogfood: split `hierc0.hi` into packages
 - Split the ~3.5k-line compiler into `lexer`/`parser`/`typecheck`/`codegen`/`main`.
