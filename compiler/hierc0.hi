@@ -2102,8 +2102,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "Tup_" + tup_suffix(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
-    if is_enum(ctx, ty) and is_place(e):         # deep-copy an enum node tree escaping via a place
-        return ty + "_copy(" + ctx.owner + ", " + code + ")"   # (return/store/outer-assign). match arms BORROW (cp_typed), so the O(n) tree-walk opt is unaffected.
+    if is_enum(ctx, ty) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL enum place (var/
+        return ty + "_copy(" + ctx.owner + ", " + code + ")"   # field/elem) escaping -> deep-copy. NOT a bare nullary-variant ctor (`return Leaf`), which is already fresh. Match arms BORROW (cp_typed).
     if (is_option(ty) or is_result(ty)) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL option/result
         return elem_copy_expr(ctx, ty, ctx.owner, code)     # place (var/field/elem, not the bare `None` ctor): re-box into ctx.owner
 
@@ -2830,19 +2830,24 @@ fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
     i := 0
     for i < len(ed.variants):
         v := ed.variants[i]
-        params := "Arena* ar"                     # the node lives in `ar` (the ambient arena)
-        j := 0
-        for j < len(v.ptypes):
-            params = params + ", " + cty(ctx, v.ptypes[j]) + "f" + str(j)
-            j = j + 1
-        out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
-        out = out + "    " + ed.name + "* n = amem(ar, sizeof(" + ed.name + "));\n"
-        out = out + "    n->tag = " + str(i) + ";\n"
-        j = 0
-        for j < len(v.ptypes):
-            out = out + "    " + efield("n", v.name, j) + " = f" + str(j) + ";\n"
-            j = j + 1
-        out = out + "    return n;\n}\n"
+        if len(v.ptypes) == 0:                    # nullary variant: one shared immortal singleton,
+            sg := "_sing_" + ed.name + "_" + str(i)   # no per-construction allocation (no payload, and
+            out = out + "static " + ed.name + " " + sg + " = { " + str(i) + " };\n"   # enum values are immutable)
+            out = out + "static " + ed.name + "* mk_" + v.name + "(Arena* ar) { (void)ar; return &" + sg + "; }\n"
+        else:
+            params := "Arena* ar"                 # the node lives in `ar` (the ambient arena)
+            j := 0
+            for j < len(v.ptypes):
+                params = params + ", " + cty(ctx, v.ptypes[j]) + "f" + str(j)
+                j = j + 1
+            out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
+            out = out + "    " + ed.name + "* n = amem(ar, sizeof(" + ed.name + "));\n"
+            out = out + "    n->tag = " + str(i) + ";\n"
+            j = 0
+            for j < len(v.ptypes):
+                out = out + "    " + efield("n", v.name, j) + " = f" + str(j) + ";\n"
+                j = j + 1
+            out = out + "    return n;\n}\n"
         i = i + 1
     return out
 
