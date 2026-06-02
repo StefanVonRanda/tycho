@@ -297,18 +297,36 @@ per-iteration transients eagerly instead of holding them to function return.
   (bench/strarr_build.hi, now a perf guard). NOTE: "map string VALUES" in the
   earlier residual list is moot — gen_map_type only monomorphizes int/float value
   types, so no str-valued maps exist.
-- Remaining ELEMENT residuals (NESTED-array / struct / tuple / option-result
-  elements): option-A still leaks these. Blocked by emission ORDERING, not just
-  risk: Arr_*_from bodies emit (step 6) BEFORE struct/tuple copy (steps 6b/8), so
-  deep-copying those element types needs forward prototypes for Struct_copy /
-  Tup_copy / Arr_*_copy ahead of the array fns. Then elem_deepcopy extends to
-  those types (per-element copy loop: nested array Arr_copy(ar,..) / struct
-  Struct_copy(ar,..) / tuple Tup_copy(ar,..) / option-result box re-box+copy),
-  with push/literal element owner = owner_arena_of. Verify carefully — a deep-copy
-  bug is a UAF in paths the self-compile may not cover; the fixpoint differential
-  catches order/content divergence. Diminishing returns: the bulk heap is already
-  O(1) and array-of-string is the dominant case (now closed), so this is the long
-  tail.
+- ✅ MM-6d (commit pending): NESTED-ARRAY ELEMENTS (`[[T]]`) now live in the
+  array's arena. `elem_deepcopy` also returns true for `is_array(et)`, and a new
+  `elem_copy_expr(ctx, et, ar, src)` emits the per-element copy (str -> scopy /
+  array -> `Arr_<inner>_copy(ar, src)`); `_from`'s deep-copy loop calls it. The
+  emission-ORDERING blocker is solved by having `gen_arr_type` (step 2, all
+  typedefs) emit `_from`/`_copy` FORWARD PROTOTYPES, so an outer `Arr_*_from`
+  body (step 6) can call the inner `Arr_*_copy` regardless of body order — and
+  the typedef ordering that already makes nested-array typedefs compile orders
+  the protos identically (so it fails CLOSED: a wrong order is a C compile error
+  the fixpoint catches, not a UAF). Recurses to any depth (`[[[T]]]`) and through
+  `[[str]]` (inner _from scopy's the strings). Store sites (push value owner,
+  array-literal element owner) already gate on `elem_deepcopy`, so they extended
+  to arrays for free. `[Struct]`/`[(tuple)]` ELEMENTS inside a nested array stay
+  shallow+immortal (Arr_Struct_from still memcpy's struct values; their heap
+  fields are owner-0/malloc) — sound, leaks only those fields. Verified: fixpoint
+  B≡C + 57/57 ASan/UBSan-clean (`compiler/hierc0.hi` + `tests/projections.hi`
+  exercise `[[…]]`) + loop-local [[int]] build 1M iters **108MB -> 1.4MB (~77×)**
+  (bench/nestarr_build.hi, now a perf guard).
+- Remaining ELEMENT residuals (STRUCT / TUPLE / option-result array elements):
+  option-A still leaks these. Blocked by emission ORDERING: `Arr_*_from` bodies
+  emit (step 6) BEFORE struct/tuple copy (steps 6b/8), so deep-copying those
+  element types needs forward prototypes for `Struct_copy` / `Tup_copy` ahead of
+  the array fns (the nested-array case above did exactly this for `Arr_*_copy`;
+  extend the same trick to struct/tuple). Then `elem_copy_expr` gains struct
+  (`Struct_copy(ar,..)`) / tuple (`Tup_copy(ar,..)`) / option-result (box
+  re-box+copy) arms, with push/literal element owner = owner_arena_of (already
+  gated by `elem_deepcopy`). Verify carefully — a deep-copy bug is a UAF in paths
+  the self-compile may not cover; the fixpoint differential catches order/content
+  divergence. Diminishing returns: the bulk heap is already O(1) and array-of-
+  string / nested-array (the common cases) are closed, so this is the long tail.
 - Struct/tuple CONSTRUCTION fields go to malloc (gen_store_args owner 0). Letting
   them inherit ctx.owner frees local construction (array-literal ELEMENTS must
   stay owner 0 — shallow Arr_copy needs immortal elements — so split the

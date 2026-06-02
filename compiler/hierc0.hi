@@ -1657,12 +1657,26 @@ fn var_index(names: [string], name: string) -> int:
 # current block (index >= block_base): the block arena, freed at block exit / per
 # loop iteration. An outer-scope local: the function _scope (outlives all blocks).
 # Does an array of element type `et` deep-copy its elements (vs shallow memcpy)?
-# True for heap element types whose copy fn is available where Arr_*_from is
-# emitted. Today: str only (scopy is in the preamble, so no ordering hazard).
-# Nested-array/struct/tuple/map/option elements stay immortal+shallow (sound,
-# as before) until their copiers are forward-declared ahead of the array fns.
+# True for heap element types whose copy fn is reachable from Arr_*_from:
+#   - str  -> scopy (in the preamble; always available).
+#   - array (nested [[T]]) -> the inner Arr_*_copy, forward-declared by
+#     gen_arr_type ahead of every array body, so order doesn't matter.
+# Struct/tuple/map/option elements stay immortal+shallow (sound, as before) —
+# their copiers (Struct_copy/Tup_copy) aren't yet forward-declared ahead of the
+# array fns, so closing those is a separate step (see docs/memory-model.md).
 fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
-    return resolve_nt(ctx, et) == "str"
+    if resolve_nt(ctx, et) == "str":
+        return true
+    return is_array(et)
+
+# The C expression that deep-copies one element of type `et` (from `src`) into
+# arena `ar`. Only called for elem_deepcopy types: str copies its bytes, a
+# nested array recurses through the inner array's _copy (re-homing its buffer
+# and, transitively, str/array sub-elements).
+fn elem_copy_expr(ctx: Ctx, et: string, ar: string, src: string) -> string:
+    if resolve_nt(ctx, et) == "str":
+        return "scopy(" + ar + ", " + src + ")"
+    return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
 
 fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     rv := root_var(e)
@@ -2457,9 +2471,12 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(ctx: Ctx, et: string) -> string:
-    nm := "Arr_" + mangle(et)                    # typedef + an _eq forward decl, so
-    out := "typedef struct { " + cty(ctx, et) + "* data; long len; long cap; } " + nm + ";\n"
-    return out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"   # cross-refs resolve any order
+    nm := "Arr_" + mangle(et)                    # typedef + forward decls, so cross-refs
+    ct := cty(ctx, et)                           # (composite _eq, and nested-array _from
+    out := "typedef struct { " + ct + "* data; long len; long cap; } " + nm + ";\n"   # deep-copy via the inner _copy) resolve in any order
+    out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
+    out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n);\n"
+    return out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a);\n"
 
 fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
@@ -2475,7 +2492,7 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
         # fully owns its elements and frees them with its arena (closes the
         # element-residual leak). push grows the buffer shallowly (same array
         # identity, same arena) so it does NOT route through _from.
-        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; for (long i = 0; i < n; i++) a.data[i] = scopy(ar, s[i]); return a; }\n"
+        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; for (long i = 0; i < n; i++) a.data[i] = " + elem_copy_expr(ctx, et, "ar", "s[i]") + "; return a; }\n"
     else:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
