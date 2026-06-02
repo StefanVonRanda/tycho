@@ -1897,6 +1897,66 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "scopy(" + ctx.owner + ", " + code + ")" # in-place-appended accumulator's snapshot stays independent
     return code
 
+# A scalar (non-heap) result type. When an assignment/decl LHS is scalar, the
+# whole RHS value carries no heap, so every heap value built while evaluating it
+# is transient (consumed in the statement, never stored) and can be reclaimed.
+fn is_scalar_ty(ctx: Ctx, ty: string) -> bool:
+    rt := resolve_nt(ctx, ty)
+    return rt == "int" or rt == "float" or rt == "bool"
+
+# Does `e` contain a call anywhere? A call is the only thing that can allocate a
+# heap transient, so a call-free scalar RHS (e.g. `i + 1`) needs no transient
+# arena — this keeps the hot loop-counter assignments allocation-free.
+fn expr_has_call(e: Expr) -> bool:
+    match e:
+        ECall(n, a):
+            return true
+        EBin(o, l, r):
+            return expr_has_call(l) or expr_has_call(r)
+        EField(b, f):
+            return expr_has_call(b)
+        EIndex(b, i):
+            return expr_has_call(b) or expr_has_call(i)
+        ESlice(b, lo, hi):
+            return expr_has_call(b) or expr_has_call(lo) or expr_has_call(hi)
+        EAddr(x):
+            return expr_has_call(x)
+        EArrLit(es):
+            return any_has_call(es)
+        EMapLit(ks, vs):
+            return any_has_call(ks) or any_has_call(vs)
+        ETuple(es):
+            return any_has_call(es)
+        EInt(t):
+            return false
+        EFloat(f):
+            return false
+        EStr(s):
+            return false
+        EVar(n):
+            return false
+        EArrEmpty(t):
+            return false
+        EMapEmpty(k, v):
+            return false
+
+fn any_has_call(es: [Expr]) -> bool:
+    i := 0
+    for i < len(es):
+        if expr_has_call(es[i]):
+            return true
+        i = i + 1
+    return false
+
+# A scalar assignment/decl whose RHS makes a call: evaluate the RHS in a fresh
+# per-statement arena `_t` and free it after the scalar result is stored — so a
+# heap transient (e.g. the tree in `sum = sum + check(make(d))`) is reclaimed at
+# the statement, not retained in the enclosing scope. `assign` is the C lvalue +
+# " = " (the decl declares it first); stores inside the RHS still route to their
+# own arena (owner_arena_of), so only true transients land in `_t`.
+fn scalar_transient(ctx: Ctx, e: Expr, names: [string], types: [string], assign: string) -> string:
+    return "    { Arena _t = arena_new(0); " + assign + gen_rhs(e, names, types, with_owner(ctx, "&_t")) + "; arena_free(&_t); }\n"
+
 # names/types are passed BY VALUE so a block's decls never escape to sibling
 # or outer scopes (matching C/Hier block scoping).
 fn gen_block(stmts: [Stmt], names: [string], types: [string], ctx: Ctx) -> string:
@@ -1918,12 +1978,19 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 push(names, name)
                 push(types, ty)
                 return code
+            if is_scalar_ty(ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
+                code := "    " + cty(ctx, ty) + name + ";\n" + scalar_transient(ctx, e, names, types, name + " = ")
+                push(names, name)
+                push(types, ty)
+                return code
             code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
         SAssign(name, e):
             lhs := gen_expr(EVar(name), names, types, ctx)
+            if is_scalar_ty(ctx, type_of(EVar(name), names, types, ctx)) and expr_has_call(e):   # transient placement
+                return scalar_transient(ctx, e, names, types, lhs + " = ")
             if has_str(ctx.saccums, name):        # string accumulator
                 pieces := sacc_pieces(e, name)
                 if len(pieces) > 0:               # s = s + p1 + ... -> in-place append each piece
@@ -2010,6 +2077,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
                 code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                push(names, name)
+                push(types, ty)
+                return code
+            if is_scalar_ty(ctx, ty) and expr_has_call(e):   # transient placement
+                code := "    " + cty(ctx, ty) + name + ";\n" + scalar_transient(ctx, e, names, types, name + " = ")
                 push(names, name)
                 push(types, ty)
                 return code

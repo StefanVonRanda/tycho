@@ -411,14 +411,23 @@ and transient values inherit the enclosing statement's owner (function scope).
   / memory-neutral ALONE: the tree-workload win needs MM-7b — the transient
   `make(d)` tree still inherits `ctx.owner = &_scope` (the accumulator `sum`'s home)
   in `sum = sum + check(make(d))`, so trees pile up in function scope until return.
-- MM-7b (next): TRANSIENT PLACEMENT. When an assignment/decl LHS is SCALAR
-  (int/float/bool), the whole RHS value is transient (no heap escapes a scalar
-  result), so evaluate it in a per-statement `_t` arena (like `print`) and free it
-  after — building the `make(d)` tree in `_t`, freed per statement. Unblocked by
-  MM-7a (enums are now deep-copied on escape, so placing them in a freeable `_t` is
-  sound). Closes binary-trees / tree-rewrite. (Does NOT fix arr_pipeline — that's
-  the MM-6a per-block coarseness: a heap array declared in an outer block but grown
-  in a nested loop routes to `&_scope`; needs per-var block depth.)
+- ✅ MM-7b (commit pending): TRANSIENT PLACEMENT — landed the tree-workload win.
+  When an assignment/decl LHS is SCALAR (`is_scalar_ty`: int/float/bool) and the
+  RHS contains a call (`expr_has_call` — so the hot `i = i + 1` counters are NOT
+  wrapped), the whole RHS value is transient (no heap escapes a scalar result), so
+  evaluate it in a fresh per-statement `_t` arena (`scalar_transient`, the `print`
+  pattern) and free it after the scalar is stored — the `make(d)` tree builds in
+  `_t`, freed per statement. SOUND because stores inside the RHS still route to
+  their own arena (`owner_arena_of`), so only true transients land in `_t`; and
+  MM-7a made enums deep-copied on escape, so a transient `_t` enum is safe.
+  Wired into SAssign / SDecl / STypedDecl. Verified: fixpoint B≡C (6853 → 6959
+  lines C) + 57/57 ASan/UBSan + make bench within bounds (treewalk still O(n),
+  transient/heap_transient hold). prong-B under hierc0: **binary-trees 2374 MB →
+  38 MB (~62×), tree-rewrite 825 MB → 9 MB (~88×)** — now competitive with the C
+  compiler / C / Rust / Koka (was 50–170× worse). Does NOT fix arr_pipeline (still
+  ~358 MB): that's the MM-6a per-block coarseness — a heap array declared in an
+  outer block but grown in a nested loop routes to `&_scope`; needs per-var block
+  depth (the last known hierc0-vs-hierc gap).
 - move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
