@@ -97,11 +97,31 @@ staged path to self-hosting (Stage 0–4) is written up in
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
 type family at a time, each step gated by the fixpoint + sanitizers. That
-campaign (MM-0 … MM-6c — strings, arrays, maps, structs/tuples/boxes, per-block
-arenas, and array string elements all now arena-managed and freed per scope) is
-documented in [docs/memory-model.md](docs/memory-model.md), with the
-head-to-head performance work (incl. the `bench/prongB/` cross-language suite vs
-C, Go, Rust, and Koka) in [docs/perf.md](docs/perf.md).
+campaign (MM-0 … MM-7e — strings, arrays, maps, structs/tuples/boxes, all array
+elements, enum node trees, inout containers, per-variable block scoping,
+transient placement, and move-on-last-use, all now arena-managed and freed per
+scope) is documented in [docs/memory-model.md](docs/memory-model.md). It closed
+every reachable leak and gave `hierc0` codegen-feature parity with the C
+compiler.
+
+**Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
+same program in six languages, built optimized, peak RSS + best-of-3 wall time;
+every binary prints byte-identical output. `hier (hierc0)` is the self-hosted
+compiler after the campaign:
+
+| workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
+| ---------------- | ------------: | -------: | -------: | --------: | -------------: |
+| binary-trees     |  37 MB/291 ms | 33/751 ms | 33/861 ms | 34/1520 ms |      14/264 ms |
+| tree-rewrite     |   9 MB/164 ms | 13/586 ms |  9/419 ms |  22/854 ms |       7/184 ms |
+| array-pipeline   |    5 MB/31 ms |  3/23 ms |  3/24 ms |   6/54 ms |      17/364 ms |
+| string-pipeline  |    3 MB/52 ms |   1/2 ms |   2/2 ms |    3/4 ms |       2/16 ms |
+
+On the allocation-heavy tree workloads the self-hosted compiler **beats Go's GC
+on both axes** (tree-rewrite 9 MB / 164 ms vs 22 MB / 854 ms) and trades blows
+with C, Rust, and Koka's Perceus reference counting — no GC, no refcounts, just
+lexical arenas and value semantics. It trails C/Rust only on the tiny flat-compute
+workloads (startup overhead, not the memory model). The compiler-vs-generated-code
+analysis is in [docs/perf.md](docs/perf.md).
 
 ## Language
 
@@ -698,7 +718,7 @@ bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + 
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 docs/bootstrap.md  the staged path (0–4) to self-hosting
-docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-6c)
+docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-7e)
 docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
 docs/ideas.md      design-space map and roadmap (what's done / deferred)
 ```
