@@ -123,9 +123,13 @@ an O(n²) in string indexing (a per-access bounds-check `strlen`, fixed with a
 hoisted length-carrying check that keeps the bounds check at O(1)), and the
 biggest one — `with_owner`/`enter_block` were deep-copying the immutable
 `sigs`/`structs`/`enums` on every scope change, fixed by splitting that
-parse-invariant data into a `Decls` value threaded read-only. Net: `hierc0`
-self-compiling its own ~3.5k-line source went from ~62 ms to ~23 ms (~2.7×), every
-step verified by the fixpoint + the fuzzer.
+parse-invariant data into a `Decls` value threaded read-only (which in turn made
+it safe to add O(1) lookup maps to it, retiring an O(reads²) move-analysis pass
+and a linear signature scan). Net: `hierc0` self-compiling its own ~3.5k-line
+source went from ~62 ms to ~20 ms (~3.1×), every step verified by the fixpoint +
+the fuzzer. What remains is the inherent string-building codegen (each function
+deep-copies its result on return); closing it is a streaming-codegen rewrite,
+scoped and measured in [docs/perf.md](docs/perf.md) but deliberately deferred.
 
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in six languages, built optimized, peak RSS + best-of-3 wall time;
