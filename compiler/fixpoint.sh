@@ -44,5 +44,31 @@ for d in tests/pkg/*/; do
         echo "FAIL pkg_$nm (hierc0 could not compile the bundle)"; fail=1
     fi
 done
+# Dogfood (Stage E): split hierc0.hi itself into a two-package program
+# (compiler/pkg-split.sh -> `main` importing `rt`) and prove the SELF-HOSTED
+# compiler handles itself packaged:
+#   - the C compiler builds the split (Apkg);
+#   - Apkg compiling its own --bundle is a fixed point (Epkg==Fpkg);
+#   - the multi-package compiler emits byte-identical C to the single-file
+#     compiler (B) on every fixture — repackaging changes no output.
+sh compiler/pkg-split.sh "$T/split" 2>/dev/null || { echo "FAIL: could not split hierc0"; fail=1; }
+if ./hierc "$T/split/main.hi" -o "$T/Apkg" >/dev/null 2>&1; then
+    ./hierc "$T/split/main.hi" --bundle > "$T/sb.hi" 2>/dev/null
+    if "$T/Apkg" < "$T/sb.hi" > "$T/eA.c" 2>/dev/null && $CC -O2 -o "$T/Epkg" "$T/eA.c" 2>/dev/null \
+       && "$T/Epkg" < "$T/sb.hi" > "$T/eB.c" 2>/dev/null; then
+        cmp -s "$T/eA.c" "$T/eB.c" || { echo "FAIL split-hierc0 self-emission is not a fixed point"; fail=1; }
+        sdiff=0
+        for f in tests/*.hi examples/*.hi; do
+            "$T/B"    < "$f" > "$T/u.c" 2>/dev/null
+            "$T/Epkg" < "$f" > "$T/v.c" 2>/dev/null
+            cmp -s "$T/u.c" "$T/v.c" || { echo "FAIL split-hierc0 differs from single-file on $(basename "$f")"; sdiff=1; }
+        done
+        [ "$sdiff" -eq 0 ] && [ "$fail" -eq 0 ] && echo "ok   split hierc0 (2 packages) self-hosts E==F and matches the single-file compiler"
+    else
+        echo "FAIL split-hierc0 could not self-build"; fail=1
+    fi
+else
+    echo "FAIL: C compiler could not build the split hierc0"; fail=1
+fi
 rm -rf "$T"
-[ "$fail" -eq 0 ] && echo "fixpoint: all green (self-hosting; B==C; B matches the C compiler on single files + packages)" || { echo "fixpoint: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "fixpoint: all green (self-hosting; B==C; single files + packages; hierc0 self-split dogfood)" || { echo "fixpoint: FAIL"; exit 1; }
