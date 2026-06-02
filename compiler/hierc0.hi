@@ -294,7 +294,8 @@ struct Ctx:
     rettype: string           # current func's Hier return type (for the return-slot _scope free)
     owner: string             # arena that fresh allocations go into ("0"=NULL=malloc; "&_t"/"_parent"/"&_scope")
     depth: int                # current block nesting depth (0 = function body _scope; d = block _b<d>)
-    block_base: int           # env length at current block entry; a var at index >= this is block-local
+    bbases: [int]             # env length at entry to each nested block (one per depth 1..depth); a var's
+                              # declaration depth = deepest k with bbases[k-1] <= its env index (see var_block_depth)
 
 struct Program:
     structs: [StructDef]
@@ -1477,7 +1478,7 @@ fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) 
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.block_base)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
@@ -1485,7 +1486,9 @@ fn with_owner(ctx: Ctx, o: string) -> Ctx:
 # name in separate C scopes; nested blocks get distinct names by depth.
 fn enter_block(ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, base)
+    nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
+    push(nb, base)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb)
 
 # C lvalue of the current block's arena.
 fn cur_arena(ctx: Ctx) -> string:
@@ -1779,6 +1782,20 @@ fn cp_field(ctx: Ctx, ty: string, ar: string, src: string) -> string:
         return "Soa_" + soa_struct(rt) + "_copy(" + src + ")"
     return src                                              # scalar / bool / non-heap struct
 
+# The block-nesting depth at which env index `vi` was declared: the deepest block
+# whose entry index is <= vi (bbases is increasing, so the last match wins). 0 =
+# function scope. A var declared in an enclosing block routes to THAT block's arena
+# (`&_b<d>`, in scope at any deeper point), not coarsely to `&_scope` — so a
+# loop-local grown inside a nested loop still frees per outer-loop iteration.
+fn var_block_depth(ctx: Ctx, vi: int) -> int:
+    d := 0
+    i := 0
+    for i < len(ctx.bbases):
+        if ctx.bbases[i] <= vi:
+            d = i + 1
+        i = i + 1
+    return d
+
 fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     rv := root_var(e)
     if rv == "":
@@ -1788,9 +1805,10 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string
         if inout_container_param(rvt):            # its home arena is threaded as a hidden param
             return "_ina_" + rv
         return "0"                                # inout scalar / struct: no _ina_ (malloc, immortal)
-    if var_index(names, rv) >= ctx.block_base:
-        return cur_arena(ctx)
-    return "&_scope"
+    d := var_block_depth(ctx, var_index(names, rv))
+    if d == 0:
+        return "&_scope"
+    return "&_b" + str(d)
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -2392,7 +2410,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, len(f.params))
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, []int)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -3099,7 +3117,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, 0)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, []int)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

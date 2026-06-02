@@ -392,7 +392,7 @@ the C compiler on recursive-enum tree workloads (binary-trees 2 GB, tree-rewrite
 1.2 GB), because two things were never migrated: enum NODES stayed malloc-immortal,
 and transient values inherit the enclosing statement's owner (function scope).
 
-- ✅ MM-7a (commit pending): ENUM NODES ARE NOW ARENA VALUE TYPES. `mk_<Variant>`
+- ✅ MM-7a (ff96105): ENUM NODES ARE NOW ARENA VALUE TYPES. `mk_<Variant>`
   takes a leading `Arena*` and `amem`s the node (both call sites pass `ctx.owner`;
   payload args inherit the ambient arena via `gen_store_args_owner`, so nested
   children co-locate — a `return Node(make(d-1),make(d-1))` builds the whole tree
@@ -411,7 +411,7 @@ and transient values inherit the enclosing statement's owner (function scope).
   / memory-neutral ALONE: the tree-workload win needs MM-7b — the transient
   `make(d)` tree still inherits `ctx.owner = &_scope` (the accumulator `sum`'s home)
   in `sum = sum + check(make(d))`, so trees pile up in function scope until return.
-- ✅ MM-7b (commit pending): TRANSIENT PLACEMENT — landed the tree-workload win.
+- ✅ MM-7b (d4d13df): TRANSIENT PLACEMENT — landed the tree-workload win.
   When an assignment/decl LHS is SCALAR (`is_scalar_ty`: int/float/bool) and the
   RHS contains a call (`expr_has_call` — so the hot `i = i + 1` counters are NOT
   wrapped), the whole RHS value is transient (no heap escapes a scalar result), so
@@ -424,10 +424,25 @@ and transient values inherit the enclosing statement's owner (function scope).
   lines C) + 57/57 ASan/UBSan + make bench within bounds (treewalk still O(n),
   transient/heap_transient hold). prong-B under hierc0: **binary-trees 2374 MB →
   38 MB (~62×), tree-rewrite 825 MB → 9 MB (~88×)** — now competitive with the C
-  compiler / C / Rust / Koka (was 50–170× worse). Does NOT fix arr_pipeline (still
-  ~358 MB): that's the MM-6a per-block coarseness — a heap array declared in an
-  outer block but grown in a nested loop routes to `&_scope`; needs per-var block
-  depth (the last known hierc0-vs-hierc gap).
+  compiler / C / Rust / Koka (was 50–170× worse). Did NOT fix arr_pipeline — that
+  was MM-7c.
+- ✅ MM-7c (commit pending): PER-VAR BLOCK DEPTH — closed the last hierc0-vs-hierc
+  gap (arr_pipeline). The MM-6a coarseness was a SINGLE `block_base` in `Ctx`, so a
+  var declared in an ENCLOSING block (not the current one, not function-top) routed
+  coarsely to `&_scope` instead of its block arena — e.g. `ys := []int` in a `for j`
+  body, grown by `push` in the nested `for i` loop, accumulated all 200 buffers in
+  function scope (358 MB). Fix: replace `block_base: int` with a STACK
+  `bbases: [int]` (env length at entry to each nested block, pushed by
+  `enter_block`); `var_block_depth(ctx, vi)` = the deepest block whose entry index
+  ≤ `vi` (bbases is increasing), and `owner_arena_of` returns that block's arena
+  `&_b<d>` (in scope at any deeper point, so no dangle) instead of `&_scope`. So
+  `ys` grows in the `for j` block arena and frees per outer-loop iteration. SOUND:
+  a var's use-depth ≥ its decl-depth (lexical scoping), so `&_b<d>` is always live;
+  value semantics truncates the env (and the bbases copy) on block exit. Verified:
+  fixpoint B≡C (6959 → 6991 lines C; hierc0 has deeply nested loops/ifs/matches
+  everywhere) + 57/57 ASan/UBSan + make bench within bounds. arr_pipeline under
+  hierc0: **358 MB → 5 MB (~72×)**, and faster (177 → 32 ms). hierc0 is now
+  competitive across ALL four prong-B workloads — no known memory gap to `hierc`.
 - move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**

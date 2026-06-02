@@ -26,7 +26,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
 | binary-trees      | 25 MB/199 ms |  37 MB/293 ms | 33/774 ms | 33/852 ms | 37/1519 ms |    14/265 ms |
 | tree-rewrite      |  7 MB/112 ms |   9 MB/172 ms | 13/561 ms |  9/435 ms |  20/853 ms |     7/182 ms |
-| array-pipeline    |  6 MB/131 ms | 🟡 358 MB/177 ms |  3/24 ms |  3/24 ms |   6/53 ms |    17/396 ms |
+| array-pipeline    |  6 MB/131 ms |    5 MB/32 ms |  3/24 ms |  3/24 ms |   6/53 ms |    17/396 ms |
 | string-pipeline   |  1 MB/32 ms  |   3 MB/53 ms  |   1/1 ms |   2/2 ms |    4/4 ms |     2/17 ms |
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
@@ -43,13 +43,15 @@ tree workloads it **beats Go on both axes** (tree-rewrite 9 MB / 172 ms vs Go
 thesis stated against the GC: Go-like "no memory management in the source",
 without the GC's time-and-space tax.
 
-**One gap remains — array-pipeline (`hierc0` 358 MB).** A heap array declared in an
-outer block but grown inside a nested loop is routed to function scope rather than
-the loop block, so each pass's array accumulates instead of freeing per iteration.
-This is the MM-6a per-block coarseness — the last known `hierc0`-vs-`hierc` memory
-gap — and it needs per-variable block-depth tracking in `owner_arena_of`. The
-mature `hierc` (6 MB) proves the model handles it; `hierc0` just hasn't closed it
-yet.
+**And the last gap is now closed — array-pipeline `hierc0` 358 → 5 MB (MM-7c).**
+A heap array declared in an outer block but grown inside a nested loop used to
+route to function scope rather than the loop block, so each pass's array
+accumulated (358 MB). MM-7c replaced the single per-block `block_base` with a
+stack (`bbases`) so `owner_arena_of` recovers each variable's exact declaration
+depth and routes it to *that* block's arena — the per-pass array now frees per
+iteration (5 MB / 32 ms, ties `hierc`/Go, beats Koka). With that, **`hierc0` is
+competitive with the C compiler across all four workloads, with no known memory
+gap** — the self-hosted compiler reproduces the full arena model.
 
 ## Workload
 
