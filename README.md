@@ -51,6 +51,7 @@ hello Ada
 | `make bench` | Run the performance guard (see below). |
 | `make bootstrap` | Build the self-hosted compiler `compiler/hierc0.hi` with `./hierc` and validate it on its fixtures. |
 | `make fixpoint` | Stage-4 self-host check: assert the Hier-built compiler reproduces itself byte-identically (B≡C) and matches the C compiler's output. |
+| `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both compilers, assert byte-identical output and no sanitizer fault. |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
@@ -97,12 +98,34 @@ staged path to self-hosting (Stage 0–4) is written up in
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
 type family at a time, each step gated by the fixpoint + sanitizers. That
-campaign (MM-0 … MM-7e — strings, arrays, maps, structs/tuples/boxes, all array
+campaign (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
 elements, enum node trees, inout containers, per-variable block scoping,
-transient placement, and move-on-last-use, all now arena-managed and freed per
-scope) is documented in [docs/memory-model.md](docs/memory-model.md). It closed
-every reachable leak and gave `hierc0` codegen-feature parity with the C
-compiler.
+transient placement, move-on-last-use, and finally heap-payload option/result
+elements, all now arena-managed and freed per scope) is documented in
+[docs/memory-model.md](docs/memory-model.md). With MM-7f closing the last residual
+(`[Option(str)]` payloads leaked at construction), `hierc0` now has **no known
+memory gap versus the C compiler** — every element type, common and rare, is
+closed — and full codegen-feature parity.
+
+The language `hierc0` compiles is no longer a strict subset: it reproduces the C
+compiler's output byte-for-byte across all `tests/` + `examples/` programs,
+including the additive `char` type, `float`, `Result`, newtypes, slices, and SOA.
+A differential + sanitizer **fuzzer** (`fuzz/`, type-directed random programs
+compiled by both compilers under ASan/UBSan) backs this up — its coverage spans
+those types, and its first run found a real latent use-after-free the hand-written
+test suite had missed.
+
+**Self-compile speed.** A from-scratch sampling profiler (`tools/prof/`, built
+because `perf` is sandbox-blocked and `gprof` mis-attributes time on tiny
+million-call functions) drove a round of algorithmic fixes to the self-hosted
+compiler: an O(n²) in the lexer (`scan_token` recomputed `strlen(src)` per token),
+an O(n²) in string indexing (a per-access bounds-check `strlen`, fixed with a
+hoisted length-carrying check that keeps the bounds check at O(1)), and the
+biggest one — `with_owner`/`enter_block` were deep-copying the immutable
+`sigs`/`structs`/`enums` on every scope change, fixed by splitting that
+parse-invariant data into a `Decls` value threaded read-only. Net: `hierc0`
+self-compiling its own ~3.5k-line source went from ~62 ms to ~23 ms (~2.7×), every
+step verified by the fixpoint + the fuzzer.
 
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in six languages, built optimized, peak RSS + best-of-3 wall time;
@@ -114,15 +137,18 @@ compiler after the campaign:
 | binary-trees     |  13 MB/124 ms | 33/772 ms | 33/848 ms | 35/1523 ms |      14/273 ms |
 | tree-rewrite     |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |       7/185 ms |
 | array-pipeline   |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |      17/372 ms |
-| string-pipeline  |    3 MB/32 ms |   1/1 ms |   1/2 ms |    4/4 ms |       2/17 ms |
+| string-pipeline  |    1 MB/1 ms  |   1/1 ms |   2/2 ms |    4/5 ms |       2/17 ms |
 
 On the allocation-heavy tree workloads the self-hosted compiler is now **best in
 class** — on binary-trees it has the lowest memory of all six (13 MB, under Koka's
 14) and is the fastest (124 ms), and it beats C, Rust, Go, and the mature `hierc`
-on both axes — no GC, no refcounts, just lexical arenas and value semantics. It
-trails C/Rust only on the tiny flat-compute workloads (startup overhead, not the
-memory model — string-pipeline also pays for Hier having no `char` type). The
-compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
+on both axes — no GC, no refcounts, just lexical arenas and value semantics. With
+the additive `char` type, the formerly-trailing string-pipeline now **ties C**
+(1 MB / 1 ms): `s = s + ('0' + d)` is an in-place one-byte append, the same
+byte-write C/Rust/Go do, instead of allocating a one-char string per digit. The
+self-hosted compiler is now best-or-tied on memory in all four workloads, trailing
+C/Rust only on array-pipeline time (per-element bounds-checking, not the memory
+model). The compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
 ## Language
 
@@ -719,10 +745,12 @@ tests/*.out        recorded expected output (goldens) for every test program
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
 bench/*.hi         one benchmark program per optimization (11); bench/peakrss.c helper
 bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md
+fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; make fuzz)
+tools/prof/        dependency-free sampling CPU profiler for hier-compiled binaries
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 docs/bootstrap.md  the staged path (0–4) to self-hosting
-docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-7e)
+docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-7f)
 docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
 docs/ideas.md      design-space map and roadmap (what's done / deferred)
 ```
