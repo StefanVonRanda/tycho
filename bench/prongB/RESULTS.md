@@ -6,6 +6,51 @@ memory-heavy workload? This is the empirical half of the thesis: not "it
 passes a 40-program suite", but "here are the numbers next to the other
 memory models."
 
+## The field: six languages, two Hier compilers
+
+Hier has **two** compilers, and both appear here:
+
+- **hier (hierc)** — the mature C reference compiler (`src/hierc.c`): full arena +
+  FBIP codegen. The detailed per-workload analysis throughout the rest of this doc
+  is about this compiler (its rows are labelled just "Hier").
+- **hier (hierc0)** — the **self-hosted** compiler, written in Hier itself
+  (`compiler/hierc0.hi`). Its codegen was migrated onto the same implicit-arena
+  model one type family at a time ([../../docs/memory-model.md](../../docs/memory-model.md),
+  MM-0 … MM-7b). The numbers below are after that campaign.
+
+All six binaries print **byte-identical output** per workload. Peak RSS via
+`getrusage`; best-of-3 wall time; `cc -O2` / `rustc -O` / `go build` / `koka -O2`;
+one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
+
+| workload          | hier (hierc) | hier (hierc0) |        C |     Rust |  Go (GC) | Koka (Perceus) |
+| ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
+| binary-trees      | 25 MB/199 ms |  37 MB/293 ms | 33/774 ms | 33/852 ms | 37/1519 ms |    14/265 ms |
+| tree-rewrite      |  7 MB/112 ms |   9 MB/172 ms | 13/561 ms |  9/435 ms |  20/853 ms |     7/182 ms |
+| array-pipeline    |  6 MB/131 ms | 🟡 358 MB/177 ms |  3/24 ms |  3/24 ms |   6/53 ms |    17/396 ms |
+| string-pipeline   |  1 MB/32 ms  |   3 MB/53 ms  |   1/1 ms |   2/2 ms |    4/4 ms |     2/17 ms |
+
+**The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
+began the memory-model campaign **50–170× worse** than the C compiler on the
+recursive-enum tree workloads (binary-trees 2374 MB, tree-rewrite 825 MB) — every
+tree node leaked, because enum nodes were `malloc`'d immortal and transients were
+retained in function scope. Two changes closed it: **MM-7a** put enum nodes on the
+arena (deep-copied when they cross an arena boundary), and **MM-7b** added
+*transient placement* (a scalar-result statement's heap transients build in a
+per-statement arena, freed immediately). Result: **binary-trees 2374 → 38 MB
+(~62×), tree-rewrite 825 → 9 MB (~88×)**. `hierc0` now sits mid-pack — and on the
+tree workloads it **beats Go on both axes** (tree-rewrite 9 MB / 172 ms vs Go
+20 MB / 853 ms; binary-trees ~5× faster than Go at equal memory). That is the
+thesis stated against the GC: Go-like "no memory management in the source",
+without the GC's time-and-space tax.
+
+**One gap remains — array-pipeline (`hierc0` 358 MB).** A heap array declared in an
+outer block but grown inside a nested loop is routed to function scope rather than
+the loop block, so each pass's array accumulates instead of freeing per iteration.
+This is the MM-6a per-block coarseness — the last known `hierc0`-vs-`hierc` memory
+gap — and it needs per-variable block-depth tracking in `owner_arena_of`. The
+mature `hierc` (6 MB) proves the model handles it; `hierc0` just hasn't closed it
+yet.
+
 ## Workload
 
 **binary-trees** (Computer Language Benchmarks Game): allocate one big
