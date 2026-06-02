@@ -377,13 +377,30 @@ per-iteration transients eagerly instead of holding them to function return.
   its block/scope arena; a chained inout → the caller's own `_ina_`, threading the
   true home up the chain). Param-side and call-side use the IDENTICAL predicate,
   so a mismatch is a C arity error the fixpoint catches (fail-closed). Inout
-  scalars/structs get no `_ina_` (stay malloc — an inout struct's field-container
-  is a smaller separate residual). SOUND: the threaded arena is the container's
+  scalars get no `_ina_` (stay malloc); inout heap STRUCTS were a separate
+  residual, closed in MM-7e. SOUND: the threaded arena is the container's
   true home, which outlives the call. Verified: fixpoint B≡C (6468 → 6577 lines C;
   hierc0 threads `inout [Token]`/`[string]`/`[Expr]` through lexing/parsing/codegen,
   so the self-compile exercises it pervasively) + 57/57 ASan/UBSan + a callee
   filling a caller-owned per-iteration `inout [int]` 200k×200: **798MB → 1.4MB
   (~582×)** (bench/inout_fill.hi, now a perf guard).
+- ✅ MM-7e (commit pending): INOUT HEAP-STRUCT field-container threading — extends
+  MM-6g from arrays/maps/soa to heap structs. `inout_container_param` (gained a
+  `ctx` arg) now also returns true for `is_struct and struct_is_heap`, so an
+  `inout Struct` param carries a hidden `Arena* _ina_<name>` and `owner_arena_of`
+  routes its FIELD-containers to it: `push(s.items, v)` on an `inout Bag` grows
+  `s.items` in the caller's arena (`_ina_s`) and frees with the caller's struct,
+  instead of malloc-leaking. `arg_ina` (the call site) mirrors the same extended
+  predicate so arity stays in sync (fail-closed). Verified: fixpoint B≡C (7318
+  lines C, unchanged — hierc0 itself passes Ctx by value, no inout structs; the
+  fixpoint differential exercises it via `examples/inout.hi`/`context.hi` +
+  `tests/value_semantics.hi`, all in `compiler/tests/`) + 57/57 ASan/UBSan + a
+  callee filling an `inout Bag`'s `[int]` field 200k×200: **798MB → 1.4MB (~582×)**
+  (bench/instruct_fill.hi, now a perf guard). The one remaining residual —
+  HEAP-PAYLOAD option arrays (`[Option(str)]`) — stays DEFERRED: no test or the
+  compiler uses one (the leak is unreachable in practice), and closing it is a
+  high-blast-radius change to the working option subsystem with zero oracle
+  coverage — a bad trade.
 
 ### MM-7 — enums on arena (the recursive AST) + transient placement
 

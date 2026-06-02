@@ -1309,7 +1309,7 @@ fn arg_ina(arg: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match arg:
         EAddr(inner):
             b := base_ty(type_of(inner, names, types, ctx))
-            if is_array(b) or is_map(b) or is_soa(b):
+            if is_array(b) or is_map(b) or is_soa(b) or (is_struct(ctx, b) and struct_is_heap(ctx, b)):   # mirrors inout_container_param
                 return ", " + owner_arena_of(inner, names, types, ctx)
             return ""
         EVar(n):
@@ -1804,7 +1804,7 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string
         return "&_scope"
     rvt := var_type(names, types, rv)
     if is_inout(rvt):
-        if inout_container_param(rvt):            # its home arena is threaded as a hidden param
+        if inout_container_param(ctx, rvt):       # its home arena is threaded as a hidden param
             return "_ina_" + rv
         return "0"                                # inout scalar / struct: no _ina_ (malloc, immortal)
     d := var_block_depth(ctx, var_index(names, rv))
@@ -2397,18 +2397,18 @@ fn ret_cty(ctx: Ctx, ret: string) -> string:
 # the callee receives it as a hidden `Arena* _ina_<name>` param and grows/allocs
 # into it (instead of malloc-leaking). Inout scalars and inout structs do NOT get
 # one (a struct's field-container is a smaller separate residual, still malloc).
-fn inout_container_param(ptype: string) -> bool:
+fn inout_container_param(ctx: Ctx, ptype: string) -> bool:
     if not is_inout(ptype):
         return false
     b := base_ty(ptype)
-    return is_array(b) or is_map(b) or is_soa(b)
+    return is_array(b) or is_map(b) or is_soa(b) or (is_struct(ctx, b) and struct_is_heap(ctx, b))   # a heap struct's field-containers grow in _ina_
 
 fn gen_params(f: Func, ctx: Ctx) -> string:
     out := "Arena* _parent"                       # every fn threads the caller's arena
     i := 0
     for i < len(f.params):
         out = out + ", " + cty(ctx, f.ptypes[i]) + f.params[i]
-        if inout_container_param(f.ptypes[i]):    # + the container's home arena
+        if inout_container_param(ctx, f.ptypes[i]):   # + the container's home arena
             out = out + ", Arena* _ina_" + f.params[i]
         i = i + 1
     return out
