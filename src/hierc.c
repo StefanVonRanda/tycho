@@ -898,8 +898,9 @@ static Expr *parse_primary(Parser *ps) {
             eat(ps, TK_RPAREN, "')'");
             return e;
         }
-        Expr *e = new_expr(E_IDENT, t->line);  /* variable */
+        Expr *e = new_expr(E_IDENT, t->line);  /* variable (or a bare payload-less enum variant) */
         e->sval = t->text;
+        e->pkg  = g_cur_pkg_prefix;            /* lets a package-local bare variant resolve */
         return e;
     }
     die_at(t->line, "expected an expression");
@@ -1130,9 +1131,23 @@ static Stmt *parse_stmt(Parser *ps) {
         while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
             if (accept(ps, TK_NEWLINE)) continue;
             Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
+            const char *vqual = NULL, *vname = vn->text;
+            if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
+                vqual = vn->text;
+                vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
+            }
             if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)realloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
             MatchArm *arm = &s->arms[s->narms++];
-            arm->variant = vn->text; arm->nbinds = 0; arm->line = vn->line;
+            /* Option/Result arms (Some/None/Ok/Err) are never package symbols; an
+             * enum variant is package-scoped, mangled with the qualifier's package
+             * (or, unqualified, the package this match is parsed in). */
+            if (vqual)
+                arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
+            else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
+                arm->variant = (char *)vname;
+            else
+                arm->variant = pkg_mangle(vname);
+            arm->nbinds = 0; arm->line = vn->line;
             if (accept(ps, TK_LPAREN)) {
                 while (!at(ps, TK_RPAREN)) {
                     if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
@@ -1345,7 +1360,7 @@ static void parse_struct(Parser *ps) {
 static void parse_enum(Parser *ps) {
     eat(ps, TK_ENUM, "'enum'");
     Tok *nameT = eat(ps, TK_IDENT, "an enum name");
-    if (struct_find(nameT->text) >= 0 || enum_find(nameT->text) >= 0)
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nenums >= 64) die_at(nameT->line, "too many enums");
     eat(ps, TK_COLON, "':' before the variants");
@@ -1360,11 +1375,12 @@ static void parse_enum(Parser *ps) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *vn = eat(ps, TK_IDENT, "a variant name");
         if (ed->nvariants >= 64) die_at(vn->line, "too many variants (max 64)");
+        char *vmn = pkg_mangle(vn->text);   /* variant names are package-scoped (mangled with the enum's package) */
         int dup;
-        if (variant_find(vn->text, &dup) >= 0)
-            die_at(vn->line, "variant name '%s' is already used — variant names are global", vn->text);
+        if (variant_find(vmn, &dup) >= 0)
+            die_at(vn->line, "variant name '%s' is already used in this package", vn->text);
         Variant *var = &ed->variants[ed->nvariants];
-        var->name = vn->text;
+        var->name = vmn;
         var->npayload = 0;
         if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
             while (!at(ps, TK_RPAREN)) {
@@ -1616,6 +1632,8 @@ static Type resolve_expr(Expr *e) {
             Type t;
             if (vars_find(e->sval, &t)) return e->type = t;
             int evi, eid = variant_find(e->sval, &evi);   /* a payload-less enum variant? */
+            if (eid < 0 && e->pkg && e->pkg[0])           /* try this package's prefixed variant */
+                eid = variant_find(sfmt("%s%s", e->pkg, e->sval), &evi);
             if (eid >= 0) {
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s carries a payload — write %s(...)", e->sval, e->sval);
@@ -1694,14 +1712,16 @@ static Type resolve_expr(Expr *e) {
              * in that package; an implicit name in an imported package (e->pkg) tries
              * its own package first, else falls through to builtins/unprefixed. */
             if (e->qual) {
+                int _vi;
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
-                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0)
+                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
                     e->sval = q;
                 else
                     die_at(e->line, "package '%s' has no symbol '%s'", e->qual, e->sval);
             } else if (e->pkg && e->pkg[0]) {
+                int _vi;
                 char *q = sfmt("%s%s", e->pkg, e->sval);
-                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0)
+                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
                     e->sval = q;
             }
             /* a call whose name is a newtype wraps its underlying value: Meters(x)
