@@ -97,7 +97,7 @@ freely. Every optimization below exploits exactly that asymmetry.
 The whole-program verification standard for this repo follows from it: every
 codegen change is checked under `cc -fsanitize=address,undefined`, asserting
 (a) exit 0, (b) clean sanitizers, and (c) ASan output byte-identical to native
-`-O2` output. A 57-program suite (`tests/` + `examples/`) holds to this.
+`-O2` output. A 62-program suite (`tests/` + `examples/`) holds to this.
 
 ## 4. Where the abstraction would leak — and the two optimizations that seal it
 

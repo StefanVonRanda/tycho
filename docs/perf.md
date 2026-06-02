@@ -17,9 +17,13 @@ are indicative, not a rigorous benchmark suite.
 > "naive vs arena," not as the current B. The prong-B section further down (tuning
 > of the C compiler `src/hierc.c`) is current.
 
-> **CURRENT self-hosted compiler speed (2026-06).** After the arena migration,
-> hierc0 reproduces the full arena model + move-on-last-use — codegen-feature
-> parity with `hierc`. Two later codegen-QUALITY fixes then improved the
+> **CURRENT self-hosted compiler speed (2026-06): ~20 ms** (B = hierc0 compiling
+> its own ~3.5k-line source; ~3.1× faster than the campaign start). The numbers in
+> this block (down to ~64 ms) are intermediate; the RESOLUTION/CORRECTION blocks
+> further down trace the lexer-O(n²), string-index-O(n²), `Ctx`/`Decls`-split, and
+> `compute_movables`/`sig_ret` map fixes that reached ~20 ms. After the arena
+> migration, hierc0 reproduces the full arena model + move-on-last-use —
+> codegen-feature parity with `hierc`. Two later codegen-QUALITY fixes then improved the
 > self-hosted compiler's own headline workload (**B = hierc0 compiled by hierc0**,
 > compiling `hierc0.hi`): a **block free-list pool** in the emitted arena runtime
 > cut time **106 → 64 ms (1.66×)** (no malloc/free churn per scope), and a

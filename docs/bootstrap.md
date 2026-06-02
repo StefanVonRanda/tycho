@@ -16,13 +16,16 @@ itself and the C compiler can be retired. Stopping at any stage ≥ 1 is still a
 standalone win.
 
 > **STATUS (current): Stages 0–4 are DONE — hierc0 self-hosts.** `make fixpoint`
-> is green (B≡C byte-identical, B matches the C compiler across all 57 `tests/` +
+> is green (B≡C byte-identical, B matches the C compiler across all 62 `tests/` +
 > `examples/`). The stage log below is the historical record of getting there.
 > One caveat it repeats — that hierc0 "emits correct-but-naive malloc/value-copy
 > C, not the optimized arena codegen" — was true *at the fixpoint* but has since
-> been closed: a follow-on campaign (MM-0 … MM-6c) migrated hierc0's codegen onto
+> been closed: a follow-on campaign (MM-0 … MM-7f) migrated hierc0's codegen onto
 > the same implicit-arena model the C compiler uses, one type family at a time,
-> each step gated by the fixpoint + sanitizers. That work is its own doc,
+> each step gated by the fixpoint + sanitizers. **That campaign is now complete:
+> hierc0 reproduces the full arena model with no known memory gap and full
+> feature parity with the C compiler — it is no longer a "subset" (the "subset"
+> language in the stage log below is historical).** That work is its own doc,
 > [memory-model.md](memory-model.md); the perf gap it closed is in [perf.md](perf.md).
 
 ## What we are and aren't rewriting
@@ -551,7 +554,7 @@ fixpoint.
         remaining work before the Stage 4 self-host fixpoint.
 - [x] **Stage 4** — fixpoint bootstrap (B ≡ C). **DONE: hierc0 is self-hosting.**
       `make fixpoint` builds A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi and
-      asserts B≡C byte-identical (+ B matches the C compiler on all 57 tests/
+      asserts B≡C byte-identical (+ B matches the C compiler on all 62 tests/
       examples). History below. First concrete attempt: hierc0 **parses** its own ~2250-line
       source fine but **dies in codegen** ("unknown variable"). Root cause traced
       to a **C-compiler arena-placement bug** (`src/hierc.c`), the same family as
@@ -610,7 +613,7 @@ fixpoint.
       (compiler/fixpoint.sh) runs the 3-stage build: A = `hierc·hierc0.hi`,
       B = A·hierc0.hi, C = B·hierc0.hi, and asserts **B ≡ C byte-identical**
       (hierc0 reproduces itself exactly, ~6,300 lines of emitted C) plus B
-      reproduces the C compiler's golden output across all 57 `tests/`+
+      reproduces the C compiler's golden output across all 62 `tests/`+
       `examples/`. The C compiler is no longer on the correctness-critical path
       for hierc0's subset; it remains for features hierc0 doesn't yet cover and
       for the optimized memory-model codegen (hierc0 emits correct-but-naive

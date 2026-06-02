@@ -750,13 +750,13 @@ build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   inout, memo, collect, context, json (.hi) — 17 programs
+                   inout, memo, collect, context, optimize, json (.hi) — 17 programs
                    (json.hi is a full recursive-descent JSON parser + serializer)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
-tests/*.hi         dedicated regression programs (41) (+ optional <name>.in stdin)
+tests/*.hi         dedicated regression programs (45) (+ optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
-bench/*.hi         one benchmark program per optimization (11); bench/peakrss.c helper
+bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
 bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md
 fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; make fuzz)
 tools/prof/        dependency-free sampling CPU profiler for hier-compiled binaries

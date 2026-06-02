@@ -1,6 +1,13 @@
 # hierc0 memory-model codegen — closing the perf gap to the C compiler
 
-## Where we are
+> **STATUS (complete): the migration documented here is DONE — MM-0 … MM-7f.**
+> hierc0 now emits the same value-semantic implicit-arena C the reference compiler
+> does, with **no known memory gap** and full feature parity; the last residual
+> (heap-payload option arrays, `[Option(str)]`) was closed in MM-7f. The
+> "Starting point" section just below describes where this doc *began* — the naive
+> malloc/leak codegen at the fixpoint — not the current state.
+
+## Starting point (historical)
 
 hierc0 self-hosts (Stage 4 fixpoint, `make fixpoint` green) but emits
 **naive malloc/leak C**: every allocation helper in `preamble()` and the

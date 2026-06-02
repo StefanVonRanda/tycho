@@ -71,7 +71,7 @@ cluster of languages, and the differences are the interesting part:
    the smallest program exercising the model on its claimed workload. Instead the
    project went all the way: `compiler/hierc0.hi` is a **self-hosting** compiler
    written in Hier (`make fixpoint` green), and its codegen was then migrated onto
-   the implicit-arena model (MM-0 … MM-6c, [memory-model.md](memory-model.md)) —
+   the implicit-arena model (MM-0 … MM-7f, [memory-model.md](memory-model.md)) —
    the model proving itself on a real, large, allocation-heavy program, not a
    micro-benchmark. This turned "validated on a 57-program suite" into "proven by
    building and running the compiler itself." A standalone interpreter is now
@@ -198,11 +198,16 @@ cluster of languages, and the differences are the interesting part:
 ### Tier 4 — large or philosophy-divergent (note, don't rush)
 
 - **Compile-time execution** (Jai/Zig) — powerful, large, arguably out of scope.
-- **Generics** — the thesis deliberately avoids a generics engine; the
-  monomorphization Hier already does for arrays/options/maps is a limited,
-  closed form. A *constrained* generics story could reuse that machinery, but it
-  cuts against the stated "small, fixed type surface" design.
-- **Modules / multi-file** — real ergonomics, no thesis content.
+- **Generics** — **decided against (firm).** Hier stays monomorphic; the
+  closed-form monomorphization it already does for arrays/options/maps is the
+  extent of it. A generics engine cuts against the "small, fixed type surface"
+  design and adds nothing to the arena thesis. Not a roadmap item.
+- **Modules / multi-file** — **promoted out of Tier 4: this is the agreed next
+  major language feature.** Odin-style packages — a package is a directory of
+  files sharing one namespace, `import "path"`, referenced `pkg.symbol`,
+  whole-program transpile with package-prefixed C symbols, and **no privacy**
+  (every package symbol is always visible). Removes the single-source-file limit
+  and lets the self-hosted compiler split into packages.
 
 ## Where this stands now
 
@@ -214,11 +219,15 @@ newtypes, the FBIP reuse family, SOA) are all shipped too. The FBIP/Hylo framing
 above is now the project's sharpest story precisely *because* it was proven on
 the compiler itself.
 
-The live frontier has moved from *language features* to the **memory-model
-codegen migration** in the self-hosted compiler ([memory-model.md](memory-model.md),
-MM-0 … MM-6c). Its remaining work is the long tail — deep-copying nested-array /
-struct / tuple array elements (blocked by emission ordering; the dominant
-array-of-string case is closed) — and the `inout`-container home-arena threading
-and move/borrow refinements banked there. Genuinely-future, philosophy-divergent
-items (compile-time execution, generics, modules; a small interpreter as a demo)
-remain Tier 4 — noted, not rushed.
+The memory-model codegen migration ([memory-model.md](memory-model.md),
+MM-0 … MM-7f) that was the live frontier is now **complete** — hierc0 reproduces
+the full arena model with **no known memory gap** and full feature + memory parity
+with the C compiler (the last residual, heap-payload option arrays, closed in
+MM-7f). Since then: a `char` type, comprehensive differential + ASan/UBSan fuzzing
+([fuzz/](../fuzz/)), a dependency-free sampling profiler ([tools/prof/](../tools/prof/)),
+a ~3.1× self-compile speedup, and a real-workload demo (`examples/json.hi`). The
+frontier has moved to the **next major language feature — Odin-style packages &
+modules** (Tier 4, now promoted above). The one open perf lever (a streaming-codegen
+rewrite, to *outperform* the C compiler) is scoped in [perf.md](perf.md) but
+deferred. Compile-time execution and a demo interpreter stay Tier 4; generics are
+decided-against.
