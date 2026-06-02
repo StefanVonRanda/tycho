@@ -49,6 +49,8 @@ hello Ada
 | `make test` | Run the test suite (see below). |
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
 | `make bench` | Run the performance guard (see below). |
+| `make bootstrap` | Build the self-hosted compiler `compiler/hierc0.hi` with `./hierc` and validate it on its fixtures. |
+| `make fixpoint` | Stage-4 self-host check: assert the Hier-built compiler reproduces itself byte-identically (B≡C) and matches the C compiler's output. |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
@@ -79,6 +81,27 @@ bound sits firmly between a working and a broken optimization; likewise the
 Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
 a dependency-free ELF (`ldd` reports "not a dynamic program").
+
+## Self-hosting
+
+Besides the C reference compiler (`src/hierc.c`), Hier has a second compiler
+**written in Hier itself**: `compiler/hierc0.hi`. It compiles a subset of the
+language large enough to compile its own source, and it **self-hosts** — `make
+fixpoint` builds it three ways (the C compiler builds it, then that build
+rebuilds it, then that rebuild rebuilds it again) and asserts the last two
+emissions are byte-identical (B≡C) and that the Hier-built compiler reproduces
+the C compiler's output across every `tests/` and `examples/` program. The
+staged path to self-hosting (Stage 0–4) is written up in
+[docs/bootstrap.md](docs/bootstrap.md).
+
+Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
+malloc/leak C to the same implicit-arena memory model the C compiler uses, one
+type family at a time, each step gated by the fixpoint + sanitizers. That
+campaign (MM-0 … MM-6c — strings, arrays, maps, structs/tuples/boxes, per-block
+arenas, and array string elements all now arena-managed and freed per scope) is
+documented in [docs/memory-model.md](docs/memory-model.md), with the
+head-to-head performance work (incl. the `bench/prongB/` cross-language suite vs
+C, Go, Rust, and Koka) in [docs/perf.md](docs/perf.md).
 
 ## Language
 
@@ -657,20 +680,27 @@ None of this appears in Hier source.
 ## Repository layout
 
 ```
-src/hierc.c        the compiler (lexer, parser, type resolver, C codegen)
+src/hierc.c        the C reference compiler (lexer, parser, type resolver, C codegen)
 runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
+compiler/hierc0.hi the self-hosted compiler, written in Hier (see make fixpoint)
+compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   inout, memo, collect, context (.hi)
+                   inout, memo, collect, context (.hi) — 16 programs
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
-tests/*.hi         dedicated regression programs (+ optional <name>.in stdin)
+tests/*.hi         dedicated regression programs (41) (+ optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
-bench/*.hi         one benchmark program per optimization; bench/peakrss.c helper
+bench/*.hi         one benchmark program per optimization (11); bench/peakrss.c helper
+bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
+docs/bootstrap.md  the staged path (0–4) to self-hosting
+docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-6c)
+docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
+docs/ideas.md      design-space map and roadmap (what's done / deferred)
 ```
 
 The runtime is turned into a C string literal at build time (`make`

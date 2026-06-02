@@ -53,24 +53,31 @@ cluster of languages, and the differences are the interesting part:
 
 ## Ranked ideas for Hier
 
-### Tier 1 — biggest expressiveness win, on-thesis, unlocks dogfooding
+### Tier 1 — ✅ DONE: the expressiveness win that unlocked dogfooding
 
-1. **General sum types: `enum` / variants + exhaustive `match`.** `Option(T)`
-   is the special case; generalize it to user types, e.g.
-   `enum Expr: Num(float), Add(Expr, Expr), Neg(Expr)`. The recursion rules are
-   the ones already solved for recursive structs/options (indirection via arrays
-   / `Option`, infinite-by-value detection). `match` already exists — extend it
-   from two fixed arms to N named cases with binding + exhaustiveness. **This is
-   the single most valuable next feature.** (Swift/Rust.)
+1. **General sum types: `enum` / variants + exhaustive `match`.** ✅
+   *Implemented.* `Option(T)` was the special case; user types are now the
+   general one, e.g. `enum Expr: Num(float), Add(Expr, Expr), Neg(Expr)`. The
+   recursion rules reuse the ones already solved for recursive structs/options
+   (indirection via arrays / `Option`, infinite-by-value detection); `match`
+   extends from two fixed arms to N named cases with binding + exhaustiveness.
+   Recursive enums (ASTs) and enum array elements work; self-hosting in both
+   compilers (`tests/enums.hi`, `tests/enum_calc.hi`,
+   `tests/recursive_enum_array.hi`). This was the single most valuable feature —
+   and it is what made the self-hosting compiler below possible. (Swift/Rust.)
 
-2. **Dogfood: write a small interpreter *in Hier*.** Not a language feature —
-   the *proof experiment*. The thesis targets "compilers and compiler passes";
-   a calculator / expression evaluator (which needs #1) is the smallest program
-   that exercises the model on its own claimed workload, surfaces the real
-   value-semantics copy cost, and drives the missing-feature list. Turns
-   "validated on a 26-program suite" into "proven on a real program."
+2. **Dogfood: write a real compiler *in Hier*.** ✅ *Realized — beyond the
+   original ask.* The plan was a small interpreter (a calculator needing #1) as
+   the smallest program exercising the model on its claimed workload. Instead the
+   project went all the way: `compiler/hierc0.hi` is a **self-hosting** compiler
+   written in Hier (`make fixpoint` green), and its codegen was then migrated onto
+   the implicit-arena model (MM-0 … MM-6c, [memory-model.md](memory-model.md)) —
+   the model proving itself on a real, large, allocation-heavy program, not a
+   micro-benchmark. This turned "validated on a 57-program suite" into "proven by
+   building and running the compiler itself." A standalone interpreter is now
+   optional (a smaller demo of the same point).
 
-### Tier 2 — removes current real limitations
+### Tier 2 — ✅ DONE: removed real limitations (projections, error handling, tuples)
 
 3. **Projections / yielding element access (Hylo-style).** ✅ *Implemented.*
    A composite-array element is now a mutable place: `arr[i].f = v`,
@@ -197,10 +204,21 @@ cluster of languages, and the differences are the interesting part:
   cuts against the stated "small, fixed type surface" design.
 - **Modules / multi-file** — real ergonomics, no thesis content.
 
-## Suggested next step
+## Where this stands now
 
-**Sum types + match, then write the interpreter.** It is the highest
-expressiveness leverage, it is the experiment that most directly tests the
-thesis, and the FBIP/Hylo framing above gives the project a sharper story about
-*why* the implicit-arena model is a distinct and defensible point in the design
-space.
+The original "suggested next step" — **sum types + match, then dogfood** — is
+**done and then some**: enums + `match` shipped (Tier 1), and the dogfood became
+a full **self-hosting compiler** (`compiler/hierc0.hi`, `make fixpoint`) rather
+than a toy interpreter. Tiers 2–3 (projections, error handling, tuples, slices,
+newtypes, the FBIP reuse family, SOA) are all shipped too. The FBIP/Hylo framing
+above is now the project's sharpest story precisely *because* it was proven on
+the compiler itself.
+
+The live frontier has moved from *language features* to the **memory-model
+codegen migration** in the self-hosted compiler ([memory-model.md](memory-model.md),
+MM-0 … MM-6c). Its remaining work is the long tail — deep-copying nested-array /
+struct / tuple array elements (blocked by emission ordering; the dominant
+array-of-string case is closed) — and the `inout`-container home-arena threading
+and move/borrow refinements banked there. Genuinely-future, philosophy-divergent
+items (compile-time execution, generics, modules; a small interpreter as a demo)
+remain Tier 4 — noted, not rushed.

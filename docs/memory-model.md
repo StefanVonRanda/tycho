@@ -116,7 +116,7 @@ in-place mutation. Same soundness pattern as the map accumulator, Stage 3I.)
    else (plain reassign `n = expr`) RESYNC: `n = scopy(<expr>); _len_n =
    strlen(n); _cap_n = _len_n + 1;` (keeps sidecars consistent across mixed use).
 7. Verify: `make fixpoint` (oracle for soundness — a snapshot bug diverges
-   B from the C compiler), `make test` 45/45, and `bench/peakrss` time+RSS on
+   B from the C compiler), `make test` 57/57, and `bench/peakrss` time+RSS on
    a string-build workload (e.g. `examples/accumulate.hi` / `accumulate_big`)
    showing the O(n²)→O(n) drop. Watch `s = s + f(s)` (RHS reads s): sequential
    appends differ from full-concat pre-eval — no current fixture does it, but
@@ -264,7 +264,7 @@ per-iteration transients eagerly instead of holding them to function return.
   return → `_parent` after freeing every enclosing block arena. So a value can
   never be referenced after its block frees. A `return` inside depth-d blocks
   frees `_bd..._b1` then `_scope`.
-- ✅ MM-6a (full lexical per-block, commit pending): instead of a per-var home
+- ✅ MM-6a (full lexical per-block, commit b9f66c7): instead of a per-var home
   stack, one int `Ctx.block_base` = env length at block entry. owner_arena_of
   routes a var declared in the CURRENT block (env index >= block_base) to the
   block arena, an outer var to `&_scope`, inout to `0` — used by push, the
@@ -279,7 +279,7 @@ per-iteration transients eagerly instead of holding them to function return.
 ### MM-6 (optimizations) — banked refinements
 - ✅ MM-6b (f1ff194): MAP KEYS now in the map's arena (sc(ar,k) in _put; struct/
   tuple map fields deep-copy; struct_is_heap counts maps). Map memory fully O(1).
-- ✅ MM-6c (commit pending): ARRAY STRING ELEMENTS now live in the array's arena
+- ✅ MM-6c (commit c84eb4c): ARRAY STRING ELEMENTS now live in the array's arena
   and free with it. `elem_deepcopy(ctx,et)` (true for str — scopy is in the
   preamble, so no forward-decl ordering hazard) gates: (1) `Arr_str_from` (hence
   `_copy`/`_slice`) deep-copies each element `scopy(ar,s[i])` instead of memcpy'ing
@@ -327,7 +327,7 @@ per-iteration transients eagerly instead of holding them to function return.
   - Return-slot for string returns (copy into `_parent`); `_scope` freed on
     every exit path. Arrays/maps/structs/tuples/boxes STILL malloc (leak) —
     sound per the mixed-model argument.
-  - **Verify:** `make fixpoint` (B≡C + matches C compiler), `make test` 45/45,
+  - **Verify:** `make fixpoint` (B≡C + matches C compiler), `make test` 57/57,
     and an ASan-leak / RSS delta on a string-heavy input showing strings freed.
 
 - **MM-2 — arrays on arena.** `Arr_<T>_from`/`_copy`/`_push` take `Arena*`;
@@ -346,7 +346,7 @@ per-iteration transients eagerly instead of holding them to function return.
 ## Validation per stage
 
 - `make fixpoint` green (B≡C; B matches the C compiler's golden output).
-- `make test` 45/45 (ASan/UBSan clean — the self-emitted C runs under sanitizers).
+- `make test` 57/57 (ASan/UBSan clean — the self-emitted C runs under sanitizers).
 - Memory delta: ASan leak report and/or `bench/peakrss` on a workload that
   exercises the migrated type — each stage must show that type's bytes now
   freed. No silent "looks done" — quote the before/after.

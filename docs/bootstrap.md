@@ -15,13 +15,23 @@ alternative front-end. Stage 4 is the dramatic fixpoint where Hier compiles
 itself and the C compiler can be retired. Stopping at any stage ≥ 1 is still a
 standalone win.
 
+> **STATUS (current): Stages 0–4 are DONE — hierc0 self-hosts.** `make fixpoint`
+> is green (B≡C byte-identical, B matches the C compiler across all 57 `tests/` +
+> `examples/`). The stage log below is the historical record of getting there.
+> One caveat it repeats — that hierc0 "emits correct-but-naive malloc/value-copy
+> C, not the optimized arena codegen" — was true *at the fixpoint* but has since
+> been closed: a follow-on campaign (MM-0 … MM-6c) migrated hierc0's codegen onto
+> the same implicit-arena model the C compiler uses, one type family at a time,
+> each step gated by the fixpoint + sanitizers. That work is its own doc,
+> [memory-model.md](memory-model.md); the perf gap it closed is in [perf.md](perf.md).
+
 ## What we are and aren't rewriting
 
-- The current compiler is **`src/hierc.c` — 3,814 lines of C** (lexer, parser,
+- The current compiler is **`src/hierc.c` — ~4,130 lines of C** (lexer, parser,
   type checker, C code generator).
-- The **677-line runtime (`runtime/hier_rt.c`) is shared, not rewritten.**
+- The **~750-line runtime (`runtime/hier_rt.c`) is shared, not rewritten.**
   Generated C embeds the runtime verbatim; the Hier compiler emits the same
-  embed. Self-hosting is about the ~3,800 lines of compiler *logic*.
+  embed. Self-hosting is about the ~4,100 lines of compiler *logic*.
 - The AST is already expressible: Hier's recursive `enum` is exactly what the C
   compiler models with `ExprKind`/`StmtKind` tagged unions. The core data model
   is native.
@@ -541,7 +551,7 @@ fixpoint.
         remaining work before the Stage 4 self-host fixpoint.
 - [x] **Stage 4** — fixpoint bootstrap (B ≡ C). **DONE: hierc0 is self-hosting.**
       `make fixpoint` builds A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi and
-      asserts B≡C byte-identical (+ B matches the C compiler on all 45 tests/
+      asserts B≡C byte-identical (+ B matches the C compiler on all 57 tests/
       examples). History below. First concrete attempt: hierc0 **parses** its own ~2250-line
       source fine but **dies in codegen** ("unknown variable"). Root cause traced
       to a **C-compiler arena-placement bug** (`src/hierc.c`), the same family as
@@ -578,7 +588,7 @@ fixpoint.
          arena it frees right after the call, so the returned pointer dangles
          (this was the 3E `resolve_nt` symptom). Fix: never mark a param
          `_parent`; `return param` deep-copies like any borrowed place. Verified:
-         `make test` 45/45, hierc0 self-compiles (exit 0, **ASan/UBSan clean**),
+         `make test` 57/57, hierc0 self-compiles (exit 0, **ASan/UBSan clean**),
          and hierc0's `resolve_nt` `+ ""` workaround is **removed**.
       1b. **✅ DONE — hierc0 codegen gaps that blocked its *output* from
          compiling/running.** Three fixes: (i) hierc0's own scrutinee variable
@@ -599,8 +609,8 @@ fixpoint.
       **✅ STAGE 4 COMPLETE — self-hosting fixpoint reached.** `make fixpoint`
       (compiler/fixpoint.sh) runs the 3-stage build: A = `hierc·hierc0.hi`,
       B = A·hierc0.hi, C = B·hierc0.hi, and asserts **B ≡ C byte-identical**
-      (hierc0 reproduces itself exactly, ~3660 lines of emitted C) plus B
-      reproduces the C compiler's golden output across all 45 `tests/`+
+      (hierc0 reproduces itself exactly, ~6,300 lines of emitted C) plus B
+      reproduces the C compiler's golden output across all 57 `tests/`+
       `examples/`. The C compiler is no longer on the correctness-critical path
       for hierc0's subset; it remains for features hierc0 doesn't yet cover and
       for the optimized memory-model codegen (hierc0 emits correct-but-naive

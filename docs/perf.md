@@ -4,6 +4,19 @@ Measured after the Stage 4 self-host fixpoint (`make fixpoint`). Best-of-N wall
 time; peak RSS via `getrusage(RUSAGE_CHILDREN)`. One machine, `cc -O2`. These
 are indicative, not a rigorous benchmark suite.
 
+> **STATUS (2026-06-02): sections (1)–(2) below are now a HISTORICAL baseline.**
+> They were measured when hierc0's codegen was still naive (`malloc`, no frees,
+> value-copy concat) — i.e. **B = naive**. Since then the memory-model migration
+> ([docs/memory-model.md](memory-model.md), MM-0 … MM-6c) has moved hierc0's
+> emitted C onto the same implicit-arena model the C compiler uses, so **B is now
+> arena-coded, not naive** — the A-vs-B "arena vs naive" gap these sections
+> document is **closed**. Concretely, the headline `accumulate_big` row below
+> (B naive: 257 ms / 598 MB) is now **B arena: ~0 ms / ~1.6 MB**, identical to A
+> (1.6 MB, measured 2026-06-02) — the O(n²)/leak is gone. The sections are kept
+> because they quantify *what the arena model bought* (the motivation for the
+> whole MM campaign); read them as "naive vs arena," not as the current B. The
+> prong-B section further down (tuning of the C compiler `src/hierc.c`) is current.
+
 Three compilers are in play:
 
 - **`hierc`** — the hand-written C compiler (`src/hierc.c`): full language,
@@ -15,7 +28,7 @@ Three compilers are in play:
 A and B are the *same hierc0 source*, so A-vs-B isolates exactly the
 codegen/memory-model difference.
 
-## (1) Compiler speed — compiling hierc0.hi (~2250 lines) to C
+## (1) Compiler speed — compiling hierc0.hi (~2970 lines) to C
 
 | compiler | ms |
 |---|---|
@@ -91,7 +104,7 @@ already made `arena_child`/`free` O(1)). See the codegen work below.
 
 ## Codegen-level arena work (prong-B, src/hierc.c)
 
-Two codegen changes, in order. Each was verified by `make test` (45 programs,
+Two codegen changes, in order. Each was verified by `make test` (57 programs,
 byte-identical output vs the reference compiler, under
 `-fsanitize=address,undefined`), `make bootstrap`, `make fixpoint` (B≡C), and
 `make bench`.

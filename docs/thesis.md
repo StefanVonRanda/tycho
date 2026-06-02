@@ -97,7 +97,7 @@ freely. Every optimization below exploits exactly that asymmetry.
 The whole-program verification standard for this repo follows from it: every
 codegen change is checked under `cc -fsanitize=address,undefined`, asserting
 (a) exit 0, (b) clean sanitizers, and (c) ASan output byte-identical to native
-`-O2` output. A 19-program suite holds to this.
+`-O2` output. A 57-program suite (`tests/` + `examples/`) holds to this.
 
 ## 4. Where the abstraction would leak — and the two optimizations that seal it
 
@@ -233,3 +233,13 @@ ceiling was confirmed with an `ulimit -v` ladder (fits under 4 MB at
 N=40 000, under 8 MB at N=400 000 — does not scale with N). Every example and
 feature program is checked under `cc -fsanitize=address,undefined` with output
 required to match native `-O2`.
+
+Two further validations have since landed, written up separately. **Self-hosting:**
+a second compiler written in Hier itself (`compiler/hierc0.hi`) reaches a
+byte-identical fixpoint (`make fixpoint`), and its codegen was then migrated onto
+this same implicit-arena model one type family at a time — each step gated by the
+fixpoint + sanitizers ([docs/memory-model.md](memory-model.md)). That migration is
+the model eating its own dog food on a real, allocation-heavy, deeply-recursive
+program. **Head-to-head:** a cross-language benchmark suite (`bench/prongB/`,
+Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the compiler-vs-
+generated-code numbers are in [docs/perf.md](perf.md).
