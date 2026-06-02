@@ -1156,6 +1156,8 @@ fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
                     return true
                 if is_soa(ft):                   # a soa field owns heap buffers
                     return true
+                if is_map(ft):                   # a map field owns its table (keys now arena-allocated)
+                    return true
                 if is_struct(ctx, ft) and struct_is_heap(ctx, ft):
                     return true
                 j = j + 1
@@ -2233,6 +2235,8 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
             out = out + "    r." + f.name + " = sc(ar, s." + f.name + ", \"\");\n"
         elif is_array(f.ty):
             out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + f.name + ");\n"
+        elif is_map(f.ty):
+            out = out + "    r." + f.name + " = " + mfam(f.ty) + "_copy(ar, s." + f.name + ");\n"
         elif is_soa(f.ty):
             out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
         elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
@@ -2278,6 +2282,8 @@ fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
             out = out + "    r.f" + str(i) + " = sc(ar, s.f" + str(i) + ", \"\");\n"
         elif is_array(p):
             out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(ar, s.f" + str(i) + ");\n"
+        elif is_map(p):
+            out = out + "    r.f" + str(i) + " = " + mfam(p) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_struct(ctx, p) and struct_is_heap(ctx, p):
             out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
         i = i + 1
@@ -2565,7 +2571,7 @@ fn gen_map_fns(v: string) -> string:
     out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
     out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
     out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
-    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(0, k, \"\"); m->len++; } m->vals[t] = val; }\n"
+    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(ar, k, \"\"); m->len++; } m->vals[t] = val; }\n"
     out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
