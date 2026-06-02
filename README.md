@@ -111,13 +111,13 @@ compiler after the campaign:
 
 | workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |
-| binary-trees     |  37 MB/291 ms | 33/751 ms | 33/861 ms | 34/1520 ms |      14/264 ms |
-| tree-rewrite     |   9 MB/164 ms | 13/586 ms |  9/419 ms |  22/854 ms |       7/184 ms |
-| array-pipeline   |    5 MB/31 ms |  3/23 ms |  3/24 ms |   6/54 ms |      17/364 ms |
-| string-pipeline  |    3 MB/52 ms |   1/2 ms |   2/2 ms |    3/4 ms |       2/16 ms |
+| binary-trees     |  37 MB/289 ms | 33/772 ms | 33/848 ms | 35/1523 ms |      14/273 ms |
+| tree-rewrite     |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |       7/185 ms |
+| array-pipeline   |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |      17/372 ms |
+| string-pipeline  |    3 MB/32 ms |   1/1 ms |   1/2 ms |    4/4 ms |       2/17 ms |
 
 On the allocation-heavy tree workloads the self-hosted compiler **beats Go's GC
-on both axes** (tree-rewrite 9 MB / 164 ms vs 22 MB / 854 ms) and trades blows
+on both axes** (tree-rewrite 7 MB / 94 ms vs 21 MB / 848 ms) and trades blows
 with C, Rust, and Koka's Perceus reference counting — no GC, no refcounts, just
 lexical arenas and value semantics. It trails C/Rust only on the tiny flat-compute
 workloads (startup overhead, not the memory model). The compiler-vs-generated-code

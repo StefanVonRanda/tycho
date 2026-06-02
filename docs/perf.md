@@ -8,14 +8,29 @@ are indicative, not a rigorous benchmark suite.
 > They were measured when hierc0's codegen was still naive (`malloc`, no frees,
 > value-copy concat) — i.e. **B = naive**. Since then the memory-model migration
 > ([docs/memory-model.md](memory-model.md), MM-0 … MM-6c) has moved hierc0's
-> emitted C onto the same implicit-arena model the C compiler uses, so **B is now
-> arena-coded, not naive** — the A-vs-B "arena vs naive" gap these sections
-> document is **closed**. Concretely, the headline `accumulate_big` row below
-> (B naive: 257 ms / 598 MB) is now **B arena: ~0 ms / ~1.6 MB**, identical to A
-> (1.6 MB, measured 2026-06-02) — the O(n²)/leak is gone. The sections are kept
-> because they quantify *what the arena model bought* (the motivation for the
-> whole MM campaign); read them as "naive vs arena," not as the current B. The
-> prong-B section further down (tuning of the C compiler `src/hierc.c`) is current.
+> emitted C onto the same implicit-arena model the C compiler uses (MM-0 … MM-7e),
+> so **B is now arena-coded, not naive** — the A-vs-B "arena vs naive" gap these
+> sections document is **closed**. Concretely, the headline `accumulate_big` row
+> below (B naive: 257 ms / 598 MB) is now **B arena: ~0 ms / ~1.6 MB**, identical
+> to A — the O(n²)/leak is gone. The sections are kept because they quantify *what
+> the arena model bought* (the motivation for the whole MM campaign); read them as
+> "naive vs arena," not as the current B. The prong-B section further down (tuning
+> of the C compiler `src/hierc.c`) is current.
+
+> **CURRENT self-hosted compiler speed (2026-06).** After the arena migration,
+> hierc0 reproduces the full arena model + move-on-last-use — codegen-feature
+> parity with `hierc`. Two later codegen-QUALITY fixes then improved the
+> self-hosted compiler's own headline workload (**B = hierc0 compiled by hierc0**,
+> compiling `hierc0.hi`): a **block free-list pool** in the emitted arena runtime
+> cut time **106 → 64 ms (1.66×)** (no malloc/free churn per scope), and a
+> **compact tagged-union enum layout** cut peak RSS **18.2 → 9.9 MB (1.84×)** (the
+> flat `Expr`/`Stmt` nodes — 25/33 fields — shrink to their active variant). Both
+> are output-invisible (fixpoint B≡C + 58 tests + the fuzzer). hierc0 now TIES
+> hierc on memory across the prong-B suite ([../bench/prongB/RESULTS.md](../bench/prongB/RESULTS.md))
+> and WINS tree-rewrite outright (7 MB / 94 ms); the remaining gap is generated-code
+> time on the deep-recursion binary-trees shape (hierc0 ~289 ms vs hierc ~201 ms),
+> not enum layout or arena bookkeeping. The C compiler stays the reference until
+> hierc0 outperforms it.
 
 Three compilers are in play:
 

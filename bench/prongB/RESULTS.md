@@ -24,10 +24,10 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 
 | workload          | hier (hierc) | hier (hierc0) |        C |     Rust |  Go (GC) | Koka (Perceus) |
 | ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
-| binary-trees      | 25 MB/197 ms |  37 MB/291 ms | 33/751 ms | 33/861 ms | 34/1520 ms |    14/264 ms |
-| tree-rewrite      |  7 MB/108 ms |   9 MB/164 ms | 13/586 ms |  9/419 ms |  22/854 ms |     7/184 ms |
-| array-pipeline    |  6 MB/132 ms |    5 MB/31 ms |  3/23 ms |  3/24 ms |   6/54 ms |    17/364 ms |
-| string-pipeline   |  1 MB/32 ms  |   3 MB/52 ms  |   1/2 ms |   2/2 ms |    3/4 ms |     2/16 ms |
+| binary-trees      | 25 MB/201 ms |  37 MB/289 ms | 33/772 ms | 33/848 ms | 35/1523 ms |    14/273 ms |
+| tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
+| array-pipeline    |  6 MB/132 ms |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
+| string-pipeline   |  1 MB/34 ms  |   3 MB/32 ms  |   1/1 ms |   1/2 ms |    4/4 ms |     2/17 ms |
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -37,11 +37,14 @@ retained in function scope. Two changes closed it: **MM-7a** put enum nodes on t
 arena (deep-copied when they cross an arena boundary), and **MM-7b** added
 *transient placement* (a scalar-result statement's heap transients build in a
 per-statement arena, freed immediately). Result: **binary-trees 2374 → 38 MB
-(~62×), tree-rewrite 825 → 9 MB (~88×)**. `hierc0` now sits mid-pack — and on the
-tree workloads it **beats Go on both axes** (tree-rewrite 9 MB / 172 ms vs Go
-20 MB / 853 ms; binary-trees ~5× faster than Go at equal memory). That is the
-thesis stated against the GC: Go-like "no memory management in the source",
-without the GC's time-and-space tax.
+(~62×), tree-rewrite 825 → 9 MB (~88×)**. Two later codegen-quality fixes (a block
+free-list pool in the emitted arena, and a compact tagged-union enum layout)
+pushed tree-rewrite further to **7 MB / 94 ms** — so `hierc0` now WINS that
+workload outright: tied for lowest memory (with Koka) and fastest of all six. More
+broadly it sits mid-pack and on the tree workloads **beats Go on both axes**
+(tree-rewrite 7 MB / 94 ms vs Go 21 MB / 848 ms; binary-trees ~5× faster than Go
+at equal memory). That is the thesis stated against the GC: Go-like "no memory
+management in the source", without the GC's time-and-space tax.
 
 **And the last gap is now closed — array-pipeline `hierc0` 358 → 5 MB (MM-7c).**
 A heap array declared in an outer block but grown inside a nested loop used to
