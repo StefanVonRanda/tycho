@@ -294,6 +294,7 @@ struct Ctx:
     rettype: string           # current func's Hier return type (for the return-slot _scope free)
     owner: string             # arena that fresh allocations go into ("0"=NULL=malloc; "&_t"/"_parent"/"&_scope")
     depth: int                # current block nesting depth (0 = function body _scope; d = block _b<d>)
+    block_base: int           # env length at current block entry; a var at index >= this is block-local
 
 struct Program:
     structs: [StructDef]
@@ -1414,14 +1415,15 @@ fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) 
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.block_base)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
-# owner for the block's transients/local decls. Sibling blocks reuse the same
+# owner for the block's transients/local decls. `base` is the env length at entry
+# (vars declared from here on are block-local). Sibling blocks reuse the same
 # name in separate C scopes; nested blocks get distinct names by depth.
-fn enter_block(ctx: Ctx) -> Ctx:
+fn enter_block(ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, base)
 
 # C lvalue of the current block's arena.
 fn cur_arena(ctx: Ctx) -> string:
@@ -1526,7 +1528,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
                     return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
                 et := elem_ty(at)
-                return "Arr_" + mangle(et) + "_push(" + owner_arena_of(args[0], names, types) + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
+                return "Arr_" + mangle(et) + "_push(" + owner_arena_of(args[0], names, types, ctx) + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
             if name == "len":
                 if type_of(args[0], names, types, ctx) == "str":
                     return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
@@ -1622,17 +1624,30 @@ fn root_var(e: Expr) -> string:
 # The arena a container place lives in: an inout-param container is the caller's
 # (its buffer must grow in _parent so it survives the call); a local lives in
 # this function's _scope. (One scope per function until MM-5 adds per-block.)
-fn owner_arena_of(e: Expr, names: [string], types: [string]) -> string:
-    # A local container grows in this function's _scope (freed at return). An
-    # inout-param container's true home arena lives further up the inout chain
-    # than `_parent` (the C compiler threads a separate `_ina_` arena for it);
-    # hierc0 doesn't, so growing it in `_parent` would land in a too-short-lived
-    # scope (heap-use-after-free, caught by ASan on the self-compile). Grow it in
-    # malloc ("0") instead — immortal, never dangles. (Inout arrays then leak,
-    # their pre-MM-2 behavior; threading the home arena is a later refinement.)
+# Most recent declaration index of `name` in the env (-1 if absent). Searches
+# from the end so a shadowing inner decl wins.
+fn var_index(names: [string], name: string) -> int:
+    i := len(names) - 1
+    for i >= 0:
+        if names[i] == name:
+            return i
+        i = i - 1
+    return -1
+
+# The arena a container place lives in (so a push/grow lands where the container
+# itself lives). inout-param container: malloc ("0") — its true home is further
+# up the inout chain than _parent, which hierc0 doesn't thread (the C compiler's
+# _ina_ param); malloc is immortal so it never dangles. A var declared in the
+# current block (index >= block_base): the block arena, freed at block exit / per
+# loop iteration. An outer-scope local: the function _scope (outlives all blocks).
+fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     rv := root_var(e)
-    if rv != "" and is_inout(var_type(names, types, rv)):
+    if rv == "":
+        return "&_scope"
+    if is_inout(var_type(names, types, rv)):
         return "0"
+    if var_index(names, rv) >= ctx.block_base:
+        return cur_arena(ctx)
     return "&_scope"
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
@@ -1776,7 +1791,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
                 return "    " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
-            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, with_owner(ctx, "&_scope")) + ";\n"   # `name` may be an outer-scope var; keep its value at function scope, not a block arena
+            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, with_owner(ctx, owner_arena_of(EVar(name), names, types, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
                 # the caller's table, so mutating it in place is a value-semantics
@@ -1786,7 +1801,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 # from accums). Locals and inout map params still grow in place.
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
-                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types) + ", &" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
+                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
                     return deflt
@@ -1899,7 +1914,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return code
         SIf(cond, then_body, else_body):
             d1 := str(ctx.depth + 1)              # each branch is its own block arena
-            bc := enter_block(ctx)
+            bc := enter_block(ctx, len(names))
             op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n"
             fr := "        arena_free(&_b" + d1 + ");\n"
             out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + op + gen_block(then_body, names, types, bc) + fr + "    }"
@@ -1908,7 +1923,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return out + "\n"
         SWhile(cond, body):
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(ctx)
+            bc := enter_block(ctx, len(names))
             return "    while (" + gen_expr(cond, names, types, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, names, types, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SForRange(name, start, stop, step, body):
             header := "    for (long " + name + " = " + gen_expr(start, names, types, ctx) + "; " + name + " < " + gen_expr(stop, names, types, ctx) + "; " + name + " += " + gen_expr(step, names, types, ctx) + ") {\n"
@@ -1917,7 +1932,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             push(bn, name)
             push(bt, "int")
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(ctx)
+            bc := enter_block(ctx, len(bn))
             return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, bn, bt, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, ctx)
@@ -2149,7 +2164,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0)
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, len(f.params))
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -2817,7 +2832,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0)
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, 0)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

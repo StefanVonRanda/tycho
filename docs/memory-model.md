@@ -264,10 +264,17 @@ per-iteration transients eagerly instead of holding them to function return.
   return → `_parent` after freeing every enclosing block arena. So a value can
   never be referenced after its block frees. A `return` inside depth-d blocks
   frees `_bd..._b1` then `_scope`.
-- Refinement (the "full" lexical version): a parallel per-var home-arena stack so
-  block-local containers and reassignments also free per-block (the lighter
-  version keeps those at function scope — sound, just coarser). Routing is still
-  lexical; it's just finer-grained bookkeeping.
+- ✅ MM-6a (full lexical per-block, commit pending): instead of a per-var home
+  stack, one int `Ctx.block_base` = env length at block entry. owner_arena_of
+  routes a var declared in the CURRENT block (env index >= block_base) to the
+  block arena, an outer var to `&_scope`, inout to `0` — used by push, the
+  map-accumulator, and plain SAssign. So a loop-local container/reassignment
+  built in the SAME block frees per-iteration (loop-local array build:
+  245MB->10MB, O(n)->O(1)). Lexical, no dataflow. Remaining coarseness: a
+  container declared in an OUTER block but pushed in a NESTED block routes to
+  `&_scope` (block_base only marks the current block, not each var's exact
+  depth) — sound, just not freed until function return. A true per-var depth
+  map would close that; rare in practice.
 
 ### MM-6 (optimizations) — banked refinements
 - Container ELEMENTS still malloc (option-A): strings in arrays, array/map
