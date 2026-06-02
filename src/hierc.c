@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>
 
 #include "hier_rt_embed.h"   /* defines: static const char *HIER_RUNTIME */
 
@@ -1357,11 +1358,46 @@ static void parse_typedecl(Parser *ps) {
     g_nnewtypes++;
 }
 
+/* ------------------------------------------------ package/import headers
+ * `package`/`import` are contextual: they are only special as the leading
+ * identifier of a top-level item, so they remain ordinary identifiers
+ * everywhere else (no reserved words added). Stage A parses them and records
+ * the package name + imports; imports are not yet resolved (Stage B). */
+static const char *g_parsed_package = NULL;   /* package of the file just parsed (NULL = none) */
+typedef struct { const char *alias; const char *path; int line; } Import;
+static Import g_imports[128];
+static int    g_nimports = 0;
+
+static void parse_package_decl(Parser *ps) {
+    ps->p++;                                    /* consume the `package` identifier */
+    Tok *name = eat(ps, TK_IDENT, "a package name after `package`");
+    g_parsed_package = name->text;
+    accept(ps, TK_NEWLINE);
+}
+
+static void parse_import_decl(Parser *ps) {
+    Tok *kw = cur(ps);
+    ps->p++;                                    /* consume the `import` identifier */
+    const char *alias = NULL;
+    if (at(ps, TK_IDENT)) { alias = cur(ps)->text; ps->p++; }   /* optional alias */
+    Tok *path = eat(ps, TK_STR, "an import path string");
+    if (g_nimports < 128) {
+        g_imports[g_nimports].alias = alias;
+        g_imports[g_nimports].path  = path->text;
+        g_imports[g_nimports].line  = kw->line;
+        g_nimports++;
+    }
+    accept(ps, TK_NEWLINE);
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0 };
     ProcVec out = {0};
+    g_parsed_package = NULL;                     /* reset per file; set if a `package` decl is seen */
     while (!at(&ps, TK_EOF)) {
         if (accept(&ps, TK_NEWLINE)) continue;
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "package")) { parse_package_decl(&ps); continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "import"))  { parse_import_decl(&ps);  continue; }
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
@@ -4200,6 +4236,82 @@ static char *strip_ext(const char *path) {
     return xstrndup(path, strlen(path));
 }
 
+/* directory of a path: "proj/geom/point.hi" -> "proj/geom"; "main.hi" -> "." */
+static char *path_dir(const char *p) {
+    const char *slash = strrchr(p, '/');
+    return slash ? xstrndup(p, (size_t)(slash - p)) : xstrndup(".", 1);
+}
+/* last path component: "proj/geom" -> "geom"; "geom" -> "geom" */
+static const char *path_base(const char *p) {
+    const char *slash = strrchr(p, '/');
+    return slash ? slash + 1 : p;
+}
+/* leading `package <name>` of a token stream, or NULL if the file has none */
+static const char *detect_package(Tok *toks) {
+    int i = 0;
+    while (toks[i].kind == TK_NEWLINE) i++;
+    if (toks[i].kind == TK_IDENT && !strcmp(toks[i].text, "package") && toks[i + 1].kind == TK_IDENT)
+        return toks[i + 1].text;
+    return NULL;
+}
+static int pkg_file_cmp(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+/* Stage A: a file declaring `package` compiles its whole directory. Read every
+ * .hi in the entry's dir (sorted for determinism), require each to declare the
+ * same package and that the package name matches the directory, and merge their
+ * defs into one program. Imports are recorded but not resolved yet (Stage B). */
+static ProcVec compile_package(const char *entry, const char *pkgname) {
+    char *dir = path_dir(entry);
+    const char *base = path_base(dir);
+    if (strcmp(base, pkgname) != 0) {
+        fprintf(stderr, "hierc: package `%s` must live in a directory named `%s` (found `%s`)\n",
+                pkgname, pkgname, base);
+        exit(1);
+    }
+    DIR *d = opendir(dir);
+    if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
+    char *files[512]; int nf = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        const char *nm = de->d_name;
+        size_t L = strlen(nm);
+        if (L > 3 && !strcmp(nm + L - 3, ".hi")) {
+            if (nf >= 512) { fprintf(stderr, "hierc: too many files in package %s\n", dir); exit(1); }
+            files[nf++] = sfmt("%s/%s", dir, nm);
+        }
+    }
+    closedir(d);
+    if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
+    qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
+
+    ProcVec prog = {0};
+    for (int i = 0; i < nf; i++) {
+        g_srcname = files[i];
+        char *s = read_file(files[i]);
+        TokVec t = lex(s);
+        ProcVec pv = parse_program(t.v);
+        if (!g_parsed_package) {
+            fprintf(stderr, "hierc: %s is in package directory `%s` but has no `package` declaration\n",
+                    files[i], pkgname);
+            exit(1);
+        }
+        if (strcmp(g_parsed_package, pkgname) != 0) {
+            fprintf(stderr, "hierc: %s declares `package %s` but is in package `%s`\n",
+                    files[i], g_parsed_package, pkgname);
+            exit(1);
+        }
+        for (int j = 0; j < pv.n; j++) {
+            if (prog.n == prog.cap) {
+                prog.cap = prog.cap ? prog.cap * 2 : 8;
+                prog.v = (Proc **)realloc(prog.v, (size_t)prog.cap * sizeof(Proc *));
+            }
+            prog.v[prog.n++] = pv.v[j];
+        }
+    }
+    return prog;
+}
+
 int main(int argc, char **argv) {
     const char *input = NULL;
     const char *out   = NULL;
@@ -4224,7 +4336,9 @@ int main(int argc, char **argv) {
 
     char *src = read_file(input);
     TokVec toks = lex(src);
-    ProcVec prog = parse_program(toks.v);
+    const char *pkg = detect_package(toks.v);
+    ProcVec prog = pkg ? compile_package(input, pkg)   /* package: merge the whole directory */
+                       : parse_program(toks.v);        /* single file: unchanged */
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
 
