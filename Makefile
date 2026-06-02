@@ -63,6 +63,14 @@ bootstrap: hierc
 fixpoint: hierc
 	@sh compiler/fixpoint.sh
 
+# Soundness fuzzer: generate N random well-typed Hier programs, compile each
+# with hierc (reference, native) and hierc0 (native + ASan/UBSan), and assert
+# byte-identical output with no sanitizer fault. N defaults to 500; failing
+# programs are saved to fuzz/findings/. See fuzz/README.md.
+N ?= 500
+fuzz: hierc
+	@python3 fuzz/run.py $(N)
+
 image:
 	podman build -t hier-build -f podman/Dockerfile .
 
