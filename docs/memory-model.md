@@ -277,10 +277,20 @@ per-iteration transients eagerly instead of holding them to function return.
   map would close that; rare in practice.
 
 ### MM-6 (optimizations) — banked refinements
-- Container ELEMENTS still malloc (option-A): strings in arrays, array/map
-  values, map keys leak. Freeing them = push elements into the container's arena
-  + make container copy RECURSIVE (deep arena-aware). Biggest remaining win
-  (e.g. map keys were the 139MB residual in MM-3).
+- ✅ MM-6b (f1ff194): MAP KEYS now in the map's arena (sc(ar,k) in _put; struct/
+  tuple map fields deep-copy; struct_is_heap counts maps). Map memory fully O(1).
+- Remaining ELEMENT residuals (array string elements, map string VALUES):
+  option-A still leaks these. CLOSING THEM IS A DIFFERENT RISK CLASS — there is
+  no choke point like _put. Requires rewriting Arr_*_copy/_from/_slice from
+  shallow (memcpy element pointers) to RECURSIVE deep-copy: a per-element-type
+  copy loop (scalar memcpy / str scopy(ar,..) / nested array Arr_copy(ar,..) /
+  struct-element Struct_copy(ar,..) / option-result box copy), emitted only when
+  the element type is heap-bearing; plus push/literal element owner = the array's
+  arena (owner_arena_of) instead of 0; plus map _put scopy'ing str VALUES (and
+  Map_copy then deep-copies values, like keys). Verify carefully — a deep-copy
+  bug is a UAF in paths the self-compile may not cover; the fixpoint differential
+  catches order/content divergence. Diminishing returns: the bulk heap is already
+  O(1), so this is the long tail.
 - Struct/tuple CONSTRUCTION fields go to malloc (gen_store_args owner 0). Letting
   them inherit ctx.owner frees local construction (array-literal ELEMENTS must
   stay owner 0 — shallow Arr_copy needs immortal elements — so split the
