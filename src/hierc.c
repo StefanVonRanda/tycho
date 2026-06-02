@@ -616,6 +616,8 @@ struct Expr {
     TokKind  op;       /* E_BINOP */
     Expr    *lhs, *rhs;
     Expr   **args; int nargs;   /* E_CALL */
+    const char *pkg;   /* E_CALL: prefix of the package this call appears in ("" = main); used to resolve a package-local name */
+    const char *qual;  /* E_CALL: explicit qualifier of `pkg.name(...)` (the source ident, e.g. "geom"); NULL if unqualified */
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
@@ -670,6 +672,15 @@ static Tok *eat(Parser *ps, TokKind k, const char *what) {
 static int accept(Parser *ps, TokKind k) {
     if (at(ps, k)) { ps->p++; return 1; }
     return 0;
+}
+
+/* While parsing an imported package, every top-level def name and every
+ * user-type reference is prefixed with "<pkg>__" so distinct packages never
+ * collide in the one flat namespace. "" for the main/entry package and for
+ * single-file programs, which keeps their output byte-identical. */
+static const char *g_cur_pkg_prefix = "";
+static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty (main) */
+    return g_cur_pkg_prefix[0] ? sfmt("%s%s", g_cur_pkg_prefix, n) : (char *)n;
 }
 
 static Type parse_type(Parser *ps) {
@@ -729,12 +740,13 @@ static Type parse_type(Parser *ps) {
         if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
         return res_of(ok, err);
     }
-    if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
-        int sid = struct_find(t->text);
+    if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name (package-local: try the prefixed name) */
+        const char *nm = pkg_mangle(t->text);
+        int sid = struct_find(nm);
         if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }
-        int eid = enum_find(t->text);
+        int eid = enum_find(nm);
         if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
-        int nid = newtype_find(t->text);
+        int nid = newtype_find(nm);
         if (nid >= 0) { ps->p++; return NT_TYPE(nid); }
         die_at(t->line, "unknown type '%s'", t->text);
     }
@@ -865,6 +877,7 @@ static Expr *parse_primary(Parser *ps) {
             ps->p++;
             Expr *e = new_expr(E_CALL, t->line);
             e->sval = t->text;
+            e->pkg  = g_cur_pkg_prefix;   /* the package this call appears in; resolver tries <pkg>name first */
             int cap = 0;
             while (!at(ps, TK_RPAREN)) {
                 if (e->nargs == cap) {
@@ -920,9 +933,28 @@ static Expr *parse_postfix(Parser *ps) {
                 e = ti;
             } else {
                 Tok *f = eat(ps, TK_IDENT, "a field name or tuple index after '.'");
-                Expr *fe = new_expr(E_FIELD, t->line);
-                fe->lhs = e; fe->sval = f->text;
-                e = fe;
+                if (at(ps, TK_LPAREN) && e->kind == E_IDENT) {
+                    /* `pkg.name(args)` — a qualified call. hier has no methods, so a
+                     * field followed by `(` on a bare identifier is always a package
+                     * call; the qualifier resolves to a package prefix in the resolver. */
+                    ps->p++;
+                    Expr *c = new_expr(E_CALL, t->line);
+                    c->sval = f->text;
+                    c->qual = e->sval;            /* the qualifier ident, e.g. "geom" */
+                    c->pkg  = g_cur_pkg_prefix;
+                    int cap = 0;
+                    while (!at(ps, TK_RPAREN)) {
+                        if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)realloc(c->args, (size_t)cap * sizeof(Expr *)); }
+                        c->args[c->nargs++] = parse_expr(ps);
+                        if (!accept(ps, TK_COMMA)) break;
+                    }
+                    eat(ps, TK_RPAREN, "')'");
+                    e = c;
+                } else {
+                    Expr *fe = new_expr(E_FIELD, t->line);
+                    fe->lhs = e; fe->sval = f->text;
+                    e = fe;
+                }
             }
         } else break;
     }
@@ -1238,7 +1270,7 @@ static Proc *parse_fn(Parser *ps) {
 
     Proc *pr = (Proc *)xmalloc(sizeof(Proc));
     memset(pr, 0, sizeof *pr);
-    pr->name = nameT->text;
+    pr->name = pkg_mangle(nameT->text);
     pr->line = nameT->line;
 
     int cap = 0;
@@ -1280,7 +1312,7 @@ static void parse_struct(Parser *ps) {
     eat(ps, TK_INDENT, "an indented field list");
 
     StructDef *sd = &g_structs[g_nstructs];
-    sd->name = nameT->text;
+    sd->name = pkg_mangle(nameT->text);
     sd->nfields = 0;
     sd->line = nameT->line;
     g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
@@ -1312,7 +1344,7 @@ static void parse_enum(Parser *ps) {
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_INDENT, "an indented variant list");
     EnumDef *ed = &g_enums[g_nenums];
-    ed->name = nameT->text;
+    ed->name = pkg_mangle(nameT->text);
     ed->nvariants = 0;
     ed->line = nameT->line;
     g_nenums++;   /* register early so a variant payload can be this enum (recursion) */
@@ -1353,7 +1385,7 @@ static void parse_typedecl(Parser *ps) {
     if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL)
         die_at(nameT->line, "a newtype's underlying type must be int, float, string, or bool (got %s)", type_name(under));
     eat(ps, TK_NEWLINE, "newline");
-    g_newtypes[g_nnewtypes].name = nameT->text;
+    g_newtypes[g_nnewtypes].name = pkg_mangle(nameT->text);
     g_newtypes[g_nnewtypes].under = under;
     g_nnewtypes++;
 }
@@ -1388,6 +1420,24 @@ static void parse_import_decl(Parser *ps) {
         g_nimports++;
     }
     accept(ps, TK_NEWLINE);
+}
+
+/* Map a source qualifier (`geom` in `geom.add`) to its package prefix. An
+ * aliased import (`import g "math/geom"`) binds the alias to the package's real
+ * name (the path's last component); a plain `import "geom"` binds the name
+ * itself. Unknown qualifiers fall through to `<qualifier>__` and fail loudly at
+ * lookup if no such package was imported. */
+static char *pkg_prefix_for(const char *qualifier) {
+    const char *pkgname = qualifier;
+    for (int i = 0; i < g_nimports; i++) {
+        if (g_imports[i].alias && !strcmp(g_imports[i].alias, qualifier)) {
+            const char *p = g_imports[i].path;
+            const char *slash = strrchr(p, '/');
+            pkgname = slash ? slash + 1 : p;
+            break;
+        }
+    }
+    return sfmt("%s__", pkgname);
 }
 
 static ProcVec parse_program(Tok *toks) {
@@ -1631,6 +1681,21 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            /* Package resolution (Stage B): rewrite e->sval to the package-mangled
+             * name before any lookup. An explicit `pkg.name` (e->qual) MUST resolve
+             * in that package; an implicit name in an imported package (e->pkg) tries
+             * its own package first, else falls through to builtins/unprefixed. */
+            if (e->qual) {
+                char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
+                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0)
+                    e->sval = q;
+                else
+                    die_at(e->line, "package '%s' has no symbol '%s'", e->qual, e->sval);
+            } else if (e->pkg && e->pkg[0]) {
+                char *q = sfmt("%s%s", e->pkg, e->sval);
+                if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0)
+                    e->sval = q;
+            }
             /* a call whose name is a newtype wraps its underlying value: Meters(x)
              * with x : float -> Meters. Zero-cost; codegen is the identity. */
             int ntid = newtype_find(e->sval);
@@ -4241,11 +4306,6 @@ static char *path_dir(const char *p) {
     const char *slash = strrchr(p, '/');
     return slash ? xstrndup(p, (size_t)(slash - p)) : xstrndup(".", 1);
 }
-/* last path component: "proj/geom" -> "geom"; "geom" -> "geom" */
-static const char *path_base(const char *p) {
-    const char *slash = strrchr(p, '/');
-    return slash ? slash + 1 : p;
-}
 /* leading `package <name>` of a token stream, or NULL if the file has none */
 static const char *detect_package(Tok *toks) {
     int i = 0;
@@ -4257,18 +4317,35 @@ static const char *detect_package(Tok *toks) {
 static int pkg_file_cmp(const void *a, const void *b) {
     return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
-/* Stage A: a file declaring `package` compiles its whole directory. Read every
- * .hi in the entry's dir (sorted for determinism), require each to declare the
- * same package and that the package name matches the directory, and merge their
- * defs into one program. Imports are recorded but not resolved yet (Stage B). */
-static ProcVec compile_package(const char *entry, const char *pkgname) {
-    char *dir = path_dir(entry);
-    const char *base = path_base(dir);
-    if (strcmp(base, pkgname) != 0) {
-        fprintf(stderr, "hierc: package `%s` must live in a directory named `%s` (found `%s`)\n",
-                pkgname, pkgname, base);
-        exit(1);
-    }
+/* Import-graph traversal state. Packages are keyed by their canonical (realpath)
+ * directory so the same package reached two ways is compiled once, and a back
+ * edge to a package still being traversed is a cycle error. */
+static char *g_pkg_seen[256];   static int g_npkg_seen   = 0;   /* fully merged */
+static char *g_pkg_active[64];  static int g_npkg_active = 0;   /* on the current DFS path */
+
+static char *canon_dir(const char *dir) {
+    char *r = realpath(dir, NULL);
+    return r ? r : xstrndup(dir, strlen(dir));
+}
+
+/* Read+parse every .hi in `dir` as package `pkgname` (mangled with `prefix`,
+ * "" for the main package), append the defs to *prog, then recurse into this
+ * package's imports (paths relative to `dir`). Each imported package's name is
+ * the path's last component, and its files must declare exactly that — the
+ * dir-name match is structural. The main package's directory may be named
+ * anything (it is reached by the entry file, not by an import path). */
+static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, ProcVec *prog) {
+    char *key = canon_dir(dir);
+    for (int i = 0; i < g_npkg_active; i++)
+        if (!strcmp(g_pkg_active[i], key)) {
+            fprintf(stderr, "hierc: import cycle through package `%s` (%s)\n", pkgname, dir);
+            exit(1);
+        }
+    for (int i = 0; i < g_npkg_seen; i++)
+        if (!strcmp(g_pkg_seen[i], key)) { free(key); return; }   /* shared dep already merged */
+    if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
+    g_pkg_active[g_npkg_active++] = key;
+
     DIR *d = opendir(dir);
     if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
     char *files[512]; int nf = 0;
@@ -4285,30 +4362,52 @@ static ProcVec compile_package(const char *entry, const char *pkgname) {
     if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
     qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
 
-    ProcVec prog = {0};
+    int imp_lo = g_nimports;   /* imports added below belong to THIS package */
     for (int i = 0; i < nf; i++) {
         g_srcname = files[i];
+        g_cur_pkg_prefix = prefix;
         char *s = read_file(files[i]);
         TokVec t = lex(s);
         ProcVec pv = parse_program(t.v);
         if (!g_parsed_package) {
-            fprintf(stderr, "hierc: %s is in package directory `%s` but has no `package` declaration\n",
-                    files[i], pkgname);
+            fprintf(stderr, "hierc: %s is in package `%s` but has no `package` declaration\n", files[i], pkgname);
             exit(1);
         }
         if (strcmp(g_parsed_package, pkgname) != 0) {
-            fprintf(stderr, "hierc: %s declares `package %s` but is in package `%s`\n",
-                    files[i], g_parsed_package, pkgname);
+            fprintf(stderr, "hierc: %s declares `package %s` but is in package `%s`\n", files[i], g_parsed_package, pkgname);
             exit(1);
         }
         for (int j = 0; j < pv.n; j++) {
-            if (prog.n == prog.cap) {
-                prog.cap = prog.cap ? prog.cap * 2 : 8;
-                prog.v = (Proc **)realloc(prog.v, (size_t)prog.cap * sizeof(Proc *));
+            if (prog->n == prog->cap) {
+                prog->cap = prog->cap ? prog->cap * 2 : 8;
+                prog->v = (Proc **)realloc(prog->v, (size_t)prog->cap * sizeof(Proc *));
             }
-            prog.v[prog.n++] = pv.v[j];
+            prog->v[prog->n++] = pv.v[j];
         }
     }
+    int imp_hi = g_nimports;
+    g_cur_pkg_prefix = "";
+
+    /* recurse into this package's imports (still on the active path => cycles caught) */
+    for (int k = imp_lo; k < imp_hi; k++) {
+        const char *path = g_imports[k].path;
+        const char *slash = strrchr(path, '/');
+        const char *childname = slash ? slash + 1 : path;
+        char *childdir    = sfmt("%s/%s", dir, path);    /* relative to the importer */
+        char *childprefix = sfmt("%s__", childname);
+        merge_pkg(childdir, childname, childprefix, prog);
+    }
+
+    g_npkg_active--;                       /* pop the DFS path */
+    g_pkg_seen[g_npkg_seen++] = key;       /* mark merged */
+}
+
+/* Compile a package program: start at the entry file's package (prefix "") and
+ * follow the import graph. */
+static ProcVec compile_package(const char *entry, const char *pkgname) {
+    ProcVec prog = {0};
+    char *dir = path_dir(entry);
+    merge_pkg(dir, pkgname, "", &prog);
     return prog;
 }
 
