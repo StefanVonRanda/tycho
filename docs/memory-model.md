@@ -365,9 +365,25 @@ per-iteration transients eagerly instead of holding them to function return.
   optimization) for the rarest element type. Deliberately deferred (low reward,
   highest blast radius); the bulk heap is O(1) and every common element type is
   closed.
-- Inout container home-arena threading (a `_ina_`-style extra param) so pushes
-  into inout arrays/maps arena-free instead of malloc-leak (owner_arena_of
-  inout -> "0" today).
+- ✅ MM-6g (commit pending): INOUT CONTAINER HOME-ARENA THREADING. An
+  `inout [T]` / `inout {…}` / `inout soa` param now carries a hidden
+  `Arena* _ina_<name>` (its array/map/soa lives in the CALLER's arena), and
+  `owner_arena_of` returns `_ina_<name>` for it instead of `"0"` — so a `push`/
+  grow/alloc into an inout container lands in the caller's arena and frees with
+  it, instead of malloc-leaking. Mechanism: `gen_params` appends the hidden param
+  after each inout container param (`inout_container_param`); the call site
+  (`gen_call_args` + `arg_ina`) interleaves the matching arena after each
+  `&container` arg — the place's caller-side home via `owner_arena_of` (a local →
+  its block/scope arena; a chained inout → the caller's own `_ina_`, threading the
+  true home up the chain). Param-side and call-side use the IDENTICAL predicate,
+  so a mismatch is a C arity error the fixpoint catches (fail-closed). Inout
+  scalars/structs get no `_ina_` (stay malloc — an inout struct's field-container
+  is a smaller separate residual). SOUND: the threaded arena is the container's
+  true home, which outlives the call. Verified: fixpoint B≡C (6468 → 6577 lines C;
+  hierc0 threads `inout [Token]`/`[string]`/`[Expr]` through lexing/parsing/codegen,
+  so the self-compile exercises it pervasively) + 57/57 ASan/UBSan + a callee
+  filling a caller-owned per-iteration `inout [int]` 200k×200: **798MB → 1.4MB
+  (~582×)** (bench/inout_fill.hi, now a perf guard).
 - move-on-last-use / borrow elision (output-invisible; guard by RSS/throughput).
 
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**

@@ -1297,6 +1297,59 @@ fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
         i = i + 1
     return out
 
+# If `arg` is an inout container argument (`&place` where place is an array/map/
+# soa), the extra hidden arena to pass after it: the place's home arena in the
+# CALLER (a local -> its scope/block arena; a chained inout -> the caller's own
+# _ina_, threading the true home up the chain). "" otherwise. Mirrors
+# inout_container_param exactly so call arity matches the callee signature.
+fn arg_ina(arg: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+    match arg:
+        EAddr(inner):
+            b := base_ty(type_of(inner, names, types, ctx))
+            if is_array(b) or is_map(b) or is_soa(b):
+                return ", " + owner_arena_of(inner, names, types, ctx)
+            return ""
+        EVar(n):
+            return ""
+        EInt(t):
+            return ""
+        EFloat(f):
+            return ""
+        EStr(s):
+            return ""
+        EBin(o, l, r):
+            return ""
+        ECall(nm, a):
+            return ""
+        EField(b, f):
+            return ""
+        EIndex(b, i):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+
+# Like gen_args, but after each inout-container arg, interleave its home arena
+# (the hidden _ina_ param) — kept positionally in sync with gen_params.
+fn gen_call_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+    out := ""
+    i := 0
+    for i < len(args):
+        if i > 0:
+            out = out + ", "
+        out = out + gen_expr(args[i], names, types, ctx) + arg_ina(args[i], names, types, ctx)
+        i = i + 1
+    return out
+
 # Like gen_args, but for CONSTRUCTION (struct/enum/array literal): the argument
 # value is STORED in the aggregate and outlives the expression, so a heap place
 # argument must be deep-copied for value semantics — else the stored field
@@ -1600,7 +1653,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
                 return "(" + name + "){" + gen_store_args_owner(args, names, types, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return name + "(" + ctx.owner + ")"
-            return name + "(" + ctx.owner + ", " + gen_args(args, names, types, ctx) + ")"
+            return name + "(" + ctx.owner + ", " + gen_call_args(args, names, types, ctx) + ")"
 
 # Root variable of a place expression (`s.items[i]` -> `s`), or "" if not a
 # place rooted in a variable. Used to find which arena a container lives in.
@@ -1651,11 +1704,11 @@ fn var_index(names: [string], name: string) -> int:
     return -1
 
 # The arena a container place lives in (so a push/grow lands where the container
-# itself lives). inout-param container: malloc ("0") — its true home is further
-# up the inout chain than _parent, which hierc0 doesn't thread (the C compiler's
-# _ina_ param); malloc is immortal so it never dangles. A var declared in the
-# current block (index >= block_base): the block arena, freed at block exit / per
-# loop iteration. An outer-scope local: the function _scope (outlives all blocks).
+# itself lives). inout-param array/map/soa: its home arena, threaded as the hidden
+# `_ina_<name>` param (so the grow frees with the caller's container instead of
+# malloc-leaking). inout scalar/struct: malloc ("0", immortal — no _ina_). A var
+# declared in the current block (index >= block_base): the block arena, freed at
+# block exit / per loop iteration. An outer-scope local: the function _scope.
 # Does an array of element type `et` deep-copy its elements (vs shallow memcpy)?
 # True for heap element types whose copy fn is reachable from Arr_*_from:
 #   - str  -> scopy (preamble; always available).
@@ -1700,8 +1753,11 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string
     rv := root_var(e)
     if rv == "":
         return "&_scope"
-    if is_inout(var_type(names, types, rv)):
-        return "0"
+    rvt := var_type(names, types, rv)
+    if is_inout(rvt):
+        if inout_container_param(rvt):            # its home arena is threaded as a hidden param
+            return "_ina_" + rv
+        return "0"                                # inout scalar / struct: no _ina_ (malloc, immortal)
     if var_index(names, rv) >= ctx.block_base:
         return cur_arena(ctx)
     return "&_scope"
@@ -2022,11 +2078,23 @@ fn ret_cty(ctx: Ctx, ret: string) -> string:
         return "void "
     return cty(ctx, ret)
 
+# An inout array/map/soa param: its container's home arena is the CALLER's, so
+# the callee receives it as a hidden `Arena* _ina_<name>` param and grows/allocs
+# into it (instead of malloc-leaking). Inout scalars and inout structs do NOT get
+# one (a struct's field-container is a smaller separate residual, still malloc).
+fn inout_container_param(ptype: string) -> bool:
+    if not is_inout(ptype):
+        return false
+    b := base_ty(ptype)
+    return is_array(b) or is_map(b) or is_soa(b)
+
 fn gen_params(f: Func, ctx: Ctx) -> string:
     out := "Arena* _parent"                       # every fn threads the caller's arena
     i := 0
     for i < len(f.params):
         out = out + ", " + cty(ctx, f.ptypes[i]) + f.params[i]
+        if inout_container_param(f.ptypes[i]):    # + the container's home arena
+            out = out + ", Arena* _ina_" + f.params[i]
         i = i + 1
     return out
 
