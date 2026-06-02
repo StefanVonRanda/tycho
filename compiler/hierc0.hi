@@ -1459,7 +1459,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             out := f + "_new()"
             j := 0
             for j < len(keys):
-                out = f + "_set(" + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_rhs(vals[j], names, types, with_owner(ctx, "0")) + ")"
+                out = f + "_set(" + ctx.owner + ", " + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_rhs(vals[j], names, types, with_owner(ctx, "0")) + ")"
                 j = j + 1
             return out
         ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
@@ -1523,13 +1523,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             if name == "split":
                 return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_set":
-                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_rhs(args[2], names, types, with_owner(ctx, "0")) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_rhs(args[2], names, types, with_owner(ctx, "0")) + ")"
             if name == "map_get":
                 return mfam(type_of(args[0], names, types, ctx)) + "_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
             if name == "keys":
                 return mfam(type_of(args[0], names, types, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
             if name == "map_del":
-                return mfam(type_of(args[0], names, types, ctx)) + "_del(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, ctx)) + "_del(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "map_has":
                 return mfam(type_of(args[0], names, types, ctx)) + "_has(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
             if name == "chr":
@@ -1686,7 +1686,7 @@ fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
     if is_array(rt):
         return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(rt):
-        return mfam(rt) + "_copy(" + code + ")"
+        return mfam(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(rt):
         return "Tup_" + tup_suffix(rt) + "_copy(" + code + ")"
     if is_struct(ctx, rt) and struct_is_heap(ctx, rt):
@@ -1704,7 +1704,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
         return ty + "_copy(" + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
-        return mfam(ty) + "_copy(" + code + ")"
+        return mfam(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
         return "Tup_" + tup_suffix(ty) + "_copy(" + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
@@ -1761,7 +1761,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 # from accums). Locals and inout map params still grow in place.
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
-                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(&" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
+                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types) + ", &" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
                     return deflt
                 EInt(t):
                     return deflt
@@ -2512,15 +2512,15 @@ fn gen_map_fns(v: string) -> string:
     M := "Map_str_" + v
     f := "map_str_" + v
     s := "ms_" + v
-    out := "static " + M + " " + s + "_cap(long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = malloc(sizeof(char*) * c); m.vals = malloc(sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
-    out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0); }\n"
+    out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
+    out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
     out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
-    out = out + "static void " + f + "_put(" + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(0, k, \"\"); m->len++; } m->vals[t] = val; }\n"
-    out = out + "static " + M + " " + f + "_copy(" + M + " m) { " + M + " r = " + s + "_cap(m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static " + M + " " + f + "_set(" + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(m); " + f + "_put(&r, k, val); return r; }\n"
+    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(0, k, \"\"); m->len++; } m->vals[t] = val; }\n"
+    out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
+    out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
-    out = out + "static " + M + " " + f + "_del(" + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(&r, m.keys[i], m.vals[i]); return r; }\n"
+    out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static Arr_str " + f + "_keys(Arena* ar, " + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(ar, &r, m.keys[i]); return r; }\n"
     # structural equality: same length, and every live key in a present in b with
     # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
