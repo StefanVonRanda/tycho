@@ -2383,7 +2383,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 bt := types
                 j := 0
                 for j < len(binds):
-                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + cp_typed(ctx, pts[j], scu + "->" + vname + "_" + str(j)) + ";\n"
+                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + cp_typed(ctx, pts[j], efield(scu, vname, j)) + ";\n"
                     push(bn, binds[j])
                     push(bt, pts[j])
                     j = j + 1
@@ -2794,23 +2794,35 @@ fn gen_enum_copy(ed: EnumDef, ctx: Ctx) -> string:
             out = out + "    if (s->tag == " + str(i) + ") {\n"
             j := 0
             for j < len(v.ptypes):
-                fld := v.name + "_" + str(j)
-                out = out + "        r->" + fld + " = " + cp_field(ctx, v.ptypes[j], "ar", "s->" + fld) + ";\n"
+                out = out + "        " + efield("r", v.name, j) + " = " + cp_field(ctx, v.ptypes[j], "ar", efield("s", v.name, j)) + ";\n"
                 j = j + 1
             out = out + "    }\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
+# C lvalue for variant `vn`'s payload field j of enum node `base` (a pointer).
+# The compact layout nests payloads in a union (one struct per payload-bearing
+# variant), so a node is only as big as its ACTIVE variant -- not the flat sum of
+# every variant's fields. (Tree node 24B; the compiler's Expr/Stmt shrink ~5-8x.)
+fn efield(base: string, vn: string, j: int) -> string:
+    return base + "->u." + vn + ".f" + str(j)
+
 fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
     out := "struct " + ed.name + " {\n    int tag;\n"
+    members := ""
     i := 0
     for i < len(ed.variants):
         v := ed.variants[i]
-        j := 0
-        for j < len(v.ptypes):
-            out = out + "    " + cty(ctx, v.ptypes[j]) + v.name + "_" + str(j) + ";\n"
-            j = j + 1
+        if len(v.ptypes) > 0:
+            members = members + "        struct {"
+            j := 0
+            for j < len(v.ptypes):
+                members = members + " " + cty(ctx, v.ptypes[j]) + "f" + str(j) + ";"
+                j = j + 1
+            members = members + " } " + v.name + ";\n"
         i = i + 1
+    if members != "":
+        out = out + "    union {\n" + members + "    } u;\n"
     return out + "};\n"
 
 fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
@@ -2828,7 +2840,7 @@ fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
         out = out + "    n->tag = " + str(i) + ";\n"
         j = 0
         for j < len(v.ptypes):
-            out = out + "    n->" + v.name + "_" + str(j) + " = f" + str(j) + ";\n"
+            out = out + "    " + efield("n", v.name, j) + " = f" + str(j) + ";\n"
             j = j + 1
         out = out + "    return n;\n}\n"
         i = i + 1
@@ -2848,8 +2860,7 @@ fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
             for j < len(v.ptypes):
                 if j > 0:
                     out = out + " && "
-                fld := v.name + "_" + str(j)
-                out = out + eq_field(ctx, v.ptypes[j], "a->" + fld, "b->" + fld)
+                out = out + eq_field(ctx, v.ptypes[j], efield("a", v.name, j), efield("b", v.name, j))
                 j = j + 1
         out = out + ";\n"
         i = i + 1
