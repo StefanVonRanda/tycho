@@ -1377,8 +1377,8 @@ static ProcVec parse_program(Tok *toks) {
 typedef struct {
     const char *name;
     Type        ret;
-    Type        params[8];
-    int         inout[8];   /* per-param: is it an inout (by-pointer) param? */
+    Type        params[16];
+    int         inout[16];   /* per-param: is it an inout (by-pointer) param? */
     int         nparams;
     int         builtin;
 } Sig;
@@ -2138,7 +2138,7 @@ static void resolve_program(ProcVec *prog) {
         if (g_nsigs >= 256) die_at(pr->line, "too many functions (max 256 including builtins)");
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
-        if (pr->nparams > 8) die_at(pr->line, "too many parameters (max 8)");
+        if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
@@ -2224,7 +2224,7 @@ static int cv_in_parent(const char *name) {
 /* names of the current proc's inout params: in the generated body they are
  * C pointers (T *h_x), so every read/lvalue use derefs as (*h_x). Reset per
  * proc; a proc has at most 8 params. */
-static const char *g_inout[8];
+static const char *g_inout[16];
 static int g_ninout = 0;
 static int is_inout_param(const char *name) {
     for (int i = 0; i < g_ninout; i++)
@@ -2241,7 +2241,7 @@ static int is_inout_param(const char *name) {
  * any param. This makes explicit the "NULL = a param" intent the cv_arena scheme
  * documents but no longer enforces (params are tracked as same-arena _scope
  * locals, which otherwise look movable). Reset per proc. */
-static const char *g_param[8];
+static const char *g_param[16];
 static int g_nparam = 0;
 static int is_param(const char *name) {
     for (int i = 0; i < g_nparam; i++)
@@ -2255,7 +2255,7 @@ static int is_param(const char *name) {
  * into THAT arena — the caller's, where the value lives — not the callee's
  * _scope. Non-heap inout (int/bool/pure struct) never allocates, so it has no
  * arena param. Populated per proc alongside g_inout. */
-static const char *g_heap_inout[8];
+static const char *g_heap_inout[16];
 static int g_nheap_inout = 0;
 static int is_heap_inout_param(const char *name) {
     for (int i = 0; i < g_nheap_inout; i++)

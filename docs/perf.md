@@ -223,6 +223,25 @@ model.
 > OOB and negative indices still `exit(1)` with the bounds error). Result: the
 > hierc-built A self-compile **126 → 75 ms (~1.7×)**; `make test` 58 byte-
 > identical + ASan, fixpoint B≡C, `tests/str_index.hi` guards it with hand-
-> verifiable output. After both fixes the remaining self-compile cost is genuinely
-> diffuse `memcpy`/`malloc` from value-semantic copies
-> (`compute_movables`/`type_of`/`sig_ret` each <8%, no dominant function).
+> verifiable output. After both fixes the self-compile cost looked diffuse
+> `memcpy`/`malloc` from value-semantic copies — but that was a profiler blind
+> spot, not the truth.
+>
+> **The "diffuse floor" was actually one thing: `Ctx` reconstruction (now fixed).**
+> Improving the sampler's caller attribution (saved-RBP-chain walk, so libc leaves
+> like `malloc` are blamed on the hier function that called them) dropped the
+> unattributed "?" from ~75% to ~13% and revealed the real floor: **`with_owner`
+> (25.7%) + `enter_block` (11.2%) = ~37%** was `Ctx` *reconstruction*. `with_owner`
+> is called just to change the `owner` string, but the returned `Ctx` escapes, so
+> value semantics deep-copied **every** field — including the large, parse-
+> invariant `sigs`/`structs`/`enums` — on every owner/depth change. hierc never
+> had this because it threads `arena` as a plain parameter. **Fix:** split the
+> immutable parse data into a `Decls` struct built once and threaded read-only
+> (`dc`), never reconstructed; `Ctx` keeps only the 7 mutable per-scope/per-fn
+> fields, so `with_owner`/`enter_block` rebuild a tiny struct. Threaded `dc`
+> through all 67 `ctx`-taking functions (this pushed `gen_match_optres` to 9
+> params, so hierc's fixed `Sig` param cap was raised 8→16; hierc0 uses dynamic
+> arrays). Result: **B self-hosted self-compile 33.5 → 22.7 ms (~1.48×)**, with
+> `with_owner`/`enter_block` gone from the profile; fixpoint B≡C + 58 tests + fuzz
+> green. The new top is genuine codegen logic (`type_of` ~13%, `gen_expr` ~11%,
+> `compute_movables` ~7%, `sig_ret` ~5%) — a smaller, more-diffuse next layer.

@@ -316,12 +316,14 @@ struct EnumDef:
 # Read-only typing/codegen context, threaded by value: function return types,
 # struct layouts, and enum definitions. (The mutable per-block var env stays as
 # the separate names/types arrays.) This is the `Ctx` docs/bootstrap.md wanted.
-struct Ctx:
-    sigs: [Sig]
-    structs: [StructDef]
-    enums: [EnumDef]
-    ntnames: [string]         # newtype names, parallel to ntunder
-    ntunder: [string]         # each newtype's underlying type
+struct Decls:                 # immutable after parse — threaded read-only as `dc`,
+    sigs: [Sig]               # NEVER reconstructed, so its (large) arrays are never
+    structs: [StructDef]      # deep-copied per scope change. The old Ctx kept these
+    enums: [EnumDef]          # fields, so with_owner/enter_block deep-copied all of
+    ntnames: [string]         # sigs/structs/enums on every owner/depth change (~37%
+    ntunder: [string]         # of self-compile). hierc threads `arena` the same way.
+
+struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
     saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
     rettype: string           # current func's Hier return type (for the return-slot _scope free)
@@ -915,56 +917,56 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
 # mutable per-block var env is the names/types arrays; function return types
 # and struct layouts come from the read-only `ctx`.
 
-fn is_enum(ctx: Ctx, name: string) -> bool:
+fn is_enum(dc: Decls, ctx: Ctx, name: string) -> bool:
     i := 0
-    for i < len(ctx.enums):
-        if ctx.enums[i].name == name:
+    for i < len(dc.enums):
+        if dc.enums[i].name == name:
             return true
         i = i + 1
     return false
 
-fn is_variant(ctx: Ctx, name: string) -> bool:
+fn is_variant(dc: Decls, ctx: Ctx, name: string) -> bool:
     i := 0
-    for i < len(ctx.enums):
+    for i < len(dc.enums):
         j := 0
-        for j < len(ctx.enums[i].variants):
-            if ctx.enums[i].variants[j].name == name:
+        for j < len(dc.enums[i].variants):
+            if dc.enums[i].variants[j].name == name:
                 return true
             j = j + 1
         i = i + 1
     return false
 
-fn variant_enum(ctx: Ctx, vname: string) -> string:
+fn variant_enum(dc: Decls, ctx: Ctx, vname: string) -> string:
     i := 0
-    for i < len(ctx.enums):
+    for i < len(dc.enums):
         j := 0
-        for j < len(ctx.enums[i].variants):
-            if ctx.enums[i].variants[j].name == vname:
-                return ctx.enums[i].name
+        for j < len(dc.enums[i].variants):
+            if dc.enums[i].variants[j].name == vname:
+                return dc.enums[i].name
             j = j + 1
         i = i + 1
     die("type: unknown variant")
     return "int"
 
-fn variant_tag(ctx: Ctx, vname: string) -> int:
+fn variant_tag(dc: Decls, ctx: Ctx, vname: string) -> int:
     i := 0
-    for i < len(ctx.enums):
+    for i < len(dc.enums):
         j := 0
-        for j < len(ctx.enums[i].variants):
-            if ctx.enums[i].variants[j].name == vname:
+        for j < len(dc.enums[i].variants):
+            if dc.enums[i].variants[j].name == vname:
                 return j
             j = j + 1
         i = i + 1
     die("type: unknown variant")
     return 0
 
-fn variant_ptypes(ctx: Ctx, vname: string) -> [string]:
+fn variant_ptypes(dc: Decls, ctx: Ctx, vname: string) -> [string]:
     i := 0
-    for i < len(ctx.enums):
+    for i < len(dc.enums):
         j := 0
-        for j < len(ctx.enums[i].variants):
-            if ctx.enums[i].variants[j].name == vname:
-                return ctx.enums[i].variants[j].ptypes
+        for j < len(dc.enums[i].variants):
+            if dc.enums[i].variants[j].name == vname:
+                return dc.enums[i].variants[j].ptypes
             j = j + 1
         i = i + 1
     die("type: unknown variant")
@@ -1104,27 +1106,27 @@ fn mangle(ty: string) -> string:
 
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
 # the C compiler already did), so codegen resolves them to the underlying type.
-fn is_newtype(ctx: Ctx, name: string) -> bool:
+fn is_newtype(dc: Decls, ctx: Ctx, name: string) -> bool:
     i := 0
-    for i < len(ctx.ntnames):
-        if ctx.ntnames[i] == name:
+    for i < len(dc.ntnames):
+        if dc.ntnames[i] == name:
             return true
         i = i + 1
     return false
 
-fn resolve_nt(ctx: Ctx, ty: string) -> string:
+fn resolve_nt(dc: Decls, ctx: Ctx, ty: string) -> string:
     i := 0
-    for i < len(ctx.ntnames):
-        if ctx.ntnames[i] == ty:
-            return resolve_nt(ctx, ctx.ntunder[i])
+    for i < len(dc.ntnames):
+        if dc.ntnames[i] == ty:
+            return resolve_nt(dc, ctx, dc.ntunder[i])
         i = i + 1
     return ty
 
-fn cty(ctx: Ctx, ty: string) -> string:
-    if is_newtype(ctx, ty):
-        return cty(ctx, resolve_nt(ctx, ty))
+fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
+    if is_newtype(dc, ctx, ty):
+        return cty(dc, ctx, resolve_nt(dc, ctx, ty))
     if is_inout(ty):                              # inout T -> pointer to T's C type
-        inner := cty(ctx, base_ty(ty))           # ends with a space
+        inner := cty(dc, ctx, base_ty(ty))           # ends with a space
         return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
         return "long "
@@ -1146,7 +1148,7 @@ fn cty(ctx: Ctx, ty: string) -> string:
         return "Tup_" + tup_suffix(ty) + " "
     if is_soa(ty):                                # soa [Struct] -> Soa_Struct
         return "Soa_" + soa_struct(ty) + " "
-    if is_enum(ctx, ty):                          # enum value -> pointer to node
+    if is_enum(dc, ctx, ty):                          # enum value -> pointer to node
         return ty + "* "
     return ty + " "                              # struct type: its own typedef
 
@@ -1159,22 +1161,22 @@ fn var_type(names: [string], types: [string], name: string) -> string:
     die("type: unknown variable")
     return "int"
 
-fn is_struct(ctx: Ctx, name: string) -> bool:
+fn is_struct(dc: Decls, ctx: Ctx, name: string) -> bool:
     i := 0
-    for i < len(ctx.structs):
-        if ctx.structs[i].name == name:
+    for i < len(dc.structs):
+        if dc.structs[i].name == name:
             return true
         i = i + 1
     return false
 
-fn field_type(ctx: Ctx, sname: string, fld: string) -> string:
+fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
     i := 0
-    for i < len(ctx.structs):
-        if ctx.structs[i].name == sname:
+    for i < len(dc.structs):
+        if dc.structs[i].name == sname:
             j := 0
-            for j < len(ctx.structs[i].fields):
-                if ctx.structs[i].fields[j].name == fld:
-                    return ctx.structs[i].fields[j].ty
+            for j < len(dc.structs[i].fields):
+                if dc.structs[i].fields[j].name == fld:
+                    return dc.structs[i].fields[j].ty
                 j = j + 1
             die("type: no such field")
         i = i + 1
@@ -1184,13 +1186,13 @@ fn field_type(ctx: Ctx, sname: string, fld: string) -> string:
 # A struct is "heap-bearing" if any field owns heap memory (a string, an array,
 # or a nested heap-bearing struct) and so needs a deep copy on value binding.
 # Enum fields are immutable pointers — shared sharing is observationally safe.
-fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
+fn struct_is_heap(dc: Decls, ctx: Ctx, sname: string) -> bool:
     i := 0
-    for i < len(ctx.structs):
-        if ctx.structs[i].name == sname:
+    for i < len(dc.structs):
+        if dc.structs[i].name == sname:
             j := 0
-            for j < len(ctx.structs[i].fields):
-                ft := ctx.structs[i].fields[j].ty
+            for j < len(dc.structs[i].fields):
+                ft := dc.structs[i].fields[j].ty
                 if ft == "str":
                     return true
                 if is_array(ft):
@@ -1199,14 +1201,14 @@ fn struct_is_heap(ctx: Ctx, sname: string) -> bool:
                     return true
                 if is_map(ft):                   # a map field owns its table (keys now arena-allocated)
                     return true
-                if is_struct(ctx, ft) and struct_is_heap(ctx, ft):
+                if is_struct(dc, ctx, ft) and struct_is_heap(dc, ctx, ft):
                     return true
                 j = j + 1
             return false
         i = i + 1
     return false
 
-fn sig_ret(ctx: Ctx, name: string) -> string:
+fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     if name == "str":
         return "str"
     if name == "substr":
@@ -1241,21 +1243,21 @@ fn sig_ret(ctx: Ctx, name: string) -> string:
         return "int"
     if name == "input":
         return "str"
-    if is_newtype(ctx, name):                     # X(v) constructor -> the newtype
+    if is_newtype(dc, ctx, name):                     # X(v) constructor -> the newtype
         return name
-    if is_variant(ctx, name):                     # enum construction yields its enum
-        return variant_enum(ctx, name)
-    if is_struct(ctx, name):                      # construction yields the struct
+    if is_variant(dc, ctx, name):                     # enum construction yields its enum
+        return variant_enum(dc, ctx, name)
+    if is_struct(dc, ctx, name):                      # construction yields the struct
         return name
     i := 0
-    for i < len(ctx.sigs):
-        if ctx.sigs[i].name == name:
-            return ctx.sigs[i].ret
+    for i < len(dc.sigs):
+        if dc.sigs[i].name == name:
+            return dc.sigs[i].ret
         i = i + 1
     die("type: unknown function")
     return "int"
 
-fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
             return "int"
@@ -1268,24 +1270,24 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EVar(name):
             if name == "None":
                 return "Option()"
-            if is_variant(ctx, name):            # bare no-payload variant (e.g. Green)
-                return variant_enum(ctx, name)
+            if is_variant(dc, ctx, name):            # bare no-payload variant (e.g. Green)
+                return variant_enum(dc, ctx, name)
             vt := base_ty(var_type(names, types, name))
-            return resolve_nt(ctx, vt)
+            return resolve_nt(dc, ctx, vt)
         EField(base, fld):
-            bt := type_of(base, names, types, ctx)
+            bt := type_of(base, names, types, dc, ctx)
             if is_tuple(bt):                      # tuple index t.0 -> the i-th part type
                 return tuple_parts(bt)[fld[0] - 48]
-            return resolve_nt(ctx, field_type(ctx, bt, fld))
+            return resolve_nt(dc, ctx, field_type(dc, ctx, bt, fld))
         EIndex(base, idx):
-            bt := type_of(base, names, types, ctx)
+            bt := type_of(base, names, types, dc, ctx)
             if bt == "str":
                 return "int"                      # s[i] is the byte value (ord)
             if is_soa(bt):
                 return soa_struct(bt)             # soa element -> the struct
             return substr(bt, 1, len(bt) - 1)     # else array element type
         EArrLit(elems):
-            return "[" + type_of(elems[0], names, types, ctx) + "]"
+            return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
         EArrEmpty(ety):
             if is_soa(ety):                       # `soa []Struct` carries the full soa type
                 return ety
@@ -1293,23 +1295,23 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EMapEmpty(kty, vty):
             return "{" + kty + ":" + vty + "}"
         EMapLit(keys, vals):
-            return "{str:" + type_of(vals[0], names, types, ctx) + "}"
+            return "{str:" + type_of(vals[0], names, types, dc, ctx) + "}"
         ETuple(elems):
             out := "("
             j := 0
             for j < len(elems):
                 if j > 0:
                     out = out + ","
-                out = out + type_of(elems[j], names, types, ctx)
+                out = out + type_of(elems[j], names, types, dc, ctx)
                 j = j + 1
             return out + ")"
         ESlice(base, lo, hi):
-            return type_of(base, names, types, ctx)   # same array type
+            return type_of(base, names, types, dc, ctx)   # same array type
         EAddr(inner):
-            return type_of(inner, names, types, ctx)
+            return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r):
-            lt := type_of(l, names, types, ctx)
-            rt := type_of(r, names, types, ctx)
+            lt := type_of(l, names, types, dc, ctx)
+            rt := type_of(r, names, types, dc, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
                 return "str"                      # str + char appends one byte
             if (op == "+" or op == "-") and (lt == "char" or rt == "char"):
@@ -1321,24 +1323,24 @@ fn type_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
             return "int"                          # comparisons, &&, || -> int (bool)
         ECall(name, args):
             if name == "map_set" or name == "map_del":   # return the first arg's map type
-                return type_of(args[0], names, types, ctx)
+                return type_of(args[0], names, types, dc, ctx)
             if name == "map_get":                 # returns the map's value type
-                return map_val(type_of(args[0], names, types, ctx))
+                return map_val(type_of(args[0], names, types, dc, ctx))
             if name == "Some":
-                return "Option(" + type_of(args[0], names, types, ctx) + ")"
+                return "Option(" + type_of(args[0], names, types, dc, ctx) + ")"
             if name == "Ok":
-                return "Result(" + type_of(args[0], names, types, ctx) + ",)"
+                return "Result(" + type_of(args[0], names, types, dc, ctx) + ",)"
             if name == "Err":
-                return "Result(," + type_of(args[0], names, types, ctx) + ")"
-            return resolve_nt(ctx, sig_ret(ctx, name))
+                return "Result(," + type_of(args[0], names, types, dc, ctx) + ")"
+            return resolve_nt(dc, ctx, sig_ret(dc, ctx, name))
 
-fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_expr(args[i], names, types, ctx)
+        out = out + gen_expr(args[i], names, types, dc, ctx)
         i = i + 1
     return out
 
@@ -1347,12 +1349,12 @@ fn gen_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
 # CALLER (a local -> its scope/block arena; a chained inout -> the caller's own
 # _ina_, threading the true home up the chain). "" otherwise. Mirrors
 # inout_container_param exactly so call arity matches the callee signature.
-fn arg_ina(arg: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match arg:
         EAddr(inner):
-            b := base_ty(type_of(inner, names, types, ctx))
-            if is_array(b) or is_map(b) or is_soa(b) or (is_struct(ctx, b) and struct_is_heap(ctx, b)):   # mirrors inout_container_param
-                return ", " + owner_arena_of(inner, names, types, ctx)
+            b := base_ty(type_of(inner, names, types, dc, ctx))
+            if is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b)):   # mirrors inout_container_param
+                return ", " + owner_arena_of(inner, names, types, dc, ctx)
             return ""
         EVar(n):
             return ""
@@ -1387,13 +1389,13 @@ fn arg_ina(arg: Expr, names: [string], types: [string], ctx: Ctx) -> string:
 
 # Like gen_args, but after each inout-container arg, interleave its home arena
 # (the hidden _ina_ param) — kept positionally in sync with gen_params.
-fn gen_call_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+fn gen_call_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_expr(args[i], names, types, ctx) + arg_ina(args[i], names, types, ctx)
+        out = out + gen_expr(args[i], names, types, dc, ctx) + arg_ina(args[i], names, types, dc, ctx)
         i = i + 1
     return out
 
@@ -1405,38 +1407,38 @@ fn gen_call_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> st
 # copies only is_place heap args; fresh values / scalars / strings pass through.
 # Mirrors the tuple path (gen_rhs per element) and the C compiler's per-field
 # copy_into. (Found by tests/value_semantics.hi probe 3.)
-fn gen_store_args(args: [Expr], names: [string], types: [string], ctx: Ctx) -> string:
+fn gen_store_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     # Values STORED into a container (array-literal / struct / enum / tuple
     # fields) must be malloc'd (owner "0"), not built in the ambient owner: a
     # construction inside a `return` expr has owner=_parent, and the constructed
     # container would then hold _parent-arena string pointers that dangle once the
     # caller's scope frees. Forcing "0" keeps stored strings immortal. (Outside a
     # return, owner is already "0", so this is a no-op there.)
-    return gen_store_args_owner(args, names, types, ctx, "0")
+    return gen_store_args_owner(args, names, types, dc, ctx, "0")
 
 # Like gen_store_args but with an explicit owner arena for the stored values.
 # Array literals of a deep-copied element type pass ctx.owner (the array's home
 # arena) so element temporaries are freed at scope instead of leaking; struct/
 # enum/tuple construction keeps owner "0" (immortal) via gen_store_args.
-fn gen_store_args_owner(args: [Expr], names: [string], types: [string], ctx: Ctx, owner: string) -> string:
-    sctx := with_owner(ctx, owner)
+fn gen_store_args_owner(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx, owner: string) -> string:
+    sctx := with_owner(dc, ctx, owner)
     out := ""
     i := 0
     for i < len(args):
         if i > 0:
             out = out + ", "
-        out = out + gen_rhs(args[i], names, types, sctx)
+        out = out + gen_rhs(args[i], names, types, dc, sctx)
         i = i + 1
     return out
 
 # index of field `fld` in struct `sname` (the soa buffer is f<index>).
-fn soa_field_index(ctx: Ctx, sname: string, fld: string) -> int:
+fn soa_field_index(dc: Decls, ctx: Ctx, sname: string, fld: string) -> int:
     si := 0
-    for si < len(ctx.structs):
-        if ctx.structs[si].name == sname:
+    for si < len(dc.structs):
+        if dc.structs[si].name == sname:
             j := 0
-            for j < len(ctx.structs[si].fields):
-                if ctx.structs[si].fields[j].name == fld:
+            for j < len(dc.structs[si].fields):
+                if dc.structs[si].fields[j].name == fld:
                     return j
                 j = j + 1
         si = si + 1
@@ -1445,13 +1447,13 @@ fn soa_field_index(ctx: Ctx, sname: string, fld: string) -> int:
 # If `base` is `soa[i]`, the C for `base.fld` is the field buffer slot
 # `(soa).fN[i]` -- a real lvalue, so it serves BOTH read and write. Else "".
 # (Hier has no wildcard match, so every Expr arm is listed.)
-fn soa_field_access(ctx: Ctx, base: Expr, fld: string, names: [string], types: [string]) -> string:
+fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string], types: [string]) -> string:
     match base:
         EIndex(sb, ix):
-            sbt := type_of(sb, names, types, ctx)
+            sbt := type_of(sb, names, types, dc, ctx)
             if is_soa(sbt):
-                fi := soa_field_index(ctx, soa_struct(sbt), fld)
-                return "(" + gen_expr(sb, names, types, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, ctx) + "]"
+                fi := soa_field_index(dc, ctx, soa_struct(sbt), fld)
+                return "(" + gen_expr(sb, names, types, dc, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, dc, ctx) + "]"
             return ""
         EInt(t):
             return ""
@@ -1487,12 +1489,12 @@ fn soa_field_access(ctx: Ctx, base: Expr, fld: string, names: [string], types: [
 # gather a whole struct value from the soa's field buffers at index `ix`.
 # (param is `basec` not `sc` — hierc0 emits user names un-prefixed and `sc` is
 # the runtime string-concat function, so a `sc` local would shadow it.)
-fn gen_soa_gather(ctx: Ctx, ty: string, basec: string, ix: string) -> string:
+fn gen_soa_gather(dc: Decls, ctx: Ctx, ty: string, basec: string, ix: string) -> string:
     sn := soa_struct(ty)
     si := 0
-    for si < len(ctx.structs):
-        if ctx.structs[si].name == sn:
-            flds := ctx.structs[si].fields
+    for si < len(dc.structs):
+        if dc.structs[si].name == sn:
+            flds := dc.structs[si].fields
             out := "(" + sn + "){"
             i := 0
             for i < len(flds):
@@ -1506,12 +1508,12 @@ fn gen_soa_gather(ctx: Ctx, ty: string, basec: string, ix: string) -> string:
     return ""
 
 # soa sub-range [lo:hi]: offset every field buffer by lo (len hi-lo, cap 0).
-fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) -> string:
+fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hic: string) -> string:
     sn := soa_struct(ty)
     si := 0
-    for si < len(ctx.structs):
-        if ctx.structs[si].name == sn:
-            flds := ctx.structs[si].fields
+    for si < len(dc.structs):
+        if dc.structs[si].name == sn:
+            flds := dc.structs[si].fields
             out := "(Soa_" + sn + "){"
             i := 0
             for i < len(flds):
@@ -1525,21 +1527,21 @@ fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) 
 # Return a copy of ctx with a different allocation owner. Sub-expressions of an
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
-fn with_owner(ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables)
+fn with_owner(dc: Decls, ctx: Ctx, o: string) -> Ctx:
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
 # (vars declared from here on are block-local). Sibling blocks reuse the same
 # name in separate C scopes; nested blocks get distinct names by depth.
-fn enter_block(ctx: Ctx, base: int) -> Ctx:
+fn enter_block(dc: Decls, ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables)
 
 # C lvalue of the current block's arena.
-fn cur_arena(ctx: Ctx) -> string:
+fn cur_arena(dc: Decls, ctx: Ctx) -> string:
     if ctx.depth == 0:
         return "&_scope"
     return "&_b" + str(ctx.depth)
@@ -1547,7 +1549,7 @@ fn cur_arena(ctx: Ctx) -> string:
 # Free sequence a `return` must run: every enclosing block arena innermost-first,
 # then the proc's own _scope. (The returned value lives in _parent, which
 # outlives all of these.)
-fn return_frees(ctx: Ctx) -> string:
+fn return_frees(dc: Decls, ctx: Ctx) -> string:
     out := ""
     k := ctx.depth
     for k > 0:
@@ -1555,7 +1557,7 @@ fn return_frees(ctx: Ctx) -> string:
         k = k - 1
     return out + "arena_free(&_scope);"
 
-fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
             return t
@@ -1568,147 +1570,147 @@ fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         EVar(name):
             if name == "None":
                 return "hnone()"
-            if is_variant(ctx, name):            # bare no-payload variant -> constructor call
+            if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
                 return "mk_" + name + "(" + ctx.owner + ")"
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + name + ")"
             return name
         EField(base, fld):
-            sf := soa_field_access(ctx, base, fld, names, types)   # soa[i].f -> (soa).fN[i]
+            sf := soa_field_access(dc, ctx, base, fld, names, types)   # soa[i].f -> (soa).fN[i]
             if sf != "":
                 return sf
-            if is_tuple(type_of(base, names, types, ctx)):   # tuple index t.0 -> t.f0
-                return gen_expr(base, names, types, ctx) + ".f" + fld
-            return gen_expr(base, names, types, ctx) + "." + fld
+            if is_tuple(type_of(base, names, types, dc, ctx)):   # tuple index t.0 -> t.f0
+                return gen_expr(base, names, types, dc, ctx) + ".f" + fld
+            return gen_expr(base, names, types, dc, ctx) + "." + fld
         EIndex(base, idx):
-            bt := type_of(base, names, types, ctx)
+            bt := type_of(base, names, types, dc, ctx)
             if bt == "str":                                 # s[i] -> the byte as an int
-                return "((long)(unsigned char)" + gen_expr(base, names, types, ctx) + "[" + gen_expr(idx, names, types, ctx) + "])"
+                return "((long)(unsigned char)" + gen_expr(base, names, types, dc, ctx) + "[" + gen_expr(idx, names, types, dc, ctx) + "])"
             if is_soa(bt):                                  # soa[i] -> gather a struct value
-                return gen_soa_gather(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(idx, names, types, ctx))
-            return gen_expr(base, names, types, ctx) + ".data[" + gen_expr(idx, names, types, ctx) + "]"
+                return gen_soa_gather(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(idx, names, types, dc, ctx))
+            return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
         EArrLit(elems):
-            et := type_of(elems[0], names, types, ctx)
+            et := type_of(elems[0], names, types, dc, ctx)
             eo := "0"                              # deep-copied element temporaries
-            if elem_deepcopy(ctx, et):             # live in the array's arena (no leak);
+            if elem_deepcopy(dc, ctx, et):             # live in the array's arena (no leak);
                 eo = ctx.owner                     # _from re-copies them into `ar` anyway
-            return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(ctx, et) + "[]){" + gen_store_args_owner(elems, names, types, ctx, eo) + "}, " + str(len(elems)) + ")"
+            return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(dc, ctx, et) + "[]){" + gen_store_args_owner(elems, names, types, dc, ctx, eo) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety):
             if is_soa(ety):                       # empty soa: zeroed descriptor
-                return "(" + cty(ctx, ety) + "){0}"
+                return "(" + cty(dc, ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty):
             return "map_str_" + vty + "_new()"
         EMapLit(keys, vals):                      # chain of _set onto a fresh map
-            f := mfam(type_of(e, names, types, ctx))
+            f := mfam(type_of(e, names, types, dc, ctx))
             out := f + "_new()"
             j := 0
             for j < len(keys):
-                out = f + "_set(" + ctx.owner + ", " + out + ", " + gen_expr(keys[j], names, types, ctx) + ", " + gen_rhs(vals[j], names, types, with_owner(ctx, "0")) + ")"
+                out = f + "_set(" + ctx.owner + ", " + out + ", " + gen_expr(keys[j], names, types, dc, ctx) + ", " + gen_rhs(vals[j], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 j = j + 1
             return out
         ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
-            out := "(Tup_" + tup_suffix(type_of(e, names, types, ctx)) + "){"
+            out := "(Tup_" + tup_suffix(type_of(e, names, types, dc, ctx)) + "){"
             j := 0
             for j < len(elems):
                 if j > 0:
                     out = out + ", "
-                out = out + gen_rhs(elems[j], names, types, ctx)   # fields inherit the ambient arena (Tup_*_copy re-homes them on any cross-arena move; enum/box/field-store set owner 0 first to keep stored tuples immortal)
+                out = out + gen_rhs(elems[j], names, types, dc, ctx)   # fields inherit the ambient arena (Tup_*_copy re-homes them on any cross-arena move; enum/box/field-store set owner 0 first to keep stored tuples immortal)
                 j = j + 1
             return out + "}"
         ESlice(base, lo, hi):
-            bt := type_of(base, names, types, ctx)
+            bt := type_of(base, names, types, dc, ctx)
             if bt == "str":                       # s[a:b] -> a fresh substring
-                return "substr(" + ctx.owner + ", " + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
+                return "substr(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
             if is_soa(bt):
-                return gen_soa_slice(ctx, bt, gen_expr(base, names, types, ctx), gen_expr(lo, names, types, ctx), gen_expr(hi, names, types, ctx))
-            return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, ctx) + ", " + gen_expr(lo, names, types, ctx) + ", " + gen_expr(hi, names, types, ctx) + ")"
+                return gen_soa_slice(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(lo, names, types, dc, ctx), gen_expr(hi, names, types, dc, ctx))
+            return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
-            return "&" + gen_expr(inner, names, types, ctx)
+            return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r):
-            lt := type_of(l, names, types, ctx)
-            if op == "+" and type_of(e, names, types, ctx) == "str":
-                if type_of(r, names, types, ctx) == "char":   # str + char: append one byte
-                    return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
-                return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ")"
+            lt := type_of(l, names, types, dc, ctx)
+            if op == "+" and type_of(e, names, types, dc, ctx) == "str":
+                if type_of(r, names, types, dc, ctx) == "char":   # str + char: append one byte
+                    return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
+                return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
             if is_cmp(op) and lt == "str":        # lexicographic string compare (== / != / < ...)
-                return "(strcmp(" + gen_expr(l, names, types, ctx) + ", " + gen_expr(r, names, types, ctx) + ") " + op + " 0)"
+                return "(strcmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
-            if (op == "==" or op == "!=") and (is_enum(ctx, lt) or is_struct(ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt) or is_map(lt)):
-                eqx := eq_field(ctx, lt, gen_expr(l, names, types, ctx), gen_expr(r, names, types, ctx))
+            if (op == "==" or op == "!=") and (is_enum(dc, ctx, lt) or is_struct(dc, ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt) or is_map(lt)):
+                eqx := eq_field(dc, ctx, lt, gen_expr(l, names, types, dc, ctx), gen_expr(r, names, types, dc, ctx))
                 if op == "!=":
                     return "(!(" + eqx + "))"
                 return eqx
-            return "(" + gen_expr(l, names, types, ctx) + " " + op + " " + gen_expr(r, names, types, ctx) + ")"
+            return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args):
             if name == "push":                    # push(arr, v): mutate in place
-                at := type_of(args[0], names, types, ctx)
+                at := type_of(args[0], names, types, dc, ctx)
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
-                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, "0")) + ")"
+                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 et := elem_ty(at)
-                oa := owner_arena_of(args[0], names, types, ctx)   # array's home arena (buffer + deep-copied elements)
+                oa := owner_arena_of(args[0], names, types, dc, ctx)   # array's home arena (buffer + deep-copied elements)
                 vo := "0"                          # non-deep-copy elements stay immortal (owner 0);
-                if elem_deepcopy(ctx, et):         # deep-copy elements (str) live in the array's arena
+                if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str) live in the array's arena
                     vo = oa
-                return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, ctx) + ", " + gen_rhs(args[1], names, types, with_owner(ctx, vo)) + ")"
+                return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
             if name == "len":
-                if type_of(args[0], names, types, ctx) == "str":
-                    return "strlen(" + gen_expr(args[0], names, types, ctx) + ")"
-                return gen_expr(args[0], names, types, ctx) + ".len"
+                if type_of(args[0], names, types, dc, ctx) == "str":
+                    return "strlen(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+                return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
-                if type_of(args[0], names, types, ctx) == "float":
-                    return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
-                return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
+                if type_of(args[0], names, types, dc, ctx) == "float":
+                    return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "to_float":
-                return "((double)(" + gen_expr(args[0], names, types, ctx) + "))"
+                return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
-                return "((long)(" + gen_expr(args[0], names, types, ctx) + "))"
+                return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_str" or name == "to_bool":   # zero-cost newtype unwrap
-                return gen_expr(args[0], names, types, ctx)
+                return gen_expr(args[0], names, types, dc, ctx)
             if name == "substr":
-                return "substr(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+                return "substr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
             if name == "find":
-                return "hi_find(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return "hi_find(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "split":
-                return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "map_set":
-                return mfam(type_of(args[0], names, types, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_rhs(args[2], names, types, with_owner(ctx, "0")) + ")"
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_rhs(args[2], names, types, dc, with_owner(dc, ctx, "0")) + ")"
             if name == "map_get":
-                return mfam(type_of(args[0], names, types, ctx)) + "_get(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_get(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
             if name == "keys":
-                return mfam(type_of(args[0], names, types, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "map_del":
-                return mfam(type_of(args[0], names, types, ctx)) + "_del(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_del(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "map_has":
-                return mfam(type_of(args[0], names, types, ctx)) + "_has(" + gen_expr(args[0], names, types, ctx) + ", " + gen_expr(args[1], names, types, ctx) + ")"
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_has(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "chr":
-                return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, ctx) + ")"
+                return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "die":
-                return "hi_die(" + gen_expr(args[0], names, types, ctx) + ")"
+                return "hi_die(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "read_all":
                 return "hi_read_all()"
             if name == "input":
                 return "hi_input()"
             if name == "Some":                    # box the payload in the SAME arena as the box, so a
-                ct := cty(ctx, type_of(args[0], names, types, ctx))   # heap payload frees with it instead of
-                return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"   # leaking at owner-0 (every copy path deep-copies via box_payload)
+                ct := cty(dc, ctx, type_of(args[0], names, types, dc, ctx))   # heap payload frees with it instead of
+                return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, dc, ctx) + "}))"   # leaking at owner-0 (every copy path deep-copies via box_payload)
             if name == "Ok":
-                ct := cty(ctx, type_of(args[0], names, types, ctx))
-                return "hok(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
+                ct := cty(dc, ctx, type_of(args[0], names, types, dc, ctx))
+                return "hok(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, dc, ctx) + "}))"
             if name == "Err":
-                ce := cty(ctx, type_of(args[0], names, types, ctx))
-                return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, ctx) + "}))"
-            if is_newtype(ctx, name):             # X(v) is zero-cost: identity
-                return gen_expr(args[0], names, types, ctx)
-            if is_variant(ctx, name):             # enum construction -> mk_Variant(ar, ...); node
-                return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
-            if is_struct(ctx, name):              # struct construction -> compound literal; fields
-                return "(" + name + "){" + gen_store_args_owner(args, names, types, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
+                ce := cty(dc, ctx, type_of(args[0], names, types, dc, ctx))
+                return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, dc, ctx) + "}))"
+            if is_newtype(dc, ctx, name):             # X(v) is zero-cost: identity
+                return gen_expr(args[0], names, types, dc, ctx)
+            if is_variant(dc, ctx, name):             # enum construction -> mk_Variant(ar, ...); node
+                return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
+            if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
+                return "(" + name + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return name + "(" + ctx.owner + ")"
-            return name + "(" + ctx.owner + ", " + gen_call_args(args, names, types, ctx) + ")"
+            return name + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
 
 # Root variable of a place expression (`s.items[i]` -> `s`), or "" if not a
 # place rooted in a variable. Used to find which arena a container lives in.
@@ -1773,8 +1775,8 @@ fn var_index(names: [string], name: string) -> int:
 #   - tuple / heap struct -> Tup_*_copy / Struct_copy, forward-declared (step 5b).
 #   - option / result -> re-boxed via hbox/hsome/... (preamble; payload shared,
 #     immortal, so shallow). map/non-heap-struct elements stay shallow memcpy.
-fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
-    if resolve_nt(ctx, et) == "str":
+fn elem_deepcopy(dc: Decls, ctx: Ctx, et: string) -> bool:
+    if resolve_nt(dc, ctx, et) == "str":
         return true
     if is_array(et):
         return true
@@ -1782,9 +1784,9 @@ fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
         return true
     if is_option(et) or is_result(et):                       # re-box into the array's arena
         return true
-    if is_enum(ctx, et):                                     # deep-copy the node tree into the arena
+    if is_enum(dc, ctx, et):                                     # deep-copy the node tree into the arena
         return true
-    return is_struct(ctx, et) and struct_is_heap(ctx, et)   # only heap structs have a _copy fn
+    return is_struct(dc, ctx, et) and struct_is_heap(dc, ctx, et)   # only heap structs have a _copy fn
 
 # The 3rd arg to hbox for an option/result payload of Hier type `ty`, whose boxed
 # value sits at `*(<ct>*)valptr`. A HEAP payload (str/array/struct/nested option…)
@@ -1792,10 +1794,10 @@ fn elem_deepcopy(ctx: Ctx, et: string) -> bool:
 # (the [Option(str)]/[Result([int],_)] element residual); a scalar payload's bytes
 # live inside the box already, so a shallow re-box (the raw pointer) is sound.
 # Mirrors hierc's hier_optN_copy (`if (v.has) v.val = hier_str_copy(a, v.val)`).
-fn box_payload(ctx: Ctx, ty: string, ar: string, valptr: string) -> string:
-    ct := cty(ctx, ty)
-    if elem_deepcopy(ctx, ty):
-        return "(" + ct + "[]){" + cp_field(ctx, ty, ar, "(*(" + ct + "*)(" + valptr + "))") + "}"
+fn box_payload(dc: Decls, ctx: Ctx, ty: string, ar: string, valptr: string) -> string:
+    ct := cty(dc, ctx, ty)
+    if elem_deepcopy(dc, ctx, ty):
+        return "(" + ct + "[]){" + cp_field(dc, ctx, ty, ar, "(*(" + ct + "*)(" + valptr + "))") + "}"
     return valptr
 
 # The C expression that deep-copies one element of type `et` (from `src`) into
@@ -1804,27 +1806,27 @@ fn box_payload(ctx: Ctx, ty: string, ar: string, valptr: string) -> string:
 # its buffer and, transitively, every str/array/struct/tuple sub-element). The
 # copy fns are forward-declared (gen_arr_type for arrays; the struct/tuple copy
 # protos emitted before the array fns) so order never matters.
-fn elem_copy_expr(ctx: Ctx, et: string, ar: string, src: string) -> string:
-    if resolve_nt(ctx, et) == "str":
+fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> string:
+    if resolve_nt(dc, ctx, et) == "str":
         return "scopy(" + ar + ", " + src + ")"
     if is_array(et):
         return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(et):
         return "Tup_" + tup_suffix(et) + "_copy(" + ar + ", " + src + ")"
     if is_option(et):                                # re-box the payload into `ar`; box_payload
-        ict := cty(ctx, option_inner(et))            # deep-copies a HEAP inner (else shallow re-box)
-        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(ctx, option_inner(et), ar, src + ".val") + ")) : hnone())"
+        ict := cty(dc, ctx, option_inner(et))            # deep-copies a HEAP inner (else shallow re-box)
+        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(dc, ctx, option_inner(et), ar, src + ".val") + ")) : hnone())"
     if is_result(et):
-        oct := cty(ctx, result_ok(et))
-        ect := cty(ctx, result_err(et))
-        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(ctx, result_ok(et), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(ctx, result_err(et), ar, src + ".err") + ")))"
+        oct := cty(dc, ctx, result_ok(et))
+        ect := cty(dc, ctx, result_err(et))
+        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(dc, ctx, result_ok(et), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(et), ar, src + ".err") + ")))"
     return et + "_copy(" + ar + ", " + src + ")"           # heap struct OR enum: <T>_copy
 
 # Deep-copy a value of Hier type `ty` from `src` into arena `ar` (the C expr) —
 # full type dispatch, used to copy enum payload fields (which may be any type).
 # Scalars / non-heap structs pass through; everything heap routes to its _copy.
-fn cp_field(ctx: Ctx, ty: string, ar: string, src: string) -> string:
-    rt := resolve_nt(ctx, ty)
+fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
+    rt := resolve_nt(dc, ctx, ty)
     if rt == "str":
         return "scopy(" + ar + ", " + src + ")"
     if is_array(rt):
@@ -1833,17 +1835,17 @@ fn cp_field(ctx: Ctx, ty: string, ar: string, src: string) -> string:
         return mfam(rt) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(rt):
         return "Tup_" + tup_suffix(rt) + "_copy(" + ar + ", " + src + ")"
-    if is_enum(ctx, rt):
+    if is_enum(dc, ctx, rt):
         return rt + "_copy(" + ar + ", " + src + ")"
-    if is_struct(ctx, rt) and struct_is_heap(ctx, rt):
+    if is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt):
         return rt + "_copy(" + ar + ", " + src + ")"
     if is_option(rt):
-        ict := cty(ctx, option_inner(rt))
-        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(ctx, option_inner(rt), ar, src + ".val") + ")) : hnone())"
+        ict := cty(dc, ctx, option_inner(rt))
+        return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(dc, ctx, option_inner(rt), ar, src + ".val") + ")) : hnone())"
     if is_result(rt):
-        oct := cty(ctx, result_ok(rt))
-        ect := cty(ctx, result_err(rt))
-        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(ctx, result_ok(rt), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(ctx, result_err(rt), ar, src + ".err") + ")))"
+        oct := cty(dc, ctx, result_ok(rt))
+        ect := cty(dc, ctx, result_err(rt))
+        return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(dc, ctx, result_ok(rt), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(rt), ar, src + ".err") + ")))"
     if is_soa(rt):
         return "Soa_" + soa_struct(rt) + "_copy(" + src + ")"
     return src                                              # scalar / bool / non-heap struct
@@ -1853,7 +1855,7 @@ fn cp_field(ctx: Ctx, ty: string, ar: string, src: string) -> string:
 # function scope. A var declared in an enclosing block routes to THAT block's arena
 # (`&_b<d>`, in scope at any deeper point), not coarsely to `&_scope` — so a
 # loop-local grown inside a nested loop still frees per outer-loop iteration.
-fn var_block_depth(ctx: Ctx, vi: int) -> int:
+fn var_block_depth(dc: Decls, ctx: Ctx, vi: int) -> int:
     d := 0
     i := 0
     for i < len(ctx.bbases):
@@ -1862,16 +1864,16 @@ fn var_block_depth(ctx: Ctx, vi: int) -> int:
         i = i + 1
     return d
 
-fn owner_arena_of(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
+fn owner_arena_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     rv := root_var(e)
     if rv == "":
         return "&_scope"
     rvt := var_type(names, types, rv)
     if is_inout(rvt):
-        if inout_container_param(ctx, rvt):       # its home arena is threaded as a hidden param
+        if inout_container_param(dc, ctx, rvt):       # its home arena is threaded as a hidden param
             return "_ina_" + rv
         return "0"                                # inout scalar / struct: no _ina_ (malloc, immortal)
-    d := var_block_depth(ctx, var_index(names, rv))
+    d := var_block_depth(dc, ctx, var_index(names, rv))
     if d == 0:
         return "&_scope"
     return "&_b" + str(d)
@@ -1951,15 +1953,15 @@ fn is_evar(e: Expr, name: string) -> bool:
 # Deep-copy a C expression `code` of Hier type `ty` (value semantics for a bind
 # whose value may be mutated). Copies the mutable heap containers; scalars,
 # strings (immutable), and enum/option/result (immutable) are share-safe.
-fn cp_typed(ctx: Ctx, ty: string, code: string) -> string:
-    rt := resolve_nt(ctx, ty)
+fn cp_typed(dc: Decls, ctx: Ctx, ty: string, code: string) -> string:
+    rt := resolve_nt(dc, ctx, ty)
     if is_array(rt):
         return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(rt):
         return mfam(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(rt):
         return "Tup_" + tup_suffix(rt) + "_copy(" + ctx.owner + ", " + code + ")"
-    if is_struct(ctx, rt) and struct_is_heap(ctx, rt):
+    if is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt):
         return rt + "_copy(" + ctx.owner + ", " + code + ")"
     return code
 
@@ -2140,7 +2142,7 @@ fn compute_movables(body: [Stmt]) -> [string]:
 # e is a bare local var of heap type, read exactly once and not in a loop
 # (ctx.movables), not a param (params borrow the caller's buffer), and its home
 # arena equals the destination owner (so the handed-off buffer's lifetime fits).
-fn can_move(e: Expr, ty: string, names: [string], types: [string], ctx: Ctx) -> bool:
+fn can_move(e: Expr, ty: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
     nm := evar_name(e)
     if nm == "":
         return false
@@ -2148,25 +2150,25 @@ fn can_move(e: Expr, ty: string, names: [string], types: [string], ctx: Ctx) -> 
         return false
     if var_index(names, nm) < 0:                  # an EVar that is not a local (a bare enum variant
         return false                              # like `Leaf`) — not a movable variable
-    rt := resolve_nt(ctx, ty)
-    isheap := is_array(rt) or is_map(rt) or is_tuple(rt) or is_enum(ctx, rt) or (is_struct(ctx, rt) and struct_is_heap(ctx, rt))
+    rt := resolve_nt(dc, ctx, ty)
+    isheap := is_array(rt) or is_map(rt) or is_tuple(rt) or is_enum(dc, ctx, rt) or (is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt))
     if not isheap:
         return false
     if has_str(ctx.vparams, nm) or is_inout(var_type(names, types, nm)):   # never move a param (borrowed)
         return false
-    return owner_arena_of(e, names, types, ctx) == ctx.owner
+    return owner_arena_of(e, names, types, dc, ctx) == ctx.owner
 
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
 # binding is independent (Hier value semantics). Fresh arrays (literals, call
 # results) already own their buffer; scalars/strings need no copy.
-fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
-    code := gen_expr(e, names, types, ctx)
-    ty := type_of(e, names, types, ctx)
-    if can_move(e, ty, names, types, ctx):       # move-on-last-use: hand off the buffer, elide the copy
+fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    code := gen_expr(e, names, types, dc, ctx)
+    ty := type_of(e, names, types, dc, ctx)
+    if can_move(e, ty, names, types, dc, ctx):       # move-on-last-use: hand off the buffer, elide the copy
         return code
     if is_array(ty) and is_place(e):
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
-    if is_struct(ctx, ty) and struct_is_heap(ctx, ty) and is_place(e):
+    if is_struct(dc, ctx, ty) and struct_is_heap(dc, ctx, ty) and is_place(e):
         return ty + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
         return mfam(ty) + "_copy(" + ctx.owner + ", " + code + ")"
@@ -2174,10 +2176,10 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
         return "Tup_" + tup_suffix(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
-    if is_enum(ctx, ty) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL enum place (var/
+    if is_enum(dc, ctx, ty) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL enum place (var/
         return ty + "_copy(" + ctx.owner + ", " + code + ")"   # field/elem) escaping -> deep-copy. NOT a bare nullary-variant ctor (`return Leaf`), which is already fresh. Match arms BORROW (cp_typed).
     if (is_option(ty) or is_result(ty)) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL option/result
-        return elem_copy_expr(ctx, ty, ctx.owner, code)     # place (var/field/elem, not the bare `None` ctor): re-box into ctx.owner
+        return elem_copy_expr(dc, ctx, ty, ctx.owner, code)     # place (var/field/elem, not the bare `None` ctor): re-box into ctx.owner
 
     if ty == "str" and is_place(e):              # copy a string bound from a place, so an
         return "scopy(" + ctx.owner + ", " + code + ")" # in-place-appended accumulator's snapshot stays independent
@@ -2186,8 +2188,8 @@ fn gen_rhs(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
 # A scalar (non-heap) result type. When an assignment/decl LHS is scalar, the
 # whole RHS value carries no heap, so every heap value built while evaluating it
 # is transient (consumed in the statement, never stored) and can be reclaimed.
-fn is_scalar_ty(ctx: Ctx, ty: string) -> bool:
-    rt := resolve_nt(ctx, ty)
+fn is_scalar_ty(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    rt := resolve_nt(dc, ctx, ty)
     return rt == "int" or rt == "float" or rt == "bool"
 
 # Does `e` contain a call anywhere? A call is the only thing that can allocate a
@@ -2242,58 +2244,58 @@ fn any_has_call(es: [Expr]) -> bool:
 # the statement, not retained in the enclosing scope. `assign` is the C lvalue +
 # " = " (the decl declares it first); stores inside the RHS still route to their
 # own arena (owner_arena_of), so only true transients land in `_t`.
-fn scalar_transient(ctx: Ctx, e: Expr, names: [string], types: [string], assign: string) -> string:
-    return "    { Arena _t = arena_new(0); " + assign + gen_rhs(e, names, types, with_owner(ctx, "&_t")) + "; arena_free(&_t); }\n"
+fn scalar_transient(dc: Decls, ctx: Ctx, e: Expr, names: [string], types: [string], assign: string) -> string:
+    return "    { Arena _t = arena_new(0); " + assign + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
 
 # names/types are passed BY VALUE so a block's decls never escape to sibling
 # or outer scopes (matching C/Hier block scoping).
-fn gen_block(stmts: [Stmt], names: [string], types: [string], ctx: Ctx) -> string:
+fn gen_block(stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
     ns := names                                  # local mutable copies; decls
     ts := types                                  # added here stay block-local
     i := 0
     for i < len(stmts):
-        out = out + gen_stmt(stmts[i], &ns, &ts, ctx)
+        out = out + gen_stmt(stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
     return out
 
-fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> string:
+fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
     match s:
         SDecl(name, e):
-            ty := type_of(e, names, types, ctx)
+            ty := type_of(e, names, types, dc, ctx)
             if has_str(ctx.saccums, name):        # string accumulator: heap buffer + len/cap sidecars
-                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
                 push(names, name)
                 push(types, ty)
                 return code
-            if is_scalar_ty(ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
-                code := "    " + cty(ctx, ty) + name + ";\n" + scalar_transient(ctx, e, names, types, name + " = ")
+            if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
+                code := "    " + cty(dc, ctx, ty) + name + ";\n" + scalar_transient(dc, ctx, e, names, types, name + " = ")
                 push(names, name)
                 push(types, ty)
                 return code
-            code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            code := "    " + cty(dc, ctx, ty) + name + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
         SAssign(name, e):
-            lhs := gen_expr(EVar(name), names, types, ctx)
-            if is_scalar_ty(ctx, type_of(EVar(name), names, types, ctx)) and expr_has_call(e):   # transient placement
-                return scalar_transient(ctx, e, names, types, lhs + " = ")
+            lhs := gen_expr(EVar(name), names, types, dc, ctx)
+            if is_scalar_ty(dc, ctx, type_of(EVar(name), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
+                return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
             if has_str(ctx.saccums, name):        # string accumulator
                 pieces := sacc_pieces(e, name)
                 if len(pieces) > 0:               # s = s + p1 + ... -> in-place append each piece
                     aout := ""
                     k := 0
                     for k < len(pieces):
-                        if type_of(pieces[k], names, types, ctx) == "char":   # one-byte append, no strlen
-                            aout = aout + "    hi_append_char(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
+                        if type_of(pieces[k], names, types, dc, ctx) == "char":   # one-byte append, no strlen
+                            aout = aout + "    hi_append_char(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         else:
-                            aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, ctx) + ");\n"
+                            aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         k = k + 1
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
-                return "    " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
-            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, with_owner(ctx, owner_arena_of(EVar(name), names, types, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
+                return "    " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
+            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
                 # the caller's table, so mutating it in place is a value-semantics
@@ -2303,7 +2305,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                 # from accums). Locals and inout map params still grow in place.
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
-                        return "    " + mfam(type_of(EVar(name), names, types, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, ctx) + ", " + gen_expr(args[2], names, types, ctx) + ");\n"
+                        return "    " + mfam(type_of(EVar(name), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, dc, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
                     return deflt
                 EInt(t):
                     return deflt
@@ -2338,13 +2340,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
         SFieldAssign(lv, rhs):
             # storing into a (malloc) struct field / array element: the value must
             # be malloc'd (owner "0"), not left in _scope which frees at return.
-            return "    " + gen_expr(lv, names, types, ctx) + " = " + gen_rhs(rhs, names, types, with_owner(ctx, "0")) + ";\n"
+            return "    " + gen_expr(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, "0")) + ";\n"
         SPrint(e):
-            if type_of(e, names, types, ctx) != "str":
+            if type_of(e, names, types, dc, ctx) != "str":
                 die("codegen: print expects a string")
             # transient arena: the print arg's string temporaries are consumed by
             # fputs and never escape, so build them in _t and free it right after.
-            return "    { Arena _t = arena_new(0); fputs(" + gen_expr(e, names, types, with_owner(ctx, "&_t")) + ", stdout); arena_free(&_t); }\n"
+            return "    { Arena _t = arena_new(0); fputs(" + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + ", stdout); arena_free(&_t); }\n"
         SReturn(e):
             # deep-copy a returned heap PLACE (a field/element/variable): the
             # return value outlives the callee, so it must not alias the source's
@@ -2362,60 +2364,60 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             # returned value never points into the freed _scope.
             # free every enclosing block arena (return_frees), innermost-first,
             # then _scope; the value is in _parent which outlives them all.
-            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, with_owner(ctx, "_parent")) + "; " + return_frees(ctx) + " return _ret; }\n"
+            return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
         SReturnVoid:
-            return "    " + return_frees(ctx) + " return;\n"
+            return "    " + return_frees(dc, ctx) + " return;\n"
         SExpr(e):
-            return "    " + gen_expr(e, names, types, ctx) + ";\n"
+            return "    " + gen_expr(e, names, types, dc, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
-                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
                 push(names, name)
                 push(types, ty)
                 return code
-            if is_scalar_ty(ctx, ty) and expr_has_call(e):   # transient placement
-                code := "    " + cty(ctx, ty) + name + ";\n" + scalar_transient(ctx, e, names, types, name + " = ")
+            if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement
+                code := "    " + cty(dc, ctx, ty) + name + ";\n" + scalar_transient(dc, ctx, e, names, types, name + " = ")
                 push(names, name)
                 push(types, ty)
                 return code
-            code := "    " + cty(ctx, ty) + name + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            code := "    " + cty(dc, ctx, ty) + name + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)
             push(types, ty)
             return code
         SDestructure(dnames, e):                  # a, b := tuple_expr
-            tt := type_of(e, names, types, ctx)
+            tt := type_of(e, names, types, dc, ctx)
             parts := tuple_parts(tt)
             tmp := "_d_" + dnames[0]
-            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
             for j < len(dnames):
-                code = code + "    " + cty(ctx, parts[j]) + dnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
+                code = code + "    " + cty(dc, ctx, parts[j]) + dnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
                 push(names, dnames[j])
                 push(types, parts[j])
                 j = j + 1
             return code
         SMultiAssign(mnames, e):                  # a, b = tuple_expr (existing vars)
-            tt := type_of(e, names, types, ctx)
+            tt := type_of(e, names, types, dc, ctx)
             tmp := "_ma_" + mnames[0]
-            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
             for j < len(mnames):
                 code = code + "    " + mnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
                 j = j + 1
             return code
         SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
-            rty := type_of(e, names, types, ctx)
+            rty := type_of(e, names, types, dc, ctx)
             tmp := "_or_" + name
             if is_option(rty):                    # Option: unwrap Some, else return None
-                cto := cty(ctx, option_inner(rty))
-                oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+                cto := cty(dc, ctx, option_inner(rty))
+                oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
                 oc = oc + "    if (" + tmp + ".tag == 0) return hnone();\n"
                 oc = oc + "    " + cto + name + " = *(" + cto + "*)(" + tmp + ".val);\n"
                 push(names, name)
                 push(types, option_inner(rty))
                 return oc
-            ct := cty(ctx, result_ok(rty))
-            code := "    HResult " + tmp + " = " + gen_expr(e, names, types, ctx) + ";\n"
+            ct := cty(dc, ctx, result_ok(rty))
+            code := "    HResult " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             code = code + "    if (" + tmp + ".tag == 0) return " + tmp + ";\n"
             code = code + "    " + ct + name + " = *(" + ct + "*)(" + tmp + ".ok);\n"
             push(names, name)
@@ -2423,74 +2425,74 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             return code
         SIf(cond, then_body, else_body):
             d1 := str(ctx.depth + 1)              # each branch is its own block arena
-            bc := enter_block(ctx, len(names))
-            op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n"
+            bc := enter_block(dc, ctx, len(names))
+            op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n"
             fr := "        arena_free(&_b" + d1 + ");\n"
-            out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + op + gen_block(then_body, names, types, bc) + fr + "    }"
+            out := "    if (" + gen_expr(cond, names, types, dc, ctx) + ") {\n" + op + gen_block(then_body, names, types, dc, bc) + fr + "    }"
             if len(else_body) > 0:
-                out = out + " else {\n" + op + gen_block(else_body, names, types, bc) + fr + "    }"
+                out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
         SWhile(cond, body):
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(ctx, len(names))
-            return "    while (" + gen_expr(cond, names, types, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, names, types, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            bc := enter_block(dc, ctx, len(names))
+            return "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SForRange(name, start, stop, step, body):
-            header := "    for (long " + name + " = " + gen_expr(start, names, types, ctx) + "; " + name + " < " + gen_expr(stop, names, types, ctx) + "; " + name + " += " + gen_expr(step, names, types, ctx) + ") {\n"
+            header := "    for (long " + name + " = " + gen_expr(start, names, types, dc, ctx) + "; " + name + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + name + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
             bn := names                           # loop var is scoped to body
             bt := types
             push(bn, name)
             push(bt, "int")
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(ctx, len(bn))
-            return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, bn, bt, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            bc := enter_block(dc, ctx, len(bn))
+            return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
-            sty := type_of(subj, names, types, ctx)
-            scu := gen_expr(subj, names, types, ctx)   # subj is a simple place / pure call
+            sty := type_of(subj, names, types, dc, ctx)
+            scu := gen_expr(subj, names, types, dc, ctx)   # subj is a simple place / pure call
             if is_option(sty) or is_result(sty):
-                return gen_match_optres(ctx, sty, scu, variants, allbinds, bodies, names, types)
+                return gen_match_optres(dc, ctx, sty, scu, variants, allbinds, bodies, names, types)
             out := ""
             i := 0
             for i < len(variants):
                 vname := variants[i]
                 binds := allbinds[i]
-                pts := variant_ptypes(ctx, vname)
+                pts := variant_ptypes(dc, ctx, vname)
                 kw := " else if ("
                 if i == 0:
                     kw = "    if ("
-                out = out + kw + scu + "->tag == " + str(variant_tag(ctx, vname)) + ") {\n"
+                out = out + kw + scu + "->tag == " + str(variant_tag(dc, ctx, vname)) + ") {\n"
                 bn := names                       # arm bindings are scoped to the arm
                 bt := types
                 j := 0
                 for j < len(binds):
-                    out = out + "    " + cty(ctx, pts[j]) + binds[j] + " = " + cp_typed(ctx, pts[j], efield(scu, vname, j)) + ";\n"
+                    out = out + "    " + cty(dc, ctx, pts[j]) + binds[j] + " = " + cp_typed(dc, ctx, pts[j], efield(scu, vname, j)) + ";\n"
                     push(bn, binds[j])
                     push(bt, pts[j])
                     j = j + 1
-                out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
+                out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
                 i = i + 1
             return out + "\n"
 
-fn ret_cty(ctx: Ctx, ret: string) -> string:
+fn ret_cty(dc: Decls, ctx: Ctx, ret: string) -> string:
     if ret == "void":
         return "void "
-    return cty(ctx, ret)
+    return cty(dc, ctx, ret)
 
 # An inout array/map/soa param: its container's home arena is the CALLER's, so
 # the callee receives it as a hidden `Arena* _ina_<name>` param and grows/allocs
 # into it (instead of malloc-leaking). Inout scalars and inout structs do NOT get
 # one (a struct's field-container is a smaller separate residual, still malloc).
-fn inout_container_param(ctx: Ctx, ptype: string) -> bool:
+fn inout_container_param(dc: Decls, ctx: Ctx, ptype: string) -> bool:
     if not is_inout(ptype):
         return false
     b := base_ty(ptype)
-    return is_array(b) or is_map(b) or is_soa(b) or (is_struct(ctx, b) and struct_is_heap(ctx, b))   # a heap struct's field-containers grow in _ina_
+    return is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b))   # a heap struct's field-containers grow in _ina_
 
-fn gen_params(f: Func, ctx: Ctx) -> string:
+fn gen_params(f: Func, dc: Decls, ctx: Ctx) -> string:
     out := "Arena* _parent"                       # every fn threads the caller's arena
     i := 0
     for i < len(f.params):
-        out = out + ", " + cty(ctx, f.ptypes[i]) + f.params[i]
-        if inout_container_param(ctx, f.ptypes[i]):   # + the container's home arena
+        out = out + ", " + cty(dc, ctx, f.ptypes[i]) + f.params[i]
+        if inout_container_param(dc, ctx, f.ptypes[i]):   # + the container's home arena
             out = out + ", Arena* _ina_" + f.params[i]
         i = i + 1
     return out
@@ -2502,8 +2504,8 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
         push(types, f.ptypes[i])
         i = i + 1
 
-fn gen_proto(f: Func, ctx: Ctx) -> string:
-    return ret_cty(ctx, f.ret) + f.name + "(" + gen_params(f, ctx) + ");\n"
+fn gen_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
+    return ret_cty(dc, ctx, f.ret) + f.name + "(" + gen_params(f, dc, ctx) + ");\n"
 
 # Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
 # A non-'+' binop or any leaf is one whole piece. So `a + b + c` -> [a, b, c]
@@ -2565,18 +2567,18 @@ fn sacc_pieces(e: Expr, name: string) -> [Expr]:
 # guard `var_type == "str"` is accurate; a non-str `c = c + 1` is never flagged.
 # Match arms bind payloads as "" (unknown) — at worst an arm-local accumulator is
 # missed (stays the safe pure-concat path); a false positive is impossible.
-fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], ctx: Ctx):
+fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
     ts := types
     i := 0
     for i < len(stmts):
-        sacc_stmt(&acc, stmts[i], &ns, &ts, ctx)
+        sacc_stmt(&acc, stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
 
-fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], ctx: Ctx):
+fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e):
-            dty := type_of(e, names, types, ctx)   # compute BEFORE pushing n (keep names/types in sync)
+            dty := type_of(e, names, types, dc, ctx)   # compute BEFORE pushing n (keep names/types in sync)
             push(names, n)
             push(types, dty)
         SAssign(n, e):
@@ -2597,7 +2599,7 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             push(names, n)
             push(types, t)
         SOrReturn(n, e):
-            ety := type_of(e, names, types, ctx)
+            ety := type_of(e, names, types, dc, ctx)
             ty := ""
             if is_option(ety):
                 ty = option_inner(ety)
@@ -2606,7 +2608,7 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             push(names, n)
             push(types, ty)
         SDestructure(dn, e):
-            parts := tuple_parts(type_of(e, names, types, ctx))
+            parts := tuple_parts(type_of(e, names, types, dc, ctx))
             i := 0
             for i < len(dn):
                 push(names, dn[i])
@@ -2615,18 +2617,18 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
         SMultiAssign(mn, e):
             i := 0
         SIf(c, tb, eb):
-            sacc_block(&acc, tb, names, types, ctx)
-            sacc_block(&acc, eb, names, types, ctx)
+            sacc_block(&acc, tb, names, types, dc, ctx)
+            sacc_block(&acc, eb, names, types, dc, ctx)
         SWhile(c, body):
-            sacc_block(&acc, body, names, types, ctx)
+            sacc_block(&acc, body, names, types, dc, ctx)
         SForRange(n, a, b, st, body):
             bn := names
             bt := types
             push(bn, n)
             push(bt, "int")
-            sacc_block(&acc, body, bn, bt, ctx)
+            sacc_block(&acc, body, bn, bt, dc, ctx)
         SMatch(subj, variants, allbinds, bodies):
-            sty := type_of(subj, names, types, ctx)
+            sty := type_of(subj, names, types, dc, ctx)
             j := 0
             for j < len(bodies):
                 bn := names                       # bind arm payloads with PROPER types so
@@ -2644,16 +2646,16 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                         else:
                             push(bt, result_err(sty))
                 else:
-                    pts := variant_ptypes(ctx, variants[j])
+                    pts := variant_ptypes(dc, ctx, variants[j])
                     k := 0
                     for k < len(binds):
                         push(bn, binds[k])
                         push(bt, pts[k])
                         k = k + 1
-                sacc_block(&acc, bodies[j], bn, bt, ctx)
+                sacc_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
 
-fn gen_func(f: Func, ctx: Ctx) -> string:
+fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
     types := []string
     seed_env(f, &names, &types)
@@ -2674,7 +2676,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
     raw := []string
     sn := names
     st := types
-    sacc_block(&raw, f.body, sn, st, ctx)
+    sacc_block(&raw, f.body, sn, st, dc, ctx)
     saccums := []string
     si := 0
     for si < len(raw):
@@ -2688,22 +2690,22 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
             push(saccums, raw[si])
         si = si + 1
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0, []int, movables)
+    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
-        return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
+        return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
     # open a child scope from the caller's arena; void funcs free it on fall-through
     # (every `return` frees it via the return-slot in gen_stmt).
     tail := ""
     if f.ret == "void":
         tail = "    arena_free(&_scope);\n"
-    return ret_cty(fctx, f.ret) + f.name + "(" + gen_params(f, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, fctx) + tail + "}\n"
+    return ret_cty(dc, fctx, f.ret) + f.name + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
 
-fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
+fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
     i := 0
     for i < len(sd.fields):
-        out = out + "    " + cty(ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
+        out = out + "    " + cty(dc, ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
         i = i + 1
     return out + "};\n"
 
@@ -2711,7 +2713,7 @@ fn gen_struct(sd: StructDef, ctx: Ctx) -> string:
 # A bound payload is read back from the box: `T x = *(T*)(scrut.val)` (Some),
 # `.ok`/`.err` for Result. `sc` is re-evaluated per use; scrutinees are places
 # or pure calls in practice (no temp/counter needed).
-fn gen_match_optres(ctx: Ctx, sty: string, scu: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
+fn gen_match_optres(dc: Decls, ctx: Ctx, sty: string, scu: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
     out := ""
     i := 0
     for i < len(variants):
@@ -2736,18 +2738,18 @@ fn gen_match_optres(ctx: Ctx, sty: string, scu: string, variants: [string], allb
                 else:
                     bty = result_err(sty)
                     fld = "err"
-            ct := cty(ctx, bty)
-            out = out + "    " + ct + binds[0] + " = " + cp_typed(ctx, bty, "*(" + ct + "*)(" + scu + "." + fld + ")") + ";\n"
+            ct := cty(dc, ctx, bty)
+            out = out + "    " + ct + binds[0] + " = " + cp_typed(dc, ctx, bty, "*(" + ct + "*)(" + scu + "." + fld + ")") + ";\n"
             push(bn, binds[0])
             push(bt, bty)
-        out = out + gen_block(bodies[i], bn, bt, ctx) + "    }"
+        out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
         i = i + 1
     return out + "\n"
 
 # Deep copy for a heap-bearing struct: shallow-copy scalars, then dup each
 # heap field (string -> fresh bytes, array -> Arr_T_copy, nested heap struct ->
 # its own _copy). Source-order emission gives nested copiers before their users.
-fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
+fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     nm := sd.name
     out := "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n    " + nm + " r = s;\n"
     i := 0
@@ -2761,16 +2763,16 @@ fn gen_struct_copy(ctx: Ctx, sd: StructDef) -> string:
             out = out + "    r." + f.name + " = " + mfam(f.ty) + "_copy(ar, s." + f.name + ");\n"
         elif is_soa(f.ty):
             out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
-        elif is_enum(ctx, f.ty):                  # deep-copy the enum node tree into `ar`
+        elif is_enum(dc, ctx, f.ty):                  # deep-copy the enum node tree into `ar`
             out = out + "    r." + f.name + " = " + f.ty + "_copy(ar, s." + f.name + ");\n"
-        elif is_struct(ctx, f.ty) and struct_is_heap(ctx, f.ty):
+        elif is_struct(dc, ctx, f.ty) and struct_is_heap(dc, ctx, f.ty):
             out = out + "    r." + f.name + " = " + f.ty + "_copy(ar, s." + f.name + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
 # Structural equality for a struct: AND of per-field equality (recurses through
 # nested structs, arrays, enums, and Option/Result fields via eq_field).
-fn gen_struct_eq(ctx: Ctx, sd: StructDef) -> string:
+fn gen_struct_eq(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     nm := sd.name
     out := "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { return "
     if len(sd.fields) == 0:
@@ -2781,21 +2783,21 @@ fn gen_struct_eq(ctx: Ctx, sd: StructDef) -> string:
             if j > 0:
                 out = out + " && "
             f := sd.fields[j]
-            out = out + eq_field(ctx, f.ty, "a." + f.name, "b." + f.name)
+            out = out + eq_field(dc, ctx, f.ty, "a." + f.name, "b." + f.name)
             j = j + 1
     return out + "; }\n"
 
 # A tuple is an anonymous struct with positional fields f0, f1, ...
-fn gen_tuple_struct(ctx: Ctx, ty: string) -> string:
+fn gen_tuple_struct(dc: Decls, ctx: Ctx, ty: string) -> string:
     parts := tuple_parts(ty)
     out := "typedef struct { "
     i := 0
     for i < len(parts):
-        out = out + cty(ctx, parts[i]) + "f" + str(i) + "; "
+        out = out + cty(dc, ctx, parts[i]) + "f" + str(i) + "; "
         i = i + 1
     return out + "} Tup_" + tup_suffix(ty) + ";\n"
 
-fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
+fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
     nm := "Tup_" + tup_suffix(ty)
     parts := tuple_parts(ty)
     out := "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n    " + nm + " r = s;\n"
@@ -2808,14 +2810,14 @@ fn gen_tuple_copy(ctx: Ctx, ty: string) -> string:
             out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_map(p):
             out = out + "    r.f" + str(i) + " = " + mfam(p) + "_copy(ar, s.f" + str(i) + ");\n"
-        elif is_enum(ctx, p):                     # deep-copy the enum node tree into `ar`
+        elif is_enum(dc, ctx, p):                     # deep-copy the enum node tree into `ar`
             out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
-        elif is_struct(ctx, p) and struct_is_heap(ctx, p):
+        elif is_struct(dc, ctx, p) and struct_is_heap(dc, ctx, p):
             out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
-fn gen_tuple_eq(ctx: Ctx, ty: string) -> string:
+fn gen_tuple_eq(dc: Decls, ctx: Ctx, ty: string) -> string:
     nm := "Tup_" + tup_suffix(ty)
     parts := tuple_parts(ty)
     out := "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { return "
@@ -2823,18 +2825,18 @@ fn gen_tuple_eq(ctx: Ctx, ty: string) -> string:
     for i < len(parts):
         if i > 0:
             out = out + " && "
-        out = out + eq_field(ctx, parts[i], "a.f" + str(i), "b.f" + str(i))
+        out = out + eq_field(dc, ctx, parts[i], "a.f" + str(i), "b.f" + str(i))
         i = i + 1
     return out + "; }\n"
 
-fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
+fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
         return "strcmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
         return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
-    if is_enum(ctx, ty):
+    if is_enum(dc, ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
-    if is_struct(ctx, ty):
+    if is_struct(dc, ctx, ty):
         return ty + "_eq(" + a + ", " + b + ")"
     if is_tuple(ty):
         return "Tup_" + tup_suffix(ty) + "_eq(" + a + ", " + b + ")"
@@ -2843,19 +2845,19 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
     if is_soa(ty):
         return "Soa_" + soa_struct(ty) + "_eq(" + a + ", " + b + ")"
     if is_option(ty):                            # tags equal, and (if Some) payloads equal
-        ct := cty(ctx, option_inner(ty))
+        ct := cty(dc, ctx, option_inner(ty))
         pa := "*(" + ct + "*)(" + a + ".val)"
         pb := "*(" + ct + "*)(" + b + ".val)"
-        return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 0 || " + eq_field(ctx, option_inner(ty), pa, pb) + "))"
+        return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 0 || " + eq_field(dc, ctx, option_inner(ty), pa, pb) + "))"
     if is_result(ty):
-        ct := cty(ctx, result_ok(ty))
-        ce := cty(ctx, result_err(ty))
+        ct := cty(dc, ctx, result_ok(ty))
+        ce := cty(dc, ctx, result_err(ty))
         oa := "*(" + ct + "*)(" + a + ".ok)"
         ob := "*(" + ct + "*)(" + b + ".ok)"
         ea := "*(" + ce + "*)(" + a + ".err)"
         eb := "*(" + ce + "*)(" + b + ".err)"
-        okeq := eq_field(ctx, result_ok(ty), oa, ob)
-        ereq := eq_field(ctx, result_err(ty), ea, eb)
+        okeq := eq_field(dc, ctx, result_ok(ty), oa, ob)
+        ereq := eq_field(dc, ctx, result_err(ty), ea, eb)
         return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 1 ? " + okeq + " : " + ereq + "))"
     return "(" + a + " == " + b + ")"            # int/bool/float by value
 
@@ -2864,7 +2866,7 @@ fn eq_field(ctx: Ctx, ty: string, a: string, b: string) -> string:
 # nested enums / arrays / structs / strings). The value-semantic mirror of the
 # arena-allocating mk_ ctors — so a returned/stored/copied enum owns its subtree
 # in the destination arena instead of aliasing a freed scope.
-fn gen_enum_copy(ed: EnumDef, ctx: Ctx) -> string:
+fn gen_enum_copy(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     nm := ed.name
     out := "static " + nm + "* " + nm + "_copy(Arena* ar, " + nm + "* s) {\n"
     out = out + "    " + nm + "* r = amem(ar, sizeof(" + nm + "));\n    r->tag = s->tag;\n"
@@ -2875,7 +2877,7 @@ fn gen_enum_copy(ed: EnumDef, ctx: Ctx) -> string:
             out = out + "    if (s->tag == " + str(i) + ") {\n"
             j := 0
             for j < len(v.ptypes):
-                out = out + "        " + efield("r", v.name, j) + " = " + cp_field(ctx, v.ptypes[j], "ar", efield("s", v.name, j)) + ";\n"
+                out = out + "        " + efield("r", v.name, j) + " = " + cp_field(dc, ctx, v.ptypes[j], "ar", efield("s", v.name, j)) + ";\n"
                 j = j + 1
             out = out + "    }\n"
         i = i + 1
@@ -2888,7 +2890,7 @@ fn gen_enum_copy(ed: EnumDef, ctx: Ctx) -> string:
 fn efield(base: string, vn: string, j: int) -> string:
     return base + "->u." + vn + ".f" + str(j)
 
-fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
+fn gen_enum_decl(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     out := "struct " + ed.name + " {\n    int tag;\n"
     members := ""
     i := 0
@@ -2898,7 +2900,7 @@ fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
             members = members + "        struct {"
             j := 0
             for j < len(v.ptypes):
-                members = members + " " + cty(ctx, v.ptypes[j]) + "f" + str(j) + ";"
+                members = members + " " + cty(dc, ctx, v.ptypes[j]) + "f" + str(j) + ";"
                 j = j + 1
             members = members + " } " + v.name + ";\n"
         i = i + 1
@@ -2906,7 +2908,7 @@ fn gen_enum_decl(ed: EnumDef, ctx: Ctx) -> string:
         out = out + "    union {\n" + members + "    } u;\n"
     return out + "};\n"
 
-fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
+fn gen_enum_ctors(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     out := ""
     i := 0
     for i < len(ed.variants):
@@ -2919,7 +2921,7 @@ fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
             params := "Arena* ar"                 # the node lives in `ar` (the ambient arena)
             j := 0
             for j < len(v.ptypes):
-                params = params + ", " + cty(ctx, v.ptypes[j]) + "f" + str(j)
+                params = params + ", " + cty(dc, ctx, v.ptypes[j]) + "f" + str(j)
                 j = j + 1
             out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
             out = out + "    " + ed.name + "* n = amem(ar, sizeof(" + ed.name + "));\n"
@@ -2932,7 +2934,7 @@ fn gen_enum_ctors(ed: EnumDef, ctx: Ctx) -> string:
         i = i + 1
     return out
 
-fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
+fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     out := "static int " + ed.name + "_eq(" + ed.name + "* a, " + ed.name + "* b) {\n"
     out = out + "    if (a->tag != b->tag) return 0;\n"
     i := 0
@@ -2946,7 +2948,7 @@ fn gen_enum_eq(ed: EnumDef, ctx: Ctx) -> string:
             for j < len(v.ptypes):
                 if j > 0:
                     out = out + " && "
-                out = out + eq_field(ctx, v.ptypes[j], efield("a", v.name, j), efield("b", v.name, j))
+                out = out + eq_field(dc, ctx, v.ptypes[j], efield("a", v.name, j), efield("b", v.name, j))
                 j = j + 1
         out = out + ";\n"
         i = i + 1
@@ -3002,29 +3004,29 @@ fn preamble() -> string:
 # between (the functions need sizeof(T) / by-value assignment, but the Arr_T
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
-fn gen_arr_type(ctx: Ctx, et: string) -> string:
+fn gen_arr_type(dc: Decls, ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)                    # typedef + forward decls, so cross-refs
-    ct := cty(ctx, et)                           # (composite _eq, and nested-array _from
+    ct := cty(dc, ctx, et)                           # (composite _eq, and nested-array _from
     out := "typedef struct { " + ct + "* data; long len; long cap; } " + nm + ";\n"   # deep-copy via the inner _copy) resolve in any order
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
     out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n);\n"
     return out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a);\n"
 
-fn gen_arr_fns(ctx: Ctx, et: string) -> string:
+fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
-    ct := cty(ctx, et)                           # element C type, trailing space
+    ct := cty(dc, ctx, et)                           # element C type, trailing space
     out := "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
     # buffer lives in arena `ar` (NULL=malloc). push ARENA-GROWS (no realloc on
     # arena memory): allocate a doubled buffer and copy; the old one is dead and
     # reclaimed at arena_free. Elements are malloc'd by the store-copy at every
     # store site, so copy/slice stay SHALLOW (element pointers) and remain valid.
-    if elem_deepcopy(ctx, et):
+    if elem_deepcopy(dc, ctx, et):
         # heap elements live in the array's arena: _from (hence _copy/_slice)
         # deep-copies each element into `ar`, so a copied/returned/sliced array
         # fully owns its elements and frees them with its arena (closes the
         # element-residual leak). push grows the buffer shallowly (same array
         # identity, same arena) so it does NOT route through _from.
-        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; for (long i = 0; i < n; i++) a.data[i] = " + elem_copy_expr(ctx, et, "ar", "s[i]") + "; return a; }\n"
+        out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; for (long i = 0; i < n; i++) a.data[i] = " + elem_copy_expr(dc, ctx, et, "ar", "s[i]") + "; return a; }\n"
     else:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
@@ -3032,23 +3034,23 @@ fn gen_arr_fns(ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
     # _eq for every element type (eq_field handles scalar/str/enum/struct/array/
     # option/result); the gen_arr_type forward decl lets composite eq cross-ref.
-    out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
+    out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(dc, ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"
     return out
 
 # SOA typedef + helper forward decls — emitted BEFORE struct bodies so a struct
 # may embed a soa by value, and before struct copy/eq so they can call the soa
 # helpers. (Bodies are gen_soa, emitted after struct bodies for sizeof.)
-fn gen_soa_decl(ctx: Ctx, ty: string) -> string:
+fn gen_soa_decl(dc: Decls, ctx: Ctx, ty: string) -> string:
     sn := soa_struct(ty)
     nm := "Soa_" + sn
     si := 0
-    for si < len(ctx.structs):
-        if ctx.structs[si].name == sn:
-            flds := ctx.structs[si].fields
+    for si < len(dc.structs):
+        if dc.structs[si].name == sn:
+            flds := dc.structs[si].fields
             out := "typedef struct {"
             i := 0
             for i < len(flds):
-                out = out + " " + cty(ctx, flds[i].ty) + "* f" + str(i) + ";"
+                out = out + " " + cty(dc, ctx, flds[i].ty) + "* f" + str(i) + ";"
                 i = i + 1
             out = out + " long len; long cap; } " + nm + ";\n"
             out = out + "static void " + nm + "_push(" + nm + "* s, " + sn + " v);\n"
@@ -3061,18 +3063,18 @@ fn gen_soa_decl(ctx: Ctx, ty: string) -> string:
 # SOA family for `soa [Struct]`: one growable buffer per struct field (f0, f1,
 # ...) + a shared len/cap, instead of an array of records. Naive (realloc/leak)
 # like the Arr families. push grows each buffer and scatters the struct's fields.
-fn gen_soa(ctx: Ctx, ty: string) -> string:
+fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
     sn := soa_struct(ty)
     nm := "Soa_" + sn
     si := 0
-    for si < len(ctx.structs):
-        if ctx.structs[si].name == sn:
-            flds := ctx.structs[si].fields       # typedef + decls emitted by gen_soa_decl (early)
+    for si < len(dc.structs):
+        if dc.structs[si].name == sn:
+            flds := dc.structs[si].fields       # typedef + decls emitted by gen_soa_decl (early)
             out := "static void " + nm + "_push(" + nm + "* s, " + sn + " v) {\n"
             out = out + "    if (s->len == s->cap) { s->cap = s->cap ? s->cap * 2 : 4;\n"
             i := 0
             for i < len(flds):
-                ct := cty(ctx, flds[i].ty)
+                ct := cty(dc, ctx, flds[i].ty)
                 out = out + "        s->f" + str(i) + " = realloc(s->f" + str(i) + ", sizeof(" + ct + ") * s->cap);\n"
                 i = i + 1
             out = out + "    }\n"
@@ -3086,7 +3088,7 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
             out = out + "    " + nm + " r; r.len = s.len; r.cap = s.len;\n"
             i = 0
             for i < len(flds):
-                ct := cty(ctx, flds[i].ty)
+                ct := cty(dc, ctx, flds[i].ty)
                 out = out + "    r.f" + str(i) + " = s.len ? malloc(sizeof(" + ct + ") * s.len) : 0;\n"
                 out = out + "    for (long j = 0; j < s.len; j = j + 1) r.f" + str(i) + "[j] = s.f" + str(i) + "[j];\n"
                 i = i + 1
@@ -3097,7 +3099,7 @@ fn gen_soa(ctx: Ctx, ty: string) -> string:
             out = out + "    for (long j = 0; j < a.len; j = j + 1) {\n"
             i = 0
             for i < len(flds):
-                out = out + "        if (!(" + eq_field(ctx, flds[i].ty, "a.f" + str(i) + "[j]", "b.f" + str(i) + "[j]") + ")) return 0;\n"
+                out = out + "        if (!(" + eq_field(dc, ctx, flds[i].ty, "a.f" + str(i) + "[j]", "b.f" + str(i) + "[j]") + ")) return 0;\n"
                 i = i + 1
             out = out + "    }\n    return 1;\n}\n"
             return out
@@ -3205,50 +3207,50 @@ fn note_arr_types(acc: inout [string], ty: string):
 # (array literals / empty arrays that no annotation would reveal).
 # The body walkers thread the var env (names/types), mirroring gen, so that
 # type_of resolves variables inside tuple/array literals (e.g. t := (a, b)).
-fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], ctx: Ctx):
+fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
         EArrLit(elems):
-            note_arr_types(&acc, type_of(e, names, types, ctx))
+            note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(elems):
-                collect_expr(&acc, elems[j], names, types, ctx)
+                collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
         EArrEmpty(ety):
             note_arr_types(&acc, "[" + ety + "]")
         EMapEmpty(k, v):
             note_arr_types(&acc, "{" + k + ":" + v + "}")
         EMapLit(keys, vals):
-            note_arr_types(&acc, type_of(e, names, types, ctx))
+            note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(vals):
-                collect_expr(&acc, keys[j], names, types, ctx)
-                collect_expr(&acc, vals[j], names, types, ctx)
+                collect_expr(&acc, keys[j], names, types, dc, ctx)
+                collect_expr(&acc, vals[j], names, types, dc, ctx)
                 j = j + 1
         ETuple(elems):
-            note_arr_types(&acc, type_of(e, names, types, ctx))
+            note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(elems):
-                collect_expr(&acc, elems[j], names, types, ctx)
+                collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
         EBin(op, l, r):
-            collect_expr(&acc, l, names, types, ctx)
-            collect_expr(&acc, r, names, types, ctx)
+            collect_expr(&acc, l, names, types, dc, ctx)
+            collect_expr(&acc, r, names, types, dc, ctx)
         ECall(nm, args):
             j := 0
             for j < len(args):
-                collect_expr(&acc, args[j], names, types, ctx)
+                collect_expr(&acc, args[j], names, types, dc, ctx)
                 j = j + 1
         EField(b, f):
-            collect_expr(&acc, b, names, types, ctx)
+            collect_expr(&acc, b, names, types, dc, ctx)
         EIndex(b, idx):
-            collect_expr(&acc, b, names, types, ctx)
-            collect_expr(&acc, idx, names, types, ctx)
+            collect_expr(&acc, b, names, types, dc, ctx)
+            collect_expr(&acc, idx, names, types, dc, ctx)
         ESlice(b, lo, hi):
-            collect_expr(&acc, b, names, types, ctx)
-            collect_expr(&acc, lo, names, types, ctx)
-            collect_expr(&acc, hi, names, types, ctx)
+            collect_expr(&acc, b, names, types, dc, ctx)
+            collect_expr(&acc, lo, names, types, dc, ctx)
+            collect_expr(&acc, hi, names, types, dc, ctx)
         EAddr(inner):
-            collect_expr(&acc, inner, names, types, ctx)
+            collect_expr(&acc, inner, names, types, dc, ctx)
         EInt(t):
             j := 0
         EChar(t):
@@ -3260,42 +3262,42 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EVar(n):
             j := 0
 
-fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], ctx: Ctx):
+fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
     ts := types
     i := 0
     for i < len(stmts):
-        collect_stmt(&acc, stmts[i], &ns, &ts, ctx)
+        collect_stmt(&acc, stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
 
-fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], ctx: Ctx):
+fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e):
-            collect_expr(&acc, e, names, types, ctx)
-            ty := type_of(e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
+            ty := type_of(e, names, types, dc, ctx)
             push(names, n)
             push(types, ty)
         SAssign(n, e):
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
         SFieldAssign(lv, rhs):
-            collect_expr(&acc, lv, names, types, ctx)
-            collect_expr(&acc, rhs, names, types, ctx)
+            collect_expr(&acc, lv, names, types, dc, ctx)
+            collect_expr(&acc, rhs, names, types, dc, ctx)
         SPrint(e):
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
         SReturn(e):
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
         SReturnVoid:
             j := 0
         SExpr(e):
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
         STypedDecl(n, t, e):
             note_arr_types(&acc, t)
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
             push(names, n)
             push(types, t)
         SOrReturn(n, e):
-            collect_expr(&acc, e, names, types, ctx)
-            ety := type_of(e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
+            ety := type_of(e, names, types, dc, ctx)
             ty := ""
             if is_option(ety):                    # Option or_return binds the inner type
                 ty = option_inner(ety)
@@ -3304,34 +3306,34 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             push(names, n)
             push(types, ty)
         SDestructure(dnames, e):
-            collect_expr(&acc, e, names, types, ctx)
-            parts := tuple_parts(type_of(e, names, types, ctx))
+            collect_expr(&acc, e, names, types, dc, ctx)
+            parts := tuple_parts(type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(dnames):
                 push(names, dnames[j])
                 push(types, parts[j])
                 j = j + 1
         SMultiAssign(mnames, e):                  # vars already exist; just collect the RHS
-            collect_expr(&acc, e, names, types, ctx)
+            collect_expr(&acc, e, names, types, dc, ctx)
         SIf(c, tb, eb):
-            collect_expr(&acc, c, names, types, ctx)
-            collect_block(&acc, tb, names, types, ctx)
-            collect_block(&acc, eb, names, types, ctx)
+            collect_expr(&acc, c, names, types, dc, ctx)
+            collect_block(&acc, tb, names, types, dc, ctx)
+            collect_block(&acc, eb, names, types, dc, ctx)
         SWhile(c, body):
-            collect_expr(&acc, c, names, types, ctx)
-            collect_block(&acc, body, names, types, ctx)
+            collect_expr(&acc, c, names, types, dc, ctx)
+            collect_block(&acc, body, names, types, dc, ctx)
         SForRange(n, a, b, st, body):
-            collect_expr(&acc, a, names, types, ctx)
-            collect_expr(&acc, b, names, types, ctx)
-            collect_expr(&acc, st, names, types, ctx)
+            collect_expr(&acc, a, names, types, dc, ctx)
+            collect_expr(&acc, b, names, types, dc, ctx)
+            collect_expr(&acc, st, names, types, dc, ctx)
             bn := names
             bt := types
             push(bn, n)
             push(bt, "int")
-            collect_block(&acc, body, bn, bt, ctx)
+            collect_block(&acc, body, bn, bt, dc, ctx)
         SMatch(subj, variants, allbinds, bodies):
-            collect_expr(&acc, subj, names, types, ctx)
-            sty := type_of(subj, names, types, ctx)
+            collect_expr(&acc, subj, names, types, dc, ctx)
+            sty := type_of(subj, names, types, dc, ctx)
             j := 0
             for j < len(bodies):
                 bn := names                       # bind arm payloads so type_of resolves them
@@ -3349,18 +3351,18 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                         else:
                             push(bt, result_err(sty))
                 else:
-                    pts := variant_ptypes(ctx, variants[j])
+                    pts := variant_ptypes(dc, ctx, variants[j])
                     k := 0
                     for k < len(binds):
                         push(bn, binds[k])
                         push(bt, pts[k])
                         k = k + 1
-                collect_block(&acc, bodies[j], bn, bt, ctx)
+                collect_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
 # practice) plus every array element type that appears in an annotation.
-fn collect_elem_types(prog: Program, ctx: Ctx) -> [string]:
+fn collect_elem_types(prog: Program, dc: Decls, ctx: Ctx) -> [string]:
     acc := []string
     push(acc, "int")
     push(acc, "str")
@@ -3388,7 +3390,7 @@ fn collect_elem_types(prog: Program, ctx: Ctx) -> [string]:
             push(en, f.params[k])
             push(et, f.ptypes[k])
             k = k + 1
-        collect_block(&acc, f.body, en, et, ctx)   # composite types from literals
+        collect_block(&acc, f.body, en, et, dc, ctx)   # composite types from literals
         i = i + 1
     i = 0
     for i < len(prog.structs):
@@ -3420,8 +3422,9 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0, []int, []string)
-    ets := collect_elem_types(prog, ctx)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder)
+    ctx := Ctx([]string, []string, "", "0", 0, []int, []string)
+    ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
     # supporting arrays-of-structs, recursive structs, and mutual struct/enum refs:
@@ -3436,12 +3439,12 @@ fn main():
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
         if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
-            out = out + gen_arr_type(ctx, ets[i])
+            out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
     for i < len(ets):                            #     bodies, so a struct may embed a soa by value)
         if is_soa(ets[i]):
-            out = out + gen_soa_decl(ctx, ets[i])
+            out = out + gen_soa_decl(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # map struct(s), one per value type used
     for i < len(ets):
@@ -3451,7 +3454,7 @@ fn main():
     i = 0                                        # 2b. tuple struct bodies (may embed Arr_T, now complete)
     for i < len(ets):
         if is_tuple(ets[i]):
-            out = out + gen_tuple_struct(ctx, ets[i])
+            out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 3. enum + struct eq prototypes (mutual recursion)
     for i < len(prog.enums):
@@ -3463,16 +3466,16 @@ fn main():
         i = i + 1
     i = 0                                        # 4. user struct bodies (source order; array fields
     for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
-        out = out + gen_struct(prog.structs[i], ctx)
+        out = out + gen_struct(prog.structs[i], dc, ctx)
         i = i + 1
     i = 0                                        # 5. enum struct bodies (payloads may be value structs)
     for i < len(prog.enums):
-        out = out + gen_enum_decl(prog.enums[i], ctx)
+        out = out + gen_enum_decl(prog.enums[i], dc, ctx)
         i = i + 1
     i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
         sn := prog.structs[i].name               #     elements regardless of copy-fn definition order
-        if struct_is_heap(ctx, sn):
+        if struct_is_heap(dc, ctx, sn):
             out = out + "static " + sn + " " + sn + "_copy(Arena* ar, " + sn + " s);\n"
         i = i + 1
     i = 0
@@ -3489,12 +3492,12 @@ fn main():
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
         if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
-            out = out + gen_arr_fns(ctx, ets[i])
+            out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
     for i < len(ets):
         if is_soa(ets[i]):
-            out = out + gen_soa(ctx, ets[i])
+            out = out + gen_soa(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # shared hash + per-value-type map families
     has_map := false
@@ -3513,34 +3516,34 @@ fn main():
     i = 0                                        # 6b. tuple copy + equality (may call array fns above)
     for i < len(ets):
         if is_tuple(ets[i]):
-            out = out + gen_tuple_copy(ctx, ets[i])
-            out = out + gen_tuple_eq(ctx, ets[i])
+            out = out + gen_tuple_copy(dc, ctx, ets[i])
+            out = out + gen_tuple_eq(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 7. enum constructors + copy + equality
     for i < len(prog.enums):
-        out = out + gen_enum_ctors(prog.enums[i], ctx)
+        out = out + gen_enum_ctors(prog.enums[i], dc, ctx)
         i = i + 1
     i = 0
     for i < len(prog.enums):
-        out = out + gen_enum_copy(prog.enums[i], ctx)
+        out = out + gen_enum_copy(prog.enums[i], dc, ctx)
         i = i + 1
     i = 0
     for i < len(prog.enums):
-        out = out + gen_enum_eq(prog.enums[i], ctx)
+        out = out + gen_enum_eq(prog.enums[i], dc, ctx)
         i = i + 1
     i = 0                                        # 8. struct equality + deep-copy fns
     for i < len(prog.structs):
-        out = out + gen_struct_eq(ctx, prog.structs[i])
-        if struct_is_heap(ctx, prog.structs[i].name):
-            out = out + gen_struct_copy(ctx, prog.structs[i])
+        out = out + gen_struct_eq(dc, ctx, prog.structs[i])
+        if struct_is_heap(dc, ctx, prog.structs[i].name):
+            out = out + gen_struct_copy(dc, ctx, prog.structs[i])
         i = i + 1
     i = 0                                        # 9. prototypes
     for i < len(funcs):
         if funcs[i].name != "main":
-            out = out + gen_proto(funcs[i], ctx)
+            out = out + gen_proto(funcs[i], dc, ctx)
         i = i + 1
     i = 0
     for i < len(funcs):
-        out = out + gen_func(funcs[i], ctx)
+        out = out + gen_func(funcs[i], dc, ctx)
         i = i + 1
     print(out)
