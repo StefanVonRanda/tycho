@@ -25,12 +25,16 @@ are indicative, not a rigorous benchmark suite.
 > cut time **106 → 64 ms (1.66×)** (no malloc/free churn per scope), and a
 > **compact tagged-union enum layout** cut peak RSS **18.2 → 9.9 MB (1.84×)** (the
 > flat `Expr`/`Stmt` nodes — 25/33 fields — shrink to their active variant). Both
-> are output-invisible (fixpoint B≡C + 58 tests + the fuzzer). hierc0 now TIES
-> hierc on memory across the prong-B suite ([../bench/prongB/RESULTS.md](../bench/prongB/RESULTS.md))
-> and WINS tree-rewrite outright (7 MB / 94 ms); the remaining gap is generated-code
-> time on the deep-recursion binary-trees shape (hierc0 ~289 ms vs hierc ~201 ms),
-> not enum layout or arena bookkeeping. The C compiler stays the reference until
-> hierc0 outperforms it.
+> are output-invisible (fixpoint B≡C + 58 tests + the fuzzer). A third fix closed
+> the last generated-code gap: profiling binary-trees showed hierc0 doing 3× the
+> allocations (102.7M vs hierc's 34.0M) from two leaf-path bugs — a redundant
+> deep-copy on `return Leaf` and no shared singleton for nullary variants. Fixing
+> both dropped binary-trees **38 → 13 MB, 289 → 124 ms** (now hierc's exact alloc
+> count). hierc0 now **beats hierc on both memory and time on 3 of 4 prong-B
+> workloads** ([../bench/prongB/RESULTS.md](../bench/prongB/RESULTS.md)) and is
+> best-in-class on binary-trees; the one place it trails is string-pipeline memory,
+> which pays for Hier having no `char` type (each `str(d)` allocates a one-char
+> string). The C compiler stays the reference until hierc0 outperforms it.
 
 Three compilers are in play:
 
