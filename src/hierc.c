@@ -682,6 +682,7 @@ static const char *g_cur_pkg_prefix = "";
 static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty (main) */
     return g_cur_pkg_prefix[0] ? sfmt("%s%s", g_cur_pkg_prefix, n) : (char *)n;
 }
+static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
@@ -740,8 +741,15 @@ static Type parse_type(Parser *ps) {
         if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
         return res_of(ok, err);
     }
-    if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name (package-local: try the prefixed name) */
-        const char *nm = pkg_mangle(t->text);
+    if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
+        const char *nm;
+        if (peek(ps, 1)->kind == TK_DOT && peek(ps, 2)->kind == TK_IDENT) {
+            /* qualified type `pkg.Type` -> the imported package's mangled name */
+            nm = sfmt("%s%s", pkg_prefix_for(t->text), peek(ps, 2)->text);
+            ps->p += 2;                  /* skip qualifier + dot; the type-name ident is consumed on a hit below */
+        } else {
+            nm = pkg_mangle(t->text);    /* package-local: try the current package's prefixed name */
+        }
         int sid = struct_find(nm);
         if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }
         int eid = enum_find(nm);
@@ -4328,12 +4336,38 @@ static char *canon_dir(const char *dir) {
     return r ? r : xstrndup(dir, strlen(dir));
 }
 
-/* Read+parse every .hi in `dir` as package `pkgname` (mangled with `prefix`,
- * "" for the main package), append the defs to *prog, then recurse into this
- * package's imports (paths relative to `dir`). Each imported package's name is
- * the path's last component, and its files must declare exactly that — the
- * dir-name match is structural. The main package's directory may be named
- * anything (it is reached by the entry file, not by an import path). */
+/* Scan a lexed file's header for its import paths. The grammar puts every
+ * import after the optional `package` decl and before any definition, so a
+ * cheap token walk (no full parse, no type interning) suffices. Used to drive
+ * post-order package loading: an imported package must be fully parsed — its
+ * types registered — before the importer parses signatures that name them
+ * (`p: geom.Point`), because type references intern to numeric ids eagerly. */
+static void scan_imports(Tok *t, char **paths, int *n, int max) {
+    int i = 0;
+    while (t[i].kind == TK_NEWLINE) i++;
+    if (t[i].kind == TK_IDENT && !strcmp(t[i].text, "package")) {
+        i++;
+        if (t[i].kind == TK_IDENT) i++;
+    }
+    for (;;) {
+        while (t[i].kind == TK_NEWLINE) i++;
+        if (t[i].kind == TK_IDENT && !strcmp(t[i].text, "import")) {
+            i++;
+            if (t[i].kind == TK_IDENT) i++;          /* optional alias */
+            if (t[i].kind == TK_STR) {
+                if (*n < max) paths[(*n)++] = t[i].text;
+                i++;
+            }
+        } else break;
+    }
+}
+
+/* Load package `pkgname` (mangled with `prefix`, "" for the main package): lex
+ * every .hi in `dir`, load its imports FIRST (post-order, paths relative to
+ * `dir`), then full-parse this package's files and append the defs to *prog.
+ * Each imported package's name is its import path's last component and its
+ * files must declare exactly that (the dir match is structural); the main
+ * package's directory may be named anything (it is reached by the entry file). */
 static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, ProcVec *prog) {
     char *key = canon_dir(dir);
     for (int i = 0; i < g_npkg_active; i++)
@@ -4362,13 +4396,31 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
     qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
 
-    int imp_lo = g_nimports;   /* imports added below belong to THIS package */
+    /* lex every file once; collect this package's imports from the headers */
+    TokVec toks[512];
+    char *imp_paths[256]; int n_imp = 0;
+    for (int i = 0; i < nf; i++) {
+        g_srcname = files[i];
+        char *s = read_file(files[i]);
+        toks[i] = lex(s);
+        scan_imports(toks[i].v, imp_paths, &n_imp, 256);
+    }
+
+    /* load imported packages first (post-order; still on the active path => cycles caught) */
+    for (int k = 0; k < n_imp; k++) {
+        const char *path = imp_paths[k];
+        const char *slash = strrchr(path, '/');
+        const char *childname = slash ? slash + 1 : path;
+        char *childdir    = sfmt("%s/%s", dir, path);
+        char *childprefix = sfmt("%s__", childname);
+        merge_pkg(childdir, childname, childprefix, prog);
+    }
+
+    /* now full-parse this package's files: imported types are registered */
     for (int i = 0; i < nf; i++) {
         g_srcname = files[i];
         g_cur_pkg_prefix = prefix;
-        char *s = read_file(files[i]);
-        TokVec t = lex(s);
-        ProcVec pv = parse_program(t.v);
+        ProcVec pv = parse_program(toks[i].v);
         if (!g_parsed_package) {
             fprintf(stderr, "hierc: %s is in package `%s` but has no `package` declaration\n", files[i], pkgname);
             exit(1);
@@ -4385,18 +4437,7 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
             prog->v[prog->n++] = pv.v[j];
         }
     }
-    int imp_hi = g_nimports;
     g_cur_pkg_prefix = "";
-
-    /* recurse into this package's imports (still on the active path => cycles caught) */
-    for (int k = imp_lo; k < imp_hi; k++) {
-        const char *path = g_imports[k].path;
-        const char *slash = strrchr(path, '/');
-        const char *childname = slash ? slash + 1 : path;
-        char *childdir    = sfmt("%s/%s", dir, path);    /* relative to the importer */
-        char *childprefix = sfmt("%s__", childname);
-        merge_pkg(childdir, childname, childprefix, prog);
-    }
 
     g_npkg_active--;                       /* pop the DFS path */
     g_pkg_seen[g_npkg_seen++] = key;       /* mark merged */
