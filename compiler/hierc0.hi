@@ -293,6 +293,7 @@ struct Ctx:
     saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
     rettype: string           # current func's Hier return type (for the return-slot _scope free)
     owner: string             # arena that fresh allocations go into ("0"=NULL=malloc; "&_t"/"_parent"/"&_scope")
+    depth: int                # current block nesting depth (0 = function body _scope; d = block _b<d>)
 
 struct Program:
     structs: [StructDef]
@@ -1413,7 +1414,31 @@ fn gen_soa_slice(ctx: Ctx, ty: string, basec: string, loc: string, hic: string) 
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o)
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth)
+
+# Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
+# owner for the block's transients/local decls. Sibling blocks reuse the same
+# name in separate C scopes; nested blocks get distinct names by depth.
+fn enter_block(ctx: Ctx) -> Ctx:
+    d := ctx.depth + 1
+    return Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d)
+
+# C lvalue of the current block's arena.
+fn cur_arena(ctx: Ctx) -> string:
+    if ctx.depth == 0:
+        return "&_scope"
+    return "&_b" + str(ctx.depth)
+
+# Free sequence a `return` must run: every enclosing block arena innermost-first,
+# then the proc's own _scope. (The returned value lives in _parent, which
+# outlives all of these.)
+fn return_frees(ctx: Ctx) -> string:
+    out := ""
+    k := ctx.depth
+    for k > 0:
+        out = out + "arena_free(&_b" + str(k) + "); "
+        k = k - 1
+    return out + "arena_free(&_scope);"
 
 fn gen_expr(e: Expr, names: [string], types: [string], ctx: Ctx) -> string:
     match e:
@@ -1751,7 +1776,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
                 return "    " + name + " = scopy(0, " + gen_expr(e, names, types, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
-            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, ctx) + ";\n"
+            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, with_owner(ctx, "&_scope")) + ";\n"   # `name` may be an outer-scope var; keep its value at function scope, not a block arena
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
                 # the caller's table, so mutating it in place is a value-semantics
@@ -1816,9 +1841,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             # in _parent here or, if stored into a constructed container, forced to
             # malloc by the store sites (gen_store_args/ETuple/map_set/hbox) — so the
             # returned value never points into the freed _scope.
-            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, with_owner(ctx, "_parent")) + "; arena_free(&_scope); return _ret; }\n"
+            # free every enclosing block arena (return_frees), innermost-first,
+            # then _scope; the value is in _parent which outlives them all.
+            return "    { " + cty(ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, with_owner(ctx, "_parent")) + "; " + return_frees(ctx) + " return _ret; }\n"
         SReturnVoid:
-            return "    arena_free(&_scope); return;\n"
+            return "    " + return_frees(ctx) + " return;\n"
         SExpr(e):
             return "    " + gen_expr(e, names, types, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
@@ -1871,19 +1898,27 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], ctx: Ctx) -> 
             push(types, result_ok(rty))
             return code
         SIf(cond, then_body, else_body):
-            out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + gen_block(then_body, names, types, ctx) + "    }"
+            d1 := str(ctx.depth + 1)              # each branch is its own block arena
+            bc := enter_block(ctx)
+            op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n"
+            fr := "        arena_free(&_b" + d1 + ");\n"
+            out := "    if (" + gen_expr(cond, names, types, ctx) + ") {\n" + op + gen_block(then_body, names, types, bc) + fr + "    }"
             if len(else_body) > 0:
-                out = out + " else {\n" + gen_block(else_body, names, types, ctx) + "    }"
+                out = out + " else {\n" + op + gen_block(else_body, names, types, bc) + fr + "    }"
             return out + "\n"
         SWhile(cond, body):
-            return "    while (" + gen_expr(cond, names, types, ctx) + ") {\n" + gen_block(body, names, types, ctx) + "    }\n"
+            d1 := str(ctx.depth + 1)              # per-iteration block arena
+            bc := enter_block(ctx)
+            return "    while (" + gen_expr(cond, names, types, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, names, types, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SForRange(name, start, stop, step, body):
             header := "    for (long " + name + " = " + gen_expr(start, names, types, ctx) + "; " + name + " < " + gen_expr(stop, names, types, ctx) + "; " + name + " += " + gen_expr(step, names, types, ctx) + ") {\n"
             bn := names                           # loop var is scoped to body
             bt := types
             push(bn, name)
             push(bt, "int")
-            return header + gen_block(body, bn, bt, ctx) + "    }\n"
+            d1 := str(ctx.depth + 1)              # per-iteration block arena
+            bc := enter_block(ctx)
+            return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(ctx) + ");\n" + gen_block(body, bn, bt, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, ctx)
             scu := gen_expr(subj, names, types, ctx)   # subj is a simple place / pure call
@@ -2114,7 +2149,7 @@ fn gen_func(f: Func, ctx: Ctx) -> string:
         if not isp:
             push(saccums, raw[si])
         si = si + 1
-    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope")
+    fctx := Ctx(ctx.sigs, ctx.structs, ctx.enums, ctx.ntnames, ctx.ntunder, vparams, saccums, f.ret, "&_scope", 0)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(void) {\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -2782,7 +2817,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret))
         i = i + 1
-    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0")
+    ctx := Ctx(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, []string, []string, "", "0", 0)
     ets := collect_elem_types(prog, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

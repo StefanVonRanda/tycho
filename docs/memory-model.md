@@ -245,22 +245,29 @@ MM-3 maps 3.7x, MM-4 structs/tuples/boxes 1.67x. Enum nodes stay malloc (the
 recursive AST). Commits: ef68daa, cc9aa27, 8407340, a850736, 29c881a, 5438dc3,
 dfbf2d2, 605085c.
 
-### MM-5 (per-block arenas) — design + finding
-Open `Arena _bN = arena_child(<enclosing>)` per if/while/for block; in-block
-fresh allocations → `&_bN`; free `_bN` at block exit. Frees per-iteration
-transients eagerly instead of holding them to function return.
-- BLOCKER: needs escape analysis. A loop body mixes transients (free per
-  iteration) with escaping values — accumulators, the array being push'd across
-  iterations, assignments to OUTER-scope vars — which must allocate in the
-  enclosing scope, not `_bN`, or they dangle when `_bN` frees. hierc0 has no
-  per-var home-scope tracking (only inout-vs-local). Plan: track the env length
-  at block entry; a var at index < entry_len is "outer"; an SAssign to an outer
-  var builds its RHS in that var's home scope (thread a parallel var-scope
-  stack), everything else in `_bN`. A return inside a block uses `_parent`.
-- Risk: HIGH (UAF in the self-hoster if escape is mis-analyzed). Benefit:
-  MARGINAL (function-scope freeing already bounds memory at each return;
-  per-block only helps a single long-running function with per-iteration churn).
-  Verify via self-compile ASan + fixpoint + a loop-churn RSS delta.
+### MM-5 (per-block arenas) — design
+Open `Arena _bN = arena_child(<enclosing>)` per if/while/for block (per-ITERATION
+for loops); in-block fresh allocations → `&_bN`; free `_bN` at block exit. Frees
+per-iteration transients eagerly instead of holding them to function return.
+- NOT escape analysis. Because Hier is value-semantic with no aliasing, no
+  closures, and no free pointers (only explicit `inout`), every cross-scope move
+  is syntactically visible and its destination is LEXICALLY known at the write
+  site: `outer = e` → outer's home block; `push(outer,v)` → outer's home;
+  `return e` → `_parent`; arg/`inout` → caller. So it's lexical home-scope
+  routing, not dataflow tracing.
+- Implemented (lighter, sound): SDecl values + pure transient subexpressions use
+  `ctx.owner` = the current block arena (freed at block exit / per loop
+  iteration). Every WRITE that could target an enclosing-scope binding routes
+  away from the block arena to a longer-lived one: plain SAssign → `&_scope`
+  (function scope, outlives all blocks); push/map-accumulator → `owner_arena_of`
+  (function-scope local / malloc inout); SFieldAssign/stores → `0`/malloc;
+  return → `_parent` after freeing every enclosing block arena. So a value can
+  never be referenced after its block frees. A `return` inside depth-d blocks
+  frees `_bd..._b1` then `_scope`.
+- Refinement (the "full" lexical version): a parallel per-var home-arena stack so
+  block-local containers and reassignments also free per-block (the lighter
+  version keeps those at function scope — sound, just coarser). Routing is still
+  lexical; it's just finer-grained bookkeeping.
 
 ### MM-6 (optimizations) — banked refinements
 - Container ELEMENTS still malloc (option-A): strings in arrays, array/map
