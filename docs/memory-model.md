@@ -338,9 +338,33 @@ per-iteration transients eagerly instead of holding them to function return.
   (hierc0.hi is saturated with `[Token]`/`[Stmt]`/`[Func]` etc., so the
   self-compile exercises both parts heavily) + loop-local `[Item]` (string field)
   build 1M iters **184MB → 1.3MB (~140×)** (bench/structarr_build.hi, now a perf
-  guard). Remaining element residual: option/result (`[Option(T)]` /
-  `[Result(T,E)]`) elements — the boxed payload needs a re-box+deep-copy in
-  `elem_copy_expr`; the smallest, rarest case, banked.
+  guard).
+- ✅ MM-6f (commit pending): OPTION / RESULT ARRAY ELEMENTS — the box now lives in
+  the array's arena. `elem_deepcopy` extends to `is_option`/`is_result`;
+  `elem_copy_expr` re-boxes via the preamble helpers — `o.tag ? hsome(hbox(ar,
+  sizeof(T), o.val)) : hnone()` (result: `hok`/`herr` on `.ok`/`.err`) — so `_from`
+  gives a copied array an independent box, and `push`/literal (already gated by
+  `elem_deepcopy`) build the box in the array's arena instead of owner-0 malloc.
+  No forward protos needed (hbox/hsome/… are in the preamble). SCOPE (a deliberate
+  call): the box is re-homed and the PAYLOAD is shared shallowly — sound because
+  construction is unchanged (`Some/Ok/Err` payload stays owner-0/immortal, and the
+  whole option model still treats options as immutable/share-safe, so no copy path
+  had to change). This FULLY closes `[Option(scalar)]` / `[Result(scalar,…)]` (no
+  payload heap); for heap payloads (`[Option(str)]`) the box is freed but the
+  payload still leaks at construction. Verified: fixpoint B≡C (6450 → 6468 lines C)
+  + 57/57 ASan/UBSan (`tests/option_arrays.hi` is in `compiler/tests/`, so the
+  fixpoint differential covers `[Option]`) + loop-local `[Option(int)]` build 1M
+  iters **62MB → 1.4MB (~45×)** (bench/optarr_build.hi, now a perf guard).
+- Remaining (last) element residual: HEAP-PAYLOAD option/result elements
+  (`[Option(str)]`, `[Result([int],_)]`) leak the payload at construction. Closing
+  it means making options first-class deep-copied value types: `Some/Ok/Err`
+  payload inherits the ambient owner (like struct/tuple in MM-6e) AND every copy
+  path that today treats options as immutable/share-safe (gen_struct_copy,
+  gen_tuple_copy, cp_typed/gen_rhs, the return path) gains an option/result
+  deep-copy — a cross-cutting change to a working subsystem (+ the optres_borrow
+  optimization) for the rarest element type. Deliberately deferred (low reward,
+  highest blast radius); the bulk heap is O(1) and every common element type is
+  closed.
 - Inout container home-arena threading (a `_ina_`-style extra param) so pushes
   into inout arrays/maps arena-free instead of malloc-leak (owner_arena_of
   inout -> "0" today).
