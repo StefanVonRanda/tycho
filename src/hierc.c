@@ -4472,24 +4472,76 @@ static ProcVec compile_package(const char *entry, const char *pkgname) {
     return prog;
 }
 
+/* --bundle: print the post-order concatenation of a package program's source
+ * (each file keeps its `package`/`import` headers) as one stream — the input
+ * format for the stdin-only self-hosted compiler (hierc0), whose parser switches
+ * its mangling prefix on each `package` header. Same traversal/ordering as
+ * merge_pkg (imports first), so hierc0 sees definitions in dependency order. */
+static void bundle_pkg(const char *dir) {
+    char *key = canon_dir(dir);
+    for (int i = 0; i < g_npkg_active; i++)
+        if (!strcmp(g_pkg_active[i], key)) { fprintf(stderr, "hierc: import cycle at %s\n", dir); exit(1); }
+    for (int i = 0; i < g_npkg_seen; i++)
+        if (!strcmp(g_pkg_seen[i], key)) { free(key); return; }
+    if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
+    g_pkg_active[g_npkg_active++] = key;
+
+    DIR *d = opendir(dir);
+    if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
+    char *files[512]; int nf = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        const char *nm = de->d_name; size_t L = strlen(nm);
+        if (L > 3 && !strcmp(nm + L - 3, ".hi")) {
+            if (nf >= 512) { fprintf(stderr, "hierc: too many files in %s\n", dir); exit(1); }
+            files[nf++] = sfmt("%s/%s", dir, nm);
+        }
+    }
+    closedir(d);
+    if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
+    qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
+
+    char *imp_paths[256]; int n_imp = 0;
+    for (int i = 0; i < nf; i++) {
+        char *s = read_file(files[i]);
+        TokVec t = lex(s);
+        scan_imports(t.v, imp_paths, &n_imp, 256);
+    }
+    for (int k = 0; k < n_imp; k++)
+        bundle_pkg(sfmt("%s/%s", dir, imp_paths[k]));
+    for (int i = 0; i < nf; i++) {
+        fputs(read_file(files[i]), stdout);
+        fputc('\n', stdout);
+    }
+    g_npkg_active--;
+    g_pkg_seen[g_npkg_seen++] = key;
+}
+
 int main(int argc, char **argv) {
     const char *input = NULL;
     const char *out   = NULL;
     const char *cc    = "cc";
     int emit_c_only = 0;
+    int bundle = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
+        else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
         else if (argv[i][0] == '-') { fprintf(stderr, "hierc: unknown flag %s\n", argv[i]); return 1; }
         else input = argv[i];
     }
     if (!input) {
-        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--cc <compiler>]\n");
+        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--bundle] [--cc <compiler>]\n");
         return 1;
     }
     g_srcname = input;
+
+    if (bundle) {   /* emit the package's source as one post-order stream (for hierc0) */
+        bundle_pkg(path_dir(input));
+        return 0;
+    }
 
     char *base   = out ? xstrndup(out, strlen(out)) : strip_ext(input);
     char *c_path = sfmt("%s.c", base);
