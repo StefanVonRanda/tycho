@@ -65,7 +65,8 @@ typedef enum {
     TK_IDENT, TK_INT, TK_FLOAT, TK_STR, TK_CHAR,
     TK_COLONCOLON, TK_COLONEQ, TK_COLON, TK_EQ,
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
-    TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH,
+    TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_PERCENT,
+    TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
@@ -261,6 +262,8 @@ static TokVec lex(const char *src) {
             else if (c == '<' && c2 == '=') { k = TK_LE;         len = 2; }
             else if (c == '>' && c2 == '=') { k = TK_GE;         len = 2; }
             else if (c == '-' && c2 == '>') { k = TK_ARROW;      len = 2; }
+            else if (c == '<' && c2 == '<') { k = TK_SHL;        len = 2; }
+            else if (c == '>' && c2 == '>') { k = TK_SHR;        len = 2; }
             else if (c == ':') k = TK_COLON;
             else if (c == '=') k = TK_EQ;
             else if (c == '<') k = TK_LT;
@@ -276,6 +279,10 @@ static TokVec lex(const char *src) {
             else if (c == '.') k = TK_DOT;
             else if (c == ',') k = TK_COMMA;
             else if (c == '&') k = TK_AMP;
+            else if (c == '%') k = TK_PERCENT;
+            else if (c == '|') k = TK_PIPE;
+            else if (c == '^') k = TK_CARET;
+            else if (c == '~') k = TK_TILDE;
             else die_at(line, "unexpected character '%c'", c);
             tv_push(&out, (Tok){k, NULL, 0, line, 0});
             p += len;
@@ -993,12 +1000,19 @@ static Expr *parse_unary(Parser *ps) {
         e->lhs = parse_unary(ps);
         return e;
     }
+    if (at(ps, TK_TILDE)) {                /* unary bitwise NOT: operand in lhs, rhs NULL */
+        Tok *t = cur(ps); ps->p++;
+        Expr *e = new_expr(E_BINOP, t->line);
+        e->op = TK_TILDE; e->lhs = parse_unary(ps);
+        return e;
+    }
     return parse_postfix(ps);
 }
 
 static Expr *parse_mul(Parser *ps) {
     Expr *l = parse_unary(ps);
-    while (at(ps, TK_STAR) || at(ps, TK_SLASH)) {
+    while (at(ps, TK_STAR) || at(ps, TK_SLASH) || at(ps, TK_PERCENT) ||
+           at(ps, TK_SHL)  || at(ps, TK_SHR)   || at(ps, TK_AMP)) {
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
         e->op = t->kind; e->lhs = l; e->rhs = parse_unary(ps);
@@ -1009,7 +1023,7 @@ static Expr *parse_mul(Parser *ps) {
 
 static Expr *parse_add(Parser *ps) {
     Expr *l = parse_mul(ps);
-    while (at(ps, TK_PLUS) || at(ps, TK_MINUS)) {
+    while (at(ps, TK_PLUS) || at(ps, TK_MINUS) || at(ps, TK_PIPE) || at(ps, TK_CARET)) {
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
         e->op = t->kind; e->lhs = l; e->rhs = parse_mul(ps);
@@ -2007,6 +2021,11 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "unary `-` needs an int or a float");
                 return e->type = ot;   /* -Meters is a Meters */
             }
+            if (e->op == TK_TILDE) {   /* unary bitwise NOT: operand in lhs, rhs NULL */
+                if (resolve_expr(e->lhs) != T_INT)
+                    die_at(e->line, "unary `~` needs an int");
+                return e->type = T_INT;
+            }
             Type lt = resolve_expr(e->lhs);
             Type rt = resolve_expr(e->rhs);
             if (e->op == TK_AND || e->op == TK_OR) {
@@ -2039,6 +2058,15 @@ static Type resolve_expr(Expr *e) {
                 if (rt != T_STRING && rt != T_CHAR)
                     die_at(e->line, "cannot concatenate string with %s", type_name(rt));
                 return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
+            }
+            /* modulo, shifts, and bitwise ops are integer-only (C `%`/`<<`/`&`
+             * are ill-typed or undefined on doubles); both operands must be int. */
+            if (e->op == TK_PERCENT || e->op == TK_SHL || e->op == TK_SHR ||
+                e->op == TK_AMP || e->op == TK_PIPE || e->op == TK_CARET) {
+                if (lt != T_INT || rt != T_INT)
+                    die_at(e->line, "modulo / shift / bitwise operators require two ints (got %s, %s)",
+                           type_name(lt), type_name(rt));
+                return e->type = T_INT;
             }
             /* arithmetic: two ints or two floats (no implicit mixing — use
              * to_float/to_int). float `/` is true division; int `/` truncates.
@@ -3037,6 +3065,12 @@ static const char *op_str(TokKind op) {
         case TK_MINUS: return "-";
         case TK_STAR:  return "*";
         case TK_SLASH: return "/";
+        case TK_PERCENT: return "%";
+        case TK_AMP:   return "&";
+        case TK_PIPE:  return "|";
+        case TK_CARET: return "^";
+        case TK_SHL:   return "<<";
+        case TK_SHR:   return ">>";
         case TK_LT:    return "<";
         case TK_GT:    return ">";
         case TK_LE:    return "<=";
@@ -3252,6 +3286,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("(!%s)", gen_expr(e->lhs, arena));
             if (e->op == TK_MINUS && e->rhs == NULL)   /* unary negation */
                 return sfmt("(-%s)", gen_expr(e->lhs, arena));
+            if (e->op == TK_TILDE)                     /* unary bitwise NOT */
+                return sfmt("(~%s)", gen_expr(e->lhs, arena));
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */

@@ -1,0 +1,28 @@
+# Integer modulo and bitwise/shift operators, Go-style precedence: `% << >> &`
+# bind at the multiplicative level and `| ^` at the additive level, so every
+# bitwise op binds TIGHTER than comparison (no C `a & b == c` footgun). Unary `~`
+# is bitwise NOT. All are integer-only (a float operand is a type error).
+fn main():
+    print("mod=" + str(17 % 5) + "\n")            # 2
+    print("modprec=" + str(0 - 17 % 5) + "\n")    # 0 - (17%5) = -2  (% tighter than -)
+    print("and=" + str(12 & 10) + "\n")           # 8
+    print("or=" + str(12 | 10) + "\n")            # 14
+    print("xor=" + str(12 ^ 10) + "\n")           # 6
+    print("shl=" + str(1 << 10) + "\n")           # 1024
+    print("shr=" + str(1024 >> 3) + "\n")         # 128
+    print("bnot0=" + str(~0) + "\n")              # -1
+    print("bnot5=" + str(~5) + "\n")              # -6
+    print("p1=" + str(1 + 2 & 3) + "\n")          # 1 + (2&3) = 3   (& tighter than +)
+    print("p2=" + str(2 | 1 << 2) + "\n")         # 2 | (1<<2) = 6  (<< tighter than |)
+
+    ok := 0
+    if 4 & 6 == 4:                                # (4&6)==4 -> 4==4 -> true
+        ok = 1
+    print("cmp=" + str(ok) + "\n")                # 1
+
+    s := 0
+    i := 0
+    for i in range(0, 8):
+        if i & 1 == 1:                            # odd test via mask
+            s = s + i
+    print("oddsum=" + str(s) + "\n")              # 1+3+5+7 = 16

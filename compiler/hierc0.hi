@@ -41,6 +41,12 @@ enum Tok:
     TGe
     TNe
     TAmp
+    TPercent
+    TPipe
+    TCaret
+    TTilde
+    TShl
+    TShr
     TNewline
     TIndent
     TDedent
@@ -177,11 +183,17 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
         if i + 1 < n and src[i + 1] == 61:
             push(toks, Token(TLe, "<="))
             return i + 2
+        if i + 1 < n and src[i + 1] == 60:
+            push(toks, Token(TShl, "<<"))
+            return i + 2
         push(toks, Token(TLt, "<"))
         return i + 1
     elif c == 62:
         if i + 1 < n and src[i + 1] == 61:
             push(toks, Token(TGe, ">="))
+            return i + 2
+        if i + 1 < n and src[i + 1] == 62:
+            push(toks, Token(TShr, ">>"))
             return i + 2
         push(toks, Token(TGt, ">"))
         return i + 1
@@ -193,6 +205,18 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
         return i + 1
     elif c == 38:
         push(toks, Token(TAmp, "&"))
+        return i + 1
+    elif c == 37:
+        push(toks, Token(TPercent, "%"))
+        return i + 1
+    elif c == 124:
+        push(toks, Token(TPipe, "|"))
+        return i + 1
+    elif c == 94:
+        push(toks, Token(TCaret, "^"))
+        return i + 1
+    elif c == 126:
+        push(toks, Token(TTilde, "~"))
         return i + 1
     else:
         die("lex: unexpected character")
@@ -379,6 +403,9 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
         pos = pos + 1
         return EBin("-", EInt("0"), parse_atom(toks, &pos))
+    elif t.kind == TTilde:                       # unary bitwise NOT: ~E ==> ((0 - E) - 1)
+        pos = pos + 1
+        return EBin("-", EBin("-", EInt("0"), parse_atom(toks, &pos)), EInt("1"))
     elif t.kind == TAmp:                         # &place : pass to an inout param
         pos = pos + 1
         return EAddr(parse_postfix(toks, &pos))
@@ -509,7 +536,7 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
 
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
     l := parse_postfix(toks, &pos)
-    for toks[pos].kind == TStar or toks[pos].kind == TSlash:
+    for toks[pos].kind == TStar or toks[pos].kind == TSlash or toks[pos].kind == TPercent or toks[pos].kind == TShl or toks[pos].kind == TShr or toks[pos].kind == TAmp:
         op := toks[pos].text
         pos = pos + 1
         r := parse_postfix(toks, &pos)
@@ -518,7 +545,7 @@ fn parse_mul(toks: [Token], pos: inout int) -> Expr:
 
 fn parse_add(toks: [Token], pos: inout int) -> Expr:
     l := parse_mul(toks, &pos)
-    for toks[pos].kind == TPlus or toks[pos].kind == TMinus:
+    for toks[pos].kind == TPlus or toks[pos].kind == TMinus or toks[pos].kind == TPipe or toks[pos].kind == TCaret:
         op := toks[pos].text
         pos = pos + 1
         r := parse_mul(toks, &pos)
