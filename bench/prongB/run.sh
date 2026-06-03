@@ -51,10 +51,42 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
     echo
 }
 
+# The json-parse workload reads a generated doc: the four C-family parsers take
+# it on stdin; Koka (UTF-8 strings, no stdin slurp) reads it as a file-path arg.
+json_run() {                                  # <label> <binary> <stdin|arg>
+    lbl="$1"; bin="$2"; m="$3"
+    [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
+    if [ "$m" = stdin ]; then "$T/peakrss" "$bin" < "$T/json_in" > "$T/out" 2> "$T/m"
+    else                     "$T/peakrss" "$bin" "$T/json_in"   > "$T/out" 2> "$T/m"; fi
+    read rss ms < "$T/m"; kb="$(to_kb "$rss")"
+    h="$(md5sum < "$T/out" | cut -c1-8)"
+    [ -z "$ref" ] && ref="$h"
+    [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
+    printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
+}
+json_workload() {
+    ref=""
+    echo "== json-parse (recursive-descent: K parse-and-discard passes over a ~4.4MB doc) =="
+    printf '%-12s %10s %8s   %s\n' lang peakRSS time output
+    $HIERC "$D/json_gen.hi" --emit-c -o "$T/jgen" >/dev/null 2>&1 && $CC -O2 -o "$T/jgen" "$T/jgen.c"
+    "$T/jgen" > "$T/json_in"
+    $HIERC "$D/json_parse.hi" --emit-c -o "$T/j_hi" >/dev/null 2>&1 && $CC -O2 -o "$T/j_hi" "$T/j_hi.c"
+    json_run hier "$T/j_hi" stdin
+    $CC -O2 -o "$T/j_c" "$D/json_parse.c" 2>/dev/null; json_run c "$T/j_c" stdin
+    command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/j_rs" "$D/json_parse.rs" 2>/dev/null
+    json_run rust "$T/j_rs" stdin
+    if command -v go >/dev/null 2>&1; then cp "$D/json_parse.go" "$T/jg.go" && ( cd "$T" && go build -o j_go jg.go 2>/dev/null ); fi
+    json_run go "$T/j_go" stdin
+    if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.kkj" -o "$T/j_kk" "$D/jsonparse.kk" >/dev/null 2>&1 && chmod +x "$T/j_kk"; fi
+    json_run koka "$T/j_kk" arg
+    echo
+}
+
 workload "binary-trees (allocate / discard)"     binary_trees binarytrees
 workload "tree-rewrite (map a persistent tree)"   maptree      maptree
 workload "array-pipeline (flat-array passes)"     arr_pipeline arrpipeline
 workload "string-pipeline (build + hash strings)" string_pipe  stringpipe
+json_workload
 
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && echo "all outputs identical within each workload" || { echo "OUTPUT MISMATCH"; exit 1; }
