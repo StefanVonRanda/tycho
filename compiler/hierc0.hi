@@ -2711,9 +2711,15 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     # old buffer), THEN recycle, THEN assign -- recycling before the call
                     # would let the call's own allocations alias the live buffer. The { }
                     # scopes _r so repeated `a = f(a)` don't redeclare it. Mirrors hierc.
+                    # `name` must NOT be movable: a movable local can be the SOURCE
+                    # of a move (`b := a`) that shares its buffer with another live
+                    # var, so its "old" buffer may not actually be dead. Non-movable
+                    # (read in a loop, or read 2+ times) ⇒ never moved ⇒ uniquely
+                    # owns its buffer ⇒ safe to recycle. (Mirrors hierc's loop gate,
+                    # which off- by-construction excludes moves.)
                     rnty := type_of(EVar(name), names, types, dc, ctx)
                     rown := owner_arena_of(EVar(name), names, types, dc, ctx)
-                    if (rnty == "[int]" or rnty == "[float]") and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and rown != "0":
+                    if (rnty == "[int]" or rnty == "[float]") and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
                         return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
                     return deflt
                 EInt(t):

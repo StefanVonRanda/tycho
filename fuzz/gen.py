@@ -222,13 +222,17 @@ class Gen:
             kinds += ["vscheck", "vscheck"]
         int_arr_vars = [n for n, ty in env.items() if ty == "[int]"]
         if int_arr_vars:
-            kinds += ["arr_rebuild"]   # `a = xform(a)` -> liveness-driven buffer recycle
+            kinds += ["arr_rebuild", "arr_realloc"]   # liveness-driven buffer recycle
         k = self.r.choice(kinds)
 
-        if k == "arr_rebuild":         # reassign a loop-carried array from a call
+        if k == "arr_rebuild":         # reassign an array from a call that READS it
             n0 = self.r.choice(int_arr_vars)
             self.emit(ind, n0 + " = xform(" + n0 + ")")
             return
+        if k == "arr_realloc":         # reassign an array from a call that does NOT read it.
+            n0 = self.r.choice(int_arr_vars)   # combined with an earlier `b := n0` copybind this
+            self.emit(ind, n0 + " = mkarr(" + str(self.r.randint(1, 6)) + ")")  # is the move-alias case:
+            return                             # recycling n0's old buffer must not touch b's (shared via move)
 
         if k == "vscheck":
             # Copy a heap value, mutate the COPY, assert the ORIGINAL is unchanged.
