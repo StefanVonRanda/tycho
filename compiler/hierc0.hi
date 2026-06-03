@@ -3267,19 +3267,19 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
 fn gen_enum_copy(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     nm := ed.name
     out := "static " + nm + "* " + nm + "_copy(Arena* ar, " + nm + "* s) {\n"
-    out = out + "    " + nm + "* r = amem(ar, sizeof(" + nm + "));\n    r->tag = s->tag;\n"
     i := 0
     for i < len(ed.variants):
         v := ed.variants[i]
-        if len(v.ptypes) > 0:
+        if len(v.ptypes) > 0:                 # allocate a cell sized to THIS variant, not the union max
             out = out + "    if (s->tag == " + str(i) + ") {\n"
+            out = out + "        " + nm + "* r = amem(ar, offsetof(" + nm + ", u) + sizeof(((" + nm + "*)0)->u." + v.name + "));\n        r->tag = " + str(i) + ";\n"
             j := 0
             for j < len(v.ptypes):
                 out = out + "        " + efield("r", v.name, j) + " = " + cp_field(dc, ctx, v.ptypes[j], "ar", efield("s", v.name, j)) + ";\n"
                 j = j + 1
-            out = out + "    }\n"
+            out = out + "        return r;\n    }\n"
         i = i + 1
-    return out + "    return r;\n}\n"
+    return out + "    return s;\n}\n"           # nullary variant: shared immortal singleton
 
 # C lvalue for variant `vn`'s payload field j of enum node `base` (a pointer).
 # The compact layout nests payloads in a union (one struct per payload-bearing
@@ -3322,7 +3322,7 @@ fn gen_enum_ctors(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
                 params = params + ", " + cty(dc, ctx, v.ptypes[j]) + "f" + str(j)
                 j = j + 1
             out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
-            out = out + "    " + ed.name + "* n = amem(ar, sizeof(" + ed.name + "));\n"
+            out = out + "    " + ed.name + "* n = amem(ar, offsetof(" + ed.name + ", u) + sizeof(((" + ed.name + "*)0)->u." + v.name + "));\n"
             out = out + "    n->tag = " + str(i) + ";\n"
             j = 0
             for j < len(v.ptypes):
@@ -3353,7 +3353,7 @@ fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     return out + "    return 0;\n}\n"
 
 fn preamble() -> string:
-    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <dirent.h>\n"
+    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n"
     # Block-list arena, 8-byte aligned. A process-global block FREE-LIST (g_pool)
     # makes the per-scope/per-loop-iteration arena_child/free O(1) pointer ops:
     # arena_free hands blocks to the pool (not the OS) and arena_alloc takes from

@@ -2768,9 +2768,12 @@ static char *gen_call(Expr *e, const char *arena) {
         const char *en = g_enums[eid].name;
         if (var->npayload == 0)
             return sfmt("(&_sing_%s_%d)", en, vi);   /* shared singleton: no allocation */
-        /* arena-allocate one tagged cell; set tag + the variant's fields inline */
-        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, sizeof(E_%s)); _p->tag = %d;",
-                         en, en, arena, en, vi);
+        /* arena-allocate one tagged cell sized to THIS variant (tag region + just
+         * this variant's payload), not the union max -- a JNum node is 16B, not
+         * sizeof(the widest variant). Reads dispatch on the tag, so the smaller
+         * cell is never over-read; copies are field-wise (per variant). */
+        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, offsetof(E_%s, u) + sizeof(E_%s_%s)); _p->tag = %d;",
+                         en, en, arena, en, en, var->name, vi);
         for (int i = 0; i < var->npayload; i++)
             out = sfmt("%s _p->u.%s.f%d = %s;", out, var->name, i,
                        arg_into(var->payload[i], arena, e->args[i]));
@@ -4247,7 +4250,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 Variant *var = &ed->variants[v2];
                 if (var->npayload == 0) continue;
                 fprintf(o, "    if (v->tag == %d) {\n", v2);
-                fprintf(o, "        E_%s *d = (E_%s *)arena_alloc(a, sizeof *d); d->tag = %d;\n", en, en, v2);
+                fprintf(o, "        E_%s *d = (E_%s *)arena_alloc(a, offsetof(E_%s, u) + sizeof(E_%s_%s)); d->tag = %d;\n", en, en, en, en, var->name, v2);
                 for (int f = 0; f < var->npayload; f++)
                     fprintf(o, "        d->u.%s.f%d = %s;\n", var->name, f,
                             copy_into(var->payload[f], "a", sfmt("v->u.%s.f%d", var->name, f)));
