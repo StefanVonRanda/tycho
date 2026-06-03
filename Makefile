@@ -90,7 +90,7 @@ HI ?= examples/hello.hi
 static: hierc image
 	./hierc $(HI) --emit-c
 	podman run --rm -v "$(CURDIR)":/work -w /work hier-build \
-	    sh -c 'gcc -static -O2 -o $(basename $(HI)) $(basename $(HI)).c && echo "static build ok:" && file $(basename $(HI))'
+	    sh -c 'gcc -static -O2 -o $(basename $(HI)) $(basename $(HI)).c -lm && echo "static build ok:" && file $(basename $(HI))'
 
 clean:
 	rm -f hierc build/hier_rt_embed.h

@@ -1528,6 +1528,11 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="read_file",.ret=T_STRING,     .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="list_dir",.ret=T_ARRAY_STRING, .params={ T_STRING },               .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="args",   .ret=T_ARRAY_STRING, .params={ 0 },                       .nparams=0, .builtin=1 };
+    /* float math (libm) -- the irreducible numeric stdlib (min/max are trivial in-language) */
+    g_sigs[g_nsigs++] = (Sig){ .name="sqrt",   .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="pow",    .ret=T_FLOAT,        .params={ T_FLOAT, T_FLOAT },        .nparams=2, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="floor",  .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="fabs",   .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
 }
 
 /* ---------------------------------------------------- variable scoping */
@@ -2963,6 +2968,10 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool"))   /* zero-cost newtype unwrap */
         return gen_expr(e->args[0], arena);
+    if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
+        return sfmt("%s(%s)", e->sval, gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "pow"))   /* libm, 2 float args */
+        return sfmt("pow(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     /* user proc: first arg is the destination arena for its return. A heap
      * inout parameter takes TWO C args: the value's owning arena, then the
      * &pointer — so an allocating mutation in the callee lands where the
@@ -4701,7 +4710,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    char *cmd = sfmt("%s -O2 -o %s %s", cc, base, c_path);
+    char *cmd = sfmt("%s -O2 -o %s %s -lm", cc, base, c_path);   /* -lm: float-math builtins (sqrt/pow/...) */
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);

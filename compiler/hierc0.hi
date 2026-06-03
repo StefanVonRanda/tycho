@@ -938,7 +938,7 @@ struct Mctx:
     variants: [string]
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "list_dir" or name == "args" or name == "die" or name == "len" or name == "push" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "list_dir" or name == "args" or name == "die" or name == "len" or name == "push" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -1599,6 +1599,8 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "int"
     if name == "find":
         return "int"
+    if name == "sqrt" or name == "pow" or name == "floor" or name == "fabs":
+        return "float"
     if name == "to_float":
         return "float"
     if name == "to_int":
@@ -2039,6 +2041,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if type_of(args[0], names, types, dc, ctx) == "float":
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "sqrt" or name == "floor" or name == "fabs":
+                return name + "(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "pow":
+                return "pow(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "to_float":
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
@@ -3408,6 +3414,12 @@ fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
 
 fn preamble() -> string:
     out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n"
+    # Math builtins (sqrt/pow/floor/fabs): declare ONLY these four with their
+    # exact libc prototypes rather than `#include <math.h>`. The full header
+    # drops dozens of names into the global namespace (yn, y0, j0, gamma, ...)
+    # that collide with bare user-function names hierc0 emits (e.g. maps.hi's
+    # `fn yn`). -lm at link still provides the definitions.
+    out = out + "double sqrt(double); double pow(double, double); double floor(double); double fabs(double);\n"
     # Block-list arena, 8-byte aligned. A process-global block FREE-LIST (g_pool)
     # makes the per-scope/per-loop-iteration arena_child/free O(1) pointer ops:
     # arena_free hands blocks to the pool (not the OS) and arena_alloc takes from

@@ -59,10 +59,10 @@ run_one() {
 
     if ! "$HIERC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
         note "$name" "transpile"; sed 's/^/      /' "$TMP/$name.log"; ok=0
-    elif ! $CC -O2 -std=c11 -o "$nat" "$c" 2>"$TMP/$name.log"; then
+    elif ! $CC -O2 -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "native cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 \
-               -std=c11 -o "$san" "$c" 2>"$TMP/$name.log"; then
+               -std=c11 -o "$san" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "sanitizer cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     else
         "$nat" <"$in" >"$TMP/$name.nout" 2>/dev/null; nrc=$?

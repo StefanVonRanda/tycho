@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <math.h>
 #include <dirent.h>
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
