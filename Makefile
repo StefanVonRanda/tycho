@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bootstrap fixpoint fuzz image static clean
+.PHONY: all demo test test-update bench bootstrap fixpoint fuzz ci hooks image static clean
 
 all: hierc
 
@@ -70,6 +70,16 @@ fixpoint: hierc
 N ?= 500
 fuzz: hierc
 	@python3 fuzz/run.py $(N)
+
+# Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz. The single
+# "is the tree green" command. N defaults to 500 (override: make ci N=200).
+ci:
+	@sh scripts/ci.sh $(N)
+
+# Activate the local git pre-push gate (.githooks/pre-push: test + fixpoint).
+hooks:
+	@git config core.hooksPath .githooks
+	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
 
 image:
 	podman build -t hier-build -f podman/Dockerfile .

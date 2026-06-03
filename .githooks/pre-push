@@ -1,0 +1,33 @@
+#!/bin/sh
+# hier pre-push gate -- no broken code leaves this machine. (Local. No GitHub
+# Actions, ever.) Runs the FAST correctness gates that catch regressions in
+# seconds: the golden+sanitizer test suite and the self-host fixpoint. Both
+# include every recycle/soundness regression test, so a reintroduced corruption
+# bug is blocked here.
+#
+# The heavier differential fuzz is NOT in this hook (it would make every push take
+# minutes). Run it before a substantial push with `make ci` (full: test +
+# fixpoint + fuzz N=500) or `make fuzz N=...`.
+#
+# Activate once:  make hooks   (sets core.hooksPath to .githooks)
+# Emergency bypass (avoid): git push --no-verify
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+printf 'pre-push: make test ... '
+if make -s test >/tmp/hier-prepush.log 2>&1; then
+    printf 'ok\n'
+else
+    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
+    printf '\npre-push BLOCKED: make test failed. Push aborted.\n'; exit 1
+fi
+
+printf 'pre-push: make fixpoint ... '
+if make -s fixpoint >/tmp/hier-prepush.log 2>&1; then
+    printf 'ok\n'
+else
+    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
+    printf '\npre-push BLOCKED: make fixpoint failed. Push aborted.\n'; exit 1
+fi
+
+printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz).\n'
