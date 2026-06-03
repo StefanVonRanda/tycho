@@ -2694,6 +2694,18 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
                 return "    " + name + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
+            # liveness-driven recycle (ANY array RHS: call / slice / copybind / literal).
+            # a's old buffer is dead and -- value semantics -- uniquely owned, GATED on
+            # NOT movable so `name` is never a move source whose buffer is shared via
+            # `b := a`. The new value is always a DISTINCT fresh buffer (a place RHS is
+            # deep-copied by gen_rhs; a call/literal is fresh), enforced by the runtime
+            # `.data != .data` guard. Eval the RHS into a { }-scoped temp FIRST (it may
+            # read the old buffer), THEN recycle, THEN assign. is_array excludes maps, so
+            # the map_set in-place put below is unaffected.
+            rnty := type_of(EVar(name), names, types, dc, ctx)
+            rown := owner_arena_of(EVar(name), names, types, dc, ctx)
+            if is_array(rnty) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
+                return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data && " + lhs + ".data != _r.data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
                 # the caller's table, so mutating it in place is a value-semantics
@@ -2704,23 +2716,6 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
                         return "    " + mfam(type_of(EVar(name), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, dc, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
-                    # liveness-driven recycle: a loop-carried scalar-array LOCAL reassigned
-                    # from a function call. a's old buffer is dead and (value semantics)
-                    # uniquely owned, and a call's result never aliases its args, so hand
-                    # the old buffer back for reuse. Eval the RHS FIRST (the call reads the
-                    # old buffer), THEN recycle, THEN assign -- recycling before the call
-                    # would let the call's own allocations alias the live buffer. The { }
-                    # scopes _r so repeated `a = f(a)` don't redeclare it. Mirrors hierc.
-                    # `name` must NOT be movable: a movable local can be the SOURCE
-                    # of a move (`b := a`) that shares its buffer with another live
-                    # var, so its "old" buffer may not actually be dead. Non-movable
-                    # (read in a loop, or read 2+ times) ⇒ never moved ⇒ uniquely
-                    # owns its buffer ⇒ safe to recycle. (Mirrors hierc's loop gate,
-                    # which off- by-construction excludes moves.)
-                    rnty := type_of(EVar(name), names, types, dc, ctx)
-                    rown := owner_arena_of(EVar(name), names, types, dc, ctx)
-                    if is_array(rnty) and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
-                        return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
                     return deflt
                 EInt(t):
                     return deflt

@@ -1,0 +1,37 @@
+# Gate widening (axis 2): buffer recycling now applies to ANY array RHS form, not
+# just function calls -- slice (a = a[1:]), identity (a = a), array literal, and
+# copybind. A place RHS is deep-copied to a fresh buffer (gen_rhs / copy_into) and
+# a call/literal is inherently fresh, so the new value is always a DISTINCT buffer
+# from the old; a runtime `.data != .data` guard backs that up. The not-a-move-
+# source gate (read >= 2 / not movable) keeps it sound (qq below must stay intact).
+fn mk(n: int, base: int) -> [int]:
+    r := []int
+    for i in range(n):
+        push(r, base + i)
+    return r
+fn main():
+    a := mk(200, 0)
+    sl := 0
+    for j in range(199):
+        sl = sl + a[0]
+        a = a[1:]
+    b := mk(30, 0)
+    for j in range(10):
+        b = b
+    sb := 0
+    for i in range(len(b)):
+        sb = sb + b[i]
+    c := mk(5, 0)
+    for j in range(8):
+        c = [j, j + 1]
+    scc := 0
+    for i in range(len(c)):
+        scc = scc + c[i]
+    p := mk(40, 0)
+    qq := p
+    for j in range(10):
+        p = mk(40, 1000)
+    sq := 0
+    for i in range(len(qq)):
+        sq = sq + qq[i]
+    print("sl=" + str(sl) + " sb=" + str(sb) + " scc=" + str(scc) + " sq=" + str(sq) + "\n")

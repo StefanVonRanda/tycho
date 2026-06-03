@@ -3498,25 +3498,26 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * buffer to b). Read >= 2 => uniquely owns its buffer => its OLD buffer
              * is truly dead on reassign. (The loop gate alone is NOT enough: `b := a`
              * outside a loop then `a = mk()` inside one would recycle b's buffer.) */
+            /* ANY RHS form (call, slice, concat, copybind, array literal): a place
+             * RHS is copy_into'd to a fresh buffer above, and a call/concat/literal is
+             * inherently fresh, so the new value is always a DISTINCT buffer from the
+             * old -- enforced at runtime by the `.data != .data` guard below. Element
+             * type also unrestricted: we recycle the SPINE (data[]); heap elements are
+             * separate (partial reclaim), flat structs full. */
             int do_recycle = g_loop_depth > 0 && !is_accum(s->name)
                 && cv_arena(s->name) && !is_inout_param(s->name)
-                && s->expr->kind == E_CALL && s->expr->op != TK_ENUM
-                && is_array(s->expr->type)   /* any element type: we recycle the SPINE buffer
-                                              * (data[]), which is dead+unique exactly as for a
-                                              * scalar array. Heap elements (strings, sub-arrays)
-                                              * are separate, also dead, not recycled -> partial
-                                              * reclaim; flat structs -> full. Same mechanism the
-                                              * generic push-recycle already uses for every type. */
+                && is_array(s->expr->type)
                 && count_reads_b(g_proc_body, g_proc_nbody, s->name) >= 2;
             if (do_recycle) {
-                /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (the call
-                 * still reads a's old buffer to build its result), THEN recycle
-                 * the old buffer, THEN assign. Recycling before the call would let
-                 * the call's own allocations hand back a's still-live buffer. */
+                /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (it may read a's
+                 * old buffer to build the result -- a call's arg, a slice's range, a
+                 * concat operand), THEN recycle, THEN assign. The `.data != .data`
+                 * guard skips the recycle in the (here impossible, but cheap to rule
+                 * out) case the new value IS / points into the old buffer. */
                 int tid = g_blk++;
                 indent(o, ind); fprintf(o, "%s_rec%d = %s;\n", c_type(s->expr->type), tid, v);
-                indent(o, ind); fprintf(o, "if (h_%s.data) arena_recycle(%s, h_%s.data, (size_t)h_%s.cap * sizeof(*h_%s.data));\n",
-                                        s->name, owner, s->name, s->name, s->name);
+                indent(o, ind); fprintf(o, "if (h_%s.data && h_%s.data != _rec%d.data) arena_recycle(%s, h_%s.data, (size_t)h_%s.cap * sizeof(*h_%s.data));\n",
+                                        s->name, s->name, tid, owner, s->name, s->name, s->name);
                 indent(o, ind); fprintf(o, "h_%s = _rec%d;\n", s->name, tid);
             } else {
                 indent(o, ind);
