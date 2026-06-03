@@ -29,6 +29,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | array-pipeline    |  6 MB/47 ms²  |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
 | json-parse (real) | 96 MB/1118 ms | 91 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+| iter-transform³   | 3.5 GB/1712 ms | 1.5 GB/1149 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
 GROW with K (89/135/433 MB at K=1/5/30): hierc0's string accumulator (`s = s + …`)
@@ -59,6 +60,13 @@ by OOB-abort regression cases). Disable with `HIERC_NO_BOUNDS_ELISION=1`. The
 idiomatic `range(len(xs))` source form is what enables it (a bare `range(n)` bound
 can't be proven equal to `len`); `hierc0`'s array index is unchecked, so it was
 already at this speed.
+
+³ iter-transform is the deliberate **worst case** for the arena (see "Where the
+model loses"): a loop-carried value reassigned each step, so every dead
+intermediate is retained until scope exit. `hierc` 3.5 GB / `hierc0` 1.5 GB (they
+differ only in arena block-sizing + push growth; both are the same can't-free-mid-
+scope model, both ~500–1200× over C's 2.9 MB). This is the honest boundary, not a
+bug — implicit lexical arenas have no liveness-based reclamation.
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -365,7 +373,43 @@ leaked per pass (LeakSanitizer flagged the `hi_append` allocations). FIXED by
 making it arena-based like hierc's, and hierc0 then got the same compact nodes
 — now ~flat, matching hierc, no gap left on this workload.)
 
-## Summary across five workloads
+## Sixth workload: iter-transform — where the model LOSES (the honest boundary)
+
+Every workload above is a case the arena is *good* at: allocate-and-discard in
+bulk, reclaimed by one O(1) reset. This one is built to expose the opposite — the
+arena's defining weakness — so the comparison isn't only flattering cases.
+
+A long-lived value is **reassigned each step**: `a = step(a)` for m = 2000 steps
+over an n = 100 000 int array (`iter_transform.{hi,c,rs,go}`, `itertransform.kk`,
+all print the same checksum `104306`). Only the *latest* array is ever live — but
+an arena cannot free a single object mid-scope, so every dead intermediate stays
+in `main`'s arena until the function returns. Peak = TOTAL allocation, not the
+live set.
+
+| language                | peak RSS | wall time |
+| ----------------------- | -------: | --------: |
+| C (manual `free`)       |   2.9 MB |    284 ms |
+| Rust (`Vec`/RAII)       |   3.3 MB |    305 ms |
+| Go (GC)                 |   7.4 MB |    407 ms |
+| Koka (Perceus, reuse)   |    14 MB |   2778 ms |
+| **Hier** (arena)        | **3.47 GB** | **1712 ms** |
+
+**Hier uses ~250–1200× the memory of every rival** (and peak grows *linearly*
+with m: 0.9 / 1.7 / 3.5 GB at m = 500 / 1000 / 2000), because it retains all 2000
+dead arrays. It is even ~6× slower than C here — the 3.5 GB of allocation traffic
+it never reclaims also costs time. Everyone else reclaims each old array as it
+dies: C frees it, Rust drops it, Go's GC collects it, and **Koka's Perceus —
+seeing the list is uniquely owned — reuses its cons cells in place (FBIP), staying
+flat**. This is precisely the case reference counting was designed for and the
+case implicit lexical arenas cannot handle: **no liveness-based, mid-scope
+reclamation.** An arena's bulk-free is all-or-nothing at scope exit.
+
+This is the real shape of the trade: the arena wins big on bulk allocate-and-
+discard (trees, the JSON parser — fastest of all, beating C) and loses big when a
+long-lived scope churns through values it can't free early. Honest framing beats a
+suite of only-wins: the model is excellent, not universal.
+
+## Summary across six workloads
 
 | workload \ Hier rank   | memory | time |
 | ---------------------- | ------ | ---- |
@@ -374,28 +418,32 @@ making it arena-based like hierc's, and hierc0 then got the same compact nodes
 | array-pipeline (flat)  | 1st (tie w/ C/Rust)  | 3rd (beats Go/Koka; ~2× C, post bounds-elision) |
 | string-pipeline        | 1st (tie w/ C/Rust)  | 1st (tie w/ C) |
 | json-parse (real parser)| 4th of 5 (96 MB)    | 1st (beats C) |
+| **iter-transform**     | **5th — LAST (3.5 GB; C 3 MB)** | 4th (~6× C) |
 
 The value-semantic implicit-arena model is **fastest-or-tied on time in four of
-five workloads (it trails only array-pipeline, now ~2× C after bounds-check
-elision narrowed the per-element-check gap²) and lowest-or-tied on memory in
-three of five, never the GC/refcount tier**. The
-shape is consistent: where work is allocate-and-discard of pointer-structured
+six workloads (it trails array-pipeline, now ~2× C after bounds-check elision²)
+and lowest-or-tied on memory in three of six, never the GC/refcount tier — except
+on iter-transform, where it is dead last by ~1000×**. The shape is consistent and
+now honestly bounded: where work is allocate-and-discard of pointer-structured
 data (trees, the real JSON parser), the arena's O(1) bulk reclaim makes Hier the
 fastest — *beating hand-written `malloc`/`free` C* — because it pays no per-object
-free/drop/GC/refcount traffic; its only memory losses are where it retains a
-whole structure in one arena (json-parse) that C/Rust free incrementally. No GC,
-no reference counts — just lexical arenas and value semantics. (Two compiler
-findings came straight out of this suite: the `char` type closed the former
-string-pipeline time gap, and the json-parse workload exposed + drove the
-length-carrying-strings fix, a 116× win on recursive-descent parsing.)
+free/drop/GC/refcount traffic. **Its losses are exactly where liveness ≪ total
+allocation within one scope**: json-parse retains a whole tree (2nd-highest
+memory), and iter-transform retains every dead intermediate (catastrophic). No GC,
+no reference counts — just lexical arenas and value semantics, with a clear
+boundary. (Two compiler findings came straight out of this suite: the `char` type
+closed the former string-pipeline time gap, and the json-parse workload exposed +
+drove the length-carrying-strings fix, a 116× win on recursive-descent parsing.)
 
 ## Caveats / TODO
 
 - Single machine, single run; numbers are representative, not averaged.
 - Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
-- Four workloads now: two tree-shaped, one flat-array, one string-heavy. The
-  axes (pointer-structured / contiguous / character) are covered.
+- Six workloads now: two tree-shaped, one flat-array, one string-heavy, one real
+  recursive-descent parser, and one deliberate arena worst-case (iter-transform).
+  The axes (pointer-structured / contiguous / character) are covered, and the
+  model's losing boundary is mapped, not just its wins.
 - **Block-retaining `arena_reset` for loop scratch: DONE** (commit 4b18b89) —
   it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
   Hier win on both axes and binary-trees to a Hier win on time. The wall-time

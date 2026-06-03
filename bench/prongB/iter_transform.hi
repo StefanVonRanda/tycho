@@ -1,0 +1,28 @@
+# iterated-transform, Hier — the workload the arena model LOSES on (by design).
+# A long-lived value `a` is reassigned each step (`a = step(a)`): only the latest
+# array is ever live, but every intermediate stays in main's arena until the
+# function returns, because an arena cannot free a single object mid-scope. So
+# peak = TOTAL allocation (m arrays), not the live set (1 array). Manual free /
+# RAII / GC reclaim each old array; Koka's Perceus reuses the cons cells in place
+# (FBIP) -> all flat. Hier's peak grows linearly with m (~3.5 GB at m=2000 vs
+# ~3 MB for C). This maps the real boundary of implicit lexical arenas: no
+# liveness-based mid-scope reclamation. See RESULTS.md "Where the model loses".
+fn step(a: [int], p: int) -> [int]:
+    b := []int
+    for i in range(len(a)):
+        t := a[i] * 1103515245 + 12345
+        push(b, t - (t / p) * p)
+    return b
+fn main():
+    n := 100000
+    m := 2000
+    p := 2147483647
+    a := []int
+    for i in range(n):
+        push(a, i)
+    for j in range(m):
+        a = step(a, p)
+    s := 0
+    for i in range(len(a)):
+        s = s + a[i]
+    print(str(s - (s / 1000003) * 1000003) + "\n")

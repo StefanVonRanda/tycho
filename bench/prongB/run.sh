@@ -4,8 +4,10 @@
 # RSS + wall time). Every binary in a workload must print byte-identical output
 # (the cross-language correctness check). See RESULTS.md.
 #
-#   binary-trees  allocate a sea of short-lived trees + one long-lived, checksum
-#   tree-rewrite  map-rewrite a persistent tree many times, checksum each result
+#   binary-trees   allocate a sea of short-lived trees + one long-lived, checksum
+#   tree-rewrite   map-rewrite a persistent tree many times, checksum each result
+#   iter-transform reassign a loop-carried value each step — the arena's WORST
+#                  case (every dead intermediate retained until scope exit)
 #
 # Languages: Hier (implicit arenas), C (manual malloc/free), Rust (Box/RAII),
 # Go (GC), Koka (Perceus reference counting + reuse — the direct rival).
@@ -86,6 +88,7 @@ workload "binary-trees (allocate / discard)"     binary_trees binarytrees
 workload "tree-rewrite (map a persistent tree)"   maptree      maptree
 workload "array-pipeline (flat-array passes)"     arr_pipeline arrpipeline
 workload "string-pipeline (build + hash strings)" string_pipe  stringpipe
+workload "iter-transform (the arena's WORST case: reassign a loop-carried value)" iter_transform itertransform
 json_workload
 
 echo "-----------------------------------------------------------"
