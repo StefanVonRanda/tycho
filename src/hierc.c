@@ -2659,12 +2659,32 @@ static int name_escapes(const char *nm) {
  * reset in lockstep with its buffer each iteration). */
 static const char *g_accum[256];
 static int g_naccum = 0;
+/* `acc = acc + e1 + e2 + ... + ek` is a self-append accumulator for ANY k>=1.
+ * A left-associative `+` chain on strings parses as (((acc+e1)+e2)+...+ek), so
+ * the accumulator is the LEFT-SPINE LEAF. Walk down the `+`/string spine; if
+ * the leftmost operand is `acc`, the whole chain is appends onto acc's buffer.
+ * (The single-piece k=1 case is just acc+e, the original form.) */
 static int is_self_append(Stmt *s) {
-    return s->kind == S_ASSIGN && s->expr
-        && s->expr->kind == E_BINOP && s->expr->op == TK_PLUS
-        && s->expr->type == T_STRING
-        && s->expr->lhs->kind == E_IDENT
-        && !strcmp(s->expr->lhs->sval, s->name);
+    if (s->kind != S_ASSIGN || !s->expr) return 0;
+    Expr *e = s->expr;
+    if (!(e->kind == E_BINOP && e->op == TK_PLUS && e->type == T_STRING)) return 0;
+    for (Expr *cur = e; cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_STRING; cur = cur->lhs)
+        if (cur->lhs->kind == E_IDENT && !strcmp(cur->lhs->sval, s->name)) return 1;
+    return 0;
+}
+/* Collect the right operands of a self-append chain (is_self_append(s) true)
+ * into `out` in append / source order — (((acc+a)+b)+c) -> [a, b, c]. Returns
+ * the operand count, or -1 if it exceeds `max`. */
+static int collect_append_ops(Expr *e, const char *name, Expr **out, int max) {
+    Expr *rev[64]; int nr = 0;
+    for (Expr *cur = e; ; cur = cur->lhs) {
+        if (nr >= 64) return -1;
+        rev[nr++] = cur->rhs;
+        if (cur->lhs->kind == E_IDENT && !strcmp(cur->lhs->sval, name)) break;
+    }
+    if (nr > max) return -1;
+    for (int i = 0; i < nr; i++) out[i] = rev[nr - 1 - i];
+    return nr;
 }
 /* `m = map_set(m, k, v)` — a self-rebind of a map accumulator. The rebind
  * reuses m's unique backing table via an in-place put instead of the pure
@@ -3425,17 +3445,51 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * fully evaluated before the buffer is touched (handles acc=acc+acc
              * and acc=acc+f(acc)). */
             if (is_accum(s->name) && is_self_append(s)) {
-                char *e = gen_expr(s->expr->rhs, owner);
-                indent(o, ind);
-                /* a char piece appends one byte in place (no strlen, no snprintf);
-                 * a string piece appends its bytes. Both grow the same buffer. */
-                if (s->expr->rhs->type == T_CHAR)
-                    fprintf(o, "hier_str_append_char(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
-                            owner, s->name, s->name, s->name, e);
-                else
-                    fprintf(o, "hier_str_append(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
-                            owner, s->name, s->name, s->name, e);
-                break;
+                Expr *ops[64];
+                int nops = collect_append_ops(s->expr, s->name, ops, 64);
+                /* Multi-piece (k>=2) in-place is sound only if no operand reads
+                 * the accumulator itself: the first append mutates acc's buffer,
+                 * so an operand aliasing it (acc, substr(acc,..), acc[i:]) would
+                 * then see the GROWN value. By value semantics acc uniquely owns
+                 * its buffer, so the only way to alias it is to name it -- which
+                 * count_reads_e finds. The single-piece (k=1) path keeps the old
+                 * behavior: one operand passed straight to the append, so the
+                 * runtime still handles acc=acc+acc / acc=acc+f(acc). */
+                int alias_safe = 1;
+                if (nops >= 2)
+                    for (int k = 0; k < nops; k++)
+                        if (count_reads_e(ops[k], s->name)) { alias_safe = 0; break; }
+                if (nops == 1 || (nops >= 2 && alias_safe)) {
+                    /* a char piece appends one byte in place (no strlen); a string
+                     * piece appends its bytes. Both grow the same buffer. */
+                    if (nops >= 2) {
+                        /* Pre-evaluate ALL operands against acc's ORIGINAL value
+                         * into temps BEFORE any append, then append in source
+                         * order -- matches the "evaluate the whole RHS first"
+                         * semantics of the original full concat. */
+                        int id0 = g_blk; g_blk += nops;
+                        for (int k = 0; k < nops; k++) {
+                            char *e = gen_expr(ops[k], owner);
+                            indent(o, ind);
+                            fprintf(o, "%s _ap%d = %s;\n", ops[k]->type == T_CHAR ? "char" : "char*", id0 + k, e);
+                        }
+                        for (int k = 0; k < nops; k++) {
+                            indent(o, ind);
+                            fprintf(o, "%s(%s, &h_%s, &_len_h_%s, &_cap_h_%s, _ap%d);\n",
+                                    ops[k]->type == T_CHAR ? "hier_str_append_char" : "hier_str_append",
+                                    owner, s->name, s->name, s->name, id0 + k);
+                        }
+                    } else {
+                        char *e = gen_expr(ops[0], owner);
+                        indent(o, ind);
+                        fprintf(o, "%s(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
+                                ops[0]->type == T_CHAR ? "hier_str_append_char" : "hier_str_append",
+                                owner, s->name, s->name, s->name, e);
+                    }
+                    break;
+                }
+                /* else (an operand aliases acc, or > 64 pieces): fall through to
+                 * the general assign -- a fresh full concat. Correct, not in-place. */
             }
             /* in-place map accumulator: `m = map_set(m, k, v)` grows m's unique
              * table in its OWNER arena via put, instead of the pure deep-copy

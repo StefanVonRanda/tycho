@@ -2682,6 +2682,53 @@ fn any_has_call(es: [Expr]) -> bool:
         i = i + 1
     return false
 
+# Does the expression subtree reference the identifier `name`? Used as the
+# alias guard for multi-piece string appends: by value semantics the
+# accumulator uniquely owns its buffer, so a piece can only alias it by NAMING
+# it. Mirrors expr_has_call's exhaustive structure.
+fn expr_refs(e: Expr, name: string) -> bool:
+    match e:
+        EVar(n):
+            return n == name
+        EBin(o, l, r):
+            return expr_refs(l, name) or expr_refs(r, name)
+        ECall(nm, a):
+            return any_refs(a, name)
+        EField(b, f):
+            return expr_refs(b, name)
+        EIndex(b, i):
+            return expr_refs(b, name) or expr_refs(i, name)
+        ESlice(b, lo, hi):
+            return expr_refs(b, name) or expr_refs(lo, name) or expr_refs(hi, name)
+        EAddr(x):
+            return expr_refs(x, name)
+        EArrLit(es):
+            return any_refs(es, name)
+        EMapLit(ks, vs):
+            return any_refs(ks, name) or any_refs(vs, name)
+        ETuple(es):
+            return any_refs(es, name)
+        EInt(t):
+            return false
+        EChar(t):
+            return false
+        EFloat(f):
+            return false
+        EStr(s):
+            return false
+        EArrEmpty(t):
+            return false
+        EMapEmpty(k, v):
+            return false
+
+fn any_refs(es: [Expr], name: string) -> bool:
+    i := 0
+    for i < len(es):
+        if expr_refs(es[i], name):
+            return true
+        i = i + 1
+    return false
+
 # A scalar assignment/decl whose RHS makes a call: evaluate the RHS in a fresh
 # per-statement arena `_t` and free it after the scalar result is stored — so a
 # heap transient (e.g. the tree in `sum = sum + check(make(d))`) is reclaimed at
@@ -2729,7 +2776,12 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if has_str(ctx.saccums, name):        # string accumulator
                 aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # the var's home arena (consistent with its decl)
                 pieces := sacc_pieces(e, name)
-                if len(pieces) > 0:               # s = s + p1 + ... -> in-place append each piece
+                # multi-piece in-place is sound only if no piece names the
+                # accumulator: the first append grows its buffer, so a later
+                # piece reading `name` would see the grown value. A single piece
+                # passes straight through (runtime handles s=s+s). Otherwise fall
+                # back to the pure-concat scopy path below.
+                if len(pieces) > 0 and (len(pieces) == 1 or not any_refs(pieces, name)):   # s = s + p1 + ... -> in-place append each piece
                     aout := ""
                     k := 0
                     for k < len(pieces):

@@ -1,0 +1,23 @@
+# Regression: multi-piece string-append accumulators `s = s + a + b + ...`.
+# The accumulator is the left-spine leaf of the `+` chain, so each piece is an
+# in-place append onto s's buffer -- but ONLY when no piece names s. If a piece
+# reads s (it would see the buffer already grown by an earlier append), the
+# compiler must fall back to a full pure concat. Distinct values so a wrong
+# in-place result is visible, not masked by repeated identical bytes.
+fn main():
+    # accumulator referenced in a LATER piece -> must fall back (NOT "AB.AB.")
+    s := "AB"
+    s = s + "." + s
+    print(s + "\n")               # AB.AB
+
+    # accumulator-only chain -> fall back
+    t := "Q"
+    t = t + t + t
+    print(t + "\n")               # QQQ
+
+    # safe multi-piece (no self-reference) in a loop -> in-place, O(n)
+    u := ""
+    j := 0
+    for j in range(0, 3):
+        u = u + "<" + str(j) + ">"
+    print(u + "\n")               # <0><1><2>
