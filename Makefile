@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bootstrap fixpoint image static clean
+.PHONY: all demo test test-update bench bootstrap fixpoint fuzz image static clean
 
 all: hierc
 

@@ -5,6 +5,11 @@
 # pushes, struct/array nesting, returns, inout, match. It accumulates an int
 # checksum across all the state it builds and prints it once at the end, so two
 # correct compilers must produce byte-identical output (the differential oracle).
+# It ALSO emits value-semantics self-checks (the `vscheck` kind): copy a heap
+# value, mutate the COPY, and assert the ORIGINAL is unchanged, calling die() if
+# not. These catch deep-copy/aliasing miscompiles present in BOTH compilers --
+# which the hierc-vs-hierc0 differential structurally cannot, since the two would
+# agree on the same wrong answer; the self-check turns such a bug into a fault.
 # Types covered: int, float, string, char, arrays ([int]/[string]/[float]),
 # structs, recursive enums, Option(int), Result([int], string), (int, string)
 # tuples, {string:int}/{string:float} maps, `type Nt = int` newtypes, slices,
@@ -122,57 +127,60 @@ class Gen:
             return t + "(" + self.fallback_lit(self.newtypes[t], env) + ")"
         return "0"
 
-    # ---- contribute a value's checksum into `acc` ----------------------
-    def checksum_into(self, ind, name, t, env):
+    # ---- contribute a value's checksum into `acc` (a named int accumulator,
+    # "acc" by default; the value-semantics self-check passes a private temp so
+    # it can snapshot the same value twice and compare). -------------------
+    def checksum_into(self, ind, name, t, env, acc="acc"):
+        add = lambda ind2, e: self.emit(ind2, acc + " = " + acc + " + " + e)
         if t == "int":
-            self.emit(ind, "acc = acc + " + name)
+            add(ind, name)
         elif t == "float":
-            self.emit(ind, "acc = acc + to_int(" + name + ")")   # truncates; identical in both compilers
+            add(ind, "to_int(" + name + ")")   # truncates; identical in both compilers
         elif t in self.newtypes:                                  # `type Nt = int`: unwrap to base int
-            self.emit(ind, "acc = acc + to_int(" + name + ")")
+            add(ind, "to_int(" + name + ")")
         elif t == "string":
-            self.emit(ind, "acc = acc + len(" + name + ")")
+            add(ind, "len(" + name + ")")
         elif t.startswith("[") and t[1:-1] == "int":
             i = self.fresh("i")
             self.emit(ind, "for " + i + " in range(len(" + name + ")):")
-            self.emit(ind+1, "acc = acc + " + name + "[" + i + "]")
+            add(ind+1, name + "[" + i + "]")
         elif t.startswith("[") and t[1:-1] == "float":
             i = self.fresh("i")
             self.emit(ind, "for " + i + " in range(len(" + name + ")):")
-            self.emit(ind+1, "acc = acc + to_int(" + name + "[" + i + "])")
+            add(ind+1, "to_int(" + name + "[" + i + "])")
         elif t.startswith("[") and t[1:-1] == "string":
             i = self.fresh("i")
             self.emit(ind, "for " + i + " in range(len(" + name + ")):")
-            self.emit(ind+1, "acc = acc + len(" + name + "[" + i + "])")
+            add(ind+1, "len(" + name + "[" + i + "])")
         elif t.startswith("Option(") and t.endswith(")"):
             inner = t[7:-1]                                  # "int" or "string"
             contrib = "x" if inner == "int" else "len(x)"
             self.emit(ind, "match " + name + ":")
             self.emit(ind+1, "Some(x):")
-            self.emit(ind+2, "acc = acc + " + contrib)
+            add(ind+2, contrib)
             self.emit(ind+1, "None:")
-            self.emit(ind+2, "acc = acc + 0")
+            add(ind+2, "0")
         elif t == "(int, string)":
-            self.emit(ind, "acc = acc + " + name + ".0")
-            self.emit(ind, "acc = acc + len(" + name + ".1)")
+            add(ind, name + ".0")
+            add(ind, "len(" + name + ".1)")
         elif t == "{string:int}":
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            self.emit(ind+1, "acc = acc + map_get(" + name + ", " + ks + "[" + ii + "], 0)")
+            add(ind+1, "map_get(" + name + ", " + ks + "[" + ii + "], 0)")
         elif t == "{string:float}":
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            self.emit(ind+1, "acc = acc + to_int(map_get(" + name + ", " + ks + "[" + ii + "], 0.0))")
+            add(ind+1, "to_int(map_get(" + name + ", " + ks + "[" + ii + "], 0.0))")
         elif t == "Result([int], string)":                # heap Ok payload + Err string, matched both arms
             xs = self.fresh("xs"); er = self.fresh("e"); ii = self.fresh("i")
             self.emit(ind, "match " + name + ":")
             self.emit(ind+1, "Ok(" + xs + "):")
             self.emit(ind+2, "for " + ii + " in range(len(" + xs + ")):")
-            self.emit(ind+3, "acc = acc + " + xs + "[" + ii + "]")
+            add(ind+3, xs + "[" + ii + "]")
             self.emit(ind+1, "Err(" + er + "):")
-            self.emit(ind+2, "acc = acc + len(" + er + ")")
+            add(ind+2, "len(" + er + ")")
         elif t.startswith("[Option(") and t.endswith(")]"):
             inner = t[8:-2]                                  # "int" or "string"
             contrib = "x" if inner == "int" else "len(x)"
@@ -180,14 +188,14 @@ class Gen:
             self.emit(ind, "for " + ii + " in range(len(" + name + ")):")
             self.emit(ind+1, "match " + name + "[" + ii + "]:")
             self.emit(ind+2, "Some(x):")
-            self.emit(ind+3, "acc = acc + " + contrib)
+            add(ind+3, contrib)
             self.emit(ind+2, "None:")
-            self.emit(ind+3, "acc = acc + 0")
+            add(ind+3, "0")
         elif t in self.structs:
             for f, ft in self.structs[t]:
-                self.checksum_into(ind, name + "." + f, ft, env)
+                self.checksum_into(ind, name + "." + f, ft, env, acc)
         elif t in self.enums:
-            self.emit(ind, "acc = acc + sum" + t + "(" + name + ")")
+            add(ind, "sum" + t + "(" + name + ")")
 
     # ---- statements ----------------------------------------------------
     def gen_stmt(self, ind, env, budget):
@@ -205,7 +213,41 @@ class Gen:
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
+        # value-semantics self-check candidates: a mutable-heap var with a
+        # checksum-changing mutation (push to an array, or to a struct's array field).
+        vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
+        vs_struct = [(n, ty) for n, ty in env.items() if ty in self.structs
+                     and any(ft.startswith("[") for _, ft in self.structs[ty])]
+        if vs_arr or vs_struct:
+            kinds += ["vscheck", "vscheck"]
         k = self.r.choice(kinds)
+
+        if k == "vscheck":
+            # Copy a heap value, mutate the COPY, assert the ORIGINAL is unchanged.
+            # If a deep-copy/aliasing bug makes the copy share the original's
+            # storage, mutating the copy changes the original -> _s1 != _s0 -> die().
+            # This catches value-semantics miscompiles present in BOTH compilers,
+            # which the hierc-vs-hierc0 differential structurally cannot (they would
+            # agree on the same wrong answer). die() exits 1 -> the runner flags it.
+            PUSHC = {"int": "7", "string": '"qq"', "float": "2.0"}
+            if vs_struct and (not vs_arr or self.r.random() < 0.5):
+                a, t0 = self.r.choice(vs_struct)
+                f, ft = self.r.choice([(f, ft) for f, ft in self.structs[t0] if ft.startswith("[")])
+                target, el = a + "." + f, ft[1:-1]
+            else:
+                a, t0 = self.r.choice(vs_arr)
+                target, el = None, t0[1:-1]
+            s0 = self.fresh("vs"); s1 = self.fresh("vs"); b = self.fresh("cp")
+            self.emit(ind, s0 + " := 0")
+            self.checksum_into(ind, a, t0, env, s0)
+            self.emit(ind, b + " := " + a)               # deep copy (value semantics)
+            self.emit(ind, "push(" + (b + "." + f if target else b) + ", " + PUSHC[el] + ")")
+            self.emit(ind, s1 + " := 0")
+            self.checksum_into(ind, a, t0, env, s1)       # re-checksum the ORIGINAL
+            self.emit(ind, "if " + s1 + " != " + s0 + ":")
+            self.emit(ind+1, 'die("value-semantics violated: mutating a copy changed the original")')
+            env[b] = t0
+            return
 
         if k == "soa_use":                          # SOA core ops (the hierc0-supported subset:
             n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
