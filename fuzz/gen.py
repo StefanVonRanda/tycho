@@ -220,7 +220,15 @@ class Gen:
                      and any(ft.startswith("[") for _, ft in self.structs[ty])]
         if vs_arr or vs_struct:
             kinds += ["vscheck", "vscheck"]
+        int_arr_vars = [n for n, ty in env.items() if ty == "[int]"]
+        if int_arr_vars:
+            kinds += ["arr_rebuild"]   # `a = xform(a)` -> liveness-driven buffer recycle
         k = self.r.choice(kinds)
+
+        if k == "arr_rebuild":         # reassign a loop-carried array from a call
+            n0 = self.r.choice(int_arr_vars)
+            self.emit(ind, n0 + " = xform(" + n0 + ")")
+            return
 
         if k == "vscheck":
             # Copy a heap value, mutate the COPY, assert the ORIGINAL is unchanged.
@@ -388,6 +396,13 @@ class Gen:
     def emit_helpers(self):
         self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
+        # transform [int]->[int] used by the `arr_rebuild` kind: `a = xform(a)`
+        # reassigns a loop-carried array from a CALL, exercising the liveness-
+        # driven buffer-recycle codegen (the call reads a's old buffer to build
+        # the result, so recycling must happen after the call, not before).
+        # bounded (result in [0,99]) so repeated `a = xform(a)` can't overflow long.
+        self.out += ["fn xform(a: [int]) -> [int]:", "    r := []int", "    for i in range(len(a)):",
+                     "        v := a[i] + 1", "        push(r, (v - (v / 100) * 100))", "    return r", ""]
         self.out += ["fn mkRes(d: int) -> Result([int], string):", "    if d < 0:", "        return Err(\"neg\")",
                      "    r := []int", "    for i in range(d):", "        push(r, (i + 1))", "    return Ok(r)", ""]
         # SOA element struct (int fields, so it checksums) + or_return helpers.

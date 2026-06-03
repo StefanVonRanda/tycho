@@ -3461,7 +3461,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             }
             /* a self-rebuild `t = C(..., t, ...)` hands off t's buffer into
              * the new aggregate instead of copying it, even inside a loop. */
-            if (self_rebuild_move(s)) g_self_move_name = s->name;
+            int handed_off = self_rebuild_move(s);   /* the RHS takes over s's old buffer */
+            if (handed_off) g_self_move_name = s->name;
             /* If the result is non-heap (a scalar), nothing heap escapes this
              * statement, so any heap TRANSIENT in the RHS — e.g. a tree built
              * only to be folded to an int in `sum = sum + check(make(d))` —
@@ -3477,12 +3478,41 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * allocated in `owner` — no copy needed. */
             if (is_place(s->expr) && type_is_heap(s->expr->type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->expr->type, owner, v);
-            indent(o, ind);
-            /* an inout param is a pointer in the body; assign through it */
-            if (is_inout_param(s->name))
-                fprintf(o, "(*h_%s) = %s;\n", s->name, v);
-            else
-                fprintf(o, "h_%s = %s;\n", s->name, v);
+            /* liveness-driven recycle: a loop-carried scalar-array local being
+             * reassigned from a FUNCTION CALL (`a = step(a)`). A Hier call returns
+             * a freshly-owned value that -- by value semantics -- never aliases an
+             * argument, so a's OLD buffer is dead and uniquely owned the instant
+             * the call returns (the arg was only borrowed). Hand it back to its
+             * arena so the NEXT iteration's allocation reuses it, instead of the
+             * arena growing unbounded. FBIP reuse from STATIC value semantics --
+             * no refcount. Restricted to a plain call (op != TK_ENUM excludes enum
+             * constructors, which INCORPORATE the arg) and scalar-element arrays
+             * (one buffer, no nested heap). v is built above; the assign is below.
+             * (void)handed_off: the move-elision of the arg copy is orthogonal --
+             * step still only reads the borrowed buffer, so it's dead afterward. */
+            (void)handed_off;
+            int do_recycle = g_loop_depth > 0 && !is_accum(s->name)
+                && cv_arena(s->name) && !is_inout_param(s->name)
+                && s->expr->kind == E_CALL && s->expr->op != TK_ENUM
+                && (s->expr->type == T_ARRAY_INT || s->expr->type == T_ARRAY_FLOAT);
+            if (do_recycle) {
+                /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (the call
+                 * still reads a's old buffer to build its result), THEN recycle
+                 * the old buffer, THEN assign. Recycling before the call would let
+                 * the call's own allocations hand back a's still-live buffer. */
+                int tid = g_blk++;
+                indent(o, ind); fprintf(o, "%s_rec%d = %s;\n", c_type(s->expr->type), tid, v);
+                indent(o, ind); fprintf(o, "if (h_%s.data) arena_recycle(%s, h_%s.data, (size_t)h_%s.cap * sizeof(*h_%s.data));\n",
+                                        s->name, owner, s->name, s->name, s->name);
+                indent(o, ind); fprintf(o, "h_%s = _rec%d;\n", s->name, tid);
+            } else {
+                indent(o, ind);
+                /* an inout param is a pointer in the body; assign through it */
+                if (is_inout_param(s->name))
+                    fprintf(o, "(*h_%s) = %s;\n", s->name, v);
+                else
+                    fprintf(o, "h_%s = %s;\n", s->name, v);
+            }
             /* a non-self assignment to a tracked accumulator rebinds its
              * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
              * grow in place — forces the next append to allocate). */

@@ -39,7 +39,18 @@ typedef struct HBlock HBlock;
 struct HBlock { HBlock *next; size_t cap; size_t off; };
 /* block payload lives immediately after the header */
 
-typedef struct { HBlock *head; size_t blocksz; } Arena;
+/* Per-arena object free-list for liveness-driven recycling. When the compiler
+ * proves a heap buffer is dead and uniquely owned (a reassigned loop-carried
+ * local — value semantics guarantees no aliasing), it calls arena_recycle to
+ * hand the buffer back; the next same-or-smaller arena_alloc reuses it instead
+ * of bumping. This is FBIP-style in-place reuse derived from STATIC value
+ * semantics, not runtime refcounts (cf. Perceus). Bounded by HIER_FREECAP nodes
+ * so the alloc-path scan stays O(1)-ish. The list is per-arena, so arena_reset/
+ * arena_free simply drop it (the chunks live in blocks that get pooled/rewound,
+ * so a stale node could otherwise alias a fresh bump — clearing prevents that). */
+typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
+#define HIER_FREECAP 32
+typedef struct { HBlock *head; size_t blocksz; FreeNode *freelist; int nfree; } Arena;
 
 static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); }
 
@@ -77,13 +88,44 @@ Arena arena_new(size_t blocksz) {
     Arena a;
     a.head = NULL;
     a.blocksz = blocksz ? blocksz : HIER_BLOCK_DEFAULT;
+    a.freelist = NULL;
+    a.nfree = 0;
     return a;
+}
+
+/* Hand a proven-dead, uniquely-owned buffer back to its arena for reuse. `n` is
+ * the buffer's byte size. Stored only if it can hold a FreeNode header and the
+ * list isn't full (else dropped — it still frees normally at arena_reset/free).
+ * SOUND because: the caller has proven nothing else references this buffer
+ * (value semantics ⇒ unique ownership), and arena_alloc only ever bumps FORWARD,
+ * so a recycled chunk (already below the bump pointer) can never overlap a fresh
+ * bump — each region is handed out by exactly one path at a time. */
+void arena_recycle(Arena *a, void *p, size_t n) {
+    if (!p || n < sizeof(FreeNode) || a->nfree >= HIER_FREECAP) return;
+    FreeNode *fn = (FreeNode *)p;
+    fn->size = n;
+    fn->next = a->freelist;
+    a->freelist = fn;
+    a->nfree++;
 }
 
 Arena arena_child(Arena *parent) { return arena_new(parent->blocksz); }
 
 void *arena_alloc(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Hier types: long/double/ptr) */
+    /* reuse a recycled buffer first: BEST fit in [n, 2n] (smallest that fits,
+     * capped at 2x so a huge recycled buffer is never wasted on a tiny request --
+     * which would defeat reuse for a geometrically-grown array). The list is
+     * empty for any arena that never recycles, so this is one predictable branch
+     * on the hot path; only recycling arenas pay the short bounded scan. */
+    if (a->freelist) {
+        FreeNode **link = &a->freelist, **best = NULL; size_t bestsz = (size_t)-1;
+        for (; *link; link = &(*link)->next)
+            if ((*link)->size >= n && (*link)->size <= 2u * n && (*link)->size < bestsz) {
+                best = link; bestsz = (*link)->size;
+            }
+        if (best) { FreeNode *fn = *best; *best = fn->next; a->nfree--; return (void *)fn; }
+    }
     if (!a->head || a->head->off + n > a->head->cap) {
         size_t cap = n > a->blocksz ? n : a->blocksz;
         HBlock *b = block_get(cap);
@@ -100,6 +142,7 @@ void *arena_alloc(Arena *a, size_t n) {
  * pool. The common case -- a loop body whose per-iteration allocations fit in
  * one block -- then does zero pool traffic per iteration, only a pointer rewind. */
 void arena_reset(Arena *a) {
+    a->freelist = NULL; a->nfree = 0;   /* chunks live in blocks we're about to rewind/pool */
     HBlock *b = a->head;
     if (!b) return;
     block_release_chain(b->next);   /* overflow blocks -> pool */
@@ -109,6 +152,7 @@ void arena_reset(Arena *a) {
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 void arena_free(Arena *a) {
+    a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
     a->head = NULL;
 }
@@ -397,6 +441,7 @@ void hier_arr_int_push(Arena *a, HierArrInt *xs, long v) {
         long ncap = xs->cap ? xs->cap * 2 : 4;
         long *nd = (long *)arena_alloc(a, (size_t)ncap * sizeof(long));
         if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(long));
+        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(long));  /* old buffer is dead+unique */
         xs->data = nd;
         xs->cap = ncap;
     }
@@ -455,6 +500,7 @@ void hier_arr_float_push(Arena *a, HierArrFloat *xs, double v) {
         long ncap = xs->cap ? xs->cap * 2 : 4;
         double *nd = (double *)arena_alloc(a, (size_t)ncap * sizeof(double));
         if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(double));
+        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(double));  /* old buffer is dead+unique */
         xs->data = nd;
         xs->cap = ncap;
     }

@@ -1,12 +1,13 @@
-# iterated-transform, Hier — the workload the arena model LOSES on (by design).
+# iterated-transform, Hier — the arena's former WORST case, now CLOSED.
 # A long-lived value `a` is reassigned each step (`a = step(a)`): only the latest
-# array is ever live, but every intermediate stays in main's arena until the
-# function returns, because an arena cannot free a single object mid-scope. So
-# peak = TOTAL allocation (m arrays), not the live set (1 array). Manual free /
-# RAII / GC reclaim each old array; Koka's Perceus reuses the cons cells in place
-# (FBIP) -> all flat. Hier's peak grows linearly with m (~3.5 GB at m=2000 vs
-# ~3 MB for C). This maps the real boundary of implicit lexical arenas: no
-# liveness-based mid-scope reclamation. See RESULTS.md "Where the model loses".
+# array is ever live, but an arena cannot free one object mid-scope, so by default
+# every dead intermediate stayed in main's arena until return -- peak = TOTAL
+# allocation (~3.5 GB at m=2000 vs ~3 MB for C), the case Koka's Perceus handles
+# with runtime refcounts. Hier now closes it WITHOUT refcounts: value semantics
+# proves the reassigned old buffer is dead + uniquely owned, so the compiler emits
+# arena_recycle to hand it back for the next iteration to reuse (FBIP from STATIC
+# reasoning). 3.5 GB -> 4 MB, flat in m. See RESULTS.md "the arena's worst case,
+# then CLOSED" and docs/memory-model.md.
 fn step(a: [int], p: int) -> [int]:
     b := []int
     for i in range(len(a)):
