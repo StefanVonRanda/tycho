@@ -28,12 +28,17 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
 | array-pipeline    |  6 MB/132 ms |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
-| json-parse (real) | 129 MB/1151 ms | 433 MB/1494 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+| json-parse (real) | 129 MB/1151 ms | 120 MB/1357 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 
-¹ json-parse is fast on `hierc0` (O(1) raw index, never O(n²)) but its peak GROWS
-with K (89/135/433 MB at K=1/5/30): hierc0 retains each pass's parse tree instead
-of freeing the loop-local per iteration, where hierc stays flat (~129 MB). A
-loop-scope reclamation gap (separate from strings) — the open `hierc0` lever here.
+¹ json-parse is fast on `hierc0` (O(1) raw index, never O(n²)). Its peak USED to
+GROW with K (89/135/433 MB at K=1/5/30): hierc0's string accumulator (`s = s + …`)
+was malloc/realloc-based, so every accumulator-built string (here every parsed
+key/value) leaked per pass — LeakSanitizer flagged exactly the `hi_append`
+allocations. FIXED by making the accumulator arena-based like hierc's (grow the
+buffer in the variable's home arena via `amem`, freed when that scope frees):
+now ~flat (78 → 120 MB over K = 1 → 30), matching hierc; fixpoint B≡C + 200-fuzz
++ ASan green. (A lone bounded `read_all` input buffer still mallocs — one
+allocation, doesn't grow with K — a minor separate item.)
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the

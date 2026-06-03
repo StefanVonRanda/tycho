@@ -2659,10 +2659,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
     match s:
         SDecl(name, e):
             ty := type_of(e, names, types, dc, ctx)
-            if has_str(ctx.saccums, name):        # string accumulator: heap buffer + len/cap sidecars
-                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+            if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
                 push(types, ty)
+                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked)
+                code := "    char* " + name + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
                 code := "    " + cty(dc, ctx, ty) + name + ";\n" + scalar_transient(dc, ctx, e, names, types, name + " = ")
@@ -2678,19 +2679,20 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if is_scalar_ty(dc, ctx, type_of(EVar(name), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
                 return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
             if has_str(ctx.saccums, name):        # string accumulator
+                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # the var's home arena (consistent with its decl)
                 pieces := sacc_pieces(e, name)
                 if len(pieces) > 0:               # s = s + p1 + ... -> in-place append each piece
                     aout := ""
                     k := 0
                     for k < len(pieces):
                         if type_of(pieces[k], names, types, dc, ctx) == "char":   # one-byte append, no strlen
-                            aout = aout + "    hi_append_char(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
+                            aout = aout + "    hi_append_char(" + aar + ", &" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         else:
-                            aout = aout + "    hi_append(&" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
+                            aout = aout + "    hi_append(" + aar + ", &" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         k = k + 1
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
-                return "    " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
+                return "    " + name + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
@@ -3376,8 +3378,8 @@ fn preamble() -> string:
     out = out + "static char* sc_char(Arena* ar, const char* a, long c) { size_t la = strlen(a); char* r = amem(ar, la + 2); memcpy(r, a, la); r[la] = (char)c; r[la + 1] = 0; return r; }\n"
     out = out + "static char* i2s(Arena* ar, long n) { char* r = amem(ar, 24); snprintf(r, 24, \"%ld\", n); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { size_t n = strlen(s) + 1; char* r = amem(ar, n); memcpy(r, s, n); return r; }\n"
-    out = out + "static void hi_append(char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; *s = (char*)realloc(*s, (size_t)nc); *cap = nc; } memcpy(*s + *len, e, (size_t)le + 1); *len += le; }\n"
-    out = out + "static void hi_append_char(char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; *s = (char*)realloc(*s, (size_t)nc); *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; }\n"
+    out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* nb = (char*)amem(a, (size_t)nc); memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; }\n"
+    out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* nb = (char*)amem(a, (size_t)nc); memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = amem(ar, m + 1); memcpy(r, t, m + 1); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = amem(ar, n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
