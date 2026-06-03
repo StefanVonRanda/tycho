@@ -584,6 +584,33 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
         l = EBin("||", l, r)
     return l
 
+# `for x in COLL:` desugars to a collection-temp decl plus a range loop over its
+# indices, pushed as TWO statements (Hier has no globals for a prelude queue, so
+# the block builder calls this directly). COLL is bound to a temp so it is
+# evaluated exactly once; the element read `x := _fc[_fi]` reuses array/string
+# indexing. The temp id is the `for` token position -- unique per occurrence.
+fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
+    uid := str(pos)
+    pos = pos + 1                            # 'for'
+    varname := toks[pos].text
+    pos = pos + 1
+    expect_ident(toks, &pos, "in")
+    coll := parse_expr(toks, &pos)
+    expect(toks, &pos, TColon)
+    body := parse_block(toks, &pos)
+    cn := "_fc" + uid
+    iv := "_fi" + uid
+    largs := []Expr
+    push(largs, EVar(cn))                    # len(_fc)
+    fbody := []Stmt
+    push(fbody, SDecl(varname, EIndex(EVar(cn), EVar(iv))))   # x := _fc[_fi]
+    k := 0
+    for k < len(body):
+        push(fbody, body[k])
+        k = k + 1
+    push(out, SDecl(cn, coll))                                # _fc := COLL  (the prelude)
+    push(out, SForRange(iv, EInt("0"), ECall("len", largs), EInt("1"), fbody))
+
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
     open_block(toks, &pos)
@@ -591,7 +618,17 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
         if toks[pos].kind == TNewline:
             pos = pos + 1
         else:
-            push(stmts, parse_stmt(toks, &pos))
+            # foreach `for x in <non-range>:` -> handled here so it can push the
+            # collection-temp decl ahead of the loop; everything else is one stmt.
+            isfe := false
+            if toks[pos].kind == TIdent and toks[pos].text == "for" and pos + 4 < len(toks):
+                if toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TIdent and toks[pos + 2].text == "in":
+                    if not (toks[pos + 3].kind == TIdent and toks[pos + 3].text == "range" and toks[pos + 4].kind == TLParen):
+                        isfe = true
+            if isfe:
+                parse_foreach(toks, &pos, &stmts)
+            else:
+                push(stmts, parse_stmt(toks, &pos))
             if toks[pos].kind == TNewline:
                 pos = pos + 1
     pos = pos + 1

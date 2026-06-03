@@ -1111,6 +1111,13 @@ static Stmt *parse_if(Parser *ps, int line) {
     return s;
 }
 
+/* `for x in COLL:` desugars to a collection-temp decl plus a range loop. The
+ * temp decl must land in the block BEFORE the loop; parse_stmt queues it here
+ * and parse_block drains the queue ahead of the statement it returned. */
+static Stmt *g_pending[64];
+static int g_npending = 0;
+static int g_forin_uid = 0;
+
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
@@ -1194,31 +1201,66 @@ static Stmt *parse_stmt(Parser *ps) {
     }
     if (t->kind == TK_FOR) {
         ps->p++;
-        /* counting form: `for i in range(...)` */
+        /* counting form `for i in range(...)` or foreach `for x in COLL:` */
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
-            Stmt *s = new_stmt(S_FORRANGE, t->line);
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
-            s->name = var->text;
             eat(ps, TK_IN, "'in'");
-            Tok *rg = eat(ps, TK_IDENT, "'range'");
-            if (strcmp(rg->text, "range") != 0)
-                die_at(rg->line, "for loops only iterate 'range(...)'");
-            eat(ps, TK_LPAREN, "'('");
-            Expr *a1 = parse_expr(ps);
-            Expr *a2 = NULL, *a3 = NULL;
-            if (accept(ps, TK_COMMA)) a2 = parse_expr(ps);
-            if (a2 && accept(ps, TK_COMMA)) a3 = parse_expr(ps);
-            eat(ps, TK_RPAREN, "')'");
+            if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN) {
+                ps->p++;                     /* consume 'range' */
+                eat(ps, TK_LPAREN, "'('");
+                Stmt *s = new_stmt(S_FORRANGE, t->line);
+                s->name = var->text;
+                Expr *a1 = parse_expr(ps);
+                Expr *a2 = NULL, *a3 = NULL;
+                if (accept(ps, TK_COMMA)) a2 = parse_expr(ps);
+                if (a2 && accept(ps, TK_COMMA)) a3 = parse_expr(ps);
+                eat(ps, TK_RPAREN, "')'");
+                eat(ps, TK_COLON, "':' before the block");
+                eat(ps, TK_NEWLINE, "newline");
+                if (!a2) {                   /* range(n): 0 .. n */
+                    Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
+                    s->r_start = zero; s->r_stop = a1; s->r_step = NULL;
+                } else {                     /* range(a, b[, step]) */
+                    s->r_start = a1; s->r_stop = a2; s->r_step = a3;
+                }
+                s->body = parse_block(ps, &s->nbody);
+                return s;
+            }
+            /* foreach over a collection (array or string):
+             *   for x in COLL:        _fcN := COLL
+             *       <body>      ==>    for _fiN in range(0, len(_fcN)):
+             *                              x := _fcN[_fiN]
+             *                              <body>
+             * COLL is bound to a temp so it is evaluated EXACTLY once; the element
+             * read reuses array/string indexing and its bounds-check elision. The
+             * temp decl is queued (g_pending) so parse_block emits it before the loop. */
+            Expr *coll = parse_expr(ps);
             eat(ps, TK_COLON, "':' before the block");
             eat(ps, TK_NEWLINE, "newline");
-            if (!a2) {                       /* range(n): 0 .. n */
-                Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
-                s->r_start = zero; s->r_stop = a1; s->r_step = NULL;
-            } else {                         /* range(a, b[, step]) */
-                s->r_start = a1; s->r_stop = a2; s->r_step = a3;
-            }
-            s->body = parse_block(ps, &s->nbody);
-            return s;
+            int nbody = 0; Stmt **ubody = parse_block(ps, &nbody);
+            int uid = g_forin_uid++;
+            char *cn = sfmt("_fc%d", uid), *iv = sfmt("_fi%d", uid);
+            Stmt *tmp = new_stmt(S_DECL, t->line);   /* _fcN := COLL (the prelude) */
+            tmp->name = cn; tmp->expr = coll;
+            Expr *cref = new_expr(E_IDENT, t->line); cref->sval = cn; cref->pkg = g_cur_pkg_prefix;
+            Expr *iref = new_expr(E_IDENT, t->line); iref->sval = iv; iref->pkg = g_cur_pkg_prefix;
+            Expr *idx = new_expr(E_INDEX, t->line); idx->lhs = cref; idx->rhs = iref;
+            Stmt *elem = new_stmt(S_DECL, t->line);  /* x := _fcN[_fiN] */
+            elem->name = var->text; elem->expr = idx;
+            Stmt *fr = new_stmt(S_FORRANGE, t->line);
+            fr->name = iv;
+            Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
+            Expr *cref2 = new_expr(E_IDENT, t->line); cref2->sval = cn; cref2->pkg = g_cur_pkg_prefix;
+            Expr *lenc = new_expr(E_CALL, t->line); lenc->sval = "len"; lenc->pkg = g_cur_pkg_prefix;
+            lenc->args = (Expr **)xmalloc(sizeof(Expr *)); lenc->args[0] = cref2; lenc->nargs = 1;
+            fr->r_start = zero; fr->r_stop = lenc; fr->r_step = NULL;
+            Stmt **fbody = (Stmt **)xmalloc((size_t)(nbody + 1) * sizeof(Stmt *));
+            fbody[0] = elem;
+            for (int k = 0; k < nbody; k++) fbody[k + 1] = ubody[k];
+            fr->body = fbody; fr->nbody = nbody + 1;
+            if (g_npending >= 64) die_at(t->line, "too many nested foreach loops in one block");
+            g_pending[g_npending++] = tmp;
+            return fr;
         }
         /* condition form: `for cond:` — does everything a while loop does */
         Stmt *s = new_stmt(S_WHILE, t->line);
@@ -1302,8 +1344,15 @@ static Stmt **parse_block(Parser *ps, int *count) {
     Stmt **body = NULL; int n = 0, cap = 0;
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
+        Stmt *st = parse_stmt(ps);
+        /* a foreach queued a collection-temp decl to emit before its loop */
+        for (int k = 0; k < g_npending; k++) {
+            if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)realloc(body, (size_t)cap * sizeof(Stmt *)); }
+            body[n++] = g_pending[k];
+        }
+        g_npending = 0;
         if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)realloc(body, (size_t)cap * sizeof(Stmt *)); }
-        body[n++] = parse_stmt(ps);
+        body[n++] = st;
     }
     eat(ps, TK_DEDENT, "dedent");
     *count = n;
