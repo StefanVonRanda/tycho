@@ -2297,6 +2297,45 @@ fn is_place(e: Expr) -> bool:
         EAddr(inner):
             return false
 
+# A slice expression already MATERIALIZES an owning copy in ctx.owner
+# (Arr_*_slice/substr/gen_soa_slice all allocate fresh into ctx.owner), so unlike
+# other places it must NOT be deep-copied again on bind -- that double-allocates
+# and leaks the intermediate. gen_rhs returns the slice code directly.
+fn is_eslice(e: Expr) -> bool:
+    match e:
+        ESlice(b, lo, hi):
+            return true
+        EInt(t):
+            return false
+        EChar(t):
+            return false
+        EFloat(f):
+            return false
+        EStr(s):
+            return false
+        EVar(n):
+            return false
+        EBin(o, l, r):
+            return false
+        ECall(n, a):
+            return false
+        EField(b, f):
+            return false
+        EIndex(b, i):
+            return false
+        EArrLit(es):
+            return false
+        EArrEmpty(t):
+            return false
+        EMapEmpty(k, v):
+            return false
+        EMapLit(ks, vs):
+            return false
+        ETuple(es):
+            return false
+        EAddr(inner):
+            return false
+
 fn is_evar(e: Expr, name: string) -> bool:
     match e:
         EVar(n):
@@ -2562,6 +2601,9 @@ fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
     ty := type_of(e, names, types, dc, ctx)
     if can_move(e, ty, names, types, dc, ctx):       # move-on-last-use: hand off the buffer, elide the copy
         return code
+    if is_eslice(e) and (is_array(ty) or ty == "str"):   # array/str slices already own (Arr_*_slice/substr
+        return code                                      # build fresh in ctx.owner) -- no double copy. A SOA slice
+                                                         # is a VIEW (cap 0), so it falls through to Soa_*_copy below.
     if is_array(ty) and is_place(e):
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(dc, ctx, ty) and struct_is_heap(dc, ctx, ty) and is_place(e):
