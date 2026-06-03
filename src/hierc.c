@@ -1599,6 +1599,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="find",   .ret=T_INT,          .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="split",  .ret=T_ARRAY_STRING, .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="read_file",.ret=T_STRING,     .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="write_file",.ret=T_BOOL,      .params={ T_STRING, T_STRING },      .nparams=2, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="list_dir",.ret=T_ARRAY_STRING, .params={ T_STRING },               .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="args",   .ret=T_ARRAY_STRING, .params={ 0 },                       .nparams=0, .builtin=1 };
     /* float math (libm) -- the irreducible numeric stdlib (min/max are trivial in-language) */
@@ -3053,6 +3054,9 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "read_file")) {
         return sfmt("hier_read_file(%s, %s)", arena, gen_expr(e->args[0], arena));
+    }
+    if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
+        return sfmt("hier_write_file(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     }
     if (!strcmp(e->sval, "list_dir")) {
         return sfmt("hier_list_dir(%s, %s)", arena, gen_expr(e->args[0], arena));

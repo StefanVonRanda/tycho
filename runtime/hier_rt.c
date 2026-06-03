@@ -349,6 +349,18 @@ char *hier_read_all(Arena *a) {
     return r;
 }
 
+/* write_file(path, data): write data's exact bytes (length from the string
+ * header, so embedded NULs survive) to path, truncating it. 1 on success, 0 if
+ * the file couldn't be opened or the write was short. */
+long hier_write_file(const char *path, const char *data) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    long n = hier_str_len(data);
+    size_t w = fwrite(data, 1, (size_t)n, f);
+    fclose(f);
+    return (w == (size_t)n) ? 1 : 0;
+}
+
 /* read_file(path): the whole file as a string, or "" if it can't be opened. */
 char *hier_read_file(Arena *a, const char *path) {
     FILE *f = fopen(path, "rb");

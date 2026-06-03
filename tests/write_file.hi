@@ -1,0 +1,26 @@
+# write_file(path, contents) -> bool: writes contents' exact bytes (truncating
+# the file), returns true on success / false if the file can't be opened. Round-
+# trips through read_file. Writes only to /tmp, so the test is self-contained and
+# leaves no state in the repo.
+fn main():
+    path := "/tmp/hier_write_file_test.dat"
+    body := "alpha\nbeta\ngamma\n"
+    if write_file(path, body):
+        print("write=ok\n")
+    else:
+        print("write=fail\n")
+
+    back := read_file(path)
+    if back == body:
+        print("roundtrip=match\n")
+    else:
+        print("roundtrip=DIFFER\n")
+    print("len=" + str(len(back)) + "\n")           # 17
+
+    if write_file(path, "hi"):                       # overwrite truncates
+        print("after=" + read_file(path) + "\n")     # hi
+
+    if write_file("/no_such_dir_zzz/x", "y"):        # unwritable path -> false
+        print("bad=ok\n")
+    else:
+        print("bad=handled\n")
