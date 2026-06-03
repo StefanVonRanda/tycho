@@ -1,0 +1,35 @@
+# Gate widening (element types): a flat-struct array ([P], all-scalar fields) gets
+# FULL buffer reclaim on reassign-from-call -- the data[] holds the structs inline,
+# no nested heap. Both reassign-recycle and push-recycle now cover composite arrays.
+# Checks correctness of the recycled path AND the move-alias guard (qb stays intact).
+struct P:
+    x: int
+    y: int
+fn rep(n: int, base: int) -> [P]:
+    r := []P
+    for i in range(n):
+        push(r, P(base + i, base - i))
+    return r
+fn step(a: [P]) -> [P]:
+    r := []P
+    for i in range(len(a)):
+        push(r, P(a[i].x + 1, a[i].y + 1))
+    return r
+fn main():
+    a := rep(80, 0)
+    b := a
+    for j in range(40):
+        a = rep(80, 1000000)
+    qa := 0
+    for i in range(len(a)):
+        qa = qa + a[i].x
+    c := rep(50, 0)
+    for j in range(25):
+        c = step(c)
+    qc := 0
+    for i in range(len(c)):
+        qc = qc + c[i].x
+    qb := 0
+    for i in range(len(b)):
+        qb = qb + b[i].x
+    print("qa=" + str(qa) + " qb=" + str(qb) + " qc=" + str(qc) + "\n")

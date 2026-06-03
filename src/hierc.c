@@ -3501,7 +3501,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int do_recycle = g_loop_depth > 0 && !is_accum(s->name)
                 && cv_arena(s->name) && !is_inout_param(s->name)
                 && s->expr->kind == E_CALL && s->expr->op != TK_ENUM
-                && (s->expr->type == T_ARRAY_INT || s->expr->type == T_ARRAY_FLOAT)
+                && is_array(s->expr->type)   /* any element type: we recycle the SPINE buffer
+                                              * (data[]), which is dead+unique exactly as for a
+                                              * scalar array. Heap elements (strings, sub-arrays)
+                                              * are separate, also dead, not recycled -> partial
+                                              * reclaim; flat structs -> full. Same mechanism the
+                                              * generic push-recycle already uses for every type. */
                 && count_reads_b(g_proc_body, g_proc_nbody, s->name) >= 2;
             if (do_recycle) {
                 /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (the call
@@ -4268,9 +4273,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "        long nc = xs->cap ? xs->cap * 2 : 4;\n"
             "        %s*nd = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s));\n"
             "        for (long i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
+            "        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"  /* dead spine; element heap lives on via nd */
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
-            i, i, ct, ct, ct, ct, copy_into(et, "a", "v"));
+            i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
         fprintf(o,
             "static %shier_arr_C%d_get(HierArrC%d xs, long i) {\n"
             "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, xs.len); exit(1); }\n"

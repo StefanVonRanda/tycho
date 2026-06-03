@@ -2719,7 +2719,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     # which off- by-construction excludes moves.)
                     rnty := type_of(EVar(name), names, types, dc, ctx)
                     rown := owner_arena_of(EVar(name), names, types, dc, ctx)
-                    if (rnty == "[int]" or rnty == "[float]") and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
+                    if is_array(rnty) and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
                         return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
                     return deflt
                 EInt(t):

@@ -560,6 +560,7 @@ void hier_arr_str_push(Arena *a, HierArrStr *xs, const char *v) {
         long ncap = xs->cap ? xs->cap * 2 : 4;
         char **nd = (char **)arena_alloc(a, (size_t)ncap * sizeof(char *));
         if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
+        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(char *));  /* dead spine; strings live on via nd */
         xs->data = nd;
         xs->cap = ncap;
     }
