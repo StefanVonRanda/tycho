@@ -1,0 +1,36 @@
+# Bounds-check elision (hierc): `for i in range(len(A)):` makes A[i] provably
+# in-range, so the per-element check is skipped. This locks in the CORRECTNESS
+# of the elided codegen — reads, in-place writes, nested loops over two arrays,
+# and access under an `if`. (The "must NOT elide when A/i is reassigned or A is
+# passed to a call" half is covered by the fuzzer + the OOB-abort cases.)
+fn main():
+    a := []int
+    for i in range(20):
+        push(a, i * 3)
+
+    # read elision
+    s := 0
+    for i in range(len(a)):
+        s = s + a[i]
+
+    # in-place write elision (a[i] = ...), then read under an `if`
+    for i in range(len(a)):
+        a[i] = a[i] + 1
+    t := 0
+    for i in range(len(a)):
+        if a[i] > 30:
+            t = t + a[i]
+
+    # nested loops over two distinct arrays — inner indexes b, outer indexes a;
+    # neither array is reassigned or passed to a call, so both elide
+    b := []int
+    for i in range(5):
+        push(b, i + 100)
+    cross := 0
+    for i in range(len(a)):
+        for j in range(len(b)):
+            cross = cross + a[i] * b[j]
+
+    print("s=" + str(s) + "\n")
+    print("t=" + str(t) + "\n")
+    print("cross=" + str(cross) + "\n")

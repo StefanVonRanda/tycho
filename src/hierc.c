@@ -2340,6 +2340,82 @@ static void resolve_program(ProcVec *prog) {
 }
 
 /* ------------------------------------------------------------- codegen */
+/* --- bounds-check elision for monotone loop indices -----------------------
+ * Inside `for i in range(len(A)):` (start 0, step +1), the access `A[i]` is
+ * provably in [0, len(A)): the C loop caches `_stop = len(A)` once at entry,
+ * `len` is an un-redefinable builtin returning the true length, Hier has NO
+ * in-place array-shrink op, and we verify below that the loop body never
+ * reassigns/shadows A or i and never passes A whole to a call (push / a
+ * possibly-inout callee could change it). So the per-element bounds check is
+ * redundant and we emit the raw `A.data[i]`. A read `A[i]` and `print(A[i])`,
+ * `acc = acc + A[i]` stay elidable (they pass `A[i]`, not `A`); `A = ...`,
+ * `push(A, x)`, `f(A)` all disable it. Escape hatch: HIERC_NO_BOUNDS_ELISION=1.
+ * This is provably-safe range narrowing, NOT a blanket "trust the index". */
+typedef struct { const char *iv, *arr; } ElidePair;
+static ElidePair g_elide[64];   /* active (loopvar,array) pairs, one per enclosing safe loop */
+static int g_nelide;
+static int g_elide_disabled = -1;
+static int elision_on(void) {
+    if (g_elide_disabled < 0) g_elide_disabled = getenv("HIERC_NO_BOUNDS_ELISION") ? 1 : 0;
+    return !g_elide_disabled;
+}
+
+/* Does `e` pass the whole array `arr` (a bare identifier) as a direct argument
+ * to any call? Such a call may be inout and shrink/rebind it -> not elidable. */
+static int expr_passes_arr(Expr *e, const char *arr) {
+    if (!e) return 0;
+    if (e->kind == E_CALL)
+        for (int i = 0; i < e->nargs; i++)
+            if (e->args[i] && e->args[i]->kind == E_IDENT && !strcmp(e->args[i]->sval, arr))
+                return 1;
+    if (expr_passes_arr(e->lhs, arr) || expr_passes_arr(e->rhs, arr)) return 1;
+    for (int i = 0; i < e->nargs; i++) if (expr_passes_arr(e->args[i], arr)) return 1;
+    return 0;
+}
+
+static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr);
+/* True if this stmt could invalidate `A[i] in range`: reassign/shadow iv or
+ * arr, or pass arr whole to a call (recursively, including nested blocks). */
+static int stmt_unsafe(Stmt *s, const char *iv, const char *arr) {
+    if (!s) return 0;
+    switch (s->kind) {
+        case S_DECL: case S_ASSIGN:
+            if (s->name && (!strcmp(s->name, iv) || !strcmp(s->name, arr))) return 1;
+            break;
+        case S_MDECL: case S_MASSIGN:
+            for (int i = 0; i < s->nnames; i++)
+                if (!strcmp(s->names[i], iv) || !strcmp(s->names[i], arr)) return 1;
+            break;
+        case S_FORRANGE:   /* a nested loop reusing the name rebinds it */
+            if (s->name && (!strcmp(s->name, iv) || !strcmp(s->name, arr))) return 1;
+            break;
+        default: break;
+    }
+    if (expr_passes_arr(s->expr, arr) || expr_passes_arr(s->target, arr)) return 1;
+    if (expr_passes_arr(s->r_start, arr) || expr_passes_arr(s->r_stop, arr) ||
+        expr_passes_arr(s->r_step, arr)) return 1;
+    if (stmts_unsafe(s->body, s->nbody, iv, arr)) return 1;
+    if (stmts_unsafe(s->els,  s->nels,  iv, arr)) return 1;
+    for (int a = 0; a < s->narms; a++) {
+        for (int b = 0; b < s->arms[a].nbinds; b++)
+            if (!strcmp(s->arms[a].binds[b], iv) || !strcmp(s->arms[a].binds[b], arr)) return 1;
+        if (stmts_unsafe(s->arms[a].body, s->arms[a].nbody, iv, arr)) return 1;
+    }
+    return 0;
+}
+static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
+    for (int i = 0; i < n; i++) if (stmt_unsafe(body[i], iv, arr)) return 1;
+    return 0;
+}
+
+/* Is the access base[idx] a loop index proven in-range (so skip the check)? */
+static int index_in_range(Expr *base, Expr *idx) {
+    if (!elision_on() || base->kind != E_IDENT || idx->kind != E_IDENT) return 0;
+    for (int k = g_nelide - 1; k >= 0; k--)
+        if (!strcmp(g_elide[k].iv, idx->sval) && !strcmp(g_elide[k].arr, base->sval)) return 1;
+    return 0;
+}
+
 /* gen_expr returns a freshly allocated C expression string. `arena` is
  * the name of the arena into which any allocation produced by this
  * expression should go (so return values land in the caller's arena). */
@@ -3016,6 +3092,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING)
                 return sfmt("hier_str_get(%s, %s)", a, ix);   /* O(1): length header, no strlen */
+            if (index_in_range(e->lhs, e->rhs))               /* monotone loop index: skip the bounds check */
+                return sfmt("(%s).data[%s]", a, ix);
             return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_SLICE: {
@@ -3235,10 +3313,13 @@ static char *gen_lvalue(Expr *e, const char *arena) {
     }
     if (e->kind == E_TUPIDX)
         return sfmt("((%s)._%ld)", gen_lvalue(e->lhs, arena), e->ival);
-    if (e->kind == E_INDEX)
+    if (e->kind == E_INDEX) {
+        if (index_in_range(e->lhs, e->rhs))   /* monotone loop index: project without the bounds check */
+            return sfmt("((%s).data[%s])", gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
         return sfmt("(*hier_arr_C%d_ptr(&(%s), %s))",
                     ARRC_ID(e->lhs->type), gen_lvalue(e->lhs, arena),
                     gen_expr(e->rhs, arena));
+    }
     return gen_expr(e, arena);
 }
 
@@ -3426,6 +3507,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * a heap inout param. */
                 const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
                 fprintf(o, "hier_arr_%s_set(%s, &(%s), %s, %s);\n", arr_fn(arrx->type), owner, arr, ix, v);
+            } else if (index_in_range(s->target->lhs, s->target->rhs)) {
+                fprintf(o, "(%s).data[%s] = %s;\n", arr, ix, v);   /* monotone loop index: skip the check */
             } else {   /* [int] or [float]: value word, no arena, no byte copy */
                 fprintf(o, "hier_arr_%s_set(&(%s), %s, %s);\n", arr_fn(arrx->type), arr, ix, v);
             }
@@ -3707,7 +3790,21 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
             ascope_push(ss);        /* a return inside the loop must free _scrN too */
             g_loop_depth++;         /* moves are unsafe inside a loop (single read runs N times) */
+            /* bounds-check elision: `for i in range(len(A)):` proves A[i] in-range
+             * for the body, provided the body never reassigns/shadows A or i and
+             * never passes A whole to a call (see stmt_unsafe). */
+            int elide_pushed = 0;
+            if (elision_on() && s->r_start->kind == E_INT && s->r_start->ival == 0 &&
+                s->r_step == NULL && s->r_stop->kind == E_CALL && s->r_stop->sval &&
+                !strcmp(s->r_stop->sval, "len") && s->r_stop->nargs == 1 &&
+                s->r_stop->args[0]->kind == E_IDENT && g_nelide < 64 &&
+                !stmts_unsafe(s->body, s->nbody, s->name, s->r_stop->args[0]->sval)) {
+                g_elide[g_nelide].iv = s->name;
+                g_elide[g_nelide].arr = s->r_stop->args[0]->sval;
+                g_nelide++; elide_pushed = 1;
+            }
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
+            if (elide_pushed) g_nelide--;
             g_loop_depth--;
             g_nascope--;
             cv_restore(m);

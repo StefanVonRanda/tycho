@@ -26,7 +26,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
 | binary-trees      | 25 MB/201 ms |  13 MB/124 ms | 33/772 ms | 33/848 ms | 35/1523 ms |    14/273 ms |
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
-| array-pipeline    |  6 MB/132 ms |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
+| array-pipeline    |  6 MB/47 ms²  |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
 | json-parse (real) | 96 MB/1118 ms | 91 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 
@@ -44,6 +44,21 @@ sizeof(active-variant)` instead of the union max), so a small `JNum`/`JBool`
 node is 16 B not 56 B: hier 129 → 96 MB, hierc0 120 → 91 MB, time and checksum
 unchanged. Safe (reads dispatch on `tag`; all copies are field-wise per active
 variant — never a blanket `*d = *s` over the union), unlike pointer-tagging.
+
+² array-pipeline `hierc` was **132 ms** until **bounds-check elision**: inside
+`for i in range(len(A)):` the access `A[i]` is provably in `[0, len(A))` — the C
+loop caches `_stop = len(A)` once at entry, `len` is an un-redefinable builtin,
+Hier has no in-place array shrink, and the compiler verifies the loop body never
+reassigns/shadows `A` or `i` and never passes `A` whole to a call — so the
+per-element check is emitted as a raw `A.data[i]`. **132 → 47 ms (~2.8×)**, same
+output, now ~2× C (was ~6×) and faster than Go. Provably-safe range narrowing,
+NOT a blanket "trust the index": when `A` is reassigned or passed to a possibly-
+inout callee the check stays and an out-of-range index still aborts (verified by
+the 600-seed differential+ASan fuzz, which generates exactly this loop shape, and
+by OOB-abort regression cases). Disable with `HIERC_NO_BOUNDS_ELISION=1`. The
+idiomatic `range(len(xs))` source form is what enables it (a bare `range(n)` bound
+can't be proven equal to `len`); `hierc0`'s array index is unchecked, so it was
+already at this speed.
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -356,13 +371,14 @@ making it arena-based like hierc's, and hierc0 then got the same compact nodes
 | ---------------------- | ------ | ---- |
 | binary-trees (tree)    | 2nd (25 MB; Koka 14) | 1st |
 | tree-rewrite (tree)    | 1st (tie, 7 MB)      | 1st |
-| array-pipeline (flat)  | 1st (tie w/ C/Rust)  | 4th (beats Koka) |
+| array-pipeline (flat)  | 1st (tie w/ C/Rust)  | 3rd (beats Go/Koka; ~2× C, post bounds-elision) |
 | string-pipeline        | 1st (tie w/ C/Rust)  | 1st (tie w/ C) |
 | json-parse (real parser)| 4th of 5 (96 MB)    | 1st (beats C) |
 
 The value-semantic implicit-arena model is **fastest-or-tied on time in four of
-five workloads (it loses only array-pipeline, on per-element bounds-checking) and
-lowest-or-tied on memory in three of five, never the GC/refcount tier**. The
+five workloads (it trails only array-pipeline, now ~2× C after bounds-check
+elision narrowed the per-element-check gap²) and lowest-or-tied on memory in
+three of five, never the GC/refcount tier**. The
 shape is consistent: where work is allocate-and-discard of pointer-structured
 data (trees, the real JSON parser), the arena's O(1) bulk reclaim makes Hier the
 fastest — *beating hand-written `malloc`/`free` C* — because it pays no per-object
