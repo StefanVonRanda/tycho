@@ -2704,6 +2704,17 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ECall(fname, args):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
                         return "    " + mfam(type_of(EVar(name), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, dc, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
+                    # liveness-driven recycle: a loop-carried scalar-array LOCAL reassigned
+                    # from a function call. a's old buffer is dead and (value semantics)
+                    # uniquely owned, and a call's result never aliases its args, so hand
+                    # the old buffer back for reuse. Eval the RHS FIRST (the call reads the
+                    # old buffer), THEN recycle, THEN assign -- recycling before the call
+                    # would let the call's own allocations alias the live buffer. The { }
+                    # scopes _r so repeated `a = f(a)` don't redeclare it. Mirrors hierc.
+                    rnty := type_of(EVar(name), names, types, dc, ctx)
+                    rown := owner_arena_of(EVar(name), names, types, dc, ctx)
+                    if (rnty == "[int]" or rnty == "[float]") and not is_variant(dc, ctx, fname) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and rown != "0":
+                        return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
                     return deflt
                 EInt(t):
                     return deflt
@@ -3361,14 +3372,22 @@ fn preamble() -> string:
     # stop paying malloc/free per scope. Peak live memory is unchanged (the pool
     # holds at most what a scope just released; reclaimed by the OS at exit).
     out = out + "typedef struct ABlk { struct ABlk* next; size_t used, cap; char* mem; } ABlk;\n"
-    out = out + "typedef struct { ABlk* head; size_t blocksz; } Arena;\n"
+    # Per-arena object free-list for liveness-driven recycling: when the compiler
+    # proves a buffer is dead + uniquely owned (value semantics ⇒ no aliasing), it
+    # is handed back via arena_recycle and the next same-size arena_alloc reuses it
+    # (best-fit). FBIP-style reuse from STATIC value semantics, no refcount. Sound
+    # because arena_alloc only bumps FORWARD, so a recycled region never overlaps a
+    # fresh bump; arena_free drops the list (its chunks live in pooled blocks).
+    out = out + "typedef struct FreeNode { struct FreeNode* next; size_t size; } FreeNode;\n"
+    out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* freelist; int nfree; } Arena;\n"
     out = out + "static ABlk* g_pool = 0;\n"
     out = out + "static ABlk* blk_get(size_t cap) { if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; return b; }\n"
     out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
-    out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; return a; }\n"
+    out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; a.freelist = 0; a.nfree = 0; return a; }\n"
+    out = out + "static void arena_recycle(Arena* a, void* p, size_t n) { if (!a || !p || n < sizeof(FreeNode) || a->nfree >= 32) return; FreeNode* fn = (FreeNode*)p; fn->size = n; fn->next = a->freelist; a->freelist = fn; a->nfree++; }\n"
     out = out + "static Arena arena_child(Arena* p) { return arena_new(p->blocksz); }\n"
-    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
-    out = out + "static void arena_free(Arena* a) { blk_release(a->head); a->head = 0; }\n"
+    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; if (a->freelist) { FreeNode** link = &a->freelist; FreeNode** best = 0; size_t bestsz = (size_t)-1; for (; *link; link = &(*link)->next) if ((*link)->size >= n && (*link)->size <= 2*n && (*link)->size < bestsz) { best = link; bestsz = (*link)->size; } if (best) { FreeNode* fn = *best; *best = fn->next; a->nfree--; return (void*)fn; } } if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
+    out = out + "static void arena_free(Arena* a) { a->freelist = 0; a->nfree = 0; blk_release(a->head); a->head = 0; }\n"
     # String allocators take an arena; a NULL arena means malloc (the safe
     # fallback for not-yet-migrated contexts). owner-threading (ctx.owner) flips
     # provably-safe contexts (e.g. print args) to a real arena. hi_append is NOT
@@ -3437,7 +3456,7 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
     else:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
-    out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
+    out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
     out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
     # _eq for every element type (eq_field handles scalar/str/enum/struct/array/
     # option/result); the gen_arr_type forward decl lets composite eq cross-ref.

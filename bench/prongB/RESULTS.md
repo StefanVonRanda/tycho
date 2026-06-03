@@ -29,7 +29,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | array-pipeline    |  6 MB/47 ms²  |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
 | json-parse (real) | 96 MB/1118 ms | 91 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
-| iter-transform³   | 4 MB/1285 ms | 1.5 GB/1149 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
+| iter-transform³   | 4 MB/1285 ms | 6 MB/358 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
 GROW with K (89/135/433 MB at K=1/5/30): hierc0's string accumulator (`s = s + …`)
@@ -69,11 +69,12 @@ and beating Go/Koka. Value semantics already proves the reassigned old buffer is
 dead and uniquely owned (no aliasing — no refcount needed), so the compiler hands
 it back to the arena (`arena_recycle`) for the next iteration to reuse. This is
 FBIP-style reuse from STATIC reasoning, the thing Koka's Perceus does with runtime
-RC — on Perceus's home turf. `hierc0` is still 1.5 GB (the reuse lands in `hierc`'s
-runtime + codegen; the port to the self-hosted compiler is pending). The general
-principle still bounds shapes the gate doesn't yet cover (string/struct arrays,
-non-call reassigns) — implicit arenas have no *general* liveness-based reclaim, but
-the canonical case no longer loses.
+RC — on Perceus's home turf. The reuse is now in BOTH compilers: `hierc0` (the
+self-hosted compiler) carries the same recycle in its emitted runtime + codegen and
+drops 1.5 GB → 6 MB here, and `make fixpoint` stays byte-identical with it. The
+general principle still bounds shapes the gate doesn't yet cover (string/struct
+arrays, non-call reassigns) — implicit arenas have no *general* liveness-based
+reclaim, but the canonical case no longer loses, in either compiler.
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -425,9 +426,10 @@ a call's result, by value semantics, can never alias its arguments.
 
 This is the thesis's sharpest result: **FBIP-grade in-place reuse derived from
 static value semantics + lexical arenas, matching reference counting on its own
-home turf without paying for it.** What remains uncovered (string/struct-element
-arrays, non-call reassigns, and the self-hosted `hierc0` runtime, still 1.5 GB
-here) still obeys the general rule — an arena has no *general* liveness-based
+home turf without paying for it.** It lives in BOTH compilers — `hierc` (4 MB) and
+the self-hosted `hierc0` (6 MB), which carries the same recycle and stays
+fixpoint-identical. What remains uncovered (string/struct-element arrays, non-call
+reassigns) still obeys the general rule — an arena has no *general* liveness-based
 reclaim — but the canonical case no longer loses. The model is excellent; its one
 clean defeat is now a clean win, and honestly bounded.
 
