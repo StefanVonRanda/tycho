@@ -28,7 +28,12 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
 | array-pipeline    |  6 MB/132 ms |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
-| json-parse (real) | 129 MB/1151 ms | (Phase 2) | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+| json-parse (real) | 129 MB/1151 ms | 433 MB/1494 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+
+¹ json-parse is fast on `hierc0` (O(1) raw index, never O(n²)) but its peak GROWS
+with K (89/135/433 MB at K=1/5/30): hierc0 retains each pass's parse tree instead
+of freeing the loop-local per iteration, where hierc stays flat (~129 MB). A
+loop-scope reclamation gap (separate from strings) — the open `hierc0` lever here.
 
 **The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
 began the memory-model campaign **50–170× worse** than the C compiler on the
@@ -318,9 +323,15 @@ are O(1), the strlen-hoist machinery deleted) — **136,395 → 1,174 ms (~116×
 linear in n, no source change. That is what "prove the model at scale" is for: a
 realistic workload found a systems-grade gap that a 40-program suite and four
 micro-benchmarks did not, and the value-semantic/arena model absorbed the fix
-cleanly. (The fix is in the C reference compiler + runtime; `hierc0`'s own
-codegen still emits the old `char*`, so hierc0-built programs stay O(n²) on this
-shape until the representation is mirrored there — Phase 2.)
+cleanly. (The fix is in the C reference compiler + runtime. `hierc0` — the
+self-hosted compiler — never had this O(n²): it emits an *unchecked* raw `s[i]`
+(no `strlen`, no bounds check), an O(1)-but-unsafe index, the opposite tradeoff,
+so hierc0-built code is already linear here (~1494 ms). What json-parse *does*
+expose in hierc0 is a **separate loop-scope memory gap**: the per-pass parse tree
+is retained rather than freed each iteration, so hierc0's peak GROWS with K
+— 89 / 135 / 433 MB at K = 1 / 5 / 30 — where hierc stays flat (~95 → 129 MB).
+That loop-local-heap reclamation gap, not strings, is the open hierc0 lever on
+this workload.)
 
 ## Summary across five workloads
 
