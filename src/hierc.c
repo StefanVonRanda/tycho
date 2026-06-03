@@ -3491,10 +3491,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * (void)handed_off: the move-elision of the arg copy is orthogonal --
              * step still only reads the borrowed buffer, so it's dead afterward. */
             (void)handed_off;
+            /* SOUNDNESS: `name` must be read >= 2 times in the function. move-on-
+             * last-use (can_move_from) only moves a var read EXACTLY once, so a
+             * var read >= 2 times is never the source of a move -- it cannot have
+             * shared its buffer with another live var (e.g. `b := a` moving a's
+             * buffer to b). Read >= 2 => uniquely owns its buffer => its OLD buffer
+             * is truly dead on reassign. (The loop gate alone is NOT enough: `b := a`
+             * outside a loop then `a = mk()` inside one would recycle b's buffer.) */
             int do_recycle = g_loop_depth > 0 && !is_accum(s->name)
                 && cv_arena(s->name) && !is_inout_param(s->name)
                 && s->expr->kind == E_CALL && s->expr->op != TK_ENUM
-                && (s->expr->type == T_ARRAY_INT || s->expr->type == T_ARRAY_FLOAT);
+                && (s->expr->type == T_ARRAY_INT || s->expr->type == T_ARRAY_FLOAT)
+                && count_reads_b(g_proc_body, g_proc_nbody, s->name) >= 2;
             if (do_recycle) {
                 /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (the call
                  * still reads a's old buffer to build its result), THEN recycle

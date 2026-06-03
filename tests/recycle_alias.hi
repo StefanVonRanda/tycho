@@ -1,22 +1,23 @@
 # Soundness guard for liveness-driven buffer recycling: a recycled buffer must be
 # the SOURCE var's OWN, not one it shared via a move. `b := a` can move a's buffer
-# to b (move-on-last-use), so reassigning a afterwards must NOT recycle that buffer
-# -- it is still live through b. The gate excludes movable vars for exactly this
-# reason. (Regression: hierc0 once printed 49 here by recycling b's buffer.)
-fn mk(n: int) -> [int]:
+# to b (move-on-last-use, since a is read exactly once here), so reassigning a
+# afterwards must NOT recycle that buffer -- it is still live through b. The gate
+# excludes vars read < 2 times for exactly this reason (a >=2-read var is never
+# moved). The loop write uses DISTINCT values (base 1000000) and a matching size,
+# so if b's buffer were wrongly recycled+reused the corruption is unmissable.
+# Regression: both compilers once printed ~100004950 here (b's buffer reused).
+fn mkv(n: int, base: int) -> [int]:
     r := []int
     for i in range(n):
-        push(r, i)
+        push(r, base + i)
     return r
 
 fn main():
-    a := mk(5)
-    b := a          # may move a's buffer to b
-    a = mk(3)       # reassign a from a call that does NOT read a -- must not recycle b's buffer
-    sb := 0
+    a := mkv(100, 0)        # b will be 0..99 (sum 4950)
+    b := a                  # may move a's buffer to b (a read exactly once)
+    for j in range(50):
+        a = mkv(100, 1000000)   # distinct values, same size: would clobber b if reused
+    s := 0
     for i in range(len(b)):
-        sb = sb + b[i]      # 0+1+2+3+4 = 10, only if b is intact
-    sa := 0
-    for i in range(len(a)):
-        sa = sa + a[i]      # 0+1+2 = 3
-    print("b=" + str(sb) + " a=" + str(sa) + "\n")
+        s = s + b[i]        # 4950 iff b's buffer was left intact
+    print(str(s) + "\n")
