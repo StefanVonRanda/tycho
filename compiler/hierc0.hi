@@ -2066,7 +2066,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "die":
                 return "hi_die(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "read_all":
-                return "hi_read_all()"
+                return "hi_read_all(" + ctx.owner + ")"
             if name == "read_file":
                 return "hi_read_file(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "list_dir":
@@ -2074,7 +2074,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "args":
                 return "hi_args(" + ctx.owner + ")"
             if name == "input":
-                return "hi_input()"
+                return "hi_input(" + ctx.owner + ")"
             if name == "Some":                    # box the payload in the SAME arena as the box, so a
                 ct := cty(dc, ctx, type_of(args[0], names, types, dc, ctx))   # heap payload frees with it instead of
                 return "hsome(hbox(" + ctx.owner + ", sizeof(" + ct + "), (" + ct + "[]){" + gen_rhs(args[0], names, types, dc, ctx) + "}))"   # leaking at owner-0 (every copy path deep-copies via box_payload)
@@ -3383,10 +3383,10 @@ fn preamble() -> string:
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = amem(ar, m + 1); memcpy(r, t, m + 1); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = amem(ar, n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
-    out = out + "static char* hi_input(void) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
+    out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = (char*)amem(ar, len + 1); memcpy(r, b, len); r[len] = 0; free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = amem(ar, 2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
-    out = out + "static char* hi_read_all(void) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } b[len] = 0; return b; }\n"
+    out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = (char*)amem(ar, len + 1); memcpy(r, b, len); r[len] = 0; free(b); return r; }\n"
     out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); b[len] = 0; return b; }\n"
     out = out + "static int hi_argc = 0;\nstatic char** hi_argv = 0;\n"
     out = out + "typedef struct { int tag; void* val; } HOption;\n"
