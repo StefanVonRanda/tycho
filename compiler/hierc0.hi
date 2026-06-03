@@ -285,6 +285,8 @@ enum Stmt:
     SDestructure([string], Expr)       # `a, b := tuple_expr`
     SMultiAssign([string], Expr)       # `a, b = tuple_expr` (assign existing vars)
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
+    SBreak                   # break out of the nearest enclosing loop
+    SContinue                # skip to the next iteration of the nearest loop
 
 struct Param:
     name: string
@@ -339,6 +341,8 @@ struct Ctx:                   # mutable per-scope / per-function state only
                               # declaration depth = deepest k with bbases[k-1] <= its env index (see var_block_depth)
     movables: [string]        # locals read exactly once in the body and not inside a loop — move-on-last-use
                               # candidates: a `b := a` over one of these hands off a's buffer (no deep copy)
+    loopdepth: int            # block depth of the innermost enclosing loop's body arena (0 = not in a loop);
+                              # break/continue free _b<depth> .. _b<loopdepth> before the C jump
 
 struct Program:
     structs: [StructDef]
@@ -641,6 +645,12 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         return SWhile(cond, body)
     elif t.kind == TIdent and t.text == "match":
         return parse_match(toks, &pos)
+    elif t.kind == TIdent and t.text == "break":
+        pos = pos + 1
+        return SBreak
+    elif t.kind == TIdent and t.text == "continue":
+        pos = pos + 1
+        return SContinue
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -1127,6 +1137,10 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
             return SReturn(mangle_expr(m, e))
         SReturnVoid:
             return SReturnVoid
+        SBreak:
+            return SBreak
+        SContinue:
+            return SContinue
         SIf(c, t, el):
             return SIf(mangle_expr(m, c), mangle_block(m, t), mangle_block(m, el))
         SWhile(c, b):
@@ -1906,7 +1920,7 @@ fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hi
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(dc: Decls, ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
@@ -1916,7 +1930,7 @@ fn enter_block(dc: Decls, ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth)
 
 # C lvalue of the current block's arena.
 fn cur_arena(dc: Decls, ctx: Ctx) -> string:
@@ -1934,6 +1948,24 @@ fn return_frees(dc: Decls, ctx: Ctx) -> string:
         out = out + "arena_free(&_b" + str(k) + "); "
         k = k - 1
     return out + "arena_free(&_scope);"
+
+# break/continue free every block arena from the current depth down to AND
+# INCLUDING the innermost loop's body arena (_b<loopdepth>). hierc0 arena_child's
+# the loop body at the top of each iteration and arena_free's it at the bottom,
+# so a C break/continue that jumps over that free would leak it (plus any
+# enclosing if-block arenas). Unlike return_frees this stops at the loop, not _scope.
+fn loop_frees(dc: Decls, ctx: Ctx) -> string:
+    out := ""
+    k := ctx.depth
+    for k >= ctx.loopdepth:
+        out = out + "arena_free(&_b" + str(k) + "); "
+        k = k - 1
+    return out
+
+# Mark a block ctx as a loop body: its own depth becomes the boundary that an
+# enclosed break/continue frees down to (nested if-blocks inherit it via enter_block).
+fn in_loop(ctx: Ctx) -> Ctx:
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth)
 
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
@@ -2523,6 +2555,10 @@ fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bo
             rd_expr(&reads, &loopreads, e, inloop)
         SReturnVoid:
             j := 0
+        SBreak:
+            j := 0
+        SContinue:
+            j := 0
         SExpr(e):
             rd_expr(&reads, &loopreads, e, inloop)
         STypedDecl(n, t, e):
@@ -2877,6 +2913,10 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
         SReturnVoid:
             return "    " + return_frees(dc, ctx) + " return;\n"
+        SBreak:
+            return "    " + loop_frees(dc, ctx) + "break;\n"
+        SContinue:
+            return "    " + loop_frees(dc, ctx) + "continue;\n"
         SExpr(e):
             return "    " + gen_expr(e, names, types, dc, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
@@ -2944,7 +2984,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return out + "\n"
         SWhile(cond, body):
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(dc, ctx, len(names))
+            bc := in_loop(enter_block(dc, ctx, len(names)))
             return "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SForRange(name, start, stop, step, body):
             header := "    for (long " + name + " = " + gen_expr(start, names, types, dc, ctx) + "; " + name + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + name + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
@@ -2953,7 +2993,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             push(bn, name)
             push(bt, "int")
             d1 := str(ctx.depth + 1)              # per-iteration block arena
-            bc := enter_block(dc, ctx, len(bn))
+            bc := in_loop(enter_block(dc, ctx, len(bn)))
             return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, dc, ctx)
@@ -3103,6 +3143,10 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             i := 0
         SReturnVoid:
             i := 0
+        SBreak:
+            i := 0
+        SContinue:
+            i := 0
         SExpr(e):
             i := 0
         STypedDecl(n, t, e):
@@ -3200,7 +3244,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
             push(saccums, raw[si])
         si = si + 1
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
-    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables)
+    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(int argc, char **argv) {\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -3834,6 +3878,10 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             collect_expr(&acc, e, names, types, dc, ctx)
         SReturnVoid:
             j := 0
+        SBreak:
+            j := 0
+        SContinue:
+            j := 0
         SExpr(e):
             collect_expr(&acc, e, names, types, dc, ctx)
         STypedDecl(n, t, e):
@@ -4118,7 +4166,7 @@ fn main():
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap)
-    ctx := Ctx([]string, []string, "", "0", 0, []int, []string)
+    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

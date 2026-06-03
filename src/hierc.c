@@ -69,6 +69,7 @@ typedef enum {
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
+    TK_BREAK, TK_CONTINUE,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
 } TokKind;
@@ -106,6 +107,8 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "or"))     return TK_OR;
     if (!strcmp(s, "not"))    return TK_NOT;
     if (!strcmp(s, "match"))  return TK_MATCH;
+    if (!strcmp(s, "break"))    return TK_BREAK;
+    if (!strcmp(s, "continue")) return TK_CONTINUE;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -621,7 +624,8 @@ struct Expr {
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
-               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN } StmtKind;
+               S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN,
+               S_BREAK, S_CONTINUE } StmtKind;
 
 typedef struct Stmt Stmt;
 /* one arm of a `match`: a variant name (Some/None or an enum variant), the
@@ -1115,6 +1119,12 @@ static Stmt *parse_stmt(Parser *ps) {
                 s->expr = first;
             }
         }
+        eat(ps, TK_NEWLINE, "newline");
+        return s;
+    }
+    if (t->kind == TK_BREAK || t->kind == TK_CONTINUE) {
+        ps->p++;
+        Stmt *s = new_stmt(t->kind == TK_BREAK ? S_BREAK : S_CONTINUE, t->line);
         eat(ps, TK_NEWLINE, "newline");
         return s;
     }
@@ -2146,6 +2156,9 @@ static void resolve_stmt(Stmt *s, Type ret) {
             }
             break;
         }
+        case S_BREAK:
+        case S_CONTINUE:
+            break;   /* nothing to type-check; outside-a-loop use is caught at codegen */
         case S_IF: {
             if (resolve_expr(s->expr) != T_BOOL)
                 die_at(s->line, "if condition must be bool");
@@ -3860,6 +3873,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 }
             }
             indent(o, ind); fprintf(o, "}\n");
+            break;
+        }
+        case S_BREAK:
+        case S_CONTINUE: {
+            if (g_loop_depth == 0)
+                die_at(s->line, "'%s' outside a loop", s->kind == S_BREAK ? "break" : "continue");
+            /* if/match blocks open no arena (they share the loop's scratch), and
+             * the loop arena is arena_reset at the top of each iteration and
+             * arena_free'd once after the loop -- so a bare C break/continue
+             * reclaims correctly with no extra cleanup. */
+            indent(o, ind); fprintf(o, "%s;\n", s->kind == S_BREAK ? "break" : "continue");
             break;
         }
         case S_WHILE: {
