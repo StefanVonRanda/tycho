@@ -652,6 +652,11 @@ fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
     else:
         return []Stmt
 
+# the binary-operator token kinds that have a compound-assignment form `x OP= e`
+# (detected as the operator token followed by `=`, so no dedicated token needed).
+fn is_caop_kind(k: Tok) -> bool:
+    return k == TPlus or k == TMinus or k == TStar or k == TSlash or k == TPercent or k == TAmp or k == TPipe or k == TCaret or k == TShl or k == TShr
+
 fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
     t := toks[pos]
     if t.kind == TIdent and t.text == "print":
@@ -747,6 +752,11 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
         elif toks[pos].kind == TEq:
             pos = pos + 1
             return SAssign(name, parse_expr(toks, &pos))
+        elif is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # x OP= rhs -> x = x OP rhs
+            op := toks[pos].text
+            pos = pos + 1
+            expect(toks, &pos, TEq)
+            return SAssign(name, EBin(op, EVar(name), parse_expr(toks, &pos)))
         elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
             lv := EVar(name)                     # place assignment: a.b[i].c = rhs
             for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
@@ -761,6 +771,11 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
                     idx := parse_expr(toks, &pos)
                     expect(toks, &pos, TRBracket)
                     lv = EIndex(lv, idx)
+            if is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # lv OP= rhs -> lv = lv OP rhs
+                op := toks[pos].text
+                pos = pos + 1
+                expect(toks, &pos, TEq)
+                return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos)))
             expect(toks, &pos, TEq)
             return SFieldAssign(lv, parse_expr(toks, &pos))
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)

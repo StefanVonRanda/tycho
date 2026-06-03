@@ -1118,6 +1118,14 @@ static Stmt *g_pending[64];
 static int g_npending = 0;
 static int g_forin_uid = 0;
 
+/* the binary operators that have a compound-assignment form `x OP= e`. Detected
+ * as the operator token followed by `=` (no dedicated token needed). */
+static int is_compound_op(TokKind k) {
+    return k == TK_PLUS || k == TK_MINUS || k == TK_STAR || k == TK_SLASH ||
+           k == TK_PERCENT || k == TK_AMP || k == TK_PIPE || k == TK_CARET ||
+           k == TK_SHL || k == TK_SHR;
+}
+
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
@@ -1322,8 +1330,10 @@ static Stmt *parse_stmt(Parser *ps) {
         return s;
     }
 
-    /* expression statement, or an index-assignment `xs[i] = v` */
-    Expr *e = parse_expr(ps);
+    /* a place (var / index / field) being assigned, a compound assignment, or a
+     * bare expression statement (a call). parse_postfix stops before any binary
+     * operator, so `a[i] += v` leaves the `+` for the compound check below. */
+    Expr *e = parse_postfix(ps);
     if (accept(ps, TK_EQ)) {
         if (e->kind != E_INDEX && e->kind != E_FIELD && e->kind != E_TUPIDX)
             die_at(t->line, "cannot assign to this expression");
@@ -1332,6 +1342,30 @@ static Stmt *parse_stmt(Parser *ps) {
         s->expr = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
         return s;
+    }
+    /* compound assignment `target OP= rhs` -> `target = target OP rhs`. The
+     * variable form `x += e` lands here too (the plain `x = e` form is taken by
+     * the identifier branch above). For an index/field target the lvalue is
+     * evaluated twice in the generated C (read then store) — sound when the
+     * index expression has no side effects, exactly like writing it out longhand. */
+    if (is_compound_op(cur(ps)->kind) && peek(ps, 1)->kind == TK_EQ) {
+        TokKind op = cur(ps)->kind; ps->p++;
+        eat(ps, TK_EQ, "'=' to complete the compound assignment");
+        Expr *rhs = parse_expr(ps);
+        eat(ps, TK_NEWLINE, "newline");
+        Expr *b = new_expr(E_BINOP, t->line);
+        b->op = op; b->lhs = e; b->rhs = rhs;
+        if (e->kind == E_IDENT) {
+            Stmt *s = new_stmt(S_ASSIGN, t->line);
+            s->name = e->sval; s->expr = b;
+            return s;
+        }
+        if (e->kind == E_INDEX || e->kind == E_FIELD || e->kind == E_TUPIDX) {
+            Stmt *s = new_stmt(e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line);
+            s->target = e; s->expr = b;
+            return s;
+        }
+        die_at(t->line, "cannot compound-assign to this expression");
     }
     Stmt *s = new_stmt(S_EXPR, t->line);
     s->expr = e;
