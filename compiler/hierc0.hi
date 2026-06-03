@@ -1941,8 +1941,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             return t
         EFloat(f):
             return f
-        EStr(s):
-            return "\"" + s + "\""
+        EStr(s):                                    # length-headered, interned once per occurrence (cached static)
+            return "({ static char* _l = 0; if (!_l) _l = hi_intern(\"" + s + "\"); _l; })"
         EVar(name):
             if name == "None":
                 return "hnone()"
@@ -1960,8 +1960,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             return gen_expr(base, names, types, dc, ctx) + "." + fld
         EIndex(base, idx):
             bt := type_of(base, names, types, dc, ctx)
-            if bt == "str":                                 # s[i] -> the byte as an int
-                return "((long)(unsigned char)" + gen_expr(base, names, types, dc, ctx) + "[" + gen_expr(idx, names, types, dc, ctx) + "])"
+            if bt == "str":                                 # s[i] -> the byte as an int, bounds-checked via the length header
+                return "hi_sidx(" + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(idx, names, types, dc, ctx) + ")"
             if is_soa(bt):                                  # soa[i] -> gather a struct value
                 return gen_soa_gather(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(idx, names, types, dc, ctx))
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
@@ -2033,7 +2033,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
             if name == "len":
                 if type_of(args[0], names, types, dc, ctx) == "str":
-                    return "strlen(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+                    return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
                 if type_of(args[0], names, types, dc, ctx) == "float":
@@ -3374,20 +3374,27 @@ fn preamble() -> string:
     # provably-safe contexts (e.g. print args) to a real arena. hi_append is NOT
     # arena-based: accumulator buffers are realloc-grown, so they must be malloc.
     out = out + "static void* amem(Arena* a, size_t n) { return a ? arena_alloc(a, n) : malloc(n); }\n"
-    out = out + "static char* sc(Arena* ar, const char* a, const char* b) { size_t la = strlen(a), lb = strlen(b); char* r = amem(ar, la + lb + 1); memcpy(r, a, la); memcpy(r + la, b, lb + 1); return r; }\n"
-    out = out + "static char* sc_char(Arena* ar, const char* a, long c) { size_t la = strlen(a); char* r = amem(ar, la + 2); memcpy(r, a, la); r[la] = (char)c; r[la + 1] = 0; return r; }\n"
-    out = out + "static char* i2s(Arena* ar, long n) { char* r = amem(ar, 24); snprintf(r, 24, \"%ld\", n); return r; }\n"
-    out = out + "static char* scopy(Arena* ar, const char* s) { size_t n = strlen(s) + 1; char* r = amem(ar, n); memcpy(r, s, n); return r; }\n"
-    out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* nb = (char*)amem(a, (size_t)nc); memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; }\n"
-    out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* nb = (char*)amem(a, (size_t)nc); memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; }\n"
-    out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = amem(ar, m + 1); memcpy(r, t, m + 1); return r; }\n"
-    out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = amem(ar, n + 1); memcpy(r, s + a, n); r[n] = 0; return r; }\n"
+    # Length-carrying strings: an 8-byte length header sits just before the
+    # returned char* (hidden behind it, so printf/strcmp are unaffected); arena
+    # blocks are 8-aligned so the header word is aligned. len(s)/s[i] read it in
+    # O(1) -- s[i] is bounds-checked (hi_sidx). Mirrors hierc's hier_str_alloc.
+    out = out + "static char* hs(Arena* ar, long n) { char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
+    out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
+    out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"hier: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
+    out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = (long)strlen(a), lb = (long)strlen(b); char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
+    out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = (long)strlen(a); char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
+    out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int m = snprintf(t, sizeof t, \"%ld\", n); char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
+    out = out + "static char* scopy(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
+    out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
+    out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
+    out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
+    out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = hs(ar, n); memcpy(r, s + a, (size_t)n); return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
-    out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = (char*)amem(ar, len + 1); memcpy(r, b, len); r[len] = 0; free(b); return r; }\n"
-    out = out + "static char* hi_chr(Arena* ar, long n) { char* r = amem(ar, 2); r[0] = (char)(n & 0xff); r[1] = 0; return r; }\n"
+    out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
+    out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
-    out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = (char*)amem(ar, len + 1); memcpy(r, b, len); r[len] = 0; free(b); return r; }\n"
-    out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); b[len] = 0; return b; }\n"
+    out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
+    out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
     out = out + "static int hi_argc = 0;\nstatic char** hi_argv = 0;\n"
     out = out + "typedef struct { int tag; void* val; } HOption;\n"
     out = out + "typedef struct { int tag; void* ok; void* err; } HResult;\n"
@@ -3530,12 +3537,12 @@ fn gen_strlib() -> string:
     out = out + "    struct dirent* de;\n"
     out = out + "    while ((de = readdir(d)) != 0) {\n"
     out = out + "        if (de->d_name[0] == '.' && (de->d_name[1] == 0 || (de->d_name[1] == '.' && de->d_name[2] == 0))) continue;\n"
-    out = out + "        Arr_str_push(ar, &r, de->d_name);\n"
+    out = out + "        Arr_str_push(ar, &r, scopy(ar, de->d_name));\n"   # headered copy; also survives readdir's buffer reuse
     out = out + "    }\n"
     out = out + "    closedir(d);\n    return r;\n}\n"
     out = out + "static Arr_str hi_args(Arena* ar) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
-    out = out + "    for (int i = 0; i < hi_argc; i++) Arr_str_push(ar, &r, hi_argv[i]);\n"
+    out = out + "    for (int i = 0; i < hi_argc; i++) Arr_str_push(ar, &r, scopy(ar, hi_argv[i]));\n"
     out = out + "    return r;\n}\n"
     return out
 

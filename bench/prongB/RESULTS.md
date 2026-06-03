@@ -30,7 +30,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
 | json-parse (real) | 96 MB/1118 ms | 91 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 
-¹ json-parse is fast on `hierc0` (O(1) raw index, never O(n²)). Its peak USED to
+¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
 GROW with K (89/135/433 MB at K=1/5/30): hierc0's string accumulator (`s = s + …`)
 was malloc/realloc-based, so every accumulator-built string (here every parsed
 key/value) leaked per pass — LeakSanitizer flagged exactly the `hi_append`
@@ -336,15 +336,19 @@ linear in n, no source change. That is what "prove the model at scale" is for: a
 realistic workload found a systems-grade gap that a 40-program suite and four
 micro-benchmarks did not, and the value-semantic/arena model absorbed the fix
 cleanly. (The fix is in the C reference compiler + runtime. `hierc0` — the
-self-hosted compiler — never had this O(n²): it emits an *unchecked* raw `s[i]`
-(no `strlen`, no bounds check), an O(1)-but-unsafe index, the opposite tradeoff,
-so hierc0-built code is already linear here (~1315 ms). json-parse also exposed a
-hierc0 **loop-scope memory gap** — peak GREW with K (89 / 135 / 433 MB at
+self-hosted compiler — never had this O(n²): it originally emitted an *unchecked*
+raw `s[i]` (no `strlen`, no bounds check), an O(1)-but-unsafe index. That unsafe
+index has since been closed: `hierc0` now carries the same **length-headered
+strings** as `hierc` (an 8-byte length word before each string), so `len(s)` and
+a **bounds-checked** `s[i]` are both O(1) and an out-of-range index aborts with a
+diagnostic instead of silently reading arena bytes (~1544 ms, ~95 MB — both ~match
+hierc now that the two runtimes share the representation). json-parse also exposed
+a hierc0 **loop-scope memory gap** — peak GREW with K (89 / 135 / 433 MB at
 K = 1 / 5 / 30) — but it was NOT tree retention: hierc0's string accumulator
 (`s = s + …`) was malloc/realloc-based, so every accumulator-built key/value
 leaked per pass (LeakSanitizer flagged the `hi_append` allocations). FIXED by
 making it arena-based like hierc's, and hierc0 then got the same compact nodes
-— now ~flat at 91 MB, matching hierc, no gap left on this workload.)
+— now ~flat, matching hierc, no gap left on this workload.)
 
 ## Summary across five workloads
 
