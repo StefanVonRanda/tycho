@@ -497,6 +497,67 @@ and transient values inherit the enclosing statement's owner (function scope).
   copies, so eliding them frees little; the value is reduced allocator churn and
   codegen-feature parity with `hierc`, not a leak fix.
 
+### MM-8 — liveness-driven in-place REUSE (the arena's worst case, closed)
+
+The result that turns the arena's one clean defeat into a win. The boundary, mapped
+by the `iter-transform` prong-B workload: an arena cannot free a single object
+mid-scope, so a loop-carried value reassigned each step (`a = step(a)`) accumulates
+every dead intermediate until the function returns — peak = TOTAL allocation, not
+the live set (3.5 GB vs ~3 MB for C). Exactly the case reference counting (Koka's
+Perceus) was built for: it sees the value is uniquely owned and reuses the storage
+in place (FBIP).
+
+**Key insight: Hier already proves unique ownership STATICALLY, for free.** Value
+semantics means no aliasing — every bind deep-copies or moves — so at `a = new`,
+`a`'s OLD buffer has exactly one owner and is dead the instant `new` is computed. No
+runtime refcount (unlike Perceus). The compiler hands the dead buffer back to its
+arena and the next allocation reuses it.
+
+- **Runtime** (commit bbea2c9 hierc / 7807850 hierc0): each `Arena` gains an object
+  free-list. `arena_recycle(a, ptr, n)` pushes a dead buffer; `arena_alloc` serves a
+  best-fit chunk in `[n, 2n]` before bumping; `arena_reset`/`arena_free` drop the
+  list (its chunks live in blocks about to be pooled). SOUND because `arena_alloc`
+  only bumps FORWARD — a recycled chunk (below the bump pointer) can never overlap a
+  fresh bump. The array `push` also recycles each geometric-growth buffer it
+  outgrows.
+- **Codegen** (`S_ASSIGN`): a qualifying reassignment emits, in this **load-bearing
+  order**, `tmp = RHS; if (old.data && old.data != tmp.data) arena_recycle(old); a =
+  tmp;`. The RHS is evaluated FIRST (it may read the old buffer — a call's arg, a
+  slice's range); recycling before would alias the live buffer.
+
+**Soundness condition — the var must never be a MOVE SOURCE**, learned the hard
+way. The first gate keyed on "inside a loop", an *unsound* proxy: `b := a` (outside
+a loop) moves `a`'s buffer to `b`, then `a = mk()` (inside one) would recycle that
+still-live buffer and corrupt `b`. **Two latent corruption bugs shipped and were
+caught** (only manifesting with distinct values + size-matching reuse, which the
+value-masked fuzz initially missed; pinned by `tests/recycle_alias.hi`). Fix:
+recycle only a var read **≥ 2 times** (hierc) / **not in `ctx.movables`** (hierc0) —
+move-on-last-use moves a var read exactly once, so read ≥ 2 ⇒ never moved ⇒
+uniquely owns its buffer.
+
+**Gate coverage (widened in two careful steps, each fuzz-clean):**
+- *Element types* (aa30d66): ANY array. We recycle the SPINE buffer (`data[]`);
+  flat-struct arrays (`[P]`) get FULL reclaim (2.5 GB → 6.6 MB), heap-element arrays
+  (`[string]`) get the spine only (partial — the elements are separate allocations,
+  also dead but not recycled). Required completing `push`-recycle across all `hierc`
+  array families.
+- *RHS forms* (05f22f4): ANY RHS — slice (`a = a[1:]`: 1.55 GB → 2 MB), copybind,
+  literal, identity — not just calls. A place RHS is deep-copied to a fresh buffer;
+  a call/literal is inherently fresh; the `.data != .data` guard backs distinctness.
+  (Array `+`-concat doesn't exist in Hier.) Drove a `hierc0` cleanup (3379c53): a
+  slice already owns (`Arr_*_slice`/`substr` allocate fresh), so `gen_rhs` no longer
+  double-copies it. SOA slices are VIEWS (cap 0) — excluded, still `Soa_copy`'d.
+
+**Result:** `iter-transform` 3.5 GB → 4 MB (`hierc`) / 6 MB (`hierc0`), flat in m,
+matching C and beating Go/Koka — on the former worst case. Verified: fixpoint B≡C +
+`make test` distinct-value regression tests + ASan/LSan + the hierc-vs-hierc0
+differential fuzz (`arr_rebuild`/`arr_realloc`/`arr_slice` patterns). NOTE the
+differential is a *weak* net here — value-masking can hide corruption — so the
+dedicated distinct-value tests are the real guard. The one residual is inherent:
+recycling a single buffer can't reclaim heap-element arrays' separately-allocated
+elements (spine only). FBIP-grade reuse from *static* value semantics + lexical
+arenas, no reference counts — Perceus on its home turf without paying for it.
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.

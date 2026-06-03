@@ -419,18 +419,27 @@ geometric-growth buffer it outgrows). Result: **3.47 GB → 4 MB, flat in m**
 (4.1 MB at m = 500 … 4000), now lower than Go and Koka and within ~1.4× of C, on
 the workload that was the arena's catastrophic worst case. Correctness is the gate:
 the checksum is unchanged, `make fixpoint` stays byte-identical, and the
-hierc-vs-hierc0 differential fuzz validates it (hierc0 has no recycle, so any
-corruption diverges). The reuse is gated to the sound, high-value case — a
-scalar-element array local reassigned from a function call inside a loop — because
-a call's result, by value semantics, can never alias its arguments.
+hierc-vs-hierc0 differential fuzz validates it. The reuse fires for any array LOCAL
+reassigned in a loop, of any element type and from any RHS form (call, slice,
+copybind, literal). The one soundness condition is that the var is **never a move
+source** — a var read ≥ 2 times (move-on-last-use only moves a var read exactly
+once), so it uniquely owns its buffer and its old buffer is truly dead; a runtime
+`.data != .data` guard backs the distinctness of the new buffer. (Two latent
+corruption bugs were found and fixed reaching this gate — the loop gate alone was
+an *unsound* proxy for unique ownership: `b := a` outside a loop then `a = mk()`
+inside one would have recycled b's still-live buffer.)
 
 This is the thesis's sharpest result: **FBIP-grade in-place reuse derived from
 static value semantics + lexical arenas, matching reference counting on its own
 home turf without paying for it.** It lives in BOTH compilers — `hierc` (4 MB) and
 the self-hosted `hierc0` (6 MB), which carries the same recycle and stays
-fixpoint-identical. What remains uncovered (string/struct-element arrays, non-call
-reassigns) still obeys the general rule — an arena has no *general* liveness-based
-reclaim — but the canonical case no longer loses. The model is excellent; its one
+fixpoint-identical. The gate was then widened in two careful steps: **all array
+element types** (flat-struct `[P]` reassign loop 2.5 GB → 6.6 MB, FULL reclaim;
+heap-element arrays like `[string]` get the spine reclaimed, partial) and **any RHS
+form** (a slice-shrink loop `a = a[1:]` 1.55 GB → 2 MB). The only residual is that
+heap-element arrays reclaim just the spine, not the separately-allocated elements —
+inherent to recycling a single buffer, not a soundness limit. The model is
+excellent; its one
 clean defeat is now a clean win, and honestly bounded.
 
 ## Summary across six workloads
