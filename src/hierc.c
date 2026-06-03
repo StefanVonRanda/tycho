@@ -2530,54 +2530,10 @@ static int block_mutates(Stmt **body, int n, const char *nm) {
     return 0;
 }
 
-/* --- indexed read-only string: hoist strlen out of the per-access bounds check.
- * A string variable `nm` that is the base of some `nm[i]` AND is never reassigned
- * (block_mutates==0 => its length is invariant, since a string's only length
- * change is a rebind) gets one `_slen_h_nm = strlen(nm)` sidecar at its scope
- * entry; its index sites then use hier_str_get_n (O(1)) instead of hier_str_get
- * (O(n) strlen each). Turns an s[i] loop from O(n^2) to O(n). ---------------- */
-static int str_indexed_e(Expr *e, const char *nm) {
-    if (!e) return 0;
-    if (e->kind == E_INDEX && e->lhs && e->lhs->kind == E_IDENT
-        && e->lhs->type == T_STRING && e->lhs->sval && !strcmp(e->lhs->sval, nm)) return 1;
-    if (str_indexed_e(e->lhs, nm) || str_indexed_e(e->rhs, nm)) return 1;
-    for (int i = 0; i < e->nargs; i++) if (str_indexed_e(e->args[i], nm)) return 1;
-    return 0;
-}
-static int str_indexed_b(Stmt **body, int n, const char *nm) {
-    for (int i = 0; i < n; i++) {
-        Stmt *s = body[i];
-        if (str_indexed_e(s->expr, nm) || str_indexed_e(s->target, nm)) return 1;
-        if (str_indexed_e(s->r_start, nm) || str_indexed_e(s->r_stop, nm) || str_indexed_e(s->r_step, nm)) return 1;
-        if (str_indexed_b(s->body, s->nbody, nm) || str_indexed_b(s->els, s->nels, nm)) return 1;
-        for (int a = 0; a < s->narms; a++)
-            if (str_indexed_b(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
-    }
-    return 0;
-}
-static const char *g_sidx[256];   /* string vars with a hoisted-length sidecar (this proc) */
-static int g_nsidx = 0;
-static int is_sidx(const char *nm) {
-    for (int i = 0; i < g_nsidx; i++) if (!strcmp(g_sidx[i], nm)) return 1;
-    return 0;
-}
-/* register string LOCALS (S_DECL) that are indexed and never reassigned; checks
- * run against the whole proc body by name, so a name reused as a mutated string
- * anywhere is conservatively skipped (correctness over the optimization). */
-static void sidx_collect(Stmt **fullbody, int fulln, Stmt **body, int n) {
-    for (int i = 0; i < n; i++) {
-        Stmt *s = body[i];
-        if (s->kind == S_DECL && s->decl_type == T_STRING && s->name && g_nsidx < 256
-            && !is_sidx(s->name)
-            && str_indexed_b(fullbody, fulln, s->name)
-            && !block_mutates(fullbody, fulln, s->name))
-            g_sidx[g_nsidx++] = s->name;
-        sidx_collect(fullbody, fulln, s->body, s->nbody);
-        sidx_collect(fullbody, fulln, s->els, s->nels);
-        for (int a = 0; a < s->narms; a++)
-            sidx_collect(fullbody, fulln, s->arms[a].body, s->arms[a].nbody);
-    }
-}
+/* (The old strlen-hoist "sidecar" optimization is gone: with length-headered
+ * strings, len(s) and bounds-checked s[i] are O(1) directly, so the per-function
+ * strlen hoist — which made recursive-descent over a string param O(n^2) — is no
+ * longer needed.) */
 
 /* --- return-slot optimization (escape analysis) -------------------------
  * A function-top-level local that is returned by name (`return r`) is
@@ -2988,7 +2944,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             return isfloaty ? sfmt("%s", b) : sfmt("%s.0", b);
         }
         case E_BOOL: return sfmt("%ld", e->ival);
-        case E_STR:  return sfmt("\"%s\"", e->sval);
+        case E_STR:  /* a length-headered, interned-once copy (cached per occurrence) */
+            return sfmt("({ static char *_l = 0; if (!_l) _l = hier_str_intern(\"%s\"); _l; })", e->sval);
         case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */
         case E_SOME: {
             Type inner = opt_inner(e->type);   /* move/copy the value into the option */
@@ -3054,11 +3011,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             }
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);
-            if (e->lhs->type == T_STRING) {
-                if (e->lhs->kind == E_IDENT && is_sidx(e->lhs->sval))   /* hoisted-length O(1) get */
-                    return sfmt("hier_str_get_n(%s, %s, _slen_h_%s)", a, ix, e->lhs->sval);
-                return sfmt("hier_str_get(%s, %s)", a, ix);
-            }
+            if (e->lhs->type == T_STRING)
+                return sfmt("hier_str_get(%s, %s)", a, ix);   /* O(1): length header, no strlen */
             return sfmt("hier_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
         }
         case E_SLICE: {
@@ -3066,7 +3020,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 int id = g_blk++;
                 char *s  = gen_expr(e->lhs, arena);
                 char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
-                char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("(long)strlen(_ss%d)", id);
+                char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("hier_str_len(_ss%d)", id);
                 return sfmt("({ const char *_ss%d = %s; hier_str_substr(%s, _ss%d, %s, %s); })",
                             id, s, arena, id, lo, hi);
             }
@@ -3322,13 +3276,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind);
                 fprintf(o, "long _len_h_%s = (long)strlen(h_%s); long _cap_h_%s = 0;\n",
                         s->name, s->name, s->name);
-            }
-            /* indexed read-only string local: hoist its length (same C scope as
-             * h_<v>, so a loop-body local re-strlens per iteration in lockstep
-             * with its rebind — never hoisted out, stays correct). */
-            if (s->decl_type == T_STRING && is_sidx(s->name)) {
-                indent(o, ind);
-                fprintf(o, "long _slen_h_%s = (long)strlen(h_%s);\n", s->name, s->name);
             }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
             break;
@@ -3893,18 +3840,6 @@ static void gen_proc(FILE *o, Proc *pr) {
                     pr->params[i].name, g_structs[STRUCT_ID(pt)].name, pr->params[i].name);
         }
     }
-    /* indexed read-only strings: hoist strlen once into _slen_h_<v> so s[i] is
-     * O(1). String PARAMS get their sidecar here; LOCALS at their S_DECL. */
-    g_nsidx = 0;
-    for (int i = 0; i < pr->nparams; i++)
-        if (pr->params[i].type == T_STRING && !pr->params[i].is_inout && g_nsidx < 256
-            && str_indexed_b(pr->body, pr->nbody, pr->params[i].name)
-            && !block_mutates(pr->body, pr->nbody, pr->params[i].name)) {
-            g_sidx[g_nsidx++] = pr->params[i].name;
-            indent(o, 1);
-            fprintf(o, "long _slen_h_%s = (long)strlen(h_%s);\n", pr->params[i].name, pr->params[i].name);
-        }
-    sidx_collect(pr->body, pr->nbody, pr->body, pr->nbody);
     gen_block(o, pr->body, pr->nbody, 1, "&_scope", pr->ret);
     if (!block_ends_in_return(pr->body, pr->nbody)) {
         if (pr->ret == T_VOID) {

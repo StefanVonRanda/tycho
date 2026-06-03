@@ -112,12 +112,24 @@ void arena_free(Arena *a) {
     a->head = NULL;
 }
 
+/* Allocate a string with `n` data bytes: an 8-byte length header sits just
+ * before the returned pointer (hier_str_len reads it in O(1)), the data is
+ * NUL-terminated, and the pointer is a valid C `char *` (the header is hidden
+ * "behind" it, so printf/strcmp/strstr stay unaffected). 8-byte arena alignment
+ * keeps the header word aligned. */
+static char *hier_str_alloc(Arena *a, long n) {
+    char *base = (char *)arena_alloc(a, (size_t)(8 + n + 1));
+    *(long *)base = n;
+    char *data = base + 8;
+    data[n] = '\0';
+    return data;
+}
+
 char *hier_str_concat(Arena *a, const char *x, const char *y) {
     size_t lx = strlen(x), ly = strlen(y);
-    char *r = (char *)arena_alloc(a, lx + ly + 1);
+    char *r = hier_str_alloc(a, (long)(lx + ly));
     memcpy(r, x, lx);
     memcpy(r + lx, y, ly);
-    r[lx + ly] = '\0';
     return r;
 }
 
@@ -135,7 +147,8 @@ void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
     if (need > *cap) {
         long nc = *cap ? *cap * 2 : 16;
         while (nc < need) nc *= 2;
-        char *nb = (char *)arena_alloc(a, (size_t)nc);
+        char *base = (char *)arena_alloc(a, (size_t)(8 + nc));   /* +8 for the length header */
+        char *nb = base + 8;
         memcpy(nb, *s, (size_t)*len);    /* old buffer still live (bump arena) */
         *s = nb;
         *cap = nc;
@@ -143,16 +156,16 @@ void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
     memmove(*s + *len, e, (size_t)el);
     *len += el;
     (*s)[*len] = '\0';
+    ((long *)(*s))[-1] = *len;            /* keep the length header in sync (always grown by here) */
 }
 
 /* string + char: one-byte append, no strlen/snprintf. `c` is a byte carried in
  * a long (Hier's char type). New buffer lives in arena `a` (cf. hier_str_concat). */
 char *hier_str_concat_char(Arena *a, const char *x, long c) {
     size_t lx = strlen(x);
-    char *r = (char *)arena_alloc(a, lx + 2);
+    char *r = hier_str_alloc(a, (long)lx + 1);
     memcpy(r, x, lx);
     r[lx] = (char)c;
-    r[lx + 1] = '\0';
     return r;
 }
 
@@ -163,7 +176,8 @@ void hier_str_append_char(Arena *a, char **s, long *len, long *cap, long c) {
     if (need > *cap) {
         long nc = *cap ? *cap * 2 : 16;
         while (nc < need) nc *= 2;
-        char *nb = (char *)arena_alloc(a, (size_t)nc);
+        char *base = (char *)arena_alloc(a, (size_t)(8 + nc));
+        char *nb = base + 8;
         memcpy(nb, *s, (size_t)*len);
         *s = nb;
         *cap = nc;
@@ -171,6 +185,7 @@ void hier_str_append_char(Arena *a, char **s, long *len, long *cap, long c) {
     (*s)[*len] = (char)c;
     *len += 1;
     (*s)[*len] = '\0';
+    ((long *)(*s))[-1] = *len;
 }
 
 /* value-semantic copy of a string into arena `a`. Used when a bare string
@@ -179,9 +194,23 @@ void hier_str_append_char(Arena *a, char **s, long *len, long *cap, long c) {
  * into the destination arena to survive (cf. hier_arr_int_copy). */
 char *hier_str_copy(Arena *a, const char *s) {
     size_t n = strlen(s);
-    char *r = (char *)arena_alloc(a, n + 1);
-    memcpy(r, s, n + 1);
+    char *r = hier_str_alloc(a, (long)n);
+    memcpy(r, s, n);
     return r;
+}
+
+/* Intern a string literal: a malloc'd, length-headered, immortal copy. Each
+ * literal occurrence caches the result in a function-local static (see the
+ * codegen), so the strlen+copy runs once; the allocation stays reachable for the
+ * process lifetime (never an LSan leak). */
+char *hier_str_intern(const char *s) {
+    size_t n = strlen(s);
+    char *base = (char *)malloc(8 + n + 1);
+    if (!base) hier_oom();
+    *(long *)base = (long)n;
+    char *data = base + 8;
+    memcpy(data, s, n + 1);   /* bytes + NUL */
+    return data;
 }
 
 void hier_print(const char *s) { fputs(s, stdout); }
@@ -191,10 +220,10 @@ void hier_print(const char *s) { fputs(s, stdout); }
  * oriented. substr returns a fresh copy in the target arena (value
  * semantics, like everything else); its range is clamped Python-style. */
 
-long hier_str_len(const char *s) { return (long)strlen(s); }
+long hier_str_len(const char *s) { return ((const long *)s)[-1]; }   /* O(1): the length header */
 
 long hier_str_get(const char *s, long i) {
-    long n = (long)strlen(s);
+    long n = ((const long *)s)[-1];
     if (i < 0 || i >= n) {
         fprintf(stderr, "hier: string index %ld out of bounds (len %ld)\n", i, n);
         exit(1);
@@ -221,9 +250,8 @@ char *hier_str_substr(Arena *a, const char *s, long start, long end) {
     if (end > n) end = n;
     if (end < start) end = start;
     long m = end - start;
-    char *r = (char *)arena_alloc(a, (size_t)m + 1);
+    char *r = hier_str_alloc(a, m);
     memcpy(r, s + start, (size_t)m);
-    r[m] = '\0';
     return r;
 }
 
@@ -248,8 +276,9 @@ char *hier_input(Arena *a) {
         }
         buf[len++] = (char)c;
     }
-    buf[len] = '\0';
-    return buf;
+    char *r = hier_str_alloc(a, (long)len);
+    memcpy(r, buf, len);
+    return r;
 }
 
 /* read ALL of stdin into one string (the whole source file), newlines and all.
@@ -269,8 +298,9 @@ char *hier_read_all(Arena *a) {
         }
         buf[len++] = (char)c;
     }
-    buf[len] = '\0';
-    return buf;
+    char *r = hier_str_alloc(a, (long)len);
+    memcpy(r, buf, len);
+    return r;
 }
 
 /* read_file(path): the whole file as a string, or "" if it can't be opened. */
@@ -291,8 +321,9 @@ char *hier_read_file(Arena *a, const char *path) {
         }
     }
     fclose(f);
-    buf[len] = '\0';
-    return buf;
+    char *r = hier_str_alloc(a, (long)len);
+    memcpy(r, buf, len);
+    return r;
 }
 
 /* args(): the program's argv as a string array (args()[0] is the program name).
@@ -304,9 +335,9 @@ static char **hier_argv = NULL;
  * `s[i] -> int` byte read. n==0 yields the empty string (strings are
  * NUL-terminated), which is fine: codegen never emits a NUL byte. */
 char *hier_chr(Arena *a, long n) {
-    char *r = (char *)arena_alloc(a, 2);
-    r[0] = (char)(n & 0xff);
-    r[1] = '\0';
+    long m = n == 0 ? 0 : 1;                  /* n==0 -> empty string (no NUL byte in data) */
+    char *r = hier_str_alloc(a, m);
+    if (m) r[0] = (char)(n & 0xff);
     return r;
 }
 
@@ -321,8 +352,8 @@ void hier_die(const char *msg) {
 char *hier_int_to_str(Arena *a, long n) {
     char tmp[32];
     int m = snprintf(tmp, sizeof tmp, "%ld", n);
-    char *r = (char *)arena_alloc(a, (size_t)m + 1);
-    memcpy(r, tmp, (size_t)m + 1);
+    char *r = hier_str_alloc(a, m);
+    memcpy(r, tmp, (size_t)m);
     return r;
 }
 
@@ -339,8 +370,8 @@ char *hier_float_to_str(Arena *a, double x) {
         if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { floaty = 1; break; }
     }
     if (!floaty && m + 2 < (int)sizeof tmp) { tmp[m++] = '.'; tmp[m++] = '0'; tmp[m] = '\0'; }
-    char *r = (char *)arena_alloc(a, (size_t)m + 1);
-    memcpy(r, tmp, (size_t)m + 1);
+    char *r = hier_str_alloc(a, m);
+    memcpy(r, tmp, (size_t)m);
     return r;
 }
 
