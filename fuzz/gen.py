@@ -46,7 +46,7 @@ class Gen:
     def types_simple(self):
         ts = ["int", "string", "float", "[int]", "[string]", "[float]", "Option(int)",
               "Option(string)", "(int, string)", "{string:int}", "{string:float}",
-              "{int:int}", "{int:float}",
+              "{int:int}", "{int:float}", "{string:string}",   # composite (heap) map value
               "[Option(int)]", "[Option(string)]"]
         ts += list(self.structs.keys())
         ts += list(self.newtypes.keys())
@@ -131,6 +131,7 @@ class Gen:
         if t == "Option(int)": return "Some(0)"
         if t == "Option(string)": return 'Some("x")'
         if t == "(int, string)": return '(0, "x")'
+        if t == "{string:string}": return '["k0": "x"]'
         if t == "{string:int}": return '["k0": 0]'
         if t == "{string:float}": return '["k0": 0.0]'
         if t == "{int:int}": return '[0: 0]'
@@ -185,9 +186,10 @@ class Gen:
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            dflt = "0" if vt == "int" else "0.0"
+            dflt = '""' if vt == "string" else ("0" if vt == "int" else "0.0")
             g = "map_get(" + name + ", " + ks + "[" + ii + "], " + dflt + ")"
-            add(ind+1, g if vt == "int" else "to_int(" + g + ")")   # SUM is key-order independent
+            contrib = g if vt == "int" else ("len(" + g + ")" if vt == "string" else "to_int(" + g + ")")
+            add(ind+1, contrib)   # SUM is key-order independent
         elif t == "Result([int], string)":                # heap Ok payload + Err string, matched both arms
             xs = self.fresh("xs"); er = self.fresh("e"); ii = self.fresh("i")
             self.emit(ind, "match " + name + ":")

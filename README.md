@@ -200,7 +200,7 @@ byte — `'x'` literals with `\n \t \r \0 \\ \'` escapes; `char ± int → char`
 `string + char` appends in place without allocating, so `s = s + ('0' + d)` is a
 zero-alloc byte append), arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), maps
-(`[string: int]`, `[string: float]`, `[int: int]`, `[int: float]`), `Option(T)` (a value or nothing — the
+(`[string: V]` for any value type `V`; `[int: int]`, `[int: float]`), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
 no-exceptions error story), tuples `(T1, ..., Tn)` (anonymous products — the
 multiple-return-values story), user-defined `struct`s, user-defined `enum`s
@@ -356,12 +356,15 @@ The one rule: you cannot pass a slice of `xs` and an `inout` of `xs` to the same
 call (the `inout` could reallocate the buffer the slice views). Strings use
 `substr(s, a, b)` (a copy), not slice syntax.
 
-### Maps (`[string: int]`, `[string: float]`, `[int: int]`, `[int: float]`)
+### Maps (`[string: V]`, `[int: int]`, `[int: float]`)
 
-A map has `string` or `int` keys and either `int` or `float` values; both types
-follow from the literal or annotation (`["a": 1]` is a `[string: int]`,
-`["a": 1.5]` a `[string: float]`, `[1: 2]` an `[int: int]`). Int-keyed maps work
-exactly like string-keyed ones — `keys(m)` returns `[int]` instead of `[string]`:
+A map has `string` or `int` keys. A **string-keyed** map's value may be *any*
+type — `int`, `float`, `string`, a struct, an array, … (`[string: Point]`,
+`[string: [int]]`); the value is deep-copied in and out like any other heap value.
+An **int-keyed** map's value is `int` or `float` (for now). The types follow from
+the literal or annotation (`["a": 1]` is a `[string: int]`, `["a": "b"]` a
+`[string: string]`, `[1: 2]` an `[int: int]`). `keys(m)` returns `[int]` or
+`[string]` to match the key type:
 
 ```
 counts := ["ada": 1, "alan": 2]   # literal: "key": value pairs
@@ -409,10 +412,11 @@ O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
 All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, the
-in-place accumulator rebind, `==`, `inout`) work the same on all four; `map_get`'s
-default and `map_set`'s value take the map's value type, and the key takes its
-key type. *Not yet:* value types other than `int`/`float`, and key types other
-than `string`/`int`.
+in-place accumulator rebind, `inout`) work the same regardless of value type;
+`map_get`'s default and `map_set`'s value take the map's value type, and the key
+takes its key type. *Not yet:* `==` on a map whose value isn't `int`/`float`,
+non-`int`/`float` values for **int**-keyed maps, and key types other than
+`string`/`int`.
 
 ### Option and `match`
 
@@ -760,11 +764,11 @@ None of this appears in Hier source.
   Self-hosting). Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
-  string- or int-keyed with `int` or `float` values (`[string: int]`,
-  `[string: float]`, `[int: int]`, `[int: float]`) — no other key or value type
-  yet; they support
+  string- or int-keyed; a **string**-keyed map's value may be any type
+  (`[string: string]`, `[string: Struct]`, `[string: [int]]`, …), an **int**-keyed
+  map's value is `int`/`float` for now — no other key type yet. They support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
-  rebinds, and `inout`.
+  rebinds, and `inout` (and `==` except on non-`int`/`float`-valued maps).
   `inout` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,
