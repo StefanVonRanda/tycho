@@ -307,6 +307,7 @@ static TokVec lex(const char *src) {
 typedef int Type;
 enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T_FLOAT, T_ARRAY_FLOAT,
        T_MAP_SF /* [string: float] */,
+       T_MAP_II /* [int: int] */, T_MAP_IF /* [int: float] */,
        T_NONE, /* type of a bare `None` until context fixes its concrete Option type */
        /* Ok(v)/Err(e) each know only ONE of Result's two type params, so they
         * carry a partial sentinel (the known inner type sits on the value's lhs)
@@ -498,10 +499,19 @@ static Type soa_struct(Type t) { return g_soatypes[SOA_ID(t)].st; }
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
  * value type, map_of the map type for a value type. */
-static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF; }
-static const char *map_fn(Type t) { return t == T_MAP_SF ? "sf" : "si"; }
-static Type map_val(Type t) { return t == T_MAP_SF ? T_FLOAT : T_INT; }
-static Type map_of(Type v) { return v == T_FLOAT ? T_MAP_SF : T_MAP_SI; }
+static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF || t == T_MAP_II || t == T_MAP_IF; }
+static const char *map_fn(Type t) {
+    return t == T_MAP_SF ? "sf" : t == T_MAP_II ? "ii" : t == T_MAP_IF ? "if" : "si";
+}
+static Type map_val(Type t) { return (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
+static Type map_key(Type t) { return (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
+/* the map type for a (key, value) pair. Only string and int keys, int and float
+ * values exist; an unsupported pair returns T_VOID (the caller rejects it). */
+static Type map_of(Type k, Type v) {
+    if (k == T_STRING) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
+    if (k == T_INT)    return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
+    return T_VOID;
+}
 
 /* A "heap" type owns arena-allocated bytes outside its own value word(s):
  * string (char* into an arena), [int]/[string] (a buffer), or any struct
@@ -556,6 +566,8 @@ static const char *c_type(Type t) {
         case T_ARRAY_STRING: return "HierArrStr ";
         case T_MAP_SI:       return "HierMapSI ";
         case T_MAP_SF:       return "HierMapSF ";
+        case T_MAP_II:       return "HierMapII ";
+        case T_MAP_IF:       return "HierMapIF ";
         default:             return "void ";
     }
 }
@@ -585,6 +597,8 @@ static const char *type_name(Type t) {
         case T_ARRAY_STRING: return "[string]";
         case T_MAP_SI:       return "[string: int]";
         case T_MAP_SF:       return "[string: float]";
+        case T_MAP_II:       return "[int: int]";
+        case T_MAP_IF:       return "[int: float]";
         default:             return "void";
     }
 }
@@ -726,8 +740,9 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
-            if (elem == T_STRING && (val == T_INT || val == T_FLOAT)) return map_of(val);
-            die_at(t->line, "maps are [string: int] or [string: float]");
+            if ((elem == T_STRING || elem == T_INT) && (val == T_INT || val == T_FLOAT))
+                return map_of(elem, val);
+            die_at(t->line, "map keys must be string or int, values int or float");
         }
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_VOID || elem == T_BOOL)
@@ -824,8 +839,8 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
-                if (elem == T_STRING && (val == T_INT || val == T_FLOAT)) { e->ival = map_of(val); e->op = TK_COLON; }
-                else die_at(t->line, "maps are [string: int] or [string: float]");
+                if ((elem == T_STRING || elem == T_INT) && (val == T_INT || val == T_FLOAT)) { e->ival = map_of(elem, val); e->op = TK_COLON; }
+                else die_at(t->line, "map keys must be string or int, values int or float");
                 return e;
             }
             if (elem == T_VOID || elem == T_BOOL)
@@ -1778,13 +1793,16 @@ static Type resolve_expr(Expr *e) {
                 Type vt = resolve_expr(e->args[1]);
                 if (vt != T_INT && vt != T_FLOAT)
                     die_at(e->line, "map values must be int or float");
+                Type kt = resolve_expr(e->args[0]);
+                if (kt != T_STRING && kt != T_INT)
+                    die_at(e->line, "map keys must be string or int");
                 for (int i = 0; i < e->nargs; i += 2) {
-                    if (resolve_expr(e->args[i]) != T_STRING)
-                        die_at(e->line, "map keys must be string");
+                    if (resolve_expr(e->args[i]) != kt)
+                        die_at(e->line, "map keys must all have the same type");
                     if (resolve_expr(e->args[i + 1]) != vt)
                         die_at(e->line, "map values must all have the same type");
                 }
-                return e->type = map_of(vt);
+                return e->type = map_of(kt, vt);
             }
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
                 return e->type = (Type)e->ival;
@@ -1965,7 +1983,7 @@ static Type resolve_expr(Expr *e) {
                 if (e->nargs != 3) die_at(e->line, "map_set(m, key, value) takes three arguments");
                 Type mt = resolve_expr(e->args[0]);
                 if (!is_map(mt)) die_at(e->line, "map_set's first argument must be a map");
-                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_set key must be string");
+                if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_set key must be %s", type_name(map_key(mt)));
                 if (resolve_expr(e->args[2]) != map_val(mt))
                     die_at(e->line, "map_set value must be %s", type_name(map_val(mt)));
                 return e->type = mt;
@@ -1974,16 +1992,17 @@ static Type resolve_expr(Expr *e) {
                 if (e->nargs != 3) die_at(e->line, "map_get(m, key, default) takes three arguments");
                 Type mt = resolve_expr(e->args[0]);
                 if (!is_map(mt)) die_at(e->line, "map_get's first argument must be a map");
-                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_get key must be string");
+                if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_get key must be %s", type_name(map_key(mt)));
                 if (resolve_expr(e->args[2]) != map_val(mt))
                     die_at(e->line, "map_get default must be %s", type_name(map_val(mt)));
                 return e->type = map_val(mt);
             }
             if (!strcmp(e->sval, "map_has")) {
                 if (e->nargs != 2) die_at(e->line, "map_has(m, key) takes two arguments");
-                if (!is_map(resolve_expr(e->args[0])))
+                Type mt = resolve_expr(e->args[0]);
+                if (!is_map(mt))
                     die_at(e->line, "map_has's first argument must be a map");
-                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_has key must be string");
+                if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_has key must be %s", type_name(map_key(mt)));
                 return e->type = T_BOOL;
             }
             /* map_del is pure (returns a new map); the m = map_del(m, k)
@@ -1992,15 +2011,16 @@ static Type resolve_expr(Expr *e) {
                 if (e->nargs != 2) die_at(e->line, "map_del(m, key) takes two arguments");
                 Type mt = resolve_expr(e->args[0]);
                 if (!is_map(mt)) die_at(e->line, "map_del's first argument must be a map");
-                if (resolve_expr(e->args[1]) != T_STRING) die_at(e->line, "map_del key must be string");
+                if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_del key must be %s", type_name(map_key(mt)));
                 return e->type = mt;
             }
-            /* keys(m) -> [string]: the map's live keys, for iteration. */
+            /* keys(m) -> [string] or [int]: the map's live keys, for iteration. */
             if (!strcmp(e->sval, "keys")) {
                 if (e->nargs != 1) die_at(e->line, "keys(m) takes one argument");
-                if (!is_map(resolve_expr(e->args[0])))
+                Type mt = resolve_expr(e->args[0]);
+                if (!is_map(mt))
                     die_at(e->line, "keys's argument must be a map");
-                return e->type = T_ARRAY_STRING;
+                return e->type = map_key(mt) == T_INT ? T_ARRAY_INT : T_ARRAY_STRING;
             }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
@@ -2861,7 +2881,9 @@ static char *copy_into(Type t, const char *arena, char *val) {
         case T_ARRAY_FLOAT:  return sfmt("hier_arr_float_copy(%s, %s)", arena, val);
         case T_ARRAY_STRING: return sfmt("hier_arr_str_copy(%s, %s)", arena, val);
         case T_MAP_SI:
-        case T_MAP_SF:       return sfmt("hier_map_%s_copy(%s, %s)", map_fn(t), arena, val);
+        case T_MAP_SF:
+        case T_MAP_II:
+        case T_MAP_IF:       return sfmt("hier_map_%s_copy(%s, %s)", map_fn(t), arena, val);
         default:
             if (IS_OPT(t))
                 return type_is_heap(t) ? sfmt("hier_opt%d_copy(%s, %s)", OPT_ID(t), arena, val) : val;

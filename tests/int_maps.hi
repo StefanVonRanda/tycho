@@ -1,0 +1,53 @@
+# Int-keyed maps: [int: int] and [int: float]. Same open-addressing table as
+# string-keyed maps but with a `long` key and an occupancy array (0 is a real
+# key, so there is no NULL "empty" marker). Exercises set/get/has/del, the
+# in-place accumulator (m = map_set(m, k, ...)), keys() -> [int], value
+# semantics (a snapshot is independent), and key 0.
+fn main():
+    counts := []int: int
+    counts = map_set(counts, 5, 100)
+    counts = map_set(counts, 0, 7)                 # key 0
+    counts = map_set(counts, 5, map_get(counts, 5, 0) + 1)
+    print("c5=" + str(map_get(counts, 5, 0 - 1)) + "\n")    # 101
+    print("c0=" + str(map_get(counts, 0, 0 - 1)) + "\n")    # 7
+    print("miss=" + str(map_get(counts, 9, 0 - 1)) + "\n")  # -1
+    if map_has(counts, 0):
+        print("has0=yes\n")
+    if not map_has(counts, 9):
+        print("has9=no\n")
+    print("len=" + str(len(counts)) + "\n")        # 2
+
+    # value semantics: a snapshot does not see later mutations
+    snap := counts
+    counts = map_set(counts, 5, 999)
+    print("snap5=" + str(map_get(snap, 5, 0)) + " now5=" + str(map_get(counts, 5, 0)) + "\n")  # 101 999
+
+    counts = map_del(counts, 5)
+    print("afterdel=" + str(len(counts)) + "\n")   # 1
+
+    # histogram accumulator + keys() iteration (sum of distinct keys)
+    h := []int: int
+    data := []int
+    push(data, 3)
+    push(data, 7)
+    push(data, 3)
+    push(data, 3)
+    push(data, 7)
+    i := 0
+    for i in range(0, len(data)):
+        h = map_set(h, data[i], map_get(h, data[i], 0) + 1)
+    print("h3=" + str(map_get(h, 3, 0)) + " h7=" + str(map_get(h, 7, 0)) + "\n")   # 3 2
+    sumk := 0
+    for kk in keys(h):
+        sumk = sumk + kk
+    print("sumk=" + str(sumk) + "\n")              # 3+7 = 10
+
+    # [int: float] values
+    fm := []int: float
+    fm = map_set(fm, 1, 1.5)
+    fm = map_set(fm, 2, 2.5)
+    fm = map_set(fm, 1, map_get(fm, 1, 0.0) + 0.25)
+    print("fm1=" + str(fm_round(map_get(fm, 1, 0.0))) + " fm2=" + str(fm_round(map_get(fm, 2, 0.0))) + "\n")   # 175 250
+
+fn fm_round(x: float) -> int:        # avoid float-print formatting differences
+    return to_int(x * 100.0)

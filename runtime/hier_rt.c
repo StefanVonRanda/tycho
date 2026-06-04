@@ -934,3 +934,175 @@ int hier_map_sf_eq(HierMapSF x, HierMapSF y) {
         }
     return 1;
 }
+
+/* ------------------------------------------------------------- Map(int, V)
+ * Int-keyed maps (HierMapII: int->int, HierMapIF: int->float). Same open-
+ * addressing table as the string-keyed maps, but the key is a `long` value, so
+ * there is no NULL/sentinel free in the key array (0 is a real key): an `occ`
+ * byte per slot tracks 0=empty / 1=live / 2=tombstone instead. Keys are plain
+ * values (no arena copy). hier_ik_hash mixes the bits so sequential int keys do
+ * not cluster. */
+static unsigned long hier_ik_hash(long k) {        /* SplitMix64 finalizer */
+    unsigned long x = (unsigned long)k + 0x9e3779b97f4a7c15UL;
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9UL;
+    x = (x ^ (x >> 27)) * 0x94d049bb133111ebUL;
+    return x ^ (x >> 31);
+}
+
+typedef struct { long *keys; long   *vals; unsigned char *occ; long len, cap, used; } HierMapII;
+typedef struct { long *keys; double *vals; unsigned char *occ; long len, cap, used; } HierMapIF;
+
+HierMapII hier_map_ii_with_cap(Arena *a, long cap) {
+    HierMapII m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;
+    m.cap = c; m.len = 0; m.used = 0;
+    if (c == 0) { m.keys = NULL; m.vals = NULL; m.occ = NULL; return m; }
+    m.keys = (long *)arena_alloc(a, (size_t)c * sizeof(long));
+    m.vals = (long *)arena_alloc(a, (size_t)c * sizeof(long));
+    m.occ  = (unsigned char *)arena_alloc(a, (size_t)c);
+    for (long i = 0; i < c; i++) m.occ[i] = 0;
+    return m;
+}
+static long hier_map_ii_find(HierMapII m, long k) {
+    if (m.cap == 0) return -1;
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_ik_hash(k) & mask);
+    while (m.occ[i] != 0) {
+        if (m.occ[i] == 1 && m.keys[i] == k) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return -1;
+}
+static long hier_map_ii_slot(HierMapII m, long k) {
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_ik_hash(k) & mask), tomb = -1;
+    while (m.occ[i] != 0) {
+        if (m.occ[i] == 2) { if (tomb < 0) tomb = i; }
+        else if (m.keys[i] == k) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return tomb >= 0 ? tomb : i;
+}
+void hier_map_ii_put(Arena *a, HierMapII *m, long k, long v) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
+        HierMapII n = hier_map_ii_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (m->occ[i] == 1) { long s = hier_map_ii_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
+        *m = n;
+    }
+    long s = hier_map_ii_slot(*m, k);
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; }
+    m->vals[s] = v;
+}
+void hier_map_ii_del(HierMapII *m, long k) {
+    long s = hier_map_ii_find(*m, k);
+    if (s < 0) return;
+    m->occ[s] = 2; m->len--;
+}
+HierMapII hier_map_ii_copy(Arena *a, HierMapII src) {
+    HierMapII r = hier_map_ii_with_cap(a, src.len ? src.len * 2 : 0);
+    for (long i = 0; i < src.cap; i++) if (src.occ[i] == 1) hier_map_ii_put(a, &r, src.keys[i], src.vals[i]);
+    return r;
+}
+HierMapII hier_map_ii_set(Arena *a, HierMapII m, long k, long v) {
+    HierMapII r = hier_map_ii_copy(a, m); hier_map_ii_put(a, &r, k, v); return r;
+}
+HierMapII hier_map_ii_del_pure(Arena *a, HierMapII m, long k) {
+    HierMapII r = hier_map_ii_copy(a, m); hier_map_ii_del(&r, k); return r;
+}
+long hier_map_ii_get(HierMapII m, long k, long dflt) {
+    long s = hier_map_ii_find(m, k); return s < 0 ? dflt : m.vals[s];
+}
+int hier_map_ii_has(HierMapII m, long k) { return hier_map_ii_find(m, k) >= 0; }
+HierArrInt hier_map_ii_keys(Arena *a, HierMapII m) {
+    HierArrInt r = hier_arr_int_with_cap(a, m.len);
+    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_int_push(a, &r, m.keys[i]);
+    return r;
+}
+int hier_map_ii_eq(HierMapII x, HierMapII y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) {
+        long s = hier_map_ii_find(y, x.keys[i]);
+        if (s < 0 || y.vals[s] != x.vals[i]) return 0;
+    }
+    return 1;
+}
+
+/* HierMapIF: identical table, double values. */
+HierMapIF hier_map_if_with_cap(Arena *a, long cap) {
+    HierMapIF m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;
+    m.cap = c; m.len = 0; m.used = 0;
+    if (c == 0) { m.keys = NULL; m.vals = NULL; m.occ = NULL; return m; }
+    m.keys = (long *)  arena_alloc(a, (size_t)c * sizeof(long));
+    m.vals = (double *)arena_alloc(a, (size_t)c * sizeof(double));
+    m.occ  = (unsigned char *)arena_alloc(a, (size_t)c);
+    for (long i = 0; i < c; i++) m.occ[i] = 0;
+    return m;
+}
+static long hier_map_if_find(HierMapIF m, long k) {
+    if (m.cap == 0) return -1;
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_ik_hash(k) & mask);
+    while (m.occ[i] != 0) {
+        if (m.occ[i] == 1 && m.keys[i] == k) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return -1;
+}
+static long hier_map_if_slot(HierMapIF m, long k) {
+    unsigned long mask = (unsigned long)m.cap - 1;
+    long i = (long)(hier_ik_hash(k) & mask), tomb = -1;
+    while (m.occ[i] != 0) {
+        if (m.occ[i] == 2) { if (tomb < 0) tomb = i; }
+        else if (m.keys[i] == k) return i;
+        i = (long)((i + 1) & mask);
+    }
+    return tomb >= 0 ? tomb : i;
+}
+void hier_map_if_put(Arena *a, HierMapIF *m, long k, double v) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
+        HierMapIF n = hier_map_if_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (m->occ[i] == 1) { long s = hier_map_if_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
+        *m = n;
+    }
+    long s = hier_map_if_slot(*m, k);
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; }
+    m->vals[s] = v;
+}
+void hier_map_if_del(HierMapIF *m, long k) {
+    long s = hier_map_if_find(*m, k);
+    if (s < 0) return;
+    m->occ[s] = 2; m->len--;
+}
+HierMapIF hier_map_if_copy(Arena *a, HierMapIF src) {
+    HierMapIF r = hier_map_if_with_cap(a, src.len ? src.len * 2 : 0);
+    for (long i = 0; i < src.cap; i++) if (src.occ[i] == 1) hier_map_if_put(a, &r, src.keys[i], src.vals[i]);
+    return r;
+}
+HierMapIF hier_map_if_set(Arena *a, HierMapIF m, long k, double v) {
+    HierMapIF r = hier_map_if_copy(a, m); hier_map_if_put(a, &r, k, v); return r;
+}
+HierMapIF hier_map_if_del_pure(Arena *a, HierMapIF m, long k) {
+    HierMapIF r = hier_map_if_copy(a, m); hier_map_if_del(&r, k); return r;
+}
+double hier_map_if_get(HierMapIF m, long k, double dflt) {
+    long s = hier_map_if_find(m, k); return s < 0 ? dflt : m.vals[s];
+}
+int hier_map_if_has(HierMapIF m, long k) { return hier_map_if_find(m, k) >= 0; }
+HierArrInt hier_map_if_keys(Arena *a, HierMapIF m) {
+    HierArrInt r = hier_arr_int_with_cap(a, m.len);
+    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_int_push(a, &r, m.keys[i]);
+    return r;
+}
+int hier_map_if_eq(HierMapIF x, HierMapIF y) {
+    if (x.len != y.len) return 0;
+    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) {
+        long s = hier_map_if_find(y, x.keys[i]);
+        if (s < 0 || y.vals[s] != x.vals[i]) return 0;
+    }
+    return 1;
+}
