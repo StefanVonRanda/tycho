@@ -1,0 +1,30 @@
+# Identifier-namespacing regression: user names that collide with hierc0's emitted
+# runtime helpers (sc/hs/amem/i2s/scopy/hbox) and with C keywords (default/case/
+# static/union) must self-host. The C compiler prefixes every user identifier with
+# h_; hierc0 now does too (un()). Before that, `static int default = ...` was a C
+# syntax error and a user `sc` clashed with the runtime concat helper. hierc0 and the
+# C compiler must agree (make bootstrap diffs them).
+enum Box:
+    Val(int)
+    Nil
+
+fn sc(amem: int) -> int:              # user fn `sc` + param `amem` (both runtime-helper names)
+    return amem + 1
+
+fn main():
+    hs := 0                           # var `hs` (runtime helper name)
+    default := 3                      # C keyword as a variable
+    for case in range(default):       # loop var `case` (C keyword)
+        hs = hs + 1
+    scopy := ""                       # string accumulator named like the runtime `scopy`
+    static := 4                       # C keyword
+    for union in range(static):       # loop var `union` (C keyword)
+        scopy = scopy + "x"
+    b := Val(sc(static))              # call the user `sc`
+    i2s := 0                          # var `i2s` (runtime helper name)
+    match b:
+        Val(hbox):                    # match binding `hbox` (runtime helper name)
+            i2s = hbox
+        Nil:
+            i2s = 0
+    print(str(hs) + "," + str(i2s) + "," + str(len(scopy)) + "\n")   # 3,5,4

@@ -2092,6 +2092,15 @@ fn loop_frees(dc: Decls, ctx: Ctx) -> string:
 fn in_loop(ctx: Ctx) -> Ctx:
     return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth)
 
+# Emitted C name for a USER variable / parameter / function identifier. Prefixed so a
+# user name can never collide with hierc0's emitted runtime helpers (sc/hs/amem/i2s/
+# mk_*/Arr_*/...) or a C keyword (int/long/struct/default/...). Mirrors the C compiler's
+# h_ scheme. Generated temps (_scope/_ret/_fc.../_ina_...) are emitted raw, never via un.
+# `main` is the C entry point and is carved out upstream (gen_func early-returns it,
+# the proto loop skips it, and nothing calls it), so it never reaches un.
+fn un(n: string) -> string:
+    return "h_" + n
+
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -2108,8 +2117,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
                 return "mk_" + name + "(" + ctx.owner + ")"
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
-                return "(*" + name + ")"
-            return name
+                return "(*" + un(name) + ")"
+            return un(name)
         EField(base, fld):
             sf := soa_field_access(dc, ctx, base, fld, names, types)   # soa[i].f -> (soa).fN[i]
             if sf != "":
@@ -2276,8 +2285,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
                 return "(" + name + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
-                return name + "(" + ctx.owner + ")"
-            return name + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
+                return un(name) + "(" + ctx.owner + ")"
+            return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
 
 # Root variable of a place expression (`s.items[i]` -> `s`), or "" if not a
 # place rooted in a variable. Used to find which arena a container lives in.
@@ -2941,14 +2950,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(names, name)
                 push(types, ty)
                 aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked)
-                code := "    char* " + name + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
-                code := "    " + cty(dc, ctx, ty) + name + ";\n" + scalar_transient(dc, ctx, e, names, types, name + " = ")
+                code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
                 push(names, name)
                 push(types, ty)
                 return code
-            code := "    " + cty(dc, ctx, ty) + name + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
+            code := "    " + cty(dc, ctx, ty) + un(name) + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             return code
@@ -2969,13 +2978,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     k := 0
                     for k < len(pieces):
                         if type_of(pieces[k], names, types, dc, ctx) == "char":   # one-byte append, no strlen
-                            aout = aout + "    hi_append_char(" + aar + ", &" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
+                            aout = aout + "    hi_append_char(" + aar + ", &" + un(name) + ", &_len_" + un(name) + ", &_cap_" + un(name) + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         else:
-                            aout = aout + "    hi_append(" + aar + ", &" + name + ", &_len_" + name + ", &_cap_" + name + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
+                            aout = aout + "    hi_append(" + aar + ", &" + un(name) + ", &_len_" + un(name) + ", &_cap_" + un(name) + ", " + gen_expr(pieces[k], names, types, dc, ctx) + ");\n"
                         k = k + 1
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
-                return "    " + name + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + name + " = strlen(" + name + ");\n    _cap_" + name + " = _len_" + name + " + 1;\n"
+                return "    " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + un(name) + " = strlen(" + un(name) + ");\n    _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             # liveness-driven recycle (ANY array RHS: call / slice / copybind / literal).
             # a's old buffer is dead and -- value semantics -- uniquely owned, GATED on
@@ -3068,16 +3077,16 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    " + gen_expr(e, names, types, dc, ctx) + ";\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
-                code := "    char* " + name + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + name + " = strlen(" + name + ");\n    long _cap_" + name + " = _len_" + name + " + 1;\n"
+                code := "    char* " + un(name) + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 push(names, name)
                 push(types, ty)
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement
-                code := "    " + cty(dc, ctx, ty) + name + ";\n" + scalar_transient(dc, ctx, e, names, types, name + " = ")
+                code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
                 push(names, name)
                 push(types, ty)
                 return code
-            code := "    " + cty(dc, ctx, ty) + name + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
+            code := "    " + cty(dc, ctx, ty) + un(name) + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)
             push(types, ty)
             return code
@@ -3088,7 +3097,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
             for j < len(dnames):
-                code = code + "    " + cty(dc, ctx, parts[j]) + dnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
+                code = code + "    " + cty(dc, ctx, parts[j]) + un(dnames[j]) + " = " + tmp + ".f" + str(j) + ";\n"
                 push(names, dnames[j])
                 push(types, parts[j])
                 j = j + 1
@@ -3099,7 +3108,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
             for j < len(mnames):
-                code = code + "    " + mnames[j] + " = " + tmp + ".f" + str(j) + ";\n"
+                code = code + "    " + un(mnames[j]) + " = " + tmp + ".f" + str(j) + ";\n"
                 j = j + 1
             return code
         SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
@@ -3109,14 +3118,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 cto := cty(dc, ctx, option_inner(rty))
                 oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
                 oc = oc + "    if (" + tmp + ".tag == 0) return hnone();\n"
-                oc = oc + "    " + cto + name + " = *(" + cto + "*)(" + tmp + ".val);\n"
+                oc = oc + "    " + cto + un(name) + " = *(" + cto + "*)(" + tmp + ".val);\n"
                 push(names, name)
                 push(types, option_inner(rty))
                 return oc
             ct := cty(dc, ctx, result_ok(rty))
             code := "    HResult " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             code = code + "    if (" + tmp + ".tag == 0) return " + tmp + ";\n"
-            code = code + "    " + ct + name + " = *(" + ct + "*)(" + tmp + ".ok);\n"
+            code = code + "    " + ct + un(name) + " = *(" + ct + "*)(" + tmp + ".ok);\n"
             push(names, name)
             push(types, result_ok(rty))
             return code
@@ -3134,7 +3143,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             bc := in_loop(enter_block(dc, ctx, len(names)))
             return "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
         SForRange(name, start, stop, step, body):
-            header := "    for (long " + name + " = " + gen_expr(start, names, types, dc, ctx) + "; " + name + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + name + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
+            header := "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + un(name) + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + un(name) + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
             bn := names                           # loop var is scoped to body
             bt := types
             push(bn, name)
@@ -3161,7 +3170,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 bt := types
                 j := 0
                 for j < len(binds):
-                    out = out + "    " + cty(dc, ctx, pts[j]) + binds[j] + " = " + cp_typed(dc, ctx, pts[j], efield(scu, vname, j)) + ";\n"
+                    out = out + "    " + cty(dc, ctx, pts[j]) + un(binds[j]) + " = " + cp_typed(dc, ctx, pts[j], efield(scu, vname, j)) + ";\n"
                     push(bn, binds[j])
                     push(bt, pts[j])
                     j = j + 1
@@ -3188,8 +3197,8 @@ fn gen_params(f: Func, dc: Decls, ctx: Ctx) -> string:
     out := "Arena* _parent"                       # every fn threads the caller's arena
     i := 0
     for i < len(f.params):
-        out = out + ", " + cty(dc, ctx, f.ptypes[i]) + f.params[i]
-        if inout_container_param(dc, ctx, f.ptypes[i]):   # + the container's home arena
+        out = out + ", " + cty(dc, ctx, f.ptypes[i]) + un(f.params[i])
+        if inout_container_param(dc, ctx, f.ptypes[i]):   # + the container's home arena (keyed by SOURCE name, like owner_arena_of)
             out = out + ", Arena* _ina_" + f.params[i]
         i = i + 1
     return out
@@ -3202,7 +3211,7 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
         i = i + 1
 
 fn gen_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
-    return ret_cty(dc, ctx, f.ret) + f.name + "(" + gen_params(f, dc, ctx) + ");\n"
+    return ret_cty(dc, ctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, ctx) + ");\n"
 
 # Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
 # A non-'+' binop or any leaf is one whole piece. So `a + b + c` -> [a, b, c]
@@ -3400,7 +3409,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     tail := ""
     if f.ret == "void":
         tail = "    arena_free(&_scope);\n"
-    return ret_cty(dc, fctx, f.ret) + f.name + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
+    return ret_cty(dc, fctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
 
 fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
@@ -3440,7 +3449,7 @@ fn gen_match_optres(dc: Decls, ctx: Ctx, sty: string, scu: string, variants: [st
                     bty = result_err(sty)
                     fld = "err"
             ct := cty(dc, ctx, bty)
-            out = out + "    " + ct + binds[0] + " = " + cp_typed(dc, ctx, bty, "*(" + ct + "*)(" + scu + "." + fld + ")") + ";\n"
+            out = out + "    " + ct + un(binds[0]) + " = " + cp_typed(dc, ctx, bty, "*(" + ct + "*)(" + scu + "." + fld + ")") + ";\n"
             push(bn, binds[0])
             push(bt, bty)
         out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
