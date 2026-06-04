@@ -79,33 +79,40 @@ amortized, no copy). Same LCG corpus and a single shared oracle
 (`vocab=8000 checksum=540001838890`); `invindex_map.{hi,c,go}` all print it. Peak
 RSS (`bench/peakrss.c`), best-of-three, `-O2` / `go build`:
 
-| impl | peak RSS | time |
-| ---- | -------: | ---: |
-| C  (`Slot{char*; long* docs; n; cap}` table, realloc in place) | **37 MB** | 252 ms |
-| Go (`map[string][]int`, `append`) | 58 MB | 308 ms |
-| hier (`[string: [int]]`, `push(idx[term], d)`) | 64 MB | 328 ms |
+As with the side-array form, two architectures — **growth** (`push(idx[term], d)`
+grows each posting list geometrically) and **count-fill** (a first pass counts each
+term's postings with `cnt[term] += 1`, then `reserve(idx[term], count)` sizes every
+list ONCE before filling — `reserve` reaches into the map value, also `#2`):
+
+| impl | growth | count-fill |
+| ---- | -----: | ---------: |
+| C    (`Slot{char*; long* docs; n; cap}` table) | 37 MB / 252 ms | **29 MB** / 420 ms |
+| Go   (`map[string][]int`) | 58 MB / 308 ms | 64 MB / 533 ms |
+| hier (`[string: [int]]`) | 64 MB / 328 ms | **31 MB** / 547 ms |
 
 Reading this honestly:
 
-1. **The natural data structure now competes.** hier is ~par with Go (1.10× memory,
-   1.06× time) and ~1.7× C memory / ~1.3× C time. This is the *same* build-and-hold
-   grow-and-abandon penalty plain arrays show (§ above): each geometric doubling of a
-   posting list abandons a buffer the bump arena can't `realloc` in place, where C's
-   `realloc` and Go's grow-in-place reclaim it. The map value arrays grow exactly like
-   standalone arrays — **no map-specific regression**, just the array story applied
-   inside a map.
+1. **The natural data structure now competes.** On growth, hier is ~par with Go
+   (1.10× memory, 1.06× time) and ~1.7× C memory / ~1.3× C time — the *same*
+   build-and-hold grow-and-abandon penalty plain arrays show (§ above): each geometric
+   doubling of a posting list abandons a buffer the bump arena can't `realloc` in place,
+   where C's `realloc` reclaims it. The map value arrays grow exactly like standalone
+   arrays — **no map-specific regression**, just the array story applied inside a map.
 
-2. **The `reserve` count-fill mitigation does NOT reach into a map value.** For plain
-   arrays, sizing each list once (`reserve`) closed the gap to ~1.04× C. There is no
-   `reserve(idx[term], n)`: `m[k]` is a place only for `push` / assign / `op=`, and
-   `reserve`'s argument is rejected as an `m[k]` read. So the map-native form is stuck
-   on the growth architecture's ~1.7× — the honest boundary the design predicted. A
-   future `reserve(m[k], n)` (gate `reserve`'s first arg as a place, like `push`) would
-   let a count-then-fill pass reach map values and likely recover the same near-parity.
+2. **`reserve(idx[term], n)` reaches into a map value and closes the gap.** Sizing each
+   posting list once (a count pass + `reserve`) drops hier from 64 MB to **31 MB —
+   ~1.07× C (29 MB), near parity**, exactly as `reserve` did for plain arrays. So the
+   count-fill mitigation is *not* stuck outside maps: `m[k]` is a place for `reserve`
+   too, and a count-then-fill build reaches the same near-C memory inside a map. (Go's
+   count-fill is *heavier* here, 64 MB — the extra count map plus map+slice header
+   overhead outweighs the per-slice cap saving; hier and C both win on the arena/inline
+   layout.) hier trails ~1.3× C on time (the second counting pass + per-push hashing),
+   the same time/space trade the array count-fill makes.
 
 The win of `#2` here is **expressiveness with competitive cost**: the term → list map
-went from O(n²)-and-impractical to O(n) and within ~10% of Go, paying only the arena's
-already-documented growth penalty vs C.
+went from O(n²)-and-impractical to O(n) and ~par Go on growth, and with one `reserve`
+count pass to ~1.07× C — the build-and-hold boundary the side-array form documented,
+now reached by the *natural* data structure with no manual lifetime management.
 
 ## Reproduce
 
@@ -116,7 +123,9 @@ already-documented growth penalty vs C.
     done
     ( cd bench/invindex && go build -o /tmp/g invindex.go ) && /tmp/peakrss /tmp/g
 
-    # map-native form (#2):
-    ./hierc bench/invindex/invindex_map.hi -o /tmp/h && /tmp/peakrss /tmp/h
-    cc -O2 -o /tmp/c bench/invindex/invindex_map.c && /tmp/peakrss /tmp/c
-    ( cd bench/invindex && go build -o /tmp/g invindex_map.go ) && /tmp/peakrss /tmp/g
+    # map-native form (#2), growth and count-fill:
+    for v in invindex_map invindex_map_exact; do
+      ./hierc bench/invindex/$v.hi -o /tmp/h && /tmp/peakrss /tmp/h
+      cc -O2 -o /tmp/c bench/invindex/$v.c && /tmp/peakrss /tmp/c
+      ( cd bench/invindex && go build -o /tmp/g $v.go ) && /tmp/peakrss /tmp/g
+    done

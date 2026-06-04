@@ -2152,7 +2152,9 @@ static Type resolve_expr(Expr *e) {
                 while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
                 if (root->kind != E_IDENT)
                     die_at(e->line, "reserve's first argument must be an array variable or field");
+                g_place = 1;                       /* reserve(m[k], n): m[k] is a place here (#2) */
                 Type arrt = resolve_expr(e->args[0]);
+                g_place = 0;
                 if (!is_array(arrt))
                     die_at(e->line, "reserve's first argument must be an array");
                 /* fail closed: only [int]/[float]/[string] have a runtime reserve

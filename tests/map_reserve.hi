@@ -1,0 +1,36 @@
+# reserve(m[k], n): capacity hint reaching INTO a map value (#2). m[k] is a place for
+# reserve too, so a count-then-fill build can size each posting list once. Behavior is
+# identical to not reserving (a hint, not a length): same contents, same len. Covers
+# [int]/[float]/[string]-valued maps, fresh + existing keys.
+fn main():
+    # [string: [int]]: reserve, then fill exactly n -> no regrow, right contents
+    idx := []string: [int]
+    reserve(idx["a"], 4)
+    i := 0
+    for i in range(4):
+        push(idx["a"], i * 10)
+    a := map_get(idx, "a", []int)
+    print(str(len(a)) + ":" + str(a[0]) + "," + str(a[3]) + "\n")   # 4:0,30
+
+    # reserve smaller than what we push (hint only): still correct, list grows past it
+    reserve(idx["b"], 1)
+    push(idx["b"], 1)
+    push(idx["b"], 2)
+    push(idx["b"], 3)
+    print(str(len(map_get(idx, "b", []int))) + "\n")                # 3
+
+    # [int: [string]]: reserve a string-list map value
+    sm := []int: [string]
+    reserve(sm[7], 2)
+    push(sm[7], "x")
+    push(sm[7], "y")
+    s := map_get(sm, 7, []string)
+    print(s[0] + s[1] + ":" + str(len(s)) + "\n")                   # xy:2
+
+    # [string: [float]]: reserve a float-list map value
+    fm := []string: [float]
+    reserve(fm["g"], 3)
+    push(fm["g"], 1.5)
+    push(fm["g"], 2.5)
+    fl := map_get(fm, "g", []float)
+    print(str(to_int(fl[0] + fl[1])) + ":" + str(len(fl)) + "\n")   # 4:2
