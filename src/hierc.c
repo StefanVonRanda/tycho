@@ -486,7 +486,7 @@ static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
 typedef struct { Type st; } SoaType;            /* st = the element struct type */
 static SoaType g_soatypes[256];
 static int g_nsoatypes = 0;
-#define IS_SOA(t)   ((t) >= T_SOA_BASE)
+#define IS_SOA(t)   ((t) >= T_SOA_BASE && (t) < T_MAPC_BASE)   /* composite maps sit above */
 #define SOA_ID(t)   ((int)((t) - T_SOA_BASE))
 static Type soa_of(Type st) {                   /* find-or-create soa [st] */
     for (int i = 0; i < g_nsoatypes; i++)
@@ -506,7 +506,7 @@ static MapType g_maptypes[256];
 static int g_nmaptypes = 0;
 #define IS_MAPC(t)  ((t) >= T_MAPC_BASE && (t) < T_MAPC_BASE + 256)
 #define MAPC_ID(t)  ((int)((t) - T_MAPC_BASE))
-static __attribute__((unused)) Type mapc_of(Type k, Type v) {   /* find-or-create [k: v]; wired up in step 3 */
+static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
     for (int i = 0; i < g_nmaptypes; i++)
         if (g_maptypes[i].key == k && g_maptypes[i].val == v) return T_MAPC_BASE + i;
     if (g_nmaptypes >= 256) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }
@@ -521,15 +521,21 @@ static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF || t == T_MAP_
 static const char *map_fn(Type t) {
     return t == T_MAP_SF ? "sf" : t == T_MAP_II ? "ii" : t == T_MAP_IF ? "if" : "si";
 }
+/* runtime fn name for a map op, dispatching hardcoded (si/sf/ii/if) vs composite. */
+static char *map_rt(Type t, const char *op) {
+    return IS_MAPC(t) ? sfmt("hier_mapc%d_%s", MAPC_ID(t), op)
+                      : sfmt("hier_map_%s_%s", map_fn(t), op);
+}
 static Type map_val(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].val : (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
 static Type map_key(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].key : (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
 /* the map type for a (key, value) pair. Only string and int keys, int and float
  * values exist; an unsupported pair returns T_VOID (the caller rejects it).
  * Step 2/3 will route non-int/float values to mapc_of once emit + codegen land. */
 static Type map_of(Type k, Type v) {
-    if (k == T_STRING) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
-    if (k == T_INT)    return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
-    return T_VOID;
+    if (k == T_STRING && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
+    if (k == T_INT    && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
+    if (k == T_STRING) return mapc_of(T_STRING, v);   /* [string: V] composite, any value type */
+    return T_VOID;   /* int-keyed composite-value maps deferred (separate occupancy scheme) */
 }
 
 /* A "heap" type owns arena-allocated bytes outside its own value word(s):
@@ -860,8 +866,9 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
-                if ((elem == T_STRING || elem == T_INT) && (val == T_INT || val == T_FLOAT)) { e->ival = map_of(elem, val); e->op = TK_COLON; }
-                else die_at(t->line, "map keys must be string or int, values int or float");
+                Type mt = map_of(elem, val);
+                if (mt == T_VOID) die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
+                e->ival = mt; e->op = TK_COLON;
                 return e;
             }
             if (elem == T_VOID || elem == T_BOOL)
@@ -1851,11 +1858,11 @@ static Type resolve_expr(Expr *e) {
                 /* args interleave k0,v0,k1,v1,...; keys string, values all int
                  * or all float (the value type picks [string: int]/[string: float]). */
                 Type vt = resolve_expr(e->args[1]);
-                if (vt != T_INT && vt != T_FLOAT)
-                    die_at(e->line, "map values must be int or float");
                 Type kt = resolve_expr(e->args[0]);
                 if (kt != T_STRING && kt != T_INT)
                     die_at(e->line, "map keys must be string or int");
+                if (map_of(kt, vt) == T_VOID)
+                    die_at(e->line, "int-keyed maps support only int or float values");
                 for (int i = 0; i < e->nargs; i += 2) {
                     if (resolve_expr(e->args[i]) != kt)
                         die_at(e->line, "map keys must all have the same type");
@@ -3066,6 +3073,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("hier_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
+    if (IS_MAPC(t))          die_at(0, "== on a [string: <non-numeric>] map is not supported yet");
     if (is_map(t))           return sfmt("hier_map_%s_eq(%s, %s)", map_fn(t), a, b);
     if (IS_ARRC(t))          return sfmt("hier_arr_C%d_eq(%s, %s)", ARRC_ID(t), a, b);
     if (IS_ENUM(t))          return sfmt("hier_eq_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, a, b);
@@ -3122,30 +3130,35 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "map_set")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
-        char *v = gen_expr(e->args[2], arena);
-        return sfmt("hier_map_%s_set(%s, %s, %s, %s)", map_fn(e->type), arena, m, k, v);
+        char *v = gen_expr(e->args[2], arena);   /* runtime put deep-copies v into the map arena */
+        return sfmt("%s(%s, %s, %s, %s)", map_rt(e->type, "set"), arena, m, k, v);
     }
     if (!strcmp(e->sval, "map_get")) {
+        Type mt = e->args[0]->type;
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
         char *d = gen_expr(e->args[2], arena);
-        return sfmt("hier_map_%s_get(%s, %s, %s)", map_fn(e->args[0]->type), m, k, d);
+        /* the get returns a BORROW into m's table (or the default); deep-copy it
+         * into the current arena so it outlives any later mutation/free of m. For
+         * int/float values copy_into is the identity -> byte-identical. */
+        char *call = sfmt("%s(%s, %s, %s)", map_rt(mt, "get"), m, k, d);
+        return copy_into(map_val(mt), arena, call);
     }
     if (!strcmp(e->sval, "map_has")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
-        return sfmt("hier_map_%s_has(%s, %s)", map_fn(e->args[0]->type), m, k);
+        return sfmt("%s(%s, %s)", map_rt(e->args[0]->type, "has"), m, k);
     }
     /* map_del pure: deep-copy + delete into `arena`; the accumulator pass
      * rewrites a self-rebind to an in-place tombstone delete separately. */
     if (!strcmp(e->sval, "map_del")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = gen_expr(e->args[1], arena);
-        return sfmt("hier_map_%s_del_pure(%s, %s, %s)", map_fn(e->type), arena, m, k);
+        return sfmt("%s(%s, %s, %s)", map_rt(e->type, "del_pure"), arena, m, k);
     }
     if (!strcmp(e->sval, "keys")) {
         char *m = gen_expr(e->args[0], arena);
-        return sfmt("hier_map_%s_keys(%s, %s)", map_fn(e->args[0]->type), arena, m);
+        return sfmt("%s(%s, %s)", map_rt(e->args[0]->type, "keys"), arena, m);
     }
     if (!strcmp(e->sval, "substr")) {
         char *s = gen_expr(e->args[0], arena);
@@ -3432,12 +3445,11 @@ static char *gen_expr(Expr *e, const char *arena) {
                 /* map literal: build empty in `arena`, then put each pair. The
                  * runtime put copies the key bytes into `arena`. args interleave
                  * k0,v0,k1,v1,...; an empty literal (nargs 0) just yields {0}. */
-                const char *mf = map_fn(e->type);
-                char *out = sfmt("({ %s_l%d = hier_map_%s_with_cap(%s, 0L);",
-                                 c_type(e->type), id, mf, arena);
+                char *out = sfmt("({ %s_l%d = %s(%s, 0L);",
+                                 c_type(e->type), id, map_rt(e->type, "with_cap"), arena);
                 for (int i = 0; i + 1 < e->nargs; i += 2)
-                    out = sfmt("%s hier_map_%s_put(%s, &_l%d, %s, %s);",
-                               out, mf, arena, id, gen_expr(e->args[i], arena),
+                    out = sfmt("%s %s(%s, &_l%d, %s, %s);",
+                               out, map_rt(e->type, "put"), arena, id, gen_expr(e->args[i], arena),
                                gen_expr(e->args[i + 1], arena));
                 return sfmt("%s _l%d; })", out, id);
             }
@@ -3757,7 +3769,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 char *k = gen_expr(s->expr->args[1], mo);
                 char *v = gen_expr(s->expr->args[2], mo);
                 indent(o, ind);
-                fprintf(o, "hier_map_%s_put(%s, %s, %s, %s);\n", map_fn(s->expr->type), mo, mp, k, v);
+                fprintf(o, "%s(%s, %s, %s, %s);\n", map_rt(s->expr->type, "put"), mo, mp, k, v);
                 break;
             }
             /* in-place map delete: `m = map_del(m, k)` tombstones in place. No
@@ -3769,7 +3781,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                                                               : sfmt("&h_%s", s->name);
                 char *k = gen_expr(s->expr->args[1], mo);
                 indent(o, ind);
-                fprintf(o, "hier_map_%s_del(%s, %s);\n", map_fn(s->expr->type), mp, k);
+                fprintf(o, "%s(%s, %s);\n", map_rt(s->expr->type, "del"), mp, k);
                 break;
             }
             /* a self-rebuild `t = C(..., t, ...)` hands off t's buffer into
