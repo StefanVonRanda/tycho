@@ -783,9 +783,10 @@ podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
                    inout, memo, collect, context, optimize, json, raytrace,
-                   grep (.hi) — 19 programs (json.hi is a full recursive-descent
-                   JSON parser + serializer; raytrace.hi a float-math PPM renderer;
-                   grep.hi a CLI text tool over args()/read_file)
+                   grep, invindex (.hi) — 20 programs (json.hi is a full recursive-
+                   descent JSON parser + serializer; raytrace.hi a float-math PPM
+                   renderer; grep.hi a CLI text tool over args()/read_file;
+                   invindex.hi an inverted-index text search engine)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
 tests/*.hi         dedicated regression programs (59, + tests/pkg/ package fixtures) (+ optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
