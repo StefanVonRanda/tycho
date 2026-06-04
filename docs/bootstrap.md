@@ -640,6 +640,13 @@ fixpoint.
       idents.hi extended (struct `register` w/ fields static/volatile, enum `goto` — all C
       keywords). All gated: fixpoint B≡C (9343 lines) + B matches the C compiler on 62
       tests/examples + bootstrap + fuzz.
+
+      **PERF / RETIREMENT DECISION (2026):** the C compiler `src/hierc.c` stays the
+      DEFAULT/production compiler. hierc0's self-compile is ~2.4× slower (a value-semantic
+      string-copy floor — see docs/perf.md "The self-compile gap: status and decision");
+      the cheap-wins lane is exhausted and closing it to *outperform* hierc (the retirement
+      bar) is not reachable incrementally. hierc0 stays the self-hosting proof + differential
+      counterpart, not retired. Self-compile perf work is closed for now.
       2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
          compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
          compiler's golden output across `tests/`+`examples/`.
