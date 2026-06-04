@@ -46,6 +46,7 @@ class Gen:
     def types_simple(self):
         ts = ["int", "string", "float", "[int]", "[string]", "[float]", "Option(int)",
               "Option(string)", "(int, string)", "{string:int}", "{string:float}",
+              "{int:int}", "{int:float}",
               "[Option(int)]", "[Option(string)]"]
         ts += list(self.structs.keys())
         ts += list(self.newtypes.keys())
@@ -67,6 +68,17 @@ class Gen:
             choices.append(("lit", lambda: str(self.r.randint(0, 9))))
             if depth < 2:
                 choices.append(("add", lambda: "(" + self.gen_expr("int", env, depth+1) + " + " + self.gen_expr("int", env, depth+1) + ")"))
+                # modulo / bitwise / shift / unary ~ (int-only). All kept bounded so
+                # the int checksum can't overflow (UBSan would flag that): `% L` and
+                # `& 7`/`& 31` cap the magnitude; shift amount is 0..3.
+                ie = lambda: self.gen_expr("int", env, depth+1)
+                choices.append(("mod",  lambda: "(" + ie() + " % " + str(self.r.randint(1, 9)) + ")"))
+                choices.append(("band", lambda: "(" + ie() + " & " + ie() + ")"))
+                choices.append(("bor",  lambda: "(" + ie() + " | " + ie() + ")"))
+                choices.append(("bxor", lambda: "(" + ie() + " ^ " + ie() + ")"))
+                choices.append(("shl",  lambda: "((" + ie() + " & 7) << " + str(self.r.randint(0, 3)) + ")"))
+                choices.append(("shr",  lambda: "(" + ie() + " >> " + str(self.r.randint(0, 3)) + ")"))
+                choices.append(("bnot", lambda: "(~(" + ie() + " & 31))"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -96,9 +108,12 @@ class Gen:
             choices.append(("some", lambda: "Some(" + self.gen_expr(inner, env, 2) + ")"))
         elif t == "(int, string)":
             choices.append(("tup", lambda: "(" + self.gen_expr("int", env, 2) + ", " + self.gen_expr("string", env, 2) + ")"))
-        elif t == "{string:int}" or t == "{string:float}":
-            vt = t[8:-1]   # "int" or "float"
-            choices.append(("map", lambda: "[" + ", ".join('"k' + str(j) + '": ' + self.gen_expr(vt, env, 2) for j in range(self.r.randint(1,3))) + "]"))
+        elif t.startswith("{") and t.endswith("}"):
+            kt, vt = t[1:-1].split(":")   # key/value: "string"/"int" keys, "int"/"float" values
+            def mkkv(j):                  # distinct keys: "k0".. for string, 0.. for int
+                k = '"k' + str(j) + '"' if kt == "string" else str(j)
+                return k + ": " + self.gen_expr(vt, env, 2)
+            choices.append(("map", lambda: "[" + ", ".join(mkkv(j) for j in range(self.r.randint(1,3))) + "]"))
         elif t in self.structs:
             fields = self.structs[t]
             choices.append(("ctor", lambda: t + "(" + ", ".join(self.gen_expr(ft, env, 2) for _, ft in fields) + ")"))
@@ -118,6 +133,8 @@ class Gen:
         if t == "(int, string)": return '(0, "x")'
         if t == "{string:int}": return '["k0": 0]'
         if t == "{string:float}": return '["k0": 0.0]'
+        if t == "{int:int}": return '[0: 0]'
+        if t == "{int:float}": return '[0: 0.0]'
         if t.startswith("["):
             el = t[1:-1]
             return "[" + self.fallback_lit(el, env) + "]"
@@ -163,16 +180,14 @@ class Gen:
         elif t == "(int, string)":
             add(ind, name + ".0")
             add(ind, "len(" + name + ".1)")
-        elif t == "{string:int}":
+        elif t.startswith("{") and t.endswith("}"):   # {string|int : int|float}
+            kt, vt = t[1:-1].split(":")
             ks = self.fresh("k"); ii = self.fresh("i")
-            self.emit(ind, ks + " := keys(" + name + ")")
+            self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            add(ind+1, "map_get(" + name + ", " + ks + "[" + ii + "], 0)")
-        elif t == "{string:float}":
-            ks = self.fresh("k"); ii = self.fresh("i")
-            self.emit(ind, ks + " := keys(" + name + ")")
-            self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            add(ind+1, "to_int(map_get(" + name + ", " + ks + "[" + ii + "], 0.0))")
+            dflt = "0" if vt == "int" else "0.0"
+            g = "map_get(" + name + ", " + ks + "[" + ii + "], " + dflt + ")"
+            add(ind+1, g if vt == "int" else "to_int(" + g + ")")   # SUM is key-order independent
         elif t == "Result([int], string)":                # heap Ok payload + Err string, matched both arms
             xs = self.fresh("xs"); er = self.fresh("e"); ii = self.fresh("i")
             self.emit(ind, "match " + name + ":")
@@ -223,7 +238,55 @@ class Gen:
         int_arr_vars = [n for n, ty in env.items() if ty == "[int]"]
         if int_arr_vars:
             kinds += ["arr_rebuild", "arr_realloc", "arr_slice"]   # liveness-driven buffer recycle
+        # new surface: compound assignment, foreach, in-place map accumulator
+        int_vars = [n for n, ty in env.items() if ty == "int"]
+        map_vars = [(n, ty) for n, ty in env.items() if ty.startswith("{")]
+        cmp_struct = [(n, ty) for n, ty in env.items()
+                      if ty in self.structs and any(ft == "int" for _, ft in self.structs[ty])]
+        if int_vars or int_arr_vars or cmp_struct:
+            kinds += ["compound", "compound"]
+        if arr_vars or str_vars:
+            kinds += ["foreach", "foreach"]
+        if map_vars:
+            kinds += ["map_accum"]
         k = self.r.choice(kinds)
+
+        if k == "compound":            # x op= e on a var / array element / struct field
+            op = self.r.choice(["+=", "-=", "&=", "|=", "^="])
+            rhs = self.r.choice([str(self.r.randint(1, 5)), self.gen_expr("int", env, 1)])
+            if self.r.random() < 0.25:                          # modulo: safe literal divisor
+                op = "%="; rhs = str(self.r.randint(1, 9))
+            targets = [("var", n) for n in int_vars]
+            targets += [("arr", n) for n in int_arr_vars]
+            targets += [("fld", n, ty) for n, ty in cmp_struct]
+            pick = self.r.choice(targets)
+            if pick[0] == "var":
+                self.emit(ind, pick[1] + " " + op + " " + rhs)
+            elif pick[0] == "arr":                              # element compound: the double-eval path
+                self.emit(ind, "if len(" + pick[1] + ") >= 1:")  # guard OOB (else exit 1)
+                self.emit(ind+1, pick[1] + "[0] " + op + " " + rhs)
+            else:
+                f = self.r.choice([f for f, ft in self.structs[pick[2]] if ft == "int"])
+                self.emit(ind, pick[1] + "." + f + " " + op + " " + rhs)
+            return
+        if k == "foreach":             # for x in <array|string>: checksum each element/byte
+            if arr_vars and (not str_vars or self.r.random() < 0.6):
+                n0, t0 = self.r.choice(arr_vars)
+                el = t0[1:-1]; x = self.fresh("x")
+                self.emit(ind, "for " + x + " in " + n0 + ":")
+                benv = dict(env); benv[x] = el
+                self.checksum_into(ind+1, x, el, benv)
+            else:
+                x = self.fresh("c")
+                self.emit(ind, "for " + x + " in " + self.r.choice(str_vars) + ":")
+                self.emit(ind+1, "acc = acc + " + x)            # x is a byte (int 0..255)
+            return
+        if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
+            n0, t0 = self.r.choice(map_vars)
+            kt, vt = t0[1:-1].split(":")
+            key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
+            self.emit(ind, n0 + " = map_set(" + n0 + ", " + key + ", " + self.gen_expr(vt, env, 1) + ")")
+            return
 
         if k == "arr_rebuild":         # reassign an array from a call that READS it
             n0 = self.r.choice(int_arr_vars)
@@ -353,8 +416,15 @@ class Gen:
             self.emit(ind, n0 + "." + f + " = " + self.gen_expr(ft, env, 1))
         elif k == "loop" and budget > 2:
             i = self.fresh("i")
-            self.emit(ind, "for " + i + " in range(" + str(self.r.randint(1,4)) + "):")
+            self.emit(ind, "for " + i + " in range(" + str(self.r.randint(2,3)) + "):")
             benv = dict(env); benv[i] = "int"
+            if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
+                bc = self.r.choice(["continue", "break"])   # the loop-iteration arena (and the
+                ls = self.fresh("ls")                       # if-block arena in hierc0) must free
+                self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1,4)) + ")")  # on the jump
+                self.emit(ind+1, "acc = acc + len(" + ls + ")")
+                self.emit(ind+1, "if " + i + " % 2 == 1:")
+                self.emit(ind+2, bc)
             self.gen_block(ind+1, benv, budget-2)
         elif k == "if" and budget > 2:
             self.emit(ind, "if " + self.gen_expr("int", env, 1) + " < " + str(self.r.randint(1,5)) + ":")
