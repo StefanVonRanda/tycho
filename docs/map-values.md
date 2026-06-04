@@ -108,38 +108,76 @@ hier_mapc<id>. T_MAPC_BASE=32768; IS_SOA was bounded `< T_MAPC_BASE` (it was
 open-ended and swallowed map types). int-keyed composite values + composite `==`
 deferred.
 
-## Step 5 map (traced, ready to execute) — hierc0 parity
+## Step 5 — hierc0 parity (PROPER PLAN, checkpointed)
 
-hierc0 is a FULL compiler (parses+types+codegens), so this mirrors steps 1-3 in
-it. Tools already present: `cty(dc,ctx,v)` (value C type, trailing space — strip
-it), `cp_field(dc,ctx,v,ar,src)` (deep-copy ANY value into ar; passthrough for
-scalars), `mangle(v)` (type→identifier; mangle("int")=="int" so existing maps
-stay byte-identical), `map_key`/`map_val` (substr "{K:V}").
+### Scope discovery (verified, simplifies the work)
 
-1. mstruct/mfam (1515-1519): `"Map_"/"map_" + map_key + "_" + mangle(map_val)`.
-2. gen_map_type (3861) + gen_map_fns (3875): signature → `(dc, ctx, ty)`; derive
-   k=map_key(ty), v=map_val(ty); `cv := cty(dc,ctx,v)` minus trailing space;
-   M/f/s use `mangle(v)`. In put, `m->vals[t] = val;` →
-   `m->vals[t] = <cp_field(dc,ctx,v,"ar","val")>;` (scalar passthrough = byte-id).
-   In _eq, the value comparison `|| b.vals[t] != a.vals[i]` only when v is scalar
-   (int/float/char) — struct/array `!=` is a C compile error, and == is dead
-   anyway (hierc rejects composite ==).
-3. Call sites: gen_map_type (4348) + gen_map_fns (4409) → pass `(dc, ctx, ets[i])`.
-4. map_get codegen (~2222): wrap in cp_field —
-   `cp_field(dc, ctx, map_val(mt), ctx.owner, "<mfam(mt)_get(...)>")`. Scalar
-   passthrough keeps int/float byte-identical; heap V deep-copies (lifetime).
-   map_set value already routes through the runtime put (with_owner "0"), which
-   now deep-copies — no codegen change.
-5. RELAX hierc0's own type checker: its map-literal resolution rejects non-int/
-   float values (mirror of hierc's old check) — find + allow string keys + any
-   value (the [int:V] heap case stays rejected). sig_ret's `map_get -> "int"`
-   (1716/1729) is a crude fallback; the real value type comes from type_of's
-   `map_get -> map_val` (1840) — leave sig_ret, but verify [string:str] map_get
-   types as str (it should, via type_of).
-6. Verify: build A (hierc·hierc0.hi) → B; B compiles a [string:str] program
-   matching hierc's output; make fixpoint B==C; THEN add tests/map_values.hi
-   (golden + value-semantics self-check) — the differential needs both compilers,
-   so the test can only land once 1-5 are green.
+hierc0 has **no map-value type gate**: `is_map(ty)` (1495) only checks the type
+string starts with `{`; `parse_type` for `[]K: V` (848-853) and `type_of` for a
+map literal (1811) build `{K:V}` from ANY key/value types with no restriction. So
+hierc0 ALREADY type-checks `[string:str]` / `[string:Struct]` — it just *generates*
+broken C (the generator hardcodes `cv = long/double`). **Step 5 is therefore only
+the generator + the map_get lifetime; NO type-checker change.** (The earlier note
+about relaxing a checker was wrong — there's nothing to relax.)
+
+Tools already present: `cty(dc,ctx,v)` (value C type; one trailing space — strip),
+`cp_field(dc,ctx,v,ar,src)` (deep-copy ANY value into `ar`; passthrough for
+scalars/non-heap structs), `mangle(v)` (type→identifier; `mangle("int")=="int"`,
+`mangle("float")=="float"` ⇒ existing maps stay byte-identical), `map_key`/`map_val`.
+
+### Checkpoint 5a — generalize the generator (BYTE-IDENTICAL refactor, green)
+
+This is a safe, committable checkpoint: it changes HOW the generator is written
+but not WHAT it emits for the only maps that exist today (int/float-valued), so
+`make fixpoint` B==C and the differential stay green. It does not yet activate
+anything new (no composite map is exercised until a test uses one in 5b).
+
+- `mstruct`/`mfam` (1515-1519): `"Map_"/"map_" + map_key(ty) + "_" + mangle(map_val(ty))`.
+- `gen_map_type` (3861) + `gen_map_fns` (3875): signature → `(dc, ctx, ty)`;
+  inside, `k := map_key(ty)`, `v := map_val(ty)`, `cv := cty(dc,ctx,v)` minus the
+  trailing space, and `M`/`f`/`s` built with `mangle(v)`.
+  - in `put`: `m->vals[t] = val;` → `m->vals[t] = <cp_field(dc,ctx,v,"ar","val")>;`
+    (scalar ⇒ `cp_field` returns `val` ⇒ byte-identical).
+  - in `_eq`: append the value compare `|| b.vals[t] != a.vals[i]` ONLY when v is
+    scalar (`int`/`float`/`char`); for heap v omit it (struct/array `!=` is a C
+    compile error, and composite `==` is dead — hierc rejects it). For existing
+    int/float maps v is scalar ⇒ the compare is present ⇒ byte-identical.
+  - apply to BOTH the int-key and string-key branches uniformly (composite values
+    only ever reach the string-key branch, but the int branch stays byte-identical
+    since its v is always scalar).
+- call sites: `gen_map_type` (4348) + `gen_map_fns` (4409) → pass `(dc, ctx, ets[i])`.
+- **Gate:** build A→B, `make fixpoint` (B==C), `make test` differential — all
+  green, and the emitted runtime for existing maps is byte-identical (diff a
+  before/after `--emit-c` of a map test to confirm). Commit 5a.
+
+### Checkpoint 5b — activate + the lifetime fix (the verifying step)
+
+- map_get codegen (~2222): wrap the result in `cp_field` —
+  `cp_field(dc, ctx, map_val(mt), ctx.owner, "<mfam(mt)_get(...)>")`. Scalar ⇒
+  passthrough (int/float byte-identical); heap V ⇒ deep-copy the borrow into the
+  caller's arena (the lifetime/UAF fix, mirror of hierc's copy_into-on-get).
+  `map_set` value already flows through the runtime `put` (with_owner "0"), which
+  now deep-copies via `cp_field` — no codegen change. Verify the map LITERAL
+  codegen path also routes through `mfam`/put (it does via EMapLit) — no special case.
+- **Gate (the real verification):** B compiles a `[string:str]` and a
+  `[string:Struct]` program and its output matches hierc's; the lifetime test
+  (`v := map_get(m,"a",d); loop map_set to force rehashes; assert v unchanged`)
+  is correct and ASan/LSan clean under hierc0's emitted C; `make fixpoint` green.
+
+### Checkpoint 5c — tests + fuzzer (this is step 6)
+
+- Add `tests/map_values.hi` (+ `.out`): CRUD on `[string:string]` and
+  `[string:Struct]`, `keys`, the lifetime self-check, and a value-semantics
+  self-check (copy the map, mutate the copy, assert the original unchanged). Now
+  in the differential (both compilers handle it) ⇒ `make test` covers it.
+- Extend `fuzz/gen.py`: let `map_accum`/map-literal kinds pick a string or struct
+  value (not just int/float). The value-semantics oracle catches a bad deep-copy
+  the hierc-vs-hierc0 differential alone cannot. Run the campaign FAIL=0.
+
+### Notes / order
+Do 5a → commit (green) → 5b → commit (green, with the test) → 5c → commit. If 5a's
+diff isn't byte-identical, STOP and reconcile before 5b — a non-identical 5a means
+a generator detail (cty spacing, mangle, eq) regressed an existing map.
 
 ## Decisions to keep
 
