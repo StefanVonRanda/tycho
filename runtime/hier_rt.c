@@ -799,6 +799,33 @@ void hier_map_si_put(Arena *a, HierMapSI *m, const char *k, long v) {
     m->vals[s] = v;
 }
 
+/* in-place value projection (#2): find-or-insert k, return &slot value for
+ * mutation. Mirrors _put exactly but yields the value slot; on a fresh key it
+ * inserts the value's zero (0). The rehash runs INSIDE the call, before the
+ * pointer is taken (`*m = n`), so the returned pointer is post-rehash and valid;
+ * the caller mutates the slot with no intervening map op, so it cannot move. */
+long *hier_map_si_slotptr(Arena *a, HierMapSI *m, const char *k) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
+                                              : (m->cap ? m->cap : 8);
+        HierMapSI n = hier_map_si_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (hier_map_live(m->keys[i])) {
+                long s = hier_map_si_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
+            }
+        *m = n;
+    }
+    long s = hier_map_si_slot(*m, k);
+    if (!hier_map_live(m->keys[s])) {
+        if (m->keys[s] == NULL) m->used++;
+        m->keys[s] = hier_str_copy(a, k);
+        m->len++;
+        m->vals[s] = 0L;
+    }
+    return &m->vals[s];
+}
+
 /* in-place delete from a uniquely-owned map: tombstone the slot if the key is
  * live. `used` is unchanged (the slot is still occupied); a later put purges it. */
 void hier_map_si_del(HierMapSI *m, const char *k) {
@@ -923,6 +950,29 @@ void hier_map_sf_put(Arena *a, HierMapSF *m, const char *k, double v) {
     m->vals[s] = v;
 }
 
+/* find-or-insert k, return &slot value (#2). See hier_map_si_slotptr; zero is 0.0. */
+double *hier_map_sf_slotptr(Arena *a, HierMapSF *m, const char *k) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
+                                              : (m->cap ? m->cap : 8);
+        HierMapSF n = hier_map_sf_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (hier_map_live(m->keys[i])) {
+                long s = hier_map_sf_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
+            }
+        *m = n;
+    }
+    long s = hier_map_sf_slot(*m, k);
+    if (!hier_map_live(m->keys[s])) {
+        if (m->keys[s] == NULL) m->used++;
+        m->keys[s] = hier_str_copy(a, k);
+        m->len++;
+        m->vals[s] = 0.0;
+    }
+    return &m->vals[s];
+}
+
 void hier_map_sf_del(HierMapSF *m, const char *k) {
     long s = hier_map_sf_find(*m, k);
     if (s < 0) return;
@@ -1035,6 +1085,20 @@ void hier_map_ii_put(Arena *a, HierMapII *m, long k, long v) {
     if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; }
     m->vals[s] = v;
 }
+/* find-or-insert k, return &slot value (#2). See hier_map_si_slotptr; zero is 0. */
+long *hier_map_ii_slotptr(Arena *a, HierMapII *m, long k) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
+        HierMapII n = hier_map_ii_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (m->occ[i] == 1) { long s = hier_map_ii_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
+        *m = n;
+    }
+    long s = hier_map_ii_slot(*m, k);
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; m->vals[s] = 0L; }
+    return &m->vals[s];
+}
 void hier_map_ii_del(HierMapII *m, long k) {
     long s = hier_map_ii_find(*m, k);
     if (s < 0) return;
@@ -1112,6 +1176,20 @@ void hier_map_if_put(Arena *a, HierMapIF *m, long k, double v) {
     long s = hier_map_if_slot(*m, k);
     if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; }
     m->vals[s] = v;
+}
+/* find-or-insert k, return &slot value (#2). See hier_map_si_slotptr; zero is 0.0. */
+double *hier_map_if_slotptr(Arena *a, HierMapIF *m, long k) {
+    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
+        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
+        HierMapIF n = hier_map_if_with_cap(a, nc);
+        for (long i = 0; i < m->cap; i++)
+            if (m->occ[i] == 1) { long s = hier_map_if_slot(n, m->keys[i]);
+                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
+        *m = n;
+    }
+    long s = hier_map_if_slot(*m, k);
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; m->vals[s] = 0.0; }
+    return &m->vals[s];
 }
 void hier_map_if_del(HierMapIF *m, long k) {
     long s = hier_map_if_find(*m, k);

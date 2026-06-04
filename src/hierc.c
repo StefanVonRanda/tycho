@@ -1763,6 +1763,15 @@ static int is_cmp(TokKind op) {
 }
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+
+/* Are we resolving a mutable PLACE spine (where `m[k]` is a legal map-value
+ * projection target)? A map index is a place only — never an rvalue read — so
+ * resolve_expr rejects it unless this is set. It is captured-and-cleared at the
+ * top of every resolve_expr so children are rvalues by default; only the spine
+ * cases (E_INDEX base, E_FIELD/E_TUPIDX lhs) re-enable it for their spine child.
+ * Statement handlers that resolve a place target (S_INDEXSET/S_FIELDSET, push's
+ * first arg) set it to 1 around that one resolve. #2 (docs/map-mutation.md). */
+static int g_place = 0;
 static Type g_fn_ret = T_VOID;   /* return type of the proc currently being resolved (for or_return) */
 
 /* A place we can mutate in place (take `&` of in C): a variable, a field of
@@ -1775,11 +1784,12 @@ static int is_lvalue(Expr *e) {
     if (e->kind == E_IDENT) return 1;
     if (e->kind == E_FIELD) return is_lvalue(e->lhs);
     if (e->kind == E_TUPIDX) return is_lvalue(e->lhs);   /* t.0 = v: a tuple element is a place */
-    if (e->kind == E_INDEX) return (IS_ARRC(e->lhs->type) || IS_SOA(e->lhs->type)) && is_lvalue(e->lhs);
+    if (e->kind == E_INDEX) return (IS_ARRC(e->lhs->type) || IS_SOA(e->lhs->type) || is_map(e->lhs->type)) && is_lvalue(e->lhs);
     return 0;
 }
 
 static Type resolve_expr(Expr *e) {
+    int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
         case E_CHAR: return e->type = T_CHAR;
@@ -1811,6 +1821,7 @@ static Type resolve_expr(Expr *e) {
             return e->type = tup_of(elems, e->nargs);
         }
         case E_TUPIDX: {   /* t.0 / t.1 */
+            g_place = _place;                  /* t.i is a place iff t is (spine) */
             Type bt = resolve_expr(e->lhs);
             if (!IS_TUP(bt))
                 die_at(e->line, "tuple index .%ld on a non-tuple value (%s)", e->ival, type_name(bt));
@@ -1885,13 +1896,26 @@ static Type resolve_expr(Expr *e) {
             return e->type = arr_of(elem);
         }
         case E_INDEX: {
+            g_place = _place;                  /* the base is on the place spine */
             Type bt = resolve_expr(e->lhs);
-            if (resolve_expr(e->rhs) != T_INT)
+            g_place = 0;                        /* the subscript/key is always an rvalue */
+            Type kt = resolve_expr(e->rhs);
+            if (is_map(bt)) {                  /* m[k] -> the value type, but a PLACE only (#2) */
+                Type wantk = map_key(bt);
+                if (kt != wantk)
+                    die_at(e->line, "map key must be %s, got %s", type_name(wantk), type_name(kt));
+                e->type = map_val(bt);
+                if (!_place)
+                    die_at(e->line, "m[k] is a mutation target only (assign / push / m[k] op= ...); "
+                                    "to READ a value use map_get(m, k, default)");
+                return e->type;
+            }
+            if (kt != T_INT)
                 die_at(e->line, "index must be int");
             if (is_array(bt)) return e->type = arr_elem(bt);   /* array element */
             if (IS_SOA(bt)) return e->type = soa_struct(bt);   /* soa element (only valid under .field) */
             if (bt == T_STRING) return e->type = T_INT;        /* string byte */
-            die_at(e->line, "can only index an array or a string");
+            die_at(e->line, "can only index an array, a string, or a map (as a place)");
         }
         case E_SLICE: {   /* xs[a:b] — a sub-range of the same array/soa type; s[a:b] -> a substring */
             Type bt = resolve_expr(e->lhs);
@@ -1918,6 +1942,7 @@ static Type resolve_expr(Expr *e) {
                 e->kind = E_CALL; e->sval = q; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;
                 return e->type = ENUM_TYPE(eid);
             }
+            g_place = _place;                  /* s.field is a place iff s is (spine) */
             Type bt = resolve_expr(e->lhs);
             if (!IS_STRUCT(bt))
                 die_at(e->line, "'.%s' on a non-struct value", e->sval);
@@ -2100,7 +2125,9 @@ static Type resolve_expr(Expr *e) {
                 while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
                 if (root->kind != E_IDENT)
                     die_at(e->line, "push's first argument must be an array variable or field");
+                g_place = 1;                       /* push(m[k], v): m[k] is a place here (#2) */
                 Type arrt = resolve_expr(e->args[0]);
+                g_place = 0;
                 if (!is_array(arrt) && !IS_SOA(arrt))
                     die_at(e->line, "push's first argument must be an array or soa");
                 if (!is_lvalue(e->args[0]))
@@ -2479,21 +2506,42 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_INDEXSET: {
-            /* lhs is the array being indexed: a variable or a struct's array
+            /* lhs is the array/map being indexed: a variable or a struct's array
              * field (e.g. p.tags[0] = v). The root variable must be mutable. */
             Expr *root = s->target->lhs;
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
             if (root->kind != E_IDENT)
-                die_at(s->line, "can only index-assign an array variable or field");
+                die_at(s->line, "can only index-assign an array or map variable or field");
             if (!vars_can_mutate(root->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                        root->sval, root->sval);
-            Type arrt = resolve_expr(s->target->lhs);
-            if (!is_array(arrt))
+            g_place = 1;                          /* m[k] is a legal target here (#2) */
+            Type tt = resolve_expr(s->target);    /* E_INDEX -> element/value type */
+            g_place = 0;
+            if (!is_lvalue(s->target->lhs))       /* the base being indexed must be a place */
+                die_at(s->line, "cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)");
+            Type baset = s->target->lhs->type;    /* the array/map type (set by the resolve above) */
+            if (is_map(baset)) {                  /* m[k] = v  or  m[k] op= v  (#2) */
+                int compound = (s->expr->kind == E_BINOP && s->expr->lhs == s->target);
+                if (compound) {
+                    /* read-modify-write on the value slot; restricted to scalar values so the
+                     * op lowers to a plain C operator with no arena copy (single-eval'd in codegen). */
+                    if (tt != T_INT && tt != T_FLOAT && tt != T_CHAR)
+                        die_at(s->line, "compound assignment `m[k] op= ...` is only supported for int/float/char "
+                                        "map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`");
+                    Type rt = resolve_expr(s->expr->rhs);
+                    if (rt != tt)
+                        die_at(s->line, "cannot compound-assign %s to a %s map value", type_name(rt), type_name(tt));
+                    s->expr->type = tt;           /* the binop yields the value type */
+                } else {
+                    Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
+                    if (tt != vt)
+                        die_at(s->line, "cannot assign %s to a %s map value", type_name(vt), type_name(tt));
+                }
+                break;
+            }
+            if (!is_array(baset))
                 die_at(s->line, "can only index-assign an array element (strings themselves are immutable)");
-            if (!is_lvalue(s->target->lhs))
-                die_at(s->line, "cannot index-assign through this expression (only a variable, field, or composite-array element is a place)");
-            Type tt = resolve_expr(s->target);    /* E_INDEX -> element type */
             Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
                 die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
@@ -2505,7 +2553,9 @@ static void resolve_stmt(Stmt *s, Type ret) {
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
             if (root->kind == E_IDENT && !vars_can_mutate(root->sval))
                 die_at(s->line, "cannot mutate parameter '%s' (it is borrowed read-only)", root->sval);
+            g_place = 1;                          /* a map index in the chain (m[k].f = v) is a place (#2) */
             Type tt = resolve_expr(s->target);   /* E_FIELD -> field type; also types the chain for is_lvalue */
+            g_place = 0;
             if (!is_lvalue(s->target))
                 die_at(s->line, "cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)");
             Type vt = resolve_exp(s->expr, tt);  /* coerces a None value */
@@ -3606,6 +3656,16 @@ static char *gen_lvalue(Expr *e, const char *arena) {
     if (e->kind == E_TUPIDX)
         return sfmt("((%s)._%ld)", gen_lvalue(e->lhs, arena), e->ival);
     if (e->kind == E_INDEX) {
+        if (is_map(e->lhs->type)) {   /* m[k] place: find-or-insert, deref the value slot (#2) */
+            Expr *root = e->lhs;
+            while (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX) root = root->lhs;
+            /* slotptr allocates (rehash + key copy + value zero) into the MAP's
+             * owning arena, so the inserted value lives as long as the map. */
+            const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
+            return sfmt("(*%s(%s, &(%s), %s))",
+                        map_rt(e->lhs->type, "slotptr"), owner,
+                        gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
+        }
         if (index_in_range(e->lhs, e->rhs))   /* monotone loop index: project without the bounds check */
             return sfmt("((%s).data[%s])", gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
         return sfmt("(*hier_arr_C%d_ptr(&(%s), %s))",
@@ -3867,6 +3927,31 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             Expr *arrx = s->target->lhs;
             Expr *root = arrx;
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            if (is_map(arrx->type)) {   /* m[k] = v  or  m[k] op= v  (#2) */
+                Type vt = s->target->type;   /* the map value type */
+                const char *mowner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
+                int compound = (s->expr->kind == E_BINOP && s->expr->lhs == s->target);
+                if (compound) {
+                    /* single-eval the slot pointer: one find-or-insert, then read-modify-write
+                     * through it (no double lookup). Scalar value, so a plain C operator. */
+                    int id = g_blk++;
+                    char *mb  = gen_lvalue(arrx, scope);
+                    char *key = gen_expr(s->target->rhs, scope);
+                    char *rhs = gen_expr(s->expr->rhs, scope);
+                    indent(o, ind);
+                    fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = *_mp%d %s %s; }\n",
+                            c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
+                            id, id, op_str(s->expr->op), rhs);
+                } else {
+                    char *lv = gen_lvalue(s->target, scope);   /* (*slotptr(owner, &m, k)) */
+                    char *v  = gen_expr(s->expr, mowner);
+                    if (type_is_heap(vt) && is_place(s->expr))   /* value semantics: own the bytes */
+                        v = copy_into(vt, mowner, v);
+                    indent(o, ind);
+                    fprintf(o, "%s = %s;\n", lv, v);
+                }
+                break;
+            }
             char *arr = gen_lvalue(arrx, scope);   /* lvalue so a nested `m[i][j]=v` indexes m's buffer */
             char *ix  = gen_expr(s->target->rhs, scope);
             char *v   = gen_expr(s->expr, scope);
