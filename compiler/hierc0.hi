@@ -1798,6 +1798,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "int"                      # s[i] is the byte value (ord)
             if is_soa(bt):
                 return soa_struct(bt)             # soa element -> the struct
+            if is_map(bt):                        # m[k] place -> the value type (#2)
+                return map_val(bt)
             return substr(bt, 1, len(bt) - 1)     # else array element type
         EArrLit(elems):
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
@@ -2121,6 +2123,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_sidx(" + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(idx, names, types, dc, ctx) + ")"
             if is_soa(bt):                                  # soa[i] -> gather a struct value
                 return gen_soa_gather(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(idx, names, types, dc, ctx))
+            if is_map(bt):                                  # m[k] place: find-or-insert, deref the value slot (#2)
+                # slotptr allocates (rehash + key copy + value zero) into the MAP's owning
+                # arena, so the inserted value lives as long as the map. This is a C lvalue,
+                # so it serves both as a write target (m[k]=v / push) and the op= read-half.
+                sp := "m" + substr(map_key(bt), 0, 1) + "_" + mangle(map_val(bt)) + "_slotptr"
+                return "(*" + sp + "(" + owner_arena_of(base, names, types, dc, ctx) + ", &(" + gen_expr(base, names, types, dc, ctx) + "), " + gen_expr(idx, names, types, dc, ctx) + "))"
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, dc, ctx)
@@ -2132,8 +2140,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_soa(ety):                       # empty soa: zeroed descriptor
                 return "(" + cty(dc, ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
-        EMapEmpty(kty, vty):
-            return "map_" + kty + "_" + vty + "_new()"
+        EMapEmpty(kty, vty):                      # value type must be mangled to match the family ([int] -> arr_int)
+            return "map_" + kty + "_" + mangle(vty) + "_new()"
         EMapLit(keys, vals):                      # chain of _set onto a fresh map
             f := mfam(type_of(e, names, types, dc, ctx))
             out := f + "_new()"
