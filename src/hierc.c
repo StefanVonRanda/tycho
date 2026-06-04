@@ -4711,6 +4711,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (x.len != y.len) return 0;\n"
                 "    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) { long s = hier_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
                 "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
+            fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
+                "static inline %s*hier_mapc%d_slotptr(Arena *a, HierMapC%d *m, long k) {\n"
+                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        HierMapC%d n = hier_mapc%d_with_cap(a, nc);\n"
+                "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = hier_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
+                "        *m = n;\n    }\n"
+                "    long s = hier_mapc%d_slot(*m, k);\n"
+                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; m->vals[s] = (%s){0}; }\n"
+                "    return &m->vals[s];\n}\n\n", ct, i, i, i, i, i, i, ct);
             continue;
         }
         fprintf(o,
@@ -4769,6 +4779,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (long i = 0; i < x.cap; i++) if (hier_map_live(x.keys[i])) { long s = hier_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
             "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
+        fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
+            "static inline %s*hier_mapc%d_slotptr(Arena *a, HierMapC%d *m, const char *k) {\n"
+            "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+            "        HierMapC%d n = hier_mapc%d_with_cap(a, nc);\n"
+            "        for (long i = 0; i < m->cap; i++) if (hier_map_live(m->keys[i])) { long s = hier_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++; }\n"
+            "        *m = n;\n    }\n"
+            "    long s = hier_mapc%d_slot(*m, k);\n"
+            "    if (!hier_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = hier_str_copy(a, k); m->len++; m->vals[s] = (%s){0}; }\n"
+            "    return &m->vals[s];\n}\n\n", ct, i, i, i, i, i, i, ct);
     }
     /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
      * field (named f<idx>) plus a shared len/cap. push grows every buffer in the
