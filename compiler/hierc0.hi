@@ -628,7 +628,13 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
             if isfe:
                 parse_foreach(toks, &pos, &stmts)
             else:
-                push(stmts, parse_stmt(toks, &pos))
+                pend := []Stmt                       # preludes (e.g. hoisted index temps)
+                st := parse_stmt(toks, &pos, &pend)
+                pj := 0
+                for pj < len(pend):
+                    push(stmts, pend[pj])
+                    pj = pj + 1
+                push(stmts, st)
             if toks[pos].kind == TNewline:
                 pos = pos + 1
     pos = pos + 1
@@ -657,7 +663,7 @@ fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
 fn is_caop_kind(k: Tok) -> bool:
     return k == TPlus or k == TMinus or k == TStar or k == TSlash or k == TPercent or k == TAmp or k == TPipe or k == TCaret or k == TShl or k == TShr
 
-fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
+fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
     t := toks[pos]
     if t.kind == TIdent and t.text == "print":
         pos = pos + 1
@@ -758,20 +764,45 @@ fn parse_stmt(toks: [Token], pos: inout int) -> Stmt:
             expect(toks, &pos, TEq)
             return SAssign(name, EBin(op, EVar(name), parse_expr(toks, &pos)))
         elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
-            lv := EVar(name)                     # place assignment: a.b[i].c = rhs
+            # collect the place steps first (a.b[i].c ...) so that, for a compound
+            # assignment, a call-bearing index can be hoisted to a temp -- the place
+            # is evaluated twice (read + store), and a side-effecting index must run
+            # once. Plain assignment and pure indices are unchanged.
+            pkinds := []int                      # 0 = field, 1 = index
+            pflds := []string
+            pidxs := []Expr
             for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
                 if toks[pos].kind == TDot:
                     pos = pos + 1
                     if toks[pos].kind != TIdent and toks[pos].kind != TInt:
                         die("parse: expected a field name or tuple index after '.'")
-                    lv = EField(lv, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
+                    push(pkinds, 0)
+                    push(pflds, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
+                    push(pidxs, EInt("0"))        # placeholder; unused for a field step
                     pos = pos + 1
                 else:
                     pos = pos + 1
-                    idx := parse_expr(toks, &pos)
+                    push(pkinds, 1)
+                    push(pflds, "")
+                    push(pidxs, parse_expr(toks, &pos))
                     expect(toks, &pos, TRBracket)
-                    lv = EIndex(lv, idx)
-            if is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # lv OP= rhs -> lv = lv OP rhs
+            iscomp := is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq
+            lv := EVar(name)
+            ci := 0
+            j := 0
+            for j < len(pkinds):
+                if pkinds[j] == 0:
+                    lv = EField(lv, pflds[j])
+                else:
+                    ix := pidxs[j]
+                    if iscomp and expr_has_call(ix):   # bind a side-effecting index once
+                        tn := "_cx" + str(pos) + "_" + str(ci)
+                        ci = ci + 1
+                        push(pending, SDecl(tn, ix))
+                        ix = EVar(tn)
+                    lv = EIndex(lv, ix)
+                j = j + 1
+            if iscomp:                           # lv OP= rhs -> lv = lv OP rhs
                 op := toks[pos].text
                 pos = pos + 1
                 expect(toks, &pos, TEq)

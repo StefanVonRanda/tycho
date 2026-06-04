@@ -1141,6 +1141,43 @@ static int is_compound_op(TokKind k) {
            k == TK_SHL || k == TK_SHR;
 }
 
+/* does the expression contain a call (so re-evaluating it could double a side
+ * effect)? */
+static int expr_has_call(Expr *e) {
+    if (!e) return 0;
+    if (e->kind == E_CALL) return 1;
+    if (expr_has_call(e->lhs) || expr_has_call(e->rhs)) return 1;
+    for (int i = 0; i < e->nargs; i++)
+        if (expr_has_call(e->args[i])) return 1;
+    return 0;
+}
+
+/* A compound assignment `a[i] OP= e` evaluates the place TWICE (read, then
+ * store), so a side-effecting index `i` would run twice. Bind each index in the
+ * place that CONTAINS A CALL to a fresh temp (queued in g_pending, emitted just
+ * before the assignment) and rewrite the place to use it, so the index runs
+ * once. Pure indices are untouched, so the common `a[i] += e` is byte-identical. */
+static void hoist_index_calls(Expr *place, int line) {
+    Expr *chain[32]; int nc = 0;
+    for (Expr *cur = place; cur && nc < 32; ) {
+        if (cur->kind == E_INDEX) chain[nc++] = cur;
+        if (cur->kind == E_INDEX || cur->kind == E_FIELD || cur->kind == E_TUPIDX) cur = cur->lhs;
+        else break;
+    }
+    for (int i = nc - 1; i >= 0; i--) {   /* innermost index (evaluated first) hoisted first */
+        Expr *ix = chain[i];
+        if (ix->rhs && expr_has_call(ix->rhs) && g_npending < 64) {
+            Stmt *d = new_stmt(S_DECL, line);
+            d->name = sfmt("_cx%d", g_forin_uid++);
+            d->expr = ix->rhs;
+            g_pending[g_npending++] = d;
+            Expr *tv = new_expr(E_IDENT, line);
+            tv->sval = d->name; tv->pkg = g_cur_pkg_prefix;
+            ix->rhs = tv;
+        }
+    }
+}
+
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
@@ -1368,6 +1405,8 @@ static Stmt *parse_stmt(Parser *ps) {
         eat(ps, TK_EQ, "'=' to complete the compound assignment");
         Expr *rhs = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
+        if (e->kind == E_INDEX || e->kind == E_FIELD || e->kind == E_TUPIDX)
+            hoist_index_calls(e, t->line);   /* single-eval a side-effecting index */
         Expr *b = new_expr(E_BINOP, t->line);
         b->op = op; b->lhs = e; b->rhs = rhs;
         if (e->kind == E_IDENT) {
