@@ -1,0 +1,25 @@
+# String interpolation (f-strings). f"...{expr}..." desugars to ("..." + str(expr) +
+# "..."); {{ and }} are literal braces; plain "..." is unaffected (literal braces stay
+# literal). str() coerces the hole: identity on a string, i2s/f2s on int/float. hierc
+# and hierc0 must agree (make bootstrap diffs them).
+struct P:
+    x: int
+    y: int
+
+fn main():
+    n := 5
+    name := "Ada"
+    p := P(3, 4)
+    f := 2.5
+
+    print(f"n={n} name={name}\n")                       # n=5 name=Ada
+    print(f"sum={n + 10} prod={n * n}\n")               # sum=15 prod=25
+    print(f"point=({p.x},{p.y})\n")                     # point=(3,4)
+    print(f"float={f}\n")                               # float=2.5
+    print(f"nested str: {str(n)}\n")                    # nested str: 5
+    print(f"literal {{braces}} around {n}\n")           # literal {braces} around 5
+    print(f"{n}{name}{p.x}\n")                          # 5Ada3  (adjacent holes, empty literals)
+    print(f"leading {n} trailing\n")                    # leading 5 trailing
+    print("plain string with {braces} stays literal\n") # plain string with {braces} stays literal
+    g := f"built={n}"                                   # f-string into a variable
+    print(g + "!\n")                                    # built=5!

@@ -18,6 +18,7 @@ enum Tok:
     TInt
     TFloat
     TStr
+    TFStr                                        # f"..." interpolated string literal
     TChar
     TIdent
     TPlus
@@ -84,6 +85,17 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
             die("lex: unterminated string")
         push(toks, Token(TStr, substr(src, start, i)))
         return i + 1                             # consume closing quote
+    elif c == 102 and i + 1 < n and src[i + 1] == 34:   # f"..." interpolated string (102='f', 34='"')
+        start := i + 2
+        i = i + 2
+        for i < n and src[i] != 34:
+            if src[i] == 92:                     # backslash escapes the next char
+                i = i + 1
+            i = i + 1
+        if i >= n:
+            die("lex: unterminated f-string")
+        push(toks, Token(TFStr, substr(src, start, i)))
+        return i + 1
     elif c == 39:                                # char literal '...' -> one byte
         i = i + 1
         if i >= n:
@@ -395,11 +407,66 @@ fn open_block(toks: [Token], pos: inout int):
         pos = pos + 1
     expect(toks, &pos, TIndent)
 
+# String interpolation: an f-string's text "a{e}b" desugars to ("a" + str(e) + "b").
+# `{{`/`}}` are literal braces; each `{e}` is lexed+parsed as a sub-expression and
+# wrapped in str() (identity on a string, i2s/f2s on int/float). No new AST node.
+fn desugar_interp(s: string) -> Expr:
+    pieces := []Expr
+    n := len(s)
+    buf := ""
+    i := 0
+    for i < n:
+        c := s[i]
+        if c == 123 and i + 1 < n and s[i + 1] == 123:        # {{ -> literal {
+            buf = buf + chr(123)
+            i = i + 2
+        elif c == 125 and i + 1 < n and s[i + 1] == 125:      # }} -> literal }
+            buf = buf + chr(125)
+            i = i + 2
+        elif c == 125:
+            die("interp: unmatched } in an f-string (use }} for a literal brace)")
+        elif c == 123:                                        # {expr}
+            if len(buf) > 0:
+                push(pieces, EStr(buf))
+                buf = ""
+            i = i + 1
+            estart := i
+            for i < n and s[i] != 125:
+                i = i + 1
+            if i >= n:
+                die("interp: unterminated { in an f-string")
+            esub := substr(s, estart, i)
+            i = i + 1                                          # consume }
+            if len(esub) == 0:
+                die("interp: empty {} in an f-string")
+            etoks := lex(esub)
+            ep := 0
+            ex := parse_expr(etoks, &ep)
+            args := []Expr
+            push(args, ex)
+            push(pieces, ECall("str", args))
+        else:
+            buf = buf + chr(c)
+            i = i + 1
+    if len(buf) > 0:
+        push(pieces, EStr(buf))
+    if len(pieces) == 0:
+        return EStr("")
+    acc := pieces[0]
+    j := 1
+    for j < len(pieces):
+        acc = EBin("+", acc, pieces[j])
+        j = j + 1
+    return acc
+
 fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     t := toks[pos]
     if t.kind == TStr:
         pos = pos + 1
         return EStr(t.text)
+    elif t.kind == TFStr:                        # f"a{e}b" -> ("a" + str(e) + "b")
+        pos = pos + 1
+        return desugar_interp(t.text)
     elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
         pos = pos + 1
         return EBin("-", EInt("0"), parse_atom(toks, &pos))
@@ -2243,7 +2310,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
-                if type_of(args[0], names, types, dc, ctx) == "float":
+                at := type_of(args[0], names, types, dc, ctx)
+                if at == "str":                                  # str(string) is identity (interpolation)
+                    return gen_expr(args[0], names, types, dc, ctx)
+                if at == "float":
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "sqrt" or name == "floor" or name == "fabs":

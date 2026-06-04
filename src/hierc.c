@@ -189,7 +189,7 @@ static TokVec lex(const char *src) {
                 }
                 continue;
             }
-            if (isalpha((unsigned char)c) || c == '_') {
+            if ((isalpha((unsigned char)c) || c == '_') && !(c == 'f' && p[1] == '"')) {   /* f"..." is an interpolated string, not an identifier */
                 const char *s = p;
                 while (isalnum((unsigned char)*p) || *p == '_') p++;
                 char *name = xstrndup(s, (size_t)(p - s));
@@ -197,8 +197,10 @@ static TokVec lex(const char *src) {
                 tv_push(&out, (Tok){k, name, 0, line, 0});
                 continue;
             }
-            if (c == '"') {
-                p++;
+            if (c == '"' || (c == 'f' && p[1] == '"')) {
+                int interp = (c == 'f');   /* f"..." -> an interpolated string (ival flag) */
+                if (interp) p++;           /* skip the f prefix */
+                p++;                       /* skip the opening quote */
                 /* keep raw contents; Hier escapes (\n \t \\ \") are a
                  * subset of C escapes so they pass straight through to
                  * the generated C string literal. */
@@ -221,7 +223,7 @@ static TokVec lex(const char *src) {
                 }
                 if (*p != '"') die_at(line, "unterminated string literal");
                 p++;
-                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), 0, line, 0});
+                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), interp, line, 0});
                 continue;
             }
 
@@ -832,12 +834,51 @@ static Expr *new_expr(ExprKind k, int line) {
 
 static Expr *parse_expr(Parser *ps);
 
+/* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
+ * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
+ * sub-expression and wrapped in str() (identity on a string, i2s/f2s on int/float —
+ * a bool/char/aggregate hole then fails str() with a clear error). */
+static Expr *interp_join(Expr *acc, Expr *piece, int line) {
+    if (!acc) return piece;
+    Expr *b = new_expr(E_BINOP, line); b->op = TK_PLUS; b->lhs = acc; b->rhs = piece; return b;
+}
+static Expr *desugar_interp(const char *s, int line) {
+    Expr *acc = NULL;
+    char *buf = (char *)xmalloc(strlen(s) + 1); size_t bn = 0;
+    for (size_t i = 0; s[i]; ) {
+        if (s[i] == '{' && s[i+1] == '{') { buf[bn++] = '{'; i += 2; continue; }
+        if (s[i] == '}' && s[i+1] == '}') { buf[bn++] = '}'; i += 2; continue; }
+        if (s[i] == '}') die_at(line, "unmatched '}' in an interpolated string (use '}}' for a literal brace)");
+        if (s[i] == '{') {
+            if (bn) { Expr *lit = new_expr(E_STR, line); lit->sval = xstrndup(buf, bn); acc = interp_join(acc, lit, line); bn = 0; }
+            i++; size_t start = i;
+            while (s[i] && s[i] != '}') i++;
+            if (!s[i]) die_at(line, "unterminated '{' in an interpolated string");
+            if (i == start) die_at(line, "empty '{}' in an interpolated string");
+            char *sub = xstrndup(s + start, i - start); i++;     /* consume '}' */
+            TokVec tv = lex(sub); Parser sp = { tv.v, 0 }; Expr *ex = parse_expr(&sp);
+            Expr *call = new_expr(E_CALL, line); call->sval = "str";
+            call->args = (Expr **)xmalloc(sizeof(Expr *)); call->args[0] = ex; call->nargs = 1;
+            acc = interp_join(acc, call, line);
+            continue;
+        }
+        buf[bn++] = s[i++];
+    }
+    if (bn) { Expr *lit = new_expr(E_STR, line); lit->sval = xstrndup(buf, bn); acc = interp_join(acc, lit, line); }
+    if (!acc) { Expr *e = new_expr(E_STR, line); e->sval = ""; return e; }
+    return acc;
+}
+
 static Expr *parse_primary(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_INT)  { ps->p++; Expr *e = new_expr(E_INT, t->line);  e->ival = t->ival; return e; }
     if (t->kind == TK_CHAR) { ps->p++; Expr *e = new_expr(E_CHAR, t->line); e->ival = t->ival; return e; }
     if (t->kind == TK_FLOAT){ ps->p++; Expr *e = new_expr(E_FLOAT, t->line); e->fval = t->fval; return e; }
-    if (t->kind == TK_STR)  { ps->p++; Expr *e = new_expr(E_STR, t->line);  e->sval = t->text; return e; }
+    if (t->kind == TK_STR)  {
+        ps->p++;
+        if (t->ival) return desugar_interp(t->text, t->line);   /* f"..." interpolated string */
+        Expr *e = new_expr(E_STR, t->line);  e->sval = t->text; return e;
+    }
     if (t->kind == TK_TRUE) { ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 1; return e; }
     if (t->kind == TK_FALSE){ ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 0; return e; }
     if (t->kind == TK_LPAREN) {
@@ -2029,8 +2070,8 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "str")) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
                 Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
-                if (b != T_INT && b != T_FLOAT)
-                    die_at(e->line, "str(x) takes an int or a float");
+                if (b != T_INT && b != T_FLOAT && b != T_STRING)   /* string: identity (for interpolation) */
+                    die_at(e->line, "str(x) takes an int, a float, or a string");
                 return e->type = T_STRING;
             }
             if (!strcmp(e->sval, "to_float")) {   /* int -> float, or unwrap a float newtype */
@@ -3287,8 +3328,9 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "str")) {
         char *a = gen_expr(e->args[0], arena);
-        if (base_of(e->args[0]->type) == T_FLOAT)   /* sees through a float newtype */
-            return sfmt("hier_float_to_str(%s, %s)", arena, a);
+        Type b = base_of(e->args[0]->type);
+        if (b == T_STRING) return a;                 /* str(string) is identity (interpolation) */
+        if (b == T_FLOAT)  return sfmt("hier_float_to_str(%s, %s)", arena, a);
         return sfmt("hier_int_to_str(%s, %s)", arena, a);
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
