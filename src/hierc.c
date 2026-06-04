@@ -2098,6 +2098,12 @@ static Type resolve_expr(Expr *e) {
                 Type arrt = resolve_expr(e->args[0]);
                 if (!is_array(arrt))
                     die_at(e->line, "reserve's first argument must be an array");
+                /* fail closed: only [int]/[float]/[string] have a runtime reserve
+                 * (every element type has push, but reserve is a capacity hint we
+                 * only provide for the scalar arrays) — reject the rest with a
+                 * clear diagnostic instead of emitting an undefined C symbol. */
+                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_FLOAT && arrt != T_ARRAY_STRING)
+                    die_at(e->line, "reserve only supports [int], [float], and [string] arrays");
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot reserve through this expression");
                 if (!vars_can_mutate(root->sval))
