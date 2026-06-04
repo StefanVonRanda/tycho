@@ -28,7 +28,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
 | array-pipeline    |  6 MB/47 ms²  |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
-| json-parse (real) | 67 MB/1118 ms⁴ | 67 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+| json-parse (real) | 67 MB/1118 ms⁴ | 55 MB/1315 ms¹⁴ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 | iter-transform³   | 4 MB/1285 ms | 6 MB/358 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
@@ -54,7 +54,10 @@ blocks from geometrically grown array buffers were never reused — each pass
 malloc'd fresh ones and the pool grew. Fixing `block_get` to scan the pool for a
 fitting block on a head-miss (the O(1) uniform fast-path unchanged) closed it to
 **1.15× C and flat across passes** (96 → 67 MB), with zero change to the other
-five workloads. In BOTH runtimes; make test 84/0 + fixpoint B≡C + fuzz green.
+five workloads. The fix is in BOTH runtimes; `hierc0`'s json-parse dropped the
+same way (94 → 55 MB — its emitted runtime is a touch more compact, so it edges
+under C's 58 MB here), no time cost on either. make test 84/0 + fixpoint B≡C +
+fuzz green.
 See the scaling study at the end.
 
 ² array-pipeline `hierc` was **132 ms** until **bounds-check elision**: inside
