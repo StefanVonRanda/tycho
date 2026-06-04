@@ -40,10 +40,6 @@ the language's minimalism, not a corelib limitation.
 
 More to come (arrays).
 
-> **f-string gotcha:** an interpolation hole `{…}` cannot contain a string literal — the
-> lexer stops the f-string at the inner `"`. Bind it to a variable first:
-> `p := f("x"); print(f"got {p}")`. (A brace/quote-aware f-string lexer would lift this.)
-
 ## Testing
 
 `make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.hi` is compiled by
