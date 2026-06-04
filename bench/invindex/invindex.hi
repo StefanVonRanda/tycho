@@ -1,0 +1,82 @@
+# Inverted-index build, at scale (prong-B style). Generates a deterministic
+# corpus of N documents x W words drawn from a V-term vocabulary (a shared LCG,
+# so C/Go produce the identical sequence -> identical checksum), builds the
+# inverted index, runs one boolean-AND query, and prints a checksum. The index
+# is a [string: int] map (term -> slot) over a [Posting] array whose elements own
+# their growing doc-id/frequency lists -- the value-semantic / arena model on a
+# build-and-hold structure, no malloc/free/GC in the source.
+struct Posting:
+    term: string
+    docs: [int]
+    freqs: [int]
+
+fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
+    pi := map_get(tidx, term, 0 - 1)
+    if pi < 0:
+        p := Posting(term, []int, []int)
+        push(p.docs, doc)
+        push(p.freqs, 1)
+        push(postings, p)
+        tidx = map_set(tidx, term, len(postings) - 1)
+    else:
+        n := len(postings[pi].docs)
+        if n > 0 and postings[pi].docs[n - 1] == doc:
+            postings[pi].freqs[n - 1] += 1
+        else:
+            push(postings[pi].docs, doc)
+            push(postings[pi].freqs, 1)
+
+fn contains(xs: [int], v: int) -> bool:
+    for x in xs:
+        if x == v:
+            return true
+    return false
+
+fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> int:
+    if len(terms) == 0:
+        return 0
+    p0 := map_get(tidx, terms[0], 0 - 1)
+    if p0 < 0:
+        return 0
+    hits := 0
+    ci := 0
+    for ci in range(len(postings[p0].docs)):
+        doc := postings[p0].docs[ci]
+        ok := true
+        ti := 1
+        for ti in range(1, len(terms)):
+            pj := map_get(tidx, terms[ti], 0 - 1)
+            if pj < 0 or not contains(postings[pj].docs, doc):
+                ok = false
+        if ok:
+            hits += 1
+    return hits
+
+fn main():
+    n := 300000          # documents
+    w := 12              # words per document
+    v := 8000            # vocabulary size
+
+    postings := []Posting
+    tidx := []string: int
+    seed := 1
+    d := 0
+    for d in range(n):
+        j := 0
+        for j in range(w):
+            seed = (seed * 1103515245 + 12345) % 2147483647    # LCG, stays in [0, 2^31)
+            tid := seed % v
+            add(&postings, &tidx, "t" + str(tid), d)
+
+    sum := 0
+    pi := 0
+    for pi in range(len(postings)):
+        sum += len(postings[pi].term) + len(postings[pi].docs)
+        fj := 0
+        for fj in range(len(postings[pi].freqs)):
+            sum += postings[pi].freqs[fj]
+
+    q := []string
+    push(q, "t0")
+    push(q, "t1")
+    print("vocab=" + str(len(postings)) + " checksum=" + str(sum) + " and01=" + str(query_and(postings, tidx, q)) + "\n")
