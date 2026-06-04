@@ -199,8 +199,8 @@ plain `inout string` is excluded (a string is immutable, so it buys nothing).
 byte — `'x'` literals with `\n \t \r \0 \\ \'` escapes; `char ± int → char`;
 `string + char` appends in place without allocating, so `s = s + ('0' + d)` is a
 zero-alloc byte append), arrays
-(`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), string-keyed maps
-(`[string: int]`, `[string: float]`), `Option(T)` (a value or nothing — the
+(`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), maps
+(`[string: int]`, `[string: float]`, `[int: int]`, `[int: float]`), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
 no-exceptions error story), tuples `(T1, ..., Tn)` (anonymous products — the
 multiple-return-values story), user-defined `struct`s, user-defined `enum`s
@@ -356,11 +356,12 @@ The one rule: you cannot pass a slice of `xs` and an `inout` of `xs` to the same
 call (the `inout` could reallocate the buffer the slice views). Strings use
 `substr(s, a, b)` (a copy), not slice syntax.
 
-### Maps (`[string: int]`, `[string: float]`)
+### Maps (`[string: int]`, `[string: float]`, `[int: int]`, `[int: float]`)
 
-A map has `string` keys and either `int` or `float` values; the value type
-follows from the literal or annotation (`["a": 1]` is a `[string: int]`,
-`["a": 1.5]` a `[string: float]`):
+A map has `string` or `int` keys and either `int` or `float` values; both types
+follow from the literal or annotation (`["a": 1]` is a `[string: int]`,
+`["a": 1.5]` a `[string: float]`, `[1: 2]` an `[int: int]`). Int-keyed maps work
+exactly like string-keyed ones — `keys(m)` returns `[int]` instead of `[string]`:
 
 ```
 counts := ["ada": 1, "alan": 2]   # literal: "key": value pairs
@@ -379,8 +380,9 @@ for i in range(len(ks)):
     print(k + "=" + str(map_get(counts, k, 0)) + "\n")
 ```
 
-`keys(m)` returns the live keys as a `[string]` (in unspecified order); index
-it to walk the map — there is no dedicated `for k in m` form. `map_del(m, k)`
+`keys(m)` returns the live keys as a `[string]` (or `[int]` for an int-keyed
+map) in unspecified order; iterate it with `for k in keys(m):` (or index it) to
+walk the map — there is no dedicated `for k in m` form. `map_del(m, k)`
 removes a key (a no-op if absent). See [`examples/wordcount.hi`](examples/wordcount.hi).
 
 `map_set(m, k, v)` is a **pure** operation: it returns a new map and leaves
@@ -407,9 +409,10 @@ O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
 All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, the
-in-place accumulator rebind, `==`, `inout`) work the same on both; `map_get`'s
-default and `map_set`'s value just take the map's value type. *Not yet:* value
-types other than `int`/`float`, and key types other than `string`.
+in-place accumulator rebind, `==`, `inout`) work the same on all four; `map_get`'s
+default and `map_set`'s value take the map's value type, and the key takes its
+key type. *Not yet:* value types other than `int`/`float`, and key types other
+than `string`/`int`.
 
 ### Option and `match`
 
@@ -511,8 +514,9 @@ write a tuple literal (`p := (10, 20)`), pass it as an argument or a struct
 field, and compare two with `==` (element-wise). Any element type works,
 including heap ones (`(string, [int])`); a tuple is a value, deep-copied on
 bind like everything else, so `b := a` leaves the two independent. The
-destructuring bind is decl-only (`a, b := f()`); there is no `a, b = f()`
-re-assignment form yet, and tuple elements are read-only (no `t.0 = v`).
+destructuring comes in both forms — `a, b := f()` declares fresh locals, `a, b = f()`
+assigns a tuple's elements to existing variables. Tuple elements are read-only
+(no `t.0 = v`).
 
 ### Enums (sum types)
 
@@ -588,11 +592,20 @@ type does — parameter, return, struct field, array element. *Not yet:* `string
 x := 41          # inferred
 y : int = 1      # explicit type
 x = x + 1        # assignment (variable must already exist)
+x += 1           # compound assignment: x op= e desugars to x = x op e
 ```
+
+Compound assignment works for every binary operator
+(`+= -= *= /= %= &= |= ^= <<= >>=`) and on any assignable place — a variable, an
+array element (`a[i] += 1`), or a struct field (`p.x *= 2`).
 
 ### Expressions
 
-- Arithmetic on `int`: `+ - * /` (`/` truncates), unary `-`.
+- Arithmetic on `int`: `+ - * / %` (`/` truncates, `%` is the remainder), unary
+  `-`. Bitwise/shift on `int`: `& | ^ << >>` and unary `~` (integer-only). These
+  follow Go precedence — `% << >> &` bind at the multiplicative level and `| ^`
+  at the additive level, so every bitwise op binds *tighter* than a comparison
+  (no C `a & b == c` surprise: it parses as `(a & b) == c`).
 - Arithmetic on `float`: `+ - * /` (`/` is true division), unary `-`. A float
   literal is `digits.digits` (e.g. `3.14`, `4.0` — no exponent or leading-dot
   form yet). `int` and `float` never mix implicitly: convert with `to_float(n)`
@@ -611,8 +624,8 @@ x = x + 1        # assignment (variable must already exist)
 
 ### Control flow
 
-There is exactly one loop keyword, `for`, in two shapes — it does
-everything a `while` would (cf. Wren):
+There is exactly one loop keyword, `for`, in three shapes (condition, counting,
+and foreach) — it does everything a `while` would (cf. Wren):
 
 ```
 if cond:
@@ -631,11 +644,18 @@ for i in range(a, b):       # a .. b-1
     ...
 for i in range(a, b, step): # step may be negative
     ...
+for x in xs:                # foreach: x is each element of an array (or each
+    ...                     # byte/char of a string), in order
+
+break                       # exit the nearest enclosing loop
+continue                    # skip to its next iteration
 ```
 
-In the counting form `range(...)` is the only thing a `for` may iterate
-(there are no general iterables yet); the loop variable is an `int`
-scoped to the loop. The condition form takes any `bool` expression.
+In the counting form the loop variable is an `int` scoped to the loop; the
+foreach form binds each element of an array (any `[T]`) or each byte of a string
+(the collection is evaluated once). The condition form takes any `bool`
+expression. `break` and `continue` work in every loop shape, and are an error
+outside a loop.
 
 ### Builtins
 
@@ -654,10 +674,15 @@ scoped to the loop. The condition form takes any `bool` expression.
 | `map_get(m, k, d)` | `([string: int], string, int) -> int` | Value for key `k`, or default `d` if absent. |
 | `map_has(m, k)` | `([string: int], string) -> bool` | Whether key `k` is present. |
 | `map_del(m, k)` | `([string: int], string) -> [string: int]` | Returns a new map without key `k` (no-op if absent); pure. The `m = map_del(m, …)` self-rebind deletes in place. |
-| `keys(m)` | `[string: int] -> [string]` | The live keys as a `[string]` (unspecified order); index it to iterate the map. |
+| `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type (unspecified order); iterate it to walk the map. |
 | `read_file(path)` | `string -> string` | The whole file as a string, or `""` if it can't be opened. |
+| `write_file(path, s)` | `(string, string) -> bool` | Write `s`'s exact bytes to `path` (truncating); `true` on success, `false` if it can't be opened. |
+| `read_all()` | `-> string` | All of stdin as one string. |
 | `list_dir(path)` | `string -> [string]` | Directory entries excluding `.`/`..` (filesystem order — sort if needed); empty if it can't be opened. |
 | `args()` | `-> [string]` | The process's command-line arguments; `args()[0]` is the program name. |
+| `chr(n)` | `int -> string` | The one-byte string for byte value `n` (0..255). |
+| `die(msg)` | `string -> void` | Print `msg` to stderr and exit with status 1. |
+| `sqrt/pow/floor/fabs` | `float… -> float` | libm float math: `sqrt(x)`, `pow(x, y)`, `floor(x)`, `fabs(x)`. |
 
 String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
 `substr`, and `find` are all byte-oriented (not Unicode-aware).
@@ -728,12 +753,16 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No modules or generics. Single source file. Arrays nest (`[int]`, `[float]`,
+- No generics. Multi-file **Odin-style packages** are supported, though
+  (a directory of files sharing one namespace, `import`, `pkg.symbol` qualified
+  names, no privacy) — `./hierc pkg/main.hi` follows the imports and emits one
+  binary; the self-hosted compiler itself is split into two packages (see
+  Self-hosting). Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
-  string-keyed with
-  `int` or `float` values (`[string: int]`, `[string: float]`) — no other key
-  or value type yet; they support
+  string- or int-keyed with `int` or `float` values (`[string: int]`,
+  `[string: float]`, `[int: int]`, `[int: float]`) — no other key or value type
+  yet; they support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
   rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates
@@ -753,10 +782,12 @@ build/             generated embed header (make artifact)
 podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   inout, memo, collect, context, optimize, json (.hi) — 17 programs
-                   (json.hi is a full recursive-descent JSON parser + serializer)
+                   inout, memo, collect, context, optimize, json, raytrace,
+                   grep (.hi) — 19 programs (json.hi is a full recursive-descent
+                   JSON parser + serializer; raytrace.hi a float-math PPM renderer;
+                   grep.hi a CLI text tool over args()/read_file)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
-tests/*.hi         dedicated regression programs (45) (+ optional <name>.in stdin)
+tests/*.hi         dedicated regression programs (59, + tests/pkg/ package fixtures) (+ optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
 bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
