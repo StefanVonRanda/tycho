@@ -63,6 +63,50 @@ burden, not the occasional capacity hint every language keeps for the hot path.
 hier trails C by ~1.2× on **time** in count-fill (the second counting pass); the
 bump allocator's speed offsets the extra copying in growth, where it equals Go.
 
+## Map-native form (`#2`: `m[k]` as a place)
+
+The tables above use the *side-array* architecture: a `[string: int]` map (term →
+slot) over a separate `[Posting]` array whose elements own the growing lists. That
+indirection existed because, before in-place map-value mutation, a `[string: [int]]`
+(term → its posting list directly) could only grow a list via
+`tidx = map_set(tidx, term, push_a_copy(map_get(tidx, term), doc))` — an O(list)
+copy of the whole value on *every* posting, i.e. O(n²) over the build. Unusable at
+scale, so the side array carried the lists and the map carried only an int slot.
+
+`#2` makes the map value a mutable place, so the index becomes exactly what it is —
+`idx: [string: [int]]`, one posting appended with `push(idx[term], d)` (O(1)
+amortized, no copy). Same LCG corpus and a single shared oracle
+(`vocab=8000 checksum=540001838890`); `invindex_map.{hi,c,go}` all print it. Peak
+RSS (`bench/peakrss.c`), best-of-three, `-O2` / `go build`:
+
+| impl | peak RSS | time |
+| ---- | -------: | ---: |
+| C  (`Slot{char*; long* docs; n; cap}` table, realloc in place) | **37 MB** | 252 ms |
+| Go (`map[string][]int`, `append`) | 58 MB | 308 ms |
+| hier (`[string: [int]]`, `push(idx[term], d)`) | 64 MB | 328 ms |
+
+Reading this honestly:
+
+1. **The natural data structure now competes.** hier is ~par with Go (1.10× memory,
+   1.06× time) and ~1.7× C memory / ~1.3× C time. This is the *same* build-and-hold
+   grow-and-abandon penalty plain arrays show (§ above): each geometric doubling of a
+   posting list abandons a buffer the bump arena can't `realloc` in place, where C's
+   `realloc` and Go's grow-in-place reclaim it. The map value arrays grow exactly like
+   standalone arrays — **no map-specific regression**, just the array story applied
+   inside a map.
+
+2. **The `reserve` count-fill mitigation does NOT reach into a map value.** For plain
+   arrays, sizing each list once (`reserve`) closed the gap to ~1.04× C. There is no
+   `reserve(idx[term], n)`: `m[k]` is a place only for `push` / assign / `op=`, and
+   `reserve`'s argument is rejected as an `m[k]` read. So the map-native form is stuck
+   on the growth architecture's ~1.7× — the honest boundary the design predicted. A
+   future `reserve(m[k], n)` (gate `reserve`'s first arg as a place, like `push`) would
+   let a count-then-fill pass reach map values and likely recover the same near-parity.
+
+The win of `#2` here is **expressiveness with competitive cost**: the term → list map
+went from O(n²)-and-impractical to O(n) and within ~10% of Go, paying only the arena's
+already-documented growth penalty vs C.
+
 ## Reproduce
 
     cc -O2 -o /tmp/peakrss bench/peakrss.c
@@ -71,3 +115,8 @@ bump allocator's speed offsets the extra copying in growth, where it equals Go.
       cc -O2 -o /tmp/c bench/invindex/$v.c 2>/dev/null && /tmp/peakrss /tmp/c
     done
     ( cd bench/invindex && go build -o /tmp/g invindex.go ) && /tmp/peakrss /tmp/g
+
+    # map-native form (#2):
+    ./hierc bench/invindex/invindex_map.hi -o /tmp/h && /tmp/peakrss /tmp/h
+    cc -O2 -o /tmp/c bench/invindex/invindex_map.c && /tmp/peakrss /tmp/c
+    ( cd bench/invindex && go build -o /tmp/g invindex_map.go ) && /tmp/peakrss /tmp/g
