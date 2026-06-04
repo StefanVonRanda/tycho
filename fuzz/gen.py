@@ -249,7 +249,17 @@ class Gen:
             kinds += ["foreach", "foreach"]
         if map_vars:
             kinds += ["map_accum"]
+        res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
+        if res_vars:
+            kinds += ["reserve"]
         k = self.r.choice(kinds)
+
+        if k == "reserve":             # reserve(arr, n): capacity hint, behavior-neutral.
+            # Reserving below/above the current length must not change contents,
+            # length, or the checksum -- the differential + ASan/LSan + vscheck
+            # catch any miscompile (bad copy on regrow, recycle corruption).
+            self.emit(ind, "reserve(" + self.r.choice(res_vars) + ", " + str(self.r.randint(0, 9)) + ")")
+            return
 
         if k == "compound":            # x op= e on a var / array element / struct field
             op = self.r.choice(["+=", "-=", "&=", "|=", "^="])
