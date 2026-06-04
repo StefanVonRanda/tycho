@@ -66,13 +66,25 @@ static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); 
 static HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
-    if (g_block_pool && g_block_pool->cap >= cap) {  /* reuse a pooled block (uniform sizes hit here) */
+    if (g_block_pool && g_block_pool->cap >= cap) {  /* fast path: head fits (uniform sizes) */
         HBlock *b = g_block_pool;
         g_block_pool = b->next;
         b->off = 0;
         b->next = NULL;
         return b;
     }
+    /* head too small for an over-sized request (e.g. a geometrically grown array
+     * buffer > blocksz): scan the pool for a block that fits rather than malloc a
+     * fresh one and leave the suitable larger block buried -- otherwise variable
+     * large blocks never get reused and the pool grows pass over pass. */
+    for (HBlock **link = &g_block_pool; *link; link = &(*link)->next)
+        if ((*link)->cap >= cap) {
+            HBlock *b = *link;
+            *link = b->next;
+            b->off = 0;
+            b->next = NULL;
+            return b;
+        }
     HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
     if (!b) hier_oom();
     b->cap = cap;

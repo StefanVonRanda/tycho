@@ -3626,7 +3626,7 @@ fn preamble() -> string:
     out = out + "typedef struct FreeNode { struct FreeNode* next; size_t size; } FreeNode;\n"
     out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* freelist; int nfree; } Arena;\n"
     out = out + "static ABlk* g_pool = 0;\n"
-    out = out + "static ABlk* blk_get(size_t cap) { if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; return b; }\n"
+    out = out + "static ABlk* blk_get(size_t cap) { if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } for (ABlk** link = &g_pool; *link; link = &(*link)->next) if ((*link)->cap >= cap) { ABlk* b = *link; *link = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; return b; }\n"
     out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
     out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; a.freelist = 0; a.nfree = 0; return a; }\n"
     out = out + "static void arena_recycle(Arena* a, void* p, size_t n) { if (!a || !p || n < sizeof(FreeNode) || a->nfree >= 32) return; FreeNode* fn = (FreeNode*)p; fn->size = n; fn->next = a->freelist; a->freelist = fn; a->nfree++; }\n"

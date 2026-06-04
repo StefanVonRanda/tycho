@@ -28,7 +28,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | tree-rewrite      |  7 MB/109 ms |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |     7/185 ms |
 | array-pipeline    |  6 MB/47 ms²  |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |    17/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   1 MB/3 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |
-| json-parse (real) | 96 MB/1118 ms | 91 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
+| json-parse (real) | 67 MB/1118 ms⁴ | 67 MB/1315 ms¹ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 | iter-transform³   | 4 MB/1285 ms | 6 MB/358 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
@@ -45,6 +45,17 @@ sizeof(active-variant)` instead of the union max), so a small `JNum`/`JBool`
 node is 16 B not 56 B: hier 129 → 96 MB, hierc0 120 → 91 MB, time and checksum
 unchanged. Safe (reads dispatch on `tag`; all copies are field-wise per active
 variant — never a blanket `*d = *s` over the union), unlike pointer-tagging.
+
+⁴ json-parse was the last memory gap: even after compact nodes, Hier sat at
+~1.66× C (96 MB). The single-tree cost is only ~1.14× C; the rest was a
+~1 MB/pass growth across the 30 passes. The loop-scratch arena pools its blocks
+for reuse, but `block_get` only checked the pool *head*, so the variable >64 KB
+blocks from geometrically grown array buffers were never reused — each pass
+malloc'd fresh ones and the pool grew. Fixing `block_get` to scan the pool for a
+fitting block on a head-miss (the O(1) uniform fast-path unchanged) closed it to
+**1.15× C and flat across passes** (96 → 67 MB), with zero change to the other
+five workloads. In BOTH runtimes; make test 84/0 + fixpoint B≡C + fuzz green.
+See the scaling study at the end.
 
 ² array-pipeline `hierc` was **132 ms** until **bounds-check elision**: inside
 `for i in range(len(A)):` the access `A[i]` is provably in `[0, len(A))` — the C
@@ -332,25 +343,27 @@ stdin, Koka (UTF-8 strings, no stdin slurp) reads it as a file-path arg.
 
 | language                | peak RSS | wall time |
 | ----------------------- | -------: | --------: |
-| **Hier** (arena)        | **96 MB** | **1118 ms** |
+| **Hier** (arena)        | **67 MB** | **1118 ms** |
 | C (malloc/free)         |    58 MB |   1332 ms |
 | Go (GC)                 |   108 MB |   1423 ms |
 | Rust (Box/RAII)         |    60 MB |   1627 ms |
 | Koka (Perceus, lists)   |   144 MB |   2490 ms |
 
 **On a real parser Hier is the FASTEST of all five — faster than hand-written
-`malloc`/`free` C.** It is the binary-trees result on a realistic, irregular
-workload: each pass builds ~550 000 heterogeneous nodes and discards them, and
-Hier bump-allocates them into the pass's arena and reclaims the whole thing with
-a single O(1) reset — paying none of C's ~550k `free`s, Rust's recursive `Drop`,
-Go's GC, or Koka's per-node refcount decrements. The cost is memory: Hier's peak
-(96 MB) is second-highest, because the entire tree lives in the arena until the
-pass resets (C/Rust free incrementally). The node cell was halved by **compact
-nodes** — each enum cell is now sized to its *active* variant (`offsetof(E, u) +
-sizeof(variant)`), so a `JNum`/`JBool` leaf is 16 B not the 56 B union max
-(129 → 96 MB). The model's shape holds — *fastest time, heaviest memory* — the
-same no-per-object-reclamation tradeoff, now on a parser rather than a
-microbenchmark.
+`malloc`/`free` C — and within 1.15× of C on memory.** It is the binary-trees
+result on a realistic, irregular workload: each pass builds ~550 000
+heterogeneous nodes and discards them, and Hier bump-allocates them into the
+pass's arena and reclaims the whole thing with a single O(1) reset — paying none
+of C's ~550k `free`s, Rust's recursive `Drop`, Go's GC, or Koka's per-node
+refcount decrements. The node cell was halved by **compact nodes** — each enum
+cell is sized to its *active* variant (`offsetof(E, u) + sizeof(variant)`), so a
+`JNum`/`JBool` leaf is 16 B not the 56 B union max (129 → 96 MB). The last gap —
+a ~1 MB/pass growth from the block pool not reusing variable >64 KB blocks — was
+closed by a pool-scan in `block_get` (footnote ⁴), taking Hier from 96 → 67 MB,
+**1.66× → 1.15× C, flat across passes**. The shape now reads *fastest time, and
+memory just behind C/Rust (67 vs 58/60 MB) and well ahead of Go's GC (108) and
+Koka's RC (144)* — the no-per-object-reclamation tradeoff is down to a thin
+constant factor.
 
 ### This workload drove a real compiler fix (the point of testing at scale)
 
@@ -528,15 +541,23 @@ count N (one generator feeds all five parsers, so the input is identical).
 
 | N | doc | Hier | C | Rust | Go | Koka |
 |--:|----:|-----:|--:|-----:|---:|-----:|
-| 50k  | 4 MB  | 96 MB / 1346 ms  | 58 MB / 1324 ms  | 60 MB / 1602 ms  | 104 MB / 1463 ms | 145 MB / 2461 ms |
-| 100k | 8 MB  | 192 MB / 2750 ms | 116 MB / 2731 ms | 118 MB / 3462 ms | 218 MB / 2819 ms | 290 MB / 5115 ms |
-| 200k | 17 MB | 385 MB / 5497 ms | 231 MB / 5582 ms | 235 MB / 7106 ms | 426 MB / 5568 ms | 607 MB / —       |
+| 50k  | 4 MB  | 67 MB / 1352 ms  | 58 MB / 1353 ms  | 60 MB / 1602 ms  | 104 MB / 1463 ms | 145 MB / 2461 ms |
+| 100k | 8 MB  | 134 MB / 2750 ms | 116 MB / 2731 ms | 118 MB / 3462 ms | 218 MB / 2819 ms | 290 MB / 5115 ms |
+| 200k | 17 MB | 269 MB / 5497 ms | 231 MB / 5582 ms | 235 MB / 7106 ms | 426 MB / 5568 ms | 607 MB / —       |
 
 Everything scales **linearly** and the ratios are **stable**: Hier is a constant
-~1.66× C's memory at every size (the per-node tagged-cell + arena overhead is a
-fixed factor, not a growing one), **matches hand-written C on wall-time**, and
+~1.15× C's memory at every size, **matches hand-written C on wall-time**, and
 beats Go's GC and Koka's RC on both axes at every size. (Koka's 200k time is a
 measurement glitch.)
+
+*(Memory closing: an earlier version measured Hier at ~1.66× C here — 96/192/385
+MB. Diagnosis showed the single-tree cost was only ~1.14× C; the rest was a
+~1 MB/pass growth across the 30 passes. The loop-scratch arena pools its blocks
+for reuse, but `block_get` only checked the pool head, so the variable >64 KB
+blocks from geometrically grown array buffers never got reused and the pool grew
+pass over pass. Fixing `block_get` to scan the pool for a fitting block on a
+head-miss (the O(1) uniform fast-path is unchanged) dropped this to the numbers
+above — 1.66×→1.15× — with zero change to the other five workloads.)*
 
 **Conclusion.** The implicit-arena model holds at scale on both axes:
 - where the workload is tree-shaped and alloc/free-heavy (binary-trees), the
