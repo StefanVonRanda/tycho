@@ -620,6 +620,21 @@ fixpoint.
       malloc/value-copy C — orthogonal to the fixpoint, as predicted). Optional
       next: namespace emitted user identifiers (`h_`) for robustness, and close
       the perf gap so a self-hosted compiler is fast.
+
+      **IDENTIFIER NAMESPACING (h_) DONE (commit 2c9633e).** hierc0 emitted user
+      variable/param/function names raw, so a valid Hier program whose identifier
+      collided with an emitted runtime helper (sc/hs/amem/i2s/scopy/hbox) or a C
+      keyword (default/case/static/union) broke under hierc0 (the C compiler handles
+      these via h_). hierc0 had only dodged it by manually renaming its own vars
+      (the scu workaround). Fixed with an `un(name)="h_"+name` helper applied at every
+      user-var/param/fn/match-binding/accumulator emit site (mirrors the C compiler's
+      h_ scheme); `main` carved out (C entry); generated temps (_scope/_fc/_ina_) stay
+      raw. Gated: fixpoint B≡C byte-identical (9308 lines), make bootstrap green incl.
+      the new collision regression compiler/tests/idents.hi, fuzz N=160 FAIL=0. STILL
+      RAW (a narrower, separate collision class — a user TYPE or FIELD named a C keyword
+      or a generated type like Arr_int): struct/enum **type names** (cty emits `Point`/
+      `Point*`, the C compiler uses S_/E_) and struct **fields** (EField emits `.field`,
+      the C compiler uses f_). The follow-on increment if that class matters.
       2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
          compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
          compiler's golden output across `tests/`+`examples/`.
