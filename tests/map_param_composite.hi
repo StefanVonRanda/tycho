@@ -1,0 +1,40 @@
+# Composite-valued maps as function PARAMETERS: [string: [int]] and [int: P].
+# Before, parse_type rejected a composite map value in a type
+# annotation (only [K: scalar] parsed), so such a map could not be passed to a
+# function -- you had to inline. A by-value map param is the caller's value, so a
+# map_set inside the callee must NOT mutate the caller's table (value semantics).
+struct P:
+    x: int
+    y: int
+
+fn sum_list(m: [string: [int]], term: string) -> int:
+    xs := map_get(m, term, []int)
+    s := 0
+    for i in range(len(xs)):
+        s += xs[i]
+    return s
+
+fn pt_x(m: [int: P], k: int) -> int:
+    return map_get(m, k, P(0, 0)).x
+
+fn grow(m: [string: [int]]) -> int:        # mutate the borrowed param: must not touch the caller
+    m = map_set(m, "zzz", [9, 9, 9])
+    return len(map_get(m, "zzz", []int))
+
+fn main():
+    idx := []string: [int]
+    push(idx["a"], 10)
+    push(idx["a"], 5)
+    push(idx["b"], 1)
+    print(str(sum_list(idx, "a")) + "," + str(sum_list(idx, "b")) + "," + str(sum_list(idx, "z")) + "\n")  # 15,1,0
+
+    pts := []int: P
+    pts[7].x = 3
+    pts[7].y = 4
+    print(str(pt_x(pts, 7)) + "," + str(pt_x(pts, 9)) + "\n")  # 3,0
+
+    # value semantics: grow() adds "zzz" to its own copy; the caller's idx is untouched
+    g := grow(idx)
+    print(str(g) + "," + str(len(keys(idx))) + "\n")  # 3,2   (idx still has only a,b)
+
+    print(str(sum_list(idx, "a")) + "\n")  # 15 (caller's idx unchanged by grow's map_set)

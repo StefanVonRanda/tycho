@@ -2225,7 +2225,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "split":
                 return "hi_split(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "map_set":
-                return mfam(type_of(args[0], names, types, dc, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_rhs(args[2], names, types, dc, with_owner(dc, ctx, "0")) + ")"
+                # value built in the map's arena (ctx.owner), NOT owner 0: _set's put deep-copies
+                # it into that same arena anyway, so an owner-0 (malloc) source is pure leak -- it's
+                # abandoned after the copy. ctx.owner is freed with the map; an escaping map re-copies
+                # its values (map_copy/cp_field) so this can't dangle. (in-place self-mapset already
+                # uses &_scope; this matches it for the param / non-self case.)
+                return mfam(type_of(args[0], names, types, dc, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_rhs(args[2], names, types, dc, ctx) + ")"
             if name == "map_get":
                 mt := type_of(args[0], names, types, dc, ctx)
                 g := mfam(mt) + "_get(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"

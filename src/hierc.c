@@ -768,9 +768,10 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
-            if ((elem == T_STRING || elem == T_INT) && (val == T_INT || val == T_FLOAT))
-                return map_of(elem, val);
-            die_at(t->line, "map keys must be string or int, values int or float");
+            Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
+            if (mt == T_VOID)
+                die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
+            return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_VOID || elem == T_BOOL)
