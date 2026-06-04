@@ -630,11 +630,16 @@ fixpoint.
       user-var/param/fn/match-binding/accumulator emit site (mirrors the C compiler's
       h_ scheme); `main` carved out (C entry); generated temps (_scope/_fc/_ina_) stay
       raw. Gated: fixpoint B≡C byte-identical (9308 lines), make bootstrap green incl.
-      the new collision regression compiler/tests/idents.hi, fuzz N=160 FAIL=0. STILL
-      RAW (a narrower, separate collision class — a user TYPE or FIELD named a C keyword
-      or a generated type like Arr_int): struct/enum **type names** (cty emits `Point`/
-      `Point*`, the C compiler uses S_/E_) and struct **fields** (EField emits `.field`,
-      the C compiler uses f_). The follow-on increment if that class matters.
+      the new collision regression compiler/tests/idents.hi, fuzz N=160 FAIL=0.
+      **NAMESPACING COMPLETE (commits e3bfec6 fields, 8ee9844 types):** struct FIELDS now
+      f_ (uf()) and struct/enum TYPE names now S_/E_ (ust/uet, with tcopy/teq dispatching
+      copy/eq call sites) — at cty, typedefs/fwd-decls, copy/eq names+sigs+calls, ctors,
+      enum node/mk_/singletons, soa gather+push. Enum variant union members stay raw
+      (matches the C compiler's same limitation). hierc0 now matches the C compiler's full
+      h_/f_/S_/E_ scheme; any valid Hier program self-hosts regardless of name collisions.
+      idents.hi extended (struct `register` w/ fields static/volatile, enum `goto` — all C
+      keywords). All gated: fixpoint B≡C (9343 lines) + B matches the C compiler on 62
+      tests/examples + bootstrap + fuzz.
       2. **Confirm hierc0 self-compiles and is differentially correct:** hierc0
          compiles `hierc0.hi` → C → `cc` → exe **A**; verify A reproduces the C
          compiler's golden output across `tests/`+`examples/`.
