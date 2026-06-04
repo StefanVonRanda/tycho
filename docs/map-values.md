@@ -57,6 +57,47 @@ map boundary must be deep-copied into the right arena, or it dangles:
    to generate string/struct-valued maps (the value-semantics oracle catches a
    bad deep-copy that the differential alone can't).
 
+## Step 1 DONE (commit 43dc86e)
+
+hierc interning scaffolding landed dormant: `T_MAPC_BASE 32768`, `g_maptypes[]`,
+`mapc_of` (marked `__attribute__((unused))` until step 3 removes it), and IS_MAPC
+in `is_map`/`map_key`/`map_val`/`c_type` (→ `HierMapC%d`)/`type_name` (→ `[K: V]`).
+`map_of` still returns T_VOID for non-int/float values (dormant).
+
+## Step 2 map (traced, ready to execute) — STRING KEYS ONLY first
+
+Scope step 2/3 to `[string: V]` (arbitrary V); `[int: V]` is a SEPARATE scheme
+(int maps use an occupancy array `occ[]`, not the NULL/tombstone sentinel — defer).
+
+Emit a `HierMapC<id>` runtime by parameterizing `runtime/hier_rt.c`'s `HierMapSI`
+(lines 725-847: struct + with_cap/find/slot/put/del/copy/set/del_pure/get/has/keys)
+over the value type. Only the VALUE changes (keys stay `char**`, FNV, strcmp,
+`hier_str_copy`); replace `long vals`/`long v` with `c_type(V)` and:
+- `put`: `m->vals[s] = <copy_into(V, "a", "v")>` (deep-copy the value into the map
+  arena — for V=string `hier_str_copy`, V=struct the struct copy, etc.).
+- `copy`: already deep-copies via put, so values re-home correctly.
+- `get`: returns the stored value BY VALUE (a borrow into the map arena); the
+  CALLER's codegen `copy_into`s it at the bind site, same as any heap return.
+
+Emission is multi-pass (mirror the composite-array passes): typedef pass near
+hierc.c:4451, forward-decls near 4544, bodies near 4595 — add a `g_maptypes` loop
+to each. Add an `IS_MAPC` case to `copy_into` (hierc.c:2960) → `hier_map_C%d_copy`.
+
+## Step 3 map (the UAF-prone core)
+
+- Flip `map_of`: `(string key, V not int/float)` → `mapc_of(T_STRING, V)`;
+  `(int key, V not int/float)` → still T_VOID (deferred). Drop mapc_of's `unused`.
+- resolve `map_get/set/has/del` already use `map_key`/`map_val` — they generalize
+  for free EXCEPT the codegen, which dispatches on `map_fn(t)` (only si/sf/ii/if).
+  Add an IS_MAPC branch in each map-builtin codegen emitting `hier_map_C<id>_*`.
+- `map_set(m,k,v)` value arg: `copy_into(V, mapowner, v)` before put.
+- `map_get(m,k,dflt)`: emits `hier_map_C<id>_get(m,k,dflt)`; the RESULT is a borrow
+  into m's arena → the bind/use site must `copy_into` it (verify this is the
+  default path for a heap call-result; if not, force it). The `dflt` arg is also
+  heap → `copy_into` it into the result owner. THIS is the lifetime seam: test
+  `v := map_get(m,"x",d); m = map_set(m,"x",other); use(v)` stays correct under
+  LSan (v must be an independent copy, not aliasing m's mutated slot).
+
 ## Decisions to keep
 
 - Keep the 4 hardcoded int/float maps as-is (byte-identical, zero churn); composite
