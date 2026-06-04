@@ -88,10 +88,32 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
     elif c == 102 and i + 1 < n and src[i + 1] == 34:   # f"..." interpolated string (102='f', 34='"')
         start := i + 2
         i = i + 2
-        for i < n and src[i] != 34:
-            if src[i] == 92:                     # backslash escapes the next char
+        depth := 0                               # brace depth inside a `{...}` hole (0 in the literal part)
+        for i < n and (src[i] != 34 or depth > 0):
+            ch := src[i]
+            if ch == 92:                         # backslash escapes the next char
+                i = i + 2
+            elif depth == 0 and ch == 123 and i + 1 < n and src[i + 1] == 123:   # {{ literal brace
+                i = i + 2
+            elif depth == 0 and ch == 125 and i + 1 < n and src[i + 1] == 125:   # }} literal brace
+                i = i + 2
+            elif ch == 123:                      # { opens / nests a hole
+                depth = depth + 1
                 i = i + 1
-            i = i + 1
+            elif depth > 0 and ch == 125:        # } closes a hole level
+                depth = depth - 1
+                i = i + 1
+            elif depth > 0 and ch == 34:         # nested string literal inside a hole: skip it whole
+                i = i + 1
+                for i < n and src[i] != 34:
+                    if src[i] == 92:
+                        i = i + 1
+                    i = i + 1
+                if i >= n:
+                    die("lex: unterminated string in f-string hole")
+                i = i + 1                         # consume closing quote
+            else:
+                i = i + 1
         if i >= n:
             die("lex: unterminated f-string")
         push(toks, Token(TFStr, substr(src, start, i)))
@@ -431,9 +453,28 @@ fn desugar_interp(s: string) -> Expr:
                 buf = ""
             i = i + 1
             estart := i
-            for i < n and s[i] != 125:
-                i = i + 1
-            if i >= n:
+            depth := 1                                         # balance nested braces; skip nested strings
+            for i < n and depth > 0:
+                ch := s[i]
+                if ch == 34:                                   # string literal in the hole: '}' inside it is not a hole end
+                    i = i + 1
+                    for i < n and s[i] != 34:
+                        if s[i] == 92:
+                            i = i + 1
+                        i = i + 1
+                    if i >= n:
+                        die("interp: unterminated string in an f-string hole")
+                    i = i + 1
+                elif ch == 123:
+                    depth = depth + 1
+                    i = i + 1
+                elif ch == 125:
+                    depth = depth - 1
+                    if depth > 0:
+                        i = i + 1
+                else:
+                    i = i + 1
+            if depth > 0:
                 die("interp: unterminated { in an f-string")
             esub := substr(s, estart, i)
             i = i + 1                                          # consume }

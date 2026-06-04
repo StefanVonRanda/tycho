@@ -6,6 +6,9 @@ struct P:
     x: int
     y: int
 
+fn wrap(s: string) -> string:
+    return "[" + s + "]"
+
 fn main():
     n := 5
     name := "Ada"
@@ -23,3 +26,12 @@ fn main():
     print("plain string with {braces} stays literal\n") # plain string with {braces} stays literal
     g := f"built={n}"                                   # f-string into a variable
     print(g + "!\n")                                    # built=5!
+
+    # nested string literal inside a hole (the inner " no longer ends the f-string)
+    print(f"wrapped={wrap("hi")}\n")                    # wrapped=[hi]
+    print(f"sep={wrap(", ")}\n")                        # sep=[, ]
+    print(f"both {wrap("a")} and {wrap("b")}\n")        # both [a] and [b]
+    # a hole holding a string with braces in it (braces inside a nested string are literal)
+    print(f"braces={wrap("{x}")}\n")                    # braces=[{x}]
+    # nested f-string inside a hole (brace balancing finds the right closing })
+    print(f"outer({f"inner={n}"})\n")                   # outer(inner=5)

@@ -206,8 +206,45 @@ static TokVec lex(const char *src) {
                  * the generated C string literal. */
                 char buf[4096];
                 int bn = 0;
-                while (*p && *p != '"') {
+                int depth = 0;             /* brace depth inside an f-string `{...}` hole (0 in the literal part) */
+                while (*p && (*p != '"' || depth > 0)) {
                     if (*p == '\n') die_at(line, "unterminated string literal");
+                    if (interp && depth == 0 && p[0] == '{' && p[1] == '{') {   /* literal {{ — stays out of a hole */
+                        if (bn + 2 >= (int)sizeof buf) die_at(line, "string too long");
+                        buf[bn++] = *p++; buf[bn++] = *p++; continue;
+                    }
+                    if (interp && depth == 0 && p[0] == '}' && p[1] == '}') {   /* literal }} */
+                        if (bn + 2 >= (int)sizeof buf) die_at(line, "string too long");
+                        buf[bn++] = *p++; buf[bn++] = *p++; continue;
+                    }
+                    if (interp && *p == '{') {            /* open / nest a hole */
+                        if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
+                        depth++; buf[bn++] = *p++; continue;
+                    }
+                    if (interp && depth > 0 && *p == '}') {  /* close a hole level */
+                        if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
+                        depth--; buf[bn++] = *p++; continue;
+                    }
+                    if (interp && depth > 0 && *p == '"') {   /* nested string literal inside a hole: copy verbatim */
+                        if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
+                        buf[bn++] = *p++;                     /* opening quote */
+                        while (*p && *p != '"') {
+                            if (*p == '\n') die_at(line, "unterminated string literal");
+                            if (*p == '\\') {
+                                if (bn + 2 >= (int)sizeof buf) die_at(line, "string too long");
+                                buf[bn++] = *p++;
+                                if (!*p) die_at(line, "unterminated string literal");
+                                buf[bn++] = *p++;             /* hole code is re-lexed later — don't validate escapes here */
+                            } else {
+                                if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
+                                buf[bn++] = *p++;
+                            }
+                        }
+                        if (*p != '"') die_at(line, "unterminated string literal");
+                        if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
+                        buf[bn++] = *p++;                     /* closing quote */
+                        continue;
+                    }
                     if (*p == '\\') {
                         if (bn + 2 >= (int)sizeof buf) die_at(line, "string too long");
                         buf[bn++] = *p++;
@@ -852,8 +889,19 @@ static Expr *desugar_interp(const char *s, int line) {
         if (s[i] == '{') {
             if (bn) { Expr *lit = new_expr(E_STR, line); lit->sval = xstrndup(buf, bn); acc = interp_join(acc, lit, line); bn = 0; }
             i++; size_t start = i;
-            while (s[i] && s[i] != '}') i++;
-            if (!s[i]) die_at(line, "unterminated '{' in an interpolated string");
+            int depth = 1;                       /* balance nested braces; skip nested string literals */
+            while (s[i] && depth > 0) {
+                if (s[i] == '"') {               /* a string literal inside the hole — '}' within it is not a hole end */
+                    i++;
+                    while (s[i] && s[i] != '"') { if (s[i] == '\\' && s[i+1]) i++; i++; }
+                    if (!s[i]) die_at(line, "unterminated string in an interpolated hole");
+                    i++; continue;
+                }
+                if (s[i] == '{') depth++;
+                else if (s[i] == '}') { depth--; if (depth == 0) break; }
+                i++;
+            }
+            if (depth != 0) die_at(line, "unterminated '{' in an interpolated string");
             if (i == start) die_at(line, "empty '{}' in an interpolated string");
             char *sub = xstrndup(s + start, i - start); i++;     /* consume '}' */
             TokVec tv = lex(sub); Parser sp = { tv.v, 0 }; Expr *ex = parse_expr(&sp);

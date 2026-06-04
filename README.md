@@ -210,7 +210,9 @@ newtypes (distinct, zero-cost aliases of `int`/`float`).
 **String interpolation:** an `f"..."` string interpolates `{expr}` holes —
 `f"point=({p.x},{p.y}) sum={a + b}"` — desugaring to `"point=(" + str(p.x) + ...`.
 `{{`/`}}` are literal braces; a plain `"..."` is never interpolated (so literal
-braces need no escaping there). A hole must be an `int`, `float`, or `string`.
+braces need no escaping there). A hole may hold any expression — including one
+with its own string literals (`f"{wrap(", ")}"`) or a nested f-string
+(`f"({f"x={n}"})"`) — and must evaluate to an `int`, `float`, or `string`.
 
 ### Structs
 
