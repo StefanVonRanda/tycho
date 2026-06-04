@@ -21,7 +21,10 @@ set -eu
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 H="$HERE/hierc0.hi"
 OUT="$1"
-RT_FNS="preamble gen_strlib gen_mhash gen_map_type gen_map_fns"
+# gen_map_type/gen_map_fns moved to MAIN: they are now type-aware (use cty/
+# cp_field/mangle, all in main) like gen_arr_fns, so they can't sit in the lower
+# rt layer. main() calls them, so the cut stays a clean one-way main -> rt.
+RT_FNS="preamble gen_strlib gen_mhash"
 
 mkdir -p "$OUT/rt"
 
@@ -44,7 +47,7 @@ BEGIN { n = split(rt, a, " "); for (i = 1; i <= n; i++) isrt[a[i]] = 1; cur = "M
     echo
     # Qualify the cross-package emitter calls (their definitions now live in rt).
     sed -n 's/^MAIN\t//p' "$OUT/.tagged" \
-        | sed 's/\(preamble\|gen_strlib\|gen_mhash\|gen_map_type\|gen_map_fns\)(/rt.\1(/g'
+        | sed 's/\(preamble\|gen_strlib\|gen_mhash\)(/rt.\1(/g'
 } > "$OUT/main.hi"
 
 rm -f "$OUT/.tagged"
