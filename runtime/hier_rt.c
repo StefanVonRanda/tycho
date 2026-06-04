@@ -461,6 +461,18 @@ HierArrInt hier_arr_int_with_cap(Arena *a, long cap) {
     return r;
 }
 
+/* Preallocate to exact capacity `n` (no-op if already that big). Lets a caller
+ * that knows the final size build a list with ZERO geometric growth -- no
+ * abandoned buffers, no 2x slack -- the arena-friendly way to build a long-lived,
+ * many-list structure (see bench/invindex). */
+void hier_arr_int_reserve(Arena *a, HierArrInt *xs, long n) {
+    if (n <= xs->cap) return;
+    long *nd = (long *)arena_alloc(a, (size_t)n * sizeof(long));
+    if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(long));
+    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(long));
+    xs->data = nd; xs->cap = n;
+}
+
 void hier_arr_int_push(Arena *a, HierArrInt *xs, long v) {
     if (xs->len == xs->cap) {
         long ncap = xs->cap ? xs->cap * 2 : 4;
@@ -518,6 +530,14 @@ HierArrFloat hier_arr_float_with_cap(Arena *a, long cap) {
     r.cap = cap;
     r.data = cap > 0 ? (double *)arena_alloc(a, (size_t)cap * sizeof(double)) : NULL;
     return r;
+}
+
+void hier_arr_float_reserve(Arena *a, HierArrFloat *xs, long n) {
+    if (n <= xs->cap) return;
+    double *nd = (double *)arena_alloc(a, (size_t)n * sizeof(double));
+    if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(double));
+    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(double));
+    xs->data = nd; xs->cap = n;
 }
 
 void hier_arr_float_push(Arena *a, HierArrFloat *xs, double v) {
@@ -578,6 +598,14 @@ HierArrStr hier_arr_str_with_cap(Arena *a, long cap) {
     r.cap = cap;
     r.data = cap > 0 ? (char **)arena_alloc(a, (size_t)cap * sizeof(char *)) : NULL;
     return r;
+}
+
+void hier_arr_str_reserve(Arena *a, HierArrStr *xs, long n) {
+    if (n <= xs->cap) return;
+    char **nd = (char **)arena_alloc(a, (size_t)n * sizeof(char *));
+    if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
+    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(char *));
+    xs->data = nd; xs->cap = n;
 }
 
 void hier_arr_str_push(Arena *a, HierArrStr *xs, const char *v) {

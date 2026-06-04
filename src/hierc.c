@@ -2089,6 +2089,23 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
             }
+            if (!strcmp(e->sval, "reserve")) {
+                if (e->nargs != 2) die_at(e->line, "reserve(arr, n) takes two arguments");
+                Expr *root = e->args[0];
+                while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+                if (root->kind != E_IDENT)
+                    die_at(e->line, "reserve's first argument must be an array variable or field");
+                Type arrt = resolve_expr(e->args[0]);
+                if (!is_array(arrt))
+                    die_at(e->line, "reserve's first argument must be an array");
+                if (!is_lvalue(e->args[0]))
+                    die_at(e->line, "cannot reserve through this expression");
+                if (!vars_can_mutate(root->sval))
+                    die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only)", root->sval);
+                if (resolve_exp(e->args[1], T_INT) != T_INT)
+                    die_at(e->line, "reserve's capacity must be int");
+                return e->type = T_VOID;
+            }
             Sig *s = sig_find(e->sval);
             if (!s) die_at(e->line, "unknown procedure '%s'", e->sval);
             if (e->nargs != s->nparams)
@@ -3131,6 +3148,14 @@ static char *gen_call(Expr *e, const char *arena) {
             return sfmt("Soa%d_push(%s, &(%s), %s)", SOA_ID(e->args[0]->type), owner, arr, v);
         /* push has the same (owner, &arr, v) shape for every element type */
         return sfmt("hier_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
+    }
+    if (!strcmp(e->sval, "reserve")) {           /* preallocate exact capacity (same shape as push) */
+        Expr *root = e->args[0];
+        while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+        const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
+        char *arr = gen_lvalue(e->args[0], arena);
+        char *n = gen_expr(e->args[1], arena);
+        return sfmt("hier_arr_%s_reserve(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, n);
     }
     if (!strcmp(e->sval, "split")) {
         char *s   = gen_expr(e->args[0], arena);
