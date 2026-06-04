@@ -2101,6 +2101,13 @@ fn in_loop(ctx: Ctx) -> Ctx:
 fn un(n: string) -> string:
     return "h_" + n
 
+# Emitted C name for a user STRUCT FIELD (member). f_ prefix so a field named a C
+# keyword (default/case/...) is legal. Mirrors the C compiler. Positional tuple/soa
+# fields (.f0/.f1) and enum variant union members are NOT routed through this (the
+# latter matches the C compiler, which also leaves them raw).
+fn uf(n: string) -> string:
+    return "f_" + n
+
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -2125,7 +2132,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return sf
             if is_tuple(type_of(base, names, types, dc, ctx)):   # tuple index t.0 -> t.f0
                 return gen_expr(base, names, types, dc, ctx) + ".f" + fld
-            return gen_expr(base, names, types, dc, ctx) + "." + fld
+            return gen_expr(base, names, types, dc, ctx) + "." + uf(fld)
         EIndex(base, idx):
             bt := type_of(base, names, types, dc, ctx)
             if bt == "str":                                 # s[i] -> the byte as an int, bounds-checked via the length header
@@ -3415,7 +3422,7 @@ fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
     out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
     i := 0
     for i < len(sd.fields):
-        out = out + "    " + cty(dc, ctx, sd.fields[i].ty) + sd.fields[i].name + ";\n"
+        out = out + "    " + cty(dc, ctx, sd.fields[i].ty) + uf(sd.fields[i].name) + ";\n"
         i = i + 1
     return out + "};\n"
 
@@ -3466,17 +3473,17 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     for i < len(sd.fields):
         f := sd.fields[i]
         if f.ty == "str":
-            out = out + "    r." + f.name + " = sc(ar, s." + f.name + ", \"\");\n"
+            out = out + "    r." + uf(f.name) + " = sc(ar, s." + uf(f.name) + ", \"\");\n"
         elif is_array(f.ty):
-            out = out + "    r." + f.name + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + f.name + ");\n"
+            out = out + "    r." + uf(f.name) + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_map(f.ty):
-            out = out + "    r." + f.name + " = " + mfam(f.ty) + "_copy(ar, s." + f.name + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + mfam(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_soa(f.ty):
-            out = out + "    r." + f.name + " = Soa_" + soa_struct(f.ty) + "_copy(s." + f.name + ");\n"
+            out = out + "    r." + uf(f.name) + " = Soa_" + soa_struct(f.ty) + "_copy(s." + uf(f.name) + ");\n"
         elif is_enum(dc, ctx, f.ty):                  # deep-copy the enum node tree into `ar`
-            out = out + "    r." + f.name + " = " + f.ty + "_copy(ar, s." + f.name + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + f.ty + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_struct(dc, ctx, f.ty) and struct_is_heap(dc, ctx, f.ty):
-            out = out + "    r." + f.name + " = " + f.ty + "_copy(ar, s." + f.name + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + f.ty + "_copy(ar, s." + uf(f.name) + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
@@ -3493,7 +3500,7 @@ fn gen_struct_eq(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
             if j > 0:
                 out = out + " && "
             f := sd.fields[j]
-            out = out + eq_field(dc, ctx, f.ty, "a." + f.name, "b." + f.name)
+            out = out + eq_field(dc, ctx, f.ty, "a." + uf(f.name), "b." + uf(f.name))
             j = j + 1
     return out + "; }\n"
 
@@ -3815,7 +3822,7 @@ fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
             out = out + "    }\n"
             i = 0
             for i < len(flds):
-                out = out + "    s->f" + str(i) + "[s->len] = v." + flds[i].name + ";\n"
+                out = out + "    s->f" + str(i) + "[s->len] = v." + uf(flds[i].name) + ";\n"
                 i = i + 1
             out = out + "    s->len = s->len + 1;\n}\n"
             # copy: deep-copy each field buffer (value semantics on bind/pass/return)
