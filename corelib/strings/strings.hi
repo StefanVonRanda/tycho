@@ -1,0 +1,82 @@
+# corelib: string utilities. Import with `import "core:strings"`, use `strings.trim(s)`.
+# (split/find/substr/len/chr are builtins; these build on them.)
+package strings
+
+fn is_space(c: int) -> bool:                 # ASCII whitespace
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn to_upper(s: string) -> string:
+    r := ""
+    i := 0
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 97 and c <= 122:             # a-z -> A-Z
+            r = r + chr(c - 32)
+        else:
+            r = r + chr(c)
+    return r
+
+fn to_lower(s: string) -> string:
+    r := ""
+    i := 0
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 65 and c <= 90:              # A-Z -> a-z
+            r = r + chr(c + 32)
+        else:
+            r = r + chr(c)
+    return r
+
+fn starts_with(s: string, prefix: string) -> bool:
+    if len(prefix) > len(s):
+        return false
+    i := 0
+    for i in range(len(prefix)):
+        if s[i] != prefix[i]:
+            return false
+    return true
+
+fn ends_with(s: string, suffix: string) -> bool:
+    if len(suffix) > len(s):
+        return false
+    off := len(s) - len(suffix)
+    i := 0
+    for i in range(len(suffix)):
+        if s[off + i] != suffix[i]:
+            return false
+    return true
+
+fn contains(s: string, sub: string) -> bool:
+    return find(s, sub) >= 0
+
+fn repeat(s: string, n: int) -> string:
+    r := ""
+    i := 0
+    for i in range(n):
+        r = r + s
+    return r
+
+fn trim(s: string) -> string:                # strip leading/trailing ASCII whitespace
+    lo := 0
+    hi := len(s)
+    for lo < hi and is_space(s[lo]):
+        lo = lo + 1
+    for hi > lo and is_space(s[hi - 1]):
+        hi = hi - 1
+    return substr(s, lo, hi)
+
+fn parse_int(s: string) -> int:              # decimal int, optional leading '-'; stops at first non-digit
+    if len(s) == 0:
+        return 0
+    neg := false
+    i := 0
+    if s[0] == 45:                           # '-'
+        neg = true
+        i = 1
+    v := 0
+    for i < len(s) and s[i] >= 48 and s[i] <= 57:
+        v = v * 10 + (s[i] - 48)
+        i = i + 1
+    if neg:
+        return 0 - v
+    return v

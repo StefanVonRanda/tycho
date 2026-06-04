@@ -34,8 +34,15 @@ the language's minimalism, not a corelib limitation.
 
 - **`math`** — integer utilities: `abs`, `imin`, `imax`, `clamp(x, lo, hi)`, `sign`,
   `gcd`, `ipow(base, exp)` (exp ≥ 0). (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
+- **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
+  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`. (`split`/`find`/
+  `substr`/`len`/`chr` are builtins.)
 
-More to come (strings, arrays).
+More to come (arrays).
+
+> **f-string gotcha:** an interpolation hole `{…}` cannot contain a string literal — the
+> lexer stops the f-string at the inner `"`. Bind it to a variable first:
+> `p := f("x"); print(f"got {p}")`. (A brace/quote-aware f-string lexer would lift this.)
 
 ## Testing
 
