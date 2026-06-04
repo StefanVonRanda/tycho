@@ -2219,7 +2219,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "map_set":
                 return mfam(type_of(args[0], names, types, dc, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_rhs(args[2], names, types, dc, with_owner(dc, ctx, "0")) + ")"
             if name == "map_get":
-                return mfam(type_of(args[0], names, types, dc, ctx)) + "_get(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
+                mt := type_of(args[0], names, types, dc, ctx)
+                g := mfam(mt) + "_get(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
+                return cp_field(dc, ctx, map_val(mt), ctx.owner, g)   # get returns a borrow into the map (or default) -> deep-copy into the caller's arena (passthrough for scalar values)
             if name == "keys":
                 return mfam(type_of(args[0], names, types, dc, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "map_del":
