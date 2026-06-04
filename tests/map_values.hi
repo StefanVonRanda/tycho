@@ -61,3 +61,12 @@ fn main():
     # literal with entries
     lit := ["x": "ex", "y": "why"]
     print(map_get(lit, "x", "?") + map_get(lit, "y", "?") + "\n")  # exwhy
+
+    # == on composite-valued maps (deep value equality)
+    e1 := ["k": "v", "j": "w"]
+    e2 := ["j": "w", "k": "v"]                 # same entries, different insertion order
+    e3 := ["k": "v", "j": "DIFF"]
+    if e1 == e2:
+        print("eq-ok\n")
+    if not (e1 == e3):
+        print("neq-ok\n")

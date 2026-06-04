@@ -3884,9 +3884,9 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     f := "map_" + k + "_" + mangle(v)
     s := "m" + substr(k, 0, 1) + "_" + mangle(v)
     vcopy := cp_field(dc, ctx, v, "ar", "val")   # deep-copy the value into ar (passthrough for scalars)
-    vcmp := ""                                   # value compare only for scalar v (struct/array != is a C error; == is dead)
+    vcmp := " || !(" + eq_field(dc, ctx, v, "b.vals[t]", "a.vals[i]") + ")"   # heap value: deep equality
     if v == "int" or v == "float" or v == "char":
-        vcmp = " || b.vals[t] != a.vals[i]"
+        vcmp = " || b.vals[t] != a.vals[i]"      # scalar: byte-identical to before
     if k == "int":
         out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(long) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
         out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"

@@ -3074,7 +3074,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (t == T_ARRAY_INT)    return sfmt("hier_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("hier_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("hier_arr_str_eq(%s, %s)", a, b);
-    if (IS_MAPC(t))          die_at(0, "== on a [string: <non-numeric>] map is not supported yet");
+    if (IS_MAPC(t))          return sfmt("hier_mapc%d_eq(%s, %s)", MAPC_ID(t), a, b);
     if (is_map(t))           return sfmt("hier_map_%s_eq(%s, %s)", map_fn(t), a, b);
     if (IS_ARRC(t))          return sfmt("hier_arr_C%d_eq(%s, %s)", ARRC_ID(t), a, b);
     if (IS_ENUM(t))          return sfmt("hier_eq_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, a, b);
@@ -4705,7 +4705,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static HierArrInt hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
                 "    HierArrInt r = hier_arr_int_with_cap(a, m.len);\n"
                 "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_int_push(a, &r, m.keys[i]);\n"
-                "    return r;\n}\n\n", i, i);
+                "    return r;\n}\n", i, i);
+            fprintf(o,
+                "static int hier_mapc%d_eq(HierMapC%d x, HierMapC%d y) {\n"
+                "    if (x.len != y.len) return 0;\n"
+                "    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) { long s = hier_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
+                "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
             continue;
         }
         fprintf(o,
@@ -4758,7 +4763,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "static HierArrStr hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
             "    HierArrStr r = hier_arr_str_with_cap(a, m.len);\n"
             "    for (long i = 0; i < m.cap; i++) if (hier_map_live(m.keys[i])) hier_arr_str_push(a, &r, m.keys[i]);\n"
-            "    return r;\n}\n\n", i, i);
+            "    return r;\n}\n", i, i);
+        fprintf(o,
+            "static int hier_mapc%d_eq(HierMapC%d x, HierMapC%d y) {\n"
+            "    if (x.len != y.len) return 0;\n"
+            "    for (long i = 0; i < x.cap; i++) if (hier_map_live(x.keys[i])) { long s = hier_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
+            "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
     }
     /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
      * field (named f<idx>) plus a shared len/cap. push grows every buffer in the
