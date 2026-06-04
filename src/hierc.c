@@ -535,7 +535,8 @@ static Type map_of(Type k, Type v) {
     if (k == T_STRING && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
     if (k == T_INT    && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
     if (k == T_STRING) return mapc_of(T_STRING, v);   /* [string: V] composite, any value type */
-    return T_VOID;   /* int-keyed composite-value maps deferred (separate occupancy scheme) */
+    if (k == T_INT)    return mapc_of(T_INT, v);      /* [int: V] composite (occupancy-array scheme) */
+    return T_VOID;
 }
 
 /* A "heap" type owns arena-allocated bytes outside its own value word(s):
@@ -4463,9 +4464,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
-    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map typedefs [string: V] */
-        fprintf(o, "typedef struct { char **keys; %s*vals; long len; long cap; long used; } HierMapC%d;\n",
-                c_type(g_maptypes[i].val), i);
+    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map typedefs [K: V] */
+        if (g_maptypes[i].key == T_INT)             /* int keys: occupancy array (0 is a real key) */
+            fprintf(o, "typedef struct { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; } HierMapC%d;\n",
+                    c_type(g_maptypes[i].val), i);
+        else
+            fprintf(o, "typedef struct { char **keys; %s*vals; long len; long cap; long used; } HierMapC%d;\n",
+                    c_type(g_maptypes[i].val), i);
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
      * enough — this can precede struct bodies, letting a struct embed a soa by
@@ -4648,6 +4653,61 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nmaptypes; i++) {
         const char *ct = c_type(g_maptypes[i].val);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
+        if (g_maptypes[i].key == T_INT) {   /* int keys: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
+            fprintf(o,
+                "static HierMapC%d hier_mapc%d_with_cap(Arena *a, long cap) {\n"
+                "    HierMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+                "    m.cap = c; m.len = 0; m.used = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
+                "    m.keys = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
+                "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
+                "    m.occ = (unsigned char *)arena_alloc(a, (size_t)c);\n"
+                "    for (long i = 0; i < c; i++) m.occ[i] = 0; return m;\n}\n", i, i, i, ct, ct);
+            fprintf(o,
+                "static long hier_mapc%d_find(HierMapC%d m, long k) {\n"
+                "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(hier_ik_hash(k) & mask);\n"
+                "    while (m.occ[i] != 0) { if (m.occ[i] == 1 && m.keys[i] == k) return i; i = (long)((i + 1) & mask); }\n"
+                "    return -1;\n}\n", i, i);
+            fprintf(o,
+                "static long hier_mapc%d_slot(HierMapC%d m, long k) {\n"
+                "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(hier_ik_hash(k) & mask), tomb = -1;\n"
+                "    while (m.occ[i] != 0) { if (m.occ[i] == 2) { if (tomb < 0) tomb = i; } else if (m.keys[i] == k) return i; i = (long)((i + 1) & mask); }\n"
+                "    return tomb >= 0 ? tomb : i;\n}\n", i, i);
+            fprintf(o,
+                "static void hier_mapc%d_put(Arena *a, HierMapC%d *m, long k, %sv) {\n"
+                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        HierMapC%d n = hier_mapc%d_with_cap(a, nc);\n"
+                "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = hier_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
+                "        *m = n;\n    }\n"
+                "    long s = hier_mapc%d_slot(*m, k);\n"
+                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; }\n"
+                "    m->vals[s] = %s;\n}\n", i, i, ct, i, i, i, i, vcopy);
+            fprintf(o,
+                "static void hier_mapc%d_del(HierMapC%d *m, long k) {\n"
+                "    long s = hier_mapc%d_find(*m, k); if (s < 0) return; m->occ[s] = 2; m->len--;\n}\n", i, i, i);
+            fprintf(o,
+                "static HierMapC%d hier_mapc%d_copy(Arena *a, HierMapC%d src) {\n"
+                "    HierMapC%d r = hier_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
+                "    for (long i = 0; i < src.cap; i++) if (src.occ[i] == 1) hier_mapc%d_put(a, &r, src.keys[i], src.vals[i]);\n"
+                "    return r;\n}\n", i, i, i, i, i, i);
+            fprintf(o,
+                "static HierMapC%d hier_mapc%d_set(Arena *a, HierMapC%d m, long k, %sv) {\n"
+                "    HierMapC%d r = hier_mapc%d_copy(a, m); hier_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, ct, i, i, i);
+            fprintf(o,
+                "static HierMapC%d hier_mapc%d_del_pure(Arena *a, HierMapC%d m, long k) {\n"
+                "    HierMapC%d r = hier_mapc%d_copy(a, m); hier_mapc%d_del(&r, k); return r;\n}\n", i, i, i, i, i, i);
+            fprintf(o,
+                "static %shier_mapc%d_get(HierMapC%d m, long k, %sdflt) {\n"
+                "    long s = hier_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
+            fprintf(o,
+                "static int hier_mapc%d_has(HierMapC%d m, long k) { return hier_mapc%d_find(m, k) >= 0; }\n", i, i, i);
+            fprintf(o,
+                "static HierArrInt hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
+                "    HierArrInt r = hier_arr_int_with_cap(a, m.len);\n"
+                "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_int_push(a, &r, m.keys[i]);\n"
+                "    return r;\n}\n\n", i, i);
+            continue;
+        }
         fprintf(o,
             "static HierMapC%d hier_mapc%d_with_cap(Arena *a, long cap) {\n"
             "    HierMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
