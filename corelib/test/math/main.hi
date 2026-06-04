@@ -1,0 +1,13 @@
+# corelib test: exercises core:math; the C compiler and hierc0 must agree (corelib/run.sh).
+package main
+import "core:math"
+
+fn main():
+    acc := 0
+    acc = acc + math.abs(0 - 7) + math.abs(7)             # 14
+    acc = acc + math.imin(3, 9) + math.imax(3, 9)         # 12
+    acc = acc + math.clamp(15, 0, 10) + math.clamp(0 - 5, 0, 10) + math.clamp(5, 0, 10)   # 15
+    acc = acc + math.sign(0 - 4) + math.sign(4) + math.sign(0)   # 0
+    acc = acc + math.gcd(12, 18) + math.gcd(17, 5)        # 7
+    acc = acc + math.ipow(2, 10) + math.ipow(3, 0) + math.ipow(5, 3)   # 1150
+    print(f"corelib/math checksum={acc}\n")               # 1198

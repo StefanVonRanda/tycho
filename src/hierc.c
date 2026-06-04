@@ -1683,13 +1683,29 @@ static void parse_import_decl(Parser *ps) {
  * name (the path's last component); a plain `import "geom"` binds the name
  * itself. Unknown qualifiers fall through to `<qualifier>__` and fail loudly at
  * lookup if no such package was imported. */
+/* corelib collection root: an import path "core:strings" resolves to
+ * $HIER_CORELIB/strings (a library importable from any program, independent of the
+ * importer's location), and binds the name `strings`. Other paths stay relative to
+ * the importing package's directory. */
+static const char *pkg_basename(const char *p) {
+    if (!strncmp(p, "core:", 5)) p += 5;        /* "core:text/utf8" -> "utf8" */
+    const char *slash = strrchr(p, '/');
+    return slash ? slash + 1 : p;
+}
+static char *resolve_pkg_dir(const char *importer_dir, const char *path) {
+    if (!strncmp(path, "core:", 5)) {
+        const char *root = getenv("HIER_CORELIB");
+        if (!root) { fprintf(stderr, "hierc: import \"%s\" needs the HIER_CORELIB environment variable set to the corelib directory\n", path); exit(1); }
+        return sfmt("%s/%s", root, path + 5);
+    }
+    return sfmt("%s/%s", importer_dir, path);
+}
+
 static char *pkg_prefix_for(const char *qualifier) {
     const char *pkgname = qualifier;
     for (int i = 0; i < g_nimports; i++) {
         if (g_imports[i].alias && !strcmp(g_imports[i].alias, qualifier)) {
-            const char *p = g_imports[i].path;
-            const char *slash = strrchr(p, '/');
-            pkgname = slash ? slash + 1 : p;
+            pkgname = pkg_basename(g_imports[i].path);
             break;
         }
     }
@@ -1701,8 +1717,7 @@ static char *pkg_prefix_for(const char *qualifier) {
 static int is_imported_pkg(const char *name) {
     for (int i = 0; i < g_nimports; i++) {
         if (g_imports[i].alias && !strcmp(g_imports[i].alias, name)) return 1;
-        const char *p = g_imports[i].path, *slash = strrchr(p, '/');
-        if (!strcmp(slash ? slash + 1 : p, name)) return 1;
+        if (!strcmp(pkg_basename(g_imports[i].path), name)) return 1;
     }
     return 0;
 }
@@ -5165,9 +5180,8 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     /* load imported packages first (post-order; still on the active path => cycles caught) */
     for (int k = 0; k < n_imp; k++) {
         const char *path = imp_paths[k];
-        const char *slash = strrchr(path, '/');
-        const char *childname = slash ? slash + 1 : path;
-        char *childdir    = sfmt("%s/%s", dir, path);
+        const char *childname = pkg_basename(path);
+        char *childdir    = resolve_pkg_dir(dir, path);
         char *childprefix = sfmt("%s__", childname);
         merge_pkg(childdir, childname, childprefix, prog);
     }
@@ -5263,7 +5277,7 @@ static void bundle_pkg(const char *dir, int is_entry) {
         scan_imports(t.v, imp_paths, &n_imp, 256);
     }
     for (int k = 0; k < n_imp; k++)
-        bundle_pkg(sfmt("%s/%s", dir, imp_paths[k]), 0);   /* imported packages keep their names */
+        bundle_pkg(resolve_pkg_dir(dir, imp_paths[k]), 0);   /* core: -> $HIER_CORELIB; else relative */
     for (int i = 0; i < nf; i++) {
         if (is_entry) emit_entry_file(read_file(files[i]));   /* entry -> `package main` (prefix "") */
         else          fputs(read_file(files[i]), stdout);
