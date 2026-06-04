@@ -2958,6 +2958,7 @@ static int is_accum(const char *nm) {
  * the value word is already a complete copy — returned unchanged. */
 static char *copy_into(Type t, const char *arena, char *val) {
     if (IS_NEWTYPE(t)) t = nt_under(t);   /* re-home as its base (int/float: nothing to do) */
+    if (IS_MAPC(t)) return sfmt("hier_mapc%d_copy(%s, %s)", MAPC_ID(t), arena, val);
     switch (t) {
         case T_STRING:       return sfmt("hier_str_copy(%s, %s)", arena, val);
         case T_ARRAY_INT:    return sfmt("hier_arr_int_copy(%s, %s)", arena, val);
@@ -4450,6 +4451,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
+    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map typedefs [string: V] */
+        fprintf(o, "typedef struct { char **keys; %s*vals; long len; long cap; long used; } HierMapC%d;\n",
+                c_type(g_maptypes[i].val), i);
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
      * enough — this can precede struct bodies, letting a struct embed a soa by
@@ -4623,6 +4627,66 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
+    }
+    /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
+     * HierMapSI (open addressing, NULL/tombstone, FNV string keys), with the VALUE
+     * generalized to any type: put deep-copies the value into the map's arena via
+     * copy_into, exactly like a composite-array element. Emitted after struct/array
+     * bodies so a struct/array value type's copy fn is already available. */
+    for (int i = 0; i < g_nmaptypes; i++) {
+        const char *ct = c_type(g_maptypes[i].val);
+        char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
+        fprintf(o,
+            "static HierMapC%d hier_mapc%d_with_cap(Arena *a, long cap) {\n"
+            "    HierMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+            "    m.cap = c; m.len = 0; m.used = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; }\n"
+            "    m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));\n"
+            "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
+            "    for (long i = 0; i < c; i++) m.keys[i] = 0; return m;\n}\n", i, i, i, ct, ct);
+        fprintf(o,
+            "static long hier_mapc%d_find(HierMapC%d m, const char *k) {\n"
+            "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(hier_si_hash(k) & mask);\n"
+            "    while (m.keys[i] != 0) { if (m.keys[i] != HIER_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); }\n"
+            "    return -1;\n}\n", i, i);
+        fprintf(o,
+            "static long hier_mapc%d_slot(HierMapC%d m, const char *k) {\n"
+            "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(hier_si_hash(k) & mask); long tomb = -1;\n"
+            "    while (m.keys[i] != 0) { if (m.keys[i] == HIER_MAP_TOMB) { if (tomb < 0) tomb = i; } else if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); }\n"
+            "    return tomb >= 0 ? tomb : i;\n}\n", i, i);
+        fprintf(o,
+            "static void hier_mapc%d_put(Arena *a, HierMapC%d *m, const char *k, %sv) {\n"
+            "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+            "        HierMapC%d n = hier_mapc%d_with_cap(a, nc);\n"
+            "        for (long i = 0; i < m->cap; i++) if (hier_map_live(m->keys[i])) { long s = hier_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++; }\n"
+            "        *m = n;\n    }\n"
+            "    long s = hier_mapc%d_slot(*m, k);\n"
+            "    if (!hier_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = hier_str_copy(a, k); m->len++; }\n"
+            "    m->vals[s] = %s;\n}\n", i, i, ct, i, i, i, i, vcopy);
+        fprintf(o,
+            "static void hier_mapc%d_del(HierMapC%d *m, const char *k) {\n"
+            "    long s = hier_mapc%d_find(*m, k); if (s < 0) return; m->keys[s] = HIER_MAP_TOMB; m->len--;\n}\n", i, i, i);
+        fprintf(o,
+            "static HierMapC%d hier_mapc%d_copy(Arena *a, HierMapC%d src) {\n"
+            "    HierMapC%d r = hier_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
+            "    for (long i = 0; i < src.cap; i++) if (hier_map_live(src.keys[i])) hier_mapc%d_put(a, &r, src.keys[i], src.vals[i]);\n"
+            "    return r;\n}\n", i, i, i, i, i, i);
+        fprintf(o,
+            "static HierMapC%d hier_mapc%d_set(Arena *a, HierMapC%d m, const char *k, %sv) {\n"
+            "    HierMapC%d r = hier_mapc%d_copy(a, m); hier_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, ct, i, i, i);
+        fprintf(o,
+            "static HierMapC%d hier_mapc%d_del_pure(Arena *a, HierMapC%d m, const char *k) {\n"
+            "    HierMapC%d r = hier_mapc%d_copy(a, m); hier_mapc%d_del(&r, k); return r;\n}\n", i, i, i, i, i, i);
+        fprintf(o,
+            "static %shier_mapc%d_get(HierMapC%d m, const char *k, %sdflt) {\n"
+            "    long s = hier_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
+        fprintf(o,
+            "static int hier_mapc%d_has(HierMapC%d m, const char *k) { return hier_mapc%d_find(m, k) >= 0; }\n", i, i, i);
+        fprintf(o,
+            "static HierArrStr hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
+            "    HierArrStr r = hier_arr_str_with_cap(a, m.len);\n"
+            "    for (long i = 0; i < m.cap; i++) if (hier_map_live(m.keys[i])) hier_arr_str_push(a, &r, m.keys[i]);\n"
+            "    return r;\n}\n\n", i, i);
     }
     /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
      * field (named f<idx>) plus a shared len/cap. push grows every buffer in the
