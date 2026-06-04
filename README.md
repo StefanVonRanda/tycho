@@ -207,6 +207,11 @@ multiple-return-values story), user-defined `struct`s, user-defined `enum`s
 (sum types / tagged unions, including recursive ones — ASTs), and `type`
 newtypes (distinct, zero-cost aliases of `int`/`float`).
 
+**String interpolation:** an `f"..."` string interpolates `{expr}` holes —
+`f"point=({p.x},{p.y}) sum={a + b}"` — desugaring to `"point=(" + str(p.x) + ...`.
+`{{`/`}}` are literal braces; a plain `"..."` is never interpolated (so literal
+braces need no escaping there). A hole must be an `int`, `float`, or `string`.
+
 ### Structs
 
 ```
