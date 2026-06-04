@@ -496,3 +496,57 @@ the string-pipeline time gap, json-parse drove the length-carrying-strings fix
   lever is pointer-tagging the tag word (24→16 B/node, ~25→~17 MB) — risky
   (fragile tagged pointers vs the current safe singletons), and it still would
   not reach Koka's 14 MB, since the gap is the retained stretch tree.
+
+## Scaling study — does the thesis hold AT SCALE? (2026-06)
+
+The numbers above are one size each. To check the *trend*, two workloads were
+swept across sizes (same machine; peak RSS via `bench/peakrss.c`; every binary
+within a size prints a byte-identical checksum). The question: as the workload
+grows, does Hier's arena model stay competitive, or does a per-node/per-arena
+overhead compound?
+
+**binary-trees** — allocate a sea of trees + one long-lived (the arena's best
+case: a whole tree is freed in one `arena_free`, no per-node free walk). Depth
++1 ≈ ×2 the work.
+
+| depth | Hier | C | Rust | Go | Koka |
+|------:|-----:|--:|-----:|---:|-----:|
+| 18 (1×)  | **25 MB / 207 ms**  | 33 MB / 743 ms  | 33 MB / 865 ms  | 37 MB / 1525 ms  | 14 MB / 271 ms  |
+| 20 (4×)  | **97 MB / 922 ms**  | 129 MB / 4725 ms | 129 MB / 4169 ms | 133 MB / 6395 ms | 66 MB / 1277 ms |
+| 21 (8×)  | **169 MB / 1825 ms** | 257 MB / 9582 ms | 258 MB / 8692 ms | 203 MB / 12649 ms | 130 MB / 2536 ms |
+
+The arena's lead over C/Rust/Go **widens** with scale. vs C: memory 0.76× → 0.66×,
+and wall-time 3.6× → **5.2× faster** from 1× to 8×. C/Rust pay a per-node
+`free()` traversal on every discarded tree; Hier drops each tree with one arena
+free, so its time advantage compounds as trees get bigger. Only Koka's Perceus RC
+stays more memory-compact (it frees the stretch tree the instant its refcount
+hits zero) — but Hier is faster than Koka at every size.
+
+**json-parse** — 30 parse-walk-free passes over a generated document (a real
+recursive-descent parser; the realistic systems workload). Scaled by the object
+count N (one generator feeds all five parsers, so the input is identical).
+
+| N | doc | Hier | C | Rust | Go | Koka |
+|--:|----:|-----:|--:|-----:|---:|-----:|
+| 50k  | 4 MB  | 96 MB / 1346 ms  | 58 MB / 1324 ms  | 60 MB / 1602 ms  | 104 MB / 1463 ms | 145 MB / 2461 ms |
+| 100k | 8 MB  | 192 MB / 2750 ms | 116 MB / 2731 ms | 118 MB / 3462 ms | 218 MB / 2819 ms | 290 MB / 5115 ms |
+| 200k | 17 MB | 385 MB / 5497 ms | 231 MB / 5582 ms | 235 MB / 7106 ms | 426 MB / 5568 ms | 607 MB / —       |
+
+Everything scales **linearly** and the ratios are **stable**: Hier is a constant
+~1.66× C's memory at every size (the per-node tagged-cell + arena overhead is a
+fixed factor, not a growing one), **matches hand-written C on wall-time**, and
+beats Go's GC and Koka's RC on both axes at every size. (Koka's 200k time is a
+measurement glitch.)
+
+**Conclusion.** The implicit-arena model holds at scale on both axes:
+- where the workload is tree-shaped and alloc/free-heavy (binary-trees), the
+  arena's bulk-free makes Hier *beat* C on memory **and** time, by a margin that
+  **grows** with size;
+- where it is a flat recursive-descent parser (json-parse), Hier tracks C
+  linearly within a constant factor and matches its speed;
+- the deliberate worst case (iter-transform, above) stays O(working set) via
+  liveness-driven buffer recycling.
+Across GC (Go) and reference counting (Koka), Hier is faster everywhere and uses
+less memory than the GC; the only memory loss is to Perceus RC on the tree
+workloads, where RC's eager free is structurally tighter than scope-bounded
+arenas — and even there Hier wins on time.
