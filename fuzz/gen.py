@@ -235,7 +235,8 @@ class Gen:
         vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
         vs_struct = [(n, ty) for n, ty in env.items() if ty in self.structs
                      and any(ft.startswith("[") for _, ft in self.structs[ty])]
-        if vs_arr or vs_struct:
+        vs_map = [(n, ty) for n, ty in env.items() if ty.startswith("{")]   # #2: in-place m[k] must not alias a copy
+        if vs_arr or vs_struct or vs_map:
             kinds += ["vscheck", "vscheck"]
         int_arr_vars = [n for n, ty in env.items() if ty == "[int]"]
         if int_arr_vars:
@@ -250,7 +251,7 @@ class Gen:
         if arr_vars or str_vars:
             kinds += ["foreach", "foreach"]
         if map_vars:
-            kinds += ["map_accum"]
+            kinds += ["map_accum", "map_place", "map_place"]   # #2: m[k] as a place
         res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
         if res_vars:
             kinds += ["reserve"]
@@ -299,6 +300,17 @@ class Gen:
             key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
             self.emit(ind, n0 + " = map_set(" + n0 + ", " + key + ", " + self.gen_expr(vt, env, 1) + ")")
             return
+        if k == "map_place":           # m[k] as a place (#2): assign or scalar compound, fresh + existing keys
+            n0, t0 = self.r.choice(map_vars)
+            kt, vt = t0[1:-1].split(":")
+            key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
+            if vt in ("int", "float") and self.r.random() < 0.5:   # read-modify-write the value slot
+                op = self.r.choice(["+=", "-="])
+                rhs = str(self.r.randint(1, 5)) if vt == "int" else str(self.r.randint(1, 5)) + ".0"
+                self.emit(ind, n0 + "[" + key + "] " + op + " " + rhs)
+            else:                                                   # plain assign (auto-inserts a fresh key)
+                self.emit(ind, n0 + "[" + key + "] = " + self.gen_expr(vt, env, 1))
+            return
 
         if k == "arr_rebuild":         # reassign an array from a call that READS it
             n0 = self.r.choice(int_arr_vars)
@@ -320,6 +332,24 @@ class Gen:
             # This catches value-semantics miscompiles present in BOTH compilers,
             # which the hierc-vs-hierc0 differential structurally cannot (they would
             # agree on the same wrong answer). die() exits 1 -> the runner flags it.
+            if vs_map and (not (vs_arr or vs_struct) or self.r.random() < 0.34):
+                # #2: mutate a COPIED map in place via m[k]; the original must not move.
+                # A slotptr that reached through a shared table would change the original.
+                a, t0 = self.r.choice(vs_map)
+                kt, vt = t0[1:-1].split(":")
+                key = '"vk"' if kt == "string" else "2"
+                newv = {"int": "987654", "float": "987.0", "string": '"zzzzzz"'}[vt]
+                s0 = self.fresh("vs"); s1 = self.fresh("vs"); b = self.fresh("cp")
+                self.emit(ind, s0 + " := 0")
+                self.checksum_into(ind, a, t0, env, s0)
+                self.emit(ind, b + " := " + a)               # deep copy (value semantics)
+                self.emit(ind, b + "[" + key + "] = " + newv)   # mutate the COPY's value slot
+                self.emit(ind, s1 + " := 0")
+                self.checksum_into(ind, a, t0, env, s1)       # re-checksum the ORIGINAL
+                self.emit(ind, "if " + s1 + " != " + s0 + ":")
+                self.emit(ind+1, 'die("value-semantics violated: in-place m[k] on a copy changed the original")')
+                env[b] = t0
+                return
             PUSHC = {"int": "7", "string": '"qq"', "float": "2.0"}
             if vs_struct and (not vs_arr or self.r.random() < 0.5):
                 a, t0 = self.r.choice(vs_struct)
