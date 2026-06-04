@@ -47,6 +47,7 @@ class Gen:
         ts = ["int", "string", "float", "[int]", "[string]", "[float]", "Option(int)",
               "Option(string)", "(int, string)", "{string:int}", "{string:float}",
               "{int:int}", "{int:float}", "{string:string}",   # composite (heap) map value
+              "{string:[int]}", "{int:[string]}",               # array-valued maps: the #2 m[k]-place surface
               "[Option(int)]", "[Option(string)]"]
         ts += list(self.structs.keys())
         ts += list(self.newtypes.keys())
@@ -136,6 +137,8 @@ class Gen:
         if t == "{string:float}": return '["k0": 0.0]'
         if t == "{int:int}": return '[0: 0]'
         if t == "{int:float}": return '[0: 0.0]'
+        if t == "{string:[int]}": return '["k0": [0]]'
+        if t == "{int:[string]}": return '[0: ["x"]]'
         if t.startswith("["):
             el = t[1:-1]
             return "[" + self.fallback_lit(el, env) + "]"
@@ -186,10 +189,15 @@ class Gen:
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            dflt = '""' if vt == "string" else ("0" if vt == "int" else "0.0")
-            g = "map_get(" + name + ", " + ks + "[" + ii + "], " + dflt + ")"
-            contrib = g if vt == "int" else ("len(" + g + ")" if vt == "string" else "to_int(" + g + ")")
-            add(ind+1, contrib)   # SUM is key-order independent
+            if vt.startswith("["):                  # composite (array) value: bind the borrow + recurse
+                gv = self.fresh("gv")
+                self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + vt[1:-1] + ")")
+                self.checksum_into(ind+1, gv, vt, env, acc)
+            else:
+                dflt = '""' if vt == "string" else ("0" if vt == "int" else "0.0")
+                g = "map_get(" + name + ", " + ks + "[" + ii + "], " + dflt + ")"
+                contrib = g if vt == "int" else ("len(" + g + ")" if vt == "string" else "to_int(" + g + ")")
+                add(ind+1, contrib)   # SUM is key-order independent
         elif t == "Result([int], string)":                # heap Ok payload + Err string, matched both arms
             xs = self.fresh("xs"); er = self.fresh("e"); ii = self.fresh("i")
             self.emit(ind, "match " + name + ":")
@@ -304,7 +312,15 @@ class Gen:
             n0, t0 = self.r.choice(map_vars)
             kt, vt = t0[1:-1].split(":")
             key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
-            if vt in ("int", "float") and self.r.random() < 0.5:   # read-modify-write the value slot
+            if vt.startswith("["):                                 # array-valued map: grow the value list in place
+                el = vt[1:-1]; r = self.r.random()
+                if r < 0.55:                                       # push into the map value (fresh key auto-inserts [])
+                    self.emit(ind, "push(" + n0 + "[" + key + "], " + self.gen_expr(el, env, 2) + ")")
+                elif r < 0.75:                                     # reserve into the map value (capacity hint)
+                    self.emit(ind, "reserve(" + n0 + "[" + key + "], " + str(self.r.randint(0, 6)) + ")")
+                else:                                              # replace the whole value list
+                    self.emit(ind, n0 + "[" + key + "] = " + self.gen_expr(vt, env, 1))
+            elif vt in ("int", "float") and self.r.random() < 0.5:  # read-modify-write the scalar value slot
                 op = self.r.choice(["+=", "-="])
                 rhs = str(self.r.randint(1, 5)) if vt == "int" else str(self.r.randint(1, 5)) + ".0"
                 self.emit(ind, n0 + "[" + key + "] " + op + " " + rhs)
@@ -338,12 +354,15 @@ class Gen:
                 a, t0 = self.r.choice(vs_map)
                 kt, vt = t0[1:-1].split(":")
                 key = '"vk"' if kt == "string" else "2"
-                newv = {"int": "987654", "float": "987.0", "string": '"zzzzzz"'}[vt]
                 s0 = self.fresh("vs"); s1 = self.fresh("vs"); b = self.fresh("cp")
                 self.emit(ind, s0 + " := 0")
                 self.checksum_into(ind, a, t0, env, s0)
                 self.emit(ind, b + " := " + a)               # deep copy (value semantics)
-                self.emit(ind, b + "[" + key + "] = " + newv)   # mutate the COPY's value slot
+                if vt.startswith("["):                       # array value: grow the COPY's list in place
+                    self.emit(ind, "push(" + b + "[" + key + "], " + self.gen_expr(vt[1:-1], env, 2) + ")")
+                else:                                        # scalar value: overwrite the COPY's slot
+                    newv = {"int": "987654", "float": "987.0", "string": '"zzzzzz"'}[vt]
+                    self.emit(ind, b + "[" + key + "] = " + newv)
                 self.emit(ind, s1 + " := 0")
                 self.checksum_into(ind, a, t0, env, s1)       # re-checksum the ORIGINAL
                 self.emit(ind, "if " + s1 + " != " + s0 + ":")

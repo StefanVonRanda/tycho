@@ -2147,7 +2147,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             out := f + "_new()"
             j := 0
             for j < len(keys):
-                out = f + "_set(" + ctx.owner + ", " + out + ", " + gen_expr(keys[j], names, types, dc, ctx) + ", " + gen_rhs(vals[j], names, types, dc, with_owner(dc, ctx, "0")) + ")"
+                # value in ctx.owner, not owner 0: _set's put deep-copies it into the map's
+                # arena anyway, so an owner-0 (malloc) source leaks (same as the map_set fix).
+                # String literals are interned (owner-independent) so existing cases are unchanged.
+                out = f + "_set(" + ctx.owner + ", " + out + ", " + gen_expr(keys[j], names, types, dc, ctx) + ", " + gen_rhs(vals[j], names, types, dc, ctx) + ")"
                 j = j + 1
             return out
         ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
