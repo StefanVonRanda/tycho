@@ -1654,8 +1654,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
     if is_soa(ty):                                # soa [Struct] -> Soa_Struct
         return "Soa_" + soa_struct(ty) + " "
     if is_enum(dc, ctx, ty):                          # enum value -> pointer to node
-        return ty + "* "
-    return ty + " "                              # struct type: its own typedef
+        return uet(ty) + "* "
+    return ust(ty) + " "                         # struct type: its own typedef
 
 fn var_type(names: [string], types: [string], name: string) -> string:
     i := len(names) - 1                          # newest-first (shadowing)
@@ -2012,7 +2012,7 @@ fn gen_soa_gather(dc: Decls, ctx: Ctx, ty: string, basec: string, ix: string) ->
     for si < len(dc.structs):
         if dc.structs[si].name == sn:
             flds := dc.structs[si].fields
-            out := "(" + sn + "){"
+            out := "(" + ust(sn) + "){"
             i := 0
             for i < len(flds):
                 if i > 0:
@@ -2107,6 +2107,25 @@ fn un(n: string) -> string:
 # latter matches the C compiler, which also leaves them raw).
 fn uf(n: string) -> string:
     return "f_" + n
+
+# Emitted C type names for user STRUCT (S_) and ENUM (E_) types — so a user type named
+# a C keyword (default/...) or a generated family (Arr_int/HOption/...) can't collide.
+# Mirrors the C compiler. The struct/enum NAME also labels generated families
+# (Arr_<name>/Soa_<name>/<name>_copy) — those labels stay raw (they're distinct from the
+# S_/E_ TYPE name, so no collision), only the C type and the type's own copy/eq/typedef
+# identifiers are prefixed. tcopy/teq dispatch a copy/eq call site to the right prefix.
+fn ust(n: string) -> string:
+    return "S_" + n
+fn uet(n: string) -> string:
+    return "E_" + n
+fn tcopy(dc: Decls, ctx: Ctx, ty: string) -> string:
+    if is_enum(dc, ctx, ty):
+        return uet(ty) + "_copy"
+    return ust(ty) + "_copy"
+fn teq(dc: Decls, ctx: Ctx, ty: string) -> string:
+    if is_enum(dc, ctx, ty):
+        return uet(ty) + "_eq"
+    return ust(ty) + "_eq"
 
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
@@ -2290,7 +2309,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_variant(dc, ctx, name):             # enum construction -> mk_Variant(ar, ...); node
                 return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
-                return "(" + name + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
+                return "(" + ust(name) + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
@@ -2403,7 +2422,7 @@ fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> s
         oct := cty(dc, ctx, result_ok(et))
         ect := cty(dc, ctx, result_err(et))
         return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(dc, ctx, result_ok(et), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(et), ar, src + ".err") + ")))"
-    return et + "_copy(" + ar + ", " + src + ")"           # heap struct OR enum: <T>_copy
+    return tcopy(dc, ctx, et) + "(" + ar + ", " + src + ")"   # heap struct OR enum: S_/E_ _copy
 
 # Deep-copy a value of Hier type `ty` from `src` into arena `ar` (the C expr) —
 # full type dispatch, used to copy enum payload fields (which may be any type).
@@ -2419,9 +2438,9 @@ fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
     if is_tuple(rt):
         return "Tup_" + tup_suffix(rt) + "_copy(" + ar + ", " + src + ")"
     if is_enum(dc, ctx, rt):
-        return rt + "_copy(" + ar + ", " + src + ")"
+        return tcopy(dc, ctx, rt) + "(" + ar + ", " + src + ")"
     if is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt):
-        return rt + "_copy(" + ar + ", " + src + ")"
+        return tcopy(dc, ctx, rt) + "(" + ar + ", " + src + ")"
     if is_option(rt):
         ict := cty(dc, ctx, option_inner(rt))
         return "(" + src + ".tag ? hsome(hbox(" + ar + ", sizeof(" + ict + "), " + box_payload(dc, ctx, option_inner(rt), ar, src + ".val") + ")) : hnone())"
@@ -2584,7 +2603,7 @@ fn cp_typed(dc: Decls, ctx: Ctx, ty: string, code: string) -> string:
     if is_tuple(rt):
         return "Tup_" + tup_suffix(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt):
-        return rt + "_copy(" + ctx.owner + ", " + code + ")"
+        return tcopy(dc, ctx, rt) + "(" + ctx.owner + ", " + code + ")"
     return code
 
 # --- move-on-last-use (deep-copy elision) --------------------------------
@@ -2812,7 +2831,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
     if is_array(ty) and is_place(e):
         return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(dc, ctx, ty) and struct_is_heap(dc, ctx, ty) and is_place(e):
-        return ty + "_copy(" + ctx.owner + ", " + code + ")"
+        return tcopy(dc, ctx, ty) + "(" + ctx.owner + ", " + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
         return mfam(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
@@ -2820,7 +2839,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
         return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
     if is_enum(dc, ctx, ty) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL enum place (var/
-        return ty + "_copy(" + ctx.owner + ", " + code + ")"   # field/elem) escaping -> deep-copy. NOT a bare nullary-variant ctor (`return Leaf`), which is already fresh. Match arms BORROW (cp_typed).
+        return tcopy(dc, ctx, ty) + "(" + ctx.owner + ", " + code + ")"   # field/elem) escaping -> deep-copy. NOT a bare nullary-variant ctor (`return Leaf`), which is already fresh. Match arms BORROW (cp_typed).
     if (is_option(ty) or is_result(ty)) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL option/result
         return elem_copy_expr(dc, ctx, ty, ctx.owner, code)     # place (var/field/elem, not the bare `None` ctor): re-box into ctx.owner
 
@@ -3419,7 +3438,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     return ret_cty(dc, fctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
 
 fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
-    out := "struct " + sd.name + " {\n"          # named tag; forward-declared elsewhere
+    out := "struct " + ust(sd.name) + " {\n"     # named tag; forward-declared elsewhere
     i := 0
     for i < len(sd.fields):
         out = out + "    " + cty(dc, ctx, sd.fields[i].ty) + uf(sd.fields[i].name) + ";\n"
@@ -3467,7 +3486,7 @@ fn gen_match_optres(dc: Decls, ctx: Ctx, sty: string, scu: string, variants: [st
 # heap field (string -> fresh bytes, array -> Arr_T_copy, nested heap struct ->
 # its own _copy). Source-order emission gives nested copiers before their users.
 fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
-    nm := sd.name
+    nm := ust(sd.name)
     out := "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n    " + nm + " r = s;\n"
     i := 0
     for i < len(sd.fields):
@@ -3481,16 +3500,16 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
         elif is_soa(f.ty):
             out = out + "    r." + uf(f.name) + " = Soa_" + soa_struct(f.ty) + "_copy(s." + uf(f.name) + ");\n"
         elif is_enum(dc, ctx, f.ty):                  # deep-copy the enum node tree into `ar`
-            out = out + "    r." + uf(f.name) + " = " + f.ty + "_copy(ar, s." + uf(f.name) + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + tcopy(dc, ctx, f.ty) + "(ar, s." + uf(f.name) + ");\n"
         elif is_struct(dc, ctx, f.ty) and struct_is_heap(dc, ctx, f.ty):
-            out = out + "    r." + uf(f.name) + " = " + f.ty + "_copy(ar, s." + uf(f.name) + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + tcopy(dc, ctx, f.ty) + "(ar, s." + uf(f.name) + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
 # Structural equality for a struct: AND of per-field equality (recurses through
 # nested structs, arrays, enums, and Option/Result fields via eq_field).
 fn gen_struct_eq(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
-    nm := sd.name
+    nm := ust(sd.name)
     out := "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { return "
     if len(sd.fields) == 0:
         out = out + "1"
@@ -3528,9 +3547,9 @@ fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
         elif is_map(p):
             out = out + "    r.f" + str(i) + " = " + mfam(p) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_enum(dc, ctx, p):                     # deep-copy the enum node tree into `ar`
-            out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = " + tcopy(dc, ctx, p) + "(ar, s.f" + str(i) + ");\n"
         elif is_struct(dc, ctx, p) and struct_is_heap(dc, ctx, p):
-            out = out + "    r.f" + str(i) + " = " + p + "_copy(ar, s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = " + tcopy(dc, ctx, p) + "(ar, s.f" + str(i) + ");\n"
         i = i + 1
     return out + "    return r;\n}\n"
 
@@ -3552,9 +3571,9 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if is_array(ty):
         return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
     if is_enum(dc, ctx, ty):
-        return ty + "_eq(" + a + ", " + b + ")"
+        return teq(dc, ctx, ty) + "(" + a + ", " + b + ")"
     if is_struct(dc, ctx, ty):
-        return ty + "_eq(" + a + ", " + b + ")"
+        return teq(dc, ctx, ty) + "(" + a + ", " + b + ")"
     if is_tuple(ty):
         return "Tup_" + tup_suffix(ty) + "_eq(" + a + ", " + b + ")"
     if is_map(ty):
@@ -3584,7 +3603,7 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
 # arena-allocating mk_ ctors — so a returned/stored/copied enum owns its subtree
 # in the destination arena instead of aliasing a freed scope.
 fn gen_enum_copy(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
-    nm := ed.name
+    nm := uet(ed.name)
     out := "static " + nm + "* " + nm + "_copy(Arena* ar, " + nm + "* s) {\n"
     i := 0
     for i < len(ed.variants):
@@ -3608,7 +3627,7 @@ fn efield(base: string, vn: string, j: int) -> string:
     return base + "->u." + vn + ".f" + str(j)
 
 fn gen_enum_decl(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
-    out := "struct " + ed.name + " {\n    int tag;\n"
+    out := "struct " + uet(ed.name) + " {\n    int tag;\n"
     members := ""
     i := 0
     for i < len(ed.variants):
@@ -3632,16 +3651,16 @@ fn gen_enum_ctors(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
         v := ed.variants[i]
         if len(v.ptypes) == 0:                    # nullary variant: one shared immortal singleton,
             sg := "_sing_" + ed.name + "_" + str(i)   # no per-construction allocation (no payload, and
-            out = out + "static " + ed.name + " " + sg + " = { " + str(i) + " };\n"   # enum values are immutable)
-            out = out + "static " + ed.name + "* mk_" + v.name + "(Arena* ar) { (void)ar; return &" + sg + "; }\n"
+            out = out + "static " + uet(ed.name) + " " + sg + " = { " + str(i) + " };\n"   # enum values are immutable)
+            out = out + "static " + uet(ed.name) + "* mk_" + v.name + "(Arena* ar) { (void)ar; return &" + sg + "; }\n"
         else:
             params := "Arena* ar"                 # the node lives in `ar` (the ambient arena)
             j := 0
             for j < len(v.ptypes):
                 params = params + ", " + cty(dc, ctx, v.ptypes[j]) + "f" + str(j)
                 j = j + 1
-            out = out + "static " + ed.name + "* mk_" + v.name + "(" + params + ") {\n"
-            out = out + "    " + ed.name + "* n = amem(ar, offsetof(" + ed.name + ", u) + sizeof(((" + ed.name + "*)0)->u." + v.name + "));\n"
+            out = out + "static " + uet(ed.name) + "* mk_" + v.name + "(" + params + ") {\n"
+            out = out + "    " + uet(ed.name) + "* n = amem(ar, offsetof(" + uet(ed.name) + ", u) + sizeof(((" + uet(ed.name) + "*)0)->u." + v.name + "));\n"
             out = out + "    n->tag = " + str(i) + ";\n"
             j = 0
             for j < len(v.ptypes):
@@ -3652,7 +3671,7 @@ fn gen_enum_ctors(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     return out
 
 fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
-    out := "static int " + ed.name + "_eq(" + ed.name + "* a, " + ed.name + "* b) {\n"
+    out := "static int " + uet(ed.name) + "_eq(" + uet(ed.name) + "* a, " + uet(ed.name) + "* b) {\n"
     out = out + "    if (a->tag != b->tag) return 0;\n"
     i := 0
     for i < len(ed.variants):
@@ -3795,7 +3814,7 @@ fn gen_soa_decl(dc: Decls, ctx: Ctx, ty: string) -> string:
                 out = out + " " + cty(dc, ctx, flds[i].ty) + "* f" + str(i) + ";"
                 i = i + 1
             out = out + " long len; long cap; } " + nm + ";\n"
-            out = out + "static void " + nm + "_push(" + nm + "* s, " + sn + " v);\n"
+            out = out + "static void " + nm + "_push(" + nm + "* s, " + ust(sn) + " v);\n"
             out = out + "static " + nm + " " + nm + "_copy(" + nm + " s);\n"
             out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
             return out
@@ -3812,7 +3831,7 @@ fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
     for si < len(dc.structs):
         if dc.structs[si].name == sn:
             flds := dc.structs[si].fields       # typedef + decls emitted by gen_soa_decl (early)
-            out := "static void " + nm + "_push(" + nm + "* s, " + sn + " v) {\n"
+            out := "static void " + nm + "_push(" + nm + "* s, " + ust(sn) + " v) {\n"
             out = out + "    if (s->len == s->cap) { s->cap = s->cap ? s->cap * 2 : 4;\n"
             i := 0
             for i < len(flds):
@@ -4370,11 +4389,11 @@ fn main():
     # supporting arrays-of-structs, recursive structs, and mutual struct/enum refs:
     i = 0                                        # 1a. forward-declare struct tags
     for i < len(prog.structs):
-        out = out + "typedef struct " + prog.structs[i].name + " " + prog.structs[i].name + ";\n"
+        out = out + "typedef struct " + ust(prog.structs[i].name) + " " + ust(prog.structs[i].name) + ";\n"
         i = i + 1
     i = 0                                        # 1b. forward-declare enum tags
     for i < len(prog.enums):
-        out = out + "typedef struct " + prog.enums[i].name + " " + prog.enums[i].name + ";\n"
+        out = out + "typedef struct " + uet(prog.enums[i].name) + " " + uet(prog.enums[i].name) + ";\n"
         i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
@@ -4393,11 +4412,11 @@ fn main():
         i = i + 1
     i = 0                                        # 3. enum + struct eq prototypes (mutual recursion)
     for i < len(prog.enums):
-        out = out + "static int " + prog.enums[i].name + "_eq(" + prog.enums[i].name + "* a, " + prog.enums[i].name + "* b);\n"
+        out = out + "static int " + uet(prog.enums[i].name) + "_eq(" + uet(prog.enums[i].name) + "* a, " + uet(prog.enums[i].name) + "* b);\n"
         i = i + 1
     i = 0
     for i < len(prog.structs):
-        out = out + "static int " + prog.structs[i].name + "_eq(" + prog.structs[i].name + " a, " + prog.structs[i].name + " b);\n"
+        out = out + "static int " + ust(prog.structs[i].name) + "_eq(" + ust(prog.structs[i].name) + " a, " + ust(prog.structs[i].name) + " b);\n"
         i = i + 1
     i = 0                                        # 4. user struct bodies (source order; array fields
     for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
@@ -4416,7 +4435,7 @@ fn main():
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
         sn := prog.structs[i].name               #     elements regardless of copy-fn definition order
         if struct_is_heap(dc, ctx, sn):
-            out = out + "static " + sn + " " + sn + "_copy(Arena* ar, " + sn + " s);\n"
+            out = out + "static " + ust(sn) + " " + ust(sn) + "_copy(Arena* ar, " + ust(sn) + " s);\n"
         i = i + 1
     i = 0
     for i < len(ets):
@@ -4427,7 +4446,7 @@ fn main():
     i = 0                                        # 5c. enum copy protos (mutual recursion + array/
     for i < len(prog.enums):                     #     struct/tuple copy may deep-copy enum members)
         en := prog.enums[i].name
-        out = out + "static " + en + "* " + en + "_copy(Arena* ar, " + en + "* s);\n"
+        out = out + "static " + uet(en) + "* " + uet(en) + "_copy(Arena* ar, " + uet(en) + "* s);\n"
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
