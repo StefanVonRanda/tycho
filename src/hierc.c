@@ -345,6 +345,7 @@ static int struct_find(const char *name) {
 #define T_ENUM_BASE 8192   /* user sum types, above the Result range */
 #define T_TUP_BASE  16384  /* tuples (T1, ..., Tn), above the (now bounded) enum range */
 #define T_NT_BASE   24576  /* distinct newtypes (type X = int/float), above tuples */
+#define T_MAPC_BASE 32768  /* composite maps [K: V] with an arbitrary value type, above newtypes */
 typedef struct { Type elem; } ArrType;
 static ArrType g_arrtypes[256];
 static int g_narrtypes = 0;
@@ -496,17 +497,35 @@ static Type soa_of(Type st) {                   /* find-or-create soa [st] */
 }
 static Type soa_struct(Type t) { return g_soatypes[SOA_ID(t)].st; }
 
+/* Composite maps [K: V] with an arbitrary value type (string/struct/array/...),
+ * interned like composite arrays: one monomorphic HierMapC<id> generated per
+ * distinct (key, value) pair used. The four hand-written int/float-valued maps
+ * (T_MAP_S?/I?) keep their dedicated runtime; everything else is a MAPC. */
+typedef struct { Type key; Type val; } MapType;
+static MapType g_maptypes[256];
+static int g_nmaptypes = 0;
+#define IS_MAPC(t)  ((t) >= T_MAPC_BASE && (t) < T_MAPC_BASE + 256)
+#define MAPC_ID(t)  ((int)((t) - T_MAPC_BASE))
+static __attribute__((unused)) Type mapc_of(Type k, Type v) {   /* find-or-create [k: v]; wired up in step 3 */
+    for (int i = 0; i < g_nmaptypes; i++)
+        if (g_maptypes[i].key == k && g_maptypes[i].val == v) return T_MAPC_BASE + i;
+    if (g_nmaptypes >= 256) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }
+    g_maptypes[g_nmaptypes].key = k; g_maptypes[g_nmaptypes].val = v;
+    return T_MAPC_BASE + g_nmaptypes++;
+}
+
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
  * value type, map_of the map type for a value type. */
-static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF || t == T_MAP_II || t == T_MAP_IF; }
+static int is_map(Type t) { return t == T_MAP_SI || t == T_MAP_SF || t == T_MAP_II || t == T_MAP_IF || IS_MAPC(t); }
 static const char *map_fn(Type t) {
     return t == T_MAP_SF ? "sf" : t == T_MAP_II ? "ii" : t == T_MAP_IF ? "if" : "si";
 }
-static Type map_val(Type t) { return (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
-static Type map_key(Type t) { return (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
+static Type map_val(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].val : (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
+static Type map_key(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].key : (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
 /* the map type for a (key, value) pair. Only string and int keys, int and float
- * values exist; an unsupported pair returns T_VOID (the caller rejects it). */
+ * values exist; an unsupported pair returns T_VOID (the caller rejects it).
+ * Step 2/3 will route non-int/float values to mapc_of once emit + codegen land. */
 static Type map_of(Type k, Type v) {
     if (k == T_STRING) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
     if (k == T_INT)    return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
@@ -550,6 +569,7 @@ static const char *c_type(Type t) {
     if (IS_NEWTYPE(t)) return c_type(nt_under(t));   /* zero-cost: emitted as its base C type */
     if (IS_STRUCT(t)) return sfmt("S_%s ", g_structs[STRUCT_ID(t)].name);
     if (IS_ARRC(t))   return sfmt("HierArrC%d ", ARRC_ID(t));
+    if (IS_MAPC(t))   return sfmt("HierMapC%d ", MAPC_ID(t));
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
     if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
@@ -575,6 +595,7 @@ static const char *type_name(Type t) {
     if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
+    if (IS_MAPC(t))   return sfmt("[%s: %s]", type_name(map_key(t)), type_name(map_val(t)));
     if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
     if (IS_RES(t))    return sfmt("Result(%s, %s)", type_name(res_ok(t)), type_name(res_err(t)));
     if (IS_TUP(t)) {
