@@ -98,6 +98,49 @@ to each. Add an `IS_MAPC` case to `copy_into` (hierc.c:2960) → `hier_map_C%d_c
   `v := map_get(m,"x",d); m = map_set(m,"x",other); use(v)` stays correct under
   LSan (v must be an independent copy, not aliasing m's mutated slot).
 
+## Steps 2-3 DONE (89b4693, ef6c749) — hierc [string: V] works
+
+Emit + codegen + map_of routing all landed and LSan-verified in hierc:
+[string:string] and [string:Struct] full CRUD + literals + keys, the get-returns-
+borrow lifetime fixed via copy_into(map_val) on map_get, existing maps byte-
+identical (make test + fixpoint green). map_rt(t,op) dispatches hardcoded vs
+hier_mapc<id>. T_MAPC_BASE=32768; IS_SOA was bounded `< T_MAPC_BASE` (it was
+open-ended and swallowed map types). int-keyed composite values + composite `==`
+deferred.
+
+## Step 5 map (traced, ready to execute) — hierc0 parity
+
+hierc0 is a FULL compiler (parses+types+codegens), so this mirrors steps 1-3 in
+it. Tools already present: `cty(dc,ctx,v)` (value C type, trailing space — strip
+it), `cp_field(dc,ctx,v,ar,src)` (deep-copy ANY value into ar; passthrough for
+scalars), `mangle(v)` (type→identifier; mangle("int")=="int" so existing maps
+stay byte-identical), `map_key`/`map_val` (substr "{K:V}").
+
+1. mstruct/mfam (1515-1519): `"Map_"/"map_" + map_key + "_" + mangle(map_val)`.
+2. gen_map_type (3861) + gen_map_fns (3875): signature → `(dc, ctx, ty)`; derive
+   k=map_key(ty), v=map_val(ty); `cv := cty(dc,ctx,v)` minus trailing space;
+   M/f/s use `mangle(v)`. In put, `m->vals[t] = val;` →
+   `m->vals[t] = <cp_field(dc,ctx,v,"ar","val")>;` (scalar passthrough = byte-id).
+   In _eq, the value comparison `|| b.vals[t] != a.vals[i]` only when v is scalar
+   (int/float/char) — struct/array `!=` is a C compile error, and == is dead
+   anyway (hierc rejects composite ==).
+3. Call sites: gen_map_type (4348) + gen_map_fns (4409) → pass `(dc, ctx, ets[i])`.
+4. map_get codegen (~2222): wrap in cp_field —
+   `cp_field(dc, ctx, map_val(mt), ctx.owner, "<mfam(mt)_get(...)>")`. Scalar
+   passthrough keeps int/float byte-identical; heap V deep-copies (lifetime).
+   map_set value already routes through the runtime put (with_owner "0"), which
+   now deep-copies — no codegen change.
+5. RELAX hierc0's own type checker: its map-literal resolution rejects non-int/
+   float values (mirror of hierc's old check) — find + allow string keys + any
+   value (the [int:V] heap case stays rejected). sig_ret's `map_get -> "int"`
+   (1716/1729) is a crude fallback; the real value type comes from type_of's
+   `map_get -> map_val` (1840) — leave sig_ret, but verify [string:str] map_get
+   types as str (it should, via type_of).
+6. Verify: build A (hierc·hierc0.hi) → B; B compiles a [string:str] program
+   matching hierc's output; make fixpoint B==C; THEN add tests/map_values.hi
+   (golden + value-semantics self-check) — the differential needs both compilers,
+   so the test can only land once 1-5 are green.
+
 ## Decisions to keep
 
 - Keep the 4 hardcoded int/float maps as-is (byte-identical, zero churn); composite
