@@ -2063,9 +2063,7 @@ static Type resolve_expr(Expr *e) {
                 for (int j = 0; j < nlam; j++) if (!strcmp(pr->params[j].name, ids[i])) { isparam = 1; break; }
                 if (isparam) continue;
                 Type vt;
-                if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE */
-                    if (type_is_heap(vt))
-                        die_at(e->line, "capturing '%s' (a non-scalar) isn't supported yet — capture int/float/bool/char only, or pass it as a parameter", ids[i]);
+                if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE (heap: deep-copied in) */
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
                     caps[ncap].name = ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
                     ncap++;
@@ -3791,7 +3789,10 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(&_scope, sizeof(Env_%d));", id, id, id);
             for (int i = 0; i < li->ncap; i++) {
                 const char *cn = li->proc->params[i].name;
-                out = sfmt("%s _e->c%d = %s;", out, i, is_inout_param(cn) ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn));
+                Type ct = li->proc->params[i].type;
+                char *cv = is_inout_param(cn) ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn);
+                if (type_is_heap(ct)) cv = copy_into(ct, "&_scope", cv);   /* value semantics: own a deep copy in the env arena */
+                out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
             return sfmt("%s (FnC%d){_e, __lam%d__clo}; })", out, fid, id);
         }
