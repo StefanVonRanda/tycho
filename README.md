@@ -728,13 +728,28 @@ push(a, 30)                  # mutate the original after capture
 print(str(get_len()))        # 2 — the closure kept its own copy (not 3)
 ```
 
-Closures are **downward-only**: you can bind one to a local, pass it as an
-argument, and call it, but you can't **return** a capturing closure or store it
-where it would outlive the scope that created it (its captured environment lives
-in that scope's arena). Returning a capturing closure is a compile error;
-returning a plain function reference or a non-capturing lambda is fine. This
-covers the common higher-order patterns (`map`/`filter`/`reduce`, predicates,
-comparators) — see [`corelib/iter`](corelib/iter/iter.hi).
+A closure can also **escape** — be returned from the function that created it:
+
+```
+fn make_adder(n: int) -> fn(int) -> int:
+    return fn(x: int) -> int: x + n      # captures n, then escapes
+
+fn main():
+    add5 := make_adder(5)
+    print(str(add5(100)))                # 105
+```
+
+This stays sound with **no lifetime annotations**: on return, the closure's
+captured environment is deep-copied (re-homed) into the caller's arena, exactly
+like every other heap value that escapes a function. The closure carries its own
+env-copy routine, so the move is automatic. This is the value-semantic memory
+model's payoff — the captured state behaves like a plain value at every step.
+
+The one remaining restriction is that a function value can't be stored in a
+**container** (struct field, array, map, tuple) — escape is via direct return or
+downward passing only. The common higher-order patterns (`map`/`filter`/`reduce`,
+predicates, comparators, factory functions) are all covered — see
+[`corelib/iter`](corelib/iter/iter.hi).
 
 ### Builtins
 

@@ -282,6 +282,8 @@ class Gen:
             kinds += ["foreach", "foreach"]
         if int_vars or int_arr_vars or str_vars:
             kinds += ["closure", "closure"]            # lambda/closure: capture by value, call, fold into the checksum
+        if int_vars or int_arr_vars:
+            kinds += ["escclosure"]                    # ESCAPING closure: bind one returned from a factory, call it later
         if map_vars:
             kinds += ["map_accum", "map_place", "map_place"]   # #2: m[k] as a place
         res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -351,6 +353,14 @@ class Gen:
                 self.emit(ind, "acc = acc + " + f + "()")
             else:
                 self.emit(ind, "acc = acc + 0")
+            return
+        if k == "escclosure":          # bind a closure RETURNED from a factory (its env re-homed into our arena), call it later.
+            f = self.fresh("ec")
+            if int_vars and (not int_arr_vars or self.r.random() < 0.5):
+                self.emit(ind, f + " := mkadder(" + self.r.choice(int_vars) + ")")   # scalar capture escaped
+            else:
+                self.emit(ind, f + " := mksum(" + self.r.choice(int_arr_vars) + ")")  # heap capture escaped + re-homed
+            self.emit(ind, "acc = acc + " + f + "(" + str(self.r.randint(0, 9)) + ")")
             return
         if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
             n0, t0 = self.r.choice(map_vars)
@@ -609,6 +619,11 @@ class Gen:
                      "    return Ok(d)", ""]
         self.out += ["fn orret_chain(d: int) -> Result(int, string):", "    x := orret_mk(d) or_return",
                      "    y := orret_mk(d + 1) or_return", "    return Ok(x + y)", ""]
+        # escaping-closure factories: the returned closure's captured env re-homes
+        # into the caller's arena. Used by the `escclosure` kind. mkadder captures a
+        # scalar; mksum captures a heap array (its env array re-homes too).
+        self.out += ["fn mkadder(n: int) -> fn(int) -> int:", "    return fn(x: int) -> int: x + n", ""]
+        self.out += ["fn mksum(a: [int]) -> fn(int) -> int:", "    return fn(x: int) -> int: x + len(a)", ""]
 
     def generate(self):
         for _ in range(self.r.randint(0, 2)):
