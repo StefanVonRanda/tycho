@@ -29,6 +29,14 @@ struct Pt:
     x: int
     y: int
 
+# escaping closures: the returned closure's env re-homes into the caller's arena
+# (deep-copying any heap captures) — sound with no lifetime annotations.
+fn make_adder(n: int) -> fn(int) -> int:
+    return fn(x: int) -> int: x + n
+
+fn make_prefixer(p: string) -> fn(string) -> string:
+    return fn(s: string) -> string: p + s
+
 fn main():
     # --- no-capture lambdas ---
     sq := fn(x: int) -> int: x * x
@@ -83,3 +91,11 @@ fn main():
     p := Pt(7, 8)
     pc := fn() -> int: p.x + p.y                            # struct capture
     print(f"pc={apply0(pc)}\n")                             # 15
+
+    # --- escaping closures (returned from a function) ---
+    add5 := make_adder(5)
+    add9 := make_adder(9)
+    print(f"escaped: {add5(100)} {add9(100)} {add5(1)}\n")  # 105 109 6 (each kept its own n)
+    pre := make_prefixer(">> ")                             # heap capture escapes + re-homes
+    print(pre("done") + "\n")                               # >> done
+    print(f"down={apply(make_adder(20), 2)}\n")             # 22 (escaped closure passed straight down)

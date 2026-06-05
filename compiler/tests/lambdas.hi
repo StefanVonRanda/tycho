@@ -25,6 +25,16 @@ fn count_pos(f: fn(int) -> int, xs: [int]) -> int:
             n = n + 1
     return n
 
+# escaping closures: the returned closure's captured env re-homes into the caller
+fn make_adder(n: int) -> fn(int) -> int:
+    return fn(x: int) -> int: x + n
+
+fn make_scaler(k: int, base: int) -> fn(int) -> int:    # multi-capture escapes
+    return fn(x: int) -> int: x * k + base
+
+fn make_tagger(tag: string) -> fn(string) -> string:    # heap capture escapes
+    return fn(s: string) -> string: tag + s
+
 fn main():
     # a lambda bound to a local, then called through a fn-typed parameter
     sq := fn(x: int) -> int: x * x
@@ -87,3 +97,13 @@ fn main():
     csum := fn(x: int) -> int: vals[0] + vals[1] + vals[2]
     vals[0] = 100                                   # mutate element after capture
     print(str(apply(csum, 0)) + "\n")               # 6  (copy, not 105)
+
+    # --- escaping closures (returned; env re-homes into the caller's arena) ---
+    add5 := make_adder(5)
+    add9 := make_adder(9)
+    print(str(add5(100)) + "," + str(add9(100)) + "," + str(add5(1)) + "\n")   # 105,109,6
+    scale := make_scaler(3, 7)
+    print(str(scale(10)) + "\n")                    # 37
+    tagger := make_tagger("[")
+    print(tagger("x") + "\n")                       # [x   (heap capture escaped)
+    print(str(apply(make_adder(20), 2)) + "\n")     # 22  (escaped closure passed straight down)

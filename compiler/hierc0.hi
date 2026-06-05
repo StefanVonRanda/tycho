@@ -2437,7 +2437,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if not has_str(names, name):             # not a local: a bare fn name -> the fat value {0, thunk}
                 ft := sig_functype(dc, name)
                 if ft != "":
-                    return "(Fn_" + func_suffix(ft) + "){0, " + un(name) + "__clo}"
+                    return "(Fn_" + func_suffix(ft) + "){0, " + un(name) + "__clo, 0}"   # plain ref: no env to re-home
                 return un(name)
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + un(name) + ")"
@@ -2504,7 +2504,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
         ELambda(id, ps, pts, ret, body, cn, ct):
             suffix := func_suffix(mk_functype(pts, ret))
             if len(cn) == 0:
-                return "(Fn_" + suffix + "){0, " + un("__lam" + str(id)) + "__clo}"
+                return "(Fn_" + suffix + "){0, " + un("__lam" + str(id)) + "__clo, 0}"
             # captures: build the env as a compound literal and hbox it into the
             # FUNCTION-scope arena (&_scope, not a block arena) so a closure assigned
             # to an outer-block local stays valid; rule (a) forbids escaping the fn.
@@ -2519,7 +2519,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 env = env + cv
                 j = j + 1
             env = env + "}"
-            return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo}"
+            return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -3520,6 +3520,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             # returned value never points into the freed _scope.
             # free every enclosing block arena (return_frees), innermost-first,
             # then _scope; the value is in _parent which outlives them all.
+            if is_func(ctx.rettype):              # escaping closure: re-home the captured env into _parent before freeing _scope (its hbox lives in &_scope); plain ref has env==0 -> no-op
+                return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + return_frees(dc, ctx) + " return _ret; }\n"
             return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
         SReturnVoid:
             return "    " + return_frees(dc, ctx) + " return;\n"
@@ -3969,7 +3971,7 @@ fn gen_func_typedef(dc: Decls, ctx: Ctx, ty: string) -> string:
     for i < len(ps):
         out = out + ", " + cty(dc, ctx, ps[i])
         i = i + 1
-    return out + "); } Fn_" + func_suffix(ty) + ";\n"
+    return out + "); void* (*copyenv)(Arena*, void*); } Fn_" + func_suffix(ty) + ";\n"   # copyenv re-homes the env on return (0 for a plain ref)
 
 fn fn_value_eligible(f: Func) -> bool:           # usable as a value: no inout params (the fat-ptr call ABI carries none)
     i := 0
@@ -5065,49 +5067,6 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
 
-# A fn-typed return value is safe to escape ONLY if it provably carries no
-# captured environment: a top-level function reference (a non-local EVar) or a
-# lambda that captures nothing. A fn-typed local/param (may hold a closure) or a
-# capturing lambda is rejected — its env lives in the freed function arena.
-fn fn_return_ok(e: Expr, names: [string]) -> bool:
-    match e:
-        ELambda(id, ps, pts, ret, body, cn, ct):
-            return len(cn) == 0
-        EVar(n):
-            return not has_str(names, n)              # a top-level fn name is safe; a local/param fn var is not
-        EInt(t):
-            return false
-        EBool(t):
-            return false
-        EChar(t):
-            return false
-        EFloat(t):
-            return false
-        EStr(s):
-            return false
-        EBin(o, l, r):
-            return false
-        ECall(n, a):
-            return false
-        EField(b, f):
-            return false
-        EIndex(b, ix):
-            return false
-        EArrLit(es):
-            return false
-        EArrEmpty(t):
-            return false
-        EMapEmpty(k, v):
-            return false
-        EMapLit(ks, vs):
-            return false
-        ETuple(es):
-            return false
-        ESlice(b, lo, hi):
-            return false
-        EAddr(x):
-            return false
-
 fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
@@ -5133,10 +5092,9 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         SPrint(e):
             return SPrint(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SReturn(e):
-            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
-            if is_func(fret) and not fn_return_ok(ne, names):   # rule (a): no escaping closure (arena-UAF; ASan-blind). fret is_func => the return IS a fn value.
-                die("hierc0: can't return this function value — a closure (or a fn variable/parameter that may hold one) can't escape its creating scope; return a plain function name or a lambda that captures nothing")
-            return SReturn(ne)
+            # A closure MAY escape: gen_stmt's SReturn re-homes its captured env into
+            # _parent via copyenv (value semantics, sound). rule (a) lifted.
+            return SReturn(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SReturnVoid:
             return s
         SIf(c, th, el):
@@ -5501,6 +5459,18 @@ fn main():
     i = 0                                        # 9c. closure thunks: unpack the env, call the lifted __lam proc
     for i < len(lams):
         out = out + gen_lambda_thunk(lams[i], dc, ctx)
+        i = i + 1
+    i = 0                                        # 9c'. env-copy thunks (after the copy fns above): re-home the env on closure return
+    for i < len(lams):
+        if len(lams[i].capnames) > 0:
+            eid := str(lams[i].id)
+            out = out + "static void* Env_" + eid + "_copy(Arena* a, void* _s) { Env_" + eid + "* s = (Env_" + eid + "*)_s; Env_" + eid + "* d = (Env_" + eid + "*)hbox(a, sizeof(Env_" + eid + "), s);"
+            cj := 0
+            for cj < len(lams[i].captypes):
+                if elem_deepcopy(dc, ctx, lams[i].captypes[cj]):   # heap capture: deep-copy into `a` (scalars keep the hbox shallow copy)
+                    out = out + " d->c" + str(cj) + " = " + cp_field(dc, ctx, lams[i].captypes[cj], "a", "s->c" + str(cj)) + ";"
+                cj = cj + 1
+            out = out + " return d; }\n"
         i = i + 1
     i = 0
     for i < len(funcs):
