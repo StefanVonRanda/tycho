@@ -45,6 +45,21 @@ fn make_adders(base: int) -> [fn(int) -> int]:           # a container of CLOSUR
     push(out, fn(x: int) -> int: x + base + 1)
     return out
 
+fn sum_arr(xs: [int]) -> int:                            # a fn whose PARAM is a composite ([int])
+    s := 0
+    for v in xs:
+        s = s + v
+    return s
+
+fn apply_arr(f: fn([int]) -> int, xs: [int]) -> int:     # the fn-typed param is fn([int]) -> int
+    return f(xs)
+
+fn double_all(n: int) -> [int]:                          # a fn whose RET is a composite ([int])
+    return [n * 2, n * 2 + 1, n * 2 + 4]
+
+fn apply_mk(f: fn(int) -> [int], n: int) -> [int]:
+    return f(n)
+
 fn main():
     # a lambda bound to a local, then called through a fn-typed parameter
     sq := fn(x: int) -> int: x * x
@@ -126,3 +141,8 @@ fn main():
     adders := make_adders(100)                      # container of closures returned (envs re-home)
     print(str(adders[0](1)) + "," + str(adders[1](1)) + "\n")   # 101,102
     print(str(make_adder(7)(3)) + "\n")             # 10  (chained call f(a)(b))
+
+    # --- fn whose PARAM/RET is a composite (array/map) — typedef-ordering edge ---
+    print(str(apply_arr(sum_arr, [10, 20, 30])) + "\n")   # 60  (fn([int]) -> int)
+    doubled := apply_mk(double_all, 1)                    # fn(int) -> [int], returns a composite
+    print(str(doubled[0]) + "," + str(doubled[2]) + "\n") # 2,6

@@ -5001,6 +5001,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
     for (int i = 0; i < g_nenums; i++)              /* forward-declare cells; a value is E_<name>* */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
+    for (int i = 0; i < g_narrtypes; i++)           /* forward-declare composite-array/map tags so a fn value */
+        fprintf(o, "typedef struct HierArrC%d_ HierArrC%d;\n", i, i);   /* whose param/ret is one (fn([T])->R) can name it incomplete */
+    for (int i = 0; i < g_nmaptypes; i++)
+        fprintf(o, "typedef struct HierMapC%d_ HierMapC%d;\n", i, i);
     /* (2a') function-value typedefs FIRST — a container may now hold a fn value
      * (array elem / struct field / map value), so FnC<id> must be complete before
      * the composite-array/struct bodies that embed it. A fn(P...)->R value is a
@@ -5013,16 +5017,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
     }
     if (g_nfunctypes) fputs("\n", o);
-    for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
-        fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
-                c_type(g_arrtypes[i].elem), i);
-    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map typedefs [K: V] */
+    for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array bodies (tags forward-declared above) */
+        fprintf(o, "struct HierArrC%d_ { %s*data; long len; long cap; };\n",
+                i, c_type(g_arrtypes[i].elem));
+    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] */
         if (g_maptypes[i].key == T_INT)             /* int keys: occupancy array (0 is a real key) */
-            fprintf(o, "typedef struct { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; } HierMapC%d;\n",
-                    c_type(g_maptypes[i].val), i);
+            fprintf(o, "struct HierMapC%d_ { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; };\n",
+                    i, c_type(g_maptypes[i].val));
         else
-            fprintf(o, "typedef struct { char **keys; %s*vals; long len; long cap; long used; } HierMapC%d;\n",
-                    c_type(g_maptypes[i].val), i);
+            fprintf(o, "struct HierMapC%d_ { char **keys; %s*vals; long len; long cap; long used; };\n",
+                    i, c_type(g_maptypes[i].val));
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
      * enough — this can precede struct bodies, letting a struct embed a soa by

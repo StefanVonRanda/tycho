@@ -4410,9 +4410,9 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(dc: Decls, ctx: Ctx, et: string) -> string:
-    nm := "Arr_" + mangle(et)                    # typedef + forward decls, so cross-refs
-    ct := cty(dc, ctx, et)                           # (composite _eq, and nested-array _from
-    out := "typedef struct { " + ct + "* data; long len; long cap; } " + nm + ";\n"   # deep-copy via the inner _copy) resolve in any order
+    nm := "Arr_" + mangle(et)                    # named-tag body; the typedef is forward-declared in the driver
+    ct := cty(dc, ctx, et)                           # (so a fn value whose param/ret is [T] can name Arr_T incomplete)
+    out := "struct " + nm + "_ { " + ct + "* data; long len; long cap; };\n"
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
     out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n);\n"
     return out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a);\n"
@@ -4565,10 +4565,10 @@ fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
-    M := "Map_" + k + "_" + mangle(v)
+    M := "Map_" + k + "_" + mangle(v)            # named-tag body; typedef forward-declared in the driver (fn([K:V])->R)
     if k == "int":                               # int keys: a value array + occupancy bytes (0 is a real key)
-        return "typedef struct { long* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; } " + M + ";\n"
-    return "typedef struct { char** keys; " + cv + "* vals; long len; long cap; } " + M + ";\n"
+        return "struct " + M + "_ { long* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; };\n"
+    return "struct " + M + "_ { char** keys; " + cv + "* vals; long len; long cap; };\n"
 
 # Map family monomorphized over key k (str/int) and value v (int/float). The C
 # value type cv is long/double. String keys use mhash + strcmp + a NULL-empty key
@@ -5489,6 +5489,17 @@ fn main():
     i = 0                                        # 1b. forward-declare enum tags
     for i < len(prog.enums):
         out = out + "typedef struct " + uet(prog.enums[i].name) + " " + uet(prog.enums[i].name) + ";\n"
+        i = i + 1
+    i = 0                                        # 1b'. forward-declare composite array/map tags so a fn value whose
+    for i < len(ets):                            #      param/ret is [T]/[K:V] (fn([T])->R) can name it incomplete
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+            out = out + "typedef struct Arr_" + mangle(ets[i]) + "_ Arr_" + mangle(ets[i]) + ";\n"
+        i = i + 1
+    i = 0
+    for i < len(ets):
+        if is_map(ets[i]):
+            mt := "Map_" + map_key(ets[i]) + "_" + mangle(map_val(ets[i]))
+            out = out + "typedef struct " + mt + "_ " + mt + ";\n"
         i = i + 1
     i = 0                                        # 1c. function-value typedefs FIRST — a container may hold a fn
     has_fnval := false                           #     value (array elem / struct field), so Fn_<suffix> must be
