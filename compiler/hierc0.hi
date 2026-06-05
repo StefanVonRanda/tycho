@@ -2379,7 +2379,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hnone()"
             if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
                 return "mk_" + name + "(" + ctx.owner + ")"
-            if not has_str(names, name):             # not a local: a bare fn name -> the C function (decays to a pointer)
+            if not has_str(names, name):             # not a local: a bare fn name -> the fat value {0, thunk}
+                ft := sig_functype(dc, name)
+                if ft != "":
+                    return "(Fn_" + func_suffix(ft) + "){0, " + un(name) + "__clo}"
                 return un(name)
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + un(name) + ")"
@@ -2563,6 +2566,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
                 return "(" + ust(name) + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
+            if has_str(names, name) and is_func(var_type(names, types, name)):   # indirect call through a fn value: g.call(g.env, arena, args)
+                cl := un(name) + ".call(" + un(name) + ".env, " + ctx.owner
+                if len(args) > 0:
+                    cl = cl + ", " + gen_call_args(args, names, types, dc, ctx)
+                return cl + ")"
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
@@ -3851,13 +3859,39 @@ fn gen_func_typedef(dc: Decls, ctx: Ctx, ty: string) -> string:
     rc := "void "                                # cty has no "void" case (fns handle it separately)
     if r != "void":
         rc = cty(dc, ctx, r)
-    out := "typedef " + rc + "(*Fn_" + func_suffix(ty) + ")(Arena*"
+    out := "typedef struct { void* env; " + rc + "(*call)(void*, Arena*"   # fat value: env + adapter thunk (closures carry captures in env)
     ps := func_params(ty)
     i := 0
     for i < len(ps):
         out = out + ", " + cty(dc, ctx, ps[i])
         i = i + 1
-    return out + ");\n"
+    return out + "); } Fn_" + func_suffix(ty) + ";\n"
+
+fn fn_value_eligible(f: Func) -> bool:           # usable as a value: no inout params (the fat-ptr call ABI carries none)
+    i := 0
+    for i < len(f.ptypes):
+        if is_inout(f.ptypes[i]):
+            return false
+        i = i + 1
+    return true
+
+# Adapter thunk: a fat-ptr `call` is R(void* env, Arena*, P...); the real C
+# function h_<name> is R(Arena*, P...). The thunk ignores env and forwards.
+fn gen_fnval_thunk(f: Func, dc: Decls, ctx: Ctx) -> string:
+    out := "static " + ret_cty(dc, ctx, f.ret) + un(f.name) + "__clo(void* _e, Arena* _p"
+    i := 0
+    for i < len(f.ptypes):
+        out = out + ", " + cty(dc, ctx, f.ptypes[i]) + "a" + str(i)
+        i = i + 1
+    out = out + ") { (void)_e; "
+    if f.ret != "void":
+        out = out + "return "
+    out = out + un(f.name) + "(_p"
+    i = 0
+    for i < len(f.ptypes):
+        out = out + ", a" + str(i)
+        i = i + 1
+    return out + "); }\n"
 
 fn gen_tuple_struct(dc: Decls, ctx: Ctx, ty: string) -> string:
     parts := tuple_parts(ty)
@@ -4796,9 +4830,11 @@ fn main():
             out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 5a'. function-pointer typedefs (all param/ret types complete now)
+    has_fnval := false
     for i < len(ets):
         if is_func(ets[i]):
             out = out + gen_func_typedef(dc, ctx, ets[i])
+            has_fnval = true
         i = i + 1
     i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
@@ -4870,6 +4906,12 @@ fn main():
         if funcs[i].name != "main":
             out = out + gen_proto(funcs[i], dc, ctx)
         i = i + 1
+    if has_fnval:                                # 9b. fn-value adapter thunks (after protos: each forwards to h_<name>)
+        i = 0
+        for i < len(funcs):
+            if funcs[i].name != "main" and fn_value_eligible(funcs[i]):
+                out = out + gen_fnval_thunk(funcs[i], dc, ctx)
+            i = i + 1
     i = 0
     for i < len(funcs):
         out = out + gen_func(funcs[i], dc, ctx)
