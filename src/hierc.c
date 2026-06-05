@@ -579,6 +579,14 @@ static Type funcc_of(Type *params, int n, Type ret) {   /* find-or-create fn(par
 static int  func_n(Type t)            { return g_functypes[FUNC_ID(t)].n; }
 static Type func_ret(Type t)          { return g_functypes[FUNC_ID(t)].ret; }
 static Type func_param(Type t, int i) { return g_functypes[FUNC_ID(t)].params[i]; }
+/* top-level functions taken as a value: each gets a `<name>__clo` thunk so a plain
+ * reference becomes the fat value {0, <name>__clo}. */
+static const char *g_fnval[256];
+static int g_nfnval = 0;
+static void note_fnval(const char *name) {
+    for (int i = 0; i < g_nfnval; i++) if (!strcmp(g_fnval[i], name)) return;
+    if (g_nfnval < 256) g_fnval[g_nfnval++] = name;
+}
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
@@ -2025,7 +2033,8 @@ static Type resolve_expr(Expr *e) {
                 if (fs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
                 for (int i = 0; i < fs->nparams; i++)
                     if (fs->inout[i]) die_at(e->line, "'%s' has an inout parameter, so it can't be a function value", e->sval);
-                e->op = TK_FN;   /* mark: this E_IDENT is a function reference (codegen emits h_<name>) */
+                e->op = TK_FN;   /* mark: this E_IDENT is a function reference (codegen emits the fat value) */
+                note_fnval(e->sval);   /* emit a <name>__clo thunk for it */
                 return e->type = funcc_of(fs->params, fs->nparams, fs->ret);
             }
             die_at(e->line, "unknown variable '%s'", e->sval);
@@ -3351,6 +3360,13 @@ static char *gen_eq(Type t, const char *a, const char *b) {
 static char *gen_call(Expr *e, const char *arena) {
     if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
         return gen_expr(e->args[0], arena);
+    if (e->op == TK_FN) {     /* indirect call through a function value: g.call(g.env, arena, args) */
+        char *g = sfmt("h_%s", e->sval);
+        char *out = sfmt("%s.call(%s.env, %s", g, g, arena);
+        for (int i = 0; i < e->nargs; i++)
+            out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
+        return sfmt("%s)", out);
+    }
     if (e->op == TK_ENUM) {   /* enum constructor: descriptor { tag, payload } */
         int eid = ENUM_ID(e->type), vi = (int)e->ival;
         Variant *var = &g_enums[eid].variants[vi];
@@ -3614,8 +3630,11 @@ static char *gen_expr(Expr *e, const char *arena) {
         }
         case E_TUPIDX:   /* t.0 -> (t)._0 */
             return sfmt("((%s)._%ld)", gen_expr(e->lhs, arena), e->ival);
-        case E_IDENT:return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
-                                                    : sfmt("h_%s", e->sval);
+        case E_IDENT:
+            if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo} */
+                return sfmt("(FnC%d){0, %s__clo}", FUNC_ID(e->type), e->sval);
+            return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
+                                           : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
                       * lvalue. gen_lvalue derefs an inout root and projects an
                       * array element to its buffer slot, so `&arr[i].x` is a
@@ -4827,14 +4846,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o, "static E_%s _sing_%s_%d = { %d };\n", ed->name, ed->name, v, v);
     }
     fputs("\n", o);
-    /* (3d) function-pointer typedefs: every aggregate C type is complete now, so a
-     * fn(P...) -> R value's params/ret are usable. fn values aren't stored in
-     * structs/arrays (first cut), so nothing above referenced FnC. */
+    /* (3d) function-value typedefs: a fn(P...) -> R value is a FAT POINTER — an env
+     * pointer plus a `call` thunk `R call(void* env, Arena*, P...)`. A plain top-level
+     * reference is {0, fn__clo}; a closure is {heap_env, lifted_body}. This uniform
+     * shape lets a ref and a closure share the type. Every aggregate C type is complete
+     * now, so the params/ret are usable. */
     for (int i = 0; i < g_nfunctypes; i++) {
         FuncTy *f = &g_functypes[i];
-        fprintf(o, "typedef %s(*FnC%d)(Arena*", c_type(f->ret), i);
+        fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
         for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
-        fprintf(o, ");\n");
+        fprintf(o, "); } FnC%d;\n", i);
     }
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
@@ -5215,6 +5236,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     fputs("\n", o);
+    for (int k = 0; k < g_nfnval; k++) {   /* fat-value thunks: <name>__clo wraps h_<name>, ignoring env */
+        Sig *fs = sig_find(g_fnval[k]);
+        if (!fs) continue;
+        fprintf(o, "static %s%s__clo(void *_e, Arena *_p", c_type(fs->ret), g_fnval[k]);
+        for (int j = 0; j < fs->nparams; j++) fprintf(o, ", %sa%d", c_type(fs->params[j]), j);
+        fprintf(o, ") { (void)_e; %sh_%s(_p", fs->ret == T_VOID ? "" : "return ", g_fnval[k]);
+        for (int j = 0; j < fs->nparams; j++) fprintf(o, ", a%d", j);
+        fprintf(o, "); }\n");
+    }
+    if (g_nfnval) fputs("\n", o);
     for (int i = 0; i < prog->n; i++) gen_proc(o, prog->v[i]);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);
