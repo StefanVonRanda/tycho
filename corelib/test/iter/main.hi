@@ -1,0 +1,35 @@
+# corelib test: exercises core:iter with both plain lambdas and CAPTURING closures
+# across the package boundary. The C compiler and hierc0 must agree (corelib/run.sh).
+package main
+import "core:iter"
+
+fn dbl(x: int) -> int:
+    return x + x
+
+fn main():
+    xs := [1, 2, 3, 4, 5]
+
+    # plain lambda
+    doubled := iter.map(xs, fn(x: int) -> int: x * 2)
+    print(f"map={doubled[0]},{doubled[4]}\n")                 # map=2,10
+
+    # a top-level function reference as the argument
+    print(f"map-ref={iter.map(xs, dbl)[2]}\n")                # map-ref=6
+
+    # filter with a capturing closure
+    thr := 2
+    big := iter.filter(xs, fn(x: int) -> int: x - thr)        # keep x > 2
+    print(f"filter>{thr}={big[0]},{big[1]},{big[2]}\n")       # filter>2=3,4,5
+
+    # reduce: sum and product
+    print(f"sum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)}\n")        # sum=15
+    print(f"prod={iter.reduce(xs, 1, fn(a: int, b: int) -> int: a * b)}\n")       # prod=120
+
+    # reduce with a captured weight
+    w := 10
+    print(f"wsum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b * w)}\n")   # wsum=150
+
+    # count + any with captured threshold
+    lim := 3
+    print(f"count>={lim}: {iter.count(xs, fn(x: int) -> int: x - lim + 1)}\n")    # count>=3: 3
+    print(f"any>100={iter.any(xs, fn(x: int) -> int: x - 100)}\n")               # any>100=false
