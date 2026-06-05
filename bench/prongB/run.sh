@@ -89,7 +89,7 @@ json_workload() {
 }
 
 summary() {                                   # normalized head-to-head scorecard from the accumulated records
-    ORDER="binary_trees maptree arr_pipeline string_pipe iter_transform json_parse"
+    ORDER="binary_trees maptree arr_pipeline string_pipe iter_transform dispatch json_parse"
     echo "==========================================================="
     echo "SUMMARY — peak RSS (MB).  'hier/C' is the headline thesis metric:"
     echo "implicit arenas vs hand-written malloc/free; ~1x = parity, lower is better."
@@ -119,6 +119,7 @@ workload "tree-rewrite (map a persistent tree)"   maptree      maptree
 workload "array-pipeline (flat-array passes)"     arr_pipeline arrpipeline
 workload "string-pipeline (build + hash strings)" string_pipe  stringpipe
 workload "iter-transform (the arena's WORST case: reassign a loop-carried value)" iter_transform itertransform
+workload "dispatch (array of closures rebuilt + applied each pass; per-pass reclaim)" dispatch dispatch
 json_workload
 
 summary
