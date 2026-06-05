@@ -573,7 +573,9 @@ the built-in `Option(T)`).
 `type Meters = float` declares a **distinct** type: it has the same runtime
 representation as its underlying type (zero cost — a `Meters` *is* a `double` in
 the generated C) but is type-incompatible with `float` and with every other
-newtype. The underlying type is `int` or `float`.
+newtype. This is exactly Odin's `Meters :: distinct f32` — Hier has no
+*transparent* alias, so `type` always means distinct (no keyword needed to say
+so). The underlying type is `int`, `float`, `string`, or `bool`.
 
 ```
 type Meters = float
