@@ -1,0 +1,85 @@
+# Closures: lambdas `fn(p: T) -> R: expr`, captured by VALUE, downward-only.
+# A lambda is a fat value {env, thunk}; captures are deep-copied into the env so
+# the closure is independent of later mutation of the captured variable. Returning
+# a capturing closure is rejected (it would dangle); see tests that must compile.
+
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn apply0(f: fn() -> int) -> int:
+    return f()
+
+fn applyS(f: fn() -> string) -> string:
+    return f()
+
+fn map_int(xs: [int], f: fn(int) -> int) -> [int]:
+    out := []int
+    for v in xs:
+        push(out, f(v))
+    return out
+
+fn count_if(xs: [int], pred: fn(int) -> int) -> int:   # pred returns nonzero = keep
+    n := 0
+    for v in xs:
+        if pred(v) > 0:
+            n = n + 1
+    return n
+
+struct Pt:
+    x: int
+    y: int
+
+fn main():
+    # --- no-capture lambdas ---
+    sq := fn(x: int) -> int: x * x
+    print(f"sq(7)={apply(sq, 7)}\n")                         # 49
+    print(f"inline={apply(fn(x: int) -> int: x + 1, 41)}\n") # 42
+    ys := map_int([1, 2, 3, 4], fn(x: int) -> int: x * 10)
+    print(f"map={ys[0]},{ys[1]},{ys[2]},{ys[3]}\n")          # 10,20,30,40
+
+    # reassign a fn-typed local, call indirectly
+    g := sq
+    print(f"g=sq -> {g(9)}\n")                               # 81
+    g = fn(x: int) -> int: 0 - x
+    print(f"g=neg -> {g(9)}\n")                              # -9
+
+    # --- scalar captures, by value ---
+    n := 10
+    addn := fn(x: int) -> int: x + n
+    print(f"addn(5)={apply(addn, 5)}\n")                     # 15
+    n = 1000                                                  # value capture: closure keeps 10
+    print(f"addn(5) after n=1000 -> {apply(addn, 5)}\n")     # 15
+
+    a := 3
+    b := 4
+    poly := fn(x: int) -> int: x * a + b                     # multi-capture
+    print(f"poly(10)={apply(poly, 10)}\n")                   # 34
+
+    thr := 5
+    print(f"count>5={count_if([1, 6, 9, 4, 7], fn(z: int) -> int: z - thr)}\n")  # 3
+
+    # closure created in an inner block, used after it (env in the function arena)
+    h := fn(x: int) -> int: x
+    if true:
+        bonus := 100
+        h = fn(x: int) -> int: x + bonus
+    print(f"block-capture={apply(h, 8)}\n")                  # 108
+
+    # --- heap captures, deep-copied (value semantics) ---
+    s := "ada"
+    greet := fn() -> string: "hi " + s
+    print(f"{applyS(greet)}\n")                              # hi ada
+
+    arr := [10, 20]
+    alen := fn() -> int: len(arr)
+    push(arr, 30)                                             # mutate original after capture
+    print(f"alen={apply0(alen)} len(arr)={len(arr)}\n")     # alen=2 len(arr)=3
+
+    vals := [1, 2, 3]
+    vsum := fn() -> int: vals[0] + vals[1] + vals[2]
+    vals[0] = 100                                            # mutate element after capture
+    print(f"vsum={apply0(vsum)}\n")                          # 6 (copy, not 105)
+
+    p := Pt(7, 8)
+    pc := fn() -> int: p.x + p.y                            # struct capture
+    print(f"pc={apply0(pc)}\n")                             # 15

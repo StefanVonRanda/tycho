@@ -1,0 +1,14 @@
+sq(7)=49
+inline=42
+map=10,20,30,40
+g=sq -> 81
+g=neg -> -9
+addn(5)=15
+addn(5) after n=1000 -> 15
+poly(10)=34
+count>5=3
+block-capture=108
+hi ada
+alen=2 len(arr)=3
+vsum=6
+pc=15

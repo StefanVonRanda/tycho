@@ -691,12 +691,50 @@ fn main():
     print(str(apply(dbl, 21)))   # 42
 ```
 
-A function value is a **reference** to a named function — there are no closures
-(it captures nothing), so it is just a code pointer: zero-cost and immortal (no
-arena, never heap). This is what lets you write generic-feeling helpers over
-concrete function arguments (`map`/`filter`/`reduce`-style) without generics.
-Builtins (`len`, `push`, …) and functions with `inout` parameters can't be taken
-as values, and a function value can't yet be stored in a struct field or array.
+A function value can be a **reference** to a named function (it captures nothing,
+so it is just a code pointer — zero-cost and immortal) or a **closure** (see
+below). This is what lets you write generic-feeling helpers over concrete
+function arguments (`map`/`filter`/`reduce`-style) without generics. Builtins
+(`len`, `push`, …) and functions with `inout` parameters can't be taken as
+values, and a function value can't be stored in a struct field or array.
+
+### Closures (lambdas)
+
+A **lambda** is an anonymous function written inline; its body is a single
+expression (an implicit return):
+
+```
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn main():
+    n := 10
+    addn := fn(x: int) -> int: x + n     # a closure: captures `n`
+    print(str(apply(addn, 5)))           # 15
+
+    xs := [1, 2, 3, 4]
+    print(str(apply(fn(x: int) -> int: x * x, 3)))   # 9 — inline, no capture
+```
+
+Closures **capture by value**: the captured variable is *deep-copied* into the
+closure when it is created, so the closure is independent of any later change to
+the original — this keeps the value-semantic memory model intact (a closure is a
+plain value, no shared references).
+
+```
+a := [10, 20]
+get_len := fn() -> int: len(a)
+push(a, 30)                  # mutate the original after capture
+print(str(get_len()))        # 2 — the closure kept its own copy (not 3)
+```
+
+Closures are **downward-only**: you can bind one to a local, pass it as an
+argument, and call it, but you can't **return** a capturing closure or store it
+where it would outlive the scope that created it (its captured environment lives
+in that scope's arena). Returning a capturing closure is a compile error;
+returning a plain function reference or a non-capturing lambda is fine. This
+covers the common higher-order patterns (`map`/`filter`/`reduce`, predicates,
+comparators) — see [`corelib/iter`](corelib/iter/iter.hi).
 
 ### Builtins
 

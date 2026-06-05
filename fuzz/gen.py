@@ -280,6 +280,8 @@ class Gen:
             kinds += ["compound", "compound"]
         if arr_vars or str_vars:
             kinds += ["foreach", "foreach"]
+        if int_vars or int_arr_vars or str_vars:
+            kinds += ["closure", "closure"]            # lambda/closure: capture by value, call, fold into the checksum
         if map_vars:
             kinds += ["map_accum", "map_place", "map_place"]   # #2: m[k] as a place
         res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -323,6 +325,32 @@ class Gen:
                 x = self.fresh("c")
                 self.emit(ind, "for " + x + " in " + self.r.choice(str_vars) + ":")
                 self.emit(ind+1, "acc = acc + " + x)            # x is a byte (int 0..255)
+            return
+        if k == "closure":             # a lambda value (closure): capture BY VALUE, call, fold into the checksum.
+            # The mutate-then-call variants are value-semantics probes: a closure
+            # captures a COPY, so the result must not see the later mutation. hierc
+            # and hierc0 must agree (differential) and ASan/LSan must stay clean
+            # (the env lives in the function arena, freed on return; never escapes).
+            r = self.r.random()
+            f = self.fresh("cl")
+            if int_vars and r < 0.5:                            # scalar capture
+                cap = self.r.choice(int_vars)
+                self.emit(ind, f + " := fn(x: int) -> int: x + " + cap)
+                if self.r.random() < 0.5:                       # mutate AFTER capture -> closure keeps the old value
+                    self.emit(ind, cap + " = " + cap + " + 7")
+                self.emit(ind, "acc = acc + " + f + "(" + str(self.r.randint(0, 9)) + ")")
+            elif int_arr_vars and (r < 0.8 or not str_vars):    # heap capture (array); len is value-semantic
+                cap = self.r.choice(int_arr_vars)
+                self.emit(ind, f + " := fn() -> int: len(" + cap + ")")
+                if self.r.random() < 0.5:                       # push AFTER capture -> closure keeps its len-N copy
+                    self.emit(ind, "push(" + cap + ", 1)")
+                self.emit(ind, "acc = acc + " + f + "()")
+            elif str_vars:                                      # heap capture (string)
+                cap = self.r.choice(str_vars)
+                self.emit(ind, f + " := fn() -> int: len(" + cap + ")")
+                self.emit(ind, "acc = acc + " + f + "()")
+            else:
+                self.emit(ind, "acc = acc + 0")
             return
         if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
             n0, t0 = self.r.choice(map_vars)
