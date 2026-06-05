@@ -88,3 +88,7 @@ fn main():
     nv = map_set(nv, "a", box)
     dn := []string: int
     print("nestval=" + str(map_get(map_get(nv, "a", dn), "x", 0)) + "\n")   # nestval=7
+    # m[k] = <multi-entry map literal>: the inner map must be built in nv's arena,
+    # NOT owner 0 — else the chained-set intermediate tables leak (LSan, make test).
+    nv["b"] = ["y": 9, "z": 8]
+    print("place=" + str(map_get(map_get(nv, "b", dn), "z", 0)) + "\n")     # place=8

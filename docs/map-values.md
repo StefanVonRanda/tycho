@@ -86,7 +86,8 @@ to each. Add an `IS_MAPC` case to `copy_into` (hierc.c:2960) → `hier_map_C%d_c
 ## Step 3 map (the UAF-prone core)
 
 - Flip `map_of`: `(string key, V not int/float)` → `mapc_of(T_STRING, V)`;
-  `(int key, V not int/float)` → still T_VOID (deferred). Drop mapc_of's `unused`.
+  `(int key, V not int/float)` → `mapc_of(T_INT, V)` too (DONE now — see the Status
+  section; was deferred to a later pass at the time of writing). Drop mapc_of's `unused`.
 - resolve `map_get/set/has/del` already use `map_key`/`map_val` — they generalize
   for free EXCEPT the codegen, which dispatches on `map_fn(t)` (only si/sf/ii/if).
   Add an IS_MAPC branch in each map-builtin codegen emitting `hier_map_C<id>_*`.
@@ -106,7 +107,7 @@ borrow lifetime fixed via copy_into(map_val) on map_get, existing maps byte-
 identical (make test + fixpoint green). map_rt(t,op) dispatches hardcoded vs
 hier_mapc<id>. T_MAPC_BASE=32768; IS_SOA was bounded `< T_MAPC_BASE` (it was
 open-ended and swallowed map types). int-keyed composite values + composite `==`
-deferred.
+deferred AT THE TIME — both DONE now (see the Status section at the end).
 
 ## Step 5 — hierc0 parity (PROPER PLAN, checkpointed)
 

@@ -42,12 +42,24 @@ class Gen:
     def emit(self, ind, s):
         self.out.append("    " * ind + s)
 
+    def _kv(self, t):
+        # Split a map type "{K:V}" on its TOP-LEVEL colon. V may itself be a map
+        # ("{string:{string:int}}") or array, so a plain split(":") is wrong.
+        # For a single-colon type this returns exactly what split(":") would.
+        s = t[1:-1]; depth = 0
+        for i, c in enumerate(s):
+            if c in "{[(": depth += 1
+            elif c in "}])": depth -= 1
+            elif c == ":" and depth == 0: return s[:i], s[i+1:]
+        raise ValueError("not a map type: " + t)
+
     # ---- types ---------------------------------------------------------
     def types_simple(self):
         ts = ["int", "string", "float", "[int]", "[string]", "[float]", "Option(int)",
               "Option(string)", "(int, string)", "{string:int}", "{string:float}",
               "{int:int}", "{int:float}", "{string:string}",   # composite (heap) map value
               "{string:[int]}", "{int:[string]}",               # array-valued maps: the #2 m[k]-place surface
+              "{string:{string:int}}",                          # nested-map value: inner map emitted before outer
               "[Option(int)]", "[Option(string)]"]
         ts += list(self.structs.keys())
         ts += list(self.newtypes.keys())
@@ -80,6 +92,12 @@ class Gen:
                 choices.append(("shl",  lambda: "((" + ie() + " & 7) << " + str(self.r.randint(0, 3)) + ")"))
                 choices.append(("shr",  lambda: "(" + ie() + " >> " + str(self.r.randint(0, 3)) + ")"))
                 choices.append(("bnot", lambda: "(~(" + ie() + " & 31))"))
+                # str(bool): a comparison / and / not -> "true"/"false"; len() is 4 or 5,
+                # so the int depends on the bool value AND both compilers must agree on the
+                # words (this is the str(bool) / distinct-bool-type differential oracle).
+                choices.append(("strcmp", lambda: "len(str(" + ie() + " > " + ie() + "))"))
+                choices.append(("strand", lambda: "len(str(" + ie() + " < " + ie() + " and " + ie() + " >= " + ie() + "))"))
+                choices.append(("strnot", lambda: "len(str(not (" + ie() + " == " + ie() + ")))"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -110,7 +128,7 @@ class Gen:
         elif t == "(int, string)":
             choices.append(("tup", lambda: "(" + self.gen_expr("int", env, 2) + ", " + self.gen_expr("string", env, 2) + ")"))
         elif t.startswith("{") and t.endswith("}"):
-            kt, vt = t[1:-1].split(":")   # key/value: "string"/"int" keys, "int"/"float" values
+            kt, vt = self._kv(t)   # key/value: "string"/"int" keys, "int"/"float" values
             def mkkv(j):                  # distinct keys: "k0".. for string, 0.. for int
                 k = '"k' + str(j) + '"' if kt == "string" else str(j)
                 return k + ": " + self.gen_expr(vt, env, 2)
@@ -132,13 +150,9 @@ class Gen:
         if t == "Option(int)": return "Some(0)"
         if t == "Option(string)": return 'Some("x")'
         if t == "(int, string)": return '(0, "x")'
-        if t == "{string:string}": return '["k0": "x"]'
-        if t == "{string:int}": return '["k0": 0]'
-        if t == "{string:float}": return '["k0": 0.0]'
-        if t == "{int:int}": return '[0: 0]'
-        if t == "{int:float}": return '[0: 0.0]'
-        if t == "{string:[int]}": return '["k0": [0]]'
-        if t == "{int:[string]}": return '[0: ["x"]]'
+        if t.startswith("{") and t.endswith("}"):   # any map, incl. array/nested-map values
+            kt, vt = self._kv(t)                     # (byte-identical to the old hardcoded literals)
+            return "[" + ('"k0"' if kt == "string" else "0") + ": " + self.fallback_lit(vt, env) + "]"
         if t.startswith("["):
             el = t[1:-1]
             return "[" + self.fallback_lit(el, env) + "]"
@@ -185,13 +199,19 @@ class Gen:
             add(ind, name + ".0")
             add(ind, "len(" + name + ".1)")
         elif t.startswith("{") and t.endswith("}"):   # {string|int : int|float}
-            kt, vt = t[1:-1].split(":")
+            kt, vt = self._kv(t)
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
+            add(ind+1, "len(str(map_has(" + name + ", " + ks + "[" + ii + "])))")   # str(bool): present key -> "true"
             if vt.startswith("["):                  # composite (array) value: bind the borrow + recurse
                 gv = self.fresh("gv")
                 self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + vt[1:-1] + ")")
+                self.checksum_into(ind+1, gv, vt, env, acc)
+            elif vt.startswith("{"):                # nested-map value: bind the borrow + recurse
+                nkt, nvt = self._kv(vt)
+                gv = self.fresh("gv")
+                self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + nkt + ": " + nvt + ")")
                 self.checksum_into(ind+1, gv, vt, env, acc)
             else:
                 dflt = '""' if vt == "string" else ("0" if vt == "int" else "0.0")
@@ -304,13 +324,13 @@ class Gen:
             return
         if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
             n0, t0 = self.r.choice(map_vars)
-            kt, vt = t0[1:-1].split(":")
+            kt, vt = self._kv(t0)
             key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
             self.emit(ind, n0 + " = map_set(" + n0 + ", " + key + ", " + self.gen_expr(vt, env, 1) + ")")
             return
         if k == "map_place":           # m[k] as a place (#2): assign or scalar compound, fresh + existing keys
             n0, t0 = self.r.choice(map_vars)
-            kt, vt = t0[1:-1].split(":")
+            kt, vt = self._kv(t0)
             key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
             if vt.startswith("["):                                 # array-valued map: grow the value list in place
                 el = vt[1:-1]; r = self.r.random()
@@ -352,7 +372,7 @@ class Gen:
                 # #2: mutate a COPIED map in place via m[k]; the original must not move.
                 # A slotptr that reached through a shared table would change the original.
                 a, t0 = self.r.choice(vs_map)
-                kt, vt = t0[1:-1].split(":")
+                kt, vt = self._kv(t0)
                 key = '"vk"' if kt == "string" else "2"
                 s0 = self.fresh("vs"); s1 = self.fresh("vs"); b = self.fresh("cp")
                 self.emit(ind, s0 + " := 0")
@@ -360,6 +380,8 @@ class Gen:
                 self.emit(ind, b + " := " + a)               # deep copy (value semantics)
                 if vt.startswith("["):                       # array value: grow the COPY's list in place
                     self.emit(ind, "push(" + b + "[" + key + "], " + self.gen_expr(vt[1:-1], env, 2) + ")")
+                elif vt.startswith("{"):                     # nested-map value: replace the COPY's whole inner map
+                    self.emit(ind, b + "[" + key + "] = " + self.gen_expr(vt, env, 2))
                 else:                                        # scalar value: overwrite the COPY's slot
                     newv = {"int": "987654", "float": "987.0", "string": '"zzzzzz"'}[vt]
                     self.emit(ind, b + "[" + key + "] = " + newv)

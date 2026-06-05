@@ -2610,6 +2610,47 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx
         return "&_scope"
     return "&_b" + str(d)
 
+# Is `e` a map-place `m[k]` (an EIndex whose base is a map)? Such a place's slot
+# lives in the MAP's arena, so a value stored there must be built in that arena —
+# NOT at owner 0 (the struct-field/array-element default), where a multi-piece
+# map literal's chained `_set` copies leak their abandoned intermediate tables.
+fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
+    match e:
+        EIndex(b, i):
+            return is_map(type_of(b, names, types, dc, ctx))
+        EInt(t):
+            return false
+        EBool(t):
+            return false
+        EChar(t):
+            return false
+        EFloat(f):
+            return false
+        EStr(s):
+            return false
+        EVar(n):
+            return false
+        EBin(o, l, r):
+            return false
+        ECall(nm, ar):
+            return false
+        EField(b, f):
+            return false
+        EArrLit(es):
+            return false
+        EArrEmpty(ty):
+            return false
+        EMapEmpty(k, v):
+            return false
+        EMapLit(ks, vs):
+            return false
+        ETuple(es):
+            return false
+        ESlice(b, lo, hi):
+            return false
+        EAddr(inr):
+            return false
+
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
 fn is_place(e: Expr) -> bool:
@@ -3214,7 +3255,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
         SFieldAssign(lv, rhs):
             # storing into a (malloc) struct field / array element: the value must
             # be malloc'd (owner "0"), not left in _scope which frees at return.
-            return "    " + gen_expr(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, "0")) + ";\n"
+            # EXCEPT a map-place m[k]: its slot lives in the map's own arena, so
+            # build the value there — owner 0 would leak a multi-piece map literal's
+            # chained-_set intermediate tables (the slotptr store doesn't re-home it).
+            sfo := "0"
+            if is_map_index(lv, names, types, dc, ctx):
+                sfo = owner_arena_of(lv, names, types, dc, ctx)
+            return "    " + gen_expr(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
         SPrint(e):
             if type_of(e, names, types, dc, ctx) != "str":
                 die("codegen: print expects a string")
