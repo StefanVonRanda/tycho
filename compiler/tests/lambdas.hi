@@ -75,3 +75,15 @@ fn main():
         k := 50
         h2 = fn(x: int) -> int: x + k
     print(str(apply(h2, 8)) + "\n")                 # 58
+
+    # --- heap captures (deep-copied into the env; value semantics) ---
+    arr := [10, 20]
+    clen := fn(x: int) -> int: len(arr)             # captures the array by value
+    push(arr, 30)                                   # mutate the original AFTER capture
+    print(str(apply(clen, 0)) + "\n")               # 2  (closure kept its len-2 copy)
+    print(str(len(arr)) + "\n")                     # 3
+
+    vals := [1, 2, 3]
+    csum := fn(x: int) -> int: vals[0] + vals[1] + vals[2]
+    vals[0] = 100                                   # mutate element after capture
+    print(str(apply(csum, 0)) + "\n")               # 6  (copy, not 105)

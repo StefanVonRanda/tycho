@@ -2502,7 +2502,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             for j < len(cn):
                 if j > 0:
                     env = env + ", "
-                env = env + gen_expr(EVar(cn[j]), names, types, dc, ctx)   # capture by value (4c: scalars)
+                cv := gen_expr(EVar(cn[j]), names, types, dc, ctx)
+                if elem_deepcopy(dc, ctx, ct[j]):                          # heap capture: own a deep copy in the env arena (value semantics)
+                    cv = cp_field(dc, ctx, ct[j], "&_scope", cv)
+                env = env + cv
                 j = j + 1
             env = env + "}"
             return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo}"
@@ -5020,12 +5023,9 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                     fv = fv                          # own param: in scope but not a capture
                 elif has_str(capnames, fv):
                     fv = fv                          # already captured
-                elif has_str(names, fv):             # an enclosing local -> capture by value
-                    vt := var_type(names, types, fv)
-                    if elem_deepcopy(dc, ctx, vt):
-                        die("hierc0: capturing '" + fv + "' (a non-scalar) isn't supported yet — capture int/float/bool/char only, or pass it as a parameter")
+                elif has_str(names, fv):             # an enclosing local -> capture by value (heap: deep-copied at creation)
                     push(capnames, fv)
-                    push(captypes, vt)
+                    push(captypes, var_type(names, types, fv))
                 # else: a top-level fn / enum / None -> resolves inside the lifted proc, not a capture
                 fi = fi + 1
             names = names[0:mark]                     # pop own params
