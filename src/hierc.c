@@ -737,7 +737,8 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, 
                E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
                E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
-               E_SLICE     /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */ } ExprKind;
+               E_SLICE,    /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */
+               E_LAMBDA    /* fn(p)->r: e closure literal; ival indexes g_laminfo */ } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -791,6 +792,14 @@ typedef struct {
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
+
+/* A lambda literal (E_LAMBDA.ival indexes here). `proc` is the lifted top-level
+ * function: its params are [captures...][lambda params...] (so its body codegen is
+ * ordinary). `ncap` captures lead; the rest are the lambda's own params. */
+typedef struct { Proc *proc; int ncap; Type ftype; } LamInfo;
+static LamInfo g_laminfo[256];
+static int g_nlaminfo = 0;
+static ProcVec g_lambda_procs;   /* lifted lambda procs, emitted after the user procs */
 
 /* --------------------------------------------------------------- parser */
 
@@ -993,20 +1002,20 @@ static Expr *desugar_interp(const char *s, int line) {
     return acc;
 }
 
-static Stmt *new_stmt(StmtKind k, int line);   /* forward: the lambda desugar builds a Return/Expr stmt */
-static ProcVec g_lambdas;       /* generated procs lifted from lambda expressions; flushed per file */
-static int g_lambda_ctr = 0;
+static Stmt *new_stmt(StmtKind k, int line);   /* forward: the lambda builds a Return/Expr body stmt */
 
 static Expr *parse_primary(Parser *ps) {
     Tok *t = cur(ps);
-    if (t->kind == TK_FN) {   /* lambda: fn(p: T, ...) [-> R]: expr  -> a lifted top-level proc + a ref to it.
-                               * Stage 2: no captures (the body may use only its own params; a reference to an
-                               * enclosing local resolves as "unknown variable" — captures are a later stage). */
+    if (t->kind == TK_FN) {   /* lambda: fn(p: T, ...) [-> R]: expr  (a closure literal -> E_LAMBDA).
+                               * The lifted proc's params are filled with [captures][lambda params] at
+                               * resolve, once the enclosing scope is known (capture analysis). */
         ps->p++;
         eat(ps, TK_LPAREN, "'(' after fn in a lambda");
         Proc *pr = (Proc *)xmalloc(sizeof(Proc));
         memset(pr, 0, sizeof *pr);
-        pr->name = sfmt("__lam%d", g_lambda_ctr++);
+        if (g_nlaminfo >= 256) die_at(t->line, "too many lambdas (max 256)");
+        int id = g_nlaminfo++;   /* reserve this id BEFORE the body (a nested lambda takes id+1) */
+        pr->name = sfmt("__lam%d", id);
         pr->line = t->line;
         int cap = 0;
         while (!at(ps, TK_RPAREN)) {
@@ -1029,11 +1038,12 @@ static Expr *parse_primary(Parser *ps) {
         s->expr = body;
         pr->body = (Stmt **)xmalloc(sizeof(Stmt *));
         pr->body[0] = s; pr->nbody = 1;
-        if (g_lambdas.n == g_lambdas.cap) { g_lambdas.cap = g_lambdas.cap ? g_lambdas.cap * 2 : 8; g_lambdas.v = (Proc **)realloc(g_lambdas.v, (size_t)g_lambdas.cap * sizeof(Proc *)); }
-        g_lambdas.v[g_lambdas.n++] = pr;
-        Expr *ref = new_expr(E_IDENT, t->line);   /* the lambda expression IS a reference to the lifted proc */
-        ref->sval = pr->name;
-        return ref;
+        Expr *e = new_expr(E_LAMBDA, t->line);
+        e->ival = id;
+        g_laminfo[id].proc = pr;
+        g_laminfo[id].ncap = 0;
+        g_laminfo[id].ftype = T_VOID;
+        return e;
     }
     if (t->kind == TK_INT)  { ps->p++; Expr *e = new_expr(E_INT, t->line);  e->ival = t->ival; return e; }
     if (t->kind == TK_CHAR) { ps->p++; Expr *e = new_expr(E_CHAR, t->line); e->ival = t->ival; return e; }
@@ -1904,11 +1914,6 @@ static ProcVec parse_program(Tok *toks) {
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
     }
-    for (int i = 0; i < g_lambdas.n; i++) {   /* lifted lambda procs become real top-level functions */
-        if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
-        out.v[out.n++] = g_lambdas.v[i];
-    }
-    g_lambdas.n = 0;
     return out;
 }
 
@@ -2018,10 +2023,76 @@ static int is_lvalue(Expr *e) {
     return 0;
 }
 
+static void resolve_block(Stmt **body, int n, Type ret);   /* fwd: the lambda body resolves as a block */
+
+/* collect the (deduped) identifier names referenced anywhere in `e` — the basis of
+ * a lambda's capture analysis (a free var that is an enclosing local is captured). */
+static void collect_idents(Expr *e, const char **out, int *n, int cap) {
+    if (!e) return;
+    if (e->kind == E_IDENT) {
+        for (int i = 0; i < *n; i++) if (!strcmp(out[i], e->sval)) return;
+        if (*n < cap) out[(*n)++] = e->sval;
+        return;
+    }
+    if (e->kind == E_LAMBDA) {   /* a nested lambda: descend so the outer transitively captures.
+                                  * The inner's own params aren't enclosing locals, so the capture
+                                  * filter (vars_find) drops them — only real outer locals stick. */
+        collect_idents(g_laminfo[e->ival].proc->body[0]->expr, out, n, cap);
+        return;
+    }
+    collect_idents(e->lhs, out, n, cap);
+    collect_idents(e->rhs, out, n, cap);
+    for (int i = 0; i < e->nargs; i++) collect_idents(e->args[i], out, n, cap);
+}
+
 static Type resolve_expr(Expr *e) {
     int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
+        case E_LAMBDA: {   /* a closure literal: capture analysis + lift the body to a top-level proc */
+            LamInfo *li = &g_laminfo[e->ival];
+            if (li->ftype != T_VOID) return e->type = li->ftype;   /* resolve once */
+            Proc *pr = li->proc;
+            int nlam = pr->nparams;
+            if (nlam > 8) die_at(e->line, "a lambda has at most 8 parameters");
+            const char *ids[64]; int nids = 0;
+            collect_idents(pr->body[0]->expr, ids, &nids, 64);
+            Param caps[16]; int ncap = 0;
+            for (int i = 0; i < nids; i++) {
+                int isparam = 0;
+                for (int j = 0; j < nlam; j++) if (!strcmp(pr->params[j].name, ids[i])) { isparam = 1; break; }
+                if (isparam) continue;
+                Type vt;
+                if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE */
+                    if (type_is_heap(vt))
+                        die_at(e->line, "capturing '%s' (a non-scalar) isn't supported yet — capture int/float/bool/char only, or pass it as a parameter", ids[i]);
+                    if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
+                    caps[ncap].name = ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
+                    ncap++;
+                }   /* else a function/enum/global: resolves inside the lifted proc, not a capture */
+            }
+            /* lifted proc params become [captures...][lambda params...] (body codegen stays ordinary) */
+            Param *np = (Param *)xmalloc((size_t)(ncap + nlam) * sizeof(Param));
+            for (int i = 0; i < ncap; i++) np[i] = caps[i];
+            for (int i = 0; i < nlam; i++) np[ncap + i] = pr->params[i];
+            pr->params = np; pr->nparams = ncap + nlam;
+            li->ncap = ncap;
+            Type ptypes[8];
+            for (int i = 0; i < nlam; i++) ptypes[i] = pr->params[ncap + i].type;
+            li->ftype = funcc_of(ptypes, nlam, pr->ret);
+            int mark = vars_mark();   /* resolve the body with caps + params (caps shadow the enclosing originals) */
+            for (int i = 0; i < pr->nparams; i++) {
+                Type pt = pr->params[i].type;
+                vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
+            }
+            Type saved = g_fn_ret; g_fn_ret = pr->ret;
+            resolve_block(pr->body, pr->nbody, pr->ret);
+            g_fn_ret = saved;
+            vars_restore(mark);
+            if (g_lambda_procs.n == g_lambda_procs.cap) { g_lambda_procs.cap = g_lambda_procs.cap ? g_lambda_procs.cap * 2 : 8; g_lambda_procs.v = (Proc **)realloc(g_lambda_procs.v, (size_t)g_lambda_procs.cap * sizeof(Proc *)); }
+            g_lambda_procs.v[g_lambda_procs.n++] = pr;
+            return e->type = li->ftype;
+        }
         case E_CHAR: return e->type = T_CHAR;
         case E_FLOAT:return e->type = T_FLOAT;
         case E_NONE: return e->type = T_NONE;   /* concrete Option fixed by context */
@@ -2029,6 +2100,7 @@ static Type resolve_expr(Expr *e) {
             Type inner = resolve_expr(e->lhs);
             if (inner == T_VOID || inner == T_NONE)
                 die_at(e->line, "Some(...) needs a concrete value");
+            reject_fn_container(inner, e->line);
             return e->type = opt_of(inner);
         }
         case E_OK: case E_ERR: {   /* one half of a Result; context fixes the rest */
@@ -2036,6 +2108,7 @@ static Type resolve_expr(Expr *e) {
             const char *w = e->kind == E_OK ? "Ok" : "Err";
             if (inner == T_VOID || inner == T_NONE || inner == T_OK_PARTIAL || inner == T_ERR_PARTIAL)
                 die_at(e->line, "%s(...) needs a concrete value", w);
+            reject_fn_container(inner, e->line);
             return e->type = (e->kind == E_OK ? T_OK_PARTIAL : T_ERR_PARTIAL);
         }
         case E_TUPLE: {   /* (e1, ..., en): a tuple literal */
@@ -2046,6 +2119,7 @@ static Type resolve_expr(Expr *e) {
                 Type et = resolve_expr(e->args[i]);
                 if (et == T_VOID || et == T_NONE || et == T_OK_PARTIAL || et == T_ERR_PARTIAL)
                     die_at(e->line, "tuple element %d needs a concrete value", i + 1);
+                reject_fn_container(et, e->line);
                 elems[i] = et;
             }
             return e->type = tup_of(elems, e->nargs);
@@ -2120,6 +2194,7 @@ static Type resolve_expr(Expr *e) {
                     if (resolve_expr(e->args[i + 1]) != vt)
                         die_at(e->line, "map values must all have the same type");
                 }
+                reject_fn_container(vt, e->line);
                 return e->type = map_of(kt, vt);
             }
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
@@ -2132,6 +2207,7 @@ static Type resolve_expr(Expr *e) {
             for (int i = 1; i < e->nargs; i++)
                 if (resolve_exp(e->args[i], elem) != elem)   /* coerces a None element */
                     die_at(e->line, "array elements must all have the same type");
+            reject_fn_container(elem, e->line);
             return e->type = arr_of(elem);
         }
         case E_INDEX: {
@@ -2671,6 +2747,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (t != ret)
                     die_at(s->line, "returning %s but proc returns %s",
                            type_name(t), type_name(ret));
+                if (IS_FUNC(t)) {   /* downward-only soundness: a closure must not escape its creating scope */
+                    int ok_ref   = (s->expr->kind == E_IDENT  && s->expr->op == TK_FN);          /* plain reference */
+                    int ok_nolam = (s->expr->kind == E_LAMBDA && g_laminfo[s->expr->ival].ncap == 0);  /* captures nothing */
+                    if (!ok_ref && !ok_nolam)
+                        die_at(s->line, "can't return this function value — a closure (or a fn variable/parameter, which may hold one) "
+                                        "can't escape its creating scope yet; return a plain function name or a lambda that captures nothing");
+                }
             } else if (ret != T_VOID) {
                 die_at(s->line, "missing return value (proc returns %s)", type_name(ret));
             }
@@ -2869,6 +2952,10 @@ static void resolve_program(ProcVec *prog) {
             if (pr->params[j].is_inout && pr->params[j].type == T_STRING)
                 die_at(pr->line, "inout parameter '%s': `string` is immutable; "
                        "inout supports int/bool/struct and [int]/[string]",
+                       pr->params[j].name);
+            if (pr->params[j].is_inout && IS_FUNC(pr->params[j].type))
+                die_at(pr->line, "inout parameter '%s': a function value can't be inout "
+                       "(a callee could write a closure back into the caller and it would dangle)",
                        pr->params[j].name);
         }
         g_sigs[g_nsigs++] = s;
@@ -3693,6 +3780,21 @@ static char *gen_expr(Expr *e, const char *arena) {
         }
         case E_TUPIDX:   /* t.0 -> (t)._0 */
             return sfmt("((%s)._%ld)", gen_expr(e->lhs, arena), e->ival);
+        case E_LAMBDA: {   /* closure creation: {env, thunk}; the env holds the captures, in the current scope arena */
+            LamInfo *li = &g_laminfo[e->ival];
+            int fid = FUNC_ID(li->ftype), id = (int)e->ival;
+            if (li->ncap == 0)
+                return sfmt("(FnC%d){0, __lam%d__clo}", fid, id);
+            /* env in the FUNCTION scope (&_scope), not the current block arena, so the closure
+             * is valid for any within-function use (assign to an outer-block local, pass down).
+             * Only RETURN escapes the function, and rule (a) forbids that. */
+            char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(&_scope, sizeof(Env_%d));", id, id, id);
+            for (int i = 0; i < li->ncap; i++) {
+                const char *cn = li->proc->params[i].name;
+                out = sfmt("%s _e->c%d = %s;", out, i, is_inout_param(cn) ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn));
+            }
+            return sfmt("%s (FnC%d){_e, __lam%d__clo}; })", out, fid, id);
+        }
         case E_IDENT:
             if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo} */
                 return sfmt("(FnC%d){0, %s__clo}", FUNC_ID(e->type), e->sval);
@@ -5297,7 +5399,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, "    return 1;\n}\n\n");
     }
+    for (int i = 0; i < g_nlaminfo; i++) {   /* closure env structs (one per capturing lambda) */
+        LamInfo *li = &g_laminfo[i];
+        if (li->ftype == T_VOID || li->ncap == 0) continue;
+        fprintf(o, "typedef struct {");
+        for (int j = 0; j < li->ncap; j++) fprintf(o, " %sc%d;", c_type(li->proc->params[j].type), j);
+        fprintf(o, " } Env_%d;\n", i);
+    }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
+    for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda prototypes */
+        if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
     fputs("\n", o);
     for (int k = 0; k < g_nfnval; k++) {   /* fat-value thunks: <name>__clo wraps h_<name>, ignoring env */
         Sig *fs = sig_find(g_fnval[k]);
@@ -5308,8 +5419,25 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < fs->nparams; j++) fprintf(o, ", a%d", j);
         fprintf(o, "); }\n");
     }
-    if (g_nfnval) fputs("\n", o);
+    for (int i = 0; i < g_nlaminfo; i++) {   /* closure thunks: unpack the env, call the lifted proc */
+        LamInfo *li = &g_laminfo[i];
+        if (li->ftype == T_VOID) continue;
+        Proc *pr = li->proc;
+        int nlam = pr->nparams - li->ncap;
+        fprintf(o, "static %s__lam%d__clo(void *_env, Arena *_p", c_type(pr->ret), i);
+        for (int j = 0; j < nlam; j++) fprintf(o, ", %sa%d", c_type(pr->params[li->ncap + j].type), j);
+        fprintf(o, ") {");
+        if (li->ncap > 0) fprintf(o, " Env_%d *_e = (Env_%d *)_env;", i, i);
+        else fprintf(o, " (void)_env;");
+        fprintf(o, " %sh___lam%d(_p", pr->ret == T_VOID ? "" : "return ", i);   /* gen_proc prefixes the proc name with h_ */
+        for (int j = 0; j < li->ncap; j++) fprintf(o, ", _e->c%d", j);
+        for (int j = 0; j < nlam; j++) fprintf(o, ", a%d", j);
+        fprintf(o, "); }\n");
+    }
+    if (g_nfnval || g_nlaminfo) fputs("\n", o);
     for (int i = 0; i < prog->n; i++) gen_proc(o, prog->v[i]);
+    for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda bodies */
+        if (g_laminfo[i].ftype != T_VOID) gen_proc(o, g_laminfo[i].proc);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);
