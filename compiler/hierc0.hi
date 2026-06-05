@@ -364,6 +364,14 @@ struct Sig:                   # collected up front, for typing calls
     ret: string
     ptypes: [string]          # parameter types, so a bare fn name can be typed as a value
 
+struct LamInfo:               # one per lambda, produced by the lift pass; drives env-struct + thunk emission
+    id: int
+    ftype: string             # the VALUE's fn type fn(lamparams->ret) — for the Fn_<suffix>
+    capnames: [string]
+    captypes: [string]        # env field types (Hier types)
+    lamptypes: [string]       # the lambda's OWN param types — the thunk's call signature
+    ret: string
+
 struct Field:
     name: string
     ty: string                # "int" | "str" | a struct name
@@ -2483,7 +2491,21 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return gen_soa_slice(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(lo, names, types, dc, ctx), gen_expr(hi, names, types, dc, ctx))
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
         ELambda(id, ps, pts, ret, body, cn, ct):
-            return "(Fn_" + func_suffix(mk_functype(pts, ret)) + "){0, " + un("__lam" + str(id)) + "__clo}"
+            suffix := func_suffix(mk_functype(pts, ret))
+            if len(cn) == 0:
+                return "(Fn_" + suffix + "){0, " + un("__lam" + str(id)) + "__clo}"
+            # captures: build the env as a compound literal and hbox it into the
+            # FUNCTION-scope arena (&_scope, not a block arena) so a closure assigned
+            # to an outer-block local stays valid; rule (a) forbids escaping the fn.
+            env := "(Env_" + str(id) + "[]){"
+            j := 0
+            for j < len(cn):
+                if j > 0:
+                    env = env + ", "
+                env = env + gen_expr(EVar(cn[j]), names, types, dc, ctx)   # capture by value (4c: scalars)
+                j = j + 1
+            env = env + "}"
+            return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo}"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -3961,6 +3983,34 @@ fn gen_fnval_thunk(f: Func, dc: Decls, ctx: Ctx) -> string:
         i = i + 1
     return out + "); }\n"
 
+# Closure thunk for a lifted lambda: unpack the env's captures and forward, with
+# the lambda's own args, to h___lam<id>(_p, c0..., a0...). The lifted proc's
+# params are [captures...][lambda params...], so this restores that order.
+fn gen_lambda_thunk(li: LamInfo, dc: Decls, ctx: Ctx) -> string:
+    nm := "__lam" + str(li.id)
+    out := "static " + ret_cty(dc, ctx, li.ret) + un(nm) + "__clo(void* _env, Arena* _p"
+    j := 0
+    for j < len(li.lamptypes):
+        out = out + ", " + cty(dc, ctx, li.lamptypes[j]) + "a" + str(j)
+        j = j + 1
+    out = out + ") { "
+    if len(li.capnames) > 0:
+        out = out + "Env_" + str(li.id) + "* _e = (Env_" + str(li.id) + "*)_env; "
+    else:
+        out = out + "(void)_env; "
+    if li.ret != "void":
+        out = out + "return "
+    out = out + un(nm) + "(_p"
+    cj := 0
+    for cj < len(li.capnames):
+        out = out + ", _e->c" + str(cj)
+        cj = cj + 1
+    j = 0
+    for j < len(li.lamptypes):
+        out = out + ", a" + str(j)
+        j = j + 1
+    return out + "); }\n"
+
 fn gen_tuple_struct(dc: Decls, ctx: Ctx, ty: string) -> string:
     parts := tuple_parts(ty)
     out := "typedef struct { "
@@ -4826,11 +4876,15 @@ fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
     return out
 
 # --- lambda lift pass -------------------------------------------------------
-# Lambdas are parsed as ELambda nodes. Before typing/codegen, this pass walks
-# every function body, assigns each lambda a unique id, and emits a top-level
-# `__lam<id>` Func (its body = the lambda body). The ELambda node is left in the
-# tree, stamped with its id, so gen_expr can build the closure value at the use
-# site. (Stage 4b: no captures — capnames/captypes stay empty.)
+# Lambdas are parsed as ELambda nodes. Before typing/codegen, this scope-aware
+# pass walks every function body, assigns each lambda a unique id, runs capture
+# analysis (a free var that is an enclosing local is captured BY VALUE), and
+# emits a top-level `__lam<id>` Func whose params are [captures...][lambda
+# params...] (so its body codegen stays ordinary). The ELambda node is stamped
+# with its id + capture names/types so gen_expr can build the closure value
+# (env + thunk) at the use site. A LamInfo per lambda drives env-struct + thunk
+# emission. hierc0 has NO mutable globals, so the lifted funcs, the capture
+# counter, and the LamInfo list are all threaded by inout.
 fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string, byte-identical to sig_functype's format
     out := "fn("
     i := 0
@@ -4841,15 +4895,74 @@ fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string
         i = i + 1
     return out + "->" + ret + ")"
 
-fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int) -> [Expr]:
+# Gather every EVar name appearing in `e` (descending into nested lambda bodies,
+# so an outer lambda transitively sees a var its inner lambda needs from an
+# enclosing scope). Used for capture analysis (free-var scan).
+fn collect_evars(e: Expr, out: inout [string]):
+    match e:
+        EVar(n):
+            push(out, n)
+        EBin(o, l, r):
+            collect_evars(l, &out)
+            collect_evars(r, &out)
+        ECall(n, a):
+            j := 0
+            for j < len(a):
+                collect_evars(a[j], &out)
+                j = j + 1
+        EField(b, f):
+            collect_evars(b, &out)
+        EIndex(b, ix):
+            collect_evars(b, &out)
+            collect_evars(ix, &out)
+        EArrLit(es):
+            j := 0
+            for j < len(es):
+                collect_evars(es[j], &out)
+                j = j + 1
+        EMapLit(ks, vs):
+            j := 0
+            for j < len(ks):
+                collect_evars(ks[j], &out)
+                collect_evars(vs[j], &out)
+                j = j + 1
+        ETuple(es):
+            j := 0
+            for j < len(es):
+                collect_evars(es[j], &out)
+                j = j + 1
+        ESlice(b, lo, hi):
+            collect_evars(b, &out)
+            collect_evars(lo, &out)
+            collect_evars(hi, &out)
+        EAddr(x):
+            collect_evars(x, &out)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            collect_evars(body, &out)
+        EInt(t):
+            return
+        EBool(t):
+            return
+        EChar(t):
+            return
+        EFloat(t):
+            return
+        EStr(s):
+            return
+        EArrEmpty(t):
+            return
+        EMapEmpty(k, v):
+            return
+
+fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
-        push(out, lift_expr(es[i], &lifted, &ctr))
+        push(out, lift_expr(es[i], &lifted, &ctr, &lams, &names, &types, dc, ctx))
         i = i + 1
     return out
 
-fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int) -> Expr:
+fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
     match e:
         EInt(t):
             return e
@@ -4868,95 +4981,326 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int) -> Expr:
         EMapEmpty(k, v):
             return e
         EBin(o, l, r):
-            return EBin(o, lift_expr(l, &lifted, &ctr), lift_expr(r, &lifted, &ctr))
+            return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ECall(n, a):
-            return ECall(n, lift_exprs(a, &lifted, &ctr))
+            return ECall(n, lift_exprs(a, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         EField(b, f):
-            return EField(lift_expr(b, &lifted, &ctr), f)
+            return EField(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), f)
         EIndex(b, ix):
-            return EIndex(lift_expr(b, &lifted, &ctr), lift_expr(ix, &lifted, &ctr))
+            return EIndex(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         EArrLit(es):
-            return EArrLit(lift_exprs(es, &lifted, &ctr))
+            return EArrLit(lift_exprs(es, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         EMapLit(ks, vs):
-            return EMapLit(lift_exprs(ks, &lifted, &ctr), lift_exprs(vs, &lifted, &ctr))
+            return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ETuple(es):
-            return ETuple(lift_exprs(es, &lifted, &ctr))
+            return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ESlice(b, lo, hi):
-            return ESlice(lift_expr(b, &lifted, &ctr), lift_expr(lo, &lifted, &ctr), lift_expr(hi, &lifted, &ctr))
+            return ESlice(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         EAddr(x):
-            return EAddr(lift_expr(x, &lifted, &ctr))
+            return EAddr(lift_expr(x, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ELambda(id, ps, pts, ret, body, cn, ct):
-            nb := lift_expr(body, &lifted, &ctr)         # lift nested lambdas in the body expr first
+            # push the lambda's own params so a nested lambda in the body can capture them
+            mark := len(names)
+            kp := 0
+            for kp < len(ps):
+                push(names, ps[kp])
+                push(types, pts[kp])
+                kp = kp + 1
+            nb := lift_expr(body, &lifted, &ctr, &lams, &names, &types, dc, ctx)   # lift nested lambdas first
+            # capture analysis: a free var that is an ENCLOSING local (not an own
+            # param, not a top-level fn/enum) is captured by value.
+            fvs := []string
+            collect_evars(nb, &fvs)
+            capnames := []string
+            captypes := []string
+            fi := 0
+            for fi < len(fvs):
+                fv := fvs[fi]
+                if has_str(ps, fv):
+                    fv = fv                          # own param: in scope but not a capture
+                elif has_str(capnames, fv):
+                    fv = fv                          # already captured
+                elif has_str(names, fv):             # an enclosing local -> capture by value
+                    vt := var_type(names, types, fv)
+                    if elem_deepcopy(dc, ctx, vt):
+                        die("hierc0: capturing '" + fv + "' (a non-scalar) isn't supported yet — capture int/float/bool/char only, or pass it as a parameter")
+                    push(capnames, fv)
+                    push(captypes, vt)
+                # else: a top-level fn / enum / None -> resolves inside the lifted proc, not a capture
+                fi = fi + 1
+            names = names[0:mark]                     # pop own params
+            types = types[0:mark]
             myid := ctr
             ctr = ctr + 1
-            lbody := []Stmt                              # wrap the single body expr into the lifted func body
+            # lifted proc params = [captures...][lambda params...]
+            lparams := []string
+            lptypes := []string
+            ci := 0
+            for ci < len(capnames):
+                push(lparams, capnames[ci])
+                push(lptypes, captypes[ci])
+                ci = ci + 1
+            pj := 0
+            for pj < len(ps):
+                push(lparams, ps[pj])
+                push(lptypes, pts[pj])
+                pj = pj + 1
+            lbody := []Stmt
             if ret == "void":
                 push(lbody, SExpr(nb))
             else:
                 push(lbody, SReturn(nb))
-            push(lifted, Func("__lam" + str(myid), ps, pts, ret, lbody))
-            return ELambda(myid, ps, pts, ret, nb, cn, ct)
+            push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody))
+            push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
+            return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
 
-fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int) -> [Stmt]:
+# A fn-typed return value is safe to escape ONLY if it provably carries no
+# captured environment: a top-level function reference (a non-local EVar) or a
+# lambda that captures nothing. A fn-typed local/param (may hold a closure) or a
+# capturing lambda is rejected — its env lives in the freed function arena.
+fn fn_return_ok(e: Expr, names: [string]) -> bool:
+    match e:
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return len(cn) == 0
+        EVar(n):
+            return not has_str(names, n)              # a top-level fn name is safe; a local/param fn var is not
+        EInt(t):
+            return false
+        EBool(t):
+            return false
+        EChar(t):
+            return false
+        EFloat(t):
+            return false
+        EStr(s):
+            return false
+        EBin(o, l, r):
+            return false
+        ECall(n, a):
+            return false
+        EField(b, f):
+            return false
+        EIndex(b, ix):
+            return false
+        EArrLit(es):
+            return false
+        EArrEmpty(t):
+            return false
+        EMapEmpty(k, v):
+            return false
+        EMapLit(ks, vs):
+            return false
+        ETuple(es):
+            return false
+        ESlice(b, lo, hi):
+            return false
+        EAddr(x):
+            return false
+
+fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
+    mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
     i := 0
     for i < len(stmts):
-        push(out, lift_stmt(stmts[i], &lifted, &ctr))
+        push(out, lift_stmt(stmts[i], &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
         i = i + 1
+    names = names[0:mark]
+    types = types[0:mark]
     return out
 
-fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int) -> Stmt:
+fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
     match s:
         SDecl(n, e):
-            return SDecl(n, lift_expr(e, &lifted, &ctr))
+            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            push(names, n)                            # in scope for later sibling stmts (+ their lambdas)
+            push(types, type_of(e, names, types, dc, ctx))
+            return SDecl(n, ne)
         SAssign(n, e):
-            return SAssign(n, lift_expr(e, &lifted, &ctr))
+            return SAssign(n, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SFieldAssign(lv, rhs):
-            return SFieldAssign(lift_expr(lv, &lifted, &ctr), lift_expr(rhs, &lifted, &ctr))
+            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(rhs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SPrint(e):
-            return SPrint(lift_expr(e, &lifted, &ctr))
+            return SPrint(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SReturn(e):
-            return SReturn(lift_expr(e, &lifted, &ctr))
+            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            if is_func(fret) and not fn_return_ok(ne, names):   # rule (a): no escaping closure (arena-UAF; ASan-blind). fret is_func => the return IS a fn value.
+                die("hierc0: can't return this function value — a closure (or a fn variable/parameter that may hold one) can't escape its creating scope; return a plain function name or a lambda that captures nothing")
+            return SReturn(ne)
         SReturnVoid:
             return s
         SIf(c, th, el):
-            return SIf(lift_expr(c, &lifted, &ctr), lift_block(th, &lifted, &ctr), lift_block(el, &lifted, &ctr))
+            return SIf(lift_expr(c, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_block(th, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret), lift_block(el, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
         SWhile(c, b):
-            return SWhile(lift_expr(c, &lifted, &ctr), lift_block(b, &lifted, &ctr))
+            return SWhile(lift_expr(c, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_block(b, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
         SForRange(nm, a, b, st, body):
-            return SForRange(nm, lift_expr(a, &lifted, &ctr), lift_expr(b, &lifted, &ctr), lift_expr(st, &lifted, &ctr), lift_block(body, &lifted, &ctr))
+            na := lift_expr(a, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            nbb := lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            nst := lift_expr(st, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            mark := len(names)                        # the loop var is in scope for the body only
+            push(names, nm)
+            push(types, "int")
+            nbody := lift_block(body, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret)
+            names = names[0:mark]
+            types = types[0:mark]
+            return SForRange(nm, na, nbb, nst, nbody)
         SExpr(e):
-            return SExpr(lift_expr(e, &lifted, &ctr))
+            return SExpr(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         STypedDecl(nm, ty, e):
-            return STypedDecl(nm, ty, lift_expr(e, &lifted, &ctr))
+            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            push(names, nm)
+            push(types, ty)
+            return STypedDecl(nm, ty, ne)
         SOrReturn(nm, e):
-            return SOrReturn(nm, lift_expr(e, &lifted, &ctr))
+            return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SDestructure(nms, e):
-            return SDestructure(nms, lift_expr(e, &lifted, &ctr))
+            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SMultiAssign(nms, e):
-            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr))
+            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         SMatch(subj, vars, binds, bodies):
+            ns := lift_expr(subj, &lifted, &ctr, &lams, &names, &types, dc, ctx)
             nb := [][Stmt]
             k := 0
             for k < len(bodies):
-                push(nb, lift_block(bodies[k], &lifted, &ctr))
+                push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
                 k = k + 1
-            return SMatch(lift_expr(subj, &lifted, &ctr), vars, binds, nb)
+            return SMatch(ns, vars, binds, nb)
         SBreak:
             return s
         SContinue:
             return s
 
+# Does an expr / stmt / block contain a lambda anywhere? Used to skip the
+# scope-aware lift (which calls type_of) for lambda-free functions — keeping a
+# lambda-free program (incl. hierc0.hi itself) byte-identical and crash-free.
+fn expr_has_lambda(e: Expr) -> bool:
+    match e:
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return true
+        EBin(o, l, r):
+            return expr_has_lambda(l) or expr_has_lambda(r)
+        ECall(n, a):
+            j := 0
+            for j < len(a):
+                if expr_has_lambda(a[j]):
+                    return true
+                j = j + 1
+            return false
+        EField(b, f):
+            return expr_has_lambda(b)
+        EIndex(b, ix):
+            return expr_has_lambda(b) or expr_has_lambda(ix)
+        EArrLit(es):
+            j := 0
+            for j < len(es):
+                if expr_has_lambda(es[j]):
+                    return true
+                j = j + 1
+            return false
+        EMapLit(ks, vs):
+            j := 0
+            for j < len(ks):
+                if expr_has_lambda(ks[j]) or expr_has_lambda(vs[j]):
+                    return true
+                j = j + 1
+            return false
+        ETuple(es):
+            j := 0
+            for j < len(es):
+                if expr_has_lambda(es[j]):
+                    return true
+                j = j + 1
+            return false
+        ESlice(b, lo, hi):
+            return expr_has_lambda(b) or expr_has_lambda(lo) or expr_has_lambda(hi)
+        EAddr(x):
+            return expr_has_lambda(x)
+        EInt(t):
+            return false
+        EBool(t):
+            return false
+        EChar(t):
+            return false
+        EFloat(t):
+            return false
+        EStr(s):
+            return false
+        EVar(n):
+            return false
+        EArrEmpty(t):
+            return false
+        EMapEmpty(k, v):
+            return false
+
+fn block_has_lambda(stmts: [Stmt]) -> bool:
+    i := 0
+    for i < len(stmts):
+        if stmt_has_lambda(stmts[i]):
+            return true
+        i = i + 1
+    return false
+
+fn stmt_has_lambda(s: Stmt) -> bool:
+    match s:
+        SDecl(n, e):
+            return expr_has_lambda(e)
+        SAssign(n, e):
+            return expr_has_lambda(e)
+        SFieldAssign(lv, rhs):
+            return expr_has_lambda(lv) or expr_has_lambda(rhs)
+        SPrint(e):
+            return expr_has_lambda(e)
+        SReturn(e):
+            return expr_has_lambda(e)
+        SReturnVoid:
+            return false
+        SIf(c, th, el):
+            return expr_has_lambda(c) or block_has_lambda(th) or block_has_lambda(el)
+        SWhile(c, b):
+            return expr_has_lambda(c) or block_has_lambda(b)
+        SForRange(nm, a, b, st, body):
+            return expr_has_lambda(a) or expr_has_lambda(b) or expr_has_lambda(st) or block_has_lambda(body)
+        SExpr(e):
+            return expr_has_lambda(e)
+        STypedDecl(nm, ty, e):
+            return expr_has_lambda(e)
+        SOrReturn(nm, e):
+            return expr_has_lambda(e)
+        SDestructure(nms, e):
+            return expr_has_lambda(e)
+        SMultiAssign(nms, e):
+            return expr_has_lambda(e)
+        SMatch(subj, vars, binds, bodies):
+            if expr_has_lambda(subj):
+                return true
+            k := 0
+            for k < len(bodies):
+                if block_has_lambda(bodies[k]):
+                    return true
+                k = k + 1
+            return false
+        SBreak:
+            return false
+        SContinue:
+            return false
+
 # Run the lift over a whole program: returns the program with ELambda nodes
-# stamped and the lifted `__lam<id>` funcs appended to the function list.
-fn lift_program(prog: Program) -> Program:
+# stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)
+# for env-struct + thunk emission. `dc` carries the ORIGINAL function sigs (built
+# before the lift) so capture-type lookups resolve; rebuilt afterwards by main.
+fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo]) -> Program:
     lifted := []Func
     ctr := 0
     nfuncs := []Func
     i := 0
     for i < len(prog.funcs):
         f := prog.funcs[i]
-        push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr)))
+        if block_has_lambda(f.body):                  # only lambda-bearing funcs need the scope-aware lift (which
+            names := []string                         # calls type_of); a lambda-free func is left UNCHANGED, so a
+            types := []string                         # lambda-free program (incl. hierc0.hi) is byte-identical.
+            seed_env(f, &names, &types)
+            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &names, &types, dc, ctx, f.ret)))
+        else:
+            push(nfuncs, f)
         i = i + 1
     i = 0
     for i < len(lifted):
@@ -4978,11 +5322,23 @@ fn main():
         src = read_all()
     toks := lex(src)
     pos := 0
-    prog := lift_program(parse_program(toks, &pos))   # stamp lambdas + append lifted __lam funcs
+    prog0 := parse_program(toks, &pos)
+    sigs0 := []Sig                                    # sigs over the ORIGINAL funcs: capture-type lookups during the lift
+    sigmap0 := []string: int
+    i := 0
+    for i < len(prog0.funcs):
+        push(sigs0, Sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes))
+        if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
+            sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
+        i = i + 1
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0)
+    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0)
+    lams := []LamInfo
+    prog := lift_program(prog0, dc0, ctx0, &lams)     # stamp lambdas + capture analysis + lifted __lam funcs
     funcs := prog.funcs
     sigs := []Sig
     sigmap := []string: int
-    i := 0
+    i = 0
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes))
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
@@ -5044,6 +5400,16 @@ fn main():
         if is_func(ets[i]):
             out = out + gen_func_typedef(dc, ctx, ets[i])
             has_fnval = true
+        i = i + 1
+    i = 0                                        # 5a''. closure env structs (one per capturing lambda)
+    for i < len(lams):
+        if len(lams[i].capnames) > 0:
+            out = out + "typedef struct {"
+            cj := 0
+            for cj < len(lams[i].captypes):
+                out = out + " " + cty(dc, ctx, lams[i].captypes[cj]) + "c" + str(cj) + ";"
+                cj = cj + 1
+            out = out + " } Env_" + str(lams[i].id) + ";\n"
         i = i + 1
     i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
@@ -5118,9 +5484,13 @@ fn main():
     if has_fnval:                                # 9b. fn-value adapter thunks (after protos: each forwards to h_<name>)
         i = 0
         for i < len(funcs):
-            if funcs[i].name != "main" and fn_value_eligible(funcs[i]):
-                out = out + gen_fnval_thunk(funcs[i], dc, ctx)
+            if funcs[i].name != "main" and fn_value_eligible(funcs[i]) and not has_prefix(funcs[i].name, "__lam"):
+                out = out + gen_fnval_thunk(funcs[i], dc, ctx)   # lifted lambdas get a capture-aware thunk instead (below)
             i = i + 1
+    i = 0                                        # 9c. closure thunks: unpack the env, call the lifted __lam proc
+    for i < len(lams):
+        out = out + gen_lambda_thunk(lams[i], dc, ctx)
+        i = i + 1
     i = 0
     for i < len(funcs):
         out = out + gen_func(funcs[i], dc, ctx)

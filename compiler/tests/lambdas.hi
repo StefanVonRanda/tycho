@@ -18,6 +18,13 @@ fn map_int(xs: [int], f: fn(int) -> int) -> [int]:
 fn twice(f: fn(int) -> int, x: int) -> int:
     return f(f(x))
 
+fn count_pos(f: fn(int) -> int, xs: [int]) -> int:
+    n := 0
+    for v in xs:
+        if f(v) > 0:
+            n = n + 1
+    return n
+
 fn main():
     # a lambda bound to a local, then called through a fn-typed parameter
     sq := fn(x: int) -> int: x * x
@@ -45,3 +52,26 @@ fn main():
     print(str(g(9)) + "\n")                         # 81
     g = fn(x: int) -> int: 0 - x
     print(str(g(9)) + "\n")                         # -9
+
+    # --- captures (stage 4c, scalar by value) ---
+    base := 10
+    addbase := fn(x: int) -> int: x + base          # captures `base`
+    print(str(apply(addbase, 3)) + "\n")            # 13
+    base = 100                                       # value capture: closure keeps the captured 10
+    print(str(apply(addbase, 3)) + "\n")            # 13
+
+    p := 2
+    q := 3
+    poly := fn(x: int) -> int: x * p + q            # multi-capture
+    print(str(apply(poly, 5)) + "\n")               # 13
+
+    # capture used inside a higher-order call
+    thr := 4
+    print(str(count_pos(fn(z: int) -> int: z - thr, [1, 5, 9, 2, 8])) + "\n")   # 3
+
+    # closure built in an inner block, called after the block (env in &_scope)
+    h2 := fn(x: int) -> int: x
+    if true:
+        k := 50
+        h2 = fn(x: int) -> int: x + k
+    print(str(apply(h2, 8)) + "\n")                 # 58
