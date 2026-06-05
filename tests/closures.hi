@@ -37,6 +37,17 @@ fn make_adder(n: int) -> fn(int) -> int:
 fn make_prefixer(p: string) -> fn(string) -> string:
     return fn(s: string) -> string: p + s
 
+# fn values in containers: a struct field holding a callback, an array of them
+struct Op:
+    label: string
+    cb: fn(int) -> int
+
+fn make_ops(base: int) -> [fn(int) -> int]:     # a container of closures escapes
+    out := []fn(int) -> int
+    push(out, fn(x: int) -> int: x + base)
+    push(out, fn(x: int) -> int: x * base)
+    return out
+
 fn main():
     # --- no-capture lambdas ---
     sq := fn(x: int) -> int: x * x
@@ -99,3 +110,12 @@ fn main():
     pre := make_prefixer(">> ")                             # heap capture escapes + re-homes
     print(pre("done") + "\n")                               # >> done
     print(f"down={apply(make_adder(20), 2)}\n")             # 22 (escaped closure passed straight down)
+
+    # --- fn values in containers + call-on-expression ---
+    op := Op("square", sq)                                  # fn in a struct field
+    print(f"{op.label}={op.cb(6)}\n")                       # square=36 (call a fn-typed field)
+    ops := [sq, fn(x: int) -> int: x + 1]                   # array of fn values
+    print(f"arr: {ops[0](5)},{ops[1](5)}\n")                # 25,6 (call by index)
+    esc := make_ops(10)                                     # container of closures escapes
+    print(f"escaped-arr: {esc[0](5)},{esc[1](5)}\n")        # 15,50
+    print(f"chained={make_adder(7)(3)}\n")                  # 10 (f(a)(b))

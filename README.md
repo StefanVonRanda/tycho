@@ -745,12 +745,33 @@ like every other heap value that escapes a function. The closure carries its own
 env-copy routine, so the move is automatic. This is the value-semantic memory
 model's payoff — the captured state behaves like a plain value at every step.
 
-Two restrictions remain. A function value can't be stored in a **container**
-(struct field, array, map, tuple) — escape is via direct return or downward
-passing only. And a closure returned by a call can't be **applied inline**:
-write `g := make_adder(5)` then `g(100)`, not `make_adder(5)(100)`. The common
+Function values are also full members of the data model: one can be stored in a
+**container** (struct field, array, map value, tuple) and called once stored, and
+a returned closure can be **applied inline**:
+
+```
+struct Handler:
+    cb: fn(int) -> int
+
+fn make_adder(n: int) -> fn(int) -> int:
+    return fn(x: int) -> int: x + n
+
+fn main():
+    h := Handler(make_adder(10))   # closure in a struct field
+    print(str(h.cb(5)))            # 15
+
+    ops := [make_adder(1), make_adder(100)]   # array of closures
+    print(str(ops[1](5)))         # 105  (call an array element)
+
+    print(str(make_adder(7)(3)))  # 10   (apply a returned closure inline)
+```
+
+When a container of closures escapes its scope (returned, or stored somewhere
+longer-lived), each closure's captured environment re-homes along with it — the
+same value-semantic deep copy that applies to every other heap value. The common
 higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators, factory
-functions) are all covered — see [`corelib/iter`](corelib/iter/iter.hi).
+functions, dispatch tables) are all covered — see
+[`corelib/iter`](corelib/iter/iter.hi).
 
 ### Builtins
 

@@ -35,6 +35,16 @@ fn make_scaler(k: int, base: int) -> fn(int) -> int:    # multi-capture escapes
 fn make_tagger(tag: string) -> fn(string) -> string:    # heap capture escapes
     return fn(s: string) -> string: tag + s
 
+struct Handler:                                          # a fn value lives in a struct field
+    name: string
+    cb: fn(int) -> int
+
+fn make_adders(base: int) -> [fn(int) -> int]:           # a container of CLOSURES escapes
+    out := []fn(int) -> int
+    push(out, fn(x: int) -> int: x + base)
+    push(out, fn(x: int) -> int: x + base + 1)
+    return out
+
 fn main():
     # a lambda bound to a local, then called through a fn-typed parameter
     sq := fn(x: int) -> int: x * x
@@ -107,3 +117,12 @@ fn main():
     tagger := make_tagger("[")
     print(tagger("x") + "\n")                       # [x   (heap capture escaped)
     print(str(apply(make_adder(20), 2)) + "\n")     # 22  (escaped closure passed straight down)
+
+    # --- fn values in containers + call-on-expression ---
+    h := Handler("dbl", sq)                         # fn ref in a struct field
+    print(h.name + "=" + str(h.cb(9)) + "\n")       # dbl=81  (call a fn-typed field)
+    fns := [sq, fn(x: int) -> int: x + 1, make_adder(50)]   # array of ref + lambda + escaped closure
+    print(str(fns[0](6)) + "," + str(fns[1](6)) + "," + str(fns[2](6)) + "\n")   # 36,7,56
+    adders := make_adders(100)                      # container of closures returned (envs re-home)
+    print(str(adders[0](1)) + "," + str(adders[1](1)) + "\n")   # 101,102
+    print(str(make_adder(7)(3)) + "\n")             # 10  (chained call f(a)(b))

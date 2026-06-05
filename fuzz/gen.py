@@ -284,6 +284,8 @@ class Gen:
             kinds += ["closure", "closure"]            # lambda/closure: capture by value, call, fold into the checksum
         if int_vars or int_arr_vars:
             kinds += ["escclosure"]                    # ESCAPING closure: bind one returned from a factory, call it later
+        if int_vars:
+            kinds += ["fncarr"]                        # fn values in a container + call-on-expression (call array elements)
         if map_vars:
             kinds += ["map_accum", "map_place", "map_place"]   # #2: m[k] as a place
         res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -361,6 +363,15 @@ class Gen:
             else:
                 self.emit(ind, f + " := mksum(" + self.r.choice(int_arr_vars) + ")")  # heap capture escaped + re-homed
             self.emit(ind, "acc = acc + " + f + "(" + str(self.r.randint(0, 9)) + ")")
+            return
+        if k == "fncarr":              # fn values stored in an array, then CALLED by index (call-on-expression).
+            # mixes a ref, a lambda, and an escaped closure (mkadder); when the array
+            # is built its closure env re-homes. Both compilers must agree (differential)
+            # and ASan/LSan must stay clean (the array + envs live in our arena).
+            a = self.fresh("fa")
+            cap = self.r.choice(int_vars)
+            self.emit(ind, a + " := [mkadder(" + cap + "), fn(x: int) -> int: x + 1]")
+            self.emit(ind, "acc = acc + " + a + "[0](" + str(self.r.randint(0, 9)) + ") + " + a + "[1](" + str(self.r.randint(0, 9)) + ")")
             return
         if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
             n0, t0 = self.r.choice(map_vars)

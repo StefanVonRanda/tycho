@@ -15,3 +15,7 @@ pc=15
 escaped: 105 109 6
 >> done
 down=22
+square=36
+arr: 25,6
+escaped-arr: 15,50
+chained=10
