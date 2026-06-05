@@ -186,3 +186,34 @@ a generator detail (cty spacing, mangle, eq) regressed an existing map.
   composite scheme is a later cleanup, not needed for the feature.)
 - Bool values: fold to int (no separate map). Nested maps as VALUES (`[string:[string:int]]`)
   fall out of the general scheme but defer until 1–6 are solid.
+
+## Status — composite maps COMPLETE (both compilers); NO deferred value type left
+
+Verified working + tested (`tests/map_values.hi` golden + ASan/LSan, `compiler/tests/`
+differential, `make fixpoint` B==C):
+- `[string: V]` AND `[int: V]` (the occupancy-array scheme, `0` is a real key) for ANY
+  value type — scalar / string / struct / **array (`[int: [int]]`)** / **nested map
+  (`[string: [string:int]]`)** — full CRUD, literals, `keys`, `map_del`, default on miss.
+- Heap-value lifetimes: `map_get` returns an INDEPENDENT deep copy (survives later
+  rehashes); copying a map deep-copies values (mutating the copy can't touch the original).
+- Composite `==`: deep value equality over string- and struct-valued maps, insertion-order
+  independent. (So the earlier "int-keyed composite values + composite `==` deferred" note
+  is RESOLVED — both work.)
+- `map_has` returns a real `bool` in BOTH compilers (`str(map_has(..))` → `true`/`false`);
+  hierc0 previously typed it (and `write_file`/`to_bool`) as `int`, a `str()` divergence
+  exposed by the bool-type work — now fixed.
+
+### Fixed this pass — nested-map VALUES in hierc0
+`[string: [string:int]]` compiled in hierc but emitted broken C in hierc0: the outer
+map struct (`Map_str_map_str_int`, member `Map_str_int* vals`) was typedef'd BEFORE the
+inner `Map_str_int` (undefined name). Root cause: `note_arr_types` pushed a map onto the
+emit list BEFORE recursing into its value type, so a map-valued map ordered outer-before-
+inner. Fix (compiler/hierc0.hi): recurse into `map_val`/the key array FIRST, push the map
+LAST — dependency order, so an inner map (and its array families) is always emitted before
+any map that holds it. Safe for fixpoint: it only reorders type decls (program output and
+B==C self-emission unchanged). Array values were already fine (their family was noted).
+
+### Genuinely separate (not a map gap)
+- A bare `[]` empty-array literal as a `map_get` default needs a value type from context
+  (`d := []int; map_get(m, k, d)`); that's the general empty-array type-inference rule,
+  not map-specific. `m[k]` stays a mutation-only place (read via `map_get`).

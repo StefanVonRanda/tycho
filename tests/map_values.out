@@ -15,3 +15,7 @@ unozerox
 exwhy
 eq-ok
 neq-ok
+has true false
+ihas true false
+arrval=3
+nestval=7

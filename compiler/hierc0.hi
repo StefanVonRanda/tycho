@@ -1842,7 +1842,7 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     if name == "map_get":
         return "int"
     if name == "map_has":
-        return "int"
+        return "bool"
     if name == "find":
         return "int"
     if name == "sqrt" or name == "pow" or name == "floor" or name == "fabs":
@@ -1853,14 +1853,14 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "int"
     if name == "to_str":                          # unwrap a string newtype
         return "str"
-    if name == "to_bool":                         # unwrap a bool newtype (bool is int)
-        return "int"
+    if name == "to_bool":                         # unwrap a bool newtype
+        return "bool"
     if name == "read_all":
         return "str"
     if name == "read_file":
         return "str"
-    if name == "write_file":                      # (path, contents) -> bool (int)
-        return "int"
+    if name == "write_file":                      # (path, contents) -> bool
+        return "bool"
     if name == "list_dir":
         return "[str]"
     if name == "args":
@@ -4153,10 +4153,10 @@ fn note_arr_types(acc: inout [string], ty: string):
             note_arr_types(&acc, parts[i])
             i = i + 1
     elif is_map(b):
-        if not has_str(acc, b):
-            push(acc, b)
-        note_arr_types(&acc, map_val(b))
-        note_arr_types(&acc, "[" + map_key(b) + "]")   # keys(m) -> [K]: emit that array family
+        note_arr_types(&acc, map_val(b))               # value family FIRST: a map-valued map's
+        note_arr_types(&acc, "[" + map_key(b) + "]")   # inner map must be typedef'd before the outer
+        if not has_str(acc, b):                        # (its struct holds an inner-map pointer member);
+            push(acc, b)                               # keys(m) -> [K] array family also emitted
 
 # Walk an expression collecting composite array element types from literals
 # (array literals / empty arrays that no annotation would reveal).
