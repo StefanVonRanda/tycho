@@ -2745,13 +2745,10 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (t != ret)
                     die_at(s->line, "returning %s but proc returns %s",
                            type_name(t), type_name(ret));
-                if (IS_FUNC(t)) {   /* downward-only soundness: a closure must not escape its creating scope */
-                    int ok_ref   = (s->expr->kind == E_IDENT  && s->expr->op == TK_FN);          /* plain reference */
-                    int ok_nolam = (s->expr->kind == E_LAMBDA && g_laminfo[s->expr->ival].ncap == 0);  /* captures nothing */
-                    if (!ok_ref && !ok_nolam)
-                        die_at(s->line, "can't return this function value — a closure (or a fn variable/parameter, which may hold one) "
-                                        "can't escape its creating scope yet; return a plain function name or a lambda that captures nothing");
-                }
+                /* A closure MAY escape: S_RETURN codegen re-homes its captured env
+                 * into the caller's arena via the closure's copyenv thunk (value
+                 * semantics, sound with no lifetime annotations). A plain reference
+                 * has copyenv=0 (nothing to re-home). */
             } else if (ret != T_VOID) {
                 die_at(s->line, "missing return value (proc returns %s)", type_name(ret));
             }
@@ -3782,10 +3779,10 @@ static char *gen_expr(Expr *e, const char *arena) {
             LamInfo *li = &g_laminfo[e->ival];
             int fid = FUNC_ID(li->ftype), id = (int)e->ival;
             if (li->ncap == 0)
-                return sfmt("(FnC%d){0, __lam%d__clo}", fid, id);
+                return sfmt("(FnC%d){0, __lam%d__clo, 0}", fid, id);
             /* env in the FUNCTION scope (&_scope), not the current block arena, so the closure
              * is valid for any within-function use (assign to an outer-block local, pass down).
-             * Only RETURN escapes the function, and rule (a) forbids that. */
+             * On RETURN the env re-homes into the caller's arena via Env_<id>_copy (3rd field). */
             char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(&_scope, sizeof(Env_%d));", id, id, id);
             for (int i = 0; i < li->ncap; i++) {
                 const char *cn = li->proc->params[i].name;
@@ -3794,11 +3791,11 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (type_is_heap(ct)) cv = copy_into(ct, "&_scope", cv);   /* value semantics: own a deep copy in the env arena */
                 out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
-            return sfmt("%s (FnC%d){_e, __lam%d__clo}; })", out, fid, id);
+            return sfmt("%s (FnC%d){_e, __lam%d__clo, Env_%d_copy}; })", out, fid, id, id);
         }
         case E_IDENT:
-            if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo} */
-                return sfmt("(FnC%d){0, %s__clo}", FUNC_ID(e->type), e->sval);
+            if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo, 0} (no env to re-home) */
+                return sfmt("(FnC%d){0, %s__clo, 0}", FUNC_ID(e->type), e->sval);
             return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
                                            : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
@@ -4485,6 +4482,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
                                             c_type(ret), v, rf);
                 }
+            } else if (IS_FUNC(ret)) {
+                /* escaping closure: re-home its captured env into the caller's
+                 * arena (deep-copying heap captures) BEFORE freeing this scope,
+                 * via the closure's own copyenv thunk. A plain reference has
+                 * copyenv==0 and env==0, so this is a no-op for it. */
+                char *v = gen_expr(s->expr, "&_scope");
+                indent(o, ind);
+                fprintf(o, "{ %s_ret = %s; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); %s return _ret; }\n",
+                        c_type(ret), v, rf);
             } else {
                 /* int/bool, or a pure-value struct: a value, nothing on the
                  * heap to keep alive — copy it out and free the scope */
@@ -5021,7 +5027,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         FuncTy *f = &g_functypes[i];
         fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
         for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
-        fprintf(o, "); } FnC%d;\n", i);
+        fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
     }
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
@@ -5400,12 +5406,19 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, "    return 1;\n}\n\n");
     }
-    for (int i = 0; i < g_nlaminfo; i++) {   /* closure env structs (one per capturing lambda) */
+    for (int i = 0; i < g_nlaminfo; i++) {   /* closure env structs (one per capturing lambda) + its env-copy thunk */
         LamInfo *li = &g_laminfo[i];
         if (li->ftype == T_VOID || li->ncap == 0) continue;
         fprintf(o, "typedef struct {");
         for (int j = 0; j < li->ncap; j++) fprintf(o, " %sc%d;", c_type(li->proc->params[j].type), j);
         fprintf(o, " } Env_%d;\n", i);
+        /* re-home the env (and deep-copy its heap captures) into `a` on closure return */
+        fprintf(o, "static void *Env_%d_copy(Arena *a, void *_s) { Env_%d *s = (Env_%d *)_s; Env_%d *d = (Env_%d *)arena_alloc(a, sizeof(Env_%d));", i, i, i, i, i, i);
+        for (int j = 0; j < li->ncap; j++) {
+            Type ct = li->proc->params[j].type;
+            fprintf(o, " d->c%d = %s;", j, copy_into(ct, "a", sfmt("s->c%d", j)));
+        }
+        fprintf(o, " return d; }\n");
     }
     for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda prototypes */
