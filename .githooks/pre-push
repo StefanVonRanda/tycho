@@ -3,7 +3,9 @@
 # Actions, ever.) Runs the FAST correctness gates that catch regressions in
 # seconds: the golden+sanitizer test suite and the self-host fixpoint. Both
 # include every recycle/soundness regression test, so a reintroduced corruption
-# bug is blocked here.
+# bug is blocked here. Also runs `make corelib` (C-vs-hierc0 + standalone-hierc0
+# vs goldens) so a type-system change can't silently break the stdlib's package
+# mangling -- that path is NOT exercised by test or fixpoint.
 #
 # The heavier differential fuzz is NOT in this hook (it would make every push take
 # minutes). Run it before a substantial push with `make ci` (full: test +
@@ -28,6 +30,14 @@ if make -s fixpoint >/tmp/hier-prepush.log 2>&1; then
 else
     printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
     printf '\npre-push BLOCKED: make fixpoint failed. Push aborted.\n'; exit 1
+fi
+
+printf 'pre-push: make corelib ... '
+if make -s corelib >/tmp/hier-prepush.log 2>&1; then
+    printf 'ok\n'
+else
+    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
+    printf '\npre-push BLOCKED: make corelib failed. Push aborted.\n'; exit 1
 fi
 
 printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz).\n'
