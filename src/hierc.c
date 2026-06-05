@@ -623,6 +623,7 @@ static Type map_of(Type k, Type v) {
 static int type_is_heap(Type t) {
     if (IS_NEWTYPE(t)) return type_is_heap(nt_under(t));   /* same rep as its base */
     if (IS_SOA(t)) return 1;                               /* holds heap field-array pointers */
+    if (IS_FUNC(t)) return 1;   /* a closure carries an env that may be heap; copy_into re-homes it (a plain ref has env==0 -> no-op) */
     if (t == T_STRING || is_map(t) || is_array(t)) return 1;
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_RES(t)) return type_is_heap(res_ok(t)) || type_is_heap(res_err(t));
@@ -832,10 +833,10 @@ static char *pkg_prefix_for(const char *qualifier);   /* defined after the impor
  * fn in a struct/array/tuple/map/Option could escape its creating scope and dangle;
  * also closes the FnC typedef-ordering gap). Pass it as an argument or keep it in a local. */
 static void reject_fn_container(Type t, int line) {
-    if (IS_FUNC(t))
-        die_at(line, "a function value can't be stored in a container yet (struct field, "
-                     "array/tuple element, map value, Option/Result) — pass it as an argument "
-                     "or keep it in a local variable");
+    (void)t; (void)line;
+    /* fn-in-container is now allowed: a fn value is a heap type (type_is_heap),
+     * so a container holding one deep-copies (re-homes) it via copy_into on
+     * escape, exactly like any other heap element. Rule (b) lifted. */
 }
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
@@ -1238,6 +1239,23 @@ static Expr *parse_postfix(Parser *ps) {
                     e = fe;
                 }
             }
+        } else if (at(ps, TK_LPAREN)) {
+            /* call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE
+             * that is the result of an index / field / prior call (e.g. xs[i](a),
+             * h.cb(a), f(a)(b)). E_CALL with lhs=callee and no sval distinguishes
+             * it from a named call (whose sval is the function name). */
+            Tok *t = cur(ps); ps->p++;
+            Expr *c = new_expr(E_CALL, t->line);
+            c->lhs = e;                  /* the callee expression (sval stays NULL) */
+            c->pkg = g_cur_pkg_prefix;
+            int cap = 0;
+            while (!at(ps, TK_RPAREN)) {
+                if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)realloc(c->args, (size_t)cap * sizeof(Expr *)); }
+                c->args[c->nargs++] = parse_expr(ps);
+                if (!accept(ps, TK_COMMA)) break;
+            }
+            eat(ps, TK_RPAREN, "')'");
+            e = c;
         } else break;
     }
     if (at(ps, TK_ORRETURN)) {   /* postfix: binds tighter than any binary op */
@@ -2276,6 +2294,26 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            /* `h.field(args)` where `h` is a LOCAL VARIABLE (not a package): a call
+             * through a fn-typed struct field. Rewrite to a call-on-expression of
+             * the field access (the parser couldn't tell h from a package name). */
+            { Type _qvt;
+              if (e->qual && !e->lhs && vars_find(e->qual, &_qvt)) {
+                  Expr *base = new_expr(E_IDENT, e->line); base->sval = e->qual; base->pkg = e->pkg;
+                  Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
+                  e->lhs = fld; e->qual = NULL; e->sval = NULL;
+              } }
+            if (e->lhs) {   /* call-on-expression: an indirect call on a fn VALUE (array elem, struct field, call result) */
+                Type ct = resolve_exp(e->lhs, T_VOID);
+                if (!IS_FUNC(ct)) die_at(e->line, "calling a value that isn't a function (%s)", type_name(ct));
+                if (e->nargs != func_n(ct))
+                    die_at(e->line, "this function value expects %d argument(s), got %d", func_n(ct), e->nargs);
+                for (int i = 0; i < e->nargs; i++)
+                    if (resolve_exp(e->args[i], func_param(ct, i)) != func_param(ct, i))
+                        die_at(e->line, "argument %d must be %s", i + 1, type_name(func_param(ct, i)));
+                e->op = TK_FN;   /* indirect-call marker */
+                return e->type = func_ret(ct);
+            }
             Type fvt;   /* indirect call through a function-typed local variable: f(args) */
             if (!e->qual && vars_find(e->sval, &fvt) && IS_FUNC(fvt)) {
                 if (e->nargs != func_n(fvt))
@@ -3394,6 +3432,8 @@ static char *copy_into(Type t, const char *arena, char *val) {
                 return type_is_heap(t) ? sfmt("hier_copy_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, arena, val) : val;
             if (IS_ARRC(t))
                 return sfmt("hier_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
+            if (IS_FUNC(t))   /* a fn value: re-home its captured env into `arena` (a plain ref has env==0 -> no-op) */
+                return sfmt("({ FnC%d _t = (%s); if (_t.env) _t.env = _t.copyenv(%s, _t.env); _t; })", FUNC_ID(t), val, arena);
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("hier_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
             if (IS_SOA(t))   /* deep-copy each field buffer into `arena` */
@@ -3504,6 +3544,8 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     }
     if (IS_STRUCT(t))        return sfmt("hier_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     if (IS_SOA(t))           return sfmt("Soa%d_eq(%s, %s)", SOA_ID(t), a, b);
+    if (IS_FUNC(t))          /* fn values: identity equality (same thunk + same env) — closures aren't structurally comparable */
+        return sfmt("((%s).call == (%s).call && (%s).env == (%s).env)", a, b, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
@@ -3511,6 +3553,13 @@ static char *gen_call(Expr *e, const char *arena) {
     if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
         return gen_expr(e->args[0], arena);
     if (e->op == TK_FN) {     /* indirect call through a function value: g.call(g.env, arena, args) */
+        if (e->lhs) {         /* call-on-expression: bind the callee to a temp first (it may have side effects / be an index) */
+            char *cv = gen_expr(e->lhs, g_cur_scope);
+            char *out = sfmt("({ %s_f = %s; _f.call(_f.env, %s", c_type(e->lhs->type), cv, arena);
+            for (int i = 0; i < e->nargs; i++)
+                out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
+            return sfmt("%s); })", out);
+        }
         char *g = sfmt("h_%s", e->sval);
         char *out = sfmt("%s.call(%s.env, %s", g, g, arena);
         for (int i = 0; i < e->nargs; i++)
@@ -4952,6 +5001,18 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
     for (int i = 0; i < g_nenums; i++)              /* forward-declare cells; a value is E_<name>* */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
+    /* (2a') function-value typedefs FIRST — a container may now hold a fn value
+     * (array elem / struct field / map value), so FnC<id> must be complete before
+     * the composite-array/struct bodies that embed it. A fn(P...)->R value is a
+     * 3-word FAT POINTER {env, call, copyenv}; common param/ret types (scalars,
+     * strings, scalar arrays) are complete here. */
+    for (int i = 0; i < g_nfunctypes; i++) {
+        FuncTy *f = &g_functypes[i];
+        fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
+        for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
+        fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
+    }
+    if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array typedefs */
         fprintf(o, "typedef struct { %s*data; long len; long cap; } HierArrC%d;\n",
                 c_type(g_arrtypes[i].elem), i);
@@ -5023,18 +5084,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o, "static E_%s _sing_%s_%d = { %d };\n", ed->name, ed->name, v, v);
     }
     fputs("\n", o);
-    /* (3d) function-value typedefs: a fn(P...) -> R value is a FAT POINTER — an env
-     * pointer plus a `call` thunk `R call(void* env, Arena*, P...)`. A plain top-level
-     * reference is {0, fn__clo}; a closure is {heap_env, lifted_body}. This uniform
-     * shape lets a ref and a closure share the type. Every aggregate C type is complete
-     * now, so the params/ret are usable. */
-    for (int i = 0; i < g_nfunctypes; i++) {
-        FuncTy *f = &g_functypes[i];
-        fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
-        for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
-        fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
-    }
-    if (g_nfunctypes) fputs("\n", o);
+    /* (3d) function-value typedefs were emitted early (2a') so containers can embed them. */
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
         const char *nm = g_structs[i].name;
         if (type_is_heap(STRUCT_TYPE(i)))
