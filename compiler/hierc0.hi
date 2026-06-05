@@ -328,6 +328,7 @@ enum Expr:
     ESlice(Expr, Expr, Expr) # `base[lo:hi]` sub-array (owning copy)
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
     ELambda(int, [string], [string], string, Expr, [string], [string])   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
+    ECallV(Expr, [Expr])     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
 
 enum Stmt:
     SDecl(string, Expr)
@@ -623,8 +624,18 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
 
 fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
     e := parse_atom(toks, &pos)
-    for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
-        if toks[pos].kind == TDot:               # field access: a.b  /  tuple index: a.0
+    for toks[pos].kind == TDot or toks[pos].kind == TLBracket or toks[pos].kind == TLParen:
+        if toks[pos].kind == TLParen:            # call-on-expression: <expr>(args) -- indirect call on a fn value
+            pos = pos + 1
+            cargs := []Expr
+            if toks[pos].kind != TRParen:
+                push(cargs, parse_expr(toks, &pos))
+                for toks[pos].kind == TComma:
+                    pos = pos + 1
+                    push(cargs, parse_expr(toks, &pos))
+            expect(toks, &pos, TRParen)
+            e = ECallV(e, cargs)
+        elif toks[pos].kind == TDot:             # field access: a.b  /  tuple index: a.0
             pos = pos + 1
             if toks[pos].kind != TIdent and toks[pos].kind != TInt:
                 die("parse: expected a field name or index after '.'")
@@ -1358,6 +1369,9 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
         EBin(op, l, r):
             return EBin(op, mangle_expr(m, l), mangle_expr(m, r))
         ECall(nm, a):
+            di := find(nm, ".")
+            if di >= 0 and has_str(m.locals, substr(nm, 0, di)):   # `h.cb(args)` where h is a LOCAL var (not a package): call through a fn-typed struct field
+                return ECallV(EField(EVar(substr(nm, 0, di)), substr(nm, di + 1, len(nm))), mangle_args(m, a))
             return ECall(mangle_ref(m, nm), mangle_args(m, a))
         EField(b, f):
             bn := evar_name(b)
@@ -1383,6 +1397,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return ESlice(mangle_expr(m, b), mangle_expr(m, lo), mangle_expr(m, hi))
         ELambda(id, ps, pts, ret, body, cn, ct):
             return ELambda(id, ps, mangle_types(m, pts), mangle_type(m, ret), mangle_expr(m, body), cn, ct)
+        ECallV(callee, cargs):
+            return ECallV(mangle_expr(m, callee), mangle_args(m, cargs))
         EAddr(x):
             return EAddr(mangle_expr(m, x))
 
@@ -2161,6 +2177,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             return type_of(base, names, types, dc, ctx)   # same array type
         ELambda(id, ps, pts, ret, body, cn, ct):
             return mk_functype(pts, ret)
+        ECallV(callee, cargs):
+            return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
         EAddr(inner):
             return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2178,6 +2196,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "bool"                     # comparisons / and / or -> bool
             return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args):
+            di := find(name, ".")
+            if di >= 0 and has_str(names, substr(name, 0, di)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
+                return type_of(ECallV(EField(EVar(substr(name, 0, di)), substr(name, di + 1, len(name))), args), names, types, dc, ctx)
             if has_str(names, name):              # indirect call through a function-typed variable
                 vt := base_ty(var_type(names, types, name))
                 if is_func(vt):
@@ -2216,6 +2237,8 @@ fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx)
 fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match arg:
         ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
+        ECallV(callee, cargs):
             return ""
         EAddr(inner):
             b := base_ty(type_of(inner, names, types, dc, ctx))
@@ -2354,6 +2377,8 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
         ESlice(b, lo, hi):
             return ""
         ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
+        ECallV(callee, cargs):
             return ""
         EAddr(x):
             return ""
@@ -2585,6 +2610,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 j = j + 1
             env = env + "}"
             return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
+        ECallV(callee, cargs):
+            ct := cty(dc, ctx, type_of(callee, names, types, dc, ctx))
+            code := "({ " + ct + "_f = " + gen_expr(callee, names, types, dc, ctx) + "; _f.call(_f.env, " + ctx.owner
+            if len(cargs) > 0:
+                code = code + ", " + gen_call_args(cargs, names, types, dc, ctx)
+            return code + "); })"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2605,6 +2636,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return eqx
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args):
+            cdi := find(name, ".")
+            if cdi >= 0 and has_str(names, substr(name, 0, cdi)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
+                return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi)), substr(name, cdi + 1, len(name))), args), names, types, dc, ctx)
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
@@ -2726,6 +2760,8 @@ fn root_var(e: Expr) -> string:
             return root_var(b)
         ELambda(id, ps, pts, ret, body, cn, ct):
             return ""
+        ECallV(callee, cargs):
+            return ""
         EAddr(x):
             return root_var(x)
         EInt(t):
@@ -2784,6 +2820,8 @@ fn var_index(names: [string], name: string) -> int:
 fn elem_deepcopy(dc: Decls, ctx: Ctx, et: string) -> bool:
     if resolve_nt(dc, ctx, et) == "str":
         return true
+    if is_func(et):                                          # a closure element carries an env to re-home on escape
+        return true
     if is_array(et):
         return true
     if is_tuple(et):
@@ -2815,6 +2853,8 @@ fn box_payload(dc: Decls, ctx: Ctx, ty: string, ar: string, valptr: string) -> s
 fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> string:
     if resolve_nt(dc, ctx, et) == "str":
         return "scopy(" + ar + ", " + src + ")"
+    if is_func(et):                                  # a fn value: re-home its env into `ar` (plain ref env==0 -> no-op)
+        return "({ Fn_" + func_suffix(et) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(et):
         return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(et):
@@ -2835,6 +2875,8 @@ fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
     rt := resolve_nt(dc, ctx, ty)
     if rt == "str":
         return "scopy(" + ar + ", " + src + ")"
+    if is_func(rt):                                  # a fn value: re-home its env into `ar`
+        return "({ Fn_" + func_suffix(rt) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(rt):
         return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ar + ", " + src + ")"
     if is_map(rt):
@@ -2924,6 +2966,8 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
             return false
         ELambda(id, ps, pts, ret, body, cn, ct):
             return false
+        ECallV(callee, cargs):
+            return false
         EAddr(inr):
             return false
 
@@ -2964,6 +3008,8 @@ fn is_place(e: Expr) -> bool:
         ESlice(b, lo, hi):
             return true                          # a slice aliases its source; binding it copies
         ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
+        ECallV(callee, cargs):
             return false
         EAddr(inner):
             return false
@@ -3008,6 +3054,8 @@ fn is_eslice(e: Expr) -> bool:
             return false
         ELambda(id, ps, pts, ret, body, cn, ct):
             return false
+        ECallV(callee, cargs):
+            return false
         EAddr(inner):
             return false
 
@@ -3046,6 +3094,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         ESlice(b, lo, hi):
             return false
         ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
+        ECallV(callee, cargs):
             return false
         EAddr(x):
             return false
@@ -3110,6 +3160,8 @@ fn evar_name(e: Expr) -> string:
             return ""
         ELambda(id, ps, pts, ret, body, cn, ct):
             return ""
+        ECallV(callee, cargs):
+            return ""
         EAddr(x):
             return ""
 
@@ -3152,6 +3204,12 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
             j := 0
             for j < len(cn):
                 push(reads, cn[j])
+                j = j + 1
+        ECallV(callee, cargs):
+            rd_expr(&reads, &loopreads, callee, inloop)
+            j := 0
+            for j < len(cargs):
+                rd_expr(&reads, &loopreads, cargs[j], inloop)
                 j = j + 1
         EAddr(x):
             rd_expr(&reads, &loopreads, x, inloop)
@@ -3341,6 +3399,8 @@ fn expr_has_call(e: Expr) -> bool:
             return expr_has_call(b) or expr_has_call(lo) or expr_has_call(hi)
         ELambda(id, ps, pts, ret, body, cn, ct):
             return false
+        ECallV(callee, cargs):
+            return true
         EAddr(x):
             return expr_has_call(x)
         EArrLit(es):
@@ -3396,6 +3456,15 @@ fn expr_refs(e: Expr, name: string) -> bool:
             j := 0
             for j < len(cn):
                 if cn[j] == name:
+                    return true
+                j = j + 1
+            return false
+        ECallV(callee, cargs):
+            if expr_refs(callee, name):
+                return true
+            j := 0
+            for j < len(cargs):
+                if expr_refs(cargs[j], name):
                     return true
                 j = j + 1
             return false
@@ -3547,6 +3616,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ETuple(es):
                     return deflt
                 ESlice(b, lo, hi):
+                    return deflt
+                ECallV(callee, cargs):
                     return deflt
                 EAddr(x):
                     return deflt
@@ -3776,6 +3847,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
         ESlice(b, lo, hi):
             push(out, e)
         ELambda(id, ps, pts, ret, body, cn, ct):
+            push(out, e)
+        ECallV(callee, cargs):
             push(out, e)
         EAddr(x):
             push(out, e)
@@ -4163,6 +4236,8 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
         okeq := eq_field(dc, ctx, result_ok(ty), oa, ob)
         ereq := eq_field(dc, ctx, result_err(ty), ea, eb)
         return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 1 ? " + okeq + " : " + ereq + "))"
+    if is_func(ty):                              # fn values: identity equality (same thunk + env) — closures aren't structurally comparable
+        return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     return "(" + a + " == " + b + ")"            # int/bool/float by value
 
 # Recursive deep-copy of an enum node into arena `ar`: fresh node, same tag, and
@@ -4640,6 +4715,12 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
             collect_expr(&acc, hi, names, types, dc, ctx)
         ELambda(id, ps, pts, ret, body, cn, ct):
             note_arr_types(&acc, mk_functype(pts, ret))   # dedups + collects param/ret families
+        ECallV(callee, cargs):
+            collect_expr(&acc, callee, names, types, dc, ctx)
+            j := 0
+            for j < len(cargs):
+                collect_expr(&acc, cargs[j], names, types, dc, ctx)
+                j = j + 1
         EAddr(inner):
             collect_expr(&acc, inner, names, types, dc, ctx)
         EInt(t):
@@ -5016,6 +5097,12 @@ fn collect_evars(e: Expr, out: inout [string]):
             collect_evars(b, &out)
             collect_evars(lo, &out)
             collect_evars(hi, &out)
+        ECallV(callee, cargs):
+            collect_evars(callee, &out)
+            j := 0
+            for j < len(cargs):
+                collect_evars(cargs[j], &out)
+                j = j + 1
         EAddr(x):
             collect_evars(x, &out)
         ELambda(id, ps, pts, ret, body, cn, ct):
@@ -5077,6 +5164,8 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ESlice(b, lo, hi):
             return ESlice(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+        ECallV(callee, cargs):
+            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_exprs(cargs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         EAddr(x):
             return EAddr(lift_expr(x, &lifted, &ctr, &lams, &names, &types, dc, ctx))
         ELambda(id, ps, pts, ret, body, cn, ct):
@@ -5246,6 +5335,15 @@ fn expr_has_lambda(e: Expr) -> bool:
             return false
         ESlice(b, lo, hi):
             return expr_has_lambda(b) or expr_has_lambda(lo) or expr_has_lambda(hi)
+        ECallV(callee, cargs):
+            if expr_has_lambda(callee):
+                return true
+            j := 0
+            for j < len(cargs):
+                if expr_has_lambda(cargs[j]):
+                    return true
+                j = j + 1
+            return false
         EAddr(x):
             return expr_has_lambda(x)
         EInt(t):
@@ -5392,9 +5490,16 @@ fn main():
     for i < len(prog.enums):
         out = out + "typedef struct " + uet(prog.enums[i].name) + " " + uet(prog.enums[i].name) + ";\n"
         i = i + 1
+    i = 0                                        # 1c. function-value typedefs FIRST — a container may hold a fn
+    has_fnval := false                           #     value (array elem / struct field), so Fn_<suffix> must be
+    for i < len(ets):                            #     complete before the array/struct bodies that embed it.
+        if is_func(ets[i]):                      #     Common param/ret types (scalars/strings) are complete here.
+            out = out + gen_func_typedef(dc, ctx, ets[i])
+            has_fnval = true
+        i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]) and not is_func(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
             out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
@@ -5428,13 +5533,6 @@ fn main():
         if is_tuple(ets[i]):
             out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
-    i = 0                                        # 5a'. function-pointer typedefs (all param/ret types complete now)
-    has_fnval := false
-    for i < len(ets):
-        if is_func(ets[i]):
-            out = out + gen_func_typedef(dc, ctx, ets[i])
-            has_fnval = true
-        i = i + 1
     i = 0                                        # 5a''. closure env structs (one per capturing lambda)
     for i < len(lams):
         if len(lams[i].capnames) > 0:
@@ -5464,7 +5562,7 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]) and not is_func(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
