@@ -1,7 +1,8 @@
 #!/bin/sh
 # corelib test harness. For each corelib/test/<name>/main.hi: compile with the C compiler
-# (hierc) AND via the self-hosted hierc0 (hierc --bundle | hierc0), and assert both produce
-# the golden corelib/test/<name>.out. Sets HIER_CORELIB so `import "core:X"` resolves.
+# (hierc), via the self-hosted hierc0 fed `hierc --bundle`, AND via STANDALONE hierc0
+# (which resolves `import "core:X"` itself through the getenv builtin + HIER_CORELIB),
+# and assert all three produce the golden corelib/test/<name>.out. Sets HIER_CORELIB.
 set -u
 cd "$(dirname "$0")/.." || exit 2                      # repo root
 HIERC=./hierc
@@ -21,6 +22,10 @@ for entry in corelib/test/*/main.hi; do
     if ! { "$HIERC" "$entry" --bundle 2>/dev/null | "$T/h0" > "$T/h0c.c" 2>/dev/null && $CC -O2 -o "$T/h0b" "$T/h0c.c" -lm 2>/dev/null; }; then echo "FAIL $name (hierc0 compile)"; fail=1; continue; fi
     "$T/h0b" > "$T/ho" 2>&1
     if ! cmp -s "$T/co" "$T/ho"; then echo "FAIL $name (hierc vs hierc0 differ)"; diff "$T/co" "$T/ho" | head | sed 's/^/      /'; fail=1; continue; fi
+    # standalone hierc0: resolves `core:` itself via getenv(HIER_CORELIB) -- no `hierc --bundle`
+    if ! { "$T/h0" "$entry" > "$T/sdc.c" 2>/dev/null && $CC -O2 -o "$T/sdb" "$T/sdc.c" -lm 2>/dev/null; }; then echo "FAIL $name (standalone hierc0 compile)"; fail=1; continue; fi
+    "$T/sdb" > "$T/sdo" 2>&1
+    if ! cmp -s "$T/co" "$T/sdo"; then echo "FAIL $name (standalone hierc0 differs)"; diff "$T/co" "$T/sdo" | head | sed 's/^/      /'; fail=1; continue; fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; continue; fi
     if [ ! -f "$golden" ]; then echo "FAIL $name (no golden -- run RECORD=1)"; fail=1; continue; fi
     if ! cmp -s "$T/co" "$golden"; then echo "FAIL $name (output != golden)"; diff "$golden" "$T/co" | head | sed 's/^/      /'; fail=1; continue; fi

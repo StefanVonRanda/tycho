@@ -1167,7 +1167,7 @@ struct Mctx:
     variants: [string]
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "die" or name == "len" or name == "push" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "die" or name == "len" or name == "push" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -1246,8 +1246,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         return ty                  # map [str: int/float]: value is primitive, never a package type
     if has_prefix(ty, "("):
         return "(" + mangle_type_list(m, substr(ty, 1, len(ty) - 1)) + ")"
-    if ty == "int" or ty == "float" or ty == "str" or ty == "void":
-        return ty
+    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char":
+        return ty                  # builtin scalar types are never package-qualified
     if find(ty, ".") >= 0:
         return mangle_dotted(m, ty)
     return m.prefix + ty
@@ -1865,6 +1865,8 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "[str]"
     if name == "args":
         return "[str]"
+    if name == "getenv":                          # env var value, or "" if unset
+        return "str"
     if name == "die":
         return "int"
     if name == "len":
@@ -2421,6 +2423,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_list_dir(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "args":
                 return "hi_args(" + ctx.owner + ")"
+            if name == "getenv":                  # env var value, or "" if unset
+                return "hi_getenv(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "input":
                 return "hi_input(" + ctx.owner + ")"
             if name == "Some":                    # box the payload in the SAME arena as the box, so a
@@ -3940,6 +3944,7 @@ fn preamble() -> string:
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
     out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
+    out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return scopy(ar, v ? v : \"\"); }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
@@ -4522,6 +4527,17 @@ fn is_package(toks: [Token]) -> bool:              # does the source open with a
         i = i + 1
     return toks[i].kind == TIdent and toks[i].text == "package"
 
+# Resolve an import path to a package directory. `core:<name>` is a corelib
+# import -> $HIER_CORELIB/<name> (a library importable from any program); anything
+# else is relative to the importing package's dir. Mirrors hierc's resolve_pkg_dir.
+fn resolve_import_dir(dir: string, imp: string) -> string:
+    if has_prefix(imp, "core:"):
+        root := getenv("HIER_CORELIB")
+        if root == "":
+            die("hierc0: import \"" + imp + "\" needs the HIER_CORELIB environment variable set to the corelib directory")
+        return root + "/" + substr(imp, 5, len(imp))
+    return dir + "/" + imp
+
 fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
     k := 0
     for k < len(seen):
@@ -4543,7 +4559,7 @@ fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
         imps := scan_imports(lex(read_file(dir + "/" + files[fj])))
         ij := 0
         for ij < len(imps):
-            out = out + bundle(dir + "/" + imps[ij], false, &seen)
+            out = out + bundle(resolve_import_dir(dir, imps[ij]), false, &seen)
             ij = ij + 1
         fj = fj + 1
     fk := 0                                         # then this package's files

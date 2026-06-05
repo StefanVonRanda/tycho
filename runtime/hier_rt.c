@@ -373,6 +373,12 @@ long hier_write_file(const char *path, const char *data) {
     return (w == (size_t)n) ? 1 : 0;
 }
 
+/* getenv(name): the environment variable's value as a string, or "" if unset. */
+char *hier_getenv(Arena *a, const char *name) {
+    const char *v = getenv(name);
+    return hier_str_copy(a, v ? v : "");
+}
+
 /* read_file(path): the whole file as a string, or "" if it can't be opened. */
 char *hier_read_file(Arena *a, const char *path) {
     FILE *f = fopen(path, "rb");

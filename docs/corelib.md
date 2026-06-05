@@ -18,10 +18,13 @@ importing package, unchanged. Implemented in the C compiler's package walker
 (`resolve_pkg_dir`/`pkg_basename` in `src/hierc.c`, used by both `compile_package` and
 `--bundle`).
 
-The self-hosted **hierc0** sees corelib via `hierc --bundle` (which resolves `core:` and
-emits one merged source stream that hierc0 compiles) — this is the path the fixpoint
-exercises. Standalone `hierc0 <path>` does **not** yet resolve `core:` itself (that needs
-a `getenv` builtin in Hier so the dir-walker can read `HIER_CORELIB`); deferred.
+The self-hosted **hierc0** sees corelib two ways, both checked by `corelib/run.sh`:
+(1) fed `hierc --bundle` (which resolves `core:` and emits one merged source stream) — the
+path the fixpoint exercises; and (2) **standalone** `hierc0 <path>`, which now resolves
+`import "core:X"` itself: its dir-walker reads `HIER_CORELIB` via the `getenv` builtin and
+routes `core:X` to `$HIER_CORELIB/X` (`resolve_import_dir`, mirroring hierc's
+`resolve_pkg_dir`). So hierc0 is a fully standalone corelib-aware compiler — no `--bundle`
+middleman needed.
 
 ## Shape (constrained by the language)
 
