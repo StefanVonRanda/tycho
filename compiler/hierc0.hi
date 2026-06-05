@@ -2596,8 +2596,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(cn) == 0:
                 return "(Fn_" + suffix + "){0, " + un("__lam" + str(id)) + "__clo, 0}"
             # captures: build the env as a compound literal and hbox it into the
-            # FUNCTION-scope arena (&_scope, not a block arena) so a closure assigned
-            # to an outer-block local stays valid; rule (a) forbids escaping the fn.
+            # OWNER arena (where this closure value is stored) — so a loop-local
+            # closure is reclaimed each iteration with its block, not retained in the
+            # function arena. Every escape re-homes the env via Env_<id>_copy.
             env := "(Env_" + str(id) + "[]){"
             j := 0
             for j < len(cn):
@@ -2605,11 +2606,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     env = env + ", "
                 cv := gen_expr(EVar(cn[j]), names, types, dc, ctx)
                 if elem_deepcopy(dc, ctx, ct[j]):                          # heap capture: own a deep copy in the env arena (value semantics)
-                    cv = cp_field(dc, ctx, ct[j], "&_scope", cv)
+                    cv = cp_field(dc, ctx, ct[j], ctx.owner, cv)
                 env = env + cv
                 j = j + 1
             env = env + "}"
-            return "(Fn_" + suffix + "){hbox(&_scope, sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
+            return "(Fn_" + suffix + "){hbox(" + ctx.owner + ", sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
         ECallV(callee, cargs):
             ct := cty(dc, ctx, type_of(callee, names, types, dc, ctx))
             code := "({ " + ct + "_f = " + gen_expr(callee, names, types, dc, ctx) + "; _f.call(_f.env, " + ctx.owner

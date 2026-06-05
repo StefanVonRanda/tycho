@@ -3834,15 +3834,17 @@ static char *gen_expr(Expr *e, const char *arena) {
             int fid = FUNC_ID(li->ftype), id = (int)e->ival;
             if (li->ncap == 0)
                 return sfmt("(FnC%d){0, __lam%d__clo, 0}", fid, id);
-            /* env in the FUNCTION scope (&_scope), not the current block arena, so the closure
-             * is valid for any within-function use (assign to an outer-block local, pass down).
-             * On RETURN the env re-homes into the caller's arena via Env_<id>_copy (3rd field). */
-            char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(&_scope, sizeof(Env_%d));", id, id, id);
+            /* env in the OWNER arena (where this closure value is stored) — so a
+             * loop-local closure is reclaimed each iteration with the rest of its
+             * block, not retained in the function arena for the whole call. Every
+             * escape (return / store in an escaping container / assign to a longer-
+             * lived var) re-homes the env via Env_<id>_copy (the 3rd field). */
+            char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(%s, sizeof(Env_%d));", id, id, arena, id);
             for (int i = 0; i < li->ncap; i++) {
                 const char *cn = li->proc->params[i].name;
                 Type ct = li->proc->params[i].type;
                 char *cv = is_inout_param(cn) ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn);
-                if (type_is_heap(ct)) cv = copy_into(ct, "&_scope", cv);   /* value semantics: own a deep copy in the env arena */
+                if (type_is_heap(ct)) cv = copy_into(ct, arena, cv);   /* value semantics: own a deep copy in the env arena */
                 out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
             return sfmt("%s (FnC%d){_e, __lam%d__clo, Env_%d_copy}; })", out, fid, id, id);
