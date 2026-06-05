@@ -361,6 +361,7 @@ struct Func:
 struct Sig:                   # collected up front, for typing calls
     name: string
     ret: string
+    ptypes: [string]          # parameter types, so a bare fn name can be typed as a value
 
 struct Field:
     name: string
@@ -968,6 +969,28 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
         st := parse_type(toks, &pos)
         expect(toks, &pos, TRBracket)
         return "soa[" + st + "]"
+    if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
+        pos = pos + 1
+        expect(toks, &pos, TLParen)
+        params := []string
+        if toks[pos].kind != TRParen:
+            push(params, parse_type(toks, &pos))
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(params, parse_type(toks, &pos))
+        expect(toks, &pos, TRParen)
+        ret := "void"
+        if toks[pos].kind == TArrow:
+            pos = pos + 1
+            ret = parse_type(toks, &pos)
+        out := "fn("
+        i := 0
+        for i < len(params):
+            if i > 0:
+                out = out + ","
+            out = out + params[i]
+            i = i + 1
+        return out + "->" + ret + ")"
     if toks[pos].kind != TIdent:
         die("parse: expected a type")
     name := toks[pos].text
@@ -1703,6 +1726,65 @@ fn tup_suffix(ty: string) -> string:             # parts mangled, joined by "_"
         i = i + 1
     return out
 
+# First-class function values: a `fn(P...) -> R` type is the string
+# "fn(p1,p2->ret)" (ret always present, "void" if none). A value is a C function
+# pointer to a top-level function (no capture). Encoded/parsed depth-aware so a
+# function-type param can itself be a function/tuple/array type.
+fn is_func(ty: string) -> bool:
+    return len(ty) >= 3 and ty[0] == 102 and ty[1] == 110 and ty[2] == 40   # "fn("
+
+fn func_inner(ty: string) -> string:             # the body between `fn(` and the final `)`
+    return substr(ty, 3, len(ty) - 1)
+
+fn func_arrow(inner: string) -> int:             # offset of the top-level "->" (params|ret split)
+    depth := 0
+    i := 0
+    for i < len(inner):
+        c := inner[i]
+        if c == 40 or c == 91 or c == 123:
+            depth = depth + 1
+        elif c == 41 or c == 93 or c == 125:
+            depth = depth - 1
+        elif depth == 0 and c == 45 and i + 1 < len(inner) and inner[i + 1] == 62:
+            return i
+        i = i + 1
+    return -1
+
+fn func_params(ty: string) -> [string]:
+    inner := func_inner(ty)
+    pstr := substr(inner, 0, func_arrow(inner))
+    parts := []string
+    if len(pstr) == 0:
+        return parts
+    depth := 0
+    start := 0
+    i := 0
+    for i < len(pstr):
+        c := pstr[i]
+        if c == 40 or c == 91 or c == 123:
+            depth = depth + 1
+        elif c == 41 or c == 93 or c == 125:
+            depth = depth - 1
+        elif c == 44 and depth == 0:
+            push(parts, substr(pstr, start, i))
+            start = i + 1
+        i = i + 1
+    push(parts, substr(pstr, start, len(pstr)))
+    return parts
+
+fn func_ret(ty: string) -> string:
+    inner := func_inner(ty)
+    return substr(inner, func_arrow(inner) + 2, len(inner))
+
+fn func_suffix(ty: string) -> string:            # a C identifier for the signature
+    out := "fn"
+    ps := func_params(ty)
+    i := 0
+    for i < len(ps):
+        out = out + "_" + mangle(ps[i])
+        i = i + 1
+    return out + "_ret_" + mangle(func_ret(ty))
+
 # A valid C identifier suffix for an element type, so composite element types
 # (nested arrays, Option/Result/tuple elements) get legal `Arr_<mangle>` names.
 fn mangle(ty: string) -> string:
@@ -1718,6 +1800,8 @@ fn mangle(ty: string) -> string:
         return "map_" + map_key(ty) + "_" + map_val(ty)
     if is_soa(ty):
         return "soa_" + soa_struct(ty)
+    if is_func(ty):
+        return func_suffix(ty)                   # fn(int->int) -> fn_int_ret_int
     return ty                                    # int/str/float/struct/enum/newtype: already valid
 
 # Newtypes (`type X = U`) are zero-cost: distinct only for type checking (which
@@ -1766,6 +1850,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "Tup_" + tup_suffix(ty) + " "
     if is_soa(ty):                                # soa [Struct] -> Soa_Struct
         return "Soa_" + soa_struct(ty) + " "
+    if is_func(ty):                               # fn(P...) -> R : a function-pointer typedef
+        return "Fn_" + func_suffix(ty) + " "
     if is_enum(dc, ctx, ty):                          # enum value -> pointer to node
         return uet(ty) + "* "
     return ust(ty) + " "                         # struct type: its own typedef
@@ -1885,6 +1971,22 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     die("type: unknown function")
     return "int"
 
+# The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
+# if `name` is not a user function (so a bare name can be typed as a value).
+fn sig_functype(dc: Decls, name: string) -> string:
+    si := map_get(dc.sigmap, name, -1)
+    if si < 0:
+        return ""
+    s := dc.sigs[si]
+    out := "fn("
+    i := 0
+    for i < len(s.ptypes):
+        if i > 0:
+            out = out + ","
+        out = out + s.ptypes[i]
+        i = i + 1
+    return out + "->" + s.ret + ")"
+
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -1902,6 +2004,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Option()"
             if is_variant(dc, ctx, name):            # bare no-payload variant (e.g. Green)
                 return variant_enum(dc, ctx, name)
+            if not has_str(names, name):             # not a local: a bare top-level fn name as a value
+                ft := sig_functype(dc, name)
+                if ft != "":
+                    return ft
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(dc, ctx, vt)
         EField(base, fld):
@@ -1956,6 +2062,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "bool"                     # comparisons / and / or -> bool
             return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args):
+            if has_str(names, name):              # indirect call through a function-typed variable
+                vt := base_ty(var_type(names, types, name))
+                if is_func(vt):
+                    return resolve_nt(dc, ctx, func_ret(vt))
             if name == "map_set" or name == "map_del":   # return the first arg's map type
                 return type_of(args[0], names, types, dc, ctx)
             if name == "map_get":                 # returns the map's value type
@@ -2269,6 +2379,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hnone()"
             if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
                 return "mk_" + name + "(" + ctx.owner + ")"
+            if not has_str(names, name):             # not a local: a bare fn name -> the C function (decays to a pointer)
+                return un(name)
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + un(name) + ")"
             return un(name)
@@ -3732,6 +3844,21 @@ fn gen_struct_eq(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     return out + "; }\n"
 
 # A tuple is an anonymous struct with positional fields f0, f1, ...
+# `typedef R (*Fn_<suffix>)(Arena*, P...)` for a fn(P...) -> R type. Matches every
+# hier function's uniform C ABI (the hidden return arena is always the first param).
+fn gen_func_typedef(dc: Decls, ctx: Ctx, ty: string) -> string:
+    r := func_ret(ty)
+    rc := "void "                                # cty has no "void" case (fns handle it separately)
+    if r != "void":
+        rc = cty(dc, ctx, r)
+    out := "typedef " + rc + "(*Fn_" + func_suffix(ty) + ")(Arena*"
+    ps := func_params(ty)
+    i := 0
+    for i < len(ps):
+        out = out + ", " + cty(dc, ctx, ps[i])
+        i = i + 1
+    return out + ");\n"
+
 fn gen_tuple_struct(dc: Decls, ctx: Ctx, ty: string) -> string:
     parts := tuple_parts(ty)
     out := "typedef struct { "
@@ -4222,6 +4349,15 @@ fn note_arr_types(acc: inout [string], ty: string):
         note_arr_types(&acc, "[" + map_key(b) + "]")   # inner map must be typedef'd before the outer
         if not has_str(acc, b):                        # (its struct holds an inner-map pointer member);
             push(acc, b)                               # keys(m) -> [K] array family also emitted
+    elif is_func(b):                                   # fn(P...) -> R : collect param/ret families first
+        ps := func_params(b)
+        i := 0
+        for i < len(ps):
+            note_arr_types(&acc, ps[i])
+            i = i + 1
+        note_arr_types(&acc, func_ret(b))
+        if not has_str(acc, b):
+            push(acc, b)
 
 # Walk an expression collecting composite array element types from literals
 # (array literals / empty arrays that no annotation would reveal).
@@ -4282,7 +4418,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EStr(s):
             j := 0
         EVar(n):
-            j := 0
+            if not has_str(names, n):              # a bare top-level fn name used as a value: collect its fn type
+                note_arr_types(&acc, type_of(e, names, types, dc, ctx))
 
 fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
@@ -4604,7 +4741,7 @@ fn main():
     sigmap := []string: int
     i := 0
     for i < len(funcs):
-        push(sigs, Sig(funcs[i].name, funcs[i].ret))
+        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes))
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
@@ -4624,7 +4761,7 @@ fn main():
         i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]) and not is_func(ets[i]):
             out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
@@ -4658,6 +4795,11 @@ fn main():
         if is_tuple(ets[i]):
             out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
+    i = 0                                        # 5a'. function-pointer typedefs (all param/ret types complete now)
+    for i < len(ets):
+        if is_func(ets[i]):
+            out = out + gen_func_typedef(dc, ctx, ets[i])
+        i = i + 1
     i = 0                                        # 5b. struct/tuple copy PROTOTYPES, so the array
     for i < len(prog.structs):                   #     _from bodies below can deep-copy struct/tuple
         sn := prog.structs[i].name               #     elements regardless of copy-fn definition order
@@ -4677,7 +4819,7 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]) and not is_func(ets[i]):
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)

@@ -1,0 +1,69 @@
+# First-class function VALUES: a reference to a top-level function (no capture).
+# A value is a C function pointer — immortal, not heap. Type is `fn(P...) -> R`.
+# Covers: reference into a var, pass as an argument, indirect call, multi-arg,
+# void return, heap (string) param/return, and higher-order composition. Both
+# compilers must agree (differential + fixpoint).
+
+fn add_one(x: int) -> int:
+    return x + 1
+
+fn dbl(x: int) -> int:
+    return x * 2
+
+fn add(a: int, b: int) -> int:
+    return a + b
+
+fn shout(s: string):
+    print(s + "!\n")
+
+fn wrap(s: string) -> string:
+    return "[" + s + "]"
+
+# higher-order: take a function value and call it
+fn apply(g: fn(int) -> int, x: int) -> int:
+    return g(x)
+
+# apply twice: f(f(x))
+fn twice(f: fn(int) -> int, x: int) -> int:
+    return f(f(x))
+
+# map a [int] through a function value (the corelib use case, done by hand here)
+fn map_int(xs: [int], f: fn(int) -> int) -> [int]:
+    out := []int
+    i := 0
+    for i < len(xs):
+        push(out, f(xs[i]))
+        i = i + 1
+    return out
+
+fn main():
+    # reference into a variable, then call indirectly
+    f := add_one
+    print("f5=" + str(f(5)) + "\n")                       # f5=6
+
+    # pass a function value as an argument
+    print("apply=" + str(apply(dbl, 10)) + "\n")          # apply=20
+    print("apply2=" + str(apply(add_one, 41)) + "\n")     # apply2=42
+
+    # multi-argument function value
+    h := add
+    print("h=" + str(h(3, 4)) + "\n")                     # h=7
+
+    # void-return function value
+    v := shout
+    v("hello")                                            # hello!
+
+    # heap (string) param + return through a function value
+    w := wrap
+    print("w=" + w("hi") + "\n")                          # w=[hi]
+    print("wrap-arg=" + apply_str(wrap, "yo") + "\n")     # wrap-arg=[yo]
+
+    # higher-order composition: twice(dbl, 5) = dbl(dbl(5)) = 20
+    print("twice=" + str(twice(dbl, 5)) + "\n")           # twice=20
+
+    # map a list through a function value
+    ms := map_int([1, 2, 3, 4], dbl)
+    print("map=" + str(ms[0]) + "," + str(ms[1]) + "," + str(ms[2]) + "," + str(ms[3]) + "\n")  # map=2,4,6,8
+
+fn apply_str(g: fn(string) -> string, s: string) -> string:
+    return g(s)

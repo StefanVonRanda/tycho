@@ -672,6 +672,32 @@ foreach form binds each element of an array (any `[T]`) or each byte of a string
 expression. `break` and `continue` work in every loop shape, and are an error
 outside a loop.
 
+### First-class function values
+
+A top-level function can be used as a **value**: bind it, pass it, return it, and
+call it indirectly. The type is `fn(P1, ..., Pn) -> R` (drop the `-> R` for a
+`void` return).
+
+```
+fn dbl(x: int) -> int:
+    return x * 2
+
+fn apply(g: fn(int) -> int, x: int) -> int:   # higher-order: takes a function
+    return g(x)
+
+fn main():
+    f := dbl                 # f : fn(int) -> int
+    print(str(f(5)))         # 10  (indirect call)
+    print(str(apply(dbl, 21)))   # 42
+```
+
+A function value is a **reference** to a named function — there are no closures
+(it captures nothing), so it is just a code pointer: zero-cost and immortal (no
+arena, never heap). This is what lets you write generic-feeling helpers over
+concrete function arguments (`map`/`filter`/`reduce`-style) without generics.
+Builtins (`len`, `push`, …) and functions with `inout` parameters can't be taken
+as values, and a function value can't yet be stored in a struct field or array.
+
 ### Builtins
 
 | Builtin | Type | Notes |
