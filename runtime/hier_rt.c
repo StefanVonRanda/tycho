@@ -427,6 +427,16 @@ char *hier_int_to_str(Arena *a, long n) {
     return r;
 }
 
+/* Bool to string: the words "true"/"false" (not 1/0). A bool is carried as a
+ * long 0/1, so any non-zero prints "true". */
+char *hier_bool_to_str(Arena *a, long b) {
+    const char *s = b ? "true" : "false";
+    int m = (int)strlen(s);
+    char *r = hier_str_alloc(a, m);
+    memcpy(r, s, (size_t)m);
+    return r;
+}
+
 /* Float to string: %.15g trims trailing zeros while keeping ~15 significant
  * digits (readable, not full 17-digit round-trip). A value that prints with no
  * '.', exponent, or inf/nan marker (e.g. 3 for 3.0) gets a trailing ".0" so it

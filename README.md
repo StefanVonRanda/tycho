@@ -212,7 +212,8 @@ newtypes (distinct, zero-cost aliases of `int`/`float`).
 `{{`/`}}` are literal braces; a plain `"..."` is never interpolated (so literal
 braces need no escaping there). A hole may hold any expression — including one
 with its own string literals (`f"{wrap(", ")}"`) or a nested f-string
-(`f"({f"x={n}"})"`) — and must evaluate to an `int`, `float`, or `string`.
+(`f"({f"x={n}"})"`) — and must evaluate to an `int`, `float`, `bool`
+(prints `true`/`false`), or `string`.
 
 ### Structs
 
@@ -674,7 +675,7 @@ outside a loop.
 | --- | --- | --- |
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
-| `str(x)` | `int -> string` / `float -> string` | Number to string (a float prints with up to 15 significant digits, always with a `.`). |
+| `str(x)` | `int -> string` / `float -> string` / `bool -> string` | Value to string (a float prints with up to 15 significant digits, always with a `.`; a `bool` prints `true`/`false`). |
 | `to_float(n)` | `int -> float` | Widen an int to a float. |
 | `to_int(x)` | `float -> int` | Truncate a float toward zero. |
 | `len(x)` | `string -> int` / `[T] -> int` / `[string: int] -> int` | Byte length of a string, element count of an array, or entry count of a map. |

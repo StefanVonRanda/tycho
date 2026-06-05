@@ -311,6 +311,7 @@ fn lex(src: string) -> [Token]:
 
 enum Expr:
     EInt(string)
+    EBool(string)             # bool literal `true`/`false`, carried as "1"/"0" (distinct from int so str() prints true/false)
     EChar(string)             # char literal `'x'`, carried as the byte value in decimal text
     EFloat(string)            # float literal, emitted verbatim (round-trips as a double)
     EStr(string)              # string literal (raw content, escapes preserved)
@@ -535,9 +536,9 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             st := parse_type(toks, &pos)
             return EArrEmpty("soa[" + st + "]")
         if name == "true":
-            return EInt("1")
+            return EBool("1")
         if name == "false":
-            return EInt("0")
+            return EBool("0")
         if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TLParen:
             qn := name + "." + toks[pos + 1].text     # qualified call pkg.name(args); resolved by the mangler
             pos = pos + 3
@@ -977,7 +978,7 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
     if name == "int":
         return "int"
     elif name == "bool":
-        return "int"                             # bool is represented as long 0/1
+        return "bool"                            # distinct type; same C repr as int (long 0/1)
     elif name == "float":
         return "float"
     elif name == "string":
@@ -1271,6 +1272,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
     match e:
         EInt(s):
             return EInt(s)
+        EBool(s):
+            return EBool(s)
         EChar(s):
             return EChar(s)
         EFloat(s):
@@ -1743,6 +1746,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
         return "long "
+    if ty == "bool":                             # bool carried as a long 0/1
+        return "long "
     if ty == "char":                             # one byte carried as a long
         return "long "
     if ty == "float":
@@ -1882,6 +1887,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
     match e:
         EInt(t):
             return "int"
+        EBool(t):
+            return "bool"
         EChar(t):
             return "char"
         EFloat(f):
@@ -1943,7 +1950,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 if lt == "float" or rt == "float":
                     return "float"
                 return "int"
-            return "int"                          # comparisons, &&, || -> int (bool)
+            if is_cmp(op) or op == "&&" or op == "||":
+                return "bool"                     # comparisons / and / or -> bool
+            return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args):
             if name == "map_set" or name == "map_del":   # return the first arg's map type
                 return type_of(args[0], names, types, dc, ctx)
@@ -1984,6 +1993,8 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
         EVar(n):
             return ""
         EInt(t):
+            return ""
+        EBool(t):
             return ""
         EChar(t):
             return ""
@@ -2081,6 +2092,8 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
                 return "(" + gen_expr(sb, names, types, dc, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, dc, ctx) + "]"
             return ""
         EInt(t):
+            return ""
+        EBool(t):
             return ""
         EChar(t):
             return ""
@@ -2239,6 +2252,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
     match e:
         EInt(t):
             return t
+        EBool(t):
+            return t
         EChar(t):
             return t
         EFloat(f):
@@ -2356,6 +2371,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return gen_expr(args[0], names, types, dc, ctx)
                 if at == "float":
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                if at == "bool":
+                    return "b2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "sqrt" or name == "floor" or name == "fabs":
                 return name + "(" + gen_expr(args[0], names, types, dc, ctx) + ")"
@@ -2438,6 +2455,8 @@ fn root_var(e: Expr) -> string:
         EAddr(x):
             return root_var(x)
         EInt(t):
+            return ""
+        EBool(t):
             return ""
         EChar(t):
             return ""
@@ -2603,6 +2622,8 @@ fn is_place(e: Expr) -> bool:
             return true
         EInt(t):
             return false
+        EBool(t):
+            return false
         EChar(t):
             return false
         EFloat(f):
@@ -2638,6 +2659,8 @@ fn is_eslice(e: Expr) -> bool:
             return true
         EInt(t):
             return false
+        EBool(t):
+            return false
         EChar(t):
             return false
         EFloat(f):
@@ -2672,6 +2695,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         EVar(n):
             return n == name
         EInt(t):
+            return false
+        EBool(t):
             return false
         EChar(t):
             return false
@@ -2731,6 +2756,8 @@ fn evar_name(e: Expr) -> string:
         EVar(n):
             return n
         EInt(t):
+            return ""
+        EBool(t):
             return ""
         EChar(t):
             return ""
@@ -2815,6 +2842,8 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
                 rd_expr(&reads, &loopreads, es[j], inloop)
                 j = j + 1
         EInt(t):
+            j := 0
+        EBool(t):
             j := 0
         EChar(t):
             j := 0
@@ -2990,6 +3019,8 @@ fn expr_has_call(e: Expr) -> bool:
             return any_has_call(es)
         EInt(t):
             return false
+        EBool(t):
+            return false
         EChar(t):
             return false
         EFloat(f):
@@ -3038,6 +3069,8 @@ fn expr_refs(e: Expr, name: string) -> bool:
         ETuple(es):
             return any_refs(es, name)
         EInt(t):
+            return false
+        EBool(t):
             return false
         EChar(t):
             return false
@@ -3147,6 +3180,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                         return "    " + mfam(type_of(EVar(name), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, dc, ctx) + ", &" + lhs + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
                     return deflt
                 EInt(t):
+                    return deflt
+                EBool(t):
                     return deflt
                 EChar(t):
                     return deflt
@@ -3362,6 +3397,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
             else:
                 push(out, e)
         EInt(t):
+            push(out, e)
+        EBool(t):
             push(out, e)
         EChar(t):
             push(out, e)
@@ -3847,6 +3884,7 @@ fn preamble() -> string:
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = (long)strlen(a), lb = (long)strlen(b); char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = (long)strlen(a); char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
     out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int m = snprintf(t, sizeof t, \"%ld\", n); char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
+    out = out + "static char* b2s(Arena* ar, long b) { const char* s = b ? \"true\" : \"false\"; long m = (long)strlen(s); char* r = hs(ar, m); memcpy(r, s, (size_t)m); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
@@ -4169,6 +4207,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EAddr(inner):
             collect_expr(&acc, inner, names, types, dc, ctx)
         EInt(t):
+            j := 0
+        EBool(t):
             j := 0
         EChar(t):
             j := 0

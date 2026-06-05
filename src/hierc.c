@@ -2133,8 +2133,8 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "str")) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
                 Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
-                if (b != T_INT && b != T_FLOAT && b != T_STRING)   /* string: identity (for interpolation) */
-                    die_at(e->line, "str(x) takes an int, a float, or a string");
+                if (b != T_INT && b != T_BOOL && b != T_FLOAT && b != T_STRING)   /* string: identity (for interpolation) */
+                    die_at(e->line, "str(x) takes an int, a bool, a float, or a string");
                 return e->type = T_STRING;
             }
             if (!strcmp(e->sval, "to_float")) {   /* int -> float, or unwrap a float newtype */
@@ -3393,6 +3393,7 @@ static char *gen_call(Expr *e, const char *arena) {
         char *a = gen_expr(e->args[0], arena);
         Type b = base_of(e->args[0]->type);
         if (b == T_STRING) return a;                 /* str(string) is identity (interpolation) */
+        if (b == T_BOOL)   return sfmt("hier_bool_to_str(%s, %s)", arena, a);
         if (b == T_FLOAT)  return sfmt("hier_float_to_str(%s, %s)", arena, a);
         return sfmt("hier_int_to_str(%s, %s)", arena, a);
     }
