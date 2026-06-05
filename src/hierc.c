@@ -978,8 +978,48 @@ static Expr *desugar_interp(const char *s, int line) {
     return acc;
 }
 
+static Stmt *new_stmt(StmtKind k, int line);   /* forward: the lambda desugar builds a Return/Expr stmt */
+static ProcVec g_lambdas;       /* generated procs lifted from lambda expressions; flushed per file */
+static int g_lambda_ctr = 0;
+
 static Expr *parse_primary(Parser *ps) {
     Tok *t = cur(ps);
+    if (t->kind == TK_FN) {   /* lambda: fn(p: T, ...) [-> R]: expr  -> a lifted top-level proc + a ref to it.
+                               * Stage 2: no captures (the body may use only its own params; a reference to an
+                               * enclosing local resolves as "unknown variable" — captures are a later stage). */
+        ps->p++;
+        eat(ps, TK_LPAREN, "'(' after fn in a lambda");
+        Proc *pr = (Proc *)xmalloc(sizeof(Proc));
+        memset(pr, 0, sizeof *pr);
+        pr->name = sfmt("__lam%d", g_lambda_ctr++);
+        pr->line = t->line;
+        int cap = 0;
+        while (!at(ps, TK_RPAREN)) {
+            Tok *pn = eat(ps, TK_IDENT, "a lambda parameter name");
+            eat(ps, TK_COLON, "':' after parameter name");
+            Type pt = parse_type(ps);   /* lambdas take by-value params only */
+            if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
+            pr->params[pr->nparams].name = pn->text;
+            pr->params[pr->nparams].type = pt;
+            pr->params[pr->nparams].is_inout = 0;
+            pr->nparams++;
+            if (!accept(ps, TK_COMMA)) break;
+        }
+        eat(ps, TK_RPAREN, "')'");
+        if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
+        else pr->ret = T_VOID;
+        eat(ps, TK_COLON, "':' before the lambda body expression");
+        Expr *body = parse_expr(ps);
+        Stmt *s = new_stmt(pr->ret == T_VOID ? S_EXPR : S_RETURN, t->line);
+        s->expr = body;
+        pr->body = (Stmt **)xmalloc(sizeof(Stmt *));
+        pr->body[0] = s; pr->nbody = 1;
+        if (g_lambdas.n == g_lambdas.cap) { g_lambdas.cap = g_lambdas.cap ? g_lambdas.cap * 2 : 8; g_lambdas.v = (Proc **)realloc(g_lambdas.v, (size_t)g_lambdas.cap * sizeof(Proc *)); }
+        g_lambdas.v[g_lambdas.n++] = pr;
+        Expr *ref = new_expr(E_IDENT, t->line);   /* the lambda expression IS a reference to the lifted proc */
+        ref->sval = pr->name;
+        return ref;
+    }
     if (t->kind == TK_INT)  { ps->p++; Expr *e = new_expr(E_INT, t->line);  e->ival = t->ival; return e; }
     if (t->kind == TK_CHAR) { ps->p++; Expr *e = new_expr(E_CHAR, t->line); e->ival = t->ival; return e; }
     if (t->kind == TK_FLOAT){ ps->p++; Expr *e = new_expr(E_FLOAT, t->line); e->fval = t->fval; return e; }
@@ -1846,6 +1886,11 @@ static ProcVec parse_program(Tok *toks) {
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
     }
+    for (int i = 0; i < g_lambdas.n; i++) {   /* lifted lambda procs become real top-level functions */
+        if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
+        out.v[out.n++] = g_lambdas.v[i];
+    }
+    g_lambdas.n = 0;
     return out;
 }
 
