@@ -2251,6 +2251,25 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "push's value must be %s", type_name(want));
                 return e->type = T_VOID;
             }
+            if (!strcmp(e->sval, "pop")) {   /* pop(arr): remove + return the last element */
+                if (e->nargs != 1) die_at(e->line, "pop(arr) takes one argument");
+                Expr *root = e->args[0];
+                while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+                if (root->kind != E_IDENT)
+                    die_at(e->line, "pop's first argument must be an array variable or field");
+                g_place = 1;
+                Type arrt = resolve_expr(e->args[0]);
+                g_place = 0;
+                if (!is_array(arrt))
+                    die_at(e->line, "pop's first argument must be an array");   /* soa pop not supported yet */
+                if (!is_lvalue(e->args[0]))
+                    die_at(e->line, "cannot pop through this expression — the array must be a "
+                                    "variable, field, or composite-array element");
+                if (!vars_can_mutate(root->sval))
+                    die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
+                           root->sval, root->sval);
+                return e->type = arr_elem(arrt);
+            }
             if (!strcmp(e->sval, "reserve")) {
                 if (e->nargs != 2) die_at(e->line, "reserve(arr, n) takes two arguments");
                 Expr *root = e->args[0];
@@ -3348,6 +3367,13 @@ static char *gen_call(Expr *e, const char *arena) {
             return sfmt("Soa%d_push(%s, &(%s), %s)", SOA_ID(e->args[0]->type), owner, arr, v);
         /* push has the same (owner, &arr, v) shape for every element type */
         return sfmt("hier_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
+    }
+    if (!strcmp(e->sval, "pop")) {
+        /* remove + return the last element. The result is deep-copied into the
+         * CURRENT arena (a heap element must outlive a later push that recycles
+         * the buffer); scalars pass through. The array (root's arena) only shrinks. */
+        char *arr = gen_lvalue(e->args[0], arena);
+        return sfmt("hier_arr_%s_pop(%s, &(%s))", arr_fn(e->args[0]->type), arena, arr);
     }
     if (!strcmp(e->sval, "reserve")) {           /* preallocate exact capacity (same shape as push) */
         Expr *root = e->args[0];
@@ -4761,6 +4787,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
         fprintf(o, "static void hier_arr_C%d_push(Arena*, HierArrC%d*, %s);\n", i, i, ct);
+        fprintf(o, "static %shier_arr_C%d_pop(Arena*, HierArrC%d*);\n", ct, i, i);
         fprintf(o, "static %shier_arr_C%d_get(HierArrC%d, long);\n", ct, i, i);
         fprintf(o, "static %s*hier_arr_C%d_ptr(HierArrC%d*, long);\n", ct, i, i);
         fprintf(o, "static void hier_arr_C%d_set(Arena*, HierArrC%d*, long, %s);\n", i, i, ct);
@@ -4820,6 +4847,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
+        fprintf(o,   /* pop: shrink + return the last element, deep-copied into `a` */
+            "static %shier_arr_C%d_pop(Arena *a, HierArrC%d *xs) {\n"
+            "    if (xs->len == 0) { fprintf(stderr, \"hier: pop from an empty array\\n\"); exit(1); }\n"
+            "    xs->len--;\n    return %s;\n}\n",
+            ct, i, i, copy_into(et, "a", "xs->data[xs->len]"));
         fprintf(o,
             "static %shier_arr_C%d_get(HierArrC%d xs, long i) {\n"
             "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"hier: index %%ld out of bounds (len %%ld)\\n\", i, xs.len); exit(1); }\n"

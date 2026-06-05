@@ -1167,7 +1167,7 @@ struct Mctx:
     variants: [string]
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "die" or name == "len" or name == "push" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "die" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -1960,6 +1960,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return type_of(args[0], names, types, dc, ctx)
             if name == "map_get":                 # returns the map's value type
                 return map_val(type_of(args[0], names, types, dc, ctx))
+            if name == "pop":                      # pop(arr) -> the array's element type
+                return elem_ty(type_of(args[0], names, types, dc, ctx))
             if name == "keys":                     # returns [K] (the map's key array)
                 return "[" + map_key(type_of(args[0], names, types, dc, ctx)) + "]"
             if name == "Some":
@@ -2359,6 +2361,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str) live in the array's arena
                     vo = oa
                 return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
+            if name == "pop":                     # pop(arr): remove + return the last element
+                pat := type_of(args[0], names, types, dc, ctx)
+                if is_soa(pat):
+                    die("codegen: pop on a soa array is not supported yet")
+                # result is deep-copied into ctx.owner (the array buffer may recycle), so
+                # the popped value is independent of the (shrunk) array. Scalars pass through.
+                return "Arr_" + mangle(elem_ty(pat)) + "_pop(" + ctx.owner + ", &" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "reserve":                 # reserve(arr, n): preallocate exact capacity
                 rt := elem_ty(type_of(args[0], names, types, dc, ctx))
                 ra := owner_arena_of(args[0], names, types, dc, ctx)
@@ -3992,6 +4001,10 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
+    popv := "a->data[a->len]"                        # scalar: the value; heap: a deep copy into `ar`
+    if elem_deepcopy(dc, ctx, et):                   # (so the popped value outlives a later array recycle)
+        popv = elem_copy_expr(dc, ctx, et, "ar", "a->data[a->len]")
+    out = out + "static " + ct + nm + "_pop(Arena* ar, " + nm + "* a) { if (a->len == 0) { fprintf(stderr, \"hier: pop from an empty array\\n\"); exit(1); } a->len--; return " + popv + "; }\n"
     out = out + "static void " + nm + "_reserve(Arena* ar, " + nm + "* a, long n) { if (n <= a->cap) return; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * n); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = n; }\n"
     out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
     # _eq for every element type (eq_field handles scalar/str/enum/struct/array/

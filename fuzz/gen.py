@@ -266,6 +266,8 @@ class Gen:
         vs_map = [(n, ty) for n, ty in env.items() if ty.startswith("{")]   # #2: in-place m[k] must not alias a copy
         if vs_arr or vs_struct or vs_map:
             kinds += ["vscheck", "vscheck"]
+        if vs_arr:                                 # pop the last element (guarded), fold it into the checksum
+            kinds += ["pop"]
         int_arr_vars = [n for n, ty in env.items() if ty == "[int]"]
         if int_arr_vars:
             kinds += ["arr_rebuild", "arr_realloc", "arr_slice"]   # liveness-driven buffer recycle
@@ -493,6 +495,13 @@ class Gen:
             n0, t0 = self.r.choice(arr_vars)
             el = t0[1:-1]
             self.emit(ind, "push(" + n0 + ", " + self.gen_expr(el, env, 1) + ")")
+        elif k == "pop" and vs_arr:
+            n0, t0 = self.r.choice(vs_arr)            # [int]/[string]/[float]: element folds into the checksum
+            el = t0[1:-1]
+            pv = self.fresh("pv")
+            self.emit(ind, "if len(" + n0 + ") > 0:")  # guard: popping an empty array dies
+            self.emit(ind + 1, pv + " := pop(" + n0 + ")")
+            self.checksum_into(ind + 1, pv, el, env)   # popped value -> acc (str:len, int:value, float:to_int)
         elif k == "fieldmut" and struct_vars:
             n0, t0 = self.r.choice(struct_vars)
             f, ft = self.r.choice(self.structs[t0])

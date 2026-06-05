@@ -273,6 +273,7 @@ exactly when `b` is an independent copy of `a`.
 xs := [10, 20, 30]      # literal
 ys := []int             # empty (element type required)
 push(xs, 40)            # append in place
+last := pop(xs)         # remove + return the last element (dies if empty)
 len(xs)                 # length -> int
 xs[0]                   # index read (bounds-checked)
 xs[0] = 99              # index write (bounds-checked)

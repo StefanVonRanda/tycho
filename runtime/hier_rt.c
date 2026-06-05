@@ -501,6 +501,14 @@ void hier_arr_int_push(Arena *a, HierArrInt *xs, long v) {
     xs->data[xs->len++] = v;
 }
 
+/* pop: shrink + return the last element. int/float pass through (no heap); the
+ * arena is unused. Dies on an empty array (a value must always be returned). */
+long hier_arr_int_pop(Arena *a, HierArrInt *xs) {
+    (void)a;
+    if (xs->len == 0) { fprintf(stderr, "hier: pop from an empty array\n"); exit(1); }
+    return xs->data[--xs->len];
+}
+
 long hier_arr_int_get(HierArrInt xs, long i) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs.len);
@@ -566,6 +574,12 @@ void hier_arr_float_push(Arena *a, HierArrFloat *xs, double v) {
         xs->cap = ncap;
     }
     xs->data[xs->len++] = v;
+}
+
+double hier_arr_float_pop(Arena *a, HierArrFloat *xs) {
+    (void)a;
+    if (xs->len == 0) { fprintf(stderr, "hier: pop from an empty array\n"); exit(1); }
+    return xs->data[--xs->len];
 }
 
 double hier_arr_float_get(HierArrFloat xs, long i) {
@@ -634,6 +648,12 @@ void hier_arr_str_push(Arena *a, HierArrStr *xs, const char *v) {
         xs->cap = ncap;
     }
     xs->data[xs->len++] = hier_str_copy(a, v);   /* copy bytes into owner arena */
+}
+
+char *hier_arr_str_pop(Arena *a, HierArrStr *xs) {
+    if (xs->len == 0) { fprintf(stderr, "hier: pop from an empty array\n"); exit(1); }
+    xs->len--;
+    return hier_str_copy(a, xs->data[xs->len]);   /* deep-copy out: survives a later push/recycle */
 }
 
 char *hier_arr_str_get(HierArrStr xs, long i) {
