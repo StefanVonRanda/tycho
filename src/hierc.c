@@ -553,6 +553,33 @@ static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
     return T_MAPC_BASE + g_nmaptypes++;
 }
 
+/* First-class function values: `fn(P1,...,Pn) -> R`. A value is a C function
+ * pointer to a top-level function (no capture, so no closure/arena machinery —
+ * a code pointer is immortal and not heap). Interned by signature like tuples;
+ * emitted as `typedef R (*FnC<id>)(Arena*, P1,...,Pn)` matching every hier fn's
+ * uniform C ABI (the hidden return arena is always the first parameter). */
+#define T_FUNC_BASE 49152
+typedef struct { Type params[8]; int n; Type ret; } FuncTy;
+static FuncTy g_functypes[256];
+static int g_nfunctypes = 0;
+#define IS_FUNC(t)  ((t) >= T_FUNC_BASE && (t) < T_FUNC_BASE + 256)
+#define FUNC_ID(t)  ((int)((t) - T_FUNC_BASE))
+static Type funcc_of(Type *params, int n, Type ret) {   /* find-or-create fn(params) -> ret */
+    for (int i = 0; i < g_nfunctypes; i++) {
+        if (g_functypes[i].n != n || g_functypes[i].ret != ret) continue;
+        int same = 1;
+        for (int j = 0; j < n; j++) if (g_functypes[i].params[j] != params[j]) { same = 0; break; }
+        if (same) return T_FUNC_BASE + i;
+    }
+    if (g_nfunctypes >= 256) { fprintf(stderr, "hierc: too many function types\n"); exit(1); }
+    g_functypes[g_nfunctypes].n = n; g_functypes[g_nfunctypes].ret = ret;
+    for (int j = 0; j < n; j++) g_functypes[g_nfunctypes].params[j] = params[j];
+    return T_FUNC_BASE + g_nfunctypes++;
+}
+static int  func_n(Type t)            { return g_functypes[FUNC_ID(t)].n; }
+static Type func_ret(Type t)          { return g_functypes[FUNC_ID(t)].ret; }
+static Type func_param(Type t, int i) { return g_functypes[FUNC_ID(t)].params[i]; }
+
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
  * [string: float] (HierMapSF). map_fn picks the runtime infix, map_val the
  * value type, map_of the map type for a value type. */
@@ -619,6 +646,7 @@ static const char *c_type(Type t) {
     if (IS_OPT(t))    return sfmt("HierOpt%d ", OPT_ID(t));
     if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
+    if (IS_FUNC(t))   return sfmt("FnC%d ", FUNC_ID(t));   /* a function-pointer typedef */
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
@@ -648,6 +676,13 @@ static const char *type_name(Type t) {
         char *s = sfmt("(%s", type_name(tup_elem(t, 0)));
         for (int i = 1; i < tup_n(t); i++) s = sfmt("%s, %s", s, type_name(tup_elem(t, i)));
         return sfmt("%s)", s);
+    }
+    if (IS_FUNC(t)) {
+        char *s = sfmt("fn(");
+        for (int i = 0; i < func_n(t); i++) s = sfmt("%s%s%s", s, i ? ", " : "", type_name(func_param(t, i)));
+        s = sfmt("%s)", s);
+        if (func_ret(t) != T_VOID) s = sfmt("%s -> %s", s, type_name(func_ret(t)));
+        return s;
     }
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
     if (IS_SOA(t))    return sfmt("soa [%s]", type_name(soa_struct(t)));
@@ -785,6 +820,24 @@ static Type parse_type(Parser *ps) {
         eat(ps, TK_RBRACKET, "']'");
         if (!IS_STRUCT(el)) die_at(t->line, "soa requires a struct element type, e.g. soa [Point]");
         return soa_of(el);
+    }
+    if (t->kind == TK_FN) {              /* function type: fn(P1, ..., Pn) [-> R] */
+        ps->p++;
+        eat(ps, TK_LPAREN, "'(' after fn in a function type");
+        Type params[8]; int n = 0;
+        if (!at(ps, TK_RPAREN)) {
+            params[n++] = parse_type(ps);
+            while (accept(ps, TK_COMMA)) {
+                if (n >= 8) die_at(t->line, "a function type has at most 8 parameters");
+                params[n++] = parse_type(ps);
+            }
+        }
+        eat(ps, TK_RPAREN, "')'");
+        Type ret = T_VOID;
+        if (accept(ps, TK_ARROW)) ret = parse_type(ps);   /* no arrow => void return */
+        for (int i = 0; i < n; i++)
+            if (params[i] == T_VOID) die_at(t->line, "a function-type parameter cannot be void");
+        return funcc_of(params, n, ret);
     }
     if (t->kind == TK_LPAREN) {          /* tuple type (T1, ..., Tn), n >= 2 */
         ps->p++;
@@ -1967,6 +2020,14 @@ static Type resolve_expr(Expr *e) {
                 e->kind = E_CALL; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;   /* 0-arg constructor */
                 return e->type = ENUM_TYPE(eid);
             }
+            Sig *fs = sig_find(e->sval);   /* a bare top-level function name used as a value */
+            if (fs && !fs->builtin) {
+                if (fs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
+                for (int i = 0; i < fs->nparams; i++)
+                    if (fs->inout[i]) die_at(e->line, "'%s' has an inout parameter, so it can't be a function value", e->sval);
+                e->op = TK_FN;   /* mark: this E_IDENT is a function reference (codegen emits h_<name>) */
+                return e->type = funcc_of(fs->params, fs->nparams, fs->ret);
+            }
             die_at(e->line, "unknown variable '%s'", e->sval);
         }
         case E_ARRLIT: {
@@ -2064,6 +2125,16 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            Type fvt;   /* indirect call through a function-typed local variable: f(args) */
+            if (!e->qual && vars_find(e->sval, &fvt) && IS_FUNC(fvt)) {
+                if (e->nargs != func_n(fvt))
+                    die_at(e->line, "'%s' expects %d argument(s), got %d", e->sval, func_n(fvt), e->nargs);
+                for (int i = 0; i < e->nargs; i++)
+                    if (resolve_exp(e->args[i], func_param(fvt, i)) != func_param(fvt, i))
+                        die_at(e->line, "argument %d to '%s' must be %s", i + 1, e->sval, type_name(func_param(fvt, i)));
+                e->op = TK_FN;   /* indirect-call marker; gen_call's user-proc tail emits h_<var>(arena, args) */
+                return e->type = func_ret(fvt);
+            }
             /* Package resolution (Stage B): rewrite e->sval to the package-mangled
              * name before any lookup. An explicit `pkg.name` (e->qual) MUST resolve
              * in that package; an implicit name in an imported package (e->pkg) tries
@@ -4756,6 +4827,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o, "static E_%s _sing_%s_%d = { %d };\n", ed->name, ed->name, v, v);
     }
     fputs("\n", o);
+    /* (3d) function-pointer typedefs: every aggregate C type is complete now, so a
+     * fn(P...) -> R value's params/ret are usable. fn values aren't stored in
+     * structs/arrays (first cut), so nothing above referenced FnC. */
+    for (int i = 0; i < g_nfunctypes; i++) {
+        FuncTy *f = &g_functypes[i];
+        fprintf(o, "typedef %s(*FnC%d)(Arena*", c_type(f->ret), i);
+        for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
+        fprintf(o, ");\n");
+    }
+    if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
         const char *nm = g_structs[i].name;
         if (type_is_heap(STRUCT_TYPE(i)))
