@@ -327,6 +327,7 @@ enum Expr:
     ETuple([Expr])           # tuple literal `(a, b, ...)` / `return a, b`
     ESlice(Expr, Expr, Expr) # `base[lo:hi]` sub-array (owning copy)
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
+    ELambda(int, [string], [string], string, Expr, [string], [string])   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
 
 enum Stmt:
     SDecl(string, Expr)
@@ -531,6 +532,8 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        if name == "fn" and toks[pos].kind == TLParen:   # lambda literal `fn(p: T, ...) [-> R]: expr`
+            return parse_lambda(toks, &pos)
         if name == "soa":                        # soa []Struct : empty SOA literal
             expect(toks, &pos, TLBracket)
             expect(toks, &pos, TRBracket)
@@ -1059,6 +1062,31 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     body := parse_block(toks, &pos)
     return Func(name, params, ptypes, ret, body)
 
+# A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
+# return). The leading `fn` and the opening `(` have already been consumed-checked
+# by the caller (parse_atom). id is a placeholder (0); the lift pass assigns it.
+fn parse_lambda(toks: [Token], pos: inout int) -> Expr:
+    expect(toks, &pos, TLParen)
+    params := []string
+    ptypes := []string
+    if toks[pos].kind != TRParen:
+        p := parse_param(toks, &pos)
+        push(params, p.name)
+        push(ptypes, p.ty)
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            p2 := parse_param(toks, &pos)
+            push(params, p2.name)
+            push(ptypes, p2.ty)
+    expect(toks, &pos, TRParen)
+    ret := "void"
+    if toks[pos].kind == TArrow:
+        pos = pos + 1
+        ret = parse_type(toks, &pos)
+    expect(toks, &pos, TColon)
+    bexpr := parse_expr(toks, &pos)
+    return ELambda(0, params, ptypes, ret, bexpr, []string, []string)   # body is the single expr; lift wraps it in a Func
+
 fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     expect_ident(toks, &pos, "struct")
     if toks[pos].kind != TIdent:
@@ -1333,6 +1361,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return ETuple(mangle_args(m, es))
         ESlice(b, lo, hi):
             return ESlice(mangle_expr(m, b), mangle_expr(m, lo), mangle_expr(m, hi))
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ELambda(id, ps, mangle_types(m, pts), mangle_type(m, ret), mangle_expr(m, body), cn, ct)
         EAddr(x):
             return EAddr(mangle_expr(m, x))
 
@@ -2045,6 +2075,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             return out + ")"
         ESlice(base, lo, hi):
             return type_of(base, names, types, dc, ctx)   # same array type
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return mk_functype(pts, ret)
         EAddr(inner):
             return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2099,6 +2131,8 @@ fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx)
 # inout_container_param exactly so call arity matches the callee signature.
 fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match arg:
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
         EAddr(inner):
             b := base_ty(type_of(inner, names, types, dc, ctx))
             if is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b)):   # mirrors inout_container_param
@@ -2234,6 +2268,8 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
         ETuple(es):
             return ""
         ESlice(b, lo, hi):
+            return ""
+        ELambda(id, ps, pts, ret, body, cn, ct):
             return ""
         EAddr(x):
             return ""
@@ -2446,6 +2482,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_soa(bt):
                 return gen_soa_slice(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(lo, names, types, dc, ctx), gen_expr(hi, names, types, dc, ctx))
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return "(Fn_" + func_suffix(mk_functype(pts, ret)) + "){0, " + un("__lam" + str(id)) + "__clo}"
         EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2585,6 +2623,8 @@ fn root_var(e: Expr) -> string:
             return root_var(b)
         EIndex(b, i):
             return root_var(b)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
         EAddr(x):
             return root_var(x)
         EInt(t):
@@ -2781,6 +2821,8 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
             return false
         ESlice(b, lo, hi):
             return false
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
         EAddr(inr):
             return false
 
@@ -2820,6 +2862,8 @@ fn is_place(e: Expr) -> bool:
             return false
         ESlice(b, lo, hi):
             return true                          # a slice aliases its source; binding it copies
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
         EAddr(inner):
             return false
 
@@ -2861,6 +2905,8 @@ fn is_eslice(e: Expr) -> bool:
             return false
         ETuple(es):
             return false
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
         EAddr(inner):
             return false
 
@@ -2897,6 +2943,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         ETuple(es):
             return false
         ESlice(b, lo, hi):
+            return false
+        ELambda(id, ps, pts, ret, body, cn, ct):
             return false
         EAddr(x):
             return false
@@ -2959,6 +3007,8 @@ fn evar_name(e: Expr) -> string:
             return ""
         ESlice(b, lo, hi):
             return ""
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
         EAddr(x):
             return ""
 
@@ -2997,6 +3047,11 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
             rd_expr(&reads, &loopreads, b, inloop)
             rd_expr(&reads, &loopreads, lo, inloop)
             rd_expr(&reads, &loopreads, hi, inloop)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            j := 0
+            for j < len(cn):
+                push(reads, cn[j])
+                j = j + 1
         EAddr(x):
             rd_expr(&reads, &loopreads, x, inloop)
         EArrLit(es):
@@ -3183,6 +3238,8 @@ fn expr_has_call(e: Expr) -> bool:
             return expr_has_call(b) or expr_has_call(i)
         ESlice(b, lo, hi):
             return expr_has_call(b) or expr_has_call(lo) or expr_has_call(hi)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return false
         EAddr(x):
             return expr_has_call(x)
         EArrLit(es):
@@ -3234,6 +3291,13 @@ fn expr_refs(e: Expr, name: string) -> bool:
             return expr_refs(b, name) or expr_refs(i, name)
         ESlice(b, lo, hi):
             return expr_refs(b, name) or expr_refs(lo, name) or expr_refs(hi, name)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            j := 0
+            for j < len(cn):
+                if cn[j] == name:
+                    return true
+                j = j + 1
+            return false
         EAddr(x):
             return expr_refs(x, name)
         EArrLit(es):
@@ -3384,6 +3448,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ESlice(b, lo, hi):
                     return deflt
                 EAddr(x):
+                    return deflt
+                ELambda(id, ps, pts, ret, body, cn, ct):
                     return deflt
         SFieldAssign(lv, rhs):
             # storing into a (malloc) struct field / array element: the value must
@@ -3605,6 +3671,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
         ETuple(es):
             push(out, e)
         ESlice(b, lo, hi):
+            push(out, e)
+        ELambda(id, ps, pts, ret, body, cn, ct):
             push(out, e)
         EAddr(x):
             push(out, e)
@@ -4439,6 +4507,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
             collect_expr(&acc, b, names, types, dc, ctx)
             collect_expr(&acc, lo, names, types, dc, ctx)
             collect_expr(&acc, hi, names, types, dc, ctx)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            note_arr_types(&acc, mk_functype(pts, ret))   # dedups + collects param/ret families
         EAddr(inner):
             collect_expr(&acc, inner, names, types, dc, ctx)
         EInt(t):
@@ -4755,6 +4825,145 @@ fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
         fk = fk + 1
     return out
 
+# --- lambda lift pass -------------------------------------------------------
+# Lambdas are parsed as ELambda nodes. Before typing/codegen, this pass walks
+# every function body, assigns each lambda a unique id, and emits a top-level
+# `__lam<id>` Func (its body = the lambda body). The ELambda node is left in the
+# tree, stamped with its id, so gen_expr can build the closure value at the use
+# site. (Stage 4b: no captures — capnames/captypes stay empty.)
+fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string, byte-identical to sig_functype's format
+    out := "fn("
+    i := 0
+    for i < len(ptypes):
+        if i > 0:
+            out = out + ","
+        out = out + ptypes[i]
+        i = i + 1
+    return out + "->" + ret + ")"
+
+fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, lift_expr(es[i], &lifted, &ctr))
+        i = i + 1
+    return out
+
+fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int) -> Expr:
+    match e:
+        EInt(t):
+            return e
+        EBool(t):
+            return e
+        EChar(t):
+            return e
+        EFloat(t):
+            return e
+        EStr(s):
+            return e
+        EVar(n):
+            return e
+        EArrEmpty(t):
+            return e
+        EMapEmpty(k, v):
+            return e
+        EBin(o, l, r):
+            return EBin(o, lift_expr(l, &lifted, &ctr), lift_expr(r, &lifted, &ctr))
+        ECall(n, a):
+            return ECall(n, lift_exprs(a, &lifted, &ctr))
+        EField(b, f):
+            return EField(lift_expr(b, &lifted, &ctr), f)
+        EIndex(b, ix):
+            return EIndex(lift_expr(b, &lifted, &ctr), lift_expr(ix, &lifted, &ctr))
+        EArrLit(es):
+            return EArrLit(lift_exprs(es, &lifted, &ctr))
+        EMapLit(ks, vs):
+            return EMapLit(lift_exprs(ks, &lifted, &ctr), lift_exprs(vs, &lifted, &ctr))
+        ETuple(es):
+            return ETuple(lift_exprs(es, &lifted, &ctr))
+        ESlice(b, lo, hi):
+            return ESlice(lift_expr(b, &lifted, &ctr), lift_expr(lo, &lifted, &ctr), lift_expr(hi, &lifted, &ctr))
+        EAddr(x):
+            return EAddr(lift_expr(x, &lifted, &ctr))
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            nb := lift_expr(body, &lifted, &ctr)         # lift nested lambdas in the body expr first
+            myid := ctr
+            ctr = ctr + 1
+            lbody := []Stmt                              # wrap the single body expr into the lifted func body
+            if ret == "void":
+                push(lbody, SExpr(nb))
+            else:
+                push(lbody, SReturn(nb))
+            push(lifted, Func("__lam" + str(myid), ps, pts, ret, lbody))
+            return ELambda(myid, ps, pts, ret, nb, cn, ct)
+
+fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int) -> [Stmt]:
+    out := []Stmt
+    i := 0
+    for i < len(stmts):
+        push(out, lift_stmt(stmts[i], &lifted, &ctr))
+        i = i + 1
+    return out
+
+fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int) -> Stmt:
+    match s:
+        SDecl(n, e):
+            return SDecl(n, lift_expr(e, &lifted, &ctr))
+        SAssign(n, e):
+            return SAssign(n, lift_expr(e, &lifted, &ctr))
+        SFieldAssign(lv, rhs):
+            return SFieldAssign(lift_expr(lv, &lifted, &ctr), lift_expr(rhs, &lifted, &ctr))
+        SPrint(e):
+            return SPrint(lift_expr(e, &lifted, &ctr))
+        SReturn(e):
+            return SReturn(lift_expr(e, &lifted, &ctr))
+        SReturnVoid:
+            return s
+        SIf(c, th, el):
+            return SIf(lift_expr(c, &lifted, &ctr), lift_block(th, &lifted, &ctr), lift_block(el, &lifted, &ctr))
+        SWhile(c, b):
+            return SWhile(lift_expr(c, &lifted, &ctr), lift_block(b, &lifted, &ctr))
+        SForRange(nm, a, b, st, body):
+            return SForRange(nm, lift_expr(a, &lifted, &ctr), lift_expr(b, &lifted, &ctr), lift_expr(st, &lifted, &ctr), lift_block(body, &lifted, &ctr))
+        SExpr(e):
+            return SExpr(lift_expr(e, &lifted, &ctr))
+        STypedDecl(nm, ty, e):
+            return STypedDecl(nm, ty, lift_expr(e, &lifted, &ctr))
+        SOrReturn(nm, e):
+            return SOrReturn(nm, lift_expr(e, &lifted, &ctr))
+        SDestructure(nms, e):
+            return SDestructure(nms, lift_expr(e, &lifted, &ctr))
+        SMultiAssign(nms, e):
+            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr))
+        SMatch(subj, vars, binds, bodies):
+            nb := [][Stmt]
+            k := 0
+            for k < len(bodies):
+                push(nb, lift_block(bodies[k], &lifted, &ctr))
+                k = k + 1
+            return SMatch(lift_expr(subj, &lifted, &ctr), vars, binds, nb)
+        SBreak:
+            return s
+        SContinue:
+            return s
+
+# Run the lift over a whole program: returns the program with ELambda nodes
+# stamped and the lifted `__lam<id>` funcs appended to the function list.
+fn lift_program(prog: Program) -> Program:
+    lifted := []Func
+    ctr := 0
+    nfuncs := []Func
+    i := 0
+    for i < len(prog.funcs):
+        f := prog.funcs[i]
+        push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr)))
+        i = i + 1
+    i = 0
+    for i < len(lifted):
+        push(nfuncs, lifted[i])
+        i = i + 1
+    return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder)
+
 fn main():
     a := args()
     src := ""
@@ -4769,7 +4978,7 @@ fn main():
         src = read_all()
     toks := lex(src)
     pos := 0
-    prog := parse_program(toks, &pos)
+    prog := lift_program(parse_program(toks, &pos))   # stamp lambdas + append lifted __lam funcs
     funcs := prog.funcs
     sigs := []Sig
     sigmap := []string: int
