@@ -2164,6 +2164,11 @@ static Type resolve_expr(Expr *e) {
                 return e->type = ENUM_TYPE(eid);
             }
             Sig *fs = sig_find(e->sval);   /* a bare top-level function name used as a value */
+            if (!fs && e->pkg && e->pkg[0]) {   /* a same-package function name (mangled <pkg>name), used as a value */
+                char *q = sfmt("%s%s", e->pkg, e->sval);
+                fs = sig_find(q);
+                if (fs) e->sval = q;            /* codegen emits the prefixed <pkg>name__clo */
+            }
             if (fs && !fs->builtin) {
                 if (fs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
                 for (int i = 0; i < fs->nparams; i++)

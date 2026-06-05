@@ -1352,7 +1352,9 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
         EVar(s):
             if is_known_variant(m, m.prefix + s):   # a bare payload-less variant value in this package
                 return EVar(m.prefix + s)
-            return EVar(s)
+            if has_str(m.locals, s) or s == "None":  # a local var / None: never package-qualified
+                return EVar(s)
+            return EVar(m.prefix + s)                # a bare same-package fn name used as a VALUE (e.g. `g := base`)
         EBin(op, l, r):
             return EBin(op, mangle_expr(m, l), mangle_expr(m, r))
         ECall(nm, a):
@@ -1384,11 +1386,64 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
         EAddr(x):
             return EAddr(mangle_expr(m, x))
 
+fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a new binding shadows a package name)
+    nl := []string
+    i := 0
+    for i < len(m.locals):
+        push(nl, m.locals[i])
+        i = i + 1
+    push(nl, name)
+    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, nl)
+
+fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a statement introduces (visible to later siblings)
+    match s:
+        SDecl(n, e):
+            return mctx_add(m, n)
+        STypedDecl(n, ty, e):
+            return mctx_add(m, n)
+        SOrReturn(n, e):
+            return mctx_add(m, n)
+        SDestructure(ns, e):
+            mm := m
+            i := 0
+            for i < len(ns):
+                mm = mctx_add(mm, ns[i])
+                i = i + 1
+            return mm
+        SMultiAssign(ns, e):
+            return m
+        SAssign(n, e):
+            return m
+        SFieldAssign(lv, r):
+            return m
+        SPrint(e):
+            return m
+        SReturn(e):
+            return m
+        SReturnVoid:
+            return m
+        SBreak:
+            return m
+        SContinue:
+            return m
+        SIf(c, t, el):
+            return m
+        SWhile(c, b):
+            return m
+        SForRange(v, a, b, st, body):
+            return m
+        SExpr(e):
+            return m
+        SMatch(subj, vars, binds, bodies):
+            return m
+
 fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
     out := []Stmt
+    mm := m                                       # thread locals: a decl is in scope for the statements after it
     i := 0
     for i < len(ss):
-        push(out, mangle_stmt(m, ss[i]))
+        push(out, mangle_stmt(mm, ss[i]))
+        mm = mctx_bind(mm, ss[i])
         i = i + 1
     return out
 
@@ -1438,7 +1493,7 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
         SWhile(c, b):
             return SWhile(mangle_expr(m, c), mangle_block(m, b))
         SForRange(v, a, b, st, body):
-            return SForRange(v, mangle_expr(m, a), mangle_expr(m, b), mangle_expr(m, st), mangle_block(m, body))
+            return SForRange(v, mangle_expr(m, a), mangle_expr(m, b), mangle_expr(m, st), mangle_block(mctx_add(m, v), body))
         SExpr(e):
             return SExpr(mangle_expr(m, e))
         STypedDecl(n, ty, e):
@@ -1450,7 +1505,17 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
         SMultiAssign(ns, e):
             return SMultiAssign(ns, mangle_expr(m, e))
         SMatch(subj, vars, binds, bodies):
-            return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, mangle_bodies(m, bodies))
+            nb := [][Stmt]                            # each arm's payload binds are locals in that arm's body
+            k := 0
+            for k < len(bodies):
+                mm := m
+                bi := 0
+                for bi < len(binds[k]):
+                    mm = mctx_add(mm, binds[k][bi])
+                    bi = bi + 1
+                push(nb, mangle_block(mm, bodies[k]))
+                k = k + 1
+            return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params)   # body sees the params as locals (indirect calls stay unprefixed)
