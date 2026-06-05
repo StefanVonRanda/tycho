@@ -819,6 +819,15 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
 }
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
 
+/* A function value can't be stored in a container yet (downward-only closures: a
+ * fn in a struct/array/tuple/map/Option could escape its creating scope and dangle;
+ * also closes the FnC typedef-ordering gap). Pass it as an argument or keep it in a local. */
+static void reject_fn_container(Type t, int line) {
+    if (IS_FUNC(t))
+        die_at(line, "a function value can't be stored in a container yet (struct field, "
+                     "array/tuple element, map value, Option/Result) — pass it as an argument "
+                     "or keep it in a local variable");
+}
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_IDENT && !strcmp(t->text, "soa")) {   /* soa [Struct] */
@@ -857,8 +866,10 @@ static Type parse_type(Parser *ps) {
         }
         eat(ps, TK_RPAREN, "')'");
         if (n < 2) die_at(t->line, "a tuple type needs at least two elements");
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < n; i++) {
             if (elems[i] == T_VOID) die_at(t->line, "a tuple element cannot be void");
+            reject_fn_container(elems[i], t->line);
+        }
         return tup_of(elems, n);
     }
     if (t->kind == TK_LBRACKET) {        /* [int] / [string] / [string: int] */
@@ -868,6 +879,7 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
+            reject_fn_container(val, t->line);
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
                 die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
@@ -876,6 +888,7 @@ static Type parse_type(Parser *ps) {
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_VOID || elem == T_BOOL)
             die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+        reject_fn_container(elem, t->line);
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
@@ -884,6 +897,7 @@ static Type parse_type(Parser *ps) {
         Type inner = parse_type(ps);
         eat(ps, TK_RPAREN, "')'");
         if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
+        reject_fn_container(inner, t->line);
         return opt_of(inner);
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Result")) {   /* Result(T, E) */
@@ -894,6 +908,7 @@ static Type parse_type(Parser *ps) {
         Type err = parse_type(ps);
         eat(ps, TK_RPAREN, "')'");
         if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
+        reject_fn_container(ok, t->line); reject_fn_container(err, t->line);
         return res_of(ok, err);
     }
     if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
@@ -1058,6 +1073,7 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
+                reject_fn_container(val, t->line);
                 Type mt = map_of(elem, val);
                 if (mt == T_VOID) die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
                 e->ival = mt; e->op = TK_COLON;
@@ -1065,6 +1081,7 @@ static Expr *parse_primary(Parser *ps) {
             }
             if (elem == T_VOID || elem == T_BOOL)
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+            reject_fn_container(elem, t->line);
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
         }
@@ -1728,6 +1745,7 @@ static void parse_struct(Parser *ps) {
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
+        reject_fn_container(ft, fn->line);
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -1766,7 +1784,7 @@ static void parse_enum(Parser *ps) {
         if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
             while (!at(ps, TK_RPAREN)) {
                 if (var->npayload >= 8) die_at(vn->line, "too many payload fields (max 8)");
-                var->payload[var->npayload++] = parse_type(ps);
+                { Type _pt = parse_type(ps); reject_fn_container(_pt, vn->line); var->payload[var->npayload++] = _pt; }
                 if (!accept(ps, TK_COMMA)) break;
             }
             eat(ps, TK_RPAREN, "')'");
