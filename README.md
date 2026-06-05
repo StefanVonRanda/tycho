@@ -745,11 +745,12 @@ like every other heap value that escapes a function. The closure carries its own
 env-copy routine, so the move is automatic. This is the value-semantic memory
 model's payoff — the captured state behaves like a plain value at every step.
 
-The one remaining restriction is that a function value can't be stored in a
-**container** (struct field, array, map, tuple) — escape is via direct return or
-downward passing only. The common higher-order patterns (`map`/`filter`/`reduce`,
-predicates, comparators, factory functions) are all covered — see
-[`corelib/iter`](corelib/iter/iter.hi).
+Two restrictions remain. A function value can't be stored in a **container**
+(struct field, array, map, tuple) — escape is via direct return or downward
+passing only. And a closure returned by a call can't be **applied inline**:
+write `g := make_adder(5)` then `g(100)`, not `make_adder(5)(100)`. The common
+higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators, factory
+functions) are all covered — see [`corelib/iter`](corelib/iter/iter.hi).
 
 ### Builtins
 
