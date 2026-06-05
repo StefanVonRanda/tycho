@@ -31,6 +31,13 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | json-parse (real) | 67 MB/1118 ms⁴ | 55 MB/1315 ms¹⁴ | 58/1332 ms | 60/1627 ms | 108/1423 ms | 144/2490 ms |
 | iter-transform³   | 4 MB/1285 ms | 6 MB/358 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
+**Reproduce:** `make bench-prongB` builds every binary, checks all outputs in a
+workload are byte-identical, and prints per-workload peak-RSS/time tables plus a
+normalized **scorecard** — a `hier/C` peak-RSS column (the headline metric) and a
+wall-time grid. The numbers above were last re-confirmed after the closures /
+fn-in-container work landed (no memory regression — the arena model is unchanged
+by first-class function values).
+
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
 GROW with K (89/135/433 MB at K=1/5/30): hierc0's string accumulator (`s = s + …`)
 was malloc/realloc-based, so every accumulator-built string (here every parsed

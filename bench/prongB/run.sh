@@ -22,6 +22,8 @@ $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 
 fail=0; ref=""
+REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>" rows, for the summary scorecard
+WL="-"                                         # current workload slug (set by workload()/json_workload())
 run_one() {                                   # <label> <binary>
     lbl="$1"; bin="$2"
     [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
@@ -31,10 +33,11 @@ run_one() {                                   # <label> <binary>
     [ -z "$ref" ] && ref="$h"
     [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
     printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
+    printf '%s %s %d %d\n' "$WL" "$lbl" "$(( kb / 1024 ))" "$ms" >> "$REC"
 }
 
 workload() {                                  # <title> <hi/c/rs/go base> <kk base>
-    title="$1"; b="$2"; kk="$3"; ref=""
+    title="$1"; b="$2"; kk="$3"; ref=""; WL="$b"
     echo "== $title =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
     $HIERC "$D/$b.hi" --emit-c -o "$T/w_hier" >/dev/null 2>&1 && $CC -O2 -o "$T/w_hier" "$T/w_hier.c"
@@ -65,9 +68,10 @@ json_run() {                                  # <label> <binary> <stdin|arg>
     [ -z "$ref" ] && ref="$h"
     [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
     printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
+    printf '%s %s %d %d\n' "$WL" "$lbl" "$(( kb / 1024 ))" "$ms" >> "$REC"
 }
 json_workload() {
-    ref=""
+    ref=""; WL="json_parse"
     echo "== json-parse (recursive-descent: K parse-and-discard passes over a ~4.4MB doc) =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
     $HIERC "$D/json_gen.hi" --emit-c -o "$T/jgen" >/dev/null 2>&1 && $CC -O2 -o "$T/jgen" "$T/jgen.c"
@@ -84,6 +88,32 @@ json_workload() {
     echo
 }
 
+summary() {                                   # normalized head-to-head scorecard from the accumulated records
+    ORDER="binary_trees maptree arr_pipeline string_pipe iter_transform json_parse"
+    echo "==========================================================="
+    echo "SUMMARY — peak RSS (MB).  'hier/C' is the headline thesis metric:"
+    echo "implicit arenas vs hand-written malloc/free; ~1x = parity, lower is better."
+    awk -v ord="$ORDER" '
+      function v(w,l){ return (m[w"|"l]!="")? m[w"|"l] : "-" }
+      { m[$1"|"$2]=$3 }
+      END{ n=split(ord,o," ")
+        printf "  %-16s %7s %7s %7s %7s %7s   %7s\n","workload","hier","c","rust","go","koka","hier/C"
+        for(i=1;i<=n;i++){ w=o[i]; h=m[w"|hier"]; c=m[w"|c"]
+          r=(h!=""&&c!=""&&c+0>0)? sprintf("%.2fx",h/c) : "-"
+          printf "  %-16s %7s %7s %7s %7s %7s   %7s\n", w, v(w,"hier"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka"), r }
+      }' "$REC"
+    echo
+    echo "SUMMARY — wall time (ms):"
+    awk -v ord="$ORDER" '
+      function v(w,l){ return (t[w"|"l]!="")? t[w"|"l] : "-" }
+      { t[$1"|"$2]=$4 }
+      END{ n=split(ord,o," ")
+        printf "  %-16s %7s %7s %7s %7s %7s\n","workload","hier","c","rust","go","koka"
+        for(i=1;i<=n;i++){ w=o[i]; printf "  %-16s %7s %7s %7s %7s %7s\n", w, v(w,"hier"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka") }
+      }' "$REC"
+    echo
+}
+
 workload "binary-trees (allocate / discard)"     binary_trees binarytrees
 workload "tree-rewrite (map a persistent tree)"   maptree      maptree
 workload "array-pipeline (flat-array passes)"     arr_pipeline arrpipeline
@@ -91,5 +121,6 @@ workload "string-pipeline (build + hash strings)" string_pipe  stringpipe
 workload "iter-transform (the arena's WORST case: reassign a loop-carried value)" iter_transform itertransform
 json_workload
 
+summary
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && echo "all outputs identical within each workload" || { echo "OUTPUT MISMATCH"; exit 1; }

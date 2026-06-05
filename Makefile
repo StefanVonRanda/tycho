@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bootstrap fixpoint fuzz corelib ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bootstrap fixpoint fuzz corelib ci hooks image static clean
 
 all: hierc
 
@@ -52,6 +52,12 @@ test-update: hierc
 # stays linear, the inout memo stays O(n)). See bench/run.sh.
 bench: hierc
 	@sh bench/run.sh
+
+# Head-to-head memory benchmark: the same workloads in Hier / C / Rust / Go /
+# Koka, peak RSS + wall time + output-identity, with a normalized scorecard.
+# The empirical half of the thesis. See bench/prongB/run.sh and RESULTS.md.
+bench-prongB: hierc
+	@sh bench/prongB/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
