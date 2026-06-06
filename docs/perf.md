@@ -264,6 +264,44 @@ model.
 > streaming-codegen refactor (assessed large + non-uniform — wrapping patterns like
 > `EMapLit` don't stream — for a ~10–15% gain); banked, not yet done.
 
+### Push-loop fusion — register-resident array building (2026-06, both compilers)
+
+The generated-code counterpart to the wins above. A loop that only pushes to a
+local scalar array paid, **per element**, for the array descriptor (`data`/`len`/
+`cap`) round-tripping through memory: the C compiler must assume `&arr` aliases
+the arena pointer also passed to `push`, so it can't keep the cursor in
+registers. Profiling `iter_transform` (a 200M-element push loop) isolated it —
+arithmetic + bounds-elided reads were 334 ms, `push` ~915 ms (73%); hand-hoisting
+the loop hit 337 ms. `reserve`, `restrict`, and a cheaper empty-arena `reset` all
+failed to move it — the cost is the descriptor traffic, not growth or the
+capacity branch.
+
+**Fusion:** when a loop's body uses a local scalar array (`[int]`/`[float]`)
+ONLY as `push(arr, …)`, codegen caches `data`/`len`/`cap` in C locals across the
+loop (hot path `_fd[_fl++] = v`), calls a grow hook (`hier_arr_int/float_grow`)
+only on overflow, and writes the descriptor back at loop exit. `break` needs
+nothing (the flush sits after the loop, which `break` falls through to);
+`continue`'s cursor survives in registers; `return` flushes via the registry
+first; nested loops pushing the same array reuse the outer cursor.
+
+**Sound by construction** — fuse ONLY when `count_reads == pushcount` (used solely
+as a push target), the array is a plain non-inout scalar local not defined/
+shadowed in the body, and (for a `while`) the condition doesn't read it. Any miss
+falls back to today's codegen, so a non-fused loop is never wrong. In hierc the
+registry is C globals (`g_fuse`); hierc0 has no globals, so it threads through
+`Ctx` (fields `fusearr`/`fusesuf`/`fusety`, top-down into the body) with cursor
+names keyed on `ctx.depth`.
+
+**Result:** `iter_transform` 1249→416 ms (6.7×→2.3× C) and 4→3 MB; `arr_pipeline`
+53→30 ms (2.2×→1.25× C). General — every scalar push loop, including the
+self-compiler. Verified: `make test` 98/0 (ASan/UBSan); `make fixpoint` B≡C in
+both compilers (fusion correctly compiles the push-heavy `hierc0.hi`, which
+self-reproduces byte-identically and compiles itself faster); `bench-prongB` all
+outputs identical, no regression; differential fuzz 300 seeds FAIL=0 (×2, one per
+compiler); `tests/push_fusion.hi` covers break/continue/return/nested/two-array/
+while/bail. Open extension: heap-element arrays (`[string]`/struct) — deferred to
+keep the element copy/recycle interplay out of scope.
+
 ## The self-compile gap: status and decision (closed for now)
 
 **Current gap: hierc0 self-compile ≈ 2.4× the C compiler** (one box: B 31 ms vs

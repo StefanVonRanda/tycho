@@ -16,10 +16,10 @@ and the self-hosted `hierc0`) are measured where shown.
 |----------|------------------|----------------|---------|-----|
 | **binary-trees** | transient alloc/discard, deep recursion | 25 MB vs C 33, Go 35, Koka 14 | **beats hand-written C** (one arena reset/iter) | `bench-prongB` |
 | **tree-rewrite** | rewrite pass over a tree | 7 MB, lowest with Koka, beats C/Rust/Go | win | `bench-prongB` |
-| **array-pipeline** | bulk transform | 6 MB vs C 3 | ~2× C, beats Go; ~2× C on time after bounds-elision | `bench-prongB` |
+| **array-pipeline** | bulk transform | 6 MB vs C 3 | ~2× C mem (slack, closes to ≤C with `reserve`); time **1.25× C** after push-loop fusion | `bench-prongB` |
 | **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
 | **json-parse (real)** | recursive-descent parse-and-discard | 67 MB vs C 58 | **fastest of all 5**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
-| **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB**: static FBIP reuse (no refcount) closed it | `bench-prongB` |
+| **iter-transform** | loop-carried reassign (was the arena's worst case) | 3 MB vs C 2 | **3.5 GB → 3 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
 | **winagg** | per-window churn-and-discard | ~par C, beats Go | win on bulk-free teardown | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
