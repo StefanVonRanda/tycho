@@ -28,10 +28,11 @@ middleman needed.
 
 ## Shape (constrained by the language)
 
-No generics, no closures, no methods — so corelib is **concrete free functions over
-concrete types**. Higher-order helpers (map/filter/reduce taking a function) aren't
-expressible; array utilities are per-element-type. This is a deliberate consequence of
-the language's minimalism, not a corelib limitation.
+No generics, no methods — so corelib is **concrete free functions over concrete types**;
+array utilities are per-element-type (currently `[int]`). Higher-order helpers
+(map/filter/reduce taking a function) **are** expressible since closures shipped — they
+live in `core:iter` and take a first-class `fn`/closure argument. This shape is a
+deliberate consequence of the language's minimalism, not a corelib limitation.
 
 ## Packages
 
@@ -40,12 +41,17 @@ the language's minimalism, not a corelib limitation.
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
   `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`. (`split`/`find`/
   `substr`/`len`/`chr` are builtins.)
-
-More to come (arrays).
+- **`arrays`** — `[int]` utilities: `contains`, `index_of` (−1 if absent), `count`, `sum`,
+  `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending). `reverse`/`sort` return a new
+  array — value semantics, the input is never mutated. (`push`/`pop`/`len`/`range` are
+  builtins.)
+- **`iter`** — higher-order over `[int]`, each taking a `fn`/closure: `map`, `filter`,
+  `reduce`, `count`, `any`.
 
 ## Testing
 
-`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.hi` is compiled by
-the C compiler **and** via `hierc --bundle | hierc0`, and both must produce the golden
+`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.hi` is compiled three
+ways — by the C compiler, via `hierc --bundle | hierc0`, and via **standalone** `hierc0`
+(which resolves `core:` itself) — and all three must produce the golden
 `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.

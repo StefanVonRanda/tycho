@@ -1,0 +1,17 @@
+package main
+# corelib test: exercises core:arrays; C compiler and hierc0 must agree (corelib/run.sh).
+import "core:arrays"
+
+fn b2i(b: bool) -> int:                       # str(bool) is not available yet; fold to int
+    if b:
+        return 1
+    return 0
+
+fn main():
+    xs := [5, 3, 8, 3, 1]
+    print(f"sum={arrays.sum(xs)} max={arrays.imax(xs)} min={arrays.imin(xs)}\n")     # sum=20 max=8 min=1
+    print(f"idx3={arrays.index_of(xs, 3)} idx9={arrays.index_of(xs, 9)} cnt3={arrays.count(xs, 3)} has8={b2i(arrays.contains(xs, 8))}\n")
+    sorted := arrays.sort(xs)
+    print(f"s0={sorted[0]} s4={sorted[4]} sok={b2i(arrays.is_sorted(sorted))} origok={b2i(arrays.is_sorted(xs))}\n")
+    rev := arrays.reverse(xs)
+    print(f"rev0={rev[0]} rev4={rev[4]}\n")                                          # rev0=1 rev4=5

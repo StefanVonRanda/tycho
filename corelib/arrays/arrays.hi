@@ -1,0 +1,82 @@
+package arrays
+# corelib: plain utilities over [int]. Import with `import "core:arrays"`.
+# (push/pop/len/range are builtins; higher-order map/filter/reduce live in core:iter.)
+# No generics in hier, so these are concrete for [int]. Value semantics: functions
+# that "modify" (sort/reverse) return a NEW array; the input is never mutated.
+
+fn contains(xs: [int], x: int) -> bool:
+    for v in xs:
+        if v == x:
+            return true
+    return false
+
+fn index_of(xs: [int], x: int) -> int:        # first index of x, or -1 if absent
+    n := len(xs)
+    i := 0
+    for i < n:
+        if xs[i] == x:
+            return i
+        i = i + 1
+    return 0 - 1
+
+fn count(xs: [int], x: int) -> int:           # number of elements equal to x
+    n := 0
+    for v in xs:
+        if v == x:
+            n = n + 1
+    return n
+
+fn sum(xs: [int]) -> int:
+    s := 0
+    for v in xs:
+        s = s + v
+    return s
+
+fn imax(xs: [int]) -> int:                    # max element; 0 if empty
+    if len(xs) == 0:
+        return 0
+    m := xs[0]
+    for v in xs:
+        if v > m:
+            m = v
+    return m
+
+fn imin(xs: [int]) -> int:                    # min element; 0 if empty
+    if len(xs) == 0:
+        return 0
+    m := xs[0]
+    for v in xs:
+        if v < m:
+            m = v
+    return m
+
+fn reverse(xs: [int]) -> [int]:               # returns a new reversed array
+    out := []int
+    i := len(xs) - 1
+    for i >= 0:
+        push(out, xs[i])
+        i = i - 1
+    return out
+
+fn is_sorted(xs: [int]) -> bool:              # ascending, non-strict
+    n := len(xs)
+    i := 1
+    for i < n:
+        if xs[i] < xs[i - 1]:
+            return false
+        i = i + 1
+    return true
+
+fn sort(xs: [int]) -> [int]:                  # ascending; returns a new sorted array (input unchanged)
+    out := xs                                 # value copy -- caller's array is not touched
+    n := len(out)
+    i := 1
+    for i < n:
+        key := out[i]
+        j := i - 1
+        for j >= 0 and out[j] > key:
+            out[j + 1] = out[j]
+            j = j - 1
+        out[j + 1] = key
+        i = i + 1
+    return out
