@@ -2216,6 +2216,124 @@ fn sig_functype(dc: Decls, name: string) -> string:
         i = i + 1
     return out + "->" + s.ret + ")"
 
+# UFCS methods: x.foo(args) / expr.foo(args) lowers (via the mangler / postfix
+# parse) to a call-on-expression with an EField callee. At codegen, if the field
+# name isn't a fn-typed struct field but IS a free fn whose first parameter has
+# the receiver's type, it's a method call -> foo(recv, args). Static dispatch;
+# mirrors hierc. (Bare field name resolves against package main; a same-package
+# method would need its prefix threaded — deferred, like hierc's scope.)
+fn efield_fname(e: Expr) -> string:               # field name if e is EField, else ""
+    match e:
+        EField(b, f):
+            return f
+        EInt(s):
+            return ""
+        EBool(s):
+            return ""
+        EChar(s):
+            return ""
+        EFloat(s):
+            return ""
+        EStr(s):
+            return ""
+        EVar(s):
+            return ""
+        EBin(o, l, r):
+            return ""
+        ECall(nm, a):
+            return ""
+        EIndex(b, ix):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+        EAddr(x):
+            return ""
+        ELambda(id, ps, pts, r, bx, cn, ct):
+            return ""
+        ECallV(c, a):
+            return ""
+
+fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller guards via efield_fname)
+    match e:
+        EField(b, f):
+            return b
+        EInt(s):
+            return e
+        EBool(s):
+            return e
+        EChar(s):
+            return e
+        EFloat(s):
+            return e
+        EStr(s):
+            return e
+        EVar(s):
+            return e
+        EBin(o, l, r):
+            return e
+        ECall(nm, a):
+            return e
+        EIndex(b, ix):
+            return e
+        EArrLit(es):
+            return e
+        EArrEmpty(t):
+            return e
+        EMapEmpty(k, v):
+            return e
+        EMapLit(ks, vs):
+            return e
+        ETuple(es):
+            return e
+        ESlice(b, lo, hi):
+            return e
+        EAddr(x):
+            return e
+        ELambda(id, ps, pts, r, bx, cn, ct):
+            return e
+        ECallV(c, a):
+            return e
+
+fn struct_fn_field(dc: Decls, sname: string, fname: string) -> bool:   # sname has a fn-typed field fname?
+    i := 0
+    for i < len(dc.structs):
+        if dc.structs[i].name == sname:
+            j := 0
+            for j < len(dc.structs[i].fields):
+                if dc.structs[i].fields[j].name == fname and is_func(dc.structs[i].fields[j].ty):
+                    return true
+                j = j + 1
+            return false
+        i = i + 1
+    return false
+
+# Method name (matches un()) if `callee` is a UFCS method call, else "".
+fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr) -> string:
+    fname := efield_fname(callee)
+    if fname == "":
+        return ""
+    if is_builtin_call(fname):
+        return ""
+    bt := type_of(efield_base(callee), names, types, dc, ctx)
+    if struct_fn_field(dc, bt, fname):            # a real fn-typed field wins (call-through-field)
+        return ""
+    si := map_get(dc.sigmap, fname, -1)
+    if si < 0:
+        return ""
+    if len(dc.sigs[si].ptypes) >= 1 and dc.sigs[si].ptypes[0] == bt:
+        return fname
+    return ""
+
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t):
@@ -2277,6 +2395,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         ELambda(id, ps, pts, ret, body, cn, ct):
             return mk_functype(pts, ret)
         ECallV(callee, cargs):
+            mn := ufcs_name(dc, ctx, names, types, callee)
+            if mn != "":                          # UFCS method: its return type
+                return resolve_nt(dc, ctx, sig_ret(dc, ctx, mn))
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
         EAddr(inner):
             return type_of(inner, names, types, dc, ctx)
@@ -2711,6 +2832,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             env = env + "}"
             return "(Fn_" + suffix + "){hbox(" + ctx.owner + ", sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
         ECallV(callee, cargs):
+            mn := ufcs_name(dc, ctx, names, types, callee)
+            if mn != "":                          # UFCS method call: foo(recv, args)
+                allargs := []Expr
+                push(allargs, efield_base(callee))
+                ci := 0
+                for ci < len(cargs):
+                    push(allargs, cargs[ci])
+                    ci = ci + 1
+                return un(mn) + "(" + ctx.owner + ", " + gen_call_args(allargs, names, types, dc, ctx) + ")"
             ct := cty(dc, ctx, type_of(callee, names, types, dc, ctx))
             code := "({ " + ct + "_f = " + gen_expr(callee, names, types, dc, ctx) + "; _f.call(_f.env, " + ctx.owner
             if len(cargs) > 0:

@@ -2429,6 +2429,36 @@ static Type resolve_expr(Expr *e) {
                       e->lhs = fld; e->qual = NULL; e->sval = NULL;
                   }
               } }
+            /* Stage 2 UFCS: callee is `base.name` (E_FIELD) where name is not a
+             * fn-typed field of base's type but IS a method -> name(base, args).
+             * Enables method chaining on any receiver expression: a.f().g(). */
+            if (e->lhs && e->lhs->kind == E_FIELD) {
+                Expr *fld = e->lhs;
+                Type bt = resolve_expr(fld->lhs);
+                int fnfield = 0;
+                if (IS_STRUCT(bt)) {
+                    StructDef *sd = &g_structs[STRUCT_ID(bt)];
+                    for (int i = 0; i < sd->nfields; i++)
+                        if (!strcmp(sd->fields[i].name, fld->sval) && IS_FUNC(sd->fields[i].type)) { fnfield = 1; break; }
+                }
+                Sig *ms = NULL;
+                if (!fnfield) {
+                    Sig *c1 = sig_find(fld->sval);
+                    if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == bt && !c1->inout[0]) ms = c1;
+                    if (!ms && e->pkg && e->pkg[0]) {
+                        Sig *c2 = sig_find(sfmt("%s%s", e->pkg, fld->sval));
+                        if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == bt && !c2->inout[0]) ms = c2;
+                    }
+                }
+                if (ms) {   /* prepend base as the receiver; resolve as a normal named call */
+                    Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
+                    na[0] = fld->lhs;
+                    for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
+                    e->args = na; e->nargs += 1;
+                    e->sval = fld->sval;   /* keep e->pkg; the package resolver prefixes if needed */
+                    e->lhs = NULL;
+                }
+            }
             if (e->lhs) {   /* call-on-expression: an indirect call on a fn VALUE (array elem, struct field, call result) */
                 Type ct = resolve_exp(e->lhs, T_VOID);
                 if (!IS_FUNC(ct)) die_at(e->line, "calling a value that isn't a function (%s)", type_name(ct));
