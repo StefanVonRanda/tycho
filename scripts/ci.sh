@@ -19,23 +19,26 @@ printf ' hier local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/5] build (make hierc)"
+step "[1/6] build (make hierc)"
 make -s hierc
 
-step "[2/5] make test  (golden output + ASan/UBSan/LeakSanitizer)"
+step "[2/6] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
-step "[3/5] make fixpoint  (self-host B==C + packages + standalone driver)"
+step "[3/6] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 
-step "[4/5] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
+step "[4/6] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
 make -s corelib
 
+step "[5/6] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
+make -s ffi
+
 if [ "$N" -gt 0 ] 2>/dev/null; then
-    step "[5/5] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
+    step "[6/6] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
     python3 fuzz/run.py "$N"
 else
-    step "[5/5] fuzz skipped (N=0)"
+    step "[6/6] fuzz skipped (N=0)"
 fi
 
 bar

@@ -359,11 +359,14 @@ struct Func:
     ptypes: [string]          # parallel to params: "int" | "str"
     ret: string               # "int" | "str" | "void"
     body: [Stmt]
+    is_extern: int            # FFI: 1 -> `extern fn`, calls a C symbol directly (no arena, name unmangled, no body)
+    lib: string               # FFI: link library from `extern "Lib" fn`; "" for bare extern
 
 struct Sig:                   # collected up front, for typing calls
     name: string
     ret: string
     ptypes: [string]          # parameter types, so a bare fn name can be typed as a value
+    is_extern: int            # FFI: 1 -> call the C symbol `name` directly (no arena); str ret arena-copied
 
 struct LamInfo:               # one per lambda, produced by the lift pass; drives env-struct + thunk emission
     id: int
@@ -1079,7 +1082,50 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
         ret = parse_type(toks, &pos)
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
-    return Func(name, params, ptypes, ret, body)
+    return Func(name, params, ptypes, ret, body, 0, "")
+
+# FFI Stage 1: only scalars + string cross the C boundary (composites have
+# hier-internal C reps, not a stable ABI). Reject everything else (fail closed).
+fn ffi_scalar(ty: string) -> bool:
+    return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str"
+
+# extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
+# Name is NOT mangled — a C symbol is global.
+fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
+    expect_ident(toks, &pos, "extern")
+    lib := ""
+    if toks[pos].kind == TStr:                 # optional link-library name
+        lib = toks[pos].text
+        pos = pos + 1
+    expect_ident(toks, &pos, "fn")
+    if toks[pos].kind != TIdent:
+        die("parse: expected a C function name after 'extern fn'")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TLParen)
+    params := []string
+    ptypes := []string
+    if toks[pos].kind != TRParen:
+        p := parse_param(toks, &pos)
+        if not ffi_scalar(p.ty):
+            die("parse: extern fn '" + name + "': parameters must be int/char/float/bool/string")
+        push(params, p.name)
+        push(ptypes, p.ty)
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            p2 := parse_param(toks, &pos)
+            if not ffi_scalar(p2.ty):
+                die("parse: extern fn '" + name + "': parameters must be int/char/float/bool/string")
+            push(params, p2.name)
+            push(ptypes, p2.ty)
+    expect(toks, &pos, TRParen)
+    ret := "void"
+    if toks[pos].kind == TArrow:
+        pos = pos + 1
+        ret = parse_type(toks, &pos)
+        if not ffi_scalar(ret):
+            die("parse: extern fn '" + name + "': return type must be int/char/float/bool/string or omitted")
+    return Func(name, params, ptypes, ret, []Stmt, 1, lib)
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
 # return). The leading `fn` and the opening `(` have already been consumed-checked
@@ -1535,7 +1581,10 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params)   # body sees the params as locals (indirect calls stay unprefixed)
-    return Func(m.prefix + f.name, f.params, mangle_types(m, f.ptypes), mangle_type(m, f.ret), mangle_block(mb, f.body))
+    nm := m.prefix + f.name
+    if f.is_extern == 1:                      # FFI: a C symbol is global — never package-mangle it
+        nm = f.name
+    return Func(nm, f.params, mangle_types(m, f.ptypes), mangle_type(m, f.ret), mangle_block(mb, f.body), f.is_extern, f.lib)
 
 fn mangle_struct(m: Mctx, sd: StructDef) -> StructDef:
     fs := []Field
@@ -1629,6 +1678,9 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
             push(rntn, nt.name)
             push(rntu, nt.ty)
             push(npfx, curpfx)
+        elif toks[pos].kind == TIdent and toks[pos].text == "extern":   # FFI: extern fn (bodyless C decl)
+            push(rfuncs, parse_extern_func(toks, &pos))
+            push(fpfx, curpfx)
         else:
             push(rfuncs, parse_func(toks, &pos))
             push(fpfx, curpfx)
@@ -2740,6 +2792,18 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
                 return "(" + ust(name) + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
+            if sig_is_extern(dc, name):               # FFI: call the C symbol directly — no arena, no h_ prefix
+                xa := ""
+                ai := 0
+                for ai < len(args):
+                    if ai > 0:
+                        xa = xa + ", "
+                    xa = xa + gen_expr(args[ai], names, types, dc, ctx)   # hier str is already char* -> zero-cost arg
+                    ai = ai + 1
+                xc := name + "(" + xa + ")"
+                if sig_ret(dc, ctx, name) == "str":   # C-owned return -> copy into the arena (NULL -> "")
+                    return "scopy(" + ctx.owner + ", ({ const char* _x = " + xc + "; _x ? _x : \"\"; }))"
+                return xc
             if has_str(names, name) and is_func(var_type(names, types, name)):   # indirect call through a fn value: g.call(g.env, arena, args)
                 cl := un(name) + ".call(" + un(name) + ".env, " + ctx.owner
                 if len(args) > 0:
@@ -3805,6 +3869,26 @@ fn seed_env(f: Func, names: inout [string], types: inout [string]):
 
 fn gen_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
     return ret_cty(dc, ctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, ctx) + ");\n"
+
+# FFI: is `name` an extern (C) function? Drives the direct-call codegen.
+fn sig_is_extern(dc: Decls, name: string) -> bool:
+    si := map_get(dc.sigmap, name, -1)
+    if si < 0:
+        return false
+    return dc.sigs[si].is_extern == 1
+
+# FFI: forward-declare the C symbol with its real C ABI — no arena, no h_ prefix.
+fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
+    out := "extern " + ret_cty(dc, ctx, f.ret) + f.name + "("
+    if len(f.params) == 0:
+        out = out + "void"
+    i := 0
+    for i < len(f.params):
+        if i > 0:
+            out = out + ", "
+        out = out + cty(dc, ctx, f.ptypes[i])
+        i = i + 1
+    return out + ");\n"
 
 # Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
 # A non-'+' binop or any leaf is one whole piece. So `a + b + c` -> [a, b, c]
@@ -5218,7 +5302,7 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 push(lbody, SExpr(nb))
             else:
                 push(lbody, SReturn(nb))
-            push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody))
+            push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
 
@@ -5431,7 +5515,7 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo]) -> Pr
             names := []string                         # calls type_of); a lambda-free func is left UNCHANGED, so a
             types := []string                         # lambda-free program (incl. hierc0.hi) is byte-identical.
             seed_env(f, &names, &types)
-            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &names, &types, dc, ctx, f.ret)))
+            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &names, &types, dc, ctx, f.ret), f.is_extern, f.lib))
         else:
             push(nfuncs, f)
         i = i + 1
@@ -5460,7 +5544,7 @@ fn main():
     sigmap0 := []string: int
     i := 0
     for i < len(prog0.funcs):
-        push(sigs0, Sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes))
+        push(sigs0, Sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes, prog0.funcs[i].is_extern))
         if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
@@ -5473,7 +5557,7 @@ fn main():
     sigmap := []string: int
     i = 0
     for i < len(funcs):
-        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes))
+        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
@@ -5622,14 +5706,16 @@ fn main():
         i = i + 1
     i = 0                                        # 9. prototypes
     for i < len(funcs):
-        if funcs[i].name != "main":
+        if funcs[i].is_extern == 1:              # FFI: real C ABI decl, not the h_/arena proto
+            out = out + gen_extern_proto(funcs[i], dc, ctx)
+        elif funcs[i].name != "main":
             out = out + gen_proto(funcs[i], dc, ctx)
         i = i + 1
     if has_fnval:                                # 9b. fn-value adapter thunks (after protos: each forwards to h_<name>)
         i = 0
         for i < len(funcs):
-            if funcs[i].name != "main" and fn_value_eligible(funcs[i]) and not has_prefix(funcs[i].name, "__lam"):
-                out = out + gen_fnval_thunk(funcs[i], dc, ctx)   # lifted lambdas get a capture-aware thunk instead (below)
+            if funcs[i].name != "main" and funcs[i].is_extern == 0 and fn_value_eligible(funcs[i]) and not has_prefix(funcs[i].name, "__lam"):
+                out = out + gen_fnval_thunk(funcs[i], dc, ctx)   # lifted lambdas get a capture-aware thunk instead (below); externs have no h_ wrapper
             i = i + 1
     i = 0                                        # 9c. closure thunks: unpack the env, call the lifted __lam proc
     for i < len(lams):
@@ -5649,6 +5735,7 @@ fn main():
         i = i + 1
     i = 0
     for i < len(funcs):
-        out = out + gen_func(funcs[i], dc, ctx)
+        if funcs[i].is_extern == 0:              # FFI externs have no body
+            out = out + gen_func(funcs[i], dc, ctx)
         i = i + 1
     print(out)

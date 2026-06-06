@@ -1,0 +1,15 @@
+# FFI Stage 1 regression: calls the C fixture lib tests/ffi/demo.c.
+# Both compilers must agree and match tests/ffi/expected.out (see tests/ffi/run.sh).
+extern "ffidemo" fn ffi_echo(s: string) -> string
+extern "ffidemo" fn ffi_sum3(a: int, b: int, c: int) -> int
+extern "ffidemo" fn ffi_scale(x: float, k: int) -> float
+extern "ffidemo" fn ffi_maybe(s: string) -> string
+
+fn main():
+    e := ffi_echo("hi")                       # string arg (zero-cost char*) + string return (arena-copied)
+    s := ffi_sum3(1, 2, 39)                    # int args + int return
+    sc := to_int(ffi_scale(2.5, 4))            # float + int args, float return
+    m1 := ffi_maybe("z")                       # non-null string return
+    m0 := ffi_maybe("")                        # NULL return -> "" (guarded)
+    print(e + "\n")
+    print(f"sum={s} scale={sc} maybe1={m1} maybe0=[{m0}]\n")

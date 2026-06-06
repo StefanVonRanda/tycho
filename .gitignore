@@ -24,4 +24,6 @@
 !/tests/pkg/*.out
 # corelib test goldens (corelib/test/<name>.out) are tracked too
 !/corelib/test/*.out
+# FFI regression golden (tests/ffi/expected.out) is tracked too
+!/tests/ffi/*.out
 .koka/

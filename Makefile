@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bootstrap fixpoint fuzz corelib ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -69,6 +69,11 @@ bootstrap: hierc
 # through the C compiler and the self-hosted hierc0. See corelib/run.sh.
 corelib: hierc
 	@sh corelib/run.sh
+
+# FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
+# through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
+ffi: hierc
+	@sh tests/ffi/run.sh
 
 # Stage 4 self-host fixpoint: A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi;
 # assert B==C (byte-identical self-emission) and B matches the C compiler.

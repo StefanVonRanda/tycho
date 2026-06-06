@@ -1,9 +1,9 @@
 # FFI — calling C from hier (design)
 
-> Status: **design proposal, not yet implemented.** This document locks the design
-> before paying the dual-compiler cost. Inspired by the `tycho` language's FFI, adapted
-> to hier's internals. Every hier claim below cites `file:line`; tycho claims cite the
-> tycho repo as read on 2026-06-06.
+> Status: **Stage 1 SHIPPED in both compilers** (scalars + string; see §8). Stages 2–3
+> remain design. Inspired by the `tycho` language's FFI, adapted to hier's internals.
+> Every hier claim below cites `file:line`; tycho claims cite the tycho repo as read on
+> 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
 
 ## 1. Goal & thesis fit
 
@@ -148,10 +148,11 @@ Gates (per the project's CI, all local — see `docs/` / `make ci`):
 
 ## 8. Staged rollout
 
-- **Stage 1 — scalars + `str`.** Types: `int`/`char`/`float`/`bool`/`str`/void. No new type
-  node. Unlocks libm, most of libc, and any C lib with a scalar/string ABI. Proves the entire
-  mechanism (parse → sig → prototype → call → arena-copy → link) end-to-end in both compilers.
-  This is the minimal sound slice.
+- **Stage 1 — scalars + `str`. ✅ DONE (both compilers).** Types: `int`/`char`/`float`/`bool`/
+  `str`/void. No new type node. Unlocks libm, most of libc, and any C lib with a scalar/string
+  ABI. The full mechanism (parse → sig → prototype → call → arena-copy → link) ships in hierc
+  (commit "FFI Stage 1 in hierc") and hierc0 (this commit), fixpoint byte-identical, `make ffi`
+  green (both compilers agree, ASan-clean, scalar+string both directions, NULL-return guarded).
 - **Stage 2 — opaque `ptr`.** New primitive `ptr` = `void *`, plus `null` / `is_null`. Unlocks
   handle-based libraries (SDL window, sqlite db, curl handle). New type threads through
   parser/type-checker/codegen/fuzzer in both compilers.
