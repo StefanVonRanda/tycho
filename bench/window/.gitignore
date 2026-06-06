@@ -1,0 +1,10 @@
+# build artifacts (run.sh builds in a tmpdir; these are from manual builds)
+wn
+wn.c
+wc
+wgo
+wi
+wi.c
+o
+m
+*.o

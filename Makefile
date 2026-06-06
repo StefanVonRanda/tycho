@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bench-dbquery bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -64,6 +64,11 @@ bench-prongB: hierc
 # `make ci` (system dependency). See bench/dbquery/RESULTS.md.
 bench-dbquery: hierc
 	@sh bench/dbquery/run.sh
+
+# Sliding-window eviction: the arena's weak point, mapped honestly (heap-record
+# window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.
+bench-window: hierc
+	@sh bench/window/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
