@@ -64,10 +64,24 @@ else
     [ "$shimout" = "triple=42" ] || { echo "FAIL: --shim output '$shimout' != 'triple=42'"; fail=1; }
 fi
 
+# (5) Package-scoped extern: an extern declared+called inside a package. Both
+# compilers must keep the C symbol unmangled (hierc0 regression). Expect tri6=42.
+if ! "$HIERC" tests/ffi/pkgext/main.hi -o "$T/pkg_c" --shim tests/ffi/shim.c >"$T/pkg.log" 2>&1; then
+    echo "FAIL: pkg-extern hierc compile"; sed 's/^/      /' "$T/pkg.log"; fail=1
+else
+    [ "$("$T/pkg_c" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern hierc output"; fail=1; }
+fi
+if ! { "$HIERC" tests/ffi/pkgext/main.hi --bundle 2>/dev/null | "$T/h0" > "$T/pkg_h0.c" 2>/dev/null && \
+       $CC -O2 -std=c11 -o "$T/pkg_h0" "$T/pkg_h0.c" tests/ffi/shim.c -lm 2>"$T/pkg_h0.log"; }; then
+    echo "FAIL: pkg-extern hierc0 compile"; sed 's/^/      /' "$T/pkg_h0.log"; fail=1
+else
+    [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern hierc0 output"; fail=1; }
+fi
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim linking)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }

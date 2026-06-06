@@ -1286,6 +1286,7 @@ struct Mctx:
     pkgs: [string]
     variants: [string]
     locals: [string]          # enclosing fn's param names: a call to one is an INDIRECT call (fn value), not a package fn -> don't prefix
+    externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
     return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
@@ -1322,6 +1323,8 @@ fn mangle_ref(m: Mctx, name: string) -> string:
     if find(name, ".") >= 0:
         return mangle_dotted(m, name)
     if is_builtin_call(name):
+        return name
+    if has_str(m.externs, name):                 # FFI: a global C symbol — never package-mangle a call to it
         return name
     if has_str(m.locals, name):                  # an enclosing param (a fn value): `f(v)` is an indirect call, NOT a package fn
         return name
@@ -1459,7 +1462,7 @@ fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a
         push(nl, m.locals[i])
         i = i + 1
     push(nl, name)
-    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, nl)
+    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, nl, m.externs)
 
 fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a statement introduces (visible to later siblings)
     match s:
@@ -1584,7 +1587,7 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
             return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
-    mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params)   # body sees the params as locals (indirect calls stay unprefixed)
+    mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs)   # body sees the params as locals (indirect calls stay unprefixed)
     nm := m.prefix + f.name
     if f.is_extern == 1:                      # FFI: a C symbol is global — never package-mangle it
         nm = f.name
@@ -1633,6 +1636,7 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
     aliasn := []string
     aliasp := []string
     variants := []string
+    externs := []string                          # FFI extern fn names (global C symbols, never mangled)
     curpfx := ""
     sawpkg := false
     for toks[pos].kind != TEof:
@@ -1683,8 +1687,10 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
             push(rntu, nt.ty)
             push(npfx, curpfx)
         elif toks[pos].kind == TIdent and toks[pos].text == "extern":   # FFI: extern fn (bodyless C decl)
-            push(rfuncs, parse_extern_func(toks, &pos))
+            ef := parse_extern_func(toks, &pos)
+            push(rfuncs, ef)
             push(fpfx, curpfx)
+            push(externs, ef.name)                                      # global C symbol — bare calls to it stay unmangled
         else:
             push(rfuncs, parse_func(toks, &pos))
             push(fpfx, curpfx)
@@ -1698,21 +1704,21 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
     si := 0
     for si < len(rstructs):
         if sawpkg:
-            push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants, []string), rstructs[si]))
+            push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants, []string, externs), rstructs[si]))
         else:
             push(structs, rstructs[si])
         si = si + 1
     ei := 0
     for ei < len(renums):
         if sawpkg:
-            push(enums, mangle_enum(Mctx(epfx[ei], aliasn, aliasp, pkgs, variants, []string), renums[ei]))
+            push(enums, mangle_enum(Mctx(epfx[ei], aliasn, aliasp, pkgs, variants, []string, externs), renums[ei]))
         else:
             push(enums, renums[ei])
         ei = ei + 1
     fi := 0
     for fi < len(rfuncs):
         if sawpkg:
-            push(funcs, mangle_func(Mctx(fpfx[fi], aliasn, aliasp, pkgs, variants, []string), rfuncs[fi]))
+            push(funcs, mangle_func(Mctx(fpfx[fi], aliasn, aliasp, pkgs, variants, []string, externs), rfuncs[fi]))
         else:
             push(funcs, rfuncs[fi])
         fi = fi + 1
@@ -1720,7 +1726,7 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
     for ni < len(rntn):
         if sawpkg:
             push(ntnames, npfx[ni] + rntn[ni])
-            push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants, []string), rntu[ni]))
+            push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants, []string, externs), rntu[ni]))
         else:
             push(ntnames, rntn[ni])
             push(ntunder, rntu[ni])

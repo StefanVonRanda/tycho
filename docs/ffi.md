@@ -57,8 +57,12 @@ extern "SDL2" fn SDL_Init(flags: int) -> int             # links -lSDL2
 
 - Bodyless `fn` decl (no `:` block). Reuses the existing `fn name(params) -> ret` parser
   shape; the difference is the leading `extern [ "Lib" ]` and the absence of a body.
-- The hier symbol name **is** the C symbol name — no mangling (the package mangler must skip
-  `extern fn`, same way it already gates mangling on declarations).
+- The hier symbol name **is** the C symbol name — no mangling, even inside a package (a C
+  symbol is global). hierc resolves this for free: its call resolver only rewrites a name to
+  the package-prefixed form *if that resolves*, else falls through to the bare extern sig.
+  hierc0 mangles eagerly, so its mangler threads an `externs` list (collected at parse) and
+  leaves those call names unmangled — like builtins. So an `extern` can be declared and called
+  from within any package.
 - `extern "Lib"` records `Lib` for linking (§6). Bare `extern fn` assumes the symbol is in
   something already linked (libc, or libm via the existing `-lm`).
 

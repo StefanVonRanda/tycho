@@ -1,0 +1,5 @@
+package main
+import "lib"
+
+fn main():
+    print(f"tri6={lib.tri6(7)}\n")    # 7 * 3 (shim) * 2 (wrapper) = 42
