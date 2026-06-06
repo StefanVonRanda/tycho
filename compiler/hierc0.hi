@@ -447,6 +447,9 @@ struct Ctx:                   # mutable per-scope / per-function state only
                               # candidates: a `b := a` over one of these hands off a's buffer (no deep copy)
     loopdepth: int            # block depth of the innermost enclosing loop's body arena (0 = not in a loop);
                               # break/continue free _b<depth> .. _b<loopdepth> before the C jump
+    fusearr: [string]         # push-loop fusion: array names whose cursor is live (cached data/len/cap)
+    fusesuf: [string]         # parallel: the C cursor suffix (e.g. "3_0") -> _fd3_0/_fl3_0/_fc3_0
+    fusety: [string]          # parallel: scalar element type ("int" | "float") for the grow hook
 
 struct Program:
     structs: [StructDef]
@@ -2645,7 +2648,7 @@ fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hi
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(dc: Decls, ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
@@ -2655,7 +2658,7 @@ fn enter_block(dc: Decls, ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
 
 # C lvalue of the current block's arena.
 fn cur_arena(dc: Decls, ctx: Ctx) -> string:
@@ -2690,7 +2693,7 @@ fn loop_frees(dc: Decls, ctx: Ctx) -> string:
 # Mark a block ctx as a loop body: its own depth becomes the boundary that an
 # enclosed break/continue frees down to (nested if-blocks inherit it via enter_block).
 fn in_loop(ctx: Ctx) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
 
 # Emitted C name for a USER variable / parameter / function identifier. Prefixed so a
 # user name can never collide with hierc0's emitted runtime helpers (sc/hs/amem/i2s/
@@ -2874,6 +2877,17 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
                     return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 et := elem_ty(at)
+                pv := evar_name(args[0])              # push-loop fusion: register-resident cursor write
+                if pv != "" and count_str_occ(ctx.fusearr, pv) > 0:
+                    fi := 0
+                    for fi < len(ctx.fusearr):
+                        if ctx.fusearr[fi] == pv:
+                            suf := ctx.fusesuf[fi]
+                            ow := owner_arena_of(args[0], names, types, dc, ctx)
+                            gname := "Arr_" + mangle(ctx.fusety[fi]) + "_grow"
+                            v := gen_expr(args[1], names, types, dc, ctx)
+                            return "({ if (_fl" + suf + " == _fc" + suf + ") " + gname + "(" + ow + ", &_fd" + suf + ", &_fc" + suf + ", _fl" + suf + "); _fd" + suf + "[_fl" + suf + "++] = " + v + "; })"
+                        fi = fi + 1
                 oa := owner_arena_of(args[0], names, types, dc, ctx)   # array's home arena (buffer + deep-copied elements)
                 vo := "0"                          # non-deep-copy elements stay immortal (owner 0);
                 if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str) live in the array's arena
@@ -3465,6 +3479,266 @@ fn count_str_occ(xs: [string], s: string) -> int:
         i = i + 1
     return c
 
+# ---- push-loop fusion (mirror of hierc's src/hierc.c) ---------------------
+# A loop whose body uses a local scalar array ONLY as push(arr,...) gets its
+# descriptor (data/len/cap) cached in C locals across the loop, so the hot path
+# is a register write; a grow hook runs only on overflow; the descriptor is
+# written back at loop exit. Sound by construction: fuse only when reads==pushes
+# (used solely as push target), the array is a plain non-inout scalar local not
+# defined/shadowed in the body, and (while) the condition does not read it.
+fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), else ""
+    match e:
+        ECall(nm, a):
+            if nm == "push" and len(a) >= 1:
+                return evar_name(a[0])
+            return ""
+        EVar(n):
+            return ""
+        EInt(t):
+            return ""
+        EBool(t):
+            return ""
+        EChar(t):
+            return ""
+        EFloat(f):
+            return ""
+        EStr(s):
+            return ""
+        EBin(o, l, r):
+            return ""
+        EField(b, f):
+            return ""
+        EIndex(b, i):
+            return ""
+        EArrLit(es):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        EMapLit(ks, vs):
+            return ""
+        ETuple(es):
+            return ""
+        ESlice(b, lo, hi):
+            return ""
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ""
+        ECallV(callee, cargs):
+            return ""
+        EAddr(x):
+            return ""
+
+fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
+    c := 0
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SExpr(e):
+                if push_target(e) == name:
+                    c = c + 1
+            SIf(cnd, b, els):
+                c = c + fuse_pushcount(b, name) + fuse_pushcount(els, name)
+            SWhile(cnd, b):
+                c = c + fuse_pushcount(b, name)
+            SForRange(n, a, bb, st, b):
+                c = c + fuse_pushcount(b, name)
+            SMatch(subj, vs, bs, bodies):
+                j := 0
+                for j < len(bodies):
+                    c = c + fuse_pushcount(bodies[j], name)
+                    j = j + 1
+            SDecl(n, e):
+                i = i
+            SAssign(n, e):
+                i = i
+            SFieldAssign(lv, r):
+                i = i
+            SPrint(e):
+                i = i
+            SReturn(e):
+                i = i
+            SReturnVoid:
+                i = i
+            STypedDecl(n, t, e):
+                i = i
+            SOrReturn(n, e):
+                i = i
+            SDestructure(ns, e):
+                i = i
+            SMultiAssign(ns, e):
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+        i = i + 1
+    return c
+
+fn fuse_gather(stmts: [Stmt], out: inout [string]):
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SExpr(e):
+                t := push_target(e)
+                if t != "" and count_str_occ(out, t) == 0:
+                    push(out, t)
+            SIf(cnd, b, els):
+                fuse_gather(b, &out)
+                fuse_gather(els, &out)
+            SWhile(cnd, b):
+                fuse_gather(b, &out)
+            SForRange(n, a, bb, st, b):
+                fuse_gather(b, &out)
+            SMatch(subj, vs, bs, bodies):
+                j := 0
+                for j < len(bodies):
+                    fuse_gather(bodies[j], &out)
+                    j = j + 1
+            SDecl(n, e):
+                i = i
+            SAssign(n, e):
+                i = i
+            SFieldAssign(lv, r):
+                i = i
+            SPrint(e):
+                i = i
+            SReturn(e):
+                i = i
+            SReturnVoid:
+                i = i
+            STypedDecl(n, t, e):
+                i = i
+            SOrReturn(n, e):
+                i = i
+            SDestructure(ns, e):
+                i = i
+            SMultiAssign(ns, e):
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+        i = i + 1
+
+fn fuse_defines(stmts: [Stmt], name: string) -> bool:
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SDecl(n, e):
+                if n == name:
+                    return true
+            SAssign(n, e):
+                if n == name:
+                    return true
+            STypedDecl(n, t, e):
+                if n == name:
+                    return true
+            SOrReturn(n, e):
+                if n == name:
+                    return true
+            SDestructure(ns, e):
+                if count_str_occ(ns, name) > 0:
+                    return true
+            SMultiAssign(ns, e):
+                if count_str_occ(ns, name) > 0:
+                    return true
+            SForRange(n, a, bb, st, b):
+                if n == name:
+                    return true
+                if fuse_defines(b, name):
+                    return true
+            SIf(cnd, b, els):
+                if fuse_defines(b, name):
+                    return true
+                if fuse_defines(els, name):
+                    return true
+            SWhile(cnd, b):
+                if fuse_defines(b, name):
+                    return true
+            SMatch(subj, vs, bs, bodies):
+                j := 0
+                for j < len(bodies):
+                    if count_str_occ(bs[j], name) > 0:
+                        return true
+                    if fuse_defines(bodies[j], name):
+                        return true
+                    j = j + 1
+            SFieldAssign(lv, r):
+                i = i
+            SPrint(e):
+                i = i
+            SReturn(e):
+                i = i
+            SReturnVoid:
+                i = i
+            SExpr(e):
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+        i = i + 1
+    return false
+
+fn fuse_envtype(names: [string], types: [string], nm: string) -> string:
+    i := len(names) - 1
+    for i >= 0:
+        if names[i] == nm:
+            return types[i]
+        i = i - 1
+    return ""
+
+fn add_fuse(ctx: Ctx, nm: string, suf: string, ety: string) -> Ctx:
+    fa := ctx.fusearr
+    fs := ctx.fusesuf
+    ft := ctx.fusety
+    push(fa, nm)
+    push(fs, suf)
+    push(ft, ety)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, fa, fs, ft)
+
+# Return the fusible scalar arrays of `body` as parallel (name, cursor-suffix,
+# elem-type) lists. A candidate qualifies iff: scalar int/float local (the env
+# type is exactly "[int]"/"[float]" -- an inout param reads as "inout [...]" and
+# is excluded); not already cached by an enclosing loop; not defined/shadowed in
+# the body; used solely as a push target (reads == pushes); and, for a while
+# loop, not read by the condition (which re-evaluates each iteration).
+fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx, guard: Expr, useguard: bool) -> ([string], [string], [string]):
+    cand := []string
+    fuse_gather(body, &cand)
+    reads := []string
+    lr := []string
+    rd_block(&reads, &lr, body, false)
+    greads := []string
+    glr := []string
+    if useguard:
+        rd_expr(&greads, &glr, guard, false)
+    fnm := []string
+    fsf := []string
+    fty := []string
+    i := 0
+    for i < len(cand):
+        nm := cand[i]
+        et := fuse_envtype(names, types, nm)
+        ok := true
+        if et != "[int]" and et != "[float]":
+            ok = false
+        if count_str_occ(ctx.fusearr, nm) > 0:
+            ok = false
+        if fuse_defines(body, nm):
+            ok = false
+        if count_str_occ(reads, nm) != fuse_pushcount(body, nm):
+            ok = false
+        if useguard and count_str_occ(greads, nm) > 0:
+            ok = false
+        if ok:
+            push(fnm, nm)
+            push(fsf, str(ctx.depth) + "_" + str(len(fnm) - 1))
+            push(fty, elem_ty(et))
+        i = i + 1
+    return (fnm, fsf, fty)
+
 # Collect every variable READ (expression occurrence), and separately those read
 # inside a loop body/condition. A name read exactly once and never in a loop is a
 # move candidate. (Decl/loop-var/assign-target NAMES are writes — not collected.)
@@ -3959,9 +4233,16 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             # returned value never points into the freed _scope.
             # free every enclosing block arena (return_frees), innermost-first,
             # then _scope; the value is in _parent which outlives them all.
+            # push-loop fusion: a return leaves before the after-loop flush, so write
+            # every live cursor back first (the returned value must see the real length)
+            rfl := ""
+            fk := 0
+            for fk < len(ctx.fusearr):
+                rfl = rfl + "    " + un(ctx.fusearr[fk]) + ".data = _fd" + ctx.fusesuf[fk] + "; " + un(ctx.fusearr[fk]) + ".len = _fl" + ctx.fusesuf[fk] + "; " + un(ctx.fusearr[fk]) + ".cap = _fc" + ctx.fusesuf[fk] + ";\n"
+                fk = fk + 1
             if is_func(ctx.rettype):              # escaping closure: re-home the captured env into _parent before freeing _scope (its hbox lives in &_scope); plain ref has env==0 -> no-op
-                return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + return_frees(dc, ctx) + " return _ret; }\n"
-            return "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
+                return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + return_frees(dc, ctx) + " return _ret; }\n"
+            return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
         SReturnVoid:
             return "    " + return_frees(dc, ctx) + " return;\n"
         SBreak:
@@ -4034,18 +4315,44 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
         SWhile(cond, body):
+            fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, cond, true)
             d1 := str(ctx.depth + 1)              # per-iteration block arena
             bc := in_loop(enter_block(dc, ctx, len(names)))
-            return "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            decls := ""
+            flush := ""
+            k := 0
+            for k < len(fnm):
+                ct := cty(dc, ctx, fty[k])
+                decls = decls + "        " + ct + "* _fd" + fsf[k] + " = " + un(fnm[k]) + ".data; long _fl" + fsf[k] + " = " + un(fnm[k]) + ".len, _fc" + fsf[k] + " = " + un(fnm[k]) + ".cap;\n"
+                flush = flush + "        " + un(fnm[k]) + ".data = _fd" + fsf[k] + "; " + un(fnm[k]) + ".len = _fl" + fsf[k] + "; " + un(fnm[k]) + ".cap = _fc" + fsf[k] + ";\n"
+                bc = add_fuse(bc, fnm[k], fsf[k], fty[k])
+                k = k + 1
+            inner := "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            if len(fnm) == 0:
+                return inner
+            return "    {\n" + decls + inner + flush + "    }\n"
         SForRange(name, start, stop, step, body):
-            header := "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + un(name) + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + un(name) + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
+            fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, start, false)
             bn := names                           # loop var is scoped to body
             bt := types
             push(bn, name)
             push(bt, "int")
             d1 := str(ctx.depth + 1)              # per-iteration block arena
             bc := in_loop(enter_block(dc, ctx, len(bn)))
-            return header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            decls := ""
+            flush := ""
+            k := 0
+            for k < len(fnm):
+                ct := cty(dc, ctx, fty[k])
+                decls = decls + "        " + ct + "* _fd" + fsf[k] + " = " + un(fnm[k]) + ".data; long _fl" + fsf[k] + " = " + un(fnm[k]) + ".len, _fc" + fsf[k] + " = " + un(fnm[k]) + ".cap;\n"
+                flush = flush + "        " + un(fnm[k]) + ".data = _fd" + fsf[k] + "; " + un(fnm[k]) + ".len = _fl" + fsf[k] + "; " + un(fnm[k]) + ".cap = _fc" + fsf[k] + ";\n"
+                bc = add_fuse(bc, fnm[k], fsf[k], fty[k])
+                k = k + 1
+            header := "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + un(name) + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + un(name) + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
+            inner := header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            if len(fnm) == 0:
+                return inner
+            return "    {\n" + decls + inner + flush + "    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, dc, ctx)
             scu := gen_expr(subj, names, types, dc, ctx)   # subj is a simple place / pure call
@@ -4321,7 +4628,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
             push(saccums, raw[si])
         si = si + 1
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
-    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0)
+    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(int argc, char **argv) {\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -4764,6 +5071,8 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
+    if et == "int" or et == "float":         # push-loop fusion grow hook (scalar elems only)
+        out = out + "static void " + nm + "_grow(Arena* ar, " + ct + "** data, long* cap, long len) { long nc = *cap ? *cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (len) memcpy(nd, *data, sizeof(" + ct + ") * len); if (ar && *cap) arena_recycle(ar, *data, sizeof(" + ct + ") * (size_t)*cap); *data = nd; *cap = nc; }\n"
     popv := "a->data[a->len]"                        # scalar: the value; heap: a deep copy into `ar`
     if elem_deepcopy(dc, ctx, et):                   # (so the popped value outlives a later array recycle)
         popv = elem_copy_expr(dc, ctx, et, "ar", "a->data[a->len]")
@@ -5792,7 +6101,7 @@ fn main():
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
     dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0)
-    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0)
+    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
     lams := []LamInfo
     prog := lift_program(prog0, dc0, ctx0, &lams)     # stamp lambdas + capture analysis + lifted __lam funcs
     funcs := prog.funcs
@@ -5805,7 +6114,7 @@ fn main():
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap)
-    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0)
+    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
