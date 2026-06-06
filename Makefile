@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bench-dbquery bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -58,6 +58,12 @@ bench: hierc
 # The empirical half of the thesis. See bench/prongB/run.sh and RESULTS.md.
 bench-prongB: hierc
 	@sh bench/prongB/run.sh
+
+# Real-library head-to-head: the same SQLite workload in hier / C / Go (peak RSS
+# + wall + identical checksum). Needs libsqlite3; skips absent toolchains. NOT in
+# `make ci` (system dependency). See bench/dbquery/RESULTS.md.
+bench-dbquery: hierc
+	@sh bench/dbquery/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.

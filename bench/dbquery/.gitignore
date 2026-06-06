@@ -1,0 +1,11 @@
+# build artifacts (run.sh builds in a tmpdir; these are from manual builds)
+dbq_hier
+dbq_hier.c
+dbq_c
+dbq_go
+o
+o.*
+m
+m.*
+tlog
+*.o
