@@ -1,0 +1,51 @@
+# hier benchmarks — the memory model, across the workload space
+
+The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
+memory and predictable, pause-free reclamation, with no manual frees and no GC** —
+and the way to prove that is not a passing test suite but numbers next to C, Rust,
+Go (GC), and Koka (Perceus RC) on memory-heavy work, with **byte-identical output**
+per workload. This file is the map; each row links to a `RESULTS.md` with detail.
+
+All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall; `cc -O2` /
+`rustc -O` / `go build` / `koka -O2`. Both hier compilers (the C reference `hierc`
+and the self-hosted `hierc0`) are measured where shown.
+
+## Axis 1 — memory (peak RSS)
+
+| workload | what it stresses | hier vs others | verdict | run |
+|----------|------------------|----------------|---------|-----|
+| **binary-trees** | transient alloc/discard, deep recursion | 25 MB vs C 33, Go 35, Koka 14 | **beats hand-written C** (one arena reset/iter) | `bench-prongB` |
+| **tree-rewrite** | rewrite pass over a tree | 7 MB, lowest with Koka, beats C/Rust/Go | win | `bench-prongB` |
+| **array-pipeline** | bulk transform | 6 MB vs C 3 | ~2× C, beats Go; ~2× C on time after bounds-elision | `bench-prongB` |
+| **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
+| **json-parse (real)** | recursive-descent parse-and-discard | 67 MB vs C 58 | **fastest of all 5**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
+| **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB**: static FBIP reuse (no refcount) closed it | `bench-prongB` |
+| **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
+| **winagg** | per-window churn-and-discard | ~par C, beats Go | win on bulk-free teardown | `winagg/` |
+| **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
+| **window** | sliding-window **eviction** | string: 47 MB vs C 3.3 (~14×); int: 2.2 MB (tie) | **loses** on heap-record eviction — the no-individual-free limit, mapped | `bench-window` |
+
+## Axis 2 — latency (GC-pause predictability)
+
+| workload | what it stresses | result | verdict | run |
+|----------|------------------|--------|---------|-----|
+| **latency** | steady churn, pause behavior | hier/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
+
+## The honest envelope
+
+- **Wins / C-class:** transient churn, deep recursion, fixed-size retention, a real
+  parser, a real SQLite workload, and pause-free latency — often *beating* hand-
+  written C on time (trees, json-parse) because reclamation is one O(1) arena reset
+  instead of N frees.
+- **Recovered:** loop-carried reassign (`iter-transform`) was the arena's clean
+  defeat (3.5 GB); static FBIP reuse derived from value semantics — Koka's Perceus
+  result without runtime refcounts — turned it into a 4 MB win, in **both** compilers.
+- **Loses:** eviction of **heap-bearing** records from a long-lived collection
+  (`window`, ~14×) — the genuine cost of no individual free. Fixed-size records tie.
+  Mapped with numbers, not hidden.
+
+Not benchmarked by design: concurrency/parallelism (hier is single-threaded and
+value-semantic — a non-goal, not a gap).
+
+See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's
+`RESULTS.md` for the per-workload analysis.
