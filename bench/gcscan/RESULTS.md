@@ -1,0 +1,42 @@
+# Large held set — per-object overhead + GC-scan cost
+
+Two angles in one workload: hold a **large live set** (2,000,000 small heap strings,
+retained for the whole run) and **churn** transient arrays alongside it. Same
+checksum across languages.
+
+## Results (`make bench-gcscan`)
+
+| lang | peak RSS | wall | GC |
+|------|---------:|-----:|----|
+| **hier** | **64.8 MB** | 257 ms | none |
+| C | 77.9 MB | 126 ms | none |
+| Go (GOGC=100, default) | 119.8 MB | 202 ms | 12 cycles, ~1.1 ms |
+| Go (GOGC=10, mem-pressured) | 63.1 MB | 457 ms | 101 cycles, ~4.7 ms |
+
+## #2 — per-object overhead: hier is the most compact
+
+hier holds 2M small strings in **64.8 MB** — below C (77.9 MB) and well below Go
+(119.8 MB). Arena bump-allocation carries **no per-object header** (C's `malloc`
+adds ~16 B each → ~32 MB of pure overhead here) and **no GC metadata / headroom**
+(Go's runtime). When peak is bound by object *count* rather than bytes, the arena's
+zero-per-object-overhead wins outright.
+
+## #1 — GC-scan cost: honest, and more nuanced than the folklore
+
+The intuition "a big live heap makes the GC expensive because it rescans it every
+cycle" is **false for modern Go at default settings**. Go's pacer triggers a
+collection on heap *growth* relative to the live set, so a larger live set means
+*fewer, larger* collections — total GC work tracks **allocation traffic, not
+live-set size**. At `GOGC=100` Go did just 12 cycles / ~1.1 ms despite the 2M-pointer
+live set.
+
+The scan cost only bites under **memory pressure**: at `GOGC=10`, Go matches hier's
+footprint (63 vs 65 MB) — but only by collecting **~10× more often** (101 cycles),
+re-scanning the whole live set each time, at **2.5× the wall (457 vs 202 ms)**.
+
+That is the real point: **Go faces a memory-vs-CPU tradeoff that hier and C do not.**
+hier gets the low footprint (65 MB, beating C) **and** zero GC work **simultaneously** —
+no pacer to tune, no rescans, deterministic. Go must pick: default memory (120 MB) or
+hier-class memory at 2.5× the time.
+
+**Reproduce:** `make bench-gcscan` (skips Go if absent; runs the `GOGC` sweep).

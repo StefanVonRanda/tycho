@@ -1,0 +1,30 @@
+# GC-scan-cost: a LARGE retained live set (2M heap strings, held the whole run) +
+# steady churn (transient arrays). A tracing GC must re-scan all 2M live pointers
+# on every collection, so its pause scales with the retained heap; the arena (hier)
+# and manual free (C) never scan — the held set just sits there. Same checksum.
+fn main():
+    m := 2000000
+    live := []string
+    i := 0
+    for i in range(m):
+        push(live, "x" + str(i % 1000))     # 2M retained heap records (GC roots to trace)
+    acc := 0
+    r := 0
+    for r < 300:                             # churn: triggers GC; each cycle rescans `live`
+        xs := []int
+        j := 0
+        for j in range(50000):
+            push(xs, (r + j) % 997)
+        s := 0
+        t := 0
+        for t < len(xs):
+            s = s + xs[t]
+            t = t + 1
+        acc = (acc + s) % 1000000007
+        r = r + 1
+    lacc := 0                                # keep `live` live + fold it into the checksum
+    i = 0
+    for i < len(live):
+        lacc = lacc + len(live[i])
+        i = i + 1
+    print(str(acc) + " " + str(lacc) + "\n")

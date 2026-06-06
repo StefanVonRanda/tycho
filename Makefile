@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -74,6 +74,11 @@ bench-window: hierc
 # See bench/latency/RESULTS.md.
 bench-latency: hierc
 	@sh bench/latency/run.sh
+
+# Large held set: per-object overhead (hier most compact) + GC-scan cost (Go's
+# memory-vs-CPU tradeoff under a GOGC sweep; hier/C never scan). bench/gcscan/RESULTS.md.
+bench-gcscan: hierc
+	@sh bench/gcscan/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
