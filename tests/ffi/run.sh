@@ -60,4 +60,4 @@ if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalar+string both directions)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string both dirs, ptr handles, null/is_null)" || { echo "ffi: FAIL"; exit 1; }

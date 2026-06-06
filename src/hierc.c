@@ -68,11 +68,11 @@ typedef enum {
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_PERCENT,
     TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
-    TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_STRUCT,
+    TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_BREAK, TK_CONTINUE,
     TK_DOT,
-    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT
+    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
 } TokKind;
 
 typedef struct {
@@ -118,10 +118,12 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "inout"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
+    if (!strcmp(s, "null"))   return TK_NULL;
     if (!strcmp(s, "int"))    return TK_KW_INT;
     if (!strcmp(s, "bool"))   return TK_KW_BOOL;
     if (!strcmp(s, "string")) return TK_KW_STRING;
     if (!strcmp(s, "float"))  return TK_KW_FLOAT;
+    if (!strcmp(s, "ptr"))    return TK_KW_PTR;
     return TK_IDENT;
 }
 
@@ -352,7 +354,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
         * carry a partial sentinel (the known inner type sits on the value's lhs)
         * until context fixes the full Result type — the same trick as T_NONE. */
        T_OK_PARTIAL, T_ERR_PARTIAL,
-       T_CHAR /* one byte; represented as `long` in C, prints as a char via string append */ };
+       T_CHAR, /* one byte; represented as `long` in C, prints as a char via string append */
+       T_PTR /* FFI opaque handle: void* in C. No deref/arithmetic in hier — only pass to C, compare to null, is_null */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -663,6 +666,7 @@ static const char *c_type(Type t) {
         case T_CHAR:         return "long ";
         case T_FLOAT:        return "double ";
         case T_BOOL:         return "int ";
+        case T_PTR:          return "void *";
         case T_STRING:       return "char *";
         case T_ARRAY_INT:    return "HierArrInt ";
         case T_ARRAY_FLOAT:  return "HierArrFloat ";
@@ -702,6 +706,7 @@ static const char *type_name(Type t) {
         case T_INT:          return "int";
         case T_FLOAT:        return "float";
         case T_BOOL:         return "bool";
+        case T_PTR:          return "ptr";
         case T_STRING:       return "string";
         case T_ARRAY_INT:    return "[int]";
         case T_ARRAY_FLOAT:  return "[float]";
@@ -739,7 +744,8 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, 
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
                E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
                E_SLICE,    /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */
-               E_LAMBDA    /* fn(p)->r: e closure literal; ival indexes g_laminfo */ } ExprKind;
+               E_LAMBDA,   /* fn(p)->r: e closure literal; ival indexes g_laminfo */
+               E_NULL      /* `null`: the opaque ptr literal (void*)0 (FFI) */ } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -945,6 +951,7 @@ static Type parse_type(Parser *ps) {
         case TK_KW_FLOAT:  ps->p++; return T_FLOAT;
         case TK_KW_BOOL:   ps->p++; return T_BOOL;
         case TK_KW_STRING: ps->p++; return T_STRING;
+        case TK_KW_PTR:    ps->p++; return T_PTR;
         default: die_at(t->line, "expected a type (int, float, bool, string, [int], or a struct)");
     }
     return T_VOID; /* unreachable */
@@ -1058,6 +1065,7 @@ static Expr *parse_primary(Parser *ps) {
     }
     if (t->kind == TK_TRUE) { ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 1; return e; }
     if (t->kind == TK_FALSE){ ps->p++; Expr *e = new_expr(E_BOOL, t->line); e->ival = 0; return e; }
+    if (t->kind == TK_NULL) { ps->p++; return new_expr(E_NULL, t->line); }   /* the opaque ptr literal */
     if (t->kind == TK_LPAREN) {
         ps->p++;
         Expr *first = parse_expr(ps);
@@ -1752,7 +1760,7 @@ static Proc *parse_fn(Parser *ps) {
  * (arrays/maps/structs/Option/Result/tuples/fn) have hier-internal C reps, not a
  * stable C ABI — reject them (fail closed). void is allowed as a return only. */
 static int ffi_scalar_type(Type t) {
-    return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING;
+    return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING || t == T_PTR;
 }
 
 /* extern [ "Lib" ] fn name(p: T, ...) [-> T]    (bodyless; calls a C symbol).
@@ -1778,7 +1786,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         eat(ps, TK_COLON, "':' after parameter name");
         if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': inout parameters are not allowed across the C boundary", pr->name);
         Type pt = parse_type(ps);
-        if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string (no composites across the C boundary)", pr->name, pn->text);
+        if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr (no composites across the C boundary)", pr->name, pn->text);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
@@ -1790,7 +1798,7 @@ static Proc *parse_extern_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) {
         pr->ret = parse_type(ps); pr->has_ret = 1;
-        if (!ffi_scalar_type(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string or omitted", pr->name);
+        if (!ffi_scalar_type(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -2041,6 +2049,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="list_dir",.ret=T_ARRAY_STRING, .params={ T_STRING },               .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="args",   .ret=T_ARRAY_STRING, .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="getenv", .ret=T_STRING,       .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="is_null",.ret=T_BOOL,         .params={ T_PTR },                   .nparams=1, .builtin=1 };   /* FFI: opaque-handle NULL test */
     /* float math (libm) -- the irreducible numeric stdlib (min/max are trivial in-language) */
     g_sigs[g_nsigs++] = (Sig){ .name="sqrt",   .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="pow",    .ret=T_FLOAT,        .params={ T_FLOAT, T_FLOAT },        .nparams=2, .builtin=1 };
@@ -2237,6 +2246,7 @@ static Type resolve_expr(Expr *e) {
             return e->type = res_ok(rt);   /* the value yielded when Ok */
         }
         case E_BOOL: return e->type = T_BOOL;
+        case E_NULL: return e->type = T_PTR;
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
             Type t;
@@ -3762,6 +3772,9 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "getenv")) {   /* env var value, or "" if unset */
         return sfmt("hier_getenv(%s, %s)", arena, gen_expr(e->args[0], arena));
     }
+    if (!strcmp(e->sval, "is_null")) {   /* FFI: opaque-handle NULL test */
+        return sfmt("((%s) == 0)", gen_expr(e->args[0], arena));
+    }
     if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
         return sfmt("hier_write_file(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     }
@@ -3874,6 +3887,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             return isfloaty ? sfmt("%s", b) : sfmt("%s.0", b);
         }
         case E_BOOL: return sfmt("%ld", e->ival);
+        case E_NULL: return sfmt("((void*)0)");
         case E_STR:  /* a length-headered, interned-once copy (cached per occurrence) */
             return sfmt("({ static char *_l = 0; if (!_l) _l = hier_str_intern(\"%s\"); _l; })", e->sval);
         case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */

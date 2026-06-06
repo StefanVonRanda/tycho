@@ -1,9 +1,9 @@
 # FFI — calling C from hier (design)
 
-> Status: **Stage 1 SHIPPED in both compilers** (scalars + string; see §8). Stages 2–3
-> remain design. Inspired by the `tycho` language's FFI, adapted to hier's internals.
-> Every hier claim below cites `file:line`; tycho claims cite the tycho repo as read on
-> 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
+> Status: **Stages 1 & 2 SHIPPED in both compilers** (scalars + string + opaque `ptr`; see
+> §8). Stage 3 remains design. Inspired by the `tycho` language's FFI, adapted to hier's
+> internals. Every hier claim below cites `file:line`; tycho claims cite the tycho repo as
+> read on 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
 
 ## 1. Goal & thesis fit
 
@@ -74,7 +74,7 @@ hier's emitted C types are fixed at `src/hierc.c:662-674`:
 | `bool`    | `int` (:665)              | in/out        | zero-cost |
 | `str`     | `char *` (:666)           | **in: zero-cost**, **out: arena-copied** | §5 |
 | (none)    | `void` (:674)             | out only      | bodyless return-less extern |
-| `ptr` (Stage 2) | `void *`            | in/out        | opaque handle, never dereferenced in hier |
+| `ptr`     | `void *`                  | in/out        | opaque handle, never dereferenced in hier; `null` literal + `is_null(p)` |
 
 **The string win.** hier `str` is a null-terminated `char *` (`:666`; built by
 `hier_str_*` in `runtime/hier_rt.c:178-322`, always NUL-terminated). A C function taking
@@ -100,9 +100,9 @@ Exactly tycho's T3.1, using hier's existing idiom — no new runtime needed:
   - NULL guard: a C function may return `NULL`. The lowering must be
     `scopy(<arena>, ({ char* __t = <call>; __t ? __t : ""; }))` so a NULL return becomes `""`
     rather than a crash in `scopy`/`strlen`. (tycho hit this exact bug — `tycho/ROADMAP.md:295`.)
-- **`ptr` (Stage 2):** opaque `void *`. hier has no operators on it except pass-to-C and
-  `== null` (a `null` literal / `is_null(p)` helper). No deref, no arithmetic. So hier never
-  touches foreign memory.
+- **`ptr`:** opaque `void *`. hier has no operators on it except pass-to-C, `==`/`!=` (against
+  another `ptr` or the `null` literal), and `is_null(p)`. No deref, no arithmetic. So hier never
+  touches foreign memory — it only shuttles the handle back to C.
 - **No variadics** (same as tycho). `printf`-style functions need a fixed-arity wrapper.
 - **No struct-by-value, no callbacks into hier** in v1 (callbacks would need hier's fat
   function-pointer rep to cross out, which is not C-ABI; defer).
@@ -153,9 +153,14 @@ Gates (per the project's CI, all local — see `docs/` / `make ci`):
   ABI. The full mechanism (parse → sig → prototype → call → arena-copy → link) ships in hierc
   (commit "FFI Stage 1 in hierc") and hierc0 (this commit), fixpoint byte-identical, `make ffi`
   green (both compilers agree, ASan-clean, scalar+string both directions, NULL-return guarded).
-- **Stage 2 — opaque `ptr`.** New primitive `ptr` = `void *`, plus `null` / `is_null`. Unlocks
-  handle-based libraries (SDL window, sqlite db, curl handle). New type threads through
-  parser/type-checker/codegen/fuzzer in both compilers.
+- **Stage 2 — opaque `ptr`. ✅ DONE (both compilers).** New primitive `ptr` = `void *`, plus the
+  `null` literal and `is_null(p) -> bool`. Unlocks handle-based libraries (SDL window, sqlite db,
+  curl handle). `ptr` is a non-heap opaque scalar: it rides the existing scalar paths (`c_type`/
+  `cty` → `void*`, `copy_into` → by-value, `gen_eq` → `==`, `type_is_heap` → 0), so it also works
+  as a local, a regular-fn param/return, a struct field, and an array element (copied by value —
+  hier never owns or dereferences it). Only deref/arithmetic are absent (no syntax for them).
+  `make ffi` exercises an `ffi_open`/`ffi_read` handle round-trip + `null`/`is_null` through both
+  compilers, fixpoint byte-identical.
 - **Stage 3 — ergonomics.** `--link`/`-L`/`-I` polish, optional `pkg-config`, and the
   `*_shim.c` companion-file pattern (tycho `vendor/README.md:99`) for libraries that need a
   thin C wrapper (opaque-struct forward decls, error-surface adaptation).

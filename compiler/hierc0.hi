@@ -555,6 +555,8 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             return EBool("1")
         if name == "false":
             return EBool("0")
+        if name == "null":                       # FFI opaque ptr literal -> a 0-arg builtin call
+            return ECall("null", []Expr)
         if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TLParen:
             qn := name + "." + toks[pos + 1].text     # qualified call pkg.name(args); resolved by the mangler
             pos = pos + 3
@@ -1031,6 +1033,8 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
         return "float"
     elif name == "string":
         return "str"
+    elif name == "ptr":                          # FFI opaque handle -> void*
+        return "ptr"
     elif name == "Option":
         expect(toks, &pos, TLParen)
         t := parse_type(toks, &pos)
@@ -1087,7 +1091,7 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
 # FFI Stage 1: only scalars + string cross the C boundary (composites have
 # hier-internal C reps, not a stable ABI). Reject everything else (fail closed).
 fn ffi_scalar(ty: string) -> bool:
-    return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str"
+    return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str" or ty == "ptr"
 
 # extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
 # Name is NOT mangled — a C symbol is global.
@@ -1284,7 +1288,7 @@ struct Mctx:
     locals: [string]          # enclosing fn's param names: a call to one is an INDIRECT call (fn value), not a package fn -> don't prefix
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "die" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -2020,6 +2024,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "double "
     if ty == "str":
         return "char* "
+    if ty == "ptr":                              # FFI opaque handle
+        return "void* "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
         return "Arr_" + mangle(elem_ty(ty)) + " "
     if is_map(ty):                                # {str:V} -> Map_str_V
@@ -2135,6 +2141,10 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "[str]"
     if name == "getenv":                          # env var value, or "" if unset
         return "str"
+    if name == "null":                            # FFI opaque ptr literal
+        return "ptr"
+    if name == "is_null":                         # FFI: opaque-handle NULL test
+        return "bool"
     if name == "die":
         return "int"
     if name == "len":
@@ -2775,6 +2785,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_args(" + ctx.owner + ")"
             if name == "getenv":                  # env var value, or "" if unset
                 return "hi_getenv(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "null":                    # FFI opaque ptr literal
+                return "((void*)0)"
+            if name == "is_null":                 # FFI: opaque-handle NULL test
+                return "((" + gen_expr(args[0], names, types, dc, ctx) + ") == 0)"
             if name == "input":
                 return "hi_input(" + ctx.owner + ")"
             if name == "Some":                    # box the payload in the SAME arena as the box, so a

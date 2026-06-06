@@ -1,15 +1,30 @@
-# FFI Stage 1 regression: calls the C fixture lib tests/ffi/demo.c.
+# FFI regression: calls the C fixture lib tests/ffi/demo.c.
 # Both compilers must agree and match tests/ffi/expected.out (see tests/ffi/run.sh).
+# Stage 1: scalars + string.  Stage 2: opaque ptr handles + null + is_null.
 extern "ffidemo" fn ffi_echo(s: string) -> string
 extern "ffidemo" fn ffi_sum3(a: int, b: int, c: int) -> int
 extern "ffidemo" fn ffi_scale(x: float, k: int) -> float
 extern "ffidemo" fn ffi_maybe(s: string) -> string
+extern "ffidemo" fn ffi_open(id: int) -> ptr
+extern "ffidemo" fn ffi_read(h: ptr) -> int
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
 
 fn main():
-    e := ffi_echo("hi")                       # string arg (zero-cost char*) + string return (arena-copied)
-    s := ffi_sum3(1, 2, 39)                    # int args + int return
-    sc := to_int(ffi_scale(2.5, 4))            # float + int args, float return
-    m1 := ffi_maybe("z")                       # non-null string return
-    m0 := ffi_maybe("")                        # NULL return -> "" (guarded)
+    # Stage 1 — scalars + string
+    e := ffi_echo("hi")                        # string arg (zero-cost char*) + string return (arena-copied)
+    s := ffi_sum3(1, 2, 39)                     # int args + int return
+    sc := to_int(ffi_scale(2.5, 4))             # float + int args, float return
+    m1 := ffi_maybe("z")                        # non-null string return
+    m0 := ffi_maybe("")                         # NULL return -> "" (guarded)
     print(e + "\n")
     print(f"sum={s} scale={sc} maybe1={m1} maybe0=[{m0}]\n")
+    # Stage 2 — opaque ptr handles
+    h := ffi_open(7)                            # int -> ptr handle
+    bad := ffi_open(0)                          # NULL handle
+    rd := ffi_read(h)                           # ptr arg -> int
+    pn := ffi_read(null)                        # pass the null literal across the boundary
+    print(f"read={rd} passnull={pn} hnull={b2i(is_null(h))} badnull={b2i(is_null(bad))} eqnull={b2i(bad == null)}\n")
