@@ -1,0 +1,30 @@
+# UFCS methods: x.foo(args) == foo(x, args), static dispatch on x's type.
+# No classes, no inheritance — a "method" is just a free fn whose first param is
+# the receiver. Stage 1: the receiver is a local variable. (Method-on-call-result
+# chaining like a.add(b).norm1() is Stage 2.)
+struct Vec:
+    x: int
+    y: int
+
+fn dot(a: Vec, b: Vec) -> int:
+    return a.x * b.x + a.y * b.y
+
+fn add(a: Vec, b: Vec) -> Vec:
+    return Vec(a.x + b.x, a.y + b.y)
+
+fn scaled(v: Vec, k: int) -> Vec:
+    return Vec(v.x * k, v.y * k)
+
+fn norm1(v: Vec) -> int:
+    return v.x + v.y
+
+fn doubled(n: int) -> int:          # a method on a non-struct receiver
+    return n * 2
+
+fn main():
+    a := Vec(1, 2)
+    b := Vec(3, 4)
+    c := a.add(b)                   # method, variable receiver -> add(a, b)
+    print(f"dot={a.dot(b)} c=({c.x},{c.y}) n1={c.norm1()} scx={a.scaled(3).x}\n")
+    n := 21
+    print(f"dbl={n.doubled()}\n")   # int receiver

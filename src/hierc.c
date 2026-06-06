@@ -2397,9 +2397,37 @@ static Type resolve_expr(Expr *e) {
              * the field access (the parser couldn't tell h from a package name). */
             { Type _qvt;
               if (e->qual && !e->lhs && vars_find(e->qual, &_qvt)) {
-                  Expr *base = new_expr(E_IDENT, e->line); base->sval = e->qual; base->pkg = e->pkg;
-                  Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
-                  e->lhs = fld; e->qual = NULL; e->sval = NULL;
+                  /* x.foo(args), x a local var: a fn-typed-FIELD call takes precedence;
+                   * otherwise UFCS — a free fn `foo` (or `<pkg>foo`) whose first
+                   * parameter has x's type by value -> foo(x, args). Static dispatch
+                   * on x's type; no classes, no inheritance. */
+                  int fnfield = 0;
+                  if (IS_STRUCT(_qvt)) {
+                      StructDef *sd = &g_structs[STRUCT_ID(_qvt)];
+                      for (int i = 0; i < sd->nfields; i++)
+                          if (!strcmp(sd->fields[i].name, e->sval) && IS_FUNC(sd->fields[i].type)) { fnfield = 1; break; }
+                  }
+                  Sig *ms = NULL;
+                  if (!fnfield) {
+                      Sig *c1 = sig_find(e->sval);
+                      if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == _qvt && !c1->inout[0]) ms = c1;
+                      if (!ms && e->pkg && e->pkg[0]) {
+                          Sig *c2 = sig_find(sfmt("%s%s", e->pkg, e->sval));
+                          if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == _qvt && !c2->inout[0]) ms = c2;
+                      }
+                  }
+                  if (ms) {   /* UFCS: prepend the receiver, drop the qualifier -> foo(x, args) */
+                      Expr *recv = new_expr(E_IDENT, e->line); recv->sval = e->qual; recv->pkg = e->pkg;
+                      Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
+                      na[0] = recv;
+                      for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
+                      e->args = na; e->nargs += 1;
+                      e->qual = NULL;   /* keep e->sval/e->pkg; the package resolver below prefixes if needed */
+                  } else {            /* fn-typed-field call: a call-on-expression of x.foo */
+                      Expr *base = new_expr(E_IDENT, e->line); base->sval = e->qual; base->pkg = e->pkg;
+                      Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
+                      e->lhs = fld; e->qual = NULL; e->sval = NULL;
+                  }
               } }
             if (e->lhs) {   /* call-on-expression: an indirect call on a fn VALUE (array elem, struct field, call result) */
                 Type ct = resolve_exp(e->lhs, T_VOID);
