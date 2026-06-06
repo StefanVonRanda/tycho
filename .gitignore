@@ -11,6 +11,9 @@
 # tracked; everything else in examples/ is reproducible with `make` / `./hierc`.
 /examples/*
 !/examples/*.hi
+# the sqlite FFI example is a multi-file dir (shim + harness); track it (its own
+# .gitignore drops the build artifacts, the root *.out exception keeps the golden).
+!/examples/sqlite
 
 # Editor/OS noise
 *.o
@@ -26,4 +29,6 @@
 !/corelib/test/*.out
 # FFI regression golden (tests/ffi/expected.out) is tracked too
 !/tests/ffi/*.out
+# the sqlite FFI example's golden is tracked too
+!/examples/sqlite/*.out
 .koka/

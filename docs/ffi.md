@@ -4,6 +4,9 @@
 > linking ergonomics in hierc — see §8). Inspired by the `tycho` language's FFI, adapted to
 > hier's internals. Every hier claim below cites `file:line`; tycho claims cite the tycho repo
 > as read on 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
+> Real-world dogfood: **`examples/sqlite/`** binds in-memory SQLite (ptr handles, SQL string
+> args, arena-copied column text, `--shim` for the out-param API, `--pkg`) — through both
+> compilers, ASan-clean against a library whose returned text pointer is genuinely transient.
 
 ## 1. Goal & thesis fit
 
