@@ -1,0 +1,76 @@
+# push-loop fusion regression: the cached cursor must produce identical results
+# to per-element push across every control-flow shape, and must BAIL (fall back)
+# when the array is observed mid-loop.
+fn sum_arr(xs: [int]) -> int:
+    s := 0
+    for i in range(len(xs)):
+        s = s + xs[i]
+    return s
+
+fn build_break(n: int) -> [int]:        # break: flush via fall-through after the loop
+    b := []int
+    for i in range(n):
+        if i == 5:
+            push(b, 999)
+            break
+        push(b, i)
+    return b
+
+fn build_cont(n: int) -> [int]:         # continue: cursor survives in registers
+    b := []int
+    for i in range(n):
+        if i % 2 == 0:
+            continue
+        push(b, i)
+    return b
+
+fn build_ret(n: int) -> [int]:          # return inside loop: flush-before-return
+    b := []int
+    for i in range(n):
+        push(b, i)
+        if i == 3:
+            return b
+    return b
+
+fn build_nested() -> [int]:             # nested loops push the SAME array: one cursor
+    b := []int
+    for i in range(3):
+        for j in range(3):
+            push(b, i * 10 + j)
+    return b
+
+fn build_two() -> int:                  # two cursors live in one loop
+    a := []int
+    b := []int
+    for i in range(4):
+        push(a, i)
+        push(b, i * i)
+    s := 0
+    for i in range(len(a)):
+        s = s + a[i] + b[i]
+    return s
+
+fn build_while() -> [int]:              # while-form loop
+    b := []int
+    i := 0
+    for i < 5:
+        push(b, i * 2)
+        i = i + 1
+    return b
+
+fn build_readmid() -> [int]:            # reads len(b) mid-loop -> must NOT fuse, still correct
+    b := []int
+    for i in range(5):
+        push(b, i)
+        if len(b) == 3:
+            push(b, 100)
+    return b
+
+fn main():
+    print(str(sum_arr(build_break(10))) + "\n")    # 0+1+2+3+4+999 = 1009
+    print(str(sum_arr(build_cont(10))) + "\n")     # 1+3+5+7+9 = 25
+    print(str(sum_arr(build_ret(10))) + "\n")      # 0+1+2+3 = 6
+    print(str(sum_arr(build_nested())) + "\n")     # 99
+    print(str(build_two()) + "\n")                 # 20
+    print(str(sum_arr(build_while())) + "\n")      # 0+2+4+6+8 = 20
+    print(str(sum_arr(build_readmid())) + "\n")    # 0+1+2+100+3+4 = 110

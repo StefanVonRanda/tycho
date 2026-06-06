@@ -3387,6 +3387,115 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
     }
     return c;
 }
+static void indent(FILE *o, int n);
+/* ---- push-loop fusion ----------------------------------------------------
+ * A loop whose body only pushes to a local scalar array pays, per element, for
+ * the descriptor (data/len/cap) going through memory: the C compiler must assume
+ * `&arr` aliases the arena pointer also passed to push, so it cannot keep the
+ * cursor in registers. Fusion caches data/len/cap in C locals across the loop
+ * (register-resident hot path: `_fd[_fl++] = v`), calling a grow hook only on
+ * overflow, and writes the descriptor back at loop exit. ~3.7x on push-heavy
+ * loops. Sound by construction: fuse ONLY when the array is used solely as
+ * push(arr,...) in the body (count_reads == pushcount), is a plain local
+ * declared OUTSIDE the loop (not a param, not reassigned/shadowed inside), and
+ * holds scalar elements. break/continue need nothing (the flush sits after the
+ * loop, which break falls through to and continue's register cursor survives);
+ * return flushes via the registry before it leaves. */
+static int expr_pushcount(Expr *e, const char *nm) {
+    if (!e) return 0;
+    int c = (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
+             && e->args[0]->kind == E_IDENT && e->args[0]->sval
+             && !strcmp(e->args[0]->sval, nm)) ? 1 : 0;
+    c += expr_pushcount(e->lhs, nm) + expr_pushcount(e->rhs, nm);
+    for (int i = 0; i < e->nargs; i++) c += expr_pushcount(e->args[i], nm);
+    return c;
+}
+static int body_pushcount(Stmt **body, int n, const char *nm) {
+    int c = 0;
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        c += expr_pushcount(s->expr, nm) + expr_pushcount(s->target, nm);
+        c += expr_pushcount(s->r_start, nm) + expr_pushcount(s->r_stop, nm) + expr_pushcount(s->r_step, nm);
+        c += body_pushcount(s->body, s->nbody, nm) + body_pushcount(s->els, s->nels, nm);
+        for (int a = 0; a < s->narms; a++) c += body_pushcount(s->arms[a].body, s->arms[a].nbody, nm);
+    }
+    return c;
+}
+/* does any stmt define/shadow `nm` (so the body's `nm` isn't the array we cache)? */
+static int body_defines(Stmt **body, int n, const char *nm) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if ((s->kind == S_DECL || s->kind == S_ASSIGN || s->kind == S_FORRANGE)
+            && s->name && !strcmp(s->name, nm)) return 1;
+        if (s->kind == S_MDECL || s->kind == S_MASSIGN)
+            for (int k = 0; k < s->nnames; k++) if (!strcmp(s->names[k], nm)) return 1;
+        for (int a = 0; a < s->narms; a++) {
+            for (int b = 0; b < s->arms[a].nbinds; b++) if (!strcmp(s->arms[a].binds[b], nm)) return 1;
+            if (body_defines(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
+        }
+        if (body_defines(s->body, s->nbody, nm)) return 1;
+        if (body_defines(s->els, s->nels, nm)) return 1;
+    }
+    return 0;
+}
+/* gather distinct scalar arrays pushed anywhere in `body` (E_IDENT first arg) */
+static void fuse_gather(Stmt **body, int n, const char **names, Type *tys, int *cnt) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        Expr *e = s->expr;
+        if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
+            && e->args[0]->kind == E_IDENT && e->args[0]->sval
+            && (e->args[0]->type == T_ARRAY_INT || e->args[0]->type == T_ARRAY_FLOAT)) {
+            const char *nm = e->args[0]->sval; int seen = 0;
+            for (int k = 0; k < *cnt; k++) if (!strcmp(names[k], nm)) { seen = 1; break; }
+            if (!seen && *cnt < 16) { names[*cnt] = nm; tys[*cnt] = e->args[0]->type; (*cnt)++; }
+        }
+        fuse_gather(s->body, s->nbody, names, tys, cnt);
+        fuse_gather(s->els, s->nels, names, tys, cnt);
+        for (int a = 0; a < s->narms; a++) fuse_gather(s->arms[a].body, s->arms[a].nbody, names, tys, cnt);
+    }
+}
+static struct { const char *arr; int id; Type ty; } g_fuse[16];
+static int g_nfuse = 0;
+static int fuse_idx(const char *nm) {
+    for (int i = g_nfuse - 1; i >= 0; i--) if (!strcmp(g_fuse[i].arr, nm)) return i;
+    return -1;
+}
+/* detect + emit cursor decls for `body`'s fusible arrays; returns count opened.
+ * `guard` is a per-iteration control expr (a while condition) that must not read
+ * the array -- it would see the stale descriptor; NULL for a for-range (its
+ * bounds are evaluated once, before the cursor diverges). */
+static int fuse_open(FILE *o, Stmt **body, int n, int ind, Expr *guard) {
+    const char *names[16]; Type tys[16]; int cnt = 0, opened = 0;
+    fuse_gather(body, n, names, tys, &cnt);
+    for (int i = 0; i < cnt; i++) {
+        const char *nm = names[i];
+        if (fuse_idx(nm) >= 0) continue;                 /* an enclosing loop already cached it */
+        if (!cv_arena(nm) || is_param(nm)) continue;     /* must be a plain local (h_nm is a value) */
+        if (body_defines(body, n, nm)) continue;         /* reassigned/shadowed -> not a stable cursor */
+        if (count_reads_b(body, n, nm) != body_pushcount(body, n, nm)) continue;  /* used beyond push */
+        if (guard && count_reads_e(guard, nm)) continue; /* loop condition reads it -> stale view */
+        int id = g_blk++;
+        indent(o, ind);
+        fprintf(o, "%s*_fd%d = h_%s.data; long _fl%d = h_%s.len, _fc%d = h_%s.cap;\n",
+                tys[i] == T_ARRAY_FLOAT ? "double " : "long ", id, nm, id, nm, id, nm);
+        g_fuse[g_nfuse].arr = nm; g_fuse[g_nfuse].id = id; g_fuse[g_nfuse].ty = tys[i];
+        g_nfuse++; opened++;
+    }
+    return opened;
+}
+/* write one cached cursor back into its descriptor */
+static void fuse_flush_one(FILE *o, int ind, int e) {
+    indent(o, ind);
+    fprintf(o, "h_%s.data = _fd%d; h_%s.len = _fl%d; h_%s.cap = _fc%d;\n",
+            g_fuse[e].arr, g_fuse[e].id, g_fuse[e].arr, g_fuse[e].id, g_fuse[e].arr, g_fuse[e].id);
+}
+/* flush + unregister the last `opened` cursors (after their loop) */
+static void fuse_close(FILE *o, int opened, int ind) {
+    for (int i = 0; i < opened; i++) fuse_flush_one(o, ind, g_nfuse - 1 - i);
+    g_nfuse -= opened;
+}
+
 /* may `b := rhs` / `b = rhs` move rhs's buffer instead of deep-copying it, given
  * the destination lives in arena `owner`? See the conditions above. */
 static int can_move_from(Expr *rhs, const char *owner) {
@@ -3822,6 +3931,17 @@ static char *gen_call(Expr *e, const char *arena) {
          * &(lvalue) works for both (h_xs / ((h_p).f_tags)). For [string] the
          * runtime push copies the element bytes into that arena, so a pushed
          * loop-scratch temporary does not dangle. */
+        if (e->args[0]->kind == E_IDENT) {       /* push-loop fusion: cursor write, no descriptor traffic */
+            int fi = fuse_idx(e->args[0]->sval);
+            if (fi >= 0) {
+                int id = g_fuse[fi].id;
+                const char *gf = g_fuse[fi].ty == T_ARRAY_FLOAT ? "hier_arr_float_grow" : "hier_arr_int_grow";
+                const char *ow = owner_arena_of(e->args[0]->sval);
+                char *v = gen_expr(e->args[1], arena);
+                return sfmt("({ if (_fl%d == _fc%d) %s(%s, &_fd%d, &_fc%d, _fl%d); _fd%d[_fl%d++] = %s; })",
+                            id, id, gf, ow, id, id, id, id, id, v);
+            }
+        }
         Expr *root = e->args[0];
         while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
         /* regrow targets the array's owning arena — the carried _ina_ arena
@@ -4639,6 +4759,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_RETURN: {
+            /* push-loop fusion: a return leaves before the after-loop flush, so
+             * write back every live cursor first -- the returned value (or the
+             * array itself) must see the real length, not the stale descriptor. */
+            for (int fi = 0; fi < g_nfuse; fi++) fuse_flush_one(o, ind, fi);
             /* `rf` frees every arena live at this return — enclosing loop/if
              * block arenas (innermost-first) then _scope — and ends with
              * "arena_free(&_scope);". At proc top level it IS just that, so a
@@ -4879,6 +5003,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int id = g_blk++;
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
+            int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
             char *c = gen_expr(s->expr, scope);
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
@@ -4889,6 +5014,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             g_loop_depth--;
             g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");
+            fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
             indent(o, ind); fprintf(o, "}\n");
             break;
@@ -4901,6 +5027,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             char *ss = sfmt("&_scr%d", id);
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
+            int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
             indent(o, ind + 1); fprintf(o, "long _stop%d = %s, _step%d = %s;\n", id, stop, id, step);
             indent(o, ind + 1);
             fprintf(o, "for (long h_%s = %s; _step%d > 0 ? h_%s < _stop%d : h_%s > _stop%d; h_%s += _step%d) {\n",
@@ -4929,6 +5056,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             g_nascope--;
             cv_restore(m);
             indent(o, ind + 1); fprintf(o, "}\n");
+            fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
             indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
             indent(o, ind); fprintf(o, "}\n");
             break;

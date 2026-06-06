@@ -563,6 +563,20 @@ void hier_arr_int_set(HierArrInt *xs, long i, long v) {
     xs->data[i] = v;
 }
 
+/* Grow hook for push-loop fusion: when a loop pushes to a local array, codegen
+ * caches data/cap/len in C locals (registers) and writes elements directly --
+ * the array descriptor never goes through memory in the hot path. This is the
+ * slow path, called only when the cached cursor is full; it reallocs in `a` and
+ * updates the caller's cached *data/*cap (geometric, recycling the old buffer --
+ * same policy as hier_arr_int_push). */
+void hier_arr_int_grow(Arena *a, long **data, long *cap, long len) {
+    long nc = *cap ? *cap * 2 : 4;
+    long *nd = (long *)arena_alloc(a, (size_t)nc * sizeof(long));
+    if (len) memcpy(nd, *data, (size_t)len * sizeof(long));
+    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(long));
+    *data = nd; *cap = nc;
+}
+
 /* value-semantic copy: independent buffer in arena `a` */
 HierArrInt hier_arr_int_copy(Arena *a, HierArrInt src) {
     HierArrInt r = hier_arr_int_with_cap(a, src.len);
@@ -612,6 +626,15 @@ void hier_arr_float_push(Arena *a, HierArrFloat *xs, double v) {
         xs->cap = ncap;
     }
     xs->data[xs->len++] = v;
+}
+
+/* push-loop fusion grow hook (see hier_arr_int_grow) */
+void hier_arr_float_grow(Arena *a, double **data, long *cap, long len) {
+    long nc = *cap ? *cap * 2 : 4;
+    double *nd = (double *)arena_alloc(a, (size_t)nc * sizeof(double));
+    if (len) memcpy(nd, *data, (size_t)len * sizeof(double));
+    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(double));
+    *data = nd; *cap = nc;
 }
 
 double hier_arr_float_pop(Arena *a, HierArrFloat *xs) {
