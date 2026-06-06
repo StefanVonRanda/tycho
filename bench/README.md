@@ -24,12 +24,14 @@ and the self-hosted `hierc0`) are measured where shown.
 | **winagg** | per-window churn-and-discard | ~par C, beats Go | win on bulk-free teardown | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 47 MB vs C 3.3 (~14×); int: 2.2 MB (tie) | **loses** on heap-record eviction — the no-individual-free limit, mapped | `bench-window` |
+| **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 77.9, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
 
 ## Axis 2 — latency (GC-pause predictability)
 
 | workload | what it stresses | result | verdict | run |
 |----------|------------------|--------|---------|-----|
 | **latency** | steady churn, pause behavior | hier/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
+| **gcscan** | GC scan cost under a large live set | hier/C never scan; Go cheap at default GOGC, but `GOGC=10` matches hier's RAM only at 2.5× wall | Go faces a memory-vs-CPU tradeoff hier/C don't | `bench-gcscan` |
 
 ## The honest envelope
 
@@ -44,8 +46,17 @@ and the self-hosted `hierc0`) are measured where shown.
   (`window`, ~14×) — the genuine cost of no individual free. Fixed-size records tie.
   Mapped with numbers, not hidden.
 
-Not benchmarked by design: concurrency/parallelism (hier is single-threaded and
-value-semantic — a non-goal, not a gap).
+Not cleanly benchmarkable, and why (honest negative space):
+- **Cache locality of pointer-chasing** (a long linked-list traversal). It isn't a
+  hier idiom: value semantics can't move a cursor out of a match-arm borrow
+  (`cur = rest` deep-copies the tail), and a multi-million-deep recursive enum
+  overflows any recursive descent. hier steers you to **arrays** (contiguous in
+  every language → no locality gap) and **bounded-depth trees** (already in
+  `binary-trees`, where the arena's contiguous layout is part of why hier beats C
+  25 vs 33 MB). So the arena's locality benefit is real but already captured, not a
+  separable number.
+- **Concurrency/parallelism** — hier is single-threaded and value-semantic, a
+  non-goal, not a gap.
 
 See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's
 `RESULTS.md` for the per-workload analysis.
