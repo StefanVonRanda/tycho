@@ -43,7 +43,10 @@ Deterministic: a finding's `seed_<n>.hi` reproduces with `python3 fuzz/gen.py <n
 `{string:int}` + `{string:float}` maps / `type Nt = int` newtypes / array &
 string slices (`v[:]`, `v[0:]`, …) / `inout [int]` / returned arrays / SOA core
 ops (`soa []Struct`: push, `len`, `a[i].f` read/write, whole-element gather) /
-`or_return` (Ok-unwrap / Err-propagate via a helper). To widen coverage, add a
+`or_return` (Ok-unwrap / Err-propagate via a helper) / FFI `extern fn` over
+scalars+`string`+opaque `ptr` (a fixed vocabulary backed by `ffi_shim.c`, linked
+by `run.py`: `is_null`/`null`, ptr handle round-trips, and the string-return
+arena-copy + NULL-guard). To widen coverage, add a
 type to `types_simple()` plus its `gen_expr` (construct) and `checksum_into`
 (consume) cases, or add a statement kind in `gen_stmt`.
 

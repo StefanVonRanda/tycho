@@ -16,6 +16,7 @@ import subprocess, sys, os, tempfile, shutil
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen.py")
 HIERC = os.path.join(REPO, "hierc")
+FFI_SHIM = os.path.join(REPO, "fuzz", "ffi_shim.c")   # backs the generator's extern fn vocabulary
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0", UBSAN_OPTIONS="halt_on_error=1")
@@ -34,7 +35,7 @@ def emit_hierc0(h0, src_path, out_c):
     return r.returncode == 0 and os.path.getsize(out_c) > 0
 
 def build_run(c_file, exe, tmp, asan=False):
-    cc = ["cc", "-O1" if asan else "-O2", "-std=c11"] + (ASAN if asan else []) + [c_file, "-o", exe]
+    cc = ["cc", "-O1" if asan else "-O2", "-std=c11"] + (ASAN if asan else []) + [c_file, FFI_SHIM, "-o", exe]
     b = sh(cc)
     if b.returncode != 0:
         return None, "ccfail:" + b.stderr.strip()[:200]

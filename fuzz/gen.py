@@ -98,6 +98,17 @@ class Gen:
                 choices.append(("strcmp", lambda: "len(str(" + ie() + " > " + ie() + "))"))
                 choices.append(("strand", lambda: "len(str(" + ie() + " < " + ie() + " and " + ie() + " >= " + ie() + "))"))
                 choices.append(("strnot", lambda: "len(str(not (" + ie() + " == " + ie() + ")))"))
+                # FFI: extern calls returning int — scalar args, ptr round-trip
+                # (handle->unwrap), is_null on a ptr and on the null literal, and
+                # str args/returns (slen + the arena-copied echo/nullify lengths).
+                se = lambda: self.gen_expr("string", env, depth+1)
+                choices.append(("fzaddi",    lambda: "fz_addi(" + ie() + ", " + ie() + ")"))
+                choices.append(("fzunwrap",  lambda: "fz_unwrap(fz_handle(" + ie() + "))"))
+                choices.append(("fzisnull",  lambda: "len(str(is_null(fz_handle(" + ie() + "))))"))
+                choices.append(("fznull",    lambda: "len(str(is_null(null)))"))
+                choices.append(("fzslen",    lambda: "fz_slen(" + se() + ")"))
+                choices.append(("fzecholen", lambda: "len(fz_echo(" + se() + "))"))
+                choices.append(("fznulllen", lambda: "len(fz_nullify(" + se() + "))"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -110,11 +121,14 @@ class Gen:
             if depth < 2:
                 choices.append(("cat", lambda: "(" + self.gen_expr("string", env, depth+1) + " + " + self.gen_expr("string", env, depth+1) + ")"))
                 choices.append(("s", lambda: "str(" + self.gen_expr("int", env, depth+1) + ")"))
+                # FFI: an arena-copied C string return woven into the string flow
+                choices.append(("fzecho", lambda: "fz_echo(" + self.gen_expr("string", env, depth+1) + ")"))
         elif t == "float":
             choices.append(("lit", lambda: self.r.choice(["0.0", "1.5", "2.0", "3.25", "4.0"])))
             choices.append(("tof", lambda: "to_float(" + self.gen_expr("int", env, depth+1) + ")"))
             if depth < 2:
                 choices.append(("add", lambda: "(" + self.gen_expr("float", env, depth+1) + " + " + self.gen_expr("float", env, depth+1) + ")"))
+                choices.append(("fzaddf", lambda: "fz_addf(" + self.gen_expr("float", env, depth+1) + ", " + self.gen_expr("float", env, depth+1) + ")"))
         elif t.startswith("["):
             el = t[1:-1]
             def mkel(j):                                    # first option-array elem must be Some (None infers its type)
@@ -635,6 +649,20 @@ class Gen:
         # scalar; mksum captures a heap array (its env array re-homes too).
         self.out += ["fn mkadder(n: int) -> fn(int) -> int:", "    return fn(x: int) -> int: x + n", ""]
         self.out += ["fn mksum(a: [int]) -> fn(int) -> int:", "    return fn(x: int) -> int: x + len(a)", ""]
+        # FFI: a fixed extern vocabulary (backed by fuzz/ffi_shim.c, linked by
+        # run.py). gen_expr weaves calls to these into typed expressions so the
+        # differential + ASan oracle exercises the extern / ptr / string-return
+        # arena-copy codegen of both compilers.
+        self.out += [
+            "extern fn fz_addi(a: int, b: int) -> int",
+            "extern fn fz_addf(a: float, b: float) -> float",
+            "extern fn fz_echo(s: string) -> string",
+            "extern fn fz_nullify(s: string) -> string",
+            "extern fn fz_slen(s: string) -> int",
+            "extern fn fz_handle(id: int) -> ptr",
+            "extern fn fz_unwrap(h: ptr) -> int",
+            "",
+        ]
 
     def generate(self):
         for _ in range(self.r.randint(0, 2)):
