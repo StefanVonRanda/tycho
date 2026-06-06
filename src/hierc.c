@@ -790,6 +790,8 @@ typedef struct {
     int     has_ret;       /* explicit -> type present */
     Stmt  **body; int nbody;
     int     line;
+    int     is_extern;     /* FFI: `extern fn` — bodyless, calls a C symbol directly (no arena, name unmangled) */
+    const char *lib;       /* FFI: `extern "Lib" fn` — link with -lLib; NULL for bare extern */
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -1746,6 +1748,56 @@ static Proc *parse_fn(Parser *ps) {
     return pr;
 }
 
+/* FFI Stage 1: only scalars + string may cross the C boundary. Composite types
+ * (arrays/maps/structs/Option/Result/tuples/fn) have hier-internal C reps, not a
+ * stable C ABI — reject them (fail closed). void is allowed as a return only. */
+static int ffi_scalar_type(Type t) {
+    return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING;
+}
+
+/* extern [ "Lib" ] fn name(p: T, ...) [-> T]    (bodyless; calls a C symbol).
+ * The name is NOT pkg_mangled — a C symbol is global. */
+static Proc *parse_extern_fn(Parser *ps) {
+    ps->p++;   /* consume the `extern` ident (caller verified its text) */
+    const char *lib = NULL;
+    if (at(ps, TK_STR)) { lib = cur(ps)->text; ps->p++; }   /* optional link-library name */
+    eat(ps, TK_FN, "'fn' after 'extern'");
+    Tok *nameT = eat(ps, TK_IDENT, "a C function name");
+    eat(ps, TK_LPAREN, "'('");
+
+    Proc *pr = (Proc *)xmalloc(sizeof(Proc));
+    memset(pr, 0, sizeof *pr);
+    pr->name = nameT->text;          /* literal C symbol — never mangled */
+    pr->line = nameT->line;
+    pr->is_extern = 1;
+    pr->lib = lib;
+
+    int cap = 0;
+    while (!at(ps, TK_RPAREN)) {
+        Tok *pn = eat(ps, TK_IDENT, "a parameter name");
+        eat(ps, TK_COLON, "':' after parameter name");
+        if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': inout parameters are not allowed across the C boundary", pr->name);
+        Type pt = parse_type(ps);
+        if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string (no composites across the C boundary)", pr->name, pn->text);
+        if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
+        pr->params[pr->nparams].name = pn->text;
+        pr->params[pr->nparams].type = pt;
+        pr->params[pr->nparams].is_inout = 0;
+        pr->nparams++;
+        if (!accept(ps, TK_COMMA)) break;
+    }
+    eat(ps, TK_RPAREN, "')'");
+
+    if (accept(ps, TK_ARROW)) {
+        pr->ret = parse_type(ps); pr->has_ret = 1;
+        if (!ffi_scalar_type(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string or omitted", pr->name);
+    } else {
+        pr->ret = T_VOID;
+    }
+    eat(ps, TK_NEWLINE, "newline (an extern fn has no body)");
+    return pr;
+}
+
 /* struct Name:
  *     field: type
  *     ...
@@ -1925,6 +1977,12 @@ static ProcVec parse_program(Tok *toks) {
         if (accept(&ps, TK_NEWLINE)) continue;
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "package")) { parse_package_decl(&ps); continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "import"))  { parse_import_decl(&ps);  continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "extern") && peek(&ps, 1)->kind != TK_LPAREN) {
+            Proc *pr = parse_extern_fn(&ps);
+            if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
+            out.v[out.n++] = pr;
+            continue;
+        }
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
@@ -1944,10 +2002,21 @@ typedef struct {
     int         inout[16];   /* per-param: is it an inout (by-pointer) param? */
     int         nparams;
     int         builtin;
+    int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
 } Sig;
 
 static Sig  g_sigs[256];
 static int  g_nsigs = 0;
+
+/* FFI: link libraries named by `extern "Lib" fn` — appended as -lLib to the cc
+ * line. Deduped; -lm is always passed separately (covers bare `extern fn sqrt`). */
+static const char *g_links[64];
+static int  g_nlinks = 0;
+static void add_link(const char *lib) {
+    if (!lib || !*lib) return;
+    for (int i = 0; i < g_nlinks; i++) if (!strcmp(g_links[i], lib)) return;
+    if (g_nlinks < 64) g_links[g_nlinks++] = lib;
+}
 
 static Sig *sig_find(const char *name) {
     for (int i = 0; i < g_nsigs; i++)
@@ -2976,6 +3045,8 @@ static void resolve_program(ProcVec *prog) {
         if (g_nsigs >= 256) die_at(pr->line, "too many functions (max 256 including builtins)");
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
+        s.is_extern = pr->is_extern;
+        if (pr->is_extern) add_link(pr->lib);   /* FFI: collect -lLib for the cc line */
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
@@ -3002,6 +3073,7 @@ static void resolve_program(ProcVec *prog) {
     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_srcname); exit(1); }
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
+        if (pr->is_extern) continue;   /* FFI: no body to resolve */
         g_nvars = 0;
         /* arrays ([int]/[string]) are passed as read-only borrows (their
          * buffer is shared, so in-place push/set would hit the caller); all
@@ -3730,6 +3802,19 @@ static char *gen_call(Expr *e, const char *arena) {
      * (which, if it's itself a heap inout param here, yields its carried
      * _ina_ arena — threading the real owner across recursion). */
     Sig *cs = sig_find(e->sval);
+    if (cs && cs->is_extern) {
+        /* FFI: call the C symbol directly — no arena, no h_ prefix. Args are
+         * built in the current scope (hier str is already a char*, so a string
+         * arg passes zero-cost). A string RETURN is C-owned, so copy it into the
+         * destination arena (NULL -> "") so hier never holds a foreign pointer. */
+        char *xc = sfmt("%s(", e->sval);
+        for (int i = 0; i < e->nargs; i++)
+            xc = sfmt("%s%s%s", xc, i ? ", " : "", gen_expr(e->args[i], g_cur_scope));
+        xc = sfmt("%s)", xc);
+        if (base_of(cs->ret) == T_STRING)
+            return sfmt("hier_str_copy(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
+        return xc;
+    }
     char *out = sfmt("h_%s(%s", e->sval, arena);
     for (int i = 0; i < e->nargs; i++) {
         /* arguments are transients (the callee's return value is independently
@@ -4768,6 +4853,16 @@ static void gen_signature(FILE *o, Proc *pr) {
 
 static void gen_proto(FILE *o, Proc *pr) { gen_signature(o, pr); fprintf(o, ";\n"); }
 
+/* FFI: forward-declare the C symbol with its real C ABI — no arena, no h_
+ * prefix. This is enough to call it; no header #include needed. */
+static void gen_extern_proto(FILE *o, Proc *pr) {
+    fprintf(o, "extern %s%s(", c_type(pr->ret), pr->name);
+    if (pr->nparams == 0) fprintf(o, "void");
+    for (int i = 0; i < pr->nparams; i++)
+        fprintf(o, "%s%s", i ? ", " : "", c_type(pr->params[i].type));
+    fprintf(o, ");\n");
+}
+
 static void gen_proc(FILE *o, Proc *pr) {
     gen_signature(o, pr);
     fprintf(o, " {\n");
@@ -5481,7 +5576,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, " return d; }\n");
     }
-    for (int i = 0; i < prog->n; i++) gen_proto(o, prog->v[i]);
+    for (int i = 0; i < prog->n; i++) {
+        if (prog->v[i]->is_extern) gen_extern_proto(o, prog->v[i]);   /* FFI: real C ABI decl */
+        else gen_proto(o, prog->v[i]);
+    }
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda prototypes */
         if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
     fputs("\n", o);
@@ -5510,7 +5608,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "); }\n");
     }
     if (g_nfnval || g_nlaminfo) fputs("\n", o);
-    for (int i = 0; i < prog->n; i++) gen_proc(o, prog->v[i]);
+    for (int i = 0; i < prog->n; i++) if (!prog->v[i]->is_extern) gen_proc(o, prog->v[i]);   /* FFI externs have no body */
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda bodies */
         if (g_laminfo[i].ftype != T_VOID) gen_proc(o, g_laminfo[i].proc);
     fputs("int main(int argc, char **argv) {\n", o);
@@ -5797,7 +5895,9 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    char *cmd = sfmt("%s -O2 -o %s %s -lm", cc, base, c_path);   /* -lm: float-math builtins (sqrt/pow/...) */
+    char *links = sfmt("%s", "");                  /* FFI: -lLib for each `extern "Lib"` */
+    for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, g_links[i]);
+    char *cmd = sfmt("%s -O2 -o %s %s -lm%s", cc, base, c_path, links);   /* -lm: float-math builtins (sqrt/pow/...) */
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);
