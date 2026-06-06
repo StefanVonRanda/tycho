@@ -23,7 +23,7 @@ and the self-hosted `hierc0`) are measured where shown.
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
 | **winagg** | per-window churn-and-discard | ~par C, beats Go | win on bulk-free teardown | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
-| **window** | sliding-window **eviction** | string: 47 MB vs C 3.3 (~14×); int: 2.2 MB (tie) | **loses** on heap-record eviction — the no-individual-free limit, mapped | `bench-window` |
+| **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
 | **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 77.9, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
 
 ## Axis 2 — latency (GC-pause predictability)
@@ -39,12 +39,17 @@ and the self-hosted `hierc0`) are measured where shown.
   parser, a real SQLite workload, and pause-free latency — often *beating* hand-
   written C on time (trees, json-parse) because reclamation is one O(1) arena reset
   instead of N frees.
-- **Recovered:** loop-carried reassign (`iter-transform`) was the arena's clean
-  defeat (3.5 GB); static FBIP reuse derived from value semantics — Koka's Perceus
-  result without runtime refcounts — turned it into a 4 MB win, in **both** compilers.
-- **Loses:** eviction of **heap-bearing** records from a long-lived collection
-  (`window`, ~14×) — the genuine cost of no individual free. Fixed-size records tie.
-  Mapped with numbers, not hidden.
+- **Recovered:** the two cases that were once clean defeats, both fixed by static
+  FBIP reuse derived from value semantics (Koka's Perceus result without runtime
+  refcounts), in **both** compilers:
+  - loop-carried reassign (`iter-transform`): 3.5 GB → 4 MB (**MM-8**, whole-var
+    reassign recycle).
+  - eviction of **heap-bearing** records (`window`): 47 MB → 4.2 MB, ~14× C →
+    ~1.3× C (**MM-9**, per-element overwrite recycle + segregated free-list).
+    Fixed-size records already tied.
+- **Loses:** no remaining clean defeat on these workloads. Hold-and-grow peak
+  (`invindex`, `arr_pipeline`) is ~1.3–2× C and needs sizing/`reserve`, like every
+  language — a cost, not a defeat.
 
 Not cleanly benchmarkable, and why (honest negative space):
 - **Cache locality of pointer-chasing** (a long linked-list traversal). It isn't a

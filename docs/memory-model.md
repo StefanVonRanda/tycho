@@ -558,6 +558,44 @@ recycling a single buffer can't reclaim heap-element arrays' separately-allocate
 elements (spine only). FBIP-grade reuse from *static* value semantics + lexical
 arenas, no reference counts — Perceus on its home turf without paying for it.
 
+### MM-9 — element-overwrite recycle (the sliding-window eviction case, closed)
+
+MM-8 recycled a buffer on whole-variable reassign (`a = step(a)`); its residual,
+noted at the time, was heap-element arrays — it recycles the spine but not the
+separately-allocated elements. The `window` workload is exactly that gap: a ring
+buffer of strings, `ring[k] = rec` each step, where only the last W are live. The
+spine is stable, but each overwrite dropped the evicted string into the arena with
+no way back — peak tracked the whole stream, not the window (47 MB vs C 3.3, ~14×;
+`bench/window`). The arena's one clean memory loss.
+
+**The fix — recycle the evicted element on `arr[k] = v`.** The old element is dead
+and uniquely owned the instant the new value is computed (value semantics: reads
+deep-copy out, so nothing else can reference the slot's bytes). Hand it back to the
+array's arena; the next store reuses it. Static unique ownership again — no refcount.
+- **Codegen.** Build the new value FIRST (the RHS may read the slot — `s[k]=s[k]+x`),
+  store it, then recycle the old buffer. Guards: `old != new` (never recycle the
+  buffer just stored) and `arena_owns(a, old)` (recycle ONLY a buffer this arena
+  allocated — never an interned string literal, which is malloc'd/immortal/possibly
+  shared, nor a cross-arena pointer). hierc: `hier_arr_str_set` in `runtime/hier_rt.c`.
+  hierc0: the `SFieldAssign` emission (`is_str_arr_index`), which additionally moves
+  the element from malloc (owner 0) into the array's arena so it is recyclable at
+  all — bringing the two compilers to the same model.
+- **Segregated free-list (the load-bearing half).** A single capped (HIER_FREECAP=32)
+  best-fit free-list was the bottleneck: an eviction window needs the free-list to
+  hold ~W dead chunks, but a linear best-fit scan cannot be uncapped. Instrumented,
+  the cap-32 list DROPPED ~1.04M of 2M dead chunks → element recycle alone only got
+  47→27 MB. Replaced with a per-8-byte-size-class free-list (`Arena.bkt[16]`, sizes
+  8..120 B): O(1) push/pop, no cap, no scan. Larger chunks keep the capped best-fit
+  `freelist`, so MM-8's large-buffer (array spine) reuse is untouched. With buckets:
+  drop=0, peak 4.2 MB.
+
+**Result:** `window` string case 47.3 MB → 4.2 MB (hierc) / 3.6 MB (hierc0), ~14× C
+→ ~1.3× C, beating Go — and *faster* (fewer bumps). Verified: checksum matches C/Go
+on both compilers; ASan/UBSan clean; `make test` 97/0; `make fixpoint` B==C (MM-9 is
+output-invisible); differential fuzz clean; `tests/elem_recycle.hi` is the
+distinct-value alias regression (the MM-8 recycle_alias lesson: value-masking fuzz
+can hide element corruption, so a dedicated distinct-value test is the real guard).
+
 - **MM-1 — threading spine + strings on arena (the irreducible first slice).**
   - `main` wrapper + `_root`; every fn gains `Arena *_parent` + `_scope`.
   - Every user-call site passes `&_scope` as the first arg.
