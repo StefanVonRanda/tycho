@@ -107,6 +107,15 @@ Exactly tycho's T3.1, using hier's existing idiom — no new runtime needed:
   - NULL guard: a C function may return `NULL`. The lowering must be
     `scopy(<arena>, ({ char* __t = <call>; __t ? __t : ""; }))` so a NULL return becomes `""`
     rather than a crash in `scopy`/`strlen`. (tycho hit this exact bug — `tycho/ROADMAP.md:295`.)
+  - **Read-once borrow (peephole, hierc).** When the `str` return is the *direct* argument to a
+    read-once consumer — `len(extern_str())` or `print(extern_str())` — the copy is skipped and
+    the C pointer is used in place (NULL-guarded): the borrow is read immediately and cannot
+    escape the consuming call, so it can't dangle. Anything that could hold it (binding to a
+    variable, concat, storing, returning, comparing two extern strings) keeps the copy. This is
+    an output-identical optimization, not a semantic change: hierc0 still copies, and the fuzzer
+    proves byte-identical output across both (it generates `len(fz_echo(…))`). Only one borrowed
+    result, read once — comparing two extern-string calls is *not* eligible (a shared static
+    return buffer would let the second call clobber the first).
 - **`ptr`:** opaque `void *`. hier has no operators on it except pass-to-C, `==`/`!=` (against
   another `ptr` or the `null` literal), and `is_null(p)`. No deref, no arithmetic. So hier never
   touches foreign memory — it only shuttles the handle back to C.

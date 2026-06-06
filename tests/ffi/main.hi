@@ -28,3 +28,9 @@ fn main():
     rd := ffi_read(h)                           # ptr arg -> int
     pn := ffi_read(null)                        # pass the null literal across the boundary
     print(f"read={rd} passnull={pn} hnull={b2i(is_null(h))} badnull={b2i(is_null(bad))} eqnull={b2i(bad == null)}\n")
+    # peephole: len/print of a DIRECT extern-str call borrow the C pointer (no
+    # arena copy) -- sound, consumed read-once inline. A bound result still copies.
+    print(ffi_echo("peep"))                     # print borrow -> [peep]
+    print("\n")
+    el := len(ffi_echo("xyz"))                  # len borrow -> len("[xyz]") = 5
+    print(f"echolen={el}\n")

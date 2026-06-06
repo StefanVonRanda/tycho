@@ -3631,6 +3631,26 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
+/* FFI: the bare C call to an extern fn — `name(args)` with NO arena-copy on a
+ * string return. The extern branch wraps this in hier_str_copy for safety; the
+ * read-once consumers below (len/print) use it directly, since the C-owned
+ * pointer is read immediately and never held. */
+static char *gen_extern_raw(Expr *e) {
+    char *xc = sfmt("%s(", e->sval);
+    for (int i = 0; i < e->nargs; i++)
+        xc = sfmt("%s%s%s", xc, i ? ", " : "", gen_expr(e->args[i], g_cur_scope));
+    return sfmt("%s)", xc);
+}
+/* Is e a DIRECT call to an extern fn returning string? (not an indirect/fn-value
+ * call, enum/struct/newtype ctor.) Such a result, consumed read-once and inline,
+ * needs no arena-copy — the borrow can't escape the consuming call. */
+static int is_extern_str_call(Expr *e) {
+    if (e->kind != E_CALL || e->lhs || !e->sval || e->op == TK_FN || e->op == TK_ENUM || e->op == TK_TYPE)
+        return 0;
+    Sig *cs = sig_find(e->sval);
+    return cs && cs->is_extern && base_of(cs->ret) == T_STRING;
+}
+
 static char *gen_call(Expr *e, const char *arena) {
     if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
         return gen_expr(e->args[0], arena);
@@ -3666,6 +3686,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("%s _p; })", out);
     }
     if (!strcmp(e->sval, "len")) {
+        if (is_extern_str_call(e->args[0]))   /* FFI: read the length of a C-owned string without copying it (read-once borrow) */
+            return sfmt("({ const char *_x = %s; _x ? (long)strlen(_x) : 0L; })", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
         if (e->args[0]->type == T_STRING)
             return sfmt("hier_str_len(%s)", a);
@@ -3757,6 +3779,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("hier_str_split(%s, %s, %s)", arena, s, sep);
     }
     if (!strcmp(e->sval, "print")) {
+        if (is_extern_str_call(e->args[0]))   /* FFI: write a C-owned string without copying it (read-once borrow) */
+            return sfmt("hier_print(({ const char *_x = %s; _x ? _x : \"\"; }))", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
         return sfmt("hier_print(%s)", a);
     }
@@ -3820,10 +3844,7 @@ static char *gen_call(Expr *e, const char *arena) {
          * built in the current scope (hier str is already a char*, so a string
          * arg passes zero-cost). A string RETURN is C-owned, so copy it into the
          * destination arena (NULL -> "") so hier never holds a foreign pointer. */
-        char *xc = sfmt("%s(", e->sval);
-        for (int i = 0; i < e->nargs; i++)
-            xc = sfmt("%s%s%s", xc, i ? ", " : "", gen_expr(e->args[i], g_cur_scope));
-        xc = sfmt("%s)", xc);
+        char *xc = gen_extern_raw(e);
         if (base_of(cs->ret) == T_STRING)
             return sfmt("hier_str_copy(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
         return xc;

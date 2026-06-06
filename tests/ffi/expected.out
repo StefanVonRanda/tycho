@@ -1,3 +1,5 @@
 [hi]
 sum=42 scale=10 maybe1=z maybe0=[]
 read=7 passnull=-1 hnull=0 badnull=1 eqnull=1
+[peep]
+echolen=5
