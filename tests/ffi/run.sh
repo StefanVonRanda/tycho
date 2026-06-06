@@ -24,8 +24,8 @@ ar rcs "$T/libffidemo.a" "$T/demo.o"
 "$HIERC" compiler/hierc0.hi -o "$T/h0" >/dev/null 2>&1 || { echo "FAIL: could not build hierc0"; exit 1; }
 
 # (1) C reference compiler: it resolves `extern "ffidemo"` -> -lffidemo on its own
-# cc line; LIBRARY_PATH points the linker at our static lib.
-if ! LIBRARY_PATH="$T" "$HIERC" tests/ffi/main.hi -o "$T/c_bin" >"$T/c.log" 2>&1; then
+# cc line; the Stage-3 `-L` flag points the linker at our static lib (no LIBRARY_PATH).
+if ! "$HIERC" tests/ffi/main.hi -o "$T/c_bin" -L "$T" >"$T/c.log" 2>&1; then
     echo "FAIL: hierc compile"; sed 's/^/      /' "$T/c.log"; fail=1
 else
     "$T/c_bin" > "$T/c.out" 2>&1
@@ -54,10 +54,20 @@ if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$T/h0.out"; then
     echo "FAIL: hierc vs hierc0 output differ"; diff "$T/c.out" "$T/h0.out" | sed 's/^/      /'; fail=1
 fi
 
+# (4) Stage 3 --shim: an extern implemented by a companion C file, compiled and
+# linked alongside the generated C with no prebuilt library.
+printf 'extern fn ffi_triple(x: int) -> int\nfn main():\n    print(f"triple={ffi_triple(14)}\\n")\n' > "$T/shimtest.hi"
+if ! "$HIERC" "$T/shimtest.hi" -o "$T/shimbin" --shim tests/ffi/shim.c >"$T/shim.log" 2>&1; then
+    echo "FAIL: --shim compile"; sed 's/^/      /' "$T/shim.log"; fail=1
+else
+    shimout="$("$T/shimbin" 2>&1)"
+    [ "$shimout" = "triple=42" ] || { echo "FAIL: --shim output '$shimout' != 'triple=42'"; fail=1; }
+fi
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string both dirs, ptr handles, null/is_null)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim linking)" || { echo "ffi: FAIL"; exit 1; }

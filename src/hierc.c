@@ -5862,23 +5862,54 @@ static void bundle_pkg(const char *dir, int is_entry) {
     g_pkg_seen[g_npkg_seen++] = key;
 }
 
+/* FFI Stage 3: `pkg-config --cflags --libs <name>` -> the cc flags for a system
+ * library, or NULL on failure. The result is spliced onto the cc line. */
+static char *pkg_config_flags(const char *name) {
+    char *cmd = sfmt("pkg-config --cflags --libs %s 2>/dev/null", name);
+    FILE *p = popen(cmd, "r");
+    if (!p) return NULL;
+    char buf[4096];
+    size_t n = fread(buf, 1, sizeof buf - 1, p);
+    int rc = pclose(p);
+    if (rc != 0) return NULL;
+    buf[n] = 0;
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ')) buf[--n] = 0;
+    return xstrndup(buf, n);
+}
+
 int main(int argc, char **argv) {
     const char *input = NULL;
     const char *out   = NULL;
     const char *cc    = "cc";
     int emit_c_only = 0;
     int bundle = 0;
+    char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
+    char *shims = sfmt("%s", "");   /* FFI: companion C shim sources (--shim) compiled+linked alongside */
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
+        /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
+         * (-L/path) and separated (-L /path) forms; all accumulate onto the cc line. */
+        else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "-I", 2)) {
+            extra = sfmt("%s %s", extra, argv[i]);
+            if (!argv[i][2] && i + 1 < argc) extra = sfmt("%s %s", extra, argv[++i]);
+        }
+        else if (!strcmp(argv[i], "--link") && i + 1 < argc) extra = sfmt("%s -l%s", extra, argv[++i]);
+        else if (!strcmp(argv[i], "--shim") && i + 1 < argc) shims = sfmt("%s %s", shims, argv[++i]);
+        else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
+            char *pc = pkg_config_flags(argv[++i]);
+            if (!pc) { fprintf(stderr, "hierc: pkg-config failed for '%s'\n", argv[i]); return 1; }
+            extra = sfmt("%s %s", extra, pc);
+        }
         else if (argv[i][0] == '-') { fprintf(stderr, "hierc: unknown flag %s\n", argv[i]); return 1; }
         else input = argv[i];
     }
     if (!input) {
-        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--bundle] [--cc <compiler>]\n");
+        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--bundle] [--cc <compiler>]\n"
+                        "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n");
         return 1;
     }
     g_srcname = input;
@@ -5911,7 +5942,9 @@ int main(int argc, char **argv) {
 
     char *links = sfmt("%s", "");                  /* FFI: -lLib for each `extern "Lib"` */
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, g_links[i]);
-    char *cmd = sfmt("%s -O2 -o %s %s -lm%s", cc, base, c_path, links);   /* -lm: float-math builtins (sqrt/pow/...) */
+    /* sources (generated .c + any --shim companions), then -lm + extern libs +
+     * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
+    char *cmd = sfmt("%s -O2 -o %s %s%s -lm%s%s", cc, base, c_path, shims, links, extra);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);

@@ -1,9 +1,9 @@
 # FFI — calling C from hier (design)
 
-> Status: **Stages 1 & 2 SHIPPED in both compilers** (scalars + string + opaque `ptr`; see
-> §8). Stage 3 remains design. Inspired by the `tycho` language's FFI, adapted to hier's
-> internals. Every hier claim below cites `file:line`; tycho claims cite the tycho repo as
-> read on 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
+> Status: **Stages 1–3 SHIPPED** (scalars + string + opaque `ptr` in both compilers; Stage-3
+> linking ergonomics in hierc — see §8). Inspired by the `tycho` language's FFI, adapted to
+> hier's internals. Every hier claim below cites `file:line`; tycho claims cite the tycho repo
+> as read on 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
 
 ## 1. Goal & thesis fit
 
@@ -118,12 +118,17 @@ int rc = system(cmd);                                        /* :5801 */
 
 - Collect every distinct `"Lib"` from `extern "Lib"` decls → append ` -l<Lib>` to that
   format string. `-lm` stays (covers bare `extern fn sqrt`).
-- Add a CLI passthrough `--link <lib>` (and/or `-L`/`-I`) for libs whose hier source doesn't
-  name them, mirroring tycho's `-link`. The `--cc <compiler>` override already exists
-  (`src/hierc.c:5756,5769`) and composes.
-- hierc0's standalone driver shells out the same way; mirror the flag assembly there.
-- **Out of scope for v1:** tycho's vendor-dir scan, `pkg-config` probing, and auto-compiled
-  `*_shim.c`. Start with explicit `-l`/`-L`/`-I`; revisit pkg-config if a real binding needs it.
+- **Stage 3 CLI passthrough (hierc, `main()`):** `-L<dir>`/`-I<dir>` (both attached and
+  separated forms), `--link <lib>` (a bare `-l` for libs not named in source), `--pkg <name>`
+  (`pkg-config --cflags --libs`, via `pkg_config_flags`/`popen`), and `--shim <file.c>` (a
+  companion C source compiled+linked alongside the generated `.c` — the `*_shim.c` pattern, but
+  an explicit flag rather than tycho's auto-discovery, matching hier's no-magic style). All
+  accumulate onto the single cc line; libs trail the objects that need them. The `--cc
+  <compiler>` override already exists and composes.
+- **hierc0 has no linking step** — it emits C to stdout, so these flags are hierc-only; the user
+  links hierc0's output with their own cc (passing the same `-l`/`-L`/shim).
+- **Still out of scope:** tycho's vendor-dir scan / collection roots. `pkg-config` and shim
+  companions now ship; vendoring can come if a real binding needs it.
 
 ## 7. Implementation across BOTH compilers (the self-hosting tax)
 
@@ -161,9 +166,11 @@ Gates (per the project's CI, all local — see `docs/` / `make ci`):
   hier never owns or dereferences it). Only deref/arithmetic are absent (no syntax for them).
   `make ffi` exercises an `ffi_open`/`ffi_read` handle round-trip + `null`/`is_null` through both
   compilers, fixpoint byte-identical.
-- **Stage 3 — ergonomics.** `--link`/`-L`/`-I` polish, optional `pkg-config`, and the
-  `*_shim.c` companion-file pattern (tycho `vendor/README.md:99`) for libraries that need a
-  thin C wrapper (opaque-struct forward decls, error-surface adaptation).
+- **Stage 3 — ergonomics. ✅ DONE (hierc).** `-L`/`-I`/`--link`/`--pkg`/`--shim` on the cc line
+  (see §6). `--pkg` shells out to `pkg-config`; `--shim` compiles+links a companion C file (the
+  `*_shim.c` pattern, tycho `vendor/README.md:99`, as an explicit flag). hierc-only — hierc0
+  emits C and doesn't link. `make ffi` now links its fixture via `-L` and covers a `--shim`
+  build; `--pkg zlib` verified manually (crc32 resolved).
 
 Each stage ships independently and is independently useful. Stop after Stage 1 and hier can
 already call libm/libc.
