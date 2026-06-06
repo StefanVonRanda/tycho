@@ -45,6 +45,11 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending). `reverse`/`sort` return a new
   array — value semantics, the input is never mutated. (`push`/`pop`/`len`/`range` are
   builtins.)
+- **`arrays_str`** — the same over `[string]` (no overloading in hier, so per-type variants
+  are sibling packages): `contains`, `index_of`, `count`, `join(xs, sep)`, `smin`, `smax`
+  (lexicographic), `reverse`, `is_sorted`, `sort`.
+- **`arrays_float`** — the same over `[float]`: `contains`, `index_of`, `count`, `sum`,
+  `fmin`, `fmax`, `reverse`, `is_sorted`, `sort`. (Equality/`contains` use exact float `==`.)
 - **`iter`** — higher-order over `[int]`, each taking a `fn`/closure: `map`, `filter`,
   `reduce`, `count`, `any`.
 

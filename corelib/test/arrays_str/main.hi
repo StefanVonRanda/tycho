@@ -1,0 +1,24 @@
+package main
+# corelib test: exercises core:arrays_str; all three compile paths must agree (corelib/run.sh).
+import "core:arrays_str"
+
+fn b2i(b: bool) -> int:                       # str(bool) is not available yet; fold to int
+    if b:
+        return 1
+    return 0
+
+fn main():
+    xs := ["pear", "apple", "fig", "apple"]
+    has := b2i(arrays_str.contains(xs, "fig"))
+    idx := arrays_str.index_of(xs, "fig")
+    miss := arrays_str.index_of(xs, "kiwi")
+    cnt := arrays_str.count(xs, "apple")
+    print(f"has={has} idx={idx} miss={miss} cnt={cnt}\n")          # has=1 idx=2 miss=-1 cnt=2
+    print(arrays_str.join(xs, "-") + "\n")                          # pear-apple-fig-apple
+    print(arrays_str.smin(xs) + "|" + arrays_str.smax(xs) + "\n")   # apple|pear
+    s := arrays_str.sort(xs)
+    sok := b2i(arrays_str.is_sorted(s))
+    origok := b2i(arrays_str.is_sorted(xs))
+    print(s[0] + "," + s[3] + f" sok={sok} origok={origok}\n")      # apple,pear sok=1 origok=0
+    rev := arrays_str.reverse(xs)
+    print(rev[0] + "," + rev[3] + "\n")                             # apple,pear
