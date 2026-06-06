@@ -27,6 +27,7 @@
 
 static const char *g_srcname = "<input>";
 static const char *g_src = NULL;   /* current file's source text, for the error snippet (set in lex) */
+static int g_err_col = 0;          /* 1-based caret column (0 = none); set from the offending token before die_at */
 
 __attribute__((noreturn, format(printf, 2, 3)))
 static void die_at(int line, const char *fmt, ...) {
@@ -36,13 +37,16 @@ static void die_at(int line, const char *fmt, ...) {
     fputc('\n', stderr);
     va_end(ap);
     /* show the offending source line under the message (single-file: always the
-     * right file; package mode: only when `line` lands in the last-lexed file). */
+     * right file; package mode: only when `line` lands in the last-lexed file),
+     * and a caret under the offending token when its column is known. */
     if (g_src && line > 0) {
         const char *p = g_src; int ln = 1;
         while (ln < line && *p) { if (*p++ == '\n') ln++; }
         if (ln == line && *p && *p != '\n') {
             const char *eol = p; while (*eol && *eol != '\n') eol++;
             fprintf(stderr, "  %4d | %.*s\n", line, (int)(eol - p), p);
+            if (g_err_col > 0 && g_err_col <= (eol - p) + 1)
+                fprintf(stderr, "       | %*s^\n", g_err_col - 1, "");
         }
     }
     exit(1);
@@ -92,6 +96,7 @@ typedef struct {
     long    ival;
     int     line;
     double  fval;   /* TK_FLOAT literal value */
+    int     col;    /* 1-based column of the token start, for the error caret (0 = unknown) */
 } Tok;
 
 typedef struct {
@@ -169,11 +174,11 @@ static TokVec lex(const char *src) {
         if (col > indent_stack[sp]) {
             if (sp + 1 >= 256) die_at(line, "indentation too deep");
             indent_stack[++sp] = col;
-            tv_push(&out, (Tok){TK_INDENT, NULL, 0, line, 0});
+            tv_push(&out, (Tok){TK_INDENT, NULL, 0, line, 0, 0});
         } else {
             while (col < indent_stack[sp]) {
                 sp--;
-                tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0});
+                tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0, 0});
             }
             if (col != indent_stack[sp])
                 die_at(line, "inconsistent indentation");
@@ -184,6 +189,7 @@ static TokVec lex(const char *src) {
         while (*p && *p != '\n' && *p != '#') {
             char c = *p;
             if (c == ' ' || c == '\r') { p++; continue; }
+            int tcol = (int)(p - ls) + 1;   /* token start column (1-based), for the error caret */
 
             if (isdigit((unsigned char)c)) {
                 const char *s = p;
@@ -195,11 +201,11 @@ static TokVec lex(const char *src) {
                     p++;
                     while (isdigit((unsigned char)*p)) p++;
                     double dv = strtod(s, NULL);
-                    tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv});
+                    tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {
                     long v = 0;
                     for (const char *q = s; q < p; q++) v = v * 10 + (*q - '0');
-                    tv_push(&out, (Tok){TK_INT, NULL, v, line, 0});
+                    tv_push(&out, (Tok){TK_INT, NULL, v, line, 0, tcol});
                 }
                 continue;
             }
@@ -208,7 +214,7 @@ static TokVec lex(const char *src) {
                 while (isalnum((unsigned char)*p) || *p == '_') p++;
                 char *name = xstrndup(s, (size_t)(p - s));
                 TokKind k = keyword(name);
-                tv_push(&out, (Tok){k, name, 0, line, 0});
+                tv_push(&out, (Tok){k, name, 0, line, 0, tcol});
                 continue;
             }
             if (c == '"' || (c == 'f' && p[1] == '"')) {
@@ -274,7 +280,7 @@ static TokVec lex(const char *src) {
                 }
                 if (*p != '"') die_at(line, "unterminated string literal");
                 p++;
-                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), interp, line, 0});
+                tv_push(&out, (Tok){TK_STR, xstrndup(buf, (size_t)bn), interp, line, 0, tcol});
                 continue;
             }
 
@@ -301,7 +307,7 @@ static TokVec lex(const char *src) {
                 }
                 if (*p != '\'') die_at(line, "char literal must be exactly one character");
                 p++;
-                tv_push(&out, (Tok){TK_CHAR, NULL, cv, line, 0});
+                tv_push(&out, (Tok){TK_CHAR, NULL, cv, line, 0, tcol});
                 continue;
             }
 
@@ -336,19 +342,19 @@ static TokVec lex(const char *src) {
             else if (c == '|') k = TK_PIPE;
             else if (c == '^') k = TK_CARET;
             else if (c == '~') k = TK_TILDE;
-            else die_at(line, "unexpected character '%c'", c);
-            tv_push(&out, (Tok){k, NULL, 0, line, 0});
+            else { g_err_col = tcol; die_at(line, "unexpected character '%c'", c); }
+            tv_push(&out, (Tok){k, NULL, 0, line, 0, tcol});
             p += len;
         }
 
-        tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0});
+        tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0, (int)(p - ls) + 1});
         if (*p == '#') while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
     }
 
     /* close out remaining indentation, then EOF */
-    while (sp > 0) { sp--; tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0}); }
-    tv_push(&out, (Tok){TK_EOF, NULL, 0, line, 0});
+    while (sp > 0) { sp--; tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0, 0}); }
+    tv_push(&out, (Tok){TK_EOF, NULL, 0, line, 0, 0});
     return out;
 }
 
@@ -831,7 +837,7 @@ static Tok *peek(Parser *ps, int k) { return &ps->t[ps->p + k]; }
 static int  at(Parser *ps, TokKind k) { return cur(ps)->kind == k; }
 
 static Tok *eat(Parser *ps, TokKind k, const char *what) {
-    if (!at(ps, k)) die_at(cur(ps)->line, "expected %s", what);
+    if (!at(ps, k)) { g_err_col = cur(ps)->col; die_at(cur(ps)->line, "expected %s", what); }
     return &ps->t[ps->p++];
 }
 static int accept(Parser *ps, TokKind k) {
@@ -1199,6 +1205,7 @@ static Expr *parse_primary(Parser *ps) {
         e->pkg  = g_cur_pkg_prefix;            /* lets a package-local bare variant resolve */
         return e;
     }
+    g_err_col = t->col;
     die_at(t->line, "expected an expression");
     return NULL;
 }
