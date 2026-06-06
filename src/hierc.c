@@ -26,6 +26,7 @@
 /* ------------------------------------------------------------------ util */
 
 static const char *g_srcname = "<input>";
+static const char *g_src = NULL;   /* current file's source text, for the error snippet (set in lex) */
 
 __attribute__((noreturn, format(printf, 2, 3)))
 static void die_at(int line, const char *fmt, ...) {
@@ -34,6 +35,16 @@ static void die_at(int line, const char *fmt, ...) {
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
+    /* show the offending source line under the message (single-file: always the
+     * right file; package mode: only when `line` lands in the last-lexed file). */
+    if (g_src && line > 0) {
+        const char *p = g_src; int ln = 1;
+        while (ln < line && *p) { if (*p++ == '\n') ln++; }
+        if (ln == line && *p && *p != '\n') {
+            const char *eol = p; while (*eol && *eol != '\n') eol++;
+            fprintf(stderr, "  %4d | %.*s\n", line, (int)(eol - p), p);
+        }
+    }
     exit(1);
 }
 
@@ -130,6 +141,7 @@ static TokKind keyword(const char *s) {
 /* Indentation-aware lexer. Processes the source line by line so blank
  * lines and comment-only lines never affect the indent stack. */
 static TokVec lex(const char *src) {
+    g_src = src;   /* for die_at's source-line snippet (re-set per file in package mode) */
     TokVec out = {0};
     int indent_stack[256];
     int sp = 0;
