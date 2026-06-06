@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -69,6 +69,11 @@ bench-dbquery: hierc
 # window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.
 bench-window: hierc
 	@sh bench/window/run.sh
+
+# Latency / GC-pause predictability: hier/C pause-free, Go's GC pause measured.
+# See bench/latency/RESULTS.md.
+bench-latency: hierc
+	@sh bench/latency/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
 # and validate it on its fixtures. See compiler/ and docs/bootstrap.md.

@@ -1,0 +1,24 @@
+# Latency / GC-pause angle: a steadily-churning loop — each of ITERS rounds builds
+# and discards a K-element working set. hier reclaims it with one O(1) per-iteration
+# arena reset (no GC, no stop-the-world); C frees; Go's GC must periodically collect
+# the garbage. Same checksum across langs; the point is predictable, pause-free
+# reclamation WITHOUT manual frees. Memory stays flat (~one working set).
+fn main():
+    iters := 2000
+    k := 100000
+    acc := 0
+    it := 0
+    for it < iters:
+        xs := []int
+        j := 0
+        for j < k:
+            push(xs, (it + j) % 997)
+            j = j + 1
+        s := 0
+        m := 0
+        for m < len(xs):
+            s = s + xs[m]
+            m = m + 1
+        acc = (acc + s) % 1000000007
+        it = it + 1
+    print(str(acc) + "\n")
