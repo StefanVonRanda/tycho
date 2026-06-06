@@ -51,7 +51,15 @@ struct HBlock { HBlock *next; size_t cap; size_t off; };
  * so a stale node could otherwise alias a fresh bump — clearing prevents that). */
 typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 #define HIER_FREECAP 32
-typedef struct { HBlock *head; size_t blocksz; FreeNode *freelist; int nfree; } Arena;
+/* Tiny-object recycling uses a SEGREGATED free-list: one LIFO per 8-byte size
+ * class, so push/pop is O(1) with no cap and no scan -- a sliding-window eviction
+ * of heap records (peak ~ window) needs the per-class list to grow to the window
+ * size, which a single capped best-fit list cannot do. HIER_NBKT inline classes
+ * cover sizes 8..HIER_NBKT*8-8 bytes (strings/small structs -- the churn that
+ * accumulates); larger chunks (array spines etc.) fall back to the capped
+ * best-fit `freelist`, unchanged, so MM-8 large-buffer reuse is unaffected. */
+#define HIER_NBKT 16
+typedef struct { HBlock *head; size_t blocksz; FreeNode *bkt[HIER_NBKT]; FreeNode *freelist; int nfree; } Arena;
 
 static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); }
 
@@ -101,6 +109,7 @@ Arena arena_new(size_t blocksz) {
     Arena a;
     a.head = NULL;
     a.blocksz = blocksz ? blocksz : HIER_BLOCK_DEFAULT;
+    for (int i = 0; i < HIER_NBKT; i++) a.bkt[i] = NULL;
     a.freelist = NULL;
     a.nfree = 0;
     return a;
@@ -114,9 +123,18 @@ Arena arena_new(size_t blocksz) {
  * so a recycled chunk (already below the bump pointer) can never overlap a fresh
  * bump — each region is handed out by exactly one path at a time. */
 void arena_recycle(Arena *a, void *p, size_t n) {
-    if (!p || n < sizeof(FreeNode) || a->nfree >= HIER_FREECAP) return;
+    if (!p || n < sizeof(FreeNode)) return;
+    n = (n + 7u) & ~(size_t)7u;             /* match arena_alloc's rounding so size classes line up */
+    size_t k = n >> 3;                       /* 8-byte size class */
     FreeNode *fn = (FreeNode *)p;
     fn->size = n;
+    if (k < HIER_NBKT) {                      /* tiny object: O(1) per-class push, NO cap (this is what lets
+                                              * an eviction window's dead records all be reused) */
+        fn->next = a->bkt[k];
+        a->bkt[k] = fn;
+        return;
+    }
+    if (a->nfree >= HIER_FREECAP) return;     /* large chunk: capped best-fit list, unchanged */
     fn->next = a->freelist;
     a->freelist = fn;
     a->nfree++;
@@ -124,14 +142,31 @@ void arena_recycle(Arena *a, void *p, size_t n) {
 
 Arena arena_child(Arena *parent) { return arena_new(parent->blocksz); }
 
+/* Does `p` point inside one of this arena's blocks? Used by element-overwrite
+ * recycling (MM-9) to recycle ONLY buffers this arena owns -- an interned string
+ * literal (malloc'd, immortal, possibly shared) or a buffer from another arena
+ * must never be handed to a->freelist. O(blocks); the list is short for a
+ * recycling arena (it stays bounded precisely because recycling works). */
+static int arena_owns(Arena *a, const void *p) {
+    for (HBlock *b = a->head; b; b = b->next) {
+        const char *base = (const char *)(b + 1);
+        if ((const char *)p >= base && (const char *)p < base + b->cap) return 1;
+    }
+    return 0;
+}
+
 void *arena_alloc(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Hier types: long/double/ptr) */
-    /* reuse a recycled buffer first: BEST fit in [n, 2n] (smallest that fits,
-     * capped at 2x so a huge recycled buffer is never wasted on a tiny request --
-     * which would defeat reuse for a geometrically-grown array). The list is
-     * empty for any arena that never recycles, so this is one predictable branch
-     * on the hot path; only recycling arenas pay the short bounded scan. */
-    if (a->freelist) {
+    size_t k = n >> 3;                       /* 8-byte size class */
+    /* reuse a recycled buffer first. Tiny objects: O(1) exact-class pop from the
+     * segregated list -- no scan, no cap. Larger objects: best-fit in [n, 2n] over
+     * the capped `freelist` (a huge recycled buffer is never wasted on a tiny
+     * request -- which would defeat reuse for a geometrically-grown array). Both
+     * lists are empty for any arena that never recycles, so this is one predictable
+     * branch on the hot path. */
+    if (k < HIER_NBKT) {
+        if (a->bkt[k]) { FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next; return (void *)fn; }
+    } else if (a->freelist) {
         FreeNode **link = &a->freelist, **best = NULL; size_t bestsz = (size_t)-1;
         for (; *link; link = &(*link)->next)
             if ((*link)->size >= n && (*link)->size <= 2u * n && (*link)->size < bestsz) {
@@ -155,7 +190,9 @@ void *arena_alloc(Arena *a, size_t n) {
  * pool. The common case -- a loop body whose per-iteration allocations fit in
  * one block -- then does zero pool traffic per iteration, only a pointer rewind. */
 void arena_reset(Arena *a) {
-    a->freelist = NULL; a->nfree = 0;   /* chunks live in blocks we're about to rewind/pool */
+    /* chunks live in blocks we're about to rewind/pool, so drop every free-list */
+    for (int i = 0; i < HIER_NBKT; i++) a->bkt[i] = NULL;
+    a->freelist = NULL; a->nfree = 0;
     HBlock *b = a->head;
     if (!b) return;
     block_release_chain(b->next);   /* overflow blocks -> pool */
@@ -165,6 +202,7 @@ void arena_reset(Arena *a) {
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 void arena_free(Arena *a) {
+    for (int i = 0; i < HIER_NBKT; i++) a->bkt[i] = NULL;
     a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
     a->head = NULL;
@@ -669,7 +707,21 @@ void hier_arr_str_set(Arena *a, HierArrStr *xs, long i, const char *v) {
         fprintf(stderr, "hier: index %ld out of bounds (len %ld)\n", i, xs->len);
         exit(1);
     }
-    xs->data[i] = hier_str_copy(a, v);           /* copy bytes into owner arena */
+    /* MM-9: the slot is being overwritten, so the OLD element is dead -- value
+     * semantics gives every str-array element a unique owner and reads copy out
+     * (cf. hier_str_copy at every get/bind site), so nothing else references it.
+     * Recycle it back to the arena so the NEXT set reuses the bytes instead of
+     * the arena growing with the whole stream (the sliding-window eviction case).
+     * Copy FIRST (v may alias old, e.g. `s[k] = s[k] + x`), THEN recycle. Only
+     * recycle a buffer THIS arena owns -- never an interned literal or a
+     * cross-arena string (arena_owns), and never the freshly-stored buffer. */
+    char *old = xs->data[i];
+    char *nw = hier_str_copy(a, v);              /* copy bytes into owner arena */
+    if (old && old != v && arena_owns(a, old - 8)) {
+        size_t on = ((size_t)(8 + (size_t)hier_str_len(old) + 1) + 7u) & ~(size_t)7u;
+        arena_recycle(a, old - 8, on);
+    }
+    xs->data[i] = nw;
 }
 
 /* value-semantic copy: independent buffer AND independent element bytes in a */
