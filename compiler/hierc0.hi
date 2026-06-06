@@ -66,8 +66,39 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
+# Lexer diagnostic: print `msg` then the offending source line + a caret under
+# byte offset `at`, then exit. die() is terminal, so this never returns. (Mirrors
+# hierc's snippet+caret for lex errors; src + offset are local to the lexer, so no
+# globals/threading are needed. Parse/resolve errors stay message-only — hierc0's
+# tokens and AST carry no position.)
+fn lex_err(src: string, at: int, msg: string):
+    n := len(src)
+    p := at
+    if p > n:
+        p = n
+    ls := 0                                   # start offset of the line containing `p`
+    ln := 1                                   # 1-based line number
+    j := 0
+    for j < p:
+        if src[j] == 10:
+            ln = ln + 1
+            ls = j + 1
+        j = j + 1
+    le := ls                                  # end offset (the newline or EOF)
+    for le < n and src[le] != 10:
+        le = le + 1
+    gutter := "  " + str(ln) + " | "
+    npad := len(gutter) + (p - ls)            # spaces before the caret
+    pad := ""
+    k := 0
+    for k < npad:
+        pad = pad + " "
+        k = k + 1
+    die(msg + "\n" + gutter + substr(src, ls, le) + "\n" + pad + "^")
+
 fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
     c := src[i]
+    tok0 := i                                    # token start, for the error caret (i advances as we scan)
     if c == 32 or c == 9:
         return i + 1
     elif c == 35:
@@ -82,7 +113,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
                 i = i + 1
             i = i + 1
         if i >= n:
-            die("lex: unterminated string")
+            lex_err(src, tok0, "lex: unterminated string")
         push(toks, Token(TStr, substr(src, start, i)))
         return i + 1                             # consume closing quote
     elif c == 102 and i + 1 < n and src[i + 1] == 34:   # f"..." interpolated string (102='f', 34='"')
@@ -110,23 +141,23 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
                         i = i + 1
                     i = i + 1
                 if i >= n:
-                    die("lex: unterminated string in f-string hole")
+                    lex_err(src, tok0, "lex: unterminated string in f-string hole")
                 i = i + 1                         # consume closing quote
             else:
                 i = i + 1
         if i >= n:
-            die("lex: unterminated f-string")
+            lex_err(src, tok0, "lex: unterminated f-string")
         push(toks, Token(TFStr, substr(src, start, i)))
         return i + 1
     elif c == 39:                                # char literal '...' -> one byte
         i = i + 1
         if i >= n:
-            die("lex: unterminated char literal")
+            lex_err(src, tok0, "lex: unterminated char literal")
         b := 0
         if src[i] == 92:                         # backslash escape
             i = i + 1
             if i >= n:
-                die("lex: unterminated char literal")
+                lex_err(src, tok0, "lex: unterminated char literal")
             e := src[i]
             if e == 110:                         # \n
                 b = 10
@@ -141,13 +172,13 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
             elif e == 39:                        # quote
                 b = 39
             else:
-                die("lex: bad char escape (use \\n \\t \\r \\0 \\\\ \\')")
+                lex_err(src, tok0, "lex: bad char escape (use \\n \\t \\r \\0 \\\\ \\')")
             i = i + 1
         else:
             b = src[i]
             i = i + 1
         if i >= n or src[i] != 39:
-            die("lex: char literal must be exactly one character")
+            lex_err(src, tok0, "lex: char literal must be exactly one character")
         push(toks, Token(TChar, str(b)))
         return i + 1                             # consume closing quote
     elif is_digit(c):
@@ -235,7 +266,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
         if i + 1 < n and src[i + 1] == 61:
             push(toks, Token(TNe, "!="))
             return i + 2
-        die("lex: '!' must be part of '!='")
+        lex_err(src, tok0, "lex: '!' must be part of '!='")
         return i + 1
     elif c == 38:
         push(toks, Token(TAmp, "&"))
@@ -253,7 +284,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
         push(toks, Token(TTilde, "~"))
         return i + 1
     else:
-        die("lex: unexpected character")
+        lex_err(src, tok0, "lex: unexpected character")
         return i + 1
 
 fn lex(src: string) -> [Token]:
@@ -291,7 +322,7 @@ fn lex(src: string) -> [Token]:
                     sp = sp - 1
                     push(toks, Token(TDedent, ""))
                 if stack[sp - 1] != ind:
-                    die("lex: inconsistent indentation")
+                    lex_err(src, i, "lex: inconsistent indentation")
                 at_bol = false
         else:
             if src[i] == 10:
