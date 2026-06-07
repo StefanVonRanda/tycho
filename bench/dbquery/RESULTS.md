@@ -29,6 +29,11 @@ SQLite work is held **constant** across all three ports — what we measure is t
 
 Stable across runs (peak RSS varies <0.2 MB; wall is cache-noisy ±10 ms).
 
+Re-measured at `-O3` (2026-06-07): hier 4.3 MB/354 ms, C 4.3 MB/352 ms, Go 7.4 MB/387 ms
+— unchanged within noise. This workload is SQLite-dominated, so host-code `-O3` barely
+moves it (`run.sh` now builds the C port at `-O3`; the hier port already builds via the
+`-O3` driver default).
+
 ## What it shows
 
 - **hier ≈ C on a real database workload** — within ~0.1 MB of peak RSS and ~3% of

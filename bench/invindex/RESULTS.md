@@ -13,6 +13,12 @@ architectures: **growth** (the naive idiom — `push`/`append`/`realloc` grow ea
 posting list geometrically) and **count-fill** (a first pass counts each term's
 postings; every list is then allocated ONCE at its exact size, no growth):
 
+> **Re-measured at `-O3` (2026-06-07): numbers hold within noise** — this is a
+> memory/`realloc`-bound build, not compute-bound, so the optimizer barely moves it.
+> Side-array growth hier 126 MB/414 ms, C 72/331, Go 96/437; count-fill hier 60/561,
+> C 57/500. Map-form growth hier 64/302, C 37/245, Go 60/293; count-fill hier 32/517,
+> C 30/400, Go 67/522. All ratios (and the conclusions below) are unchanged.
+
 | impl | growth | count-fill |
 | ---- | -----: | ---------: |
 | C    | 71 MB / ~340 ms | **57 MB** / 533 ms |

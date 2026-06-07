@@ -10,17 +10,21 @@ identical algorithm over the identical stream and prints the same oracle:
 
     windows=40 checksum=505098931
 
-Peak RSS (`bench/peakrss.c`), best-of-five, `-O2` / `rustc -O` / `go build`. Each
+Peak RSS (`bench/peakrss.c`), best-of-3, `-O3` / `rustc -O3` / `go build` (each
+language's standard optimized build; re-measured 2026-06-07). Each
 language uses its idiomatic per-key-growing-list map: hier `[int: [int]]`, C a
 hand-rolled open-addressing table of `realloc`'d lists, Rust `HashMap<i64, Vec<i64>>`,
 Go `map[int64][]int64`.
 
 | impl | peak RSS | time |
 | ---- | -------: | ---: |
-| C    | **5 MB** | **128 ms** |
-| hier | 7 MB | 190 ms |
-| Rust | 5 MB | 238 ms |
+| C    | **5 MB** | **126 ms** |
+| hier | 7 MB | 172 ms |
+| Rust | 5 MB | 239 ms |
 | Go   | 11 MB | 330 ms |
+
+(Wall re-measured 2026-06-07 at `-O3` standard opt, best-of-3; peak RSS unchanged —
+allocation is flag-independent. hier 190→172 ms; C/Rust/Go within noise.)
 
 ## Reading this honestly
 

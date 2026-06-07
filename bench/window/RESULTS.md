@@ -21,6 +21,10 @@ checksum `15777800`. Peak RSS via `bench/peakrss`.
 
 From **14× C to ~1.3× C** — now under Go, ~par C, with no manual frees and no GC.
 
+Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string hier 4.3 MB, C 3.2 MB,
+Go 7.5 MB; int hier 2.3 MB — all flag-independent). Wall, best-of-3: string hier
+106 ms, C 77 ms, Go 81 ms; int hier 3 ms. `run.sh` now builds at `-O3`.
+
 ## What MM-9 does
 
 Overwriting a string-array slot (`ring[k] = rec`) now **recycles the evicted

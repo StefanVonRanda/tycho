@@ -28,7 +28,7 @@ runlang() {                                           # <label> <binary>
 printf '%-8s %10s %9s   %s\n' lang peakRSS time checksum
 $HIERC "$D/dbquery.hi" -o "$T/dbq_hier" --shim "$D/db_shim.c" --pkg sqlite3 >/dev/null 2>&1
 runlang hier "$T/dbq_hier"
-$CC -O2 "$D/dbquery.c" -o "$T/dbq_c" $LIBS 2>/dev/null
+$CC -O3 "$D/dbquery.c" -o "$T/dbq_c" $LIBS 2>/dev/null
 runlang C "$T/dbq_c"
 if command -v go >/dev/null 2>&1; then
     cp "$D/dbquery.go" "$T/dbq.go" && ( cd "$T" && go build -o dbq_go dbq.go 2>/dev/null )
