@@ -6109,6 +6109,7 @@ int main(int argc, char **argv) {
     const char *cc    = "cc";
     int emit_c_only = 0;
     int bundle = 0;
+    int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
     char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
     char *shims = sfmt("%s", "");   /* FFI: companion C shim sources (--shim) compiled+linked alongside */
 
@@ -6116,6 +6117,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
+        else if (!strcmp(argv[i], "--native")) native = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
         /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
          * (-L/path) and separated (-L /path) forms; all accumulate onto the cc line. */
@@ -6134,7 +6136,7 @@ int main(int argc, char **argv) {
         else input = argv[i];
     }
     if (!input) {
-        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--bundle] [--cc <compiler>]\n"
+        fprintf(stderr, "usage: hierc file.hi [-o name] [--emit-c] [--bundle] [--native] [--cc <compiler>]\n"
                         "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n");
         return 1;
     }
@@ -6170,7 +6172,9 @@ int main(int argc, char **argv) {
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, g_links[i]);
     /* sources (generated .c + any --shim companions), then -lm + extern libs +
      * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
-    char *cmd = sfmt("%s -O2 -o %s %s%s -lm%s%s", cc, base, c_path, shims, links, extra);
+    /* -O3 is the portable default; --native opts into -march=native (host-CPU only). */
+    const char *march = native ? " -march=native" : "";
+    char *cmd = sfmt("%s -O3%s -o %s %s%s -lm%s%s", cc, march, base, c_path, shims, links, extra);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);
