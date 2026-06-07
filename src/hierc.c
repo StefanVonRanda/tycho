@@ -1446,6 +1446,19 @@ static int expr_has_call(Expr *e) {
     return 0;
 }
 
+/* True if `e` contains an `or_return` (E_ORRETURN), which early-returns from the
+ * enclosing function on the Err/None path. Such an expression CANNOT be wrapped in
+ * a per-statement `_t` arena (MM-10): the early return would jump past the
+ * `arena_free(&_t)` (leak) and bypass the proper return-frees. Exclude it. */
+static int expr_has_orreturn(Expr *e) {
+    if (!e) return 0;
+    if (e->kind == E_ORRETURN) return 1;
+    if (expr_has_orreturn(e->lhs) || expr_has_orreturn(e->rhs)) return 1;
+    for (int i = 0; i < e->nargs; i++)
+        if (expr_has_orreturn(e->args[i])) return 1;
+    return 0;
+}
+
 /* A compound assignment `a[i] OP= e` evaluates the place TWICE (read, then
  * store), so a side-effecting index `i` would run twice. Bind each index in the
  * place that CONTAINS A CALL to a fresh temp (queued in g_pending, emitted just
@@ -4458,6 +4471,23 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (!strcmp(scope, "&_scope") && type_is_heap(s->decl_type)
                 && name_escapes(s->name))
                 owner = "_parent";
+            /* MM-10b: a top-level SCALAR decl whose RHS allocates (has a call) — the
+             * RHS's heap is all transient (the result is a scalar copied out by value),
+             * and at function top level there is no per-iteration reset to reclaim it,
+             * so it would sit in _scope until function return. Build the RHS in a
+             * per-statement _t arena freed immediately. Gated to "&_scope": inside a
+             * loop/block the scratch reset already reclaims, so no hot-loop overhead.
+             * Emitted form MUST match hierc0 (fixpoint byte-identity). */
+            if (!type_is_heap(s->decl_type) && !strcmp(scope, "&_scope")
+                && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)) {
+                g_cur_scope = "&_t";
+                char *tv = gen_expr(s->expr, "&_t");
+                indent(o, ind);
+                fprintf(o, "%sh_%s; { Arena _t = arena_new(0); h_%s = %s; arena_free(&_t); }\n",
+                        c_type(s->decl_type), s->name, s->name, tv);
+                cv_push(s->name, scope);
+                break;
+            }
             char *v = gen_expr(s->expr, owner);
             /* value semantics: binding from a heap *place* aliases its bytes,
              * so deep-copy into the owner arena. A literal/call/concat result
@@ -4526,6 +4556,21 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             const char *owner = cv_arena(s->name);
             if (!owner) owner = scope;
             if (is_heap_inout_param(s->name)) owner = owner_arena_of(s->name);
+            /* MM-10b: a top-level SCALAR assign with an allocating RHS — the RHS heap
+             * is all transient (result is a scalar), and at function top level there
+             * is no per-iteration reset to reclaim it, so it would sit in _scope until
+             * return. Build it in a per-statement _t arena. Gated to "&_scope" (in a
+             * loop/block the scratch reset already reclaims) and excludes or_return
+             * (early return would skip arena_free) and inout (LHS is *h_, leave it). */
+            if (!strcmp(scope, "&_scope") && !type_is_heap(s->expr->type)
+                && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)
+                && !is_inout_param(s->name)) {
+                g_cur_scope = "&_t";
+                char *tv = gen_expr(s->expr, "&_t");
+                indent(o, ind);
+                fprintf(o, "{ Arena _t = arena_new(0); h_%s = %s; arena_free(&_t); }\n", s->name, tv);
+                break;
+            }
             /* in-place append: `acc = acc + e` on a tracked accumulator grows
              * acc's buffer in its OWNER arena (cv_arena), not the current loop
              * scratch scope. The append result re-homes acc, so the rest of
@@ -4759,7 +4804,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * instead of letting them accumulate in the enclosing scope until function
              * return. Sound because stores into longer-lived containers / inout route
              * through owner_arena_of, not g_cur_scope — only pure transients land in _t.
-             * Emitted form MUST match hierc0's SExpr codegen (fixpoint byte-identity). */
+             * Emitted form MUST match hierc0's SExpr codegen (fixpoint byte-identity).
+             * EXCLUDE or_return: it early-returns past arena_free(&_t) (leak). */
+            if (expr_has_orreturn(s->expr)) {
+                char *v = gen_expr(s->expr, scope);
+                indent(o, ind);
+                fprintf(o, "%s;\n", v);
+                break;
+            }
             g_cur_scope = "&_t";
             char *v = gen_expr(s->expr, "&_t");
             indent(o, ind);
