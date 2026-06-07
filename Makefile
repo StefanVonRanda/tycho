@@ -109,8 +109,14 @@ N ?= 500
 fuzz: hierc
 	@python3 fuzz/run.py $(N)
 
-# Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz. The single
-# "is the tree green" command. N defaults to 500 (override: make ci N=200).
+# Wall-time regression guard: asserts hier beats hand-written C on tree-alloc
+# workloads (relative, machine-independent). Catches perf regressions that golden/
+# fuzz/fixpoint can't (they check output, not speed -- see commit 6ff7aa1). In CI.
+bench-guard: hierc
+	@sh bench/guard.sh
+
+# Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz + perf guard.
+# The single "is the tree green" command. N defaults to 500 (override: make ci N=200).
 ci:
 	@sh scripts/ci.sh $(N)
 

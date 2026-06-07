@@ -35,11 +35,14 @@ step "[5/6] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
 make -s ffi
 
 if [ "$N" -gt 0 ] 2>/dev/null; then
-    step "[6/6] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
+    step "[6/7] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
     python3 fuzz/run.py "$N"
 else
-    step "[6/6] fuzz skipped (N=0)"
+    step "[6/7] fuzz skipped (N=0)"
 fi
+
+step "[7/7] bench-guard  (tree-alloc wall: hier must beat C -- perf regression gate)"
+sh bench/guard.sh
 
 bar
 printf ' CI GREEN -- tree is good\n'
