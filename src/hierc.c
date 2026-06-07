@@ -4804,7 +4804,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * instead of letting them accumulate in the enclosing scope until function
              * return. Sound because stores into longer-lived containers / inout route
              * through owner_arena_of, not g_cur_scope — only pure transients land in _t.
-             * Emitted form MUST match hierc0's SExpr codegen (fixpoint byte-identity).
              * EXCLUDE or_return: it early-returns past arena_free(&_t) (leak). */
             if (expr_has_orreturn(s->expr)) {
                 char *v = gen_expr(s->expr, scope);
