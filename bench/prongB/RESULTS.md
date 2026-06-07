@@ -15,13 +15,13 @@ memory models."
 > C/Rust `-O3`, `go build` (Go's only level), `koka -O2` (Koka's max). Comparing
 > hier-`-O3` to a rival at `-O2` would be a cheat; this table is apples-to-apples.
 > Peak RSS via `bench/peakrss`; best-of-3 wall; one machine. Regenerate with
-> `sh bench/fair_full.sh`. (`hierc` rows only — the `hierc0` self-host column below
-> has not been re-measured at `-O3`.)
+> `sh bench/fair_full.sh`. (The `hierc0` self-host column in "The field" table below
+> was also re-measured at `-O3`.)
 
 | workload      | hier (hierc)   | C            | Rust         | Go (GC)        | Koka (ARC)     |
 |---------------|---------------:|-------------:|-------------:|---------------:|---------------:|
-| binary-trees  | **25.3MB/180ms** | 33.3MB/775ms | 33.6MB/846ms | 37.2MB/1516ms  | 14.8MB/267ms   |
-| tree-rewrite  | **6.5MB/119ms**  | 13.4MB/556ms |  9.8MB/404ms | 20.9MB/837ms   |  7.7MB/178ms   |
+| binary-trees  | **13.3MB/179ms** | 33.3MB/765ms | 33.5MB/855ms | 32.3MB/1756ms  | 14.8MB/269ms   |
+| tree-rewrite  | **6.5MB/120ms**  | 13.6MB/484ms | 10.0MB/375ms | 21.1MB/812ms   |  7.6MB/182ms   |
 | array-pipeline| 6.3MB/30ms     |  3.1MB/22ms  |  3.3MB/23ms  |  6.4MB/53ms    | 17.8MB/372ms   |
 | json-parse    | 67.3MB/1108ms  | 58.6MB/1260ms| 60.2MB/1623ms| 108.9MB/1445ms | n/a¹           |
 | gcscan        | 64.7MB/136ms   | 78.1MB/129ms | —            | 125.1MB/201ms  | —              |
@@ -29,7 +29,7 @@ memory models."
 
 **What it says, honestly:**
 - **vs Go (GC): hier wins every workload on BOTH time and memory.** Across the board.
-- **vs Koka (ARC): hier wins every workload on TIME** (binary-trees 180 vs 267, tree-rewrite 119 vs 178, array-pipeline 30 vs 372). On **memory** Koka is lighter only on the two pointer-tree workloads (its Perceus RC frees the stretch tree the instant its refcount hits 0; the arena holds to scope end) — hier is far lighter on array/parse where Koka's core has no flat array.
+- **vs Koka (ARC): hier now wins every workload on BOTH axes too.** Time was always hier's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by **MM-10** (per-statement transient reclaim, see [memory-model.md](../../docs/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). hier is also far lighter on array/parse where Koka's core has no flat array.
 - **vs manual C/Rust** (neither GC nor ARC): hier *beats* them on the tree workloads (bulk-free vs per-node free) and on object-count-bound gcscan; it trails them on flat-array throughput and `latency` (the raw-loop ceiling). That gap is the manual-memory ceiling, not the GC/ARC rivals.
 
 ¹ Koka's json-parse port failed to build in this run (the harness records a 1 ms / 2.7 MB
@@ -64,7 +64,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 
 | workload          | hier (hierc) | hier (hierc0) |        C |     Rust |  Go (GC) | Koka (Perceus) |
 | ----------------- | -----------: | ------------: | -------: | -------: | -------: | -------------: |
-| binary-trees      | 25 MB/179 ms |  14 MB/109 ms | 33/775 ms | 34/846 ms | 37/1516 ms |    15/267 ms |
+| binary-trees      | 13 MB/179 ms |  13 MB/107 ms | 33/765 ms | 34/855 ms | 32/1756 ms |    15/269 ms |
 | tree-rewrite      |  7 MB/120 ms |   6 MB/89 ms  | 13/556 ms | 10/404 ms |  21/837 ms |     8/178 ms |
 | array-pipeline    |  6 MB/29 ms²  |    5 MB/30 ms |  3/22 ms |  3/23 ms |   6/53 ms |    18/372 ms |
 | string-pipeline   |  1 MB/1 ms   |   2 MB/1 ms   |   1/1 ms |   2/2 ms |    4/5 ms |     2/17 ms |

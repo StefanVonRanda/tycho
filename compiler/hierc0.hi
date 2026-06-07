@@ -4249,8 +4249,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    " + loop_frees(dc, ctx) + "break;\n"
         SContinue:
             return "    " + loop_frees(dc, ctx) + "continue;\n"
-        SExpr(e):
-            return "    " + gen_expr(e, names, types, dc, ctx) + ";\n"
+        SExpr(e):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches hierc S_EXPR + scalar_transient)
+            return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
                 code := "    char* " + un(name) + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"

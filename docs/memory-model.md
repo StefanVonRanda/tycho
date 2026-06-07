@@ -1,11 +1,26 @@
 # hierc0 memory-model codegen — closing the perf gap to the C compiler
 
-> **STATUS (complete): the migration documented here is DONE — MM-0 … MM-7f.**
-> hierc0 now emits the same value-semantic implicit-arena C the reference compiler
-> does, with **no known memory gap** and full feature parity; the last residual
-> (heap-payload option arrays, `[Option(str)]`) was closed in MM-7f. The
-> "Starting point" section just below describes where this doc *began* — the naive
+> **STATUS (complete): the migration documented here is DONE — MM-0 … MM-7f**,
+> plus **MM-10** (below). hierc0 now emits the same value-semantic implicit-arena C
+> the reference compiler does, with **no known memory gap** and full feature parity;
+> the last residual (heap-payload option arrays, `[Option(str)]`) was closed in MM-7f.
+> The "Starting point" section just below describes where this doc *began* — the naive
 > malloc/leak codegen at the fixpoint — not the current state.
+>
+> ### MM-10 — per-statement transient reclaim (both compilers; closes the ARC tree-memory gap)
+> An **expression statement**'s value is discarded, so every heap value it allocates
+> is dead at statement end. Previously those transients were built in the enclosing
+> scope arena (function `_scope` at top level) and only freed at function return —
+> so a discarded `print(... check(make(19)) ...)` left a depth-19 *stretch tree*
+> (~12 MB) resident through the rest of `main`. MM-10 wraps each `S_EXPR`/`SExpr` in
+> a per-statement arena: `{ Arena _t = arena_new(0); <expr in &_t>; arena_free(&_t); }`
+> (the same shape `scalar_transient` already used). **Sound** because side-effecting
+> stores into longer-lived containers / inout params route through `owner_arena_of`,
+> not the current scope — only pure transients land in `_t` (ASan/UBSan + 500-seed
+> differential fuzz clean). **Result:** prong-B binary-trees peak **25 → 13.3 MB**,
+> now *below* Koka's Perceus RC (14.8 MB) — the last workload where an ARC rival led
+> on memory. hier now wins both memory and time vs Go (GC) and Koka (ARC) on every
+> prong-B workload. Both compilers emit byte-identical C (`make fixpoint` green).
 
 ## Starting point (historical)
 

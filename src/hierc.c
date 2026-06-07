@@ -4753,9 +4753,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_EXPR: {
-            char *v = gen_expr(s->expr, scope);
+            /* MM-10: an expression statement's value is DISCARDED, so every transient
+             * it allocates is dead at statement end. Build them in a fresh per-statement
+             * `_t` arena (block-scoped, like scalar_transient) and free it immediately,
+             * instead of letting them accumulate in the enclosing scope until function
+             * return. Sound because stores into longer-lived containers / inout route
+             * through owner_arena_of, not g_cur_scope — only pure transients land in _t.
+             * Emitted form MUST match hierc0's SExpr codegen (fixpoint byte-identity). */
+            g_cur_scope = "&_t";
+            char *v = gen_expr(s->expr, "&_t");
             indent(o, ind);
-            fprintf(o, "%s;\n", v);
+            fprintf(o, "{ Arena _t = arena_new(0); %s; arena_free(&_t); }\n", v);
             break;
         }
         case S_RETURN: {
