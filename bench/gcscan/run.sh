@@ -22,8 +22,8 @@ row() { # <label> <binary> <env>
     printf '  %-16s %6s MB %6s ms   %s\n' "$1" "$rss" "$ms" "$gc"
     if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "    ^ CHECKSUM MISMATCH ($out vs $ref)"; FAIL=1; fi
 }
-$HIERC "$D/gcscan.hi" --emit-c -o "$T/gh" >/dev/null 2>&1 && $CC -O2 -o "$T/gh" "$T/gh.c" -lm; row "hier" "$T/gh" ""
-$CC -O2 -o "$T/gc" "$D/gcscan.c"; row "C" "$T/gc" ""
+$HIERC "$D/gcscan.hi" --emit-c -o "$T/gh" >/dev/null 2>&1 && $CC -O3 -o "$T/gh" "$T/gh.c" -lm; row "hier" "$T/gh" ""
+$CC -O3 -o "$T/gc" "$D/gcscan.c"; row "C" "$T/gc" ""
 if command -v go >/dev/null 2>&1; then
     cp "$D/gcscan.go" "$T/gg.go" && ( cd "$T" && go build -o ggo gg.go 2>/dev/null )
     row "Go (GOGC=100)" "$T/ggo" ""

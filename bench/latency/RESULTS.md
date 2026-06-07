@@ -12,11 +12,14 @@ trace and collect the garbage. All three print the same checksum (`599376507`).
 
 ## Results (`make bench-latency`)
 
+Native builds at `-O3` (each language's standard optimized build: hier `-O3`,
+C `-O3`, `go build`). Re-measured 2026-06-07.
+
 | lang | peak RSS | wall | GC pauses |
 |------|---------:|-----:|-----------|
-| **hier** | 4.3 MB | 1301 ms | **none — no GC** |
-| C    | 2.2 MB | 125 ms | **none — no GC** |
-| Go   | 11.5 MB | 1883 ms | **2927 collections, ~211 ms total pause** |
+| **hier** | 4.5 MB | 267 ms | **none — no GC** |
+| C    | 2.3 MB | 121 ms | **none — no GC** |
+| Go   | 11.4 MB | 1831 ms | **2927 collections, ~211 ms total pause** |
 
 (Go self-reports its GC stats via `runtime.ReadMemStats`; hier and C have zero by
 construction — there is no collector.)
@@ -30,12 +33,12 @@ construction — there is no collector.)
 - **Go spent ~211 ms of its 1883 ms run inside the garbage collector** (2927
   cycles). Those are tail-latency spikes a real service would feel; hier and C
   don't have them.
-- hier even beats Go on **total** wall here (1301 vs 1883 ms) — both grow their
-  arrays the same way (hier `push` / Go `append`), but Go carries the GC tax on
-  top. C is fastest (125 ms) because it `malloc`s the exact size once (no growth)
+- hier even beats Go on **total** wall here (267 vs 1831 ms, ~6.8×) — both grow
+  their arrays the same way (hier `push` / Go `append`), but Go carries the GC tax
+  on top. C is fastest (121 ms) because it `malloc`s the exact size once (no growth)
   and frees explicitly — the raw-speed ceiling, at the cost of manual memory
   management. hier's growth-loop overhead vs C's exact alloc is a separate,
-  known cost (push grows geometrically); it is not the pause story.
+  known cost (~2.2× C here; push grows geometrically); it is not the pause story.
 
 ## Where this sits in the picture
 

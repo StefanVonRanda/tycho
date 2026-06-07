@@ -23,7 +23,7 @@ meas() {  # <label> <binary> <gc?>
     printf '  %-5s %6s MB %6s ms   GC: %-32s out=%s\n' "$1" "$rss" "$ms" "$gc" "$out"
     if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "    ^ CHECKSUM MISMATCH"; FAIL=1; fi
 }
-$HIERC "$D/latency.hi" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O2 -o "$T/lh" "$T/lh.c" -lm; meas hier "$T/lh" nogc
-$CC -O2 -o "$T/lc" "$D/latency.c"; meas C "$T/lc" nogc
+$HIERC "$D/latency.hi" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O3 -o "$T/lh" "$T/lh.c" -lm; meas hier "$T/lh" nogc
+$CC -O3 -o "$T/lc" "$D/latency.c"; meas C "$T/lc" nogc
 if command -v go >/dev/null 2>&1; then cp "$D/latency.go" "$T/lg.go" && ( cd "$T" && go build -o lgo lg.go 2>/dev/null ); meas Go "$T/lgo" gc; fi
 [ "$FAIL" = 0 ] && echo "latency: ok (checksums agree; hier/C have zero GC pause)" || { echo "latency: FAIL"; exit 1; }

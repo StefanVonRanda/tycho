@@ -6,12 +6,17 @@ checksum across languages.
 
 ## Results (`make bench-gcscan`)
 
+Native builds at `-O3` (standard optimized build per language). Re-measured 2026-06-07.
+
 | lang | peak RSS | wall | GC |
 |------|---------:|-----:|----|
-| **hier** | **64.8 MB** | 257 ms | none |
-| C | 77.9 MB | 126 ms | none |
+| **hier** | **64.8 MB** | 137 ms | none |
+| C | 78.1 MB | 129 ms | none |
 | Go (GOGC=100, default) | 119.8 MB | 202 ms | 12 cycles, ~1.1 ms |
 | Go (GOGC=10, mem-pressured) | 63.1 MB | 457 ms | 101 cycles, ~4.7 ms |
+
+hier is now lowest-memory **and** beats Go on wall (137 vs 202 ms) while doing zero
+GC — and is within ~6% of hand-written C's time (129 ms) at a smaller footprint.
 
 ## #2 — per-object overhead: hier is the most compact
 
