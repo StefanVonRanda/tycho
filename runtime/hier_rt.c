@@ -54,12 +54,22 @@ typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 /* Tiny-object recycling uses a SEGREGATED free-list: one LIFO per 8-byte size
  * class, so push/pop is O(1) with no cap and no scan -- a sliding-window eviction
  * of heap records (peak ~ window) needs the per-class list to grow to the window
- * size, which a single capped best-fit list cannot do. HIER_NBKT inline classes
- * cover sizes 8..HIER_NBKT*8-8 bytes (strings/small structs -- the churn that
+ * size, which a single capped best-fit list cannot do. HIER_NBKT classes cover
+ * sizes 8..HIER_NBKT*8-8 bytes (strings/small structs -- the churn that
  * accumulates); larger chunks (array spines etc.) fall back to the capped
- * best-fit `freelist`, unchanged, so MM-8 large-buffer reuse is unaffected. */
+ * best-fit `freelist`, unchanged, so MM-8 large-buffer reuse is unaffected.
+ *
+ * The bucket table is a LAZILY-ALLOCATED pointer, NULL until an arena first
+ * recycles a tiny object. This matters because generated code creates a by-value
+ * scope `Arena` per function call / loop iteration (e.g. recursive node builders);
+ * an inline `FreeNode *bkt[HIER_NBKT]` array bloated that struct by 128 B and made
+ * arena_new/reset/free each run a HIER_NBKT-iteration init/clear loop on every
+ * call -- a ~5x regression on allocation-heavy workloads that never recycle
+ * (binary-trees, maptree). With a lazy pointer a non-recycling arena pays only a
+ * single NULL store + one not-taken branch; only recycling arenas allocate the
+ * table (once, freed at arena_free). */
 #define HIER_NBKT 16
-typedef struct { HBlock *head; size_t blocksz; FreeNode *bkt[HIER_NBKT]; FreeNode *freelist; int nfree; } Arena;
+typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; } Arena;
 
 static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); }
 
@@ -109,7 +119,7 @@ Arena arena_new(size_t blocksz) {
     Arena a;
     a.head = NULL;
     a.blocksz = blocksz ? blocksz : HIER_BLOCK_DEFAULT;
-    for (int i = 0; i < HIER_NBKT; i++) a.bkt[i] = NULL;
+    a.bkt = NULL;                            /* lazily allocated on first tiny recycle */
     a.freelist = NULL;
     a.nfree = 0;
     return a;
@@ -130,6 +140,10 @@ void arena_recycle(Arena *a, void *p, size_t n) {
     fn->size = n;
     if (k < HIER_NBKT) {                      /* tiny object: O(1) per-class push, NO cap (this is what lets
                                               * an eviction window's dead records all be reused) */
+        if (!a->bkt) {                        /* first tiny recycle for this arena: allocate the table */
+            a->bkt = (FreeNode **)calloc(HIER_NBKT, sizeof(FreeNode *));
+            if (!a->bkt) return;              /* OOM: drop the chunk (still freed at arena_reset/free) */
+        }
         fn->next = a->bkt[k];
         a->bkt[k] = fn;
         return;
@@ -165,7 +179,7 @@ void *arena_alloc(Arena *a, size_t n) {
      * lists are empty for any arena that never recycles, so this is one predictable
      * branch on the hot path. */
     if (k < HIER_NBKT) {
-        if (a->bkt[k]) { FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next; return (void *)fn; }
+        if (a->bkt && a->bkt[k]) { FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next; return (void *)fn; }
     } else if (a->freelist) {
         FreeNode **link = &a->freelist, **best = NULL; size_t bestsz = (size_t)-1;
         for (; *link; link = &(*link)->next)
@@ -190,8 +204,11 @@ void *arena_alloc(Arena *a, size_t n) {
  * pool. The common case -- a loop body whose per-iteration allocations fit in
  * one block -- then does zero pool traffic per iteration, only a pointer rewind. */
 void arena_reset(Arena *a) {
-    /* chunks live in blocks we're about to rewind/pool, so drop every free-list */
-    for (int i = 0; i < HIER_NBKT; i++) a->bkt[i] = NULL;
+    /* chunks live in blocks we're about to rewind/pool, so drop every free-list.
+     * Keep the bucket table itself (the arena is being reused) -- just clear its
+     * entries; only recycling arenas ever allocated one, so this is skipped wholesale
+     * for the common non-recycling scratch arena. */
+    if (a->bkt) for (int i = 0; i < HIER_NBKT; i++) a->bkt[i] = NULL;
     a->freelist = NULL; a->nfree = 0;
     HBlock *b = a->head;
     if (!b) return;
@@ -202,7 +219,7 @@ void arena_reset(Arena *a) {
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 void arena_free(Arena *a) {
-    for (int i = 0; i < HIER_NBKT; i++) a->bkt[i] = NULL;
+    if (a->bkt) { free(a->bkt); a->bkt = NULL; }   /* release the lazily-allocated table */
     a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
     a->head = NULL;
