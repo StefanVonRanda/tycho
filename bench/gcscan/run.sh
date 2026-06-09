@@ -13,11 +13,13 @@ HIERC=./hierc; [ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 
 CC="${CC:-cc}"; D=bench/gcscan
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2; }
+# ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB, then /1024 for MB.
+to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 ref=""; FAIL=0
 row() { # <label> <binary> <env>
     env $3 "$T/peakrss" "$2" > "$T/o" 2> "$T/m"
     rl=$(grep -vE '^gc=' "$T/m" | tail -1); gl=$(grep -E '^gc=' "$T/m")
-    rss=$(echo "$rl" | awk '{printf "%.1f",$1/1024}'); ms=$(echo "$rl" | awk '{print $2}'); out=$(cat "$T/o")
+    kb=$(to_kb "$(echo "$rl" | awk '{print $1}')"); rss=$(awk "BEGIN{printf \"%.1f\", $kb/1024}"); ms=$(echo "$rl" | awk '{print $2}'); out=$(cat "$T/o")
     gc="no GC"; [ -n "$gl" ] && gc=$(echo "$gl" | sed 's/gc=\([0-9]*\) pause_us=\([0-9]*\)/\1 cycles, \2us pause/')
     printf '  %-16s %6s MB %6s ms   %s\n' "$1" "$rss" "$ms" "$gc"
     if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "    ^ CHECKSUM MISMATCH ($out vs $ref)"; FAIL=1; fi

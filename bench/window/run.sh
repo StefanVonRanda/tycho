@@ -12,10 +12,12 @@ CC="${CC:-cc}"
 D=bench/window
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2; }
+# ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB, then /1024 for MB.
+to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 ref=""; FAIL=0
 meas() {  # <label> <binary> <check?>
     "$T/peakrss" "$2" > "$T/o" 2> "$T/m"
-    rss=$(awk '{printf "%.1f", $1/1024}' "$T/m"); ms=$(awk '{print $2}' "$T/m"); out=$(cat "$T/o")
+    kb=$(to_kb "$(awk '{print $1}' "$T/m")"); rss=$(awk "BEGIN{printf \"%.1f\", $kb/1024}"); ms=$(awk '{print $2}' "$T/m"); out=$(cat "$T/o")
     printf '  %-14s %7s MB %6s ms   %s\n' "$1" "$rss" "$ms" "$out"
     if [ "$3" = check ]; then
         if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "    ^ CHECKSUM MISMATCH"; FAIL=1; fi

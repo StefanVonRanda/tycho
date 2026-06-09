@@ -3,14 +3,16 @@
 #   hier : -O3 (its default; rides the C optimizer)   C/Rust : -O3
 #   Go   : go build (Go's only optimized level)        Koka  : koka -O2 (its max)
 # best-of-3 wall ms; peak RSS kb via bench/peakrss (prints "... rss_kb wall_ms").
-cd /home/igzo/github/hier || exit 1
+cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 P=bench/prongB
+# ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
+to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 best() { bms=9999999; bkb=0
   for i in 1 2 3; do
     if [ -n "$2" ]; then o=$("$T/pk" "$1" < "$2" 2>&1); else o=$("$T/pk" "$1" 2>&1); fi
     last=$(echo "$o" | tail -1)
-    kb=$(echo "$last" | awk '{print $(NF-1)}'); ms=$(echo "$last" | awk '{print $NF}')
+    kb=$(to_kb "$(echo "$last" | awk '{print $(NF-1)}')"); ms=$(echo "$last" | awk '{print $NF}')
     case "$ms" in *[!0-9]*|"") ms=9999999 ;; esac
     [ "$ms" -lt "$bms" ] && bms=$ms && bkb=$kb
   done
