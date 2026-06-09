@@ -24,6 +24,15 @@ C `-O3`, `go build`). Re-measured 2026-06-07.
 (Go self-reports its GC stats via `runtime.ReadMemStats`; hier and C have zero by
 construction — there is no collector.)
 
+### macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09)
+
+Same story on a second OS (`sh bench/latency/run.sh`, checksum `599376507`):
+hier **4.4 MB / 243 ms, zero GC**; C 2.1 MB / 300 ms, zero GC; Go 18.0 MB / 986 ms
+with **2650 collections, ~71 ms total pause**. Fair `-O3` best-of-3
+(`bench/fair_full.sh`): hier 4.4 MB/115 ms, C 2.1 MB/69 ms, Go 16.7 MB/557 ms. hier
+keeps C-class pause-free determinism with no manual `free`; Go pays the GC tax on
+both platforms. (Peak-RSS unit bug in the runner was fixed first — see prongB doc.)
+
 ## The point
 
 - **hier pays zero GC pause — like C — but with no manual `free`.** Each round's
