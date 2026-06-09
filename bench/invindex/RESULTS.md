@@ -19,6 +19,16 @@ postings; every list is then allocated ONCE at its exact size, no growth):
 > C 57/500. Map-form growth hier 64/302, C 37/245, Go 60/293; count-fill hier 32/517,
 > C 30/400, Go 67/522. All ratios (and the conclusions below) are unchanged.
 
+> **macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09; `sh
+> bench/fair_rest.sh`, fair `-O3`):** side-array growth hier 142.3 MB/351 ms, C
+> 126.1/299, Go 99.4/253; count-fill hier 60.3/566, C 65.2/521. Map-form growth hier
+> 72.1/274, C 64.4/241, Go 67.4/185; count-fill hier 32.0/510, C 33.9/442, Go
+> 69.5/341. Same shape as Linux: on this build-and-hold workload hier tracks C within
+> a constant factor on growth and **edges under C on count-fill** (60.3 vs 65.2,
+> 32.0 vs 33.9), while Go is far heavier on count-fill (map 69.5 vs hier 32.0). (macOS peak
+> reads higher than Linux per 16 KB pages/allocator; runner unit bug fixed first —
+> see prongB `RESULTS.md`.)
+
 | impl | growth | count-fill |
 | ---- | -----: | ---------: |
 | C    | 71 MB / ~340 ms | **57 MB** / 533 ms |

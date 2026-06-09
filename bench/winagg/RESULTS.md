@@ -26,6 +26,14 @@ Go `map[int64][]int64`.
 (Wall re-measured 2026-06-07 at `-O3` standard opt, best-of-3; peak RSS unchanged —
 allocation is flag-independent. hier 190→172 ms; C/Rust/Go within noise.)
 
+### macOS (Apple Silicon, Darwin 25.5, clang 21 / rustc 1.95 / go 1.26.4 — 2026-06-09)
+
+Fair `-O3` best-of-3 (`sh bench/fair_rest.sh`, checksum `505098931`): hier
+**8.8 MB / 144 ms**, C 6.6 MB / 104 ms, Rust 6.7 MB / 172 ms, Go 14.4 MB / 191 ms.
+The churn-workload shape holds — hier well under Go on both axes and ties/beats Rust
+on time; C keeps the manual-memory lead. (macOS peak reads a touch higher than Linux;
+the runner's bytes-vs-KB unit bug was fixed first — see prongB `RESULTS.md`.)
+
 ## Reading this honestly
 
 This is the case the implicit arena is *built* for, and it shows — but read the two

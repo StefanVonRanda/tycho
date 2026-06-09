@@ -34,6 +34,17 @@ Re-measured at `-O3` (2026-06-07): hier 4.3 MB/354 ms, C 4.3 MB/352 ms, Go 7.4 M
 moves it (`run.sh` now builds the C port at `-O3`; the hier port already builds via the
 `-O3` driver default).
 
+### macOS (Apple Silicon, Darwin 25.5, clang 21 — 2026-06-09)
+
+`sh bench/dbquery/run.sh` (checksum `495113400` agrees): hier **3.2 MB / 410 ms**,
+C 3.1 MB / 553 ms. Fair `-O3` best-of-3 (`bench/fair_rest.sh`): hier 3.2 MB / 274 ms,
+C 3.1 MB / 273 ms. hier is **~par C on a real SQLite FFI workload** on a second OS,
+zero manual memory management. The Go (cgo) port is skipped here (no cgo sqlite
+driver installed). Note: macOS Apple ships libsqlite3 + `sqlite3.h` in the SDK but
+no `pkg-config` `.pc` file, so the runner now detects sqlite3 and passes hier
+`--link sqlite3` (instead of `--pkg sqlite3`, which needs pkg-config) — without that
+fix the hier port failed to build on macOS.
+
 ## What it shows
 
 - **hier ≈ C on a real database workload** — within ~0.1 MB of peak RSS and ~3% of
