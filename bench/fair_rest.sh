@@ -42,7 +42,9 @@ printf "  int    hier %s\n" "$(hier $WD/window_int.hi)"
 echo "===== dbquery (real SQLite via FFI; skips if no libsqlite3) ====="
 if pkg-config --exists sqlite3 2>/dev/null || echo '#include <sqlite3.h>' | cc -E - >/dev/null 2>&1; then
   DB=bench/dbquery
-  $HIERC "$DB/dbquery.hi" -o "$T/dbh" --shim "$DB/db_shim.c" --pkg sqlite3 >/dev/null 2>&1 && printf "  hier %s\n" "$(best "$T/dbh")" || echo "  hier build-fail"
+  # macOS ships libsqlite3 + sqlite3.h but no .pc file — use --link (not --pkg) there.
+  if pkg-config --exists sqlite3 2>/dev/null; then HIER_SQLITE="--pkg sqlite3"; else HIER_SQLITE="--link sqlite3"; fi
+  $HIERC "$DB/dbquery.hi" -o "$T/dbh" --shim "$DB/db_shim.c" $HIER_SQLITE >/dev/null 2>&1 && printf "  hier %s\n" "$(best "$T/dbh")" || echo "  hier build-fail"
   LIBS=$(pkg-config --cflags --libs sqlite3 2>/dev/null || echo -lsqlite3)
   cc -O3 $DB/dbquery.c -o "$T/dbc" $LIBS 2>/dev/null && printf "  C    %s\n" "$(best "$T/dbc")" || echo "  C build-fail"
   ( cd "$DB" && go build -o "$T/dbg" dbquery.go 2>/dev/null ) && printf "  Go   %s\n" "$(best "$T/dbg")" || echo "  Go (cgo) skip/fail"
