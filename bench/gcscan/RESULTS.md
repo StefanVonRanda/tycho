@@ -18,6 +18,18 @@ Native builds at `-O3` (standard optimized build per language). Re-measured 2026
 hier is now lowest-memory **and** beats Go on wall (137 vs 202 ms) while doing zero
 GC — and is within ~6% of hand-written C's time (129 ms) at a smaller footprint.
 
+### macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09)
+
+`sh bench/gcscan/run.sh` on a second OS: hier **72.7 MB / 240 ms, no GC**;
+C 47.7 MB / 318 ms, no GC; Go (GOGC=100) 143.1 MB / 444 ms (11 cycles, ~0.4 ms);
+Go (GOGC=10) 69.9 MB / 259 ms (90 cycles, ~2.2 ms). hier still **beats C on wall and
+beats Go's default on memory by ~2×** with zero GC; matching Go's footprint forces
+GOGC=10, which costs Go ~2.2 ms of pause and is still slower than hier. (Here the
+macOS allocator inverts the C/hier *memory* order vs Linux — macOS C is more compact
+than hier on this pure-held-set, 47.7 vs 72.7 MB — a per-object-overhead artifact of
+the two platforms' mallocs, not a code change. hier still wins on time and vs Go.
+Runner unit bug fixed first — see prongB doc.)
+
 ## #2 — per-object overhead: hier is the most compact
 
 hier holds 2M small strings in **64.8 MB** — below C (77.9 MB) and well below Go

@@ -25,6 +25,16 @@ Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string hier 4.3 MB, C 3.2
 Go 7.5 MB; int hier 2.3 MB — all flag-independent). Wall, best-of-3: string hier
 106 ms, C 77 ms, Go 81 ms; int hier 3 ms. `run.sh` now builds at `-O3`.
 
+### macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09)
+
+The MM-9 close holds on a second OS. `sh bench/window/run.sh` (string checksum
+`15777800` agrees across langs): string hier **4.7 MB**/363 ms, C 2.5 MB/275 ms,
+Go 9.8 MB/415 ms; int hier 2.3 MB/249 ms. Fair `-O3` best-of-3 (`bench/fair_rest.sh`):
+string hier 4.7 MB/244 ms, C 2.5 MB/112 ms, Go 9.7 MB/64 ms; int hier 2.3 MB/2 ms.
+Still **~1.9× C and under Go on memory** — the eviction loss stays closed. (macOS
+peak RSS reads a touch higher than Linux per 16 KB pages / allocator; the runner's
+bytes-vs-KB `ru_maxrss` unit bug was fixed first — see prongB `RESULTS.md`.)
+
 ## What MM-9 does
 
 Overwriting a string-array slot (`ring[k] = rec`) now **recycles the evicted

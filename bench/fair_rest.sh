@@ -2,13 +2,15 @@
 # Fair standard-opt (-O3) re-run of the benches not covered by fair_full.sh:
 # winagg, invindex (side-array + map, growth + count-fill), window, dbquery.
 # peak RSS + best-of-3 wall via bench/peakrss. Self-contained workloads (no stdin).
-cd /home/igzo/github/hier || exit 1
+cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
 HIERC=./hierc
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
+# ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
+to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 best() { bms=9999999; bkb=0
   for i in 1 2 3; do
     o=$("$T/pk" "$1" 2>&1); last=$(echo "$o" | tail -1)
-    kb=$(echo "$last" | awk '{print $(NF-1)}'); ms=$(echo "$last" | awk '{print $NF}')
+    kb=$(to_kb "$(echo "$last" | awk '{print $(NF-1)}')"); ms=$(echo "$last" | awk '{print $NF}')
     case "$ms" in *[!0-9]*|"") ms=9999999 ;; esac
     [ "$ms" -lt "$bms" ] && bms=$ms && bkb=$kb
   done

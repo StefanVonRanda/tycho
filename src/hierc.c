@@ -4477,7 +4477,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * so it would sit in _scope until function return. Build the RHS in a
              * per-statement _t arena freed immediately. Gated to "&_scope": inside a
              * loop/block the scratch reset already reclaims, so no hot-loop overhead.
-             * Emitted form MUST match hierc0 (fixpoint byte-identity). */
+             * (hierc0's scalar_transient wraps at every depth; this hierc-only gating
+             * is output-invisible — reclaim only — so the fixpoint stays green.) */
             if (!type_is_heap(s->decl_type) && !strcmp(scope, "&_scope")
                 && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)) {
                 g_cur_scope = "&_t";
@@ -4799,22 +4800,29 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
         }
         case S_EXPR: {
             /* MM-10: an expression statement's value is DISCARDED, so every transient
-             * it allocates is dead at statement end. Build them in a fresh per-statement
-             * `_t` arena (block-scoped, like scalar_transient) and free it immediately,
-             * instead of letting them accumulate in the enclosing scope until function
-             * return. Sound because stores into longer-lived containers / inout route
-             * through owner_arena_of, not g_cur_scope — only pure transients land in _t.
-             * EXCLUDE or_return: it early-returns past arena_free(&_t) (leak). */
-            if (expr_has_orreturn(s->expr)) {
-                char *v = gen_expr(s->expr, scope);
+             * it allocates is dead at statement end. At function top level (scope is
+             * "&_scope") there is no per-iteration reset to reclaim them, so build them
+             * in a fresh per-statement `_t` arena (block-scoped, like scalar_transient)
+             * and free it immediately, instead of letting them accumulate in the
+             * enclosing scope until function return. Sound because stores into
+             * longer-lived containers / inout route through owner_arena_of, not
+             * g_cur_scope — only pure transients land in _t.
+             * Gated to "&_scope" like the scalar decl/assign reclaim above: inside a
+             * loop/block the scratch reset already reclaims, so the _t wrap would be a
+             * redundant empty-arena per iteration. EXCLUDE or_return: it early-returns
+             * past arena_free(&_t) (leak). (hierc0's SExpr wraps at every depth; the
+             * extra reclaim is output-invisible, so this hierc-only gating — matching
+             * its own decl/assign gating — keeps the fixpoint differential green.) */
+            if (!strcmp(scope, "&_scope") && !expr_has_orreturn(s->expr)) {
+                g_cur_scope = "&_t";
+                char *v = gen_expr(s->expr, "&_t");
                 indent(o, ind);
-                fprintf(o, "%s;\n", v);
+                fprintf(o, "{ Arena _t = arena_new(0); %s; arena_free(&_t); }\n", v);
                 break;
             }
-            g_cur_scope = "&_t";
-            char *v = gen_expr(s->expr, "&_t");
+            char *v = gen_expr(s->expr, scope);
             indent(o, ind);
-            fprintf(o, "{ Arena _t = arena_new(0); %s; arena_free(&_t); }\n", v);
+            fprintf(o, "%s;\n", v);
             break;
         }
         case S_RETURN: {

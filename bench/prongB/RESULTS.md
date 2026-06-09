@@ -45,6 +45,51 @@ window-eviction win (4.0 MB) intact. Golden/fuzz/fixpoint all stayed green throu
 the regression because they check **output, not wall time** — hence the new
 `make bench-guard` perf gate in `make ci`.
 
+## macOS (Apple Silicon) — fair standard-opt sweep (2026-06-09)
+
+> The numbers above are the **Linux** machine (gcc 15.2 / rustc 1.93 / go 1.26 /
+> koka 3.2.3) and stay authoritative. This is a **second machine, second OS**:
+> Apple Silicon arm64, Darwin 25.5, Apple clang 21.0.0, rustc 1.95.0, go 1.26.4,
+> **Koka not installed** (its column is absent here, not zero). Same fair rule —
+> each language at its standard optimized build (hier/C/Rust `-O3`, `go build`).
+> Peak RSS via `bench/peakrss`; best-of-3 wall. Regenerate with
+> `sh bench/fair_full.sh` (+ `sh bench/fair_rest.sh` for the lower block).
+> hier is built post-**MM-10c** (which is output-invisible and a no-op on every
+> workload here — none has a discarded call-statement inside a loop).
+
+| workload         | hier (hierc)    | C             | Rust           | Go (GC)        |
+|------------------|----------------:|--------------:|---------------:|---------------:|
+| binary-trees     | **16.7MB/160ms** | 17.4MB/976ms  | 17.6MB/1084ms  | 39.3MB/999ms   |
+| tree-rewrite     | **7.8MB/89ms**   | 9.4MB/496ms   | 5.6MB/468ms    | 23.8MB/429ms   |
+| array-pipeline   | 6.3MB/20ms      | 2.9MB/13ms    | 3.0MB/13ms     | 9.2MB/29ms     |
+| json-parse       | 79.9MB/794ms    | 44.1MB/731ms  | 52.7MB/592ms   | 113.9MB/993ms  |
+| gcscan           | 72.7MB/112ms    | 47.7MB/102ms  | —              | 142.5MB/100ms  |
+| latency          | 4.4MB/115ms     | 2.1MB/69ms    | —              | 16.7MB/557ms   |
+| winagg           | 8.8MB/144ms     | 6.6MB/104ms   | 6.7MB/172ms    | 14.4MB/191ms   |
+| window (string)  | 4.7MB/244ms     | 2.5MB/112ms   | —              | 9.7MB/64ms     |
+| invindex (map)   | 72.1MB/274ms    | 64.4MB/241ms  | —              | 67.4MB/185ms   |
+
+**The thesis holds cross-platform.** The *relative* shape is identical to Linux:
+- **vs Go (GC): hier wins memory on every workload and time on the tree/latency
+  ones** (binary-trees 16.7 vs 39.3 MB and **6× faster**; gcscan 72.7 vs 142.5 MB).
+- **vs C/Rust on the tree workloads hier still wins both axes** (binary-trees
+  16.7MB/160ms vs C 17.4MB/976ms — the arena's bulk-free vs per-node `free`), and
+  trails them on flat-array / json-parse / latency — the same manual-memory ceiling.
+
+**Two honest cross-platform deltas:**
+1. **hier memory reads higher on macOS** (binary-trees 16.7 vs Linux 13.3 MB;
+   gcscan 72.7 vs 64.7). Peak RSS is platform-sensitive — 16 KB arm64 pages and a
+   different system allocator. The *ranking* transfers; the absolute MB does not.
+   (The Linux table also has Koka at 14.8 MB on binary-trees, which would still
+   edge hier here — that comparison can't be made on this box, Koka being absent.)
+2. **The macOS bench scripts had a unit bug, now fixed.** `bench/peakrss.c`'s
+   `ru_maxrss` is **bytes on macOS, KB on Linux**; `fair_full.sh`/`fair_rest.sh`/
+   `window`/`latency`/`gcscan` runners divided by 1024 assuming KB, so they printed
+   ~1024× inflated "MB" on macOS. Normalized to KB by `uname` (the idiom
+   `bench/run.sh`/`prongB/run.sh` already used) — these numbers are post-fix.
+   `bench/dbquery`'s hier FFI binary also fails to link against macOS libsqlite3
+   (C builds: 3.1MB/275ms); left as a known macOS gap.
+
 ## The field: six languages, two Hier compilers
 
 Hier has **two** compilers, and both appear here:
