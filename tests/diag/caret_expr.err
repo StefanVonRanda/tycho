@@ -1,0 +1,3 @@
+tests/diag/caret_expr.hi:2: error: expected an expression
+     2 |     x := 1 +
+       |             ^

@@ -157,6 +157,31 @@ for hi in tests/abort/*.hi; do
     fi
 done
 
+# Diagnostics goldens. tests/diag/<name>.hi are invalid programs whose EXACT
+# compiler stderr (message + source-line snippet + caret + did-you-mean) is
+# locked as tests/diag/<name>.err — so an error-quality regression fails the
+# build, same discipline as the .out goldens (record with RECORD=1, review the
+# diff). hierc only: hierc0's bootstrap diagnostics are deliberately simpler.
+for hi in tests/diag/*.hi; do
+    [ -e "$hi" ] || continue
+    name="diag_$(basename "$hi" .hi)"
+    g="tests/diag/$(basename "$hi" .hi).err"
+    if "$HIERC" "$hi" --emit-c -o "$TMP/dg" >"$TMP/dg.log" 2>&1; then
+        note "$name" "compiler ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    if [ "$RECORD" = 1 ]; then
+        cp "$TMP/dg.log" "$g"; echo "rec   $name"; recorded=$((recorded + 1)); continue
+    fi
+    if [ ! -f "$g" ]; then
+        note "$name" "no golden — run 'make test-update'"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! cmp -s "$TMP/dg.log" "$g"; then
+        note "$name" "diagnostic != golden ($g)"
+        diff "$g" "$TMP/dg.log" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 echo "-----------------------------------------"
 if [ "$RECORD" = 1 ]; then
     echo "recorded: $recorded   failed: $fail"

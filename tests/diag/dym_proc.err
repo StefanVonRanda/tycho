@@ -1,0 +1,2 @@
+tests/diag/dym_proc.hi:4: error: unknown procedure 'totl'; did you mean 'total'?
+     4 |     print(str(totl(3)))

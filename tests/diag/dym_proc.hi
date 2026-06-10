@@ -1,0 +1,4 @@
+fn total(x: int) -> int:
+    return x
+fn main():
+    print(str(totl(3)))

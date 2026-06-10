@@ -568,6 +568,49 @@ static Type soa_of(Type st) {                   /* find-or-create soa [st] */
 }
 static Type soa_struct(Type t) { return g_soatypes[SOA_ID(t)].st; }
 
+/* ------------------------------------------- "did you mean ...?" */
+
+/* Bounded Levenshtein distance for typo suggestions in diagnostics.
+ * Names longer than 63 bytes never match (cheap upper bound). */
+static int edit_dist(const char *a, const char *b) {
+    int la = (int)strlen(a), lb = (int)strlen(b);
+    if (la > 63 || lb > 63) return 99;
+    int row[64];
+    for (int j = 0; j <= lb; j++) row[j] = j;
+    for (int i = 1; i <= la; i++) {
+        int prev = row[0];
+        row[0] = i;
+        for (int j = 1; j <= lb; j++) {
+            int tmp = row[j];
+            int d = prev + (a[i - 1] == b[j - 1] ? 0 : 1);
+            if (row[j] + 1 < d) d = row[j] + 1;
+            if (row[j - 1] + 1 < d) d = row[j - 1] + 1;
+            row[j] = d;
+            prev = tmp;
+        }
+    }
+    return row[lb];
+}
+/* consider `cand` as a suggestion for the unknown `name`; keep the closest */
+static void dym(const char *name, const char *cand, const char **best, int *bestd) {
+    if (!cand || !cand[0] || !strcmp(cand, name)) return;
+    int d = edit_dist(name, cand);
+    if (d < *bestd) { *bestd = d; *best = cand; }
+}
+/* only offer a suggestion close enough to be a plausible typo */
+static const char *dym_pick(const char *name, const char *best, int bestd) {
+    return bestd <= (strlen(name) <= 4 ? 1 : 2) ? best : NULL;
+}
+static const char *suggest_type(const char *name) {
+    const char *best = NULL; int bestd = 99;
+    for (int i = 0; i < g_nstructs; i++)  dym(name, g_structs[i].name, &best, &bestd);
+    for (int i = 0; i < g_nenums; i++)    dym(name, g_enums[i].name, &best, &bestd);
+    for (int i = 0; i < g_nnewtypes; i++) dym(name, g_newtypes[i].name, &best, &bestd);
+    static const char *const kw[] = { "int", "float", "bool", "string" };
+    for (int i = 0; i < (int)(sizeof kw / sizeof *kw); i++) dym(name, kw[i], &best, &bestd);
+    return dym_pick(name, best, bestd);
+}
+
 /* Composite maps [K: V] with an arbitrary value type (string/struct/array/...),
  * interned like composite arrays: one monomorphic HierMapC<id> generated per
  * distinct (key, value) pair used. The four hand-written int/float-valued maps
@@ -960,6 +1003,8 @@ static Type parse_type(Parser *ps) {
         if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
         int nid = newtype_find(nm);
         if (nid >= 0) { ps->p++; return NT_TYPE(nid); }
+        const char *sg = suggest_type(nm);
+        if (sg) die_at(t->line, "unknown type '%s'; did you mean '%s'?", t->text, sg);
         die_at(t->line, "unknown type '%s'", t->text);
     }
     switch (t->kind) {
@@ -2121,6 +2166,17 @@ static int vars_can_mutate(const char *name) {
     return 1;
 }
 
+static const char *suggest_var(const char *name) {
+    const char *best = NULL; int bestd = 99;
+    for (int i = 0; i < g_nvars; i++) dym(name, g_vars[i].name, &best, &bestd);
+    return dym_pick(name, best, bestd);
+}
+static const char *suggest_fn(const char *name) {
+    const char *best = NULL; int bestd = 99;
+    for (int i = 0; i < g_nsigs; i++) dym(name, g_sigs[i].name, &best, &bestd);
+    return dym_pick(name, best, bestd);
+}
+
 
 /* --------------------------------------------------------- type resolve */
 
@@ -2307,6 +2363,9 @@ static Type resolve_expr(Expr *e) {
                 note_fnval(e->sval);   /* emit a <name>__clo thunk for it */
                 return e->type = funcc_of(fs->params, fs->nparams, fs->ret);
             }
+            const char *sg = suggest_var(e->sval);
+            if (!sg) sg = suggest_fn(e->sval);
+            if (sg) die_at(e->line, "unknown variable '%s'; did you mean '%s'?", e->sval, sg);
             die_at(e->line, "unknown variable '%s'", e->sval);
         }
         case E_ARRLIT: {
@@ -2724,7 +2783,11 @@ static Type resolve_expr(Expr *e) {
                 return e->type = T_VOID;
             }
             Sig *s = sig_find(e->sval);
-            if (!s) die_at(e->line, "unknown procedure '%s'", e->sval);
+            if (!s) {
+                const char *sg = suggest_fn(e->sval);
+                if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", e->sval, sg);
+                die_at(e->line, "unknown procedure '%s'", e->sval);
+            }
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        e->sval, s->nparams, e->nargs);
@@ -2930,8 +2993,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "assigning %d name(s) from a %d-element tuple", s->nnames, tup_n(rt));
             for (int i = 0; i < s->nnames; i++) {
                 Type vt;
-                if (!vars_find(s->names[i], &vt))
+                if (!vars_find(s->names[i], &vt)) {
+                    const char *sg = suggest_var(s->names[i]);
+                    if (sg) die_at(s->line, "assignment to unknown variable '%s' (use ':=' to declare); did you mean '%s'?", s->names[i], sg);
                     die_at(s->line, "assignment to unknown variable '%s' (use ':=' to declare)", s->names[i]);
+                }
                 s->mtypes[i] = tup_elem(rt, i);
                 if (s->mtypes[i] != vt)
                     die_at(s->line, "cannot assign %s to '%s' of type %s",
@@ -2941,8 +3007,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
         }
         case S_ASSIGN: {
             Type vt;
-            if (!vars_find(s->name, &vt))
+            if (!vars_find(s->name, &vt)) {
+                const char *sg = suggest_var(s->name);
+                if (sg) die_at(s->line, "assignment to unknown variable '%s'; did you mean '%s'?", s->name, sg);
                 die_at(s->line, "assignment to unknown variable '%s'", s->name);
+            }
             Type t = resolve_exp(s->expr, vt);
             if (t != vt)
                 die_at(s->line, "cannot assign %s to '%s' of type %s",
