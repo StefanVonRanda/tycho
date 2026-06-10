@@ -611,6 +611,19 @@ static const char *suggest_type(const char *name) {
     return dym_pick(name, best, bestd);
 }
 
+/* "geom__" when t names a package-mangled user type (geom__Circle), else NULL.
+ * Lets UFCS resolve a method defined in the receiver type's own package. */
+static const char *type_pkg_prefix(Type t) {
+    const char *nm = NULL;
+    if (IS_STRUCT(t))       nm = g_structs[STRUCT_ID(t)].name;
+    else if (IS_ENUM(t))    nm = g_enums[ENUM_ID(t)].name;
+    else if (IS_NEWTYPE(t)) nm = g_newtypes[NT_ID(t)].name;
+    if (!nm) return NULL;
+    const char *us = strstr(nm, "__");
+    if (!us) return NULL;
+    return sfmt("%.*s", (int)(us - nm) + 2, nm);
+}
+
 /* Composite maps [K: V] with an arbitrary value type (string/struct/array/...),
  * interned like composite arrays: one monomorphic HierMapC<id> generated per
  * distinct (key, value) pair used. The four hand-written int/float-valued maps
@@ -2490,6 +2503,13 @@ static Type resolve_expr(Expr *e) {
                           Sig *c2 = sig_find(sfmt("%s%s", e->pkg, e->sval));
                           if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == _qvt && !c2->inout[0]) ms = c2;
                       }
+                      if (!ms) {   /* method defined in the receiver type's package: geom__Circle -> geom__area */
+                          const char *pp = type_pkg_prefix(_qvt);
+                          if (pp) {
+                              Sig *c3 = sig_find(sfmt("%s%s", pp, e->sval));
+                              if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == _qvt && !c3->inout[0]) ms = c3;
+                          }
+                      }
                   }
                   if (ms) {   /* UFCS: prepend the receiver, drop the qualifier -> foo(x, args) */
                       Expr *recv = new_expr(E_IDENT, e->line); recv->sval = e->qual; recv->pkg = e->pkg;
@@ -2497,7 +2517,8 @@ static Type resolve_expr(Expr *e) {
                       na[0] = recv;
                       for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
                       e->args = na; e->nargs += 1;
-                      e->qual = NULL;   /* keep e->sval/e->pkg; the package resolver below prefixes if needed */
+                      e->qual = NULL;
+                      e->sval = (char *)ms->name;   /* the resolved (possibly package-mangled) method name */
                   } else {            /* fn-typed-field call: a call-on-expression of x.foo */
                       Expr *base = new_expr(E_IDENT, e->line); base->sval = e->qual; base->pkg = e->pkg;
                       Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
@@ -2524,13 +2545,20 @@ static Type resolve_expr(Expr *e) {
                         Sig *c2 = sig_find(sfmt("%s%s", e->pkg, fld->sval));
                         if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == bt && !c2->inout[0]) ms = c2;
                     }
+                    if (!ms) {   /* method defined in the receiver type's package */
+                        const char *pp = type_pkg_prefix(bt);
+                        if (pp) {
+                            Sig *c3 = sig_find(sfmt("%s%s", pp, fld->sval));
+                            if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == bt && !c3->inout[0]) ms = c3;
+                        }
+                    }
                 }
                 if (ms) {   /* prepend base as the receiver; resolve as a normal named call */
                     Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
                     na[0] = fld->lhs;
                     for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
                     e->args = na; e->nargs += 1;
-                    e->sval = fld->sval;   /* keep e->pkg; the package resolver prefixes if needed */
+                    e->sval = (char *)ms->name;   /* the resolved (possibly package-mangled) method name */
                     e->lhs = NULL;
                 }
             }

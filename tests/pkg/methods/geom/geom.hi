@@ -1,0 +1,10 @@
+package geom
+
+struct Circle:
+    r: int
+
+fn area(c: Circle) -> int:
+    return c.r * c.r * 3
+
+fn describe(c: Circle) -> string:
+    return "circle area " + str(c.area())

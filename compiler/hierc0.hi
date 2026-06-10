@@ -2335,10 +2335,14 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
     if struct_fn_field(dc, bt, fname):            # a real fn-typed field wins (call-through-field)
         return ""
     si := map_get(dc.sigmap, fname, -1)
-    if si < 0:
-        return ""
-    if len(dc.sigs[si].ptypes) >= 1 and dc.sigs[si].ptypes[0] == bt:
+    if si >= 0 and len(dc.sigs[si].ptypes) >= 1 and dc.sigs[si].ptypes[0] == bt:
         return fname
+    us := find(bt, "__")                          # method in the receiver type's package: geom__Circle -> geom__area
+    if us >= 0:
+        qn := substr(bt, 0, us + 2) + fname
+        sj := map_get(dc.sigmap, qn, -1)
+        if sj >= 0 and len(dc.sigs[sj].ptypes) >= 1 and dc.sigs[sj].ptypes[0] == bt:
+            return qn
     return ""
 
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
