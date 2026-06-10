@@ -17,9 +17,11 @@ cluster of languages, and the differences are the interesting part:
   exclusive copy-in/copy-out borrow (Hier already cites this). Hylo's
   distinctive tool is **subscripts that *project* (yield) rather than return** —
   the callee temporarily grants the caller read or read/write access to an
-  interior value without ever exposing a pointer. That is *exactly* the
-  mechanism Hier is missing for "mutate through an array element" (`arr[i].f =
-  v`). Hylo gets efficiency from projections; Hier gets it from arenas + the
+  interior value without ever exposing a pointer. Hier has since shipped
+  "mutate through an array element" (`arr[i].f = v`, and `m[k]` map places)
+  *without* projections — the compiler treats the element as a place and
+  mutates it in the arena directly (see `tests/soa.hi`). Hylo gets efficiency
+  from projections; Hier gets it from arenas + the
   deep-copy seam. ([Hylo intro](https://hylo-lang.org/introduction/),
   [spec](https://hylo-lang.org/docs/reference/specification/))
 - **Koka / Perceus** — *the same idea via a different mechanism*. Perceus is
@@ -220,14 +222,15 @@ above is now the project's sharpest story precisely *because* it was proven on
 the compiler itself.
 
 The memory-model codegen migration ([memory-model.md](memory-model.md),
-MM-0 … MM-7f) that was the live frontier is now **complete** — hierc0 reproduces
+MM-0 … MM-10) that was the live frontier is now **complete** — hierc0 reproduces
 the full arena model with **no known memory gap** and full feature + memory parity
 with the C compiler (the last residual, heap-payload option arrays, closed in
 MM-7f). Since then: a `char` type, comprehensive differential + ASan/UBSan fuzzing
 ([fuzz/](../fuzz/)), a dependency-free sampling profiler ([tools/prof/](../tools/prof/)),
 a ~3.1× self-compile speedup, and a real-workload demo (`examples/json.hi`). The
-frontier has moved to the **next major language feature — Odin-style packages &
-modules** (Tier 4, now promoted above). The one open perf lever (a streaming-codegen
-rewrite, to *outperform* the C compiler) is scoped in [perf.md](perf.md) but
-deferred. Compile-time execution and a demo interpreter stay Tier 4; generics are
+**Odin-style packages & modules** that the frontier then moved to have shipped
+too — as have closures, UFCS methods, C FFI ([ffi.md](ffi.md)), and a corelib —
+so the open items left in *this* doc are the deferred streaming-codegen rewrite
+(scoped in [perf.md](perf.md), to *outperform* the C compiler) and the remaining
+Tier-4 ideas: compile-time execution and a demo interpreter. Generics are
 decided-against.
