@@ -1,7 +1,7 @@
 # hierc0 memory-model codegen — closing the perf gap to the C compiler
 
-> **STATUS (complete): the migration documented here is DONE — MM-0 … MM-7f**,
-> plus **MM-10** (below). hierc0 now emits the same value-semantic implicit-arena C
+> **STATUS (complete): the migration documented here is DONE — MM-0 … MM-10**
+> (MM-8/9/10 below). hierc0 now emits the same value-semantic implicit-arena C
 > the reference compiler does, with **no known memory gap** and full feature parity;
 > the last residual (heap-payload option arrays, `[Option(str)]`) was closed in MM-7f.
 > The "Starting point" section just below describes where this doc *began* — the naive
@@ -319,7 +319,7 @@ per-iteration transients eagerly instead of holding them to function return.
   (bench/strarr_build.hi, now a perf guard). NOTE: "map string VALUES" in the
   earlier residual list is moot — gen_map_type only monomorphizes int/float value
   types, so no str-valued maps exist.
-- ✅ MM-6d (commit pending): NESTED-ARRAY ELEMENTS (`[[T]]`) now live in the
+- ✅ MM-6d: NESTED-ARRAY ELEMENTS (`[[T]]`) now live in the
   array's arena. `elem_deepcopy` also returns true for `is_array(et)`, and a new
   `elem_copy_expr(ctx, et, ar, src)` emits the per-element copy (str -> scopy /
   array -> `Arr_<inner>_copy(ar, src)`); `_from`'s deep-copy loop calls it. The
@@ -337,7 +337,7 @@ per-iteration transients eagerly instead of holding them to function return.
   B≡C + 57/57 ASan/UBSan-clean (`compiler/hierc0.hi` + `tests/projections.hi`
   exercise `[[…]]`) + loop-local [[int]] build 1M iters **108MB -> 1.4MB (~77×)**
   (bench/nestarr_build.hi, now a perf guard).
-- ✅ MM-6e (commit pending): STRUCT / TUPLE ARRAY ELEMENTS now live in the array's
+- ✅ MM-6e: STRUCT / TUPLE ARRAY ELEMENTS now live in the array's
   arena — and, because the leak source for these was *construction*, this also
   closed the banked "struct/tuple construction → malloc" item. Two coupled parts:
   (1) `elem_deepcopy` extends to heap structs (`is_struct and struct_is_heap` —
@@ -361,7 +361,7 @@ per-iteration transients eagerly instead of holding them to function return.
   self-compile exercises both parts heavily) + loop-local `[Item]` (string field)
   build 1M iters **184MB → 1.3MB (~140×)** (bench/structarr_build.hi, now a perf
   guard).
-- ✅ MM-6f (commit pending): OPTION / RESULT ARRAY ELEMENTS — the box now lives in
+- ✅ MM-6f: OPTION / RESULT ARRAY ELEMENTS — the box now lives in
   the array's arena. `elem_deepcopy` extends to `is_option`/`is_result`;
   `elem_copy_expr` re-boxes via the preamble helpers — `o.tag ? hsome(hbox(ar,
   sizeof(T), o.val)) : hnone()` (result: `hok`/`herr` on `.ok`/`.err`) — so `_from`
@@ -415,7 +415,7 @@ per-iteration transients eagerly instead of holding them to function return.
   so the self-compile exercises it pervasively) + 57/57 ASan/UBSan + a callee
   filling a caller-owned per-iteration `inout [int]` 200k×200: **798MB → 1.4MB
   (~582×)** (bench/inout_fill.hi, now a perf guard).
-- ✅ MM-7e (commit pending): INOUT HEAP-STRUCT field-container threading — extends
+- ✅ MM-7e: INOUT HEAP-STRUCT field-container threading — extends
   MM-6g from arrays/maps/soa to heap structs. `inout_container_param` (gained a
   `ctx` arg) now also returns true for `is_struct and struct_is_heap`, so an
   `inout Struct` param carries a hidden `Arena* _ina_<name>` and `owner_arena_of`
@@ -475,7 +475,7 @@ and transient values inherit the enclosing statement's owner (function scope).
   38 MB (~62×), tree-rewrite 825 MB → 9 MB (~88×)** — now competitive with the C
   compiler / C / Rust / Koka (was 50–170× worse). Did NOT fix arr_pipeline — that
   was MM-7c.
-- ✅ MM-7c (commit pending): PER-VAR BLOCK DEPTH — closed the last hierc0-vs-hierc
+- ✅ MM-7c: PER-VAR BLOCK DEPTH — closed the last hierc0-vs-hierc
   gap (arr_pipeline). The MM-6a coarseness was a SINGLE `block_base` in `Ctx`, so a
   var declared in an ENCLOSING block (not the current one, not function-top) routed
   coarsely to `&_scope` instead of its block arena — e.g. `ys := []int` in a `for j`
@@ -492,7 +492,7 @@ and transient values inherit the enclosing statement's owner (function scope).
   everywhere) + 57/57 ASan/UBSan + make bench within bounds. arr_pipeline under
   hierc0: **358 MB → 5 MB (~72×)**, and faster (177 → 32 ms). hierc0 is now
   competitive across ALL four prong-B workloads — no known memory gap to `hierc`.
-- ✅ MM-7d (commit pending): MOVE-ON-LAST-USE (deep-copy elision). `b := a` over a
+- ✅ MM-7d: MOVE-ON-LAST-USE (deep-copy elision). `b := a` over a
   uniquely-owned local normally deep-copies; if `a` is read exactly once in the
   whole function and that read is not in a loop (so it is its single dynamic last
   use), `b` takes over `a`'s buffer — a move, no copy. Mirrors the C compiler's
@@ -606,7 +606,7 @@ array's arena; the next store reuses it. Static unique ownership again — no re
 
 **Result:** `window` string case 47.3 MB → 4.2 MB (hierc) / 3.6 MB (hierc0), ~14× C
 → ~1.3× C, beating Go — and *faster* (fewer bumps). Verified: checksum matches C/Go
-on both compilers; ASan/UBSan clean; `make test` 97/0; `make fixpoint` B==C (MM-9 is
+on both compilers; ASan/UBSan clean; `make test` all green; `make fixpoint` B==C (MM-9 is
 output-invisible); differential fuzz clean; `tests/elem_recycle.hi` is the
 distinct-value alias regression (the MM-8 recycle_alias lesson: value-masking fuzz
 can hide element corruption, so a dedicated distinct-value test is the real guard).
@@ -639,7 +639,7 @@ can hide element corruption, so a dedicated distinct-value test is the real guar
 ## Validation per stage
 
 - `make fixpoint` green (B≡C; B matches the C compiler's golden output).
-- `make test` 57/57 (ASan/UBSan clean — the self-emitted C runs under sanitizers).
+- `make test` all green (ASan/UBSan clean — the self-emitted C runs under sanitizers).
 - Memory delta: ASan leak report and/or `bench/peakrss` on a workload that
   exercises the migrated type — each stage must show that type's bytes now
   freed. No silent "looks done" — quote the before/after.
