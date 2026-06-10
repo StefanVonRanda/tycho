@@ -72,6 +72,15 @@ typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; } Arena;
 
 static void hier_oom(void) { fprintf(stderr, "hier: out of memory\n"); exit(1); }
+/* reserve() takes a runtime int straight from user code: a negative or huge n
+ * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
+ * every later push then writes out of bounds. Fail loudly instead. */
+static void hier_cap_check(long n, size_t elem) {
+    if (n < 0 || (unsigned long)n > (size_t)-1 / elem) {
+        fprintf(stderr, "hier: reserve capacity %ld out of range\n", n);
+        exit(1);
+    }
+}
 
 /* Global block free-list. Arenas are created/reset/freed per block scope, call,
  * and loop iteration, so naive malloc/free of a HIER_BLOCK_DEFAULT-sized block
@@ -538,6 +547,7 @@ HierArrInt hier_arr_int_with_cap(Arena *a, long cap) {
  * many-list structure (see bench/invindex). */
 void hier_arr_int_reserve(Arena *a, HierArrInt *xs, long n) {
     if (n <= xs->cap) return;
+    hier_cap_check(n, sizeof(long));
     long *nd = (long *)arena_alloc(a, (size_t)n * sizeof(long));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(long));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(long));
@@ -627,6 +637,7 @@ HierArrFloat hier_arr_float_with_cap(Arena *a, long cap) {
 
 void hier_arr_float_reserve(Arena *a, HierArrFloat *xs, long n) {
     if (n <= xs->cap) return;
+    hier_cap_check(n, sizeof(double));
     double *nd = (double *)arena_alloc(a, (size_t)n * sizeof(double));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(double));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(double));
@@ -710,6 +721,7 @@ HierArrStr hier_arr_str_with_cap(Arena *a, long cap) {
 
 void hier_arr_str_reserve(Arena *a, HierArrStr *xs, long n) {
     if (n <= xs->cap) return;
+    hier_cap_check(n, sizeof(char *));
     char **nd = (char **)arena_alloc(a, (size_t)n * sizeof(char *));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(char *));
