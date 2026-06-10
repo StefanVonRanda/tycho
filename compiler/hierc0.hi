@@ -4292,17 +4292,29 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
         SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
             rty := type_of(e, names, types, dc, ctx)
             tmp := "_or_" + name
+            # the early return leaves the function like SReturn does: flush any
+            # live push-loop fusion cursors, then free every enclosing block
+            # arena + _scope (return_frees) — skipping them leaked every arena
+            # on the error path. The Err payload is promoted into _parent BEFORE
+            # the frees (it points into a scope we are about to free), exactly
+            # like hierc's E_ORRETURN (src/hierc.c:4135).
+            orfl := ""
+            ofk := 0
+            for ofk < len(ctx.fusearr):
+                orfl = orfl + "    " + un(ctx.fusearr[ofk]) + ".data = _fd" + ctx.fusesuf[ofk] + "; " + un(ctx.fusearr[ofk]) + ".len = _fl" + ctx.fusesuf[ofk] + "; " + un(ctx.fusearr[ofk]) + ".cap = _fc" + ctx.fusesuf[ofk] + ";\n"
+                ofk = ofk + 1
             if is_option(rty):                    # Option: unwrap Some, else return None
                 cto := cty(dc, ctx, option_inner(rty))
                 oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
-                oc = oc + "    if (" + tmp + ".tag == 0) return hnone();\n"
+                oc = oc + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    " + return_frees(dc, ctx) + " return hnone(); }\n"
                 oc = oc + "    " + cto + un(name) + " = *(" + cto + "*)(" + tmp + ".val);\n"
                 push(names, name)
                 push(types, option_inner(rty))
                 return oc
             ct := cty(dc, ctx, result_ok(rty))
+            ect := cty(dc, ctx, result_err(rty))
             code := "    HResult " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
-            code = code + "    if (" + tmp + ".tag == 0) return " + tmp + ";\n"
+            code = code + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    HResult _re_" + name + " = herr(hbox(_parent, sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(rty), "_parent", tmp + ".err") + ")); " + return_frees(dc, ctx) + " return _re_" + name + "; }\n"
             code = code + "    " + ct + un(name) + " = *(" + ct + "*)(" + tmp + ".ok);\n"
             push(names, name)
             push(types, result_ok(rty))

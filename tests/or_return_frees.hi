@@ -1,0 +1,41 @@
+# or_return's early-return path must free the live block arenas + _scope
+# exactly like a normal return (and promote the Err payload to the caller's
+# arena first). Regression: hierc0 leaked every scope arena on the error
+# path -> GBs of RSS over a 1M-iteration loop (hierc stays flat).
+fn boom(i: int) -> Result(int, string):
+    if i >= 0:
+        return Err("nope" + str(i))
+    return Ok(i)
+
+fn step(i: int) -> Result(int, string):
+    pad := "x" + str(i)
+    v := boom(i) or_return
+    return Ok(v + len(pad))
+
+fn opt_get(i: int) -> Option(int):
+    if i >= 0:
+        return None
+    return Some(i)
+
+fn ostep(i: int) -> Option(int):
+    pad := "y" + str(i)
+    v := opt_get(i) or_return
+    return Some(v + len(pad))
+
+fn main():
+    n := 0
+    last := ""
+    for i in range(0, 100000):
+        match step(i):
+            Ok(v):
+                n = n + v
+            Err(e):
+                n = n + 1
+                last = e
+        match ostep(i):
+            Some(v):
+                n = n + v
+            None:
+                n = n + 1
+    print(str(n))
+    print(last)
