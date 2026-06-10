@@ -4270,9 +4270,10 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
-                code := "    char* " + un(name) + " = scopy(0, " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 push(names, name)
                 push(types, ty)
+                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked) — mirrors the SDecl saccum path; scopy(0,...) here was a malloc leak
+                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement
                 code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")

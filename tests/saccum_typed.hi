@@ -1,0 +1,12 @@
+fn build(n: int) -> string:
+    acc: string = ""
+    i := 0
+    for i < n:
+        acc = acc + "ab"
+        i = i + 1
+    return acc
+
+fn main():
+    s := build(6)
+    print(s)
+    print(str(len(s)))
