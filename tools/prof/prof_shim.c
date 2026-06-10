@@ -6,7 +6,8 @@
  * needs none of that: ITIMER_PROF fires SIGPROF on consumed CPU time, and the
  * handler records the interrupted instruction pointer (RIP) plus a few stack
  * words (return-address candidates). At exit it resolves each sample to a symbol
- * with dladdr and appends "leaf <- caller" lines to /tmp/prof_syms.txt; many runs
+ * with dladdr and appends "leaf <- caller" lines to $HIER_PROF_OUT (default
+ * /tmp/prof_syms.txt — profile.sh points it at a private mktemp dir); many runs
  * accumulate, then `sort | uniq -c | sort -rn` gives the breakdown. Link with the
  * program under test: cc -O2 -no-pie -rdynamic -fno-omit-frame-pointer prog.c
  * prof_shim.c -ldl. (-rdynamic exposes the program's statics to dladdr; -no-pie
@@ -21,6 +22,7 @@
 #include <dlfcn.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define CAP (1u << 23)
 #define NW 8     /* RIP + 3 RSP words (leaf-call return addr) + 3 frame-pointer-chain returns */
@@ -62,7 +64,9 @@ __attribute__((constructor)) static void prof_start(void) {
 __attribute__((destructor)) static void prof_stop(void) {
     struct itimerval z = {{0,0},{0,0}};
     setitimer(ITIMER_PROF, &z, 0);
-    int fd = open("/tmp/prof_syms.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    const char *out = getenv("HIER_PROF_OUT");
+    if (!out || !*out) out = "/tmp/prof_syms.txt";
+    int fd = open(out, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
     Dl_info self; dladdr((void *)prof_stop, &self);          /* our own object name */
     for (unsigned long i = 0; i < npc; i++) {

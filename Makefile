@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -150,7 +150,4 @@ clean:
 	rm -f examples/memo examples/memo.c
 	rm -f examples/collect examples/collect.c
 	rm -f examples/context examples/context.c
-	rm -f examples/strings examples/strings.c
-	rm -f examples/words examples/words.c
-	rm -f examples/records examples/records.c
 	-rmdir build 2>/dev/null || true

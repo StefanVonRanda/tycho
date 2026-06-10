@@ -7,16 +7,25 @@ HIERC=./hierc
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 # ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
-best() { bms=9999999; bkb=0
+# Fail-closed: a nonzero exit prints a loud FAILED marker instead of numbers
+# (peakrss propagates the child's status). stdout goes to $T/cur.out and is
+# compared against the row's first contender ($T/ref.out — hier() resets it,
+# and hier is always first on a row): a mismatch appends OUT-DIFF.
+best() { bms=9999999; bkb=0; rc=0
   for i in 1 2 3; do
-    o=$("$T/pk" "$1" 2>&1); last=$(echo "$o" | tail -1)
+    "$T/pk" "$1" > "$T/cur.out" 2> "$T/stat" || rc=$?
+    last=$(tail -1 "$T/stat")
     kb=$(to_kb "$(echo "$last" | awk '{print $(NF-1)}')"); ms=$(echo "$last" | awk '{print $NF}')
     case "$ms" in *[!0-9]*|"") ms=9999999 ;; esac
     [ "$ms" -lt "$bms" ] && bms=$ms && bkb=$kb
   done
+  if [ "$rc" -ne 0 ]; then printf 'FAILED(rc=%s)' "$rc"; return 0; fi
+  if [ -f "$T/ref.out" ]; then
+    cmp -s "$T/cur.out" "$T/ref.out" || { awk "BEGIN{printf \"%5.1fMB/%s OUT-DIFF\", $bkb/1024.0, \"${bms}ms\"}"; return 0; }
+  else cp "$T/cur.out" "$T/ref.out"; fi
   awk "BEGIN{printf \"%5.1fMB/%-7s\", $bkb/1024.0, \"${bms}ms\"}"
 }
-hier() { $HIERC "$1" --emit-c -o "$T/b" >/dev/null 2>&1 && cc -O3 -o "$T/b" "$T/b.c" -lm 2>/dev/null && best "$T/b" || echo "build-fail"; }
+hier() { rm -f "$T/ref.out"; $HIERC "$1" --emit-c -o "$T/b" >/dev/null 2>&1 && cc -O3 -o "$T/b" "$T/b.c" -lm 2>/dev/null && best "$T/b" || echo "build-fail"; }
 cc3()  { cc -O3 -o "$T/b" "$1" -lm 2>/dev/null && best "$T/b" || echo "-"; }
 rs3()  { rustc -C opt-level=3 -o "$T/b" "$1" 2>/dev/null && best "$T/b" || echo "-"; }
 go3()  { ( cd "$(dirname "$1")" && go build -o "$T/b" "$(basename "$1")" 2>/dev/null ) && best "$T/b" || echo "-"; }
@@ -44,6 +53,7 @@ if pkg-config --exists sqlite3 2>/dev/null || echo '#include <sqlite3.h>' | cc -
   DB=bench/dbquery
   # macOS ships libsqlite3 + sqlite3.h but no .pc file — use --link (not --pkg) there.
   if pkg-config --exists sqlite3 2>/dev/null; then HIER_SQLITE="--pkg sqlite3"; else HIER_SQLITE="--link sqlite3"; fi
+  rm -f "$T/ref.out"
   $HIERC "$DB/dbquery.hi" -o "$T/dbh" --shim "$DB/db_shim.c" $HIER_SQLITE >/dev/null 2>&1 && printf "  hier %s\n" "$(best "$T/dbh")" || echo "  hier build-fail"
   LIBS=$(pkg-config --cflags --libs sqlite3 2>/dev/null || echo -lsqlite3)
   cc -O3 $DB/dbquery.c -o "$T/dbc" $LIBS 2>/dev/null && printf "  C    %s\n" "$(best "$T/dbc")" || echo "  C build-fail"

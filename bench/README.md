@@ -6,9 +6,12 @@ and the way to prove that is not a passing test suite but numbers next to C, Rus
 Go (GC), and Koka (Perceus RC) on memory-heavy work, with **byte-identical output**
 per workload. This file is the map; each row links to a `RESULTS.md` with detail.
 
-All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall; `cc -O2` /
-`rustc -O` / `go build` / `koka -O2`. Both hier compilers (the C reference `hierc`
-and the self-hosted `hierc0`) are measured where shown.
+All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Build regime:
+each language at its standard release optimization — hier and C at `cc -O3`,
+`rustc -C opt-level=3`, `go build`, `koka -O2` (its max). The authoritative
+numbers under this regime are in each workload's `RESULTS.md`. Both hier
+compilers (the C reference `hierc` and the self-hosted `hierc0`) are measured
+where shown.
 
 ## Axis 1 — memory (peak RSS)
 

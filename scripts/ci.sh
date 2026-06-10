@@ -10,6 +10,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 N="${1:-500}"
+# Fail-closed: a non-numeric FUZZ_N must abort, not silently skip the fuzz.
+case "$N" in
+    *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
+esac
 
 bar() { printf '================================================================\n'; }
 step() { printf '\n>>> %s\n' "$1"; }
@@ -19,22 +23,22 @@ printf ' hier local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/6] build (make hierc)"
+step "[1/7] build (make hierc)"
 make -s hierc
 
-step "[2/6] make test  (golden output + ASan/UBSan/LeakSanitizer)"
+step "[2/7] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
-step "[3/6] make fixpoint  (self-host B==C + packages + standalone driver)"
+step "[3/7] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 
-step "[4/6] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
+step "[4/7] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
 make -s corelib
 
-step "[5/6] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
+step "[5/7] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
 make -s ffi
 
-if [ "$N" -gt 0 ] 2>/dev/null; then
+if [ "$N" -gt 0 ]; then
     step "[6/7] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
     python3 fuzz/run.py "$N"
 else

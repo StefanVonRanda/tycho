@@ -16,28 +16,37 @@
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 
+# Private per-run log (mktemp, not a fixed world-shared /tmp path): no multi-user
+# collision/symlink risk, and each step APPENDS under a header so earlier steps'
+# output survives. Kept on failure (path printed); removed on success.
+LOG="$(mktemp "${TMPDIR:-/tmp}/hier-prepush.XXXXXX")"
+
 printf 'pre-push: make test ... '
-if make -s test >/tmp/hier-prepush.log 2>&1; then
+printf '===== make test =====\n' >>"$LOG"
+if make -s test >>"$LOG" 2>&1; then
     printf 'ok\n'
 else
-    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
-    printf '\npre-push BLOCKED: make test failed. Push aborted.\n'; exit 1
+    printf 'FAILED\n\n'; tail -20 "$LOG"
+    printf '\npre-push BLOCKED: make test failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
 fi
 
 printf 'pre-push: make fixpoint ... '
-if make -s fixpoint >/tmp/hier-prepush.log 2>&1; then
+printf '===== make fixpoint =====\n' >>"$LOG"
+if make -s fixpoint >>"$LOG" 2>&1; then
     printf 'ok\n'
 else
-    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
-    printf '\npre-push BLOCKED: make fixpoint failed. Push aborted.\n'; exit 1
+    printf 'FAILED\n\n'; tail -20 "$LOG"
+    printf '\npre-push BLOCKED: make fixpoint failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
 fi
 
 printf 'pre-push: make corelib ... '
-if make -s corelib >/tmp/hier-prepush.log 2>&1; then
+printf '===== make corelib =====\n' >>"$LOG"
+if make -s corelib >>"$LOG" 2>&1; then
     printf 'ok\n'
 else
-    printf 'FAILED\n\n'; tail -20 /tmp/hier-prepush.log
-    printf '\npre-push BLOCKED: make corelib failed. Push aborted.\n'; exit 1
+    printf 'FAILED\n\n'; tail -20 "$LOG"
+    printf '\npre-push BLOCKED: make corelib failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
 fi
 
+rm -f "$LOG"
 printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz).\n'

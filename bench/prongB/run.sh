@@ -1,7 +1,7 @@
 #!/bin/sh
-# Prong B — head-to-head memory benchmarks. Two workloads, the same program in
-# Hier, C, Rust, Go, and Koka, built at -O and run under bench/peakrss (peak
-# RSS + wall time). Every binary in a workload must print byte-identical output
+# Prong B — head-to-head memory benchmarks. The same program in Hier, C, Rust,
+# Go, and Koka, each at its standard release opt (hier/C -O3, rustc opt-level=3,
+# go build, koka -O2) and run under bench/peakrss (peak RSS + wall time). Every binary in a workload must print byte-identical output
 # (the cross-language correctness check). See RESULTS.md.
 #
 #   binary-trees   allocate a sea of short-lived trees + one long-lived, checksum
@@ -22,6 +22,14 @@ $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 
 fail=0; ref=""
+build_hier() {                                # <src.hi> <out-binary> — fail-closed:
+    # a hier build failure prints the compiler error and exits nonzero (it must
+    # never become a silent "(not built)" green run).
+    if ! $HIERC "$1" --emit-c -o "$2" > "$T/hier_err" 2>&1; then
+        echo "HIER BUILD FAILED: $1"; cat "$T/hier_err"; exit 2
+    fi
+    $CC -O3 -o "$2" "$2.c" || { echo "cc failed on hier-emitted C for $1"; exit 2; }
+}
 REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>" rows, for the summary scorecard
 WL="-"                                         # current workload slug (set by workload()/json_workload())
 run_one() {                                   # <label> <binary>
@@ -40,14 +48,14 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
     title="$1"; b="$2"; kk="$3"; ref=""; WL="$b"
     echo "== $title =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
-    $HIERC "$D/$b.hi" --emit-c -o "$T/w_hier" >/dev/null 2>&1 && $CC -O2 -o "$T/w_hier" "$T/w_hier.c"
+    build_hier "$D/$b.hi" "$T/w_hier"
     run_one hier "$T/w_hier"
     if [ -f "$D/${b}_scoped.hi" ]; then
-        $HIERC "$D/${b}_scoped.hi" --emit-c -o "$T/w_hiers" >/dev/null 2>&1 && $CC -O2 -o "$T/w_hiers" "$T/w_hiers.c"
+        build_hier "$D/${b}_scoped.hi" "$T/w_hiers"
         run_one hier_scoped "$T/w_hiers"
     fi
-    $CC -O2 -o "$T/w_c" "$D/$b.c" 2>/dev/null; run_one c "$T/w_c"
-    command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/w_rs" "$D/$b.rs" 2>/dev/null
+    $CC -O3 -o "$T/w_c" "$D/$b.c" 2>/dev/null; run_one c "$T/w_c"
+    command -v rustc >/dev/null 2>&1 && rustc -C opt-level=3 -o "$T/w_rs" "$D/$b.rs" 2>/dev/null
     run_one rust "$T/w_rs"
     if command -v go >/dev/null 2>&1; then cp "$D/$b.go" "$T/w.go" && ( cd "$T" && go build -o w_go w.go 2>/dev/null ); fi
     run_one go "$T/w_go"
@@ -74,12 +82,12 @@ json_workload() {
     ref=""; WL="json_parse"
     echo "== json-parse (recursive-descent: K parse-and-discard passes over a ~4.4MB doc) =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
-    $HIERC "$D/json_gen.hi" --emit-c -o "$T/jgen" >/dev/null 2>&1 && $CC -O2 -o "$T/jgen" "$T/jgen.c"
-    "$T/jgen" > "$T/json_in"
-    $HIERC "$D/json_parse.hi" --emit-c -o "$T/j_hi" >/dev/null 2>&1 && $CC -O2 -o "$T/j_hi" "$T/j_hi.c"
+    build_hier "$D/json_gen.hi" "$T/jgen"
+    "$T/jgen" > "$T/json_in" || { echo "json doc generation failed"; exit 2; }
+    build_hier "$D/json_parse.hi" "$T/j_hi"
     json_run hier "$T/j_hi" stdin
-    $CC -O2 -o "$T/j_c" "$D/json_parse.c" 2>/dev/null; json_run c "$T/j_c" stdin
-    command -v rustc >/dev/null 2>&1 && rustc -O -o "$T/j_rs" "$D/json_parse.rs" 2>/dev/null
+    $CC -O3 -o "$T/j_c" "$D/json_parse.c" 2>/dev/null; json_run c "$T/j_c" stdin
+    command -v rustc >/dev/null 2>&1 && rustc -C opt-level=3 -o "$T/j_rs" "$D/json_parse.rs" 2>/dev/null
     json_run rust "$T/j_rs" stdin
     if command -v go >/dev/null 2>&1; then cp "$D/json_parse.go" "$T/jg.go" && ( cd "$T" && go build -o j_go jg.go 2>/dev/null ); fi
     json_run go "$T/j_go" stdin

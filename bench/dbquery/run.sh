@@ -37,7 +37,12 @@ runlang() {                                           # <label> <binary>
 }
 
 printf '%-8s %10s %9s   %s\n' lang peakRSS time checksum
-$HIERC "$D/dbquery.hi" -o "$T/dbq_hier" --shim "$D/db_shim.c" $HIER_SQLITE >/dev/null 2>&1
+# Fail-closed: libsqlite3 is present (checked above), so a hier build failure
+# here is a real failure -- print the compiler error and exit nonzero, never
+# a silent "(build skipped)" followed by "dbquery: ok".
+if ! $HIERC "$D/dbquery.hi" -o "$T/dbq_hier" --shim "$D/db_shim.c" $HIER_SQLITE > "$T/hier_err" 2>&1; then
+    echo "dbquery: HIER BUILD FAILED"; cat "$T/hier_err"; exit 2
+fi
 runlang hier "$T/dbq_hier"
 $CC -O3 "$D/dbquery.c" -o "$T/dbq_c" $LIBS 2>/dev/null
 runlang C "$T/dbq_c"
