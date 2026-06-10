@@ -1,0 +1,7 @@
+# a reserve() capacity whose byte size would wrap size_t must die loudly
+# (was silent heap corruption before the hier_cap_check guard)
+fn main():
+    a := []int
+    reserve(a, 2305843009213693953)
+    push(a, 1)
+    print(str(len(a)))

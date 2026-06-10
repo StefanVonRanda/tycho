@@ -1,0 +1,3 @@
+# print takes a string; a bare int argument must be a type error
+fn main():
+    print(42)

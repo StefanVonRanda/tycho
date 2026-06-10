@@ -1,0 +1,5 @@
+# pop from an empty array must die cleanly
+fn main():
+    a := []int
+    x := pop(a)
+    print(str(x))

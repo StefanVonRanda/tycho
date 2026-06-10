@@ -1,0 +1,3 @@
+# the compiler must reject a read of an undeclared variable
+fn main():
+    print(nosuchvar)

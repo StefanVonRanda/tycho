@@ -120,6 +120,43 @@ for d in tests/pkg/*/; do
     run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
 done
 
+# Negative paths. tests/reject/*.hi are invalid programs the compiler must
+# REFUSE (nonzero exit + a diagnostic on stderr/stdout) — guards against
+# fail-open parsing/typechecking. tests/abort/*.hi are valid programs whose
+# RUN must die cleanly at runtime (nonzero exit + a 'hier:' message): OOB
+# index, pop from empty, reserve out of range. Abort programs run native-only:
+# a deliberate exit(1) leaves live arenas, so LeakSanitizer would (correctly,
+# uselessly) report them.
+for hi in tests/reject/*.hi; do
+    [ -e "$hi" ] || continue
+    name="reject_$(basename "$hi" .hi)"
+    if "$HIERC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
+        note "$name" "compiler ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
+    elif [ ! -s "$TMP/rj.log" ]; then
+        note "$name" "rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+for hi in tests/abort/*.hi; do
+    [ -e "$hi" ] || continue
+    name="abort_$(basename "$hi" .hi)"
+    if ! "$HIERC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
+       || ! $CC -O2 -std=c11 -o "$TMP/ab.bin" "$TMP/ab.c" -lm 2>"$TMP/ab.log"; then
+        note "$name" "did not build"; sed 's/^/      /' "$TMP/ab.log"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    "$TMP/ab.bin" </dev/null >/dev/null 2>"$TMP/ab.err"; rc=$?
+    if [ "$rc" -eq 0 ]; then
+        note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! grep -q 'hier:' "$TMP/ab.err"; then
+        note "$name" "died (exit $rc) but without a 'hier:' message"; sed 's/^/      /' "$TMP/ab.err"
+        fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 echo "-----------------------------------------"
 if [ "$RECORD" = 1 ]; then
     echo "recorded: $recorded   failed: $fail"

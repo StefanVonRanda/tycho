@@ -1,0 +1,5 @@
+# reading past the end of an array must die with a bounds message
+fn main():
+    a := []int
+    push(a, 1)
+    print(str(a[5]))
