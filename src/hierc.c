@@ -3384,6 +3384,12 @@ static const char *g_cur_scope = "&_scope";
 static int count_reads_e(Expr *e, const char *nm) {
     if (!e) return 0;
     int c = (e->kind == E_IDENT && e->sval && !strcmp(e->sval, nm)) ? 1 : 0;
+    if (e->kind == E_LAMBDA) {   /* the env build reads every captured var at creation
+                                  * (e.g. push-loop fusion must not leave `nm` stale) */
+        LamInfo *li = &g_laminfo[e->ival];
+        for (int i = 0; i < li->ncap; i++)
+            if (!strcmp(li->proc->params[i].name, nm)) c++;
+    }
     c += count_reads_e(e->lhs, nm) + count_reads_e(e->rhs, nm);
     for (int i = 0; i < e->nargs; i++) c += count_reads_e(e->args[i], nm);
     return c;

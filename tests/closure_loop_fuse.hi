@@ -1,0 +1,16 @@
+# Regression: fuzz seed 306. Push-loop fusion caches an array's data/len/cap in
+# C locals across the loop and writes the descriptor back only at loop exit. A
+# closure created INSIDE the loop captures the array by value at creation time;
+# the env build must not read the stale (pre-loop) descriptor. hierc fused the
+# loop because count_reads didn't see lambda captures as reads -> cl() returned
+# the pre-loop len (3) every iteration instead of the value at creation.
+# Correct: iterations capture len 3, 4, 5 -> acc 12; final len 6.
+fn main():
+    acc := 0
+    v := [1, 2, 3]
+    for i in range(3):
+        cl := fn() -> int: len(v)
+        push(v, 1)
+        acc = acc + cl()
+    print(str(acc) + "\n")
+    print(str(len(v)) + "\n")
