@@ -68,7 +68,7 @@ if ./hierc "$T/split/main.hi" -o "$T/Apkg" >/dev/null 2>&1; then
         for f in tests/*.hi examples/*.hi; do
             "$T/B"    < "$f" > "$T/u.c" 2>/dev/null
             "$T/Epkg" < "$f" > "$T/v.c" 2>/dev/null
-            cmp -s "$T/u.c" "$T/v.c" || { echo "FAIL split-hierc0 differs from single-file on $(basename "$f")"; sdiff=1; }
+            cmp -s "$T/u.c" "$T/v.c" || { echo "FAIL split-hierc0 differs from single-file on $(basename "$f")"; sdiff=1; fail=1; }
         done
         [ "$sdiff" -eq 0 ] && [ "$fail" -eq 0 ] && echo "ok   split hierc0 (2 packages) self-hosts E==F and matches the single-file compiler"
     else
