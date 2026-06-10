@@ -1897,7 +1897,11 @@ static Proc *parse_extern_fn(Parser *ps) {
 static void parse_struct(Parser *ps) {
     eat(ps, TK_STRUCT, "'struct'");
     Tok *nameT = eat(ps, TK_IDENT, "a struct name");
-    if (struct_find(nameT->text) >= 0) die_at(nameT->line, "'%s' is already defined", nameT->text);
+    /* check the MANGLED name (like the enum site): a cross-package collision
+     * ("a__b" + "c" vs "a" + "b__c") otherwise slips through to a duplicate C
+     * typedef and fails at cc with no hier-level diagnostic. */
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
+        die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nstructs >= 128) die_at(nameT->line, "too many structs");
     eat(ps, TK_COLON, "':' before the block");
     eat(ps, TK_NEWLINE, "newline");
@@ -1929,7 +1933,7 @@ static void parse_struct(Parser *ps) {
 static void parse_enum(Parser *ps) {
     eat(ps, TK_ENUM, "'enum'");
     Tok *nameT = eat(ps, TK_IDENT, "an enum name");
-    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0)
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nenums >= 64) die_at(nameT->line, "too many enums");
     eat(ps, TK_COLON, "':' before the variants");
@@ -1970,7 +1974,7 @@ static void parse_enum(Parser *ps) {
 static void parse_typedecl(Parser *ps) {
     eat(ps, TK_TYPE, "'type'");
     Tok *nameT = eat(ps, TK_IDENT, "a type name");
-    if (struct_find(nameT->text) >= 0 || enum_find(nameT->text) >= 0 || newtype_find(nameT->text) >= 0)
+    if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nnewtypes >= 128) die_at(nameT->line, "too many newtypes");
     eat(ps, TK_EQ, "'=' in a type declaration");
@@ -6103,17 +6107,34 @@ static int scan_pkg_files(const char *dir, char **files, const char *toomany_msg
     return nf;
 }
 
-static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, ProcVec *prog) {
+/* Shared DFS prologue/epilogue for the two package walkers (merge_pkg and
+ * bundle_pkg, which duplicated it): cycle + already-merged checks, depth cap,
+ * push onto the active path. Returns 0 when the package is already merged
+ * (caller does nothing); on 1, *keyout owns the canonical key — pass it to
+ * pkg_walk_done after processing. `desc` names the package in the cycle error. */
+static int pkg_walk_enter(const char *dir, const char *desc, char **keyout) {
     char *key = canon_dir(dir);
     for (int i = 0; i < g_npkg_active; i++)
         if (!strcmp(g_pkg_active[i], key)) {
-            fprintf(stderr, "hierc: import cycle through package `%s` (%s)\n", pkgname, dir);
+            fprintf(stderr, "hierc: import cycle through %s\n", desc);
             exit(1);
         }
     for (int i = 0; i < g_npkg_seen; i++)
-        if (!strcmp(g_pkg_seen[i], key)) { free(key); return; }   /* shared dep already merged */
+        if (!strcmp(g_pkg_seen[i], key)) { free(key); return 0; }   /* shared dep already merged */
     if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
     g_pkg_active[g_npkg_active++] = key;
+    *keyout = key;
+    return 1;
+}
+static void pkg_walk_done(char *key) {
+    g_npkg_active--;                       /* pop the DFS path */
+    if (g_npkg_seen >= 256) { fprintf(stderr, "hierc: too many packages (max 256)\n"); exit(1); }
+    g_pkg_seen[g_npkg_seen++] = key;       /* mark merged */
+}
+
+static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, ProcVec *prog) {
+    char *key;
+    if (!pkg_walk_enter(dir, sfmt("package `%s` (%s)", pkgname, dir), &key)) return;
 
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in package");
@@ -6160,8 +6181,7 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     }
     g_cur_pkg_prefix = "";
 
-    g_npkg_active--;                       /* pop the DFS path */
-    g_pkg_seen[g_npkg_seen++] = key;       /* mark merged */
+    pkg_walk_done(key);
 }
 
 /* Compile a package program: start at the entry file's package (prefix "") and
@@ -6198,13 +6218,8 @@ static void emit_entry_file(const char *c) {
 }
 
 static void bundle_pkg(const char *dir, int is_entry) {
-    char *key = canon_dir(dir);
-    for (int i = 0; i < g_npkg_active; i++)
-        if (!strcmp(g_pkg_active[i], key)) { fprintf(stderr, "hierc: import cycle at %s\n", dir); exit(1); }
-    for (int i = 0; i < g_npkg_seen; i++)
-        if (!strcmp(g_pkg_seen[i], key)) { free(key); return; }
-    if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
-    g_pkg_active[g_npkg_active++] = key;
+    char *key;
+    if (!pkg_walk_enter(dir, dir, &key)) return;
 
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in");
@@ -6222,8 +6237,7 @@ static void bundle_pkg(const char *dir, int is_entry) {
         else          fputs(read_file(files[i]), stdout);
         fputc('\n', stdout);
     }
-    g_npkg_active--;
-    g_pkg_seen[g_npkg_seen++] = key;
+    pkg_walk_done(key);
 }
 
 /* FFI Stage 3: `pkg-config --cflags --libs <name>` -> the cc flags for a system

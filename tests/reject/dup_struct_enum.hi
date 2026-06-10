@@ -1,0 +1,6 @@
+enum X:
+    A
+struct X:
+    a: int
+fn main():
+    print("no")
