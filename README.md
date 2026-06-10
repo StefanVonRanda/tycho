@@ -368,12 +368,12 @@ The one rule: you cannot pass a slice of `xs` and an `inout` of `xs` to the same
 call (the `inout` could reallocate the buffer the slice views). Strings use
 `substr(s, a, b)` (a copy), not slice syntax.
 
-### Maps (`[string: V]`, `[int: int]`, `[int: float]`)
+### Maps (`[string: V]`, `[int: V]`)
 
-A map has `string` or `int` keys. A **string-keyed** map's value may be *any*
+A map has `string` or `int` keys; with either key kind the value may be *any*
 type — `int`, `float`, `string`, a struct, an array, … (`[string: Point]`,
-`[string: [int]]`); the value is deep-copied in and out like any other heap value.
-An **int-keyed** map's value is `int` or `float` (for now). The types follow from
+`[string: [int]]`, `[int: [int]]`); the value is deep-copied in and out like any
+other heap value. The types follow from
 the literal or annotation (`["a": 1]` is a `[string: int]`, `["a": "b"]` a
 `[string: string]`, `[1: 2]` an `[int: int]`). `keys(m)` returns `[int]` or
 `[string]` to match the key type:
@@ -423,12 +423,11 @@ uniquely owned at that point, the compiler mutates it in place — the loop is
 O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
-All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, the
-in-place accumulator rebind, `inout`) work the same regardless of value type;
-`map_get`'s default and `map_set`'s value take the map's value type, and the key
-takes its key type. *Not yet:* `==` on a map whose value isn't `int`/`float`,
-non-`int`/`float` values for **int**-keyed maps, and key types other than
-`string`/`int`.
+All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, `==`
+deep value equality, the in-place accumulator rebind, `inout`) work the same
+regardless of key or value type; `map_get`'s default and `map_set`'s value take
+the map's value type, and the key takes its key type. *Not yet:* key types other
+than `string`/`int`.
 
 ### Option and `match`
 
@@ -776,6 +775,69 @@ higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators, factory
 functions, dispatch tables) are all covered — see
 [`corelib/iter`](corelib/iter/iter.hi).
 
+### Methods (UFCS)
+
+`x.foo(a)` is sugar for `foo(x, a)` — a "method" is just a free function whose
+first parameter is the receiver. No classes, no inheritance, no `self`: dispatch
+is static (on the receiver's compile-time type), the receiver is passed by value
+like any argument, and any type can be a receiver (structs, `int`, …). Calls
+chain, including on call results:
+
+```
+fn add(a: Vec, b: Vec) -> Vec: ...
+fn norm1(v: Vec) -> int: ...
+fn doubled(n: int) -> int:
+    return n * 2
+
+a.add(b).norm1()        # == norm1(add(a, b))
+n := 21
+n.doubled()             # == doubled(n) — int receiver
+```
+
+If the receiver's struct has a *fn-typed field* with the same name, the field
+wins: `b.doubled(7)` calls the stored function value, not the free `doubled`.
+See `tests/methods.hi`.
+
+### FFI (calling C)
+
+`extern fn` declares a C function hier can call — bodyless, direct C symbol,
+optionally naming the library to link:
+
+```
+extern fn getpid() -> int                      # libc
+extern "m" fn cos(x: float) -> float           # links -lm
+extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, hier string out
+```
+
+The boundary covers scalars, `string`, and the opaque foreign-handle type `ptr`
+(a `void*` hier never dereferences; `null` literal, `is_null(p)`). A C-returned
+string is **copied into the caller's arena** at the call site, so hier never
+holds a pointer into C-owned memory. Composites and `inout` across the boundary
+are rejected (fail closed). Linking ergonomics on the `hierc` line: `--link`,
+`--pkg` (pkg-config), `--shim` (companion `.c`). A real binding lives at
+`examples/sqlite/` (in-memory SQLite); design and full rules in
+[docs/ffi.md](docs/ffi.md).
+
+### Packages
+
+Odin-style packages: a directory of `.hi` files sharing one namespace, named by
+a `package` declaration, pulled in with `import` and used via qualified
+`pkg.symbol` names (functions, types, enum variants); an alias renames the
+prefix:
+
+```
+package main
+import g "geom"          # alias; plain `import "geom"` uses the package name
+
+fn main():
+    r := g.add(g.Point(3, 4), g.Point(1, 2))
+```
+
+`./hierc pkg/main.hi` follows the imports and emits one binary; `import
+"core:strings"` resolves the bundled corelib (via the `HIER_CORELIB`
+environment variable). No privacy — everything in a package is visible.
+Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
+
 ### Builtins
 
 | Builtin | Type | Notes |
@@ -794,6 +856,8 @@ functions, dispatch tables) are all covered — see
 | `map_has(m, k)` | `([string: int], string) -> bool` | Whether key `k` is present. |
 | `map_del(m, k)` | `([string: int], string) -> [string: int]` | Returns a new map without key `k` (no-op if absent); pure. The `m = map_del(m, …)` self-rebind deletes in place. |
 | `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type (unspecified order); iterate it to walk the map. |
+| `reserve(arr, n)` | `([T], int) -> void` | Capacity hint: preallocate room for `n` elements (`[int]`/`[float]`/`[string]`; a map place `m[k]` works too — count-then-fill builds size each list once). A hint, not a length: contents and `len` are unchanged, pushing past `n` still grows. A capacity that can't be allocated aborts at runtime. |
+| `getenv(name)` | `string -> string` | The environment variable's value, or `""` if unset. |
 | `read_file(path)` | `string -> string` | The whole file as a string, or `""` if it can't be opened. |
 | `write_file(path, s)` | `(string, string) -> bool` | Write `s`'s exact bytes to `path` (truncating); `true` on success, `false` if it can't be opened. |
 | `read_all()` | `-> string` | All of stdin as one string. |
@@ -872,18 +936,16 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No generics. Multi-file **Odin-style packages** are supported, though
-  (a directory of files sharing one namespace, `import`, `pkg.symbol` qualified
-  names, no privacy) — `./hierc pkg/main.hi` follows the imports and emits one
-  binary; the self-hosted compiler itself is split into two packages (see
-  Self-hosting). Arrays nest (`[int]`, `[float]`,
+- No generics. Multi-file **Odin-style packages** are supported, though (see
+  [Packages](#packages)); the self-hosted compiler itself is split into two
+  packages (see Self-hosting). Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
-  string- or int-keyed; a **string**-keyed map's value may be any type
-  (`[string: string]`, `[string: Struct]`, `[string: [int]]`, …), an **int**-keyed
-  map's value is `int`/`float` for now — no other key type yet. They support
-  `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, in-place accumulator
-  rebinds, and `inout` (and `==` except on non-`int`/`float`-valued maps).
+  string- or int-keyed with values of any type
+  (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
+  type yet. They support
+  `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`/`==`, in-place
+  accumulator rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,
@@ -907,7 +969,7 @@ examples/          hello, demo, accumulate, accumulate_big, arrays,
                    renderer; grep.hi a CLI text tool over args()/read_file;
                    invindex.hi an inverted-index text search engine)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
-tests/*.hi         dedicated regression programs (59, + tests/pkg/ package fixtures) (+ optional <name>.in stdin)
+tests/*.hi         dedicated regression programs, one per feature/bug (+ tests/pkg/ package fixtures, + optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
 bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
