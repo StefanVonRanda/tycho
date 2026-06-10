@@ -4357,10 +4357,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    {\n" + decls + inner + flush + "    }\n"
         SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, dc, ctx)
-            scu := gen_expr(subj, names, types, dc, ctx)   # subj is a simple place / pure call
+            # evaluate the subject ONCE into a brace-scoped temp: a side-effecting
+            # subject (match pop(s):) must not run once per arm test (hierc: _m<id>)
+            sv := gen_expr(subj, names, types, dc, ctx)
+            scu := "_msub"
+            hd := "    { " + cty(dc, ctx, sty) + scu + " = " + sv + ";\n"
             if is_option(sty) or is_result(sty):
-                return gen_match_optres(dc, ctx, sty, scu, variants, allbinds, bodies, names, types)
-            out := ""
+                return hd + gen_match_optres(dc, ctx, sty, scu, variants, allbinds, bodies, names, types) + "    }\n"
+            out := hd
             i := 0
             for i < len(variants):
                 vname := variants[i]
@@ -4380,7 +4384,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     j = j + 1
                 out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
                 i = i + 1
-            return out + "\n"
+            return out + "\n    }\n"
 
 fn ret_cty(dc: Decls, ctx: Ctx, ret: string) -> string:
     if ret == "void":
@@ -4651,8 +4655,8 @@ fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
 
 # Match over a boxed Option/Result value. Some/Ok -> tag 1, None/Err -> tag 0.
 # A bound payload is read back from the box: `T x = *(T*)(scrut.val)` (Some),
-# `.ok`/`.err` for Result. `sc` is re-evaluated per use; scrutinees are places
-# or pure calls in practice (no temp/counter needed).
+# `.ok`/`.err` for Result. `scu` is the caller's already-evaluated subject temp
+# (SMatch evaluates the subject exactly once before dispatching here).
 fn gen_match_optres(dc: Decls, ctx: Ctx, sty: string, scu: string, variants: [string], allbinds: [[string]], bodies: [[Stmt]], names: [string], types: [string]) -> string:
     out := ""
     i := 0
