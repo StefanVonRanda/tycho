@@ -34,6 +34,11 @@ class Gen:
         self.newtypes = {}  # name -> base type ("int") ; `type Name = int`
         self.funcs = []     # list of (name, [(pname,ptype,inout)], ret)
         self.want_result = False   # set when a Result helper is needed
+        # loop counters / foreach vars: must NEVER be written by a generated
+        # statement. A compound assign like `i -= i` on a range counter resets
+        # it every iteration -> the loop never terminates (latent bug surfaced
+        # when run.py stopped counting timeouts as skips).
+        self.loop_vars = set()
 
     def fresh(self, p="v"):
         self.uid += 1
@@ -86,6 +91,15 @@ class Gen:
                 # `& 7`/`& 31` cap the magnitude; shift amount is 0..3.
                 ie = lambda: self.gen_expr("int", env, depth+1)
                 choices.append(("mod",  lambda: "(" + ie() + " % " + str(self.r.randint(1, 9)) + ")"))
+                # subtraction: same magnitude class as add (operands stay small).
+                choices.append(("sub",  lambda: "(" + ie() + " - " + ie() + ")"))
+                # multiplication: operands masked (& 31, & 7) so the product is
+                # bounded <= 217 -- same keep-it-in-range convention as shl/bnot
+                # (UBSan flags signed overflow, see the note above).
+                choices.append(("mul",  lambda: "((" + ie() + " & 31) * (" + ie() + " & 7))"))
+                # division: nonzero LITERAL divisor 1..9, the same guard pattern
+                # mod uses above -- division by zero is impossible by construction.
+                choices.append(("div",  lambda: "(" + ie() + " / " + str(self.r.randint(1, 9)) + ")"))
                 choices.append(("band", lambda: "(" + ie() + " & " + ie() + ")"))
                 choices.append(("bor",  lambda: "(" + ie() + " | " + ie() + ")"))
                 choices.append(("bxor", lambda: "(" + ie() + " ^ " + ie() + ")"))
@@ -272,6 +286,8 @@ class Gen:
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
+        # constructs hierc0 historically miscompiled -- keep the class covered:
+        kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
         # value-semantics self-check candidates: a mutable-heap var with a
         # checksum-changing mutation (push to an array, or to a struct's array field).
         vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -319,9 +335,12 @@ class Gen:
             rhs = self.r.choice([str(self.r.randint(1, 5)), self.gen_expr("int", env, 1)])
             if self.r.random() < 0.25:                          # modulo: safe literal divisor
                 op = "%="; rhs = str(self.r.randint(1, 9))
-            targets = [("var", n) for n in int_vars]
+            targets = [("var", n) for n in int_vars if n not in self.loop_vars]
             targets += [("arr", n) for n in int_arr_vars]
             targets += [("fld", n, ty) for n, ty in cmp_struct]
+            if not targets:                                 # only loop counters in scope
+                self.emit(ind, "acc += " + str(self.r.randint(1, 5)))
+                return
             pick = self.r.choice(targets)
             if pick[0] == "var":
                 self.emit(ind, pick[1] + " " + op + " " + rhs)
@@ -336,6 +355,7 @@ class Gen:
             if arr_vars and (not str_vars or self.r.random() < 0.6):
                 n0, t0 = self.r.choice(arr_vars)
                 el = t0[1:-1]; x = self.fresh("x")
+                self.loop_vars.add(x)    # conservative: foreach var is read-only too
                 self.emit(ind, "for " + x + " in " + n0 + ":")
                 benv = dict(env); benv[x] = el
                 self.checksum_into(ind+1, x, el, benv)
@@ -488,6 +508,44 @@ class Gen:
             self.emit(ind, g + " := " + s + "[0]")                    # whole-element gather
             self.emit(ind, "acc = acc + " + g + ".a")
             return
+        if k == "multiassign":         # TWO multi-assign `a, b = f()` stmts in the SAME block
+            a = self.fresh("ma"); b = self.fresh("mb")
+            self.emit(ind, a + " := 0")
+            self.emit(ind, b + " := 0")
+            self.emit(ind, a + ", " + b + " = pair2(" + self.gen_expr("int", env, 1) + ")")
+            self.emit(ind, a + ", " + b + " = pair2((" + b + " % 50))")   # second one feeds off the first
+            self.emit(ind, "acc = acc + " + a + " + " + b)
+            env[a] = "int"; env[b] = "int"
+            return
+        if k == "negrange":            # negative-step range: for i in range(hi, lo, -1|-2)
+            i = self.fresh("i")
+            hi = self.r.randint(2, 5)
+            step = self.r.choice(["-1", "-2"])
+            self.emit(ind, "for " + i + " in range(" + str(hi) + ", 0, " + step + "):")
+            self.emit(ind+1, "acc = acc + " + i)
+            return
+        if k == "matchpop":            # match on a SIDE-EFFECTING subject: match pop(arr)
+            a = self.fresh("mp"); x = self.fresh("px")
+            self.emit(ind, a + " := [Some(" + str(self.r.randint(0, 9)) + "), None, Some(" + str(self.r.randint(0, 9)) + ")]")
+            env[a] = "[Option(int)]"
+            self.emit(ind, "if len(" + a + ") > 0:")    # guard: pop on empty dies
+            self.emit(ind+1, "match pop(" + a + "):")
+            self.emit(ind+2, "Some(" + x + "):")
+            self.emit(ind+3, "acc = acc + " + x)
+            self.emit(ind+2, "None:")
+            self.emit(ind+3, "acc = acc + 1")
+            self.emit(ind, "acc = acc + len(" + a + ")")   # the subject's side effect must be visible (len shrank by 1)
+            return
+        if k == "orret_loop":          # or_return helper called IN A LOOP with the Err path taken
+            i = self.fresh("i"); rv = self.fresh("r"); v = self.fresh("v"); e = self.fresh("e")
+            self.emit(ind, "for " + i + " in range(" + str(self.r.randint(2, 4)) + "):")
+            self.emit(ind+1, rv + " := orret_chain((" + i + " - 1))")    # i=0 -> orret_chain(-1) -> Err propagated
+            self.emit(ind+1, "match " + rv + ":")
+            self.emit(ind+2, "Ok(" + v + "):")
+            self.emit(ind+3, "acc = acc + " + v)
+            self.emit(ind+2, "Err(" + e + "):")
+            self.emit(ind+3, "acc = acc + len(" + e + ")")
+            return
         if k == "orret_use":                        # or_return: helper unwraps Ok in place / propagates Err
             r = self.fresh("r"); v = self.fresh("v"); e = self.fresh("e")
             self.emit(ind, r + " := orret_chain(" + str(self.r.randint(-1, 4)) + ")")
@@ -571,6 +629,7 @@ class Gen:
             self.emit(ind, n0 + "." + f + " = " + self.gen_expr(ft, env, 1))
         elif k == "loop" and budget > 2:
             i = self.fresh("i")
+            self.loop_vars.add(i)        # counter must never be written (termination)
             self.emit(ind, "for " + i + " in range(" + str(self.r.randint(2,3)) + "):")
             benv = dict(env); benv[i] = "int"
             if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
@@ -644,6 +703,9 @@ class Gen:
                      "    return Ok(d)", ""]
         self.out += ["fn orret_chain(d: int) -> Result(int, string):", "    x := orret_mk(d) or_return",
                      "    y := orret_mk(d + 1) or_return", "    return Ok(x + y)", ""]
+        # multi-return helper for the `multiassign` kind (`a, b = pair2(n)`).
+        # bounded: callers pass small / %50-capped args, so n*2 can't overflow.
+        self.out += ["fn pair2(n: int) -> (int, int):", "    return n + 1, n * 2", ""]
         # escaping-closure factories: the returned closure's captured env re-homes
         # into the caller's arena. Used by the `escclosure` kind. mkadder captures a
         # scalar; mksum captures a heap array (its env array re-homes too).
