@@ -56,6 +56,7 @@ enum Tok:
 struct Token:
     kind: Tok
     text: string
+    line: int                 # 1-based source line, for parse diagnostics
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
@@ -69,8 +70,8 @@ fn is_alnum(c: int) -> bool:
 # Lexer diagnostic: print `msg` then the offending source line + a caret under
 # byte offset `at`, then exit. die() is terminal, so this never returns. (Mirrors
 # hierc's snippet+caret for lex errors; src + offset are local to the lexer, so no
-# globals/threading are needed. Parse/resolve errors stay message-only — hierc0's
-# tokens and AST carry no position.)
+# globals/threading are needed. Parse errors report "line N" via Token.line;
+# resolve/codegen errors stay message-only — hierc0's AST carries no position.)
 fn lex_err(src: string, at: int, msg: string):
     n := len(src)
     p := at
@@ -96,7 +97,7 @@ fn lex_err(src: string, at: int, msg: string):
         k = k + 1
     die(msg + "\n" + gutter + substr(src, ls, le) + "\n" + pad + "^")
 
-fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
+fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int) -> int:
     c := src[i]
     tok0 := i                                    # token start, for the error caret (i advances as we scan)
     if c == 32 or c == 9:
@@ -114,7 +115,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
             i = i + 1
         if i >= n:
             lex_err(src, tok0, "lex: unterminated string")
-        push(toks, Token(TStr, substr(src, start, i)))
+        push(toks, Token(TStr, substr(src, start, i), line))
         return i + 1                             # consume closing quote
     elif c == 102 and i + 1 < n and src[i + 1] == 34:   # f"..." interpolated string (102='f', 34='"')
         start := i + 2
@@ -147,7 +148,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
                 i = i + 1
         if i >= n:
             lex_err(src, tok0, "lex: unterminated f-string")
-        push(toks, Token(TFStr, substr(src, start, i)))
+        push(toks, Token(TFStr, substr(src, start, i), line))
         return i + 1
     elif c == 39:                                # char literal '...' -> one byte
         i = i + 1
@@ -179,7 +180,7 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
             i = i + 1
         if i >= n or src[i] != 39:
             lex_err(src, tok0, "lex: char literal must be exactly one character")
-        push(toks, Token(TChar, str(b)))
+        push(toks, Token(TChar, str(b), line))
         return i + 1                             # consume closing quote
     elif is_digit(c):
         start := i
@@ -189,99 +190,99 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token]) -> int:
             i = i + 1
             for i < n and is_digit(src[i]):
                 i = i + 1
-            push(toks, Token(TFloat, substr(src, start, i)))
+            push(toks, Token(TFloat, substr(src, start, i), line))
             return i
-        push(toks, Token(TInt, substr(src, start, i)))
+        push(toks, Token(TInt, substr(src, start, i), line))
         return i
     elif is_alpha(c):
         start := i
         for i < n and is_alnum(src[i]):
             i = i + 1
-        push(toks, Token(TIdent, substr(src, start, i)))
+        push(toks, Token(TIdent, substr(src, start, i), line))
         return i
     elif c == 43:
-        push(toks, Token(TPlus, "+"))
+        push(toks, Token(TPlus, "+", line))
         return i + 1
     elif c == 45:
         if i + 1 < n and src[i + 1] == 62:
-            push(toks, Token(TArrow, "->"))
+            push(toks, Token(TArrow, "->", line))
             return i + 2
-        push(toks, Token(TMinus, "-"))
+        push(toks, Token(TMinus, "-", line))
         return i + 1
     elif c == 42:
-        push(toks, Token(TStar, "*"))
+        push(toks, Token(TStar, "*", line))
         return i + 1
     elif c == 47:
-        push(toks, Token(TSlash, "/"))
+        push(toks, Token(TSlash, "/", line))
         return i + 1
     elif c == 40:
-        push(toks, Token(TLParen, "("))
+        push(toks, Token(TLParen, "(", line))
         return i + 1
     elif c == 41:
-        push(toks, Token(TRParen, ")"))
+        push(toks, Token(TRParen, ")", line))
         return i + 1
     elif c == 91:
-        push(toks, Token(TLBracket, "["))
+        push(toks, Token(TLBracket, "[", line))
         return i + 1
     elif c == 93:
-        push(toks, Token(TRBracket, "]"))
+        push(toks, Token(TRBracket, "]", line))
         return i + 1
     elif c == 44:
-        push(toks, Token(TComma, ","))
+        push(toks, Token(TComma, ",", line))
         return i + 1
     elif c == 46:
-        push(toks, Token(TDot, "."))
+        push(toks, Token(TDot, ".", line))
         return i + 1
     elif c == 58:
         if i + 1 < n and src[i + 1] == 61:
-            push(toks, Token(TWalrus, ":="))
+            push(toks, Token(TWalrus, ":=", line))
             return i + 2
-        push(toks, Token(TColon, ":"))
+        push(toks, Token(TColon, ":", line))
         return i + 1
     elif c == 61:
         if i + 1 < n and src[i + 1] == 61:
-            push(toks, Token(TEqEq, "=="))
+            push(toks, Token(TEqEq, "==", line))
             return i + 2
-        push(toks, Token(TEq, "="))
+        push(toks, Token(TEq, "=", line))
         return i + 1
     elif c == 60:
         if i + 1 < n and src[i + 1] == 61:
-            push(toks, Token(TLe, "<="))
+            push(toks, Token(TLe, "<=", line))
             return i + 2
         if i + 1 < n and src[i + 1] == 60:
-            push(toks, Token(TShl, "<<"))
+            push(toks, Token(TShl, "<<", line))
             return i + 2
-        push(toks, Token(TLt, "<"))
+        push(toks, Token(TLt, "<", line))
         return i + 1
     elif c == 62:
         if i + 1 < n and src[i + 1] == 61:
-            push(toks, Token(TGe, ">="))
+            push(toks, Token(TGe, ">=", line))
             return i + 2
         if i + 1 < n and src[i + 1] == 62:
-            push(toks, Token(TShr, ">>"))
+            push(toks, Token(TShr, ">>", line))
             return i + 2
-        push(toks, Token(TGt, ">"))
+        push(toks, Token(TGt, ">", line))
         return i + 1
     elif c == 33:
         if i + 1 < n and src[i + 1] == 61:
-            push(toks, Token(TNe, "!="))
+            push(toks, Token(TNe, "!=", line))
             return i + 2
         lex_err(src, tok0, "lex: '!' must be part of '!='")
         return i + 1
     elif c == 38:
-        push(toks, Token(TAmp, "&"))
+        push(toks, Token(TAmp, "&", line))
         return i + 1
     elif c == 37:
-        push(toks, Token(TPercent, "%"))
+        push(toks, Token(TPercent, "%", line))
         return i + 1
     elif c == 124:
-        push(toks, Token(TPipe, "|"))
+        push(toks, Token(TPipe, "|", line))
         return i + 1
     elif c == 94:
-        push(toks, Token(TCaret, "^"))
+        push(toks, Token(TCaret, "^", line))
         return i + 1
     elif c == 126:
-        push(toks, Token(TTilde, "~"))
+        push(toks, Token(TTilde, "~", line))
         return i + 1
     else:
         lex_err(src, tok0, "lex: unexpected character")
@@ -294,6 +295,7 @@ fn lex(src: string) -> [Token]:
     sp := 1
     n := len(src)
     i := 0
+    line := 1
     at_bol := true
     for i < n:
         if at_bol:
@@ -304,8 +306,9 @@ fn lex(src: string) -> [Token]:
             if i >= n:
                 at_bol = false
             elif src[i] == 10:
-                push(toks, Token(TNewline, ""))
+                push(toks, Token(TNewline, "", line))
                 i = i + 1
+                line = line + 1
             elif src[i] == 35:
                 for i < n and src[i] != 10:
                     i = i + 1
@@ -315,27 +318,28 @@ fn lex(src: string) -> [Token]:
                 else:
                     push(stack, ind)
                 sp = sp + 1
-                push(toks, Token(TIndent, ""))
+                push(toks, Token(TIndent, "", line))
                 at_bol = false
             else:
                 for sp > 1 and stack[sp - 1] > ind:
                     sp = sp - 1
-                    push(toks, Token(TDedent, ""))
+                    push(toks, Token(TDedent, "", line))
                 if stack[sp - 1] != ind:
                     lex_err(src, i, "lex: inconsistent indentation")
                 at_bol = false
         else:
             if src[i] == 10:
-                push(toks, Token(TNewline, ""))
+                push(toks, Token(TNewline, "", line))
                 i = i + 1
+                line = line + 1
                 at_bol = true
             else:
-                i = scan_token(src, n, i, &toks)
-    push(toks, Token(TNewline, ""))
+                i = scan_token(src, n, i, &toks, line)
+    push(toks, Token(TNewline, "", line))
     for sp > 1:
         sp = sp - 1
-        push(toks, Token(TDedent, ""))
-    push(toks, Token(TEof, ""))
+        push(toks, Token(TDedent, "", line))
+    push(toks, Token(TEof, "", line))
     return toks
 
 # ------------------------------------------------------------------ AST ----
@@ -462,12 +466,12 @@ struct Program:
 
 fn expect(toks: [Token], pos: inout int, k: Tok):
     if toks[pos].kind != k:
-        die("parse: unexpected token")
+        die("parse: line " + str(toks[pos].line) + ": unexpected token")
     pos = pos + 1
 
 fn expect_ident(toks: [Token], pos: inout int, name: string):
     if toks[pos].kind != TIdent or toks[pos].text != name:
-        die("parse: expected a keyword")
+        die("parse: line " + str(toks[pos].line) + ": expected a keyword")
     pos = pos + 1
 
 # Open an indented block: a newline, then any number of blank/comment-only
@@ -658,7 +662,7 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
         expect(toks, &pos, TRBracket)
         return EArrLit(elems)
     else:
-        die("parse: expected an atom")
+        die("parse: line " + str(toks[pos].line) + ": expected an atom")
         return EInt("0")
 
 fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
@@ -677,7 +681,7 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
         elif toks[pos].kind == TDot:             # field access: a.b  /  tuple index: a.0
             pos = pos + 1
             if toks[pos].kind != TIdent and toks[pos].kind != TInt:
-                die("parse: expected a field name or index after '.'")
+                die("parse: line " + str(toks[pos].line) + ": expected a field name or index after '.'")
             e = EField(e, toks[pos].text)
             pos = pos + 1
         else:                                    # index a[i]  or  slice a[lo:hi]
@@ -906,7 +910,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             for toks[pos].kind == TComma:
                 pos = pos + 1
                 if toks[pos].kind != TIdent:
-                    die("parse: expected a name in destructure")
+                    die("parse: line " + str(toks[pos].line) + ": expected a name in destructure")
                 push(names, toks[pos].text)
                 pos = pos + 1
             if toks[pos].kind == TWalrus:        # `:=` declares new vars
@@ -946,7 +950,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 if toks[pos].kind == TDot:
                     pos = pos + 1
                     if toks[pos].kind != TIdent and toks[pos].kind != TInt:
-                        die("parse: expected a field name or tuple index after '.'")
+                        die("parse: line " + str(toks[pos].line) + ": expected a field name or tuple index after '.'")
                     push(pkinds, 0)
                     push(pflds, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
                     push(pidxs, EInt("0"))        # placeholder; unused for a field step
@@ -991,10 +995,10 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             expect(toks, &pos, TRParen)
             return SExpr(ECall(name, args))
         else:
-            die("parse: expected ':=', '=', or '('")
+            die("parse: line " + str(toks[pos].line) + ": expected ':=', '=', or '('")
             return SReturn(EInt("0"))
     else:
-        die("parse: expected a statement")
+        die("parse: line " + str(toks[pos].line) + ": expected a statement")
         return SReturn(EInt("0"))
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
@@ -1053,7 +1057,7 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
             i = i + 1
         return out + "->" + ret + ")"
     if toks[pos].kind != TIdent:
-        die("parse: expected a type")
+        die("parse: line " + str(toks[pos].line) + ": expected a type")
     name := toks[pos].text
     pos = pos + 1
     if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent:   # qualified type pkg.Type
@@ -1086,7 +1090,7 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
 
 fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
-        die("parse: expected a parameter name")
+        die("parse: line " + str(toks[pos].line) + ": expected a parameter name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
@@ -1098,7 +1102,7 @@ fn parse_param(toks: [Token], pos: inout int) -> Param:
 fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
-        die("parse: expected a function name")
+        die("parse: line " + str(toks[pos].line) + ": expected a function name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TLParen)
@@ -1137,7 +1141,7 @@ fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
         pos = pos + 1
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
-        die("parse: expected a C function name after 'extern fn'")
+        die("parse: line " + str(toks[pos].line) + ": expected a C function name after 'extern fn'")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TLParen)
@@ -1146,14 +1150,14 @@ fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
     if toks[pos].kind != TRParen:
         p := parse_param(toks, &pos)
         if not ffi_scalar(p.ty):
-            die("parse: extern fn '" + name + "': parameters must be int/char/float/bool/string")
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string")
         push(params, p.name)
         push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
             p2 := parse_param(toks, &pos)
             if not ffi_scalar(p2.ty):
-                die("parse: extern fn '" + name + "': parameters must be int/char/float/bool/string")
+                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string")
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
@@ -1162,7 +1166,7 @@ fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
         pos = pos + 1
         ret = parse_type(toks, &pos)
         if not ffi_scalar(ret):
-            die("parse: extern fn '" + name + "': return type must be int/char/float/bool/string or omitted")
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string or omitted")
     return Func(name, params, ptypes, ret, []Stmt, 1, lib)
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
@@ -1193,7 +1197,7 @@ fn parse_lambda(toks: [Token], pos: inout int) -> Expr:
 fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     expect_ident(toks, &pos, "struct")
     if toks[pos].kind != TIdent:
-        die("parse: expected a struct name")
+        die("parse: line " + str(toks[pos].line) + ": expected a struct name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
@@ -1204,7 +1208,7 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
             pos = pos + 1
         else:
             if toks[pos].kind != TIdent:
-                die("parse: expected a field name")
+                die("parse: line " + str(toks[pos].line) + ": expected a field name")
             fname := toks[pos].text
             pos = pos + 1
             expect(toks, &pos, TColon)
@@ -1228,7 +1232,7 @@ fn parse_match(toks: [Token], pos: inout int) -> Stmt:
             pos = pos + 1
         else:
             if toks[pos].kind != TIdent:
-                die("parse: expected a variant name in match arm")
+                die("parse: line " + str(toks[pos].line) + ": expected a variant name in match arm")
             avar := toks[pos].text
             pos = pos + 1
             if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent:   # qualified arm pkg.Variant
@@ -1240,13 +1244,13 @@ fn parse_match(toks: [Token], pos: inout int) -> Stmt:
                 pos = pos + 1
                 if toks[pos].kind != TRParen:
                     if toks[pos].kind != TIdent:
-                        die("parse: expected a binding name")
+                        die("parse: line " + str(toks[pos].line) + ": expected a binding name")
                     push(binds, toks[pos].text)
                     pos = pos + 1
                     for toks[pos].kind == TComma:
                         pos = pos + 1
                         if toks[pos].kind != TIdent:
-                            die("parse: expected a binding name")
+                            die("parse: line " + str(toks[pos].line) + ": expected a binding name")
                         push(binds, toks[pos].text)
                         pos = pos + 1
                 expect(toks, &pos, TRParen)
@@ -1259,7 +1263,7 @@ fn parse_match(toks: [Token], pos: inout int) -> Stmt:
 fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
     expect_ident(toks, &pos, "enum")
     if toks[pos].kind != TIdent:
-        die("parse: expected an enum name")
+        die("parse: line " + str(toks[pos].line) + ": expected an enum name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
@@ -1270,7 +1274,7 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
             pos = pos + 1
         else:
             if toks[pos].kind != TIdent:
-                die("parse: expected a variant name")
+                die("parse: line " + str(toks[pos].line) + ": expected a variant name")
             vname := toks[pos].text
             pos = pos + 1
             ptypes := []string
@@ -1291,7 +1295,7 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
 fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Underlying`
     expect_ident(toks, &pos, "type")
     if toks[pos].kind != TIdent:
-        die("parse: expected a newtype name")
+        die("parse: line " + str(toks[pos].line) + ": expected a newtype name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TEq)
