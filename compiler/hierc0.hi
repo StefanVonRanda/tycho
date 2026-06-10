@@ -2363,7 +2363,20 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         EField(base, fld):
             bt := type_of(base, names, types, dc, ctx)
             if is_tuple(bt):                      # tuple index t.0 -> the i-th part type
-                return tuple_parts(bt)[fld[0] - 48]
+                # parse the FULL index and range-check it (fail closed): the old
+                # fld[0]-48 read one digit, silently accepting t.10 as part 1
+                # (hierc: "tuple index %ld out of range", src/hierc.c:2259)
+                parts := tuple_parts(bt)
+                tidx := 0
+                tk := 0
+                for tk < len(fld):
+                    if fld[tk] < 48 or fld[tk] > 57:
+                        die("type: tuple index ." + fld + " is not a number")
+                    tidx = tidx * 10 + (fld[tk] - 48)
+                    tk = tk + 1
+                if tidx >= len(parts):
+                    die("type: tuple index ." + fld + " out of range (the tuple has " + str(len(parts)) + " elements)")
+                return parts[tidx]
             return resolve_nt(dc, ctx, field_type(dc, ctx, bt, fld))
         EIndex(base, idx):
             bt := type_of(base, names, types, dc, ctx)
