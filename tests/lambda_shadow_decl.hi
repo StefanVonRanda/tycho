@@ -1,0 +1,13 @@
+# A shadowing decl (y := y + 2) in an inner block of a lambda-bearing fn:
+# lift_stmt's SDecl must compute the decl's type BEFORE pushing the name
+# (sacc_stmt order) — pushing first crashed the compiler with
+# "index 2 out of bounds" (names/types out of lockstep).
+fn main():
+    f := fn(x: int) -> int: x + 1
+    y := 1
+    if y > 0:
+        y := y + 2
+        print("inner " + str(y))
+        g := fn(t: int) -> int: t * 10
+        print("inner2 " + str(g(y)))
+    print("outer " + str(f(y)))

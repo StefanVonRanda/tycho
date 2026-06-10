@@ -5896,8 +5896,9 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
     match s:
         SDecl(n, e):
             ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
-            push(names, n)                            # in scope for later sibling stmts (+ their lambdas)
-            push(types, type_of(e, names, types, dc, ctx))
+            nty := type_of(e, names, types, dc, ctx)  # type BEFORE pushing the name (sacc_stmt order):
+            push(names, n)                            # a shadowing `y := y + 2` must resolve y to the
+            push(types, nty)                          # OUTER decl, and names/types must stay in lockstep
             return SDecl(n, ne)
         SAssign(n, e):
             return SAssign(n, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
