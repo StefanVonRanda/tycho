@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 #include <dirent.h>
 
 #include "hier_rt_embed.h"   /* defines: static const char *HIER_RUNTIME */
@@ -64,6 +65,12 @@ static void *xmalloc(size_t n) {
     void *p = malloc(n);
     if (!p) { fprintf(stderr, "hierc: oom\n"); exit(1); }
     return p;
+}
+
+static void *xrealloc(void *p, size_t n) {
+    void *r = realloc(p, n);
+    if (!r) { fprintf(stderr, "hierc: oom\n"); exit(1); }
+    return r;
 }
 
 static char *xstrndup(const char *s, size_t n) {
@@ -204,7 +211,11 @@ static TokVec lex(const char *src) {
                     tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {
                     long v = 0;
-                    for (const char *q = s; q < p; q++) v = v * 10 + (*q - '0');
+                    for (const char *q = s; q < p; q++) {
+                        int d = *q - '0';
+                        if (v > (LONG_MAX - d) / 10) die_at(line, "integer literal out of range");
+                        v = v * 10 + d;
+                    }
                     tv_push(&out, (Tok){TK_INT, NULL, v, line, 0, tcol});
                 }
                 continue;
@@ -606,7 +617,8 @@ static const char *g_fnval[256];
 static int g_nfnval = 0;
 static void note_fnval(const char *name) {
     for (int i = 0; i < g_nfnval; i++) if (!strcmp(g_fnval[i], name)) return;
-    if (g_nfnval < 256) g_fnval[g_nfnval++] = name;
+    if (g_nfnval >= 256) { fprintf(stderr, "hierc: too many functions used as values (max 256)\n"); exit(1); }
+    g_fnval[g_nfnval++] = name;
 }
 
 /* String-keyed maps come in two value flavours: [string: int] (HierMapSI) and
@@ -855,15 +867,6 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
 }
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
 
-/* A function value can't be stored in a container yet (downward-only closures: a
- * fn in a struct/array/tuple/map/Option could escape its creating scope and dangle;
- * also closes the FnC typedef-ordering gap). Pass it as an argument or keep it in a local. */
-static void reject_fn_container(Type t, int line) {
-    (void)t; (void)line;
-    /* fn-in-container is now allowed: a fn value is a heap type (type_is_heap),
-     * so a container holding one deep-copies (re-homes) it via copy_into on
-     * escape, exactly like any other heap element. Rule (b) lifted. */
-}
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_IDENT && !strcmp(t->text, "soa")) {   /* soa [Struct] */
@@ -904,7 +907,6 @@ static Type parse_type(Parser *ps) {
         if (n < 2) die_at(t->line, "a tuple type needs at least two elements");
         for (int i = 0; i < n; i++) {
             if (elems[i] == T_VOID) die_at(t->line, "a tuple element cannot be void");
-            reject_fn_container(elems[i], t->line);
         }
         return tup_of(elems, n);
     }
@@ -915,7 +917,6 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
-            reject_fn_container(val, t->line);
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
                 die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
@@ -924,7 +925,6 @@ static Type parse_type(Parser *ps) {
         eat(ps, TK_RBRACKET, "']'");
         if (elem == T_VOID || elem == T_BOOL)
             die_at(t->line, "array elements must be int, float, string, a struct, or an array");
-        reject_fn_container(elem, t->line);
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
@@ -933,7 +933,6 @@ static Type parse_type(Parser *ps) {
         Type inner = parse_type(ps);
         eat(ps, TK_RPAREN, "')'");
         if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
-        reject_fn_container(inner, t->line);
         return opt_of(inner);
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Result")) {   /* Result(T, E) */
@@ -944,7 +943,6 @@ static Type parse_type(Parser *ps) {
         Type err = parse_type(ps);
         eat(ps, TK_RPAREN, "')'");
         if (ok == T_VOID || err == T_VOID) die_at(t->line, "Result's types cannot be void");
-        reject_fn_container(ok, t->line); reject_fn_container(err, t->line);
         return res_of(ok, err);
     }
     if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
@@ -1017,7 +1015,13 @@ static Expr *desugar_interp(const char *s, int line) {
             if (depth != 0) die_at(line, "unterminated '{' in an interpolated string");
             if (i == start) die_at(line, "empty '{}' in an interpolated string");
             char *sub = xstrndup(s + start, i - start); i++;     /* consume '}' */
+            /* lex(sub) clobbers g_src (die_at's source-line snippet); restore it after
+             * parsing the hole so later diagnostics in the file keep their snippet.
+             * (die_at also reads g_srcname and g_err_col; lex touches neither on a
+             * non-fatal path.) */
+            const char *save_src = g_src;
             TokVec tv = lex(sub); Parser sp = { tv.v, 0 }; Expr *ex = parse_expr(&sp);
+            g_src = save_src;
             Expr *call = new_expr(E_CALL, line); call->sval = "str";
             call->args = (Expr **)xmalloc(sizeof(Expr *)); call->args[0] = ex; call->nargs = 1;
             acc = interp_join(acc, call, line);
@@ -1050,7 +1054,7 @@ static Expr *parse_primary(Parser *ps) {
             Tok *pn = eat(ps, TK_IDENT, "a lambda parameter name");
             eat(ps, TK_COLON, "':' after parameter name");
             Type pt = parse_type(ps);   /* lambdas take by-value params only */
-            if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
+            if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
             pr->params[pr->nparams].name = pn->text;
             pr->params[pr->nparams].type = pt;
             pr->params[pr->nparams].is_inout = 0;
@@ -1092,11 +1096,11 @@ static Expr *parse_primary(Parser *ps) {
             return first;
         }
         Expr *e = new_expr(E_TUPLE, t->line);   /* tuple literal (e1, e2, ...) */
-        int cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+        int cap = 4; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
         e->args[e->nargs++] = first;
         while (accept(ps, TK_COMMA)) {
             if (at(ps, TK_RPAREN)) break;       /* trailing comma */
-            if (e->nargs == cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+            if (e->nargs == cap) { cap *= 2; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *)); }
             e->args[e->nargs++] = parse_expr(ps);
         }
         eat(ps, TK_RPAREN, "')'");
@@ -1112,7 +1116,6 @@ static Expr *parse_primary(Parser *ps) {
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
                 Type val = parse_type(ps);
-                reject_fn_container(val, t->line);
                 Type mt = map_of(elem, val);
                 if (mt == T_VOID) die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
                 e->ival = mt; e->op = TK_COLON;
@@ -1120,7 +1123,6 @@ static Expr *parse_primary(Parser *ps) {
             }
             if (elem == T_VOID || elem == T_BOOL)
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
-            reject_fn_container(elem, t->line);
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
         }
@@ -1132,12 +1134,12 @@ static Expr *parse_primary(Parser *ps) {
         if (at(ps, TK_COLON)) {              /* map literal ["k": v, ...] */
             e->op = TK_COLON;
             ps->p++;
-            cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+            cap = 4; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
             e->args[e->nargs++] = first;             /* key0 */
             e->args[e->nargs++] = parse_expr(ps);    /* val0 */
             while (accept(ps, TK_COMMA)) {
                 if (at(ps, TK_RBRACKET)) break;       /* trailing comma */
-                if (e->nargs + 2 > cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+                if (e->nargs + 2 > cap) { cap *= 2; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *)); }
                 e->args[e->nargs++] = parse_expr(ps);   /* key */
                 eat(ps, TK_COLON, "':' in a map literal entry");
                 e->args[e->nargs++] = parse_expr(ps);   /* value */
@@ -1145,11 +1147,11 @@ static Expr *parse_primary(Parser *ps) {
             eat(ps, TK_RBRACKET, "']'");
             return e;
         }
-        cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+        cap = 4; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
         e->args[e->nargs++] = first;
         while (accept(ps, TK_COMMA)) {
             if (at(ps, TK_RBRACKET)) break;          /* trailing comma */
-            if (e->nargs == cap) { cap = cap * 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+            if (e->nargs == cap) { cap = cap * 2; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *)); }
             e->args[e->nargs++] = parse_expr(ps);
         }
         eat(ps, TK_RBRACKET, "']'");
@@ -1192,7 +1194,7 @@ static Expr *parse_primary(Parser *ps) {
             while (!at(ps, TK_RPAREN)) {
                 if (e->nargs == cap) {
                     cap = cap ? cap * 2 : 4;
-                    e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+                    e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
                 }
                 e->args[e->nargs++] = parse_expr(ps);
                 if (!accept(ps, TK_COMMA)) break;
@@ -1229,7 +1231,7 @@ static Expr *parse_postfix(Parser *ps) {
             if (is_slice) {
                 Expr *sl = new_expr(E_SLICE, t->line);
                 sl->lhs = e; sl->rhs = lo;          /* lo NULL => 0 */
-                if (hi) { sl->args = (Expr **)realloc(sl->args, sizeof(Expr *)); sl->args[0] = hi; sl->nargs = 1; }
+                if (hi) { sl->args = (Expr **)xrealloc(sl->args, sizeof(Expr *)); sl->args[0] = hi; sl->nargs = 1; }
                 e = sl;
             } else {
                 Expr *ix = new_expr(E_INDEX, t->line);
@@ -1256,7 +1258,7 @@ static Expr *parse_postfix(Parser *ps) {
                     c->pkg  = g_cur_pkg_prefix;
                     int cap = 0;
                     while (!at(ps, TK_RPAREN)) {
-                        if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)realloc(c->args, (size_t)cap * sizeof(Expr *)); }
+                        if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)xrealloc(c->args, (size_t)cap * sizeof(Expr *)); }
                         c->args[c->nargs++] = parse_expr(ps);
                         if (!accept(ps, TK_COMMA)) break;
                     }
@@ -1279,7 +1281,7 @@ static Expr *parse_postfix(Parser *ps) {
             c->pkg = g_cur_pkg_prefix;
             int cap = 0;
             while (!at(ps, TK_RPAREN)) {
-                if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)realloc(c->args, (size_t)cap * sizeof(Expr *)); }
+                if (c->nargs == cap) { cap = cap ? cap * 2 : 4; c->args = (Expr **)xrealloc(c->args, (size_t)cap * sizeof(Expr *)); }
                 c->args[c->nargs++] = parse_expr(ps);
                 if (!accept(ps, TK_COMMA)) break;
             }
@@ -1466,14 +1468,18 @@ static int expr_has_orreturn(Expr *e) {
  * once. Pure indices are untouched, so the common `a[i] += e` is byte-identical. */
 static void hoist_index_calls(Expr *place, int line) {
     Expr *chain[32]; int nc = 0;
-    for (Expr *cur = place; cur && nc < 32; ) {
-        if (cur->kind == E_INDEX) chain[nc++] = cur;
+    for (Expr *cur = place; cur; ) {
+        if (cur->kind == E_INDEX) {
+            if (nc >= 32) die_at(line, "assignment place too deeply nested (max 32 indices)");
+            chain[nc++] = cur;
+        }
         if (cur->kind == E_INDEX || cur->kind == E_FIELD || cur->kind == E_TUPIDX) cur = cur->lhs;
         else break;
     }
     for (int i = nc - 1; i >= 0; i--) {   /* innermost index (evaluated first) hoisted first */
         Expr *ix = chain[i];
-        if (ix->rhs && expr_has_call(ix->rhs) && g_npending < 64) {
+        if (ix->rhs && expr_has_call(ix->rhs)) {
+            if (g_npending >= 64) die_at(line, "too many hoisted index expressions in one statement (max 64)");
             Stmt *d = new_stmt(S_DECL, line);
             d->name = sfmt("_cx%d", g_forin_uid++);
             d->expr = ix->rhs;
@@ -1495,10 +1501,10 @@ static Stmt *parse_stmt(Parser *ps) {
             Expr *first = parse_expr(ps);
             if (at(ps, TK_COMMA)) {       /* return a, b, ... builds a tuple */
                 Expr *e = new_expr(E_TUPLE, t->line);
-                int cap = 4; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *));
+                int cap = 4; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
                 e->args[e->nargs++] = first;
                 while (accept(ps, TK_COMMA)) {
-                    if (e->nargs == cap) { cap *= 2; e->args = (Expr **)realloc(e->args, (size_t)cap * sizeof(Expr *)); }
+                    if (e->nargs == cap) { cap *= 2; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *)); }
                     e->args[e->nargs++] = parse_expr(ps);
                 }
                 if (e->nargs > 8) die_at(t->line, "a tuple has at most 8 elements");
@@ -1534,7 +1540,7 @@ static Stmt *parse_stmt(Parser *ps) {
                 vqual = vn->text;
                 vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
             }
-            if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)realloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
+            if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)xrealloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
             MatchArm *arm = &s->arms[s->narms++];
             /* Option/Result arms (Some/None/Ok/Err) are never package symbols; an
              * enum variant is package-scoped, mangled with the qualifier's package
@@ -1742,11 +1748,11 @@ static Stmt **parse_block(Parser *ps, int *count) {
         Stmt *st = parse_stmt(ps);
         /* a foreach queued a collection-temp decl to emit before its loop */
         for (int k = 0; k < g_npending; k++) {
-            if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)realloc(body, (size_t)cap * sizeof(Stmt *)); }
+            if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
             body[n++] = g_pending[k];
         }
         g_npending = 0;
-        if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)realloc(body, (size_t)cap * sizeof(Stmt *)); }
+        if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
         body[n++] = st;
     }
     eat(ps, TK_DEDENT, "dedent");
@@ -1770,7 +1776,7 @@ static Proc *parse_fn(Parser *ps) {
         eat(ps, TK_COLON, "':' after parameter name");
         int is_inout = accept(ps, TK_INOUT);   /* `name: inout type` */
         Type pt = parse_type(ps);
-        if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
+        if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = is_inout;
@@ -1819,7 +1825,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': inout parameters are not allowed across the C boundary", pr->name);
         Type pt = parse_type(ps);
         if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr (no composites across the C boundary)", pr->name, pn->text);
-        if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)realloc(pr->params, (size_t)cap * sizeof(Param)); }
+        if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = 0;
@@ -1865,7 +1871,6 @@ static void parse_struct(Parser *ps) {
         Tok *fn = eat(ps, TK_IDENT, "a field name");
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
-        reject_fn_container(ft, fn->line);
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
@@ -1904,7 +1909,7 @@ static void parse_enum(Parser *ps) {
         if (accept(ps, TK_LPAREN)) {     /* a payload tuple, e.g. Add(Expr, Expr) */
             while (!at(ps, TK_RPAREN)) {
                 if (var->npayload >= 8) die_at(vn->line, "too many payload fields (max 8)");
-                { Type _pt = parse_type(ps); reject_fn_container(_pt, vn->line); var->payload[var->npayload++] = _pt; }
+                var->payload[var->npayload++] = parse_type(ps);
                 if (!accept(ps, TK_COMMA)) break;
             }
             eat(ps, TK_RPAREN, "')'");
@@ -2018,7 +2023,7 @@ static ProcVec parse_program(Tok *toks) {
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "import"))  { parse_import_decl(&ps);  continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "extern") && peek(&ps, 1)->kind != TK_LPAREN) {
             Proc *pr = parse_extern_fn(&ps);
-            if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
+            if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)xrealloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
             out.v[out.n++] = pr;
             continue;
         }
@@ -2026,7 +2031,7 @@ static ProcVec parse_program(Tok *toks) {
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
         Proc *pr = parse_fn(&ps);
-        if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)realloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
+        if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)xrealloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
     }
     return out;
@@ -2214,7 +2219,7 @@ static Type resolve_expr(Expr *e) {
             resolve_block(pr->body, pr->nbody, pr->ret);
             g_fn_ret = saved;
             vars_restore(mark);
-            if (g_lambda_procs.n == g_lambda_procs.cap) { g_lambda_procs.cap = g_lambda_procs.cap ? g_lambda_procs.cap * 2 : 8; g_lambda_procs.v = (Proc **)realloc(g_lambda_procs.v, (size_t)g_lambda_procs.cap * sizeof(Proc *)); }
+            if (g_lambda_procs.n == g_lambda_procs.cap) { g_lambda_procs.cap = g_lambda_procs.cap ? g_lambda_procs.cap * 2 : 8; g_lambda_procs.v = (Proc **)xrealloc(g_lambda_procs.v, (size_t)g_lambda_procs.cap * sizeof(Proc *)); }
             g_lambda_procs.v[g_lambda_procs.n++] = pr;
             return e->type = li->ftype;
         }
@@ -2225,7 +2230,6 @@ static Type resolve_expr(Expr *e) {
             Type inner = resolve_expr(e->lhs);
             if (inner == T_VOID || inner == T_NONE)
                 die_at(e->line, "Some(...) needs a concrete value");
-            reject_fn_container(inner, e->line);
             return e->type = opt_of(inner);
         }
         case E_OK: case E_ERR: {   /* one half of a Result; context fixes the rest */
@@ -2233,7 +2237,6 @@ static Type resolve_expr(Expr *e) {
             const char *w = e->kind == E_OK ? "Ok" : "Err";
             if (inner == T_VOID || inner == T_NONE || inner == T_OK_PARTIAL || inner == T_ERR_PARTIAL)
                 die_at(e->line, "%s(...) needs a concrete value", w);
-            reject_fn_container(inner, e->line);
             return e->type = (e->kind == E_OK ? T_OK_PARTIAL : T_ERR_PARTIAL);
         }
         case E_TUPLE: {   /* (e1, ..., en): a tuple literal */
@@ -2244,7 +2247,6 @@ static Type resolve_expr(Expr *e) {
                 Type et = resolve_expr(e->args[i]);
                 if (et == T_VOID || et == T_NONE || et == T_OK_PARTIAL || et == T_ERR_PARTIAL)
                     die_at(e->line, "tuple element %d needs a concrete value", i + 1);
-                reject_fn_container(et, e->line);
                 elems[i] = et;
             }
             return e->type = tup_of(elems, e->nargs);
@@ -2325,7 +2327,6 @@ static Type resolve_expr(Expr *e) {
                     if (resolve_expr(e->args[i + 1]) != vt)
                         die_at(e->line, "map values must all have the same type");
                 }
-                reject_fn_container(vt, e->line);
                 return e->type = map_of(kt, vt);
             }
             if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
@@ -2338,7 +2339,6 @@ static Type resolve_expr(Expr *e) {
             for (int i = 1; i < e->nargs; i++)
                 if (resolve_exp(e->args[i], elem) != elem)   /* coerces a None element */
                     die_at(e->line, "array elements must all have the same type");
-            reject_fn_container(elem, e->line);
             return e->type = arr_of(elem);
         }
         case E_INDEX: {
@@ -6013,6 +6013,27 @@ static void scan_imports(Tok *t, char **paths, int *n, int max) {
  * Each imported package's name is its import path's last component and its
  * files must declare exactly that (the dir match is structural); the main
  * package's directory may be named anything (it is reached by the entry file). */
+/* Scan a package directory for .hi files into files[512], sorted. Shared by
+ * merge_pkg and bundle_pkg; `toomany_msg` keeps each caller's exact error text. */
+static int scan_pkg_files(const char *dir, char **files, const char *toomany_msg) {
+    DIR *d = opendir(dir);
+    if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
+    int nf = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        const char *nm = de->d_name;
+        size_t L = strlen(nm);
+        if (L > 3 && !strcmp(nm + L - 3, ".hi")) {
+            if (nf >= 512) { fprintf(stderr, "hierc: %s %s\n", toomany_msg, dir); exit(1); }
+            files[nf++] = sfmt("%s/%s", dir, nm);
+        }
+    }
+    closedir(d);
+    if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
+    qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
+    return nf;
+}
+
 static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, ProcVec *prog) {
     char *key = canon_dir(dir);
     for (int i = 0; i < g_npkg_active; i++)
@@ -6025,21 +6046,8 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
     g_pkg_active[g_npkg_active++] = key;
 
-    DIR *d = opendir(dir);
-    if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
-    char *files[512]; int nf = 0;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        const char *nm = de->d_name;
-        size_t L = strlen(nm);
-        if (L > 3 && !strcmp(nm + L - 3, ".hi")) {
-            if (nf >= 512) { fprintf(stderr, "hierc: too many files in package %s\n", dir); exit(1); }
-            files[nf++] = sfmt("%s/%s", dir, nm);
-        }
-    }
-    closedir(d);
-    if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
-    qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
+    char *files[512];
+    int nf = scan_pkg_files(dir, files, "too many files in package");
 
     /* lex every file once; collect this package's imports from the headers */
     TokVec toks[512];
@@ -6076,7 +6084,7 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
         for (int j = 0; j < pv.n; j++) {
             if (prog->n == prog->cap) {
                 prog->cap = prog->cap ? prog->cap * 2 : 8;
-                prog->v = (Proc **)realloc(prog->v, (size_t)prog->cap * sizeof(Proc *));
+                prog->v = (Proc **)xrealloc(prog->v, (size_t)prog->cap * sizeof(Proc *));
             }
             prog->v[prog->n++] = pv.v[j];
         }
@@ -6129,20 +6137,8 @@ static void bundle_pkg(const char *dir, int is_entry) {
     if (g_npkg_active >= 64) { fprintf(stderr, "hierc: package nesting too deep\n"); exit(1); }
     g_pkg_active[g_npkg_active++] = key;
 
-    DIR *d = opendir(dir);
-    if (!d) { fprintf(stderr, "hierc: cannot open package directory %s\n", dir); exit(1); }
-    char *files[512]; int nf = 0;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        const char *nm = de->d_name; size_t L = strlen(nm);
-        if (L > 3 && !strcmp(nm + L - 3, ".hi")) {
-            if (nf >= 512) { fprintf(stderr, "hierc: too many files in %s\n", dir); exit(1); }
-            files[nf++] = sfmt("%s/%s", dir, nm);
-        }
-    }
-    closedir(d);
-    if (nf == 0) { fprintf(stderr, "hierc: package directory %s has no .hi files\n", dir); exit(1); }
-    qsort(files, (size_t)nf, sizeof(char *), pkg_file_cmp);
+    char *files[512];
+    int nf = scan_pkg_files(dir, files, "too many files in");
 
     char *imp_paths[256]; int n_imp = 0;
     for (int i = 0; i < nf; i++) {
