@@ -4350,8 +4350,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 flush = flush + "        " + un(fnm[k]) + ".data = _fd" + fsf[k] + "; " + un(fnm[k]) + ".len = _fl" + fsf[k] + "; " + un(fnm[k]) + ".cap = _fc" + fsf[k] + ";\n"
                 bc = add_fuse(bc, fnm[k], fsf[k], fty[k])
                 k = k + 1
-            header := "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + un(name) + " < " + gen_expr(stop, names, types, dc, ctx) + "; " + un(name) + " += " + gen_expr(step, names, types, dc, ctx) + ") {\n"
-            inner := header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            # bounds eval once, pre-loop; the condition is sign-aware so a negative
+            # step counts down (hierc: _stop/_step temps + step>0 ? < : >)
+            sx := "_stop_" + un(name)
+            px := "_step_" + un(name)
+            header := "    { long " + sx + " = " + gen_expr(stop, names, types, dc, ctx) + ", " + px + " = " + gen_expr(step, names, types, dc, ctx) + ";\n"
+            header = header + "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + px + " > 0 ? " + un(name) + " < " + sx + " : " + un(name) + " > " + sx + "; " + un(name) + " += " + px + ") {\n"
+            inner := header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    } }\n"
             if len(fnm) == 0:
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
