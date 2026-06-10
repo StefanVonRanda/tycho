@@ -138,19 +138,22 @@ compiler after the campaign:
 
 | workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |
-| binary-trees     |  13 MB/124 ms | 33/772 ms | 33/848 ms | 35/1523 ms |      14/273 ms |
-| tree-rewrite     |   7 MB/94 ms  | 13/586 ms |  9/439 ms |  21/848 ms |       7/185 ms |
-| array-pipeline   |    5 MB/30 ms |  3/22 ms |  3/24 ms |   6/53 ms |      17/372 ms |
-| string-pipeline  |    1 MB/1 ms  |   1/1 ms |   2/2 ms |    4/5 ms |       2/17 ms |
+| binary-trees     |  13 MB/107 ms | 33/765 ms | 34/855 ms | 32/1756 ms |      15/269 ms |
+| tree-rewrite     |   6 MB/89 ms  | 13/556 ms | 10/404 ms |  21/837 ms |       8/178 ms |
+| array-pipeline   |    5 MB/30 ms |  3/22 ms |  3/23 ms |   6/53 ms |      18/372 ms |
+| string-pipeline  |    2 MB/1 ms  |   1/1 ms |   2/2 ms |    4/5 ms |       2/17 ms |
 
-On the allocation-heavy tree workloads the self-hosted compiler is now **best in
+(Numbers are the 2026-06-07 standard-opt re-measure from RESULTS.md — that file
+is authoritative; regenerate with `sh bench/fair_full.sh`.) On the
+allocation-heavy tree workloads the self-hosted compiler is now **best in
 class** — on binary-trees it has the lowest memory of all six (13 MB, under Koka's
-14) and is the fastest (124 ms), and it beats C, Rust, Go, and the mature `hierc`
-on both axes — no GC, no refcounts, just lexical arenas and value semantics. With
-the additive `char` type, the formerly-trailing string-pipeline now **ties C**
-(1 MB / 1 ms): `s = s + ('0' + d)` is an in-place one-byte append, the same
-byte-write C/Rust/Go do, instead of allocating a one-char string per digit. The
-self-hosted compiler is now best-or-tied on memory in all four workloads, trailing
+15) and is the fastest (107 ms), beating C, Rust, Go, and Koka on both axes and
+the mature `hierc` on time at equal memory — no GC, no refcounts, just lexical
+arenas and value semantics. With the additive `char` type, the formerly-trailing
+string-pipeline now **matches C's 1 ms**: `s = s + ('0' + d)` is an in-place
+one-byte append, the same byte-write C/Rust/Go do, instead of allocating a
+one-char string per digit. On memory the self-hosted compiler is best-in-class on
+both tree workloads and within 1–2 MB of C on array/string-pipeline, trailing
 C/Rust only on array-pipeline time (per-element bounds-checking, not the memory
 model). The compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
