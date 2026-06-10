@@ -4281,12 +4281,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
         SMultiAssign(mnames, e):                  # a, b = tuple_expr (existing vars)
             tt := type_of(e, names, types, dc, ctx)
             tmp := "_ma_" + mnames[0]
-            code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
+            # brace-scope the temp: two multi-assigns with the same first target in
+            # one block must not redefine it (hierc names its temp _mt<g_blk++>)
+            code := "    { Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
             for j < len(mnames):
                 code = code + "    " + un(mnames[j]) + " = " + tmp + ".f" + str(j) + ";\n"
                 j = j + 1
-            return code
+            return code + "    }\n"
         SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
             rty := type_of(e, names, types, dc, ctx)
             tmp := "_or_" + name
