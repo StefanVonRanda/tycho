@@ -46,8 +46,10 @@ BEGIN { n = split(rt, a, " "); for (i = 1; i <= n; i++) isrt[a[i]] = 1; cur = "M
     echo 'import "rt"'
     echo
     # Qualify the cross-package emitter calls (their definitions now live in rt).
+    # sed -E (not GNU \| alternation) so BSD/macOS sed works too; the leading
+    # (^|[^A-Za-z0-9_]) guard stops substring hits like `xpreamble(`.
     sed -n 's/^MAIN\t//p' "$OUT/.tagged" \
-        | sed 's/\(preamble\|gen_strlib\|gen_mhash\)(/rt.\1(/g'
+        | sed -E 's/(^|[^A-Za-z0-9_])(preamble|gen_strlib|gen_mhash)\(/\1rt.\2(/g'
 } > "$OUT/main.hi"
 
 rm -f "$OUT/.tagged"
