@@ -1956,12 +1956,11 @@ static void parse_import_decl(Parser *ps) {
     const char *alias = NULL;
     if (at(ps, TK_IDENT)) { alias = cur(ps)->text; ps->p++; }   /* optional alias */
     Tok *path = eat(ps, TK_STR, "an import path string");
-    if (g_nimports < 128) {
-        g_imports[g_nimports].alias = alias;
-        g_imports[g_nimports].path  = path->text;
-        g_imports[g_nimports].line  = kw->line;
-        g_nimports++;
-    }
+    if (g_nimports >= 128) die_at(kw->line, "too many imports (max 128)");
+    g_imports[g_nimports].alias = alias;
+    g_imports[g_nimports].path  = path->text;
+    g_imports[g_nimports].line  = kw->line;
+    g_nimports++;
     accept(ps, TK_NEWLINE);
 }
 
@@ -3483,6 +3482,7 @@ static int fuse_open(FILE *o, Stmt **body, int n, int ind, Expr *guard) {
     fuse_gather(body, n, names, tys, &cnt);
     for (int i = 0; i < cnt; i++) {
         const char *nm = names[i];
+        if (g_nfuse >= 16) break;                        /* table full (nested loops share it) -> skip fusing, plain pushes stay correct */
         if (fuse_idx(nm) >= 0) continue;                 /* an enclosing loop already cached it */
         if (!cv_arena(nm) || is_param(nm)) continue;     /* must be a plain local (h_nm is a value) */
         if (body_defines(body, n, nm)) continue;         /* reassigned/shadowed -> not a stable cursor */
