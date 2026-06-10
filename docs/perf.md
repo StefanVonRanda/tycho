@@ -294,7 +294,7 @@ names keyed on `ctx.depth`.
 
 **Result:** `iter_transform` 1249→416 ms (6.7×→2.3× C) and 4→3 MB; `arr_pipeline`
 53→30 ms (2.2×→1.25× C). General — every scalar push loop, including the
-self-compiler. Verified: `make test` 98/0 (ASan/UBSan); `make fixpoint` B≡C in
+self-compiler. Verified: `make test` all green (ASan/UBSan); `make fixpoint` B≡C in
 both compilers (fusion correctly compiles the push-heavy `hierc0.hi`, which
 self-reproduces byte-identically and compiles itself faster); `bench-prongB` all
 outputs identical, no regression; differential fuzz 300 seeds FAIL=0 (×2, one per

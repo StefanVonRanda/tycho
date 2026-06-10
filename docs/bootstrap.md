@@ -16,8 +16,8 @@ itself and the C compiler can be retired. Stopping at any stage ≥ 1 is still a
 standalone win.
 
 > **STATUS (current): Stages 0–4 are DONE — hierc0 self-hosts.** `make fixpoint`
-> is green (B≡C byte-identical, B matches the C compiler across all 62 `tests/` +
-> `examples/`). The stage log below is the historical record of getting there.
+> is green (B≡C byte-identical, B matches the C compiler across the full `tests/` +
+> `examples/` suite). The stage log below is the historical record of getting there.
 > One caveat it repeats — that hierc0 "emits correct-but-naive malloc/value-copy
 > C, not the optimized arena codegen" — was true *at the fixpoint* but has since
 > been closed: a follow-on campaign (MM-0 … MM-7f) migrated hierc0's codegen onto
