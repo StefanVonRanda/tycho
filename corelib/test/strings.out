@@ -2,3 +2,6 @@ HELLO, WORLD!
 hello, world!
 ababab|[spaced text]
 bits=7 miss=0 p1=-42 p2=123
+pmax=9223372036854775807 pmin=-9223372036854775808
+ovf=0 ovn=0 pe=0 pd=0 pg=0
+vt=[x]

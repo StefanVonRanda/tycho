@@ -16,10 +16,11 @@ fn main():
     # a top-level function reference as the argument
     print(f"map-ref={iter.map(xs, dbl)[2]}\n")                # map-ref=6
 
-    # filter with a capturing closure
+    # filter with a capturing closure; nonzero (incl. NEGATIVE) return retains:
+    # x=1 yields -1 and is kept, only x=2 (yields 0) drops
     thr := 2
-    big := iter.filter(xs, fn(x: int) -> int: x - thr)        # keep x > 2
-    print(f"filter>{thr}={big[0]},{big[1]},{big[2]}\n")       # filter>2=3,4,5
+    keep := iter.filter(xs, fn(x: int) -> int: x - thr)
+    print(f"filter!={thr}: {keep[0]},{keep[1]},{keep[2]},{keep[3]}\n")   # filter!=2: 1,3,4,5
 
     # reduce: sum and product
     print(f"sum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)}\n")        # sum=15
@@ -29,7 +30,8 @@ fn main():
     w := 10
     print(f"wsum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b * w)}\n")   # wsum=150
 
-    # count + any with captured threshold
+    # count + any honor the documented nonzero contract: negative returns count too
     lim := 3
-    print(f"count>={lim}: {iter.count(xs, fn(x: int) -> int: x - lim + 1)}\n")    # count>=3: 3
-    print(f"any>100={iter.any(xs, fn(x: int) -> int: x - 100)}\n")               # any>100=false
+    print(f"count!={lim}: {iter.count(xs, fn(x: int) -> int: x - lim)}\n")       # count!=3: 4
+    print(f"any-neg={iter.any(xs, fn(x: int) -> int: 0 - x)}\n")                 # any-neg=true (all negative, all nonzero)
+    print(f"any-none={iter.any(xs, fn(x: int) -> int: x / 100)}\n")              # any-none=false (all yield 0)

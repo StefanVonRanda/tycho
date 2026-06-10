@@ -2,8 +2,8 @@
 # (split/find/substr/len/chr are builtins; these build on them.)
 package strings
 
-fn is_space(c: int) -> bool:                 # ASCII whitespace
-    return c == 32 or c == 9 or c == 10 or c == 13
+fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v \f \r
+    return c == 32 or c == 9 or c == 10 or c == 11 or c == 12 or c == 13
 
 fn to_upper(s: string) -> string:
     r := ""
@@ -66,6 +66,9 @@ fn trim(s: string) -> string:                # strip leading/trailing ASCII whit
     return substr(s, lo, hi)
 
 fn parse_int(s: string) -> int:              # decimal int, optional leading '-'; stops at first non-digit
+    # Failure value is 0 (same as non-numeric input): values outside int64 range
+    # ([-9223372036854775808, 9223372036854775807]) return 0 instead of overflowing.
+    # Accumulates NEGATIVE so min int64 itself parses without signed overflow.
     if len(s) == 0:
         return 0
     neg := false
@@ -73,10 +76,16 @@ fn parse_int(s: string) -> int:              # decimal int, optional leading '-'
     if s[0] == 45:                           # '-'
         neg = true
         i = 1
+    min64 := (0 - 9223372036854775807) - 1
     v := 0
     for i < len(s) and s[i] >= 48 and s[i] <= 57:
-        v = v * 10 + (s[i] - 48)
+        d := s[i] - 48
+        if v < (min64 + d) / 10:             # v*10 - d would underflow int64
+            return 0
+        v = v * 10 - d
         i = i + 1
     if neg:
-        return 0 - v
-    return v
+        return v
+    if v == min64:                           # +9223372036854775808 does not fit
+        return 0
+    return 0 - v

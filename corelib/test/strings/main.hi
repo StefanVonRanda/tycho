@@ -17,3 +17,15 @@ fn main():
     p1 := strings.parse_int("-42")
     p2 := strings.parse_int("123stop")
     print(f"bits={bits} miss={miss} p1={p1} p2={p2}\n")       # bits=7 miss=0 p1=-42 p2=123
+    # parse_int edges: int64 bounds parse exactly; overflow/empty/'-'/garbage -> 0
+    pmax := strings.parse_int("9223372036854775807")
+    pmin := strings.parse_int("-9223372036854775808")
+    print(f"pmax={pmax} pmin={pmin}\n")                       # pmax=9223372036854775807 pmin=-9223372036854775808
+    ovf := strings.parse_int("12345678901234567890")
+    ovn := strings.parse_int("-9223372036854775809")
+    pe := strings.parse_int("")
+    pd := strings.parse_int("-")
+    pg := strings.parse_int("garbage")
+    print(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}\n")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
+    # is_space covers \v (11) and \f (12) too: trim strips them
+    print("vt=[" + strings.trim(chr(11) + "x" + chr(12)) + "]\n")   # vt=[x]

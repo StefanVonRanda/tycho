@@ -15,3 +15,5 @@ fn main():
     print(f"s0={sorted[0]} s4={sorted[4]} sok={b2i(arrays.is_sorted(sorted))} origok={b2i(arrays.is_sorted(xs))}\n")
     rev := arrays.reverse(xs)
     print(f"rev0={rev[0]} rev4={rev[4]}\n")                                          # rev0=1 rev4=5
+    e := []int                                                                       # documented empty sentinels: 0
+    print(f"esum={arrays.sum(e)} emax={arrays.imax(e)} emin={arrays.imin(e)}\n")     # esum=0 emax=0 emin=0

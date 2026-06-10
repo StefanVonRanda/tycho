@@ -22,3 +22,5 @@ fn main():
     print(s[0] + "," + s[3] + f" sok={sok} origok={origok}\n")      # apple,pear sok=1 origok=0
     rev := arrays_str.reverse(xs)
     print(rev[0] + "," + rev[3] + "\n")                             # apple,pear
+    e := []string                                                   # documented empty sentinel: ""
+    print("empty=[" + arrays_str.smin(e) + "|" + arrays_str.smax(e) + "]\n")   # empty=[|]

@@ -29,3 +29,8 @@ fn main():
     rev := arrays_float.reverse(xs)
     rok := b2i(rev[0] == 1.0 and rev[3] == 2.5)
     print(f"rok={rok}\n")                                          # rok=1
+    e := []float                                                   # documented empty sentinels: 0.0
+    esum := b2i(arrays_float.sum(e) == 0.0)
+    emin := b2i(arrays_float.fmin(e) == 0.0)
+    emax := b2i(arrays_float.fmax(e) == 0.0)
+    print(f"esum={esum} emin={emin} emax={emax}\n")                # esum=1 emin=1 emax=1

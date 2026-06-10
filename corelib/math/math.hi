@@ -2,6 +2,11 @@
 package math
 
 fn abs(x: int) -> int:
+    # EDGE: abs(min int64) is not representable; negating it would overflow (UB).
+    # Like C labs in practice, that one input returns min int64 itself — checked
+    # explicitly so no signed negation ever overflows.
+    if x == (0 - 9223372036854775807) - 1:
+        return x
     if x < 0:
         return 0 - x
     return x
@@ -40,6 +45,9 @@ fn gcd(a: int, b: int) -> int:           # greatest common divisor (Euclid), non
     return x
 
 fn ipow(base: int, exp: int) -> int:     # integer power for exp >= 0 (exp < 0 returns 0)
+    # No overflow guard: results outside int64 wrap/are undefined — caller's job to
+    # keep base^exp in range. In-range edges are safe: the squaring is skipped once
+    # the result is complete, so e.g. ipow(2, 62) never computes 2^32 * 2^32.
     if exp < 0:
         return 0
     r := 1
@@ -48,6 +56,7 @@ fn ipow(base: int, exp: int) -> int:     # integer power for exp >= 0 (exp < 0 r
     for e > 0:
         if e % 2 == 1:
             r = r * b
-        b = b * b
         e = e / 2
+        if e > 0:
+            b = b * b
     return r
