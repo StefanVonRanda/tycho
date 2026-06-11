@@ -651,3 +651,15 @@ signature, call site, and return. Mitigation: land MM-1 behind a full fixpoint
 run before commit; if the self-emission breaks, ASan on the self-emitted C is
 the debugger (it caught the Stage-4 return-promotion bugs). Keep each stage its
 own commit with the verification quoted in the message.
+
+## Postscript: the model across threads
+
+The arena model extends to concurrency without new rules
+([docs/concurrency.md](concurrency.md)): a spawned task is an ordinary call
+whose `_parent` is a private root arena (arguments deep-copy in before the
+thread starts; the result copies out at `wait`, then the whole tree frees);
+the block pool became thread-local, so allocation never contends; channel
+payloads live in per-cell arenas recycled on ring reuse, bounding channel
+memory by capacity x payload. Every cross-thread byte is a deep copy — the
+same rule as an ordinary call — which is what makes the threads race-free
+with zero annotations.
