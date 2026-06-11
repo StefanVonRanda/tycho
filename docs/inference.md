@@ -12,7 +12,19 @@ variables: B-3 is a flow-sensitive forward scan, not unification — hierc
 keeps a pending registry through its in-order resolve; hierc0 rewrites the
 decl to its annotated form via a forward seek in the lift. Gated by
 tests/inference.hi (through the fixpoint differential, both compilers) and
-tests/reject/infer_*.hi. Original investigation below. Question: should hier adopt
+tests/reject/infer_*.hi.
+
+**The grounding contract (both compilers, fixture-locked):** a pending decl
+grounds at its first occurrence in any of — an assignment to it (`o =
+Some(5)`), `push`/`map_set` on it, a typed argument position (named fn,
+fn-typed variable or call-on-expression, struct/enum construction, `send`,
+`spawn`), `return`, a field/element store, or an array-literal element
+position (typed by the literal's first element). Anything else that needs
+the type first is the local "used before its type can be inferred" error; a
+block ending with the decl still pending errors at the declaration. The
+fuzzer's `infer_*` kinds exercise the contract differentially.
+
+Original investigation below. Question: should hier adopt
 HM-style inference — type variables, unification, let-generalization,
 principal types? Verdict up front: **full HM is infeasible for hier by its
 own prior decisions, function-local unification is feasible but poor ROI,

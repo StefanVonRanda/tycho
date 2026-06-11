@@ -38,6 +38,7 @@ fn main():
     em : [string: int] = []
     print(str(total(em)))
     print(str(b3()))
+    print(str(b3residue()))
     match maybe(5):
         Some(v):
             print(str(v))
@@ -61,3 +62,11 @@ fn b3() -> int:
         None:
             return 0 - 1
     return 0 - 2
+
+fn b3residue() -> int:
+    g := fn(a: [int]) -> int: len(a) + 10
+    xs := []
+    n := g(xs)
+    ys := []
+    yss := [[1, 2], ys]
+    return n + len(yss)

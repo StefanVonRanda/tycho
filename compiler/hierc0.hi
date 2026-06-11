@@ -6620,6 +6620,14 @@ fn arg_want(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a
         return ""
     if is_builtin_call(nm):
         return ""
+    if has_str(names, nm):                        # indirect call through a fn-typed VAR: its param types
+        ft := base_ty(var_type(names, types, nm))
+        if is_func(ft):
+            fp := []string
+            fr := fnty_split(ft, &fp)
+            if i < len(fp):
+                return fp[i]
+        return ""
     si := map_get(dc.sigmap, nm, 0 - 1)
     if si >= 0 and i < len(dc.sigs[si].ptypes):
         return base_ty(dc.sigs[si].ptypes[i])
@@ -6702,7 +6710,26 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         ESlice(b, lo, hi):
             return ESlice(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ECallV(callee, cargs):
-            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(cargs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            # B: a call-on-expression's params ground its args too. EField
+            # callees are method forms (UFCS / ch.send) -- their dispatch
+            # resolves later, and type_of on the field would die; skip those.
+            gca := cargs
+            cvt := "void"
+            if efield_fname(callee) == "":
+                cvt = type_of(callee, names, types, dc, ctx)
+            if is_func(cvt):
+                cvp := []string
+                cvr := fnty_split(cvt, &cvp)
+                gc2 := []Expr
+                gk := 0
+                for gk < len(cargs):
+                    cw := ""
+                    if gk < len(cvp):
+                        cw = cvp[gk]
+                    push(gc2, ground_pre(dc, ctx, cw, cargs[gk]))
+                    gk = gk + 1
+                gca = gc2
+            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(gca, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EAddr(x):
             return EAddr(lift_expr(x, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ELambda(id, ps, pts, ret, body, cn, ct):
@@ -6918,6 +6945,8 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
         EArrLit(es):
             j := 0
             for j < len(es):
+                if j > 0 and evar_name(es[j]) == nm and evar_name(es[0]) != nm:
+                    return type_of(es[0], n2, t2, dc, ctx)   # an element checks against the FIRST element's type
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, es[j])
                 if r != "":
                     return r
@@ -6947,8 +6976,16 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
         EAddr(x):
             return pend_seek_expr(dc, ctx, n2, t2, nm, x)
         ECallV(c, a):
+            cvt := "void"                         # a call-on-expression's param types ground a pending arg;
+            if efield_fname(c) == "":             # EField callees are method forms -- type_of would die there
+                cvt = type_of(c, n2, t2, dc, ctx)
             j := 0
             for j < len(a):
+                if evar_name(a[j]) == nm and is_func(cvt):
+                    cvp := []string
+                    cvr := fnty_split(cvt, &cvp)
+                    if j < len(cvp):
+                        return cvp[j]
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, a[j])
                 if r != "":
                     return r
