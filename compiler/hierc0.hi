@@ -6604,41 +6604,46 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
         ESpawn(sid, snm, sa):
             return e
 
-# Per-argument destination types for a call's grounding: user-fn params (from
-# the pre-lift Sig table), struct fields, enum payloads, and the typed builtins
-# (push/map_set/send). Builtins like Some/Ok/Err supply nothing (as in hierc).
+# The destination type of argument `i` of a call to `nm`: user-fn params
+# (from the pre-lift Sig table), struct fields, enum payloads, and the typed
+# builtins (push/map_set/send). "" when nothing supplies one (Some/Ok/Err
+# supply nothing, as in hierc). Shared by ground_args and the B-3 seek.
+fn arg_want(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a: [Expr], i: int) -> string:
+    if nm == "push" and i == 1:
+        return elem_ty(type_of(a[0], names, types, dc, ctx))
+    if nm == "map_set" and i == 2:
+        return map_val(type_of(a[0], names, types, dc, ctx))
+    if nm == "send" and i == 1:
+        at := type_of(a[0], names, types, dc, ctx)
+        if is_chan(at):
+            return chan_inner(at)
+        return ""
+    if is_builtin_call(nm):
+        return ""
+    si := map_get(dc.sigmap, nm, 0 - 1)
+    if si >= 0 and i < len(dc.sigs[si].ptypes):
+        return base_ty(dc.sigs[si].ptypes[i])
+    sj := 0
+    for sj < len(dc.structs):
+        if dc.structs[sj].name == nm and i < len(dc.structs[sj].fields):
+            return dc.structs[sj].fields[i].ty
+        sj = sj + 1
+    ej := 0
+    for ej < len(dc.enums):
+        vk := 0
+        for vk < len(dc.enums[ej].variants):
+            if dc.enums[ej].variants[vk].name == nm and i < len(dc.enums[ej].variants[vk].ptypes):
+                return dc.enums[ej].variants[vk].ptypes[i]
+            vk = vk + 1
+        ej = ej + 1
+    return ""
+
+# Ground every argument of a call against its destination type (B-0/B-2).
 fn ground_args(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a: [Expr]) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(a):
-        w := ""
-        if nm == "push" and i == 1:
-            w = elem_ty(type_of(a[0], names, types, dc, ctx))
-        elif nm == "map_set" and i == 2:
-            w = map_val(type_of(a[0], names, types, dc, ctx))
-        elif nm == "send" and i == 1:
-            at := type_of(a[0], names, types, dc, ctx)
-            if is_chan(at):
-                w = chan_inner(at)
-        elif not is_builtin_call(nm):
-            si := map_get(dc.sigmap, nm, 0 - 1)
-            if si >= 0 and i < len(dc.sigs[si].ptypes):
-                w = base_ty(dc.sigs[si].ptypes[i])
-            else:
-                sj := 0
-                for sj < len(dc.structs):
-                    if dc.structs[sj].name == nm and i < len(dc.structs[sj].fields):
-                        w = dc.structs[sj].fields[i].ty
-                    sj = sj + 1
-                ej := 0
-                for ej < len(dc.enums):
-                    vk := 0
-                    for vk < len(dc.enums[ej].variants):
-                        if dc.enums[ej].variants[vk].name == nm and i < len(dc.enums[ej].variants[vk].ptypes):
-                            w = dc.enums[ej].variants[vk].ptypes[i]
-                        vk = vk + 1
-                    ej = ej + 1
-        push(out, ground_pre(dc, ctx, w, a[i]))
+        push(out, ground_pre(dc, ctx, arg_want(dc, ctx, names, types, nm, a, i), a[i]))
         i = i + 1
     return out
 
@@ -6777,12 +6782,388 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(spawns, SpawnInfo(nm, dc.sigs[si].ptypes, dc.sigs[si].ret))
             return ESpawn(sid, nm, nsa)
 
+# B-3 (docs/inference.md): is `e` a bare incomplete initializer? 1 = bare [],
+# 2 = bare None, 0 = neither. (hierc parses None as an E_NONE node; hierc0
+# parses it as the 0-arg builtin call ECall("None", []).)
+fn pend_init_kind(e: Expr) -> int:
+    match e:
+        EArrEmpty(t):
+            if t == "":
+                return 1
+            return 0
+        ECall(nm, a):
+            if nm == "None" and len(a) == 0:
+                return 2
+            return 0
+        EInt(s):
+            return 0
+        EBool(s):
+            return 0
+        EChar(s):
+            return 0
+        EFloat(s):
+            return 0
+        EStr(s):
+            return 0
+        EVar(s):
+            if s == "None":                       # a bare None parses as EVar("None") in hierc0
+                return 2
+            return 0
+        EBin(o, l, r):
+            return 0
+        EField(b, f):
+            return 0
+        EIndex(b, ix):
+            return 0
+        EArrLit(es):
+            return 0
+        EMapEmpty(k, v):
+            return 0
+        EMapLit(ks, vs):
+            return 0
+        ETuple(es):
+            return 0
+        ESlice(b, lo, hi):
+            return 0
+        EAddr(x):
+            return 0
+        ELambda(id, ps, pts, ret, bx, cn, ct):
+            return 0
+        ECallV(c, a2):
+            return 0
+        ESpawn(sid, snm, sa):
+            return 0
+
+# B-3 probe: the declared name if `s` is an untyped decl with a bare
+# initializer ("" otherwise), with the initializer handed back via `ex`.
+fn pend_probe(s: Stmt, ex: inout Expr) -> string:
+    match s:
+        SDecl(n, e):
+            if pend_init_kind(e) != 0:
+                ex = e
+                return n
+            return ""
+        SAssign(n, e):
+            return ""
+        SFieldAssign(lv, r):
+            return ""
+        SPrint(e):
+            return ""
+        SReturn(e):
+            return ""
+        SReturnVoid:
+            return ""
+        SIf(c, t, el):
+            return ""
+        SWhile(c, b):
+            return ""
+        SForRange(v, a, b, st, body):
+            return ""
+        SExpr(e):
+            return ""
+        STypedDecl(n, ty, e):
+            return ""
+        SOrReturn(n, e):
+            return ""
+        SDestructure(ns, e):
+            return ""
+        SMultiAssign(ns, e):
+            return ""
+        SMatch(subj, vars, binds, bodies):
+            return ""
+        SBreak:
+            return ""
+        SContinue:
+            return ""
+        SParFor(v, a, b, body, pid):
+            return ""
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            return ""
+
+# B-3 seek, expression half: the first typed use of pending var `nm` inside
+# `e` -- an argument position whose destination type is known (arg_want).
+# A use anywhere else is hierc's "used before its type can be inferred"
+# error; hierc gates programs, so here we just keep seeking.
+fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e: Expr) -> string:
+    match e:
+        ECall(cn, a):
+            if cn == "push" and len(a) == 2 and evar_name(a[0]) == nm:        # push(xs, v) -> [typeof v]
+                return "[" + type_of(a[1], n2, t2, dc, ctx) + "]"
+            if cn == "map_set" and len(a) == 3 and evar_name(a[0]) == nm:     # map_set(m, k, v) -> {K:V}
+                return "{" + type_of(a[1], n2, t2, dc, ctx) + ":" + type_of(a[2], n2, t2, dc, ctx) + "}"
+            j := 0
+            for j < len(a):
+                if evar_name(a[j]) == nm:
+                    w := arg_want(dc, ctx, n2, t2, cn, a, j)
+                    if w != "":
+                        return w
+                else:
+                    r := pend_seek_expr(dc, ctx, n2, t2, nm, a[j])
+                    if r != "":
+                        return r
+                j = j + 1
+            return ""
+        EBin(o, l, r):
+            lr := pend_seek_expr(dc, ctx, n2, t2, nm, l)
+            if lr != "":
+                return lr
+            return pend_seek_expr(dc, ctx, n2, t2, nm, r)
+        EField(b, f):
+            return pend_seek_expr(dc, ctx, n2, t2, nm, b)
+        EIndex(b, ix):
+            br := pend_seek_expr(dc, ctx, n2, t2, nm, b)
+            if br != "":
+                return br
+            return pend_seek_expr(dc, ctx, n2, t2, nm, ix)
+        EArrLit(es):
+            j := 0
+            for j < len(es):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, es[j])
+                if r != "":
+                    return r
+                j = j + 1
+            return ""
+        EMapLit(ks, vs):
+            j := 0
+            for j < len(ks):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, ks[j])
+                if r != "":
+                    return r
+                r = pend_seek_expr(dc, ctx, n2, t2, nm, vs[j])
+                if r != "":
+                    return r
+                j = j + 1
+            return ""
+        ETuple(es):
+            j := 0
+            for j < len(es):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, es[j])
+                if r != "":
+                    return r
+                j = j + 1
+            return ""
+        ESlice(b, lo, hi):
+            return pend_seek_expr(dc, ctx, n2, t2, nm, b)
+        EAddr(x):
+            return pend_seek_expr(dc, ctx, n2, t2, nm, x)
+        ECallV(c, a):
+            j := 0
+            for j < len(a):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, a[j])
+                if r != "":
+                    return r
+                j = j + 1
+            return ""
+        ESpawn(sid, snm, sa):
+            j := 0
+            for j < len(sa):
+                if evar_name(sa[j]) == nm:
+                    si := map_get(dc.sigmap, snm, 0 - 1)
+                    if si >= 0 and j < len(dc.sigs[si].ptypes):
+                        return base_ty(dc.sigs[si].ptypes[j])
+                else:
+                    r := pend_seek_expr(dc, ctx, n2, t2, nm, sa[j])
+                    if r != "":
+                        return r
+                j = j + 1
+            return ""
+        EInt(s):
+            return ""
+        EBool(s):
+            return ""
+        EChar(s):
+            return ""
+        EFloat(s):
+            return ""
+        EStr(s):
+            return ""
+        EVar(s):
+            return ""
+        EArrEmpty(t):
+            return ""
+        EMapEmpty(k, v):
+            return ""
+        ELambda(id, ps, pts, ret, bx, cn, ct):
+            return ""
+
+# B-3 seek, statement half: walk forward from a pending decl maintaining a
+# COPY of the env (so a grounding value's type resolves with everything
+# declared in between), returning the type the first grounding use implies:
+# `nm = e` (typeof e), `return nm` (the fn's return type), `place = nm`
+# (typeof place), or a typed argument position (pend_seek_expr). A shadowing
+# redeclaration of `nm` ends the search. Recurses into nested blocks.
+fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: string, stmts: [Stmt], from: int, fret: string) -> string:
+    i := from
+    for i < len(stmts):
+        match stmts[i]:
+            SAssign(x, e):
+                if x == nm:
+                    r0 := pend_seek_expr(dc, ctx, n2, t2, nm, e)   # m = map_set(m, k, v): the rhs READS nm --
+                    if r0 != "":                                   # the call form grounds, not the (pending) type
+                        return r0
+                    return type_of(e, n2, t2, dc, ctx)
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+            SReturn(e):
+                if evar_name(e) == nm:
+                    return fret
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+            SFieldAssign(lv, rhs):
+                if evar_name(rhs) == nm:
+                    return type_of(lv, n2, t2, dc, ctx)
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, rhs)
+                if r != "":
+                    return r
+            SDecl(x, e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+                if x == nm:
+                    return ""                     # shadowed before grounding
+                push(n2, x)
+                if pend_init_kind(e) != 0:
+                    push(t2, "?")
+                else:
+                    push(t2, type_of(e, n2, t2, dc, ctx))
+            STypedDecl(x, ty, e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+                if x == nm:
+                    return ""
+                push(n2, x)
+                push(t2, ty)
+            SOrReturn(x, e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+                rt2 := type_of(e, n2, t2, dc, ctx)
+                push(n2, x)
+                if is_option(rt2):
+                    push(t2, option_inner(rt2))
+                else:
+                    push(t2, result_ok(rt2))
+            SDestructure(ns, e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+                dt := type_of(e, n2, t2, dc, ctx)
+                dp := tuple_parts(dt)
+                dk := 0
+                for dk < len(ns):
+                    push(n2, ns[dk])
+                    push(t2, dp[dk])
+                    dk = dk + 1
+            SMultiAssign(ns, e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+            SPrint(e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+            SExpr(e):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
+                if r != "":
+                    return r
+            SIf(c, t, el):
+                bn := n2
+                bt := t2
+                r := pend_seek(dc, ctx, &bn, &bt, nm, t, 0, fret)
+                if r != "":
+                    return r
+                bn2 := n2
+                bt2 := t2
+                r = pend_seek(dc, ctx, &bn2, &bt2, nm, el, 0, fret)
+                if r != "":
+                    return r
+            SWhile(c, b):
+                bn := n2
+                bt := t2
+                r := pend_seek(dc, ctx, &bn, &bt, nm, b, 0, fret)
+                if r != "":
+                    return r
+            SForRange(v, a, b, st, body):
+                if v != nm:
+                    bn := n2
+                    bt := t2
+                    push(bn, v)
+                    push(bt, "int")
+                    r := pend_seek(dc, ctx, &bn, &bt, nm, body, 0, fret)
+                    if r != "":
+                        return r
+            SMatch(subj, vars, binds, bodies):
+                r := pend_seek_expr(dc, ctx, n2, t2, nm, subj)
+                if r != "":
+                    return r
+                mk := 0
+                for mk < len(bodies):
+                    bn := n2
+                    bt := t2
+                    mt := type_of(subj, n2, t2, dc, ctx)
+                    if len(binds[mk]) > 0:
+                        push(bn, binds[mk][0])
+                        if is_option(mt):
+                            push(bt, option_inner(mt))
+                        elif vars[mk] == "Ok":
+                            push(bt, result_ok(mt))
+                        elif vars[mk] == "Err":
+                            push(bt, result_err(mt))
+                        else:
+                            push(bt, "int")       # enum payload binds: rare in a seek; conservative
+                    r = pend_seek(dc, ctx, &bn, &bt, nm, bodies[mk], 0, fret)
+                    if r != "":
+                        return r
+                    mk = mk + 1
+            SSelect(uid, svars, schans, sbinds, sbodies):
+                sk := 0
+                for sk < len(svars):
+                    bn := n2
+                    bt := t2
+                    if svars[sk] == "recv":
+                        push(bn, sbinds[sk])
+                        push(bt, chan_inner(type_of(schans[sk], n2, t2, dc, ctx)))
+                    r := pend_seek(dc, ctx, &bn, &bt, nm, sbodies[sk], 0, fret)
+                    if r != "":
+                        return r
+                    sk = sk + 1
+            SParFor(v, a, b, body, pid):
+                if v != nm:
+                    bn := n2
+                    bt := t2
+                    push(bn, v)
+                    push(bt, "int")
+                    r := pend_seek(dc, ctx, &bn, &bt, nm, body, 0, fret)
+                    if r != "":
+                        return r
+            SReturnVoid:
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+        i = i + 1
+    return ""
+
 fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
     i := 0
     for i < len(stmts):
-        push(out, lift_stmt(stmts[i], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
+        st := stmts[i]
+        pe := EInt("0")
+        pn := pend_probe(st, &pe)
+        if pn != "":                                  # B-3: a bare decl grounds from its first use in this block
+            sn := names
+            stt := types
+            pty := pend_seek(dc, ctx, &sn, &stt, pn, stmts, i + 1, fret)
+            if pty == "":
+                die("type: could not infer the type of '" + pn + "' -- no grounding use in its block (annotate the declaration)")
+            st = STypedDecl(pn, pty, pe)              # the annotated form; ground_pre types the initializer
+        push(out, lift_stmt(st, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         i = i + 1
     names = names[0:mark]
     types = types[0:mark]
@@ -7035,6 +7416,8 @@ fn block_has_lambda(stmts: [Stmt]) -> bool:
 fn stmt_has_lambda(s: Stmt) -> bool:
     match s:
         SDecl(n, e):
+            if pend_init_kind(e) != 0:            # B-3: a bare decl gates the lift (pend_seek runs there);
+                return true                       # decl-position ONLY -- `return None` etc never re-gates
             return expr_has_lambda(e)
         SAssign(n, e):
             return expr_has_lambda(e)

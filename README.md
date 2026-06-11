@@ -621,6 +621,11 @@ counts(em, [])           # ...in argument position too
 f := 1.5
 g := f + 2               # an int LITERAL adapts to a float context
 iter.map(xs, fn(x): x * 2)   # lambda params + return from the expected fn type
+
+ys := []                 # B-3: even a bare decl works -- it stays pending
+push(ys, 3)              # ...until its first grounding use in the block types it
+o := None                # (same for None; a use that NEEDS the type first,
+o = Some(5)              #  or a block ending with it pending, is a local error)
 ```
 
 No type variables, no unification: every expression is typed at its own

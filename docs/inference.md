@@ -1,12 +1,18 @@
 # Hindley-Milner type inference for hier — feasibility study
 
-Status: DECIDED AND SHIPPED — stages **B-0, B-1, B-2 are implemented in both
-compilers** (bare `[]` empties consume expectations at decls/args/returns/
-stores/elements; int literals adapt to float contexts, literals only; lambda
-param/return elision from expected fn types). Gated by tests/inference.hi
-(through the fixpoint differential) and tests/reject/infer_*.hi (local
-"no expected type here" errors). B-3 (block-local grounding for bare
-`xs := []`) remains optional/unscheduled. Original investigation below. Question: should hier adopt
+Status: DECIDED AND SHIPPED — **all four stages, both compilers.** B-0
+(bare `[]` consumes expectations at decls/args/returns/stores/elements),
+B-1 (int literals adapt to float contexts, literals only), B-2 (lambda
+param/return elision from expected fn types), and B-3 (block-local
+grounding: a bare `xs := []` / `x := None` declares pending and its FIRST
+grounding use in the block — assignment, push/map_set, or any expected-type
+position — types it retroactively; a use needing the type first, or a block
+ending with it still pending, errors locally at that line). Still no type
+variables: B-3 is a flow-sensitive forward scan, not unification — hierc
+keeps a pending registry through its in-order resolve; hierc0 rewrites the
+decl to its annotated form via a forward seek in the lift. Gated by
+tests/inference.hi (through the fixpoint differential, both compilers) and
+tests/reject/infer_*.hi. Original investigation below. Question: should hier adopt
 HM-style inference — type variables, unification, let-generalization,
 principal types? Verdict up front: **full HM is infeasible for hier by its
 own prior decisions, function-local unification is feasible but poor ROI,

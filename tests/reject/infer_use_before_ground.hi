@@ -1,0 +1,3 @@
+fn main():
+    xs := []
+    print(str(len(xs)))

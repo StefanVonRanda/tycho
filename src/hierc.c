@@ -388,7 +388,9 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
         * until context fixes the full Result type — the same trick as T_NONE. */
        T_OK_PARTIAL, T_ERR_PARTIAL,
        T_CHAR, /* one byte; represented as `long` in C, prints as a char via string append */
-       T_PTR /* FFI opaque handle: void* in C. No deref/arithmetic in hier — only pass to C, compare to null, is_null */ };
+       T_PTR, /* FFI opaque handle: void* in C. No deref/arithmetic in hier — only pass to C, compare to null, is_null */
+       T_PENDING /* B-3 (docs/inference.md): a bare `xs := []` / `x := None` decl, awaiting its
+                  * first grounding use in the same block; never survives resolve */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
  * >= 64, so the upper bound is what keeps an array type from looking like a
@@ -2429,6 +2431,42 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
 static Sig *g_spawn[256];
 static int g_nspawn = 0;
 
+/* B-3 pending declarations (docs/inference.md): `xs := []` / `x := None`
+ * with no context declares at T_PENDING; the FIRST grounding use in its
+ * block — an assignment, push/map_set, or any expected-type position (the
+ * resolve_exp head) — retroactively types the variable, its decl, and its
+ * initializer node. Any use that NEEDS the type first dies at that line;
+ * a still-pending var dies when its block ends (resolve_block audits). */
+static struct { const char *name; Stmt *decl; int done; } g_pend[32];
+static int g_npend = 0;
+
+static int pend_find(const char *name) {          /* newest-first, not-yet-done */
+    for (int i = g_npend - 1; i >= 0; i--)
+        if (!g_pend[i].done && !strcmp(g_pend[i].name, name)) return i;
+    return -1;
+}
+static void pend_ground(const char *name, Type t, int line) {
+    if (t == T_VOID || t == T_NONE || t == T_OK_PARTIAL || t == T_ERR_PARTIAL || t == T_PENDING)
+        die_at(line, "cannot infer the type of '%s' from this use", name);
+    int pi = pend_find(name);
+    if (pi < 0) return;
+    Stmt *d = g_pend[pi].decl;
+    if (d->expr->kind == E_ARRLIT) {              /* bare [] initializer takes the grounded type */
+        if (is_map(t)) { d->expr->ival = t; d->expr->op = TK_COLON; }
+        else if (is_array(t) || IS_SOA(t)) d->expr->ival = t;
+        else die_at(line, "'%s' was declared with [] but its first use makes it %s", name, type_name(t));
+        d->expr->type = t;
+    } else {                                      /* bare None initializer needs an Option */
+        if (!IS_OPT(t))
+            die_at(line, "'%s' was declared with None but its first use makes it %s", name, type_name(t));
+        d->expr->type = t;
+    }
+    d->decl_type = t;
+    for (int i = g_nvars - 1; i >= 0; i--)        /* retype the live binding (newest wins) */
+        if (!strcmp(g_vars[i].name, name) && g_vars[i].type == T_PENDING) { g_vars[i].type = t; break; }
+    g_pend[pi].done = 1;
+}
+
 static Type resolve_expr(Expr *e) {
     int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
@@ -2565,7 +2603,11 @@ static Type resolve_expr(Expr *e) {
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
             Type t;
-            if (vars_find(e->sval, &t)) return e->type = t;
+            if (vars_find(e->sval, &t)) {
+                if (t == T_PENDING)               /* B-3: this use NEEDS the type; grounding hasn't happened */
+                    die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", e->sval);
+                return e->type = t;
+            }
             int evi, eid = variant_find(e->sval, &evi);   /* a payload-less enum variant? */
             if (eid < 0 && e->pkg && e->pkg[0])           /* try this package's prefixed variant */
                 eid = variant_find(sfmt("%s%s", e->pkg, e->sval), &evi);
@@ -2969,6 +3011,15 @@ static Type resolve_expr(Expr *e) {
              * accumulator pass, like array push / string append. */
             if (!strcmp(e->sval, "map_set")) {
                 if (e->nargs != 3) die_at(e->line, "map_set(m, key, value) takes three arguments");
+                {   /* B-3: map_set(m, k, v) grounds a pending m to [typeof(k): typeof(v)] */
+                    Type pvt;
+                    if (e->args[0]->kind == E_IDENT && vars_find(e->args[0]->sval, &pvt) && pvt == T_PENDING) {
+                        Type gk = resolve_expr(e->args[1]), gv = resolve_expr(e->args[2]);
+                        Type gm = map_of(gk, gv);
+                        if (gm == T_VOID) die_at(e->line, "map keys must be string or int");
+                        pend_ground(e->args[0]->sval, gm, e->line);
+                    }
+                }
                 Type mt = resolve_expr(e->args[0]);
                 if (!is_map(mt)) die_at(e->line, "map_set's first argument must be a map");
                 if (resolve_expr(e->args[1]) != map_key(mt)) die_at(e->line, "map_set key must be %s", type_name(map_key(mt)));
@@ -3020,6 +3071,11 @@ static Type resolve_expr(Expr *e) {
                 while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
                 if (root->kind != E_IDENT)
                     die_at(e->line, "push's first argument must be an array variable or field");
+                {   /* B-3: push(xs, v) grounds a pending xs to [typeof(v)] */
+                    Type pvt;
+                    if (e->args[0]->kind == E_IDENT && vars_find(e->args[0]->sval, &pvt) && pvt == T_PENDING)
+                        pend_ground(e->args[0]->sval, arr_of(resolve_expr(e->args[1])), e->line);
+                }
                 g_place = 1;                       /* push(m[k], v): m[k] is a place here (#2) */
                 Type arrt = resolve_expr(e->args[0]);
                 g_place = 0;
@@ -3251,6 +3307,10 @@ static Type resolve_exp(Expr *e, Type want) {
      * type flows INTO the few expressions that can consume one, before
      * synthesis would have to fail. Dispatch/receivers always synthesize;
      * only literal-ish constructs consume — types stay ground at every line. */
+    if (e->kind == E_IDENT && want != T_VOID) {   /* B-3: a pending decl grounds from its first typed use */
+        Type vt;
+        if (vars_find(e->sval, &vt) && vt == T_PENDING) pend_ground(e->sval, want, e->line);
+    }
     if (e->kind == E_ARRLIT && e->nargs == 0 && e->ival == T_VOID) {   /* bare [] (B-0) */
         if (is_array(want) || IS_SOA(want)) e->ival = want;
         else if (is_map(want)) { e->ival = want; e->op = TK_COLON; }
@@ -3583,6 +3643,19 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * the channel(...) resolve case reject every other position */
             if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
                 s->expr->op = TK_COLONEQ;
+            /* B-3 (docs/inference.md): an UNTYPED decl from a bare [] / None
+             * defers -- T_PENDING until the first grounding use in this block
+             * (resolve_block audits the leftovers). Checked BEFORE resolution:
+             * resolving the bare initializer itself would fail. */
+            if (!s->typed_decl
+                && ((s->expr->kind == E_ARRLIT && s->expr->nargs == 0 && s->expr->ival == T_VOID)
+                    || s->expr->kind == E_NONE)) {
+                if (g_npend >= 32) die_at(s->line, "too many pending declarations in one function");
+                g_pend[g_npend].name = s->name; g_pend[g_npend].decl = s; g_pend[g_npend].done = 0; g_npend++;
+                s->decl_type = T_PENDING;
+                vars_push(s->name, T_PENDING, 1);
+                break;
+            }
             Type t = s->typed_decl ? resolve_exp(s->expr, s->annot) : resolve_expr(s->expr);
             if (t == T_VOID) die_at(s->line, "cannot bind a void value");
             if (s->typed_decl) {
@@ -3654,6 +3727,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "a task variable cannot be reassigned -- each task is waited exactly once");
             if (IS_CHAN(vt))   /* CC-4: rebinding would orphan the created channel (freed once, at its decl's scope exit) */
                 die_at(s->line, "a channel variable cannot be reassigned");
+            if (vt == T_PENDING) {   /* B-3: the first assignment grounds a pending decl */
+                Type gt = resolve_expr(s->expr);
+                pend_ground(s->name, gt, s->line);
+                break;
+            }
             Type t = resolve_exp(s->expr, vt);
             if (t != vt)
                 die_at(s->line, "cannot assign %s to '%s' of type %s",
@@ -3865,7 +3943,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
 
 static void resolve_block(Stmt **body, int n, Type ret) {
     int m = vars_mark();
+    int pm = g_npend;
     for (int i = 0; i < n; i++) resolve_stmt(body[i], ret);
+    for (int i = pm; i < g_npend; i++)   /* B-3 audit: a pending decl must ground in its own block */
+        if (!g_pend[i].done)
+            die_at(g_pend[i].decl->line, "could not infer the type of '%s' -- no grounding use in its block (annotate: %s : [T] = [] / Option(T) = None)",
+                   g_pend[i].name, g_pend[i].name);
+    g_npend = pm;
     vars_restore(m);
 }
 

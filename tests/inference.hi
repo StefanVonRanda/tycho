@@ -37,8 +37,27 @@ fn main():
     print(str(apply(fn(x): x * 2, 21)))
     em : [string: int] = []
     print(str(total(em)))
+    print(str(b3()))
     match maybe(5):
         Some(v):
             print(str(v))
         None:
             print("none")
+
+fn b3() -> int:
+    xs := []
+    push(xs, 3)
+    push(xs, 4)
+    m := []
+    m = map_set(m, "a", 10)
+    o := None
+    o = Some(xs[0] + xs[1] + map_get(m, "a", 0))
+    grid := []
+    if true:
+        push(grid, [1, 2])
+    match o:
+        Some(v):
+            return v + len(grid[0])
+        None:
+            return 0 - 1
+    return 0 - 2
