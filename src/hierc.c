@@ -2235,7 +2235,7 @@ typedef struct {
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
 } Sig;
 
-static Sig  g_sigs[256];
+static Sig  g_sigs[512];   /* 256 was outgrown by hierc0.hi's concurrency port (CC) */
 static int  g_nsigs = 0;
 
 /* FFI: link libraries named by `extern "Lib" fn` — appended as -lLib to the cc
@@ -3378,7 +3378,7 @@ static void resolve_parfor(Stmt *s) {
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
     if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
-    if (g_nsigs >= 256)  die_at(s->line, "too many functions");
+    if (g_nsigs >= 512)  die_at(s->line, "too many functions");
     /* scan: captures, reduction accumulators, fail-closed rejections */
     g_pf_nloc = 0; g_pf_ncap = 0; g_pf_nacc = 0;
     pf_add_local(s->name);
@@ -3781,7 +3781,7 @@ static void resolve_program(ProcVec *prog) {
                 die_at(pr->line, "a channel parameter cannot be inout (the handle is already shared)");
         if (sig_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
-        if (g_nsigs >= 256) die_at(pr->line, "too many functions (max 256 including builtins)");
+        if (g_nsigs >= 512) die_at(pr->line, "too many functions (max 512 including builtins)");
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;

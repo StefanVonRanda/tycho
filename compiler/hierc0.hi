@@ -364,6 +364,7 @@ enum Expr:
     EAddr(Expr)              # `&place` at a call site (pass to an inout param)
     ELambda(int, [string], [string], string, Expr, [string], [string])   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
     ECallV(Expr, [Expr])     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
+    ESpawn(int, string, [Expr])   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
 
 enum Stmt:
     SDecl(string, Expr)
@@ -383,6 +384,9 @@ enum Stmt:
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
     SBreak                   # break out of the nearest enclosing loop
     SContinue                # skip to the next iteration of the nearest loop
+    SParFor(string, Expr, Expr, [Stmt], int)   # `parallel for` (CC-3): loopvar, start, stop, body, par-id
+                             # (parse: body=original, par-id=-1; the lift pass moves the body into a
+                             # lifted __par<N> chunk proc and stores caps/accs in the pars side table)
 
 struct Param:
     name: string
@@ -411,6 +415,19 @@ struct LamInfo:               # one per lambda, produced by the lift pass; drive
     lamptypes: [string]       # the lambda's OWN param types — the thunk's call signature
     ret: string
 
+struct SpawnInfo:             # one per spawn SITE (incl. each parallel-for chunk), from the lift
+    fname: string             # pass; drives the HSpawnA_<i> args-struct + hier_spawn_<i> thread
+    argtypes: [string]        # trampoline emission in the driver (mirrors hierc's g_spawn)
+    retty: string
+
+struct ParInfo:               # one per `parallel for` site (CC-3), from the lift pass
+    sid: int                  # its chunk proc's spawn-site id (HSpawnA_<sid>/hier_spawn_<sid>)
+    capnames: [string]        # captured outer vars (deep-copied per chunk at the site)
+    captypes: [string]
+    accnames: [string]        # reduction accumulators (outer int/float locals)
+    accops: [string]          # "+" | "*" (the fold op, applied at the in-order join)
+    retty: string             # the chunk proc's partial type (acc type, or a tuple of them)
+
 struct Field:
     name: string
     ty: string                # "int" | "str" | a struct name
@@ -437,6 +454,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     ntnames: [string]         # sigs/structs/enums on every owner/depth change (~37%
     ntunder: [string]         # of self-compile). hierc threads `arena` the same way.
     sigmap: [string: int]     # function name -> index in `sigs`, built once: O(1) sig_ret
+    pars: [ParInfo]           # parallel-for sites from the lift pass (CC-3), indexed by SParFor's par-id
                               # (safe to map here precisely because Decls is never rebuilt)
 
 struct Ctx:                   # mutable per-scope / per-function state only
@@ -589,6 +607,58 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             expect(toks, &pos, TRBracket)
             st := parse_type(toks, &pos)
             return EArrEmpty("soa[" + st + "]")
+        if name == "spawn":                      # spawn f(args): run the call on a new thread (CC-1)
+            sp := parse_postfix(toks, &pos)
+            match sp:
+                ECall(sn, sa):
+                    return ESpawn(0, sn, sa)     # site id assigned by the lift pass
+                EInt(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EBool(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EChar(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EFloat(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EStr(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EVar(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EBin(o, l, r):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EField(b, f):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EIndex(b, ix):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EArrLit(es):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EArrEmpty(t):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EMapEmpty(k, mv):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EMapLit(ks, vs):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                ETuple(es):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                ESlice(b, lo, hi):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                EAddr(x):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                ELambda(lid, ps, pts, ret, bx, cn, ct):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                ECallV(c, a):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+                ESpawn(sid, sn2, sa2):
+                    die("parse: spawn requires a direct call: spawn f(args)")
+            return EInt("0")
+        if name == "channel" and toks[pos].kind == TLParen:   # channel(T, cap) (CC-4); the type rides the name
+            pos = pos + 1
+            chty := parse_type(toks, &pos)
+            expect(toks, &pos, TComma)
+            chargs := []Expr
+            push(chargs, parse_expr(toks, &pos))
+            expect(toks, &pos, TRParen)
+            return ECall("channel:" + chty, chargs)
         if name == "true":
             return EBool("1")
         if name == "false":
@@ -866,6 +936,51 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         then_body := parse_block(toks, &pos)
         else_body := parse_else(toks, &pos)
         return SIf(cond, then_body, else_body)
+    elif t.kind == TIdent and t.text == "parallel":   # parallel for ... (CC-3)
+        pos = pos + 1
+        if not (toks[pos].kind == TIdent and toks[pos].text == "for"):
+            die("parse: line " + str(toks[pos].line) + ": expected 'for' after 'parallel'")
+        pos = pos + 1
+        if toks[pos].kind == TIdent and toks[pos + 1].kind == TIdent and toks[pos + 1].text == "in":
+            pvar := toks[pos].text
+            pos = pos + 1
+            expect_ident(toks, &pos, "in")
+            if toks[pos].kind == TIdent and toks[pos].text == "range" and toks[pos + 1].kind == TLParen:
+                pos = pos + 1
+                expect(toks, &pos, TLParen)
+                pa1 := parse_expr(toks, &pos)
+                pstart := EInt("0")
+                pstop := pa1
+                if toks[pos].kind == TComma:
+                    pos = pos + 1
+                    pstart = pa1
+                    pstop = parse_expr(toks, &pos)
+                    if toks[pos].kind == TComma:
+                        die("parse: line " + str(toks[pos].line) + ": parallel for does not support a range step")
+                expect(toks, &pos, TRParen)
+                expect(toks, &pos, TColon)
+                pbody := parse_block(toks, &pos)
+                return SParFor(pvar, pstart, pstop, pbody, 0 - 1)
+            # foreach form: `parallel for x in COLL:` -> prelude `_fc := COLL`
+            # (via `pending`) + a parallel range loop, mirroring parse_foreach
+            pcoll := parse_expr(toks, &pos)
+            expect(toks, &pos, TColon)
+            pubody := parse_block(toks, &pos)
+            puid := str(pos)
+            pcn := "_fc" + puid
+            piv := "_fi" + puid
+            plargs := []Expr
+            push(plargs, EVar(pcn))
+            pfbody := []Stmt
+            push(pfbody, SDecl(pvar, EIndex(EVar(pcn), EVar(piv))))
+            pk := 0
+            for pk < len(pubody):
+                push(pfbody, pubody[pk])
+                pk = pk + 1
+            push(pending, SDecl(pcn, pcoll))
+            return SParFor(piv, EInt("0"), ECall("len", plargs), pfbody, 0 - 1)
+        die("parse: line " + str(t.line) + ": parallel supports 'for x in range(...)' and 'for x in collection' loops")
+        return SBreak
     elif t.kind == TIdent and t.text == "for":
         pos = pos + 1
         if toks[pos].kind == TIdent and toks[pos + 1].kind == TIdent and toks[pos + 1].text == "in":
@@ -955,6 +1070,24 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     push(pflds, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
                     push(pidxs, EInt("0"))        # placeholder; unused for a field step
                     pos = pos + 1
+                    if toks[pos].kind == TLParen:   # method-call STATEMENT (ch.send(v), t.wait(), x.foo(a)):
+                        mb := EVar(name)            # rebuild the receiver from the steps before the method name
+                        mj := 0
+                        for mj < len(pkinds) - 1:
+                            if pkinds[mj] == 0:
+                                mb = EField(mb, pflds[mj])
+                            else:
+                                mb = EIndex(mb, pidxs[mj])
+                            mj = mj + 1
+                        pos = pos + 1
+                        margs := []Expr
+                        if toks[pos].kind != TRParen:
+                            push(margs, parse_expr(toks, &pos))
+                            for toks[pos].kind == TComma:
+                                pos = pos + 1
+                                push(margs, parse_expr(toks, &pos))
+                        expect(toks, &pos, TRParen)
+                        return SExpr(ECallV(EField(mb, pflds[len(pflds) - 1]), margs))
                 else:
                     pos = pos + 1
                     push(pkinds, 1)
@@ -1073,6 +1206,11 @@ fn parse_type(toks: [Token], pos: inout int) -> string:
         return "str"
     elif name == "ptr":                          # FFI opaque handle -> void*
         return "ptr"
+    elif name == "Channel":                      # Channel(T): a worker param's queue type (CC-4)
+        expect(toks, &pos, TLParen)
+        cht := parse_type(toks, &pos)
+        expect(toks, &pos, TRParen)
+        return "Channel(" + cht + ")"
     elif name == "Option":
         expect(toks, &pos, TLParen)
         t := parse_type(toks, &pos)
@@ -1492,6 +1630,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return ECallV(mangle_expr(m, callee), mangle_args(m, cargs))
         EAddr(x):
             return EAddr(mangle_expr(m, x))
+        ESpawn(id, nm, a):
+            return ESpawn(id, mangle_ref(m, nm), mangle_args(m, a))
 
 fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a new binding shadows a package name)
     nl := []string
@@ -1542,6 +1682,8 @@ fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a
         SExpr(e):
             return m
         SMatch(subj, vars, binds, bodies):
+            return m
+        SParFor(v, a, b, body, pid):
             return m
 
 fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
@@ -1623,6 +1765,8 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
                 push(nb, mangle_block(mm, bodies[k]))
                 k = k + 1
             return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb)
+        SParFor(v, a, b, body, pid):
+            return SParFor(v, mangle_expr(m, a), mangle_expr(m, b), mangle_block(mctx_add(m, v), body), pid)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs)   # body sees the params as locals (indirect calls stay unprefixed)
@@ -1891,6 +2035,17 @@ fn has_prefix(s: string, p: string) -> bool:
         return false
     return substr(s, 0, len(p)) == p
 
+fn is_task(ty: string) -> bool:                   # Task(T): the handle from `spawn f(args)` (CC-1)
+    return has_prefix(ty, "Task(")
+fn task_inner(ty: string) -> string:              # "Task(T)" -> "T"
+    return substr(ty, 5, len(ty) - 1)
+fn is_chan(ty: string) -> bool:                   # Channel(T): the bounded queue handle (CC-4)
+    return has_prefix(ty, "Channel(")
+fn chan_inner(ty: string) -> string:              # "Channel(T)" -> "T"
+    return substr(ty, 8, len(ty) - 1)
+fn is_conc_method(nm: string) -> bool:            # the task/channel "methods" outside the Sig table
+    return nm == "wait" or nm == "send" or nm == "recv" or nm == "close"
+
 fn is_option(ty: string) -> bool:
     return has_prefix(ty, "Option(")
 
@@ -2070,6 +2225,10 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "char* "
     if ty == "ptr":                              # FFI opaque handle
         return "void* "
+    if is_task(ty):                              # opaque runtime task handle (spawn/wait, CC-1)
+        return "HTask* "
+    if is_chan(ty):                              # shared bounded-queue handle (channels, CC-4)
+        return "HChan* "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
         return "Arr_" + mangle(elem_ty(ty)) + " "
     if is_map(ty):                                # {str:V} -> Map_str_V
@@ -2209,6 +2368,12 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
 
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
 # if `name` is not a user function (so a bare name can be typed as a value).
+fn sig_ptypes(dc: Decls, name: string) -> [string]:   # the named fn's param types (spawn-site copy-in, CC-1)
+    si := map_get(dc.sigmap, name, -1)
+    if si < 0:
+        die("type: unknown function '" + name + "' in spawn")
+    return dc.sigs[si].ptypes
+
 fn sig_functype(dc: Decls, name: string) -> string:
     si := map_get(dc.sigmap, name, -1)
     if si < 0:
@@ -2269,6 +2434,8 @@ fn efield_fname(e: Expr) -> string:               # field name if e is EField, e
             return ""
         ECallV(c, a):
             return ""
+        ESpawn(id, nm, a):
+            return ""
 
 fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller guards via efield_fname)
     match e:
@@ -2309,6 +2476,8 @@ fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller gu
         ELambda(id, ps, pts, r, bx, cn, ct):
             return e
         ECallV(c, a):
+            return e
+        ESpawn(id, nm, a):
             return e
 
 fn struct_fn_field(dc: Decls, sname: string, fname: string) -> bool:   # sname has a fn-typed field fname?
@@ -2419,10 +2588,21 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         ELambda(id, ps, pts, ret, body, cn, ct):
             return mk_functype(pts, ret)
         ECallV(callee, cargs):
+            cfn := efield_fname(callee)           # t.wait() / ch.send(v) ...: a task/chan "method" (CC)
+            if is_conc_method(cfn):
+                cbt := type_of(efield_base(callee), names, types, dc, ctx)
+                if is_task(cbt) and cfn == "wait":
+                    return task_inner(cbt)
+                if is_chan(cbt):
+                    if cfn == "recv":
+                        return "Option(" + chan_inner(cbt) + ")"
+                    return "void"                 # send / close
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method: its return type
                 return resolve_nt(dc, ctx, sig_ret(dc, ctx, mn))
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
+        ESpawn(id, nm, sargs):
+            return "Task(" + resolve_nt(dc, ctx, sig_ret(dc, ctx, nm)) + ")"
         EAddr(inner):
             return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2455,6 +2635,14 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return elem_ty(type_of(args[0], names, types, dc, ctx))
             if name == "keys":                     # returns [K] (the map's key array)
                 return "[" + map_key(type_of(args[0], names, types, dc, ctx)) + "]"
+            if has_prefix(name, "channel:"):      # channel(T, cap) creation (the type rides the name)
+                return "Channel(" + substr(name, 8, len(name)) + ")"
+            if name == "wait":                    # wait(t) -> T (CC-1)
+                return task_inner(type_of(args[0], names, types, dc, ctx))
+            if name == "recv":                    # recv(ch) -> Option(T); None = closed+drained (CC-4)
+                return "Option(" + chan_inner(type_of(args[0], names, types, dc, ctx)) + ")"
+            if name == "send" or name == "close":
+                return "void"
             if name == "Some":
                 return "Option(" + type_of(args[0], names, types, dc, ctx) + ")"
             if name == "Ok":
@@ -2520,6 +2708,8 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
         ETuple(es):
             return ""
         ESlice(b, lo, hi):
+            return ""
+        ESpawn(id, nm, a):
             return ""
 
 # Like gen_args, but after each inout-container arg, interleave its home arena
@@ -2625,6 +2815,8 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
         ECallV(callee, cargs):
             return ""
         EAddr(x):
+            return ""
+        ESpawn(id, nm, a):
             return ""
 
 # gather a whole struct value from the soa's field buffers at index `ix`.
@@ -2856,6 +3048,17 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             env = env + "}"
             return "(Fn_" + suffix + "){hbox(" + ctx.owner + ", sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
         ECallV(callee, cargs):
+            cfn := efield_fname(callee)           # t.wait() / ch.send(v) / ch.recv() / ch.close() (CC):
+            if is_conc_method(cfn):               # rewrite to the free-call form and recurse
+                cbt := type_of(efield_base(callee), names, types, dc, ctx)
+                if is_task(cbt) or is_chan(cbt):
+                    nca := []Expr
+                    push(nca, efield_base(callee))
+                    cci := 0
+                    for cci < len(cargs):
+                        push(nca, cargs[cci])
+                        cci = cci + 1
+                    return gen_expr(ECall(cfn, nca), names, types, dc, ctx)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method call: foo(recv, args)
                 allargs := []Expr
@@ -3002,6 +3205,33 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "Err":
                 ce := cty(dc, ctx, type_of(args[0], names, types, dc, ctx))
                 return "herr(hbox(" + ctx.owner + ", sizeof(" + ce + "), (" + ce + "[]){" + gen_rhs(args[0], names, types, dc, ctx) + "}))"
+            if has_prefix(name, "channel:"):      # channel(T, cap): create the shared bounded queue (CC-4)
+                return "hier_chan_new(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "wait" and len(args) == 1 and is_task(type_of(args[0], names, types, dc, ctx)):
+                # join; deep-copy the result out of the task's root arena into the
+                # destination (ctx.owner); free the arena tree eagerly. A NAMED handle's
+                # struct stays alive to its scope-exit hier_task_finish (so a second
+                # wait dies on the done flag); an anonymous wait(spawn ...) frees all.
+                wt := task_inner(type_of(args[0], names, types, dc, ctx))
+                wct := cty(dc, ctx, wt)
+                wfree := "arena_free(&_tk->root);"
+                if evar_name(args[0]) == "":
+                    wfree = "hier_task_free(_tk);"
+                return "({ HTask* _tk = " + gen_expr(args[0], names, types, dc, ctx) + "; hier_task_join(_tk); " + wct + "_w = " + cp_field(dc, ctx, wt, ctx.owner, "(*(" + wct + "*)_tk->ret)") + "; " + wfree + " _w; })"
+            if name == "send" and len(args) == 2 and is_chan(type_of(args[0], names, types, dc, ctx)):
+                # deep-copy the payload into the claimed slot's arena UNDER the
+                # channel mutex (begin/commit bracket); every element type is covered
+                sty := chan_inner(type_of(args[0], names, types, dc, ctx))
+                sct := cty(dc, ctx, sty)
+                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; Arena* _slot = hier_chan_send_begin(_ch); " + sct + "* _p = (" + sct + "*)amem(_slot, sizeof(" + sct + ")); *_p = " + cp_field(dc, ctx, sty, "_slot", gen_expr(args[1], names, types, dc, ctx)) + "; hier_chan_send_commit(_ch, _p); })"
+            if name == "recv" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
+                # Option(T): tag 0 (None) = closed and drained; the value deep-copies
+                # straight into the destination arena while the mutex is held
+                rty := chan_inner(type_of(args[0], names, types, dc, ctx))
+                rct := cty(dc, ctx, rty)
+                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HOption _co; void* _rp = hier_chan_recv_begin(_ch); if (_rp) { " + rct + " _v = " + cp_field(dc, ctx, rty, ctx.owner, "(*(" + rct + "*)_rp)") + "; hier_chan_recv_commit(_ch); _co = hsome(hbox(" + ctx.owner + ", sizeof(" + rct + "), &_v)); } else { _co = hnone(); } _co; })"
+            if name == "close" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
+                return "hier_chan_close(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if is_newtype(dc, ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, dc, ctx)
             if is_variant(dc, ctx, name):             # enum construction -> mk_Variant(ar, ...); node
@@ -3028,6 +3258,18 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
+        ESpawn(id, nm, sargs):
+            # CC-1 spawn site: copy every argument into the task's private root
+            # arena (after this, spawner and task share zero bytes), then start
+            # the thread on the per-site trampoline emitted by the driver.
+            sid := str(id)
+            spt := sig_ptypes(dc, nm)
+            sout := "({ HTask* _tk = hier_task_new(); HSpawnA_" + sid + "* _sa = (HSpawnA_" + sid + "*)amem(&_tk->root, sizeof(HSpawnA_" + sid + ")); _sa->t = _tk;"
+            sk := 0
+            for sk < len(sargs):
+                sout = sout + " _sa->a" + str(sk) + " = " + cp_field(dc, ctx, spt[sk], "(&_tk->root)", gen_expr(sargs[sk], names, types, dc, ctx)) + ";"
+                sk = sk + 1
+            return sout + " hier_task_start(_tk, hier_spawn_" + sid + ", _sa); _tk; })"
 
 # Root variable of a place expression (`s.items[i]` -> `s`), or "" if not a
 # place rooted in a variable. Used to find which arena a container lives in.
@@ -3070,6 +3312,8 @@ fn root_var(e: Expr) -> string:
         ETuple(es):
             return ""
         ESlice(b, lo, hi):
+            return ""
+        ESpawn(id, nm, a):
             return ""
 
 # The arena a container place lives in: an inout-param container is the caller's
@@ -3251,6 +3495,8 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
             return false
         EAddr(inr):
             return false
+        ESpawn(id, nm, a):
+            return false
 
 # Is `e` an index into a STRING array (a heap-element slot)? Overwriting such a
 # slot can recycle the evicted element back to the array's arena (MM-9), so peak
@@ -3296,6 +3542,8 @@ fn is_str_arr_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: C
             return false
         EAddr(inr):
             return false
+        ESpawn(id, nm, a):
+            return false
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -3338,6 +3586,8 @@ fn is_place(e: Expr) -> bool:
         ECallV(callee, cargs):
             return false
         EAddr(inner):
+            return false
+        ESpawn(id, nm, a):
             return false
 
 # A slice expression already MATERIALIZES an owning copy in ctx.owner
@@ -3384,6 +3634,8 @@ fn is_eslice(e: Expr) -> bool:
             return false
         EAddr(inner):
             return false
+        ESpawn(sid, nm, a):
+            return false
 
 fn is_evar(e: Expr, name: string) -> bool:
     match e:
@@ -3424,6 +3676,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         ECallV(callee, cargs):
             return false
         EAddr(x):
+            return false
+        ESpawn(sid, snm, sa):
             return false
 
 # Deep-copy a C expression `code` of Hier type `ty` (value semantics for a bind
@@ -3490,6 +3744,8 @@ fn evar_name(e: Expr) -> string:
             return ""
         EAddr(x):
             return ""
+        ESpawn(sid, snm, sa):
+            return ""
 
 fn count_str_occ(xs: [string], s: string) -> int:
     c := 0
@@ -3549,6 +3805,8 @@ fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), el
             return ""
         EAddr(x):
             return ""
+        ESpawn(sid, snm, sa):
+            return ""
 
 fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
     c := 0
@@ -3592,6 +3850,8 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
             SBreak:
                 i = i
             SContinue:
+                i = i
+            SParFor(v, a, b, body, pid):
                 i = i
         i = i + 1
     return c
@@ -3639,6 +3899,8 @@ fn fuse_gather(stmts: [Stmt], out: inout [string]):
             SBreak:
                 i = i
             SContinue:
+                i = i
+            SParFor(v, a, b, body, pid):
                 i = i
         i = i + 1
 
@@ -3699,6 +3961,8 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
                 i = i
             SContinue:
                 i = i
+            SParFor(v, a, b, body, pid):
+                return true   # a parallel for captures arrays by value -- any live fusion cursor would be stale; fail closed
         i = i + 1
     return false
 
@@ -3829,6 +4093,11 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
             j := 0
         EMapEmpty(k, v):
             j := 0
+        ESpawn(sid, snm, sa):
+            j := 0                                # spawn args read as if in a loop: never move-eligible (the
+            for j < len(sa):                      # site always deep-copies into the task root -- keep it that way)
+                rd_expr(&reads, &loopreads, sa[j], true)
+                j = j + 1
 
 fn rd_block(reads: inout [string], loopreads: inout [string], stmts: [Stmt], inloop: bool):
     i := 0
@@ -3883,6 +4152,10 @@ fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bo
             for j < len(bodies):
                 rd_block(&reads, &loopreads, bodies[j], inloop)
                 j = j + 1
+        SParFor(v, a, b, body, pid):
+            rd_expr(&reads, &loopreads, a, inloop)
+            rd_expr(&reads, &loopreads, b, inloop)
+            rd_block(&reads, &loopreads, body, true)   # captured reads run N times across chunks: never move-eligible
 
 fn compute_movables(body: [Stmt]) -> [string]:
     reads := []string
@@ -4011,6 +4284,8 @@ fn expr_has_call(e: Expr) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        ESpawn(sid, snm, sa):
+            return true                           # a spawn site allocates (task root + arg copies)
 
 fn any_has_call(es: [Expr]) -> bool:
     i := 0
@@ -4076,6 +4351,8 @@ fn expr_refs(e: Expr, name: string) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        ESpawn(sid, snm, sa):
+            return any_refs(sa, name)
 
 fn any_refs(es: [Expr], name: string) -> bool:
     i := 0
@@ -4100,11 +4377,35 @@ fn gen_block(stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ct
     out := ""
     ns := names                                  # local mutable copies; decls
     ts := types                                  # added here stay block-local
+    entry := len(ns)                             # CC-2: finalizer sentinels above this die at block end
     i := 0
     for i < len(stmts):
         out = out + gen_stmt(stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
+    fin := conc_finals(ns, entry)                # implicit join / channel free at every normal block exit
+    if fin != "":                                # (dead C after a trailing return -- the return path already ran them)
+        out = out + "    " + fin + "\n"
     return out
+
+# CC-2 implicit join / CC-4 channel free: SDecl pushes a "!<finalizer-call>"
+# sentinel into the names env (with a "!" placeholder type, keeping the arrays
+# in lockstep); no user identifier can start with '!' so name lookups never
+# collide. Every scope exit emits the pending calls LIFO -- gen_block covers
+# block/iteration/proc-body ends, the return paths cover early exits (incl.
+# or_return), break/continue cover loop escapes via bbases[loopdepth-1].
+fn conc_finals(names: [string], from: int) -> string:
+    out := ""
+    i := len(names) - 1
+    for i >= from:
+        if len(names[i]) > 0 and names[i][0] == 33:   # '!' sentinel
+            out = out + substr(names[i], 1, len(names[i])) + "; "
+        i = i - 1
+    return out
+
+fn conc_loop_finals(names: [string], ctx: Ctx) -> string:   # finals since the innermost loop body's entry
+    if ctx.loopdepth < 1 or len(ctx.bbases) < ctx.loopdepth:
+        return ""
+    return conc_finals(names, ctx.bbases[ctx.loopdepth - 1])
 
 fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
     match s:
@@ -4120,10 +4421,22 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
                 push(names, name)
                 push(types, ty)
+                if is_task(ty):                   # CC-2: implicit join at this var's scope exit
+                    push(names, "!hier_task_finish(" + un(name) + ")")
+                    push(types, "!")
+                if is_chan(ty) and expr_has_call(e):   # CC-4: a CREATED channel (not an alias) frees at its scope exit
+                    push(names, "!hier_chan_free(" + un(name) + ")")
+                    push(types, "!")
                 return code
             code := "    " + cty(dc, ctx, ty) + un(name) + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
+            if is_task(ty):                       # CC-2 (see the transient path above)
+                push(names, "!hier_task_finish(" + un(name) + ")")
+                push(types, "!")
+            if is_chan(ty) and expr_has_call(e):
+                push(names, "!hier_chan_free(" + un(name) + ")")
+                push(types, "!")
             return code
         SAssign(name, e):
             lhs := gen_expr(EVar(name), names, types, dc, ctx)
@@ -4209,6 +4522,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     return deflt
                 ELambda(id, ps, pts, ret, body, cn, ct):
                     return deflt
+                ESpawn(sid, snm, sa):
+                    return deflt
         SFieldAssign(lv, rhs):
             # storing into a (malloc) struct field / array element: the value must
             # be malloc'd (owner "0"), not left in _scope which frees at return.
@@ -4262,14 +4577,14 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 rfl = rfl + "    " + un(ctx.fusearr[fk]) + ".data = _fd" + ctx.fusesuf[fk] + "; " + un(ctx.fusearr[fk]) + ".len = _fl" + ctx.fusesuf[fk] + "; " + un(ctx.fusearr[fk]) + ".cap = _fc" + ctx.fusesuf[fk] + ";\n"
                 fk = fk + 1
             if is_func(ctx.rettype):              # escaping closure: re-home the captured env into _parent before freeing _scope (its hbox lives in &_scope); plain ref has env==0 -> no-op
-                return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + return_frees(dc, ctx) + " return _ret; }\n"
-            return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + return_frees(dc, ctx) + " return _ret; }\n"
+                return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + conc_finals(names, 0) + return_frees(dc, ctx) + " return _ret; }\n"
+            return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + conc_finals(names, 0) + return_frees(dc, ctx) + " return _ret; }\n"
         SReturnVoid:
-            return "    " + return_frees(dc, ctx) + " return;\n"
+            return "    " + conc_finals(names, 0) + return_frees(dc, ctx) + " return;\n"
         SBreak:
-            return "    " + loop_frees(dc, ctx) + "break;\n"
+            return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "break;\n"
         SContinue:
-            return "    " + loop_frees(dc, ctx) + "continue;\n"
+            return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "continue;\n"
         SExpr(e):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches hierc S_EXPR + scalar_transient)
             return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
         STypedDecl(name, ty, e):                  # annotation fixes the var's type
@@ -4328,7 +4643,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if is_option(rty):                    # Option: unwrap Some, else return None
                 cto := cty(dc, ctx, option_inner(rty))
                 oc := "    HOption " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
-                oc = oc + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    " + return_frees(dc, ctx) + " return hnone(); }\n"
+                oc = oc + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    " + conc_finals(names, 0) + return_frees(dc, ctx) + " return hnone(); }\n"
                 oc = oc + "    " + cto + un(name) + " = *(" + cto + "*)(" + tmp + ".val);\n"
                 push(names, name)
                 push(types, option_inner(rty))
@@ -4336,7 +4651,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             ct := cty(dc, ctx, result_ok(rty))
             ect := cty(dc, ctx, result_err(rty))
             code := "    HResult " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
-            code = code + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    HResult _re_" + name + " = herr(hbox(_parent, sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(rty), "_parent", tmp + ".err") + ")); " + return_frees(dc, ctx) + " return _re_" + name + "; }\n"
+            code = code + "    if (" + tmp + ".tag == 0) {\n" + orfl + "    HResult _re_" + name + " = herr(hbox(_parent, sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(rty), "_parent", tmp + ".err") + ")); " + conc_finals(names, 0) + return_frees(dc, ctx) + " return _re_" + name + "; }\n"
             code = code + "    " + ct + un(name) + " = *(" + ct + "*)(" + tmp + ".ok);\n"
             push(names, name)
             push(types, result_ok(rty))
@@ -4424,6 +4739,36 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
                 i = i + 1
             return out + "\n    }\n"
+        SParFor(v, a, b, body, pid):
+            # CC-3: K = hier_ncpu() chunk tasks of the lifted __par chunk proc,
+            # through the same HSpawnA/hier_spawn trampolines as CC-1 spawn;
+            # captures deep-copy into each task root; partials fold at the
+            # in-order join. All tasks join inside this statement (structured).
+            pf := dc.pars[pid]
+            sid := str(pf.sid)
+            rct := cty(dc, ctx, pf.retty)
+            out := "    { long _plo = " + gen_expr(a, names, types, dc, ctx) + ", _phi = " + gen_expr(b, names, types, dc, ctx) + ";\n"
+            out = out + "    if (_phi < _plo) _phi = _plo;\n"
+            out = out + "    long _pk = hier_ncpu();\n    if (_pk > _phi - _plo) _pk = _phi - _plo;\n    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n"
+            out = out + "    HTask* _pts[64];\n"
+            out = out + "    for (long _pc = 0; _pc < _pk; _pc++) {\n"
+            out = out + "        HTask* _tk = hier_task_new();\n"
+            out = out + "        HSpawnA_" + sid + "* _sa = (HSpawnA_" + sid + "*)amem(&_tk->root, sizeof(HSpawnA_" + sid + "));\n"
+            out = out + "        _sa->t = _tk;\n        _sa->a0 = _plo + (_phi - _plo) * _pc / _pk;\n        _sa->a1 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n"
+            ck := 0
+            for ck < len(pf.capnames):
+                out = out + "        _sa->a" + str(ck + 2) + " = " + cp_field(dc, ctx, pf.captypes[ck], "(&_tk->root)", gen_expr(EVar(pf.capnames[ck]), names, types, dc, ctx)) + ";\n"
+                ck = ck + 1
+            out = out + "        hier_task_start(_tk, hier_spawn_" + sid + ", _sa);\n        _pts[_pc] = _tk;\n    }\n"
+            out = out + "    for (long _pc = 0; _pc < _pk; _pc++) {\n        hier_task_join(_pts[_pc]);\n        " + rct + "_pp = *(" + rct + "*)_pts[_pc]->ret;\n        hier_task_free(_pts[_pc]);\n"
+            ak := 0
+            for ak < len(pf.accnames):
+                part := "_pp"
+                if len(pf.accnames) > 1:
+                    part = "_pp.f" + str(ak)
+                out = out + "        " + un(pf.accnames[ak]) + " = " + un(pf.accnames[ak]) + " " + pf.accops[ak] + " " + part + ";\n"
+                ak = ak + 1
+            return out + "    }\n    }\n"
 
 fn ret_cty(dc: Decls, ctx: Ctx, ret: string) -> string:
     if ret == "void":
@@ -4526,6 +4871,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
         ECallV(callee, cargs):
             push(out, e)
         EAddr(x):
+            push(out, e)
+        ESpawn(sid, snm, sa):
             push(out, e)
 
 # If `e` is `name + p1 + p2 + ...` (an all-'+' chain whose leftmost leaf is the
@@ -4637,6 +4984,8 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                         k = k + 1
                 sacc_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
+        SParFor(v, a, b, body, pid):
+            np := 0                               # reductions are int/float only -- never a string accumulator
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
@@ -5009,7 +5358,7 @@ fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     return out + "    return 0;\n}\n"
 
 fn preamble() -> string:
-    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n"
+    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n#include <pthread.h>\n#include <unistd.h>\n"
     # Math builtins (sqrt/pow/floor/fabs): declare ONLY these four with their
     # exact libc prototypes rather than `#include <math.h>`. The full header
     # drops dozens of names into the global namespace (yn, y0, j0, gamma, ...)
@@ -5035,7 +5384,12 @@ fn preamble() -> string:
     # eviction needs the per-class list to grow to the window size, which a single
     # capped best-fit list cannot. Larger chunks keep the capped best-fit `freelist`.
     out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* bkt[16]; FreeNode* freelist; int nfree; } Arena;\n"
-    out = out + "static ABlk* g_pool = 0;\n"
+    # THREAD-LOCAL (CC-0): each thread owns a private pool -- allocation never
+    # contends or races. Blocks may be freed on a different thread than they
+    # were allocated on (wait() frees the task tree on the waiting thread);
+    # that's fine, a block is just malloc'd memory and lands in the releasing
+    # thread's pool. A spawned thread flushes its pool before exiting.
+    out = out + "static __thread ABlk* g_pool = 0;\n"
     out = out + "static ABlk* blk_get(size_t cap) { if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } for (ABlk** link = &g_pool; *link; link = &(*link)->next) if ((*link)->cap >= cap) { ABlk* b = *link; *link = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; return b; }\n"
     out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
     out = out + "static Arena arena_new(size_t bs) { Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; for (int i = 0; i < 16; i++) a.bkt[i] = 0; a.freelist = 0; a.nfree = 0; return a; }\n"
@@ -5044,6 +5398,31 @@ fn preamble() -> string:
     out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; size_t k = n >> 3; if (k < 16) { if (a->bkt[k]) { FreeNode* fn = a->bkt[k]; a->bkt[k] = fn->next; return (void*)fn; } } else if (a->freelist) { FreeNode** link = &a->freelist; FreeNode** best = 0; size_t bestsz = (size_t)-1; for (; *link; link = &(*link)->next) if ((*link)->size >= n && (*link)->size <= 2*n && (*link)->size < bestsz) { best = link; bestsz = (*link)->size; } if (best) { FreeNode* fn = *best; *best = fn->next; a->nfree--; return (void*)fn; } } if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; return p; }\n"
     out = out + "static int arena_owns(Arena* a, const void* p) { for (ABlk* b = a->head; b; b = b->next) if ((const char*)p >= b->mem && (const char*)p < b->mem + b->cap) return 1; return 0; }\n"
     out = out + "static void arena_free(Arena* a) { for (int i = 0; i < 16; i++) a->bkt[i] = 0; a->freelist = 0; a->nfree = 0; blk_release(a->head); a->head = 0; }\n"
+    # ---- concurrency runtime (CC-0..CC-4), mirroring runtime/hier_rt.c ----
+    # A task is one OS thread running one call against a private arena tree;
+    # arguments deep-copy IN before the thread starts, the result copies OUT at
+    # wait. The done flag makes a double wait a defined loud failure (the named
+    # handle's struct lives to its scope-exit finish). hier_pool_flush frees a
+    # spawned thread's TLS block pool before it exits (the TLS dies with it).
+    out = out + "static void hier_pool_flush(void) { while (g_pool) { ABlk* b = g_pool; g_pool = b->next; free(b->mem); free(b); } }\n"
+    out = out + "typedef struct { pthread_t th; Arena root; void* ret; int done; } HTask;\n"
+    out = out + "static HTask* hier_task_new(void) { HTask* t = malloc(sizeof(HTask)); t->root = arena_new(0); t->ret = 0; t->done = 0; return t; }\n"
+    out = out + "static void hier_task_join(HTask* t) { if (t->done) { fprintf(stderr, \"hier: task already waited\\n\"); exit(1); } pthread_join(t->th, 0); t->done = 1; }\n"
+    out = out + "static void hier_task_free(HTask* t) { arena_free(&t->root); free(t); }\n"
+    out = out + "static void hier_task_finish(HTask* t) { if (!t->done) { pthread_join(t->th, 0); t->done = 1; } arena_free(&t->root); free(t); }\n"
+    out = out + "static void hier_task_start(HTask* t, void* (*fn)(void*), void* arg) { if (pthread_create(&t->th, 0, fn, arg) != 0) { fprintf(stderr, \"hier: spawn failed (cannot create thread)\\n\"); exit(1); } }\n"
+    # Channels: bounded MPMC ring with PER-SLOT arenas (payload bytes freed when
+    # the slot is reclaimed by a later send -- memory bounded by cap x payload).
+    # The begin/commit pairs hold the mutex across the generated deep copy.
+    out = out + "typedef struct { void** vals; Arena* slots; long cap, head, count; int closed; pthread_mutex_t mu; pthread_cond_t not_full, not_empty; } HChan;\n"
+    out = out + "static HChan* hier_chan_new(long cap) { if (cap < 1) { fprintf(stderr, \"hier: channel capacity must be >= 1\\n\"); exit(1); } HChan* ch = malloc(sizeof(HChan)); ch->vals = malloc(cap * sizeof(void*)); ch->slots = malloc(cap * sizeof(Arena)); for (long i = 0; i < cap; i++) ch->slots[i] = arena_new(0); ch->cap = cap; ch->head = 0; ch->count = 0; ch->closed = 0; pthread_mutex_init(&ch->mu, 0); pthread_cond_init(&ch->not_full, 0); pthread_cond_init(&ch->not_empty, 0); return ch; }\n"
+    out = out + "static Arena* hier_chan_send_begin(HChan* ch) { pthread_mutex_lock(&ch->mu); while (ch->count == ch->cap && !ch->closed) pthread_cond_wait(&ch->not_full, &ch->mu); if (ch->closed) { fprintf(stderr, \"hier: send on a closed channel\\n\"); exit(1); } long tail = (ch->head + ch->count) % ch->cap; arena_free(&ch->slots[tail]); return &ch->slots[tail]; }\n"
+    out = out + "static void hier_chan_send_commit(HChan* ch, void* val) { long tail = (ch->head + ch->count) % ch->cap; ch->vals[tail] = val; ch->count++; pthread_cond_signal(&ch->not_empty); pthread_mutex_unlock(&ch->mu); }\n"
+    out = out + "static void* hier_chan_recv_begin(HChan* ch) { pthread_mutex_lock(&ch->mu); while (ch->count == 0 && !ch->closed) pthread_cond_wait(&ch->not_empty, &ch->mu); if (ch->count == 0) { pthread_mutex_unlock(&ch->mu); return 0; } return ch->vals[ch->head]; }\n"
+    out = out + "static void hier_chan_recv_commit(HChan* ch) { ch->head = (ch->head + 1) % ch->cap; ch->count--; pthread_cond_signal(&ch->not_full); pthread_mutex_unlock(&ch->mu); }\n"
+    out = out + "static void hier_chan_close(HChan* ch) { pthread_mutex_lock(&ch->mu); if (ch->closed) { fprintf(stderr, \"hier: channel already closed\\n\"); exit(1); } ch->closed = 1; pthread_cond_broadcast(&ch->not_empty); pthread_cond_broadcast(&ch->not_full); pthread_mutex_unlock(&ch->mu); }\n"
+    out = out + "static void hier_chan_free(HChan* ch) { for (long i = 0; i < ch->cap; i++) arena_free(&ch->slots[i]); free(ch->vals); free(ch->slots); pthread_mutex_destroy(&ch->mu); pthread_cond_destroy(&ch->not_full); pthread_cond_destroy(&ch->not_empty); free(ch); }\n"
+    out = out + "static long hier_ncpu(void) { const char* e = getenv(\"HIER_THREADS\"); if (e && *e) { long v = atol(e); if (v >= 1) return v; } long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ? n : 1; }\n"
     # String allocators take an arena; a NULL arena means malloc (the safe
     # fallback for not-yet-migrated contexts). owner-threading (ctx.owner) flips
     # provably-safe contexts (e.g. print args) to a real arena. hi_append is NOT
@@ -5418,6 +5797,11 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EVar(n):
             if not has_str(names, n):              # a bare top-level fn name used as a value: collect its fn type
                 note_arr_types(&acc, type_of(e, names, types, dc, ctx))
+        ESpawn(sid, snm, sa):
+            j := 0
+            for j < len(sa):
+                collect_expr(&acc, sa[j], names, types, dc, ctx)
+                j = j + 1
 
 fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
@@ -5520,6 +5904,9 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                         k = k + 1
                 collect_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
+        SParFor(v, a, b, body, pid):              # the chunk proc (and its partial type) is a lifted Func,
+            collect_expr(&acc, a, names, types, dc, ctx)   # walked separately; only the site's bounds remain here
+            collect_expr(&acc, b, names, types, dc, ctx)
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
 # practice) plus every array element type that appears in an annotation.
@@ -5803,16 +6190,172 @@ fn collect_evars(e: Expr, out: inout [string]):
             return
         EMapEmpty(k, v):
             return
+        ESpawn(sid, snm, sa):
+            j := 0
+            for j < len(sa):
+                collect_evars(sa[j], &out)
+                j = j + 1
 
-fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
+# Free-var scan over a parallel-for BODY (CC-3 capture analysis): every EVar
+# occurrence, via the lambda free-var scan; body-local shadowing only yields a
+# harmless extra chunk-proc param. (Reject-grade analysis -- acc-read audits,
+# outer-write rejection -- stays in the C compiler, which gates user programs.)
+fn pf_body_evars(stmts: [Stmt], out: inout [string]):
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SDecl(n, e):
+                collect_evars(e, &out)
+            SAssign(n, e):
+                collect_evars(e, &out)
+            SFieldAssign(lv, r):
+                collect_evars(lv, &out)
+                collect_evars(r, &out)
+            SPrint(e):
+                collect_evars(e, &out)
+            SReturn(e):
+                collect_evars(e, &out)
+            SReturnVoid:
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+            SIf(c, t, el):
+                collect_evars(c, &out)
+                pf_body_evars(t, &out)
+                pf_body_evars(el, &out)
+            SWhile(c, b):
+                collect_evars(c, &out)
+                pf_body_evars(b, &out)
+            SForRange(v, a, b, st, body):
+                collect_evars(a, &out)
+                collect_evars(b, &out)
+                collect_evars(st, &out)
+                pf_body_evars(body, &out)
+            SExpr(e):
+                collect_evars(e, &out)
+            STypedDecl(n, ty, e):
+                collect_evars(e, &out)
+            SOrReturn(n, e):
+                collect_evars(e, &out)
+            SDestructure(ns, e):
+                collect_evars(e, &out)
+            SMultiAssign(ns, e):
+                collect_evars(e, &out)
+            SMatch(subj, vars, binds, bodies):
+                collect_evars(subj, &out)
+                k := 0
+                for k < len(bodies):
+                    pf_body_evars(bodies[k], &out)
+                    k = k + 1
+            SParFor(v, a, b, body, pid):
+                collect_evars(a, &out)
+                collect_evars(b, &out)
+                pf_body_evars(body, &out)
+        i = i + 1
+
+# Reduction accumulators of a parallel-for body: assignments `n = n OP rest`
+# (OP in +,*) to a variable bound in the ENCLOSING env. These become identity-
+# initialized locals of the chunk proc, folded at the in-order join.
+fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [string]):
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SAssign(n, e):
+                if has_str(outer, n) and not has_str(accn, n):
+                    match e:
+                        EBin(op, l, r):
+                            if (op == "+" or op == "*") and is_evar(l, n):
+                                push(accn, n)
+                                push(accop, op)
+                        EInt(t):
+                            i = i
+                        EBool(t):
+                            i = i
+                        EChar(t):
+                            i = i
+                        EFloat(f):
+                            i = i
+                        EStr(s):
+                            i = i
+                        EVar(vn):
+                            i = i
+                        ECall(cn, ca):
+                            i = i
+                        EField(b, f):
+                            i = i
+                        EIndex(b, ix):
+                            i = i
+                        EArrLit(es):
+                            i = i
+                        EArrEmpty(t):
+                            i = i
+                        EMapEmpty(k, v):
+                            i = i
+                        EMapLit(ks, vs):
+                            i = i
+                        ETuple(es):
+                            i = i
+                        ESlice(b, lo, hi):
+                            i = i
+                        EAddr(x):
+                            i = i
+                        ELambda(lid, ps, pts, ret, bx, cn2, ct2):
+                            i = i
+                        ECallV(c, a):
+                            i = i
+                        ESpawn(sid, snm, sa):
+                            i = i
+            SDecl(n, e):
+                i = i
+            SFieldAssign(lv, r):
+                i = i
+            SPrint(e):
+                i = i
+            SReturn(e):
+                i = i
+            SReturnVoid:
+                i = i
+            SBreak:
+                i = i
+            SContinue:
+                i = i
+            SIf(c, t, el):
+                pf_accs(t, outer, &accn, &accop)
+                pf_accs(el, outer, &accn, &accop)
+            SWhile(c, b):
+                pf_accs(b, outer, &accn, &accop)
+            SForRange(v, a, b, st, body):
+                pf_accs(body, outer, &accn, &accop)
+            SExpr(e):
+                i = i
+            STypedDecl(n, ty, e):
+                i = i
+            SOrReturn(n, e):
+                i = i
+            SDestructure(ns, e):
+                i = i
+            SMultiAssign(ns, e):
+                i = i
+            SMatch(subj, vars, binds, bodies):
+                k := 0
+                for k < len(bodies):
+                    pf_accs(bodies[k], outer, &accn, &accop)
+                    k = k + 1
+            SParFor(v, a, b, body, pid):
+                pf_accs(body, outer, &accn, &accop)
+        i = i + 1
+
+fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
-        push(out, lift_expr(es[i], &lifted, &ctr, &lams, &names, &types, dc, ctx))
+        push(out, lift_expr(es[i], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         i = i + 1
     return out
 
-fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
+fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
     match e:
         EInt(t):
             return e
@@ -5831,25 +6374,25 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         EMapEmpty(k, v):
             return e
         EBin(o, l, r):
-            return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ECall(n, a):
-            return ECall(n, lift_exprs(a, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return ECall(n, lift_exprs(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EField(b, f):
-            return EField(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), f)
+            return EField(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), f)
         EIndex(b, ix):
-            return EIndex(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return EIndex(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EArrLit(es):
-            return EArrLit(lift_exprs(es, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return EArrLit(lift_exprs(es, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EMapLit(ks, vs):
-            return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ETuple(es):
-            return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ESlice(b, lo, hi):
-            return ESlice(lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return ESlice(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ECallV(callee, cargs):
-            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_exprs(cargs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(cargs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EAddr(x):
-            return EAddr(lift_expr(x, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return EAddr(lift_expr(x, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ELambda(id, ps, pts, ret, body, cn, ct):
             # push the lambda's own params so a nested lambda in the body can capture them
             mark := len(names)
@@ -5858,7 +6401,7 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 push(names, ps[kp])
                 push(types, pts[kp])
                 kp = kp + 1
-            nb := lift_expr(body, &lifted, &ctr, &lams, &names, &types, dc, ctx)   # lift nested lambdas first
+            nb := lift_expr(body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)   # lift nested lambdas first
             # capture analysis: a free var that is an ENCLOSING local (not an own
             # param, not a top-level fn/enum) is captured by value.
             fvs := []string
@@ -5902,78 +6445,177 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
+        ESpawn(id, nm, sargs):
+            # CC-1: assign the spawn-site id and record the SpawnInfo that drives
+            # the HSpawnA_<id> args-struct + hier_spawn_<id> trampoline emission.
+            nsa := lift_exprs(sargs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            si := map_get(dc.sigmap, nm, -1)
+            if si < 0:
+                die("type: spawn of unknown function '" + nm + "'")
+            if dc.sigs[si].is_extern == 1:
+                die("type: cannot spawn an extern (FFI) function")
+            if dc.sigs[si].ret == "void":
+                die("type: a spawned function must return a value (wait(t) yields it)")
+            sj := 0
+            for sj < len(dc.sigs[si].ptypes):
+                if is_inout(dc.sigs[si].ptypes[sj]):
+                    die("type: cannot spawn a function with inout parameters (no shared state across threads)")
+                sj = sj + 1
+            sid := len(spawns)
+            push(spawns, SpawnInfo(nm, dc.sigs[si].ptypes, dc.sigs[si].ret))
+            return ESpawn(sid, nm, nsa)
 
-fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
+fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
     i := 0
     for i < len(stmts):
-        push(out, lift_stmt(stmts[i], &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
+        push(out, lift_stmt(stmts[i], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         i = i + 1
     names = names[0:mark]
     types = types[0:mark]
     return out
 
-fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
+fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
     match s:
         SDecl(n, e):
-            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nty := type_of(e, names, types, dc, ctx)  # type BEFORE pushing the name (sacc_stmt order):
             push(names, n)                            # a shadowing `y := y + 2` must resolve y to the
             push(types, nty)                          # OUTER decl, and names/types must stay in lockstep
             return SDecl(n, ne)
         SAssign(n, e):
-            return SAssign(n, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SAssign(n, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SFieldAssign(lv, rhs):
-            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_expr(rhs, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(rhs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SPrint(e):
-            return SPrint(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SPrint(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SReturn(e):
             # A closure MAY escape: gen_stmt's SReturn re-homes its captured env into
             # _parent via copyenv (value semantics, sound). rule (a) lifted.
-            return SReturn(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SReturn(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SReturnVoid:
             return s
         SIf(c, th, el):
-            return SIf(lift_expr(c, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_block(th, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret), lift_block(el, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
+            return SIf(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(th, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret), lift_block(el, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         SWhile(c, b):
-            return SWhile(lift_expr(c, &lifted, &ctr, &lams, &names, &types, dc, ctx), lift_block(b, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
+            return SWhile(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         SForRange(nm, a, b, st, body):
-            na := lift_expr(a, &lifted, &ctr, &lams, &names, &types, dc, ctx)
-            nbb := lift_expr(b, &lifted, &ctr, &lams, &names, &types, dc, ctx)
-            nst := lift_expr(st, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            na := lift_expr(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            nbb := lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            nst := lift_expr(st, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             mark := len(names)                        # the loop var is in scope for the body only
             push(names, nm)
             push(types, "int")
-            nbody := lift_block(body, &lifted, &ctr, &lams, &names, &types, dc, ctx, fret)
+            nbody := lift_block(body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret)
             names = names[0:mark]
             types = types[0:mark]
             return SForRange(nm, na, nbb, nst, nbody)
         SExpr(e):
-            return SExpr(lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SExpr(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         STypedDecl(nm, ty, e):
-            ne := lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             push(names, nm)
             push(types, ty)
             return STypedDecl(nm, ty, ne)
         SOrReturn(nm, e):
-            return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SDestructure(nms, e):
-            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SMultiAssign(nms, e):
-            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &names, &types, dc, ctx))
+            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SMatch(subj, vars, binds, bodies):
-            ns := lift_expr(subj, &lifted, &ctr, &lams, &names, &types, dc, ctx)
+            ns := lift_expr(subj, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nb := [][Stmt]
             k := 0
             for k < len(bodies):
-                push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &names, &types, dc, ctx, fret))
+                push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
                 k = k + 1
             return SMatch(ns, vars, binds, nb)
         SBreak:
             return s
         SContinue:
             return s
+        SParFor(v, a, b, body, pid0):
+            # CC-3: lift the body to a chunk proc __par<pid>(__plo, __phi,
+            # captures...) -> partial(s); register its spawn site (the driver
+            # emits the trampoline) and the ParInfo the site codegen reads.
+            na := lift_expr(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            nbb := lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            raw := []string
+            pf_body_evars(body, &raw)
+            accn := []string
+            accop := []string
+            pf_accs(body, names, &accn, &accop)
+            capn := []string
+            capt := []string
+            j := 0
+            for j < len(raw):
+                if has_str(names, raw[j]) and not has_str(accn, raw[j]) and not has_str(capn, raw[j]) and raw[j] != v:
+                    push(capn, raw[j])
+                    push(capt, base_ty(var_type(names, types, raw[j])))
+                j = j + 1
+            pid := len(pars)
+            accty := []string
+            j = 0
+            for j < len(accn):
+                push(accty, base_ty(var_type(names, types, accn[j])))
+                j = j + 1
+            rty := "int"
+            if len(accn) == 1:
+                rty = accty[0]
+            if len(accn) > 1:
+                rty = "("
+                j = 0
+                for j < len(accn):
+                    if j > 0:
+                        rty = rty + ","
+                    rty = rty + accty[j]
+                    j = j + 1
+                rty = rty + ")"
+            cps := []string
+            cpt := []string
+            push(cps, "__plo")
+            push(cpt, "int")
+            push(cps, "__phi")
+            push(cpt, "int")
+            j = 0
+            for j < len(capn):
+                push(cps, capn[j])
+                push(cpt, capt[j])
+                j = j + 1
+            cbody := []Stmt
+            j = 0
+            for j < len(accn):
+                idv := EInt("0")
+                if accop[j] == "*":
+                    idv = EInt("1")
+                if accty[j] == "float":
+                    idv = EFloat("0.0")
+                    if accop[j] == "*":
+                        idv = EFloat("1.0")
+                push(cbody, SDecl(accn[j], idv))
+                j = j + 1
+            push(cbody, SForRange(v, EVar("__plo"), EVar("__phi"), EInt("1"), body))
+            if len(accn) == 0:
+                push(cbody, SReturn(EInt("0")))
+            if len(accn) == 1:
+                push(cbody, SReturn(EVar(accn[0])))
+            if len(accn) > 1:
+                tup := []Expr
+                j = 0
+                for j < len(accn):
+                    push(tup, EVar(accn[j]))
+                    j = j + 1
+                push(cbody, SReturn(ETuple(tup)))
+            cn2 := cps
+            ct2 := cpt
+            cbody = lift_block(cbody, &lifted, &ctr, &lams, &spawns, &pars, &cn2, &ct2, dc, ctx, rty)
+            push(lifted, Func("__par" + str(pid), cps, cpt, rty, cbody, 0, ""))
+            sid := len(spawns)
+            push(spawns, SpawnInfo("__par" + str(pid), cpt, rty))
+            push(pars, ParInfo(sid, capn, capt, accn, accop, rty))
+            return SParFor("", na, nbb, []Stmt, pid)
 
 # Does an expr / stmt / block contain a lambda anywhere? Used to skip the
 # scope-aware lift (which calls type_of) for lambda-free functions — keeping a
@@ -5985,6 +6627,8 @@ fn expr_has_lambda(e: Expr) -> bool:
         EBin(o, l, r):
             return expr_has_lambda(l) or expr_has_lambda(r)
         ECall(n, a):
+            if has_prefix(n, "channel:"):         # channel creation gates the lift (its decl needs gen support)
+                return true
             j := 0
             for j < len(a):
                 if expr_has_lambda(a[j]):
@@ -6045,6 +6689,8 @@ fn expr_has_lambda(e: Expr) -> bool:
             return false
         EMapEmpty(k, v):
             return false
+        ESpawn(sid, snm, sa):
+            return true                           # conc gates the lift too: spawn sites get their ids there
 
 fn block_has_lambda(stmts: [Stmt]) -> bool:
     i := 0
@@ -6097,12 +6743,14 @@ fn stmt_has_lambda(s: Stmt) -> bool:
             return false
         SContinue:
             return false
+        SParFor(v, a, b, body, pid):
+            return true                           # a parallel for IS a lift job (chunk-proc extraction)
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)
 # for env-struct + thunk emission. `dc` carries the ORIGINAL function sigs (built
 # before the lift) so capture-type lookups resolve; rebuilt afterwards by main.
-fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo]) -> Program:
+fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo]) -> Program:
     lifted := []Func
     ctr := 0
     nfuncs := []Func
@@ -6113,7 +6761,7 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo]) -> Pr
             names := []string                         # calls type_of); a lambda-free func is left UNCHANGED, so a
             types := []string                         # lambda-free program (incl. hierc0.hi) is byte-identical.
             seed_env(f, &names, &types)
-            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &names, &types, dc, ctx, f.ret), f.is_extern, f.lib))
+            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, f.ret), f.is_extern, f.lib))
         else:
             push(nfuncs, f)
         i = i + 1
@@ -6146,10 +6794,12 @@ fn main():
         if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
-    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0)
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo)
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
     lams := []LamInfo
-    prog := lift_program(prog0, dc0, ctx0, &lams)     # stamp lambdas + capture analysis + lifted __lam funcs
+    spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
+    pars := []ParInfo                                 # CC-3: parallel-for sites
+    prog := lift_program(prog0, dc0, ctx0, &lams, &spawns, &pars)     # stamp lambdas + capture analysis + lifted __lam funcs
     funcs := prog.funcs
     sigs := []Sig
     sigmap := []string: int
@@ -6159,7 +6809,7 @@ fn main():
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars)
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
@@ -6308,6 +6958,23 @@ fn main():
             out = out + gen_extern_proto(funcs[i], dc, ctx)
         elif funcs[i].name != "main":
             out = out + gen_proto(funcs[i], dc, ctx)
+        i = i + 1
+    i = 0                                        # 9a'. CC spawn sites: per-site args struct + thread trampoline.
+    for i < len(spawns):                         #      The trampoline runs the call with the task's root arena as
+        si := str(i)                             #      _parent, parks the result in a root-allocated slot, then
+        out = out + "typedef struct { HTask* t;"  #     flushes this thread's block pool (TLS dies with the thread).
+        j := 0
+        for j < len(spawns[i].argtypes):
+            out = out + " " + cty(dc, ctx, spawns[i].argtypes[j]) + "a" + str(j) + ";"
+            j = j + 1
+        out = out + " } HSpawnA_" + si + ";\n"
+        rct := cty(dc, ctx, spawns[i].retty)
+        out = out + "static void* hier_spawn_" + si + "(void* _p) { HSpawnA_" + si + "* _a = (HSpawnA_" + si + "*)_p; " + rct + "_r = " + un(spawns[i].fname) + "(&_a->t->root"
+        j = 0
+        for j < len(spawns[i].argtypes):
+            out = out + ", _a->a" + str(j)
+            j = j + 1
+        out = out + "); " + rct + "* _s = (" + rct + "*)amem(&_a->t->root, sizeof(" + rct + ")); *_s = _r; _a->t->ret = _s; hier_pool_flush(); return 0; }\n"
         i = i + 1
     if has_fnval:                                # 9b. fn-value adapter thunks (after protos: each forwards to h_<name>)
         i = 0

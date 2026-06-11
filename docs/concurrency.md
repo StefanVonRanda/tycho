@@ -1,6 +1,20 @@
 # Concurrency for hier — research & staged design
 
-Status: CC-0 through CC-4 SHIPPED in hierc (C compiler) + runtime —
+Status: CC-0 through CC-4 SHIPPED IN BOTH COMPILERS. hierc0 (self-hosted)
+reproduces the full model in its own emitted-C dialect: ESpawn/SParFor AST
+variants (every exhaustive match extended), the lift pass assigns spawn-site
+ids, extracts parallel-for chunk procs (__par<N>) and registers SpawnInfo/
+ParInfo side tables, the driver emits HSpawnA_<i> args structs + hier_spawn_<i>
+trampolines, channel send/recv inline the type-aware copies (cp_field) inside
+the runtime's mutex-held begin/commit bracket, CC-2 finalizers ride "!"-prefix
+sentinels in the names env (LIFO at gen_block ends, return paths, break/
+continue via bbases[loopdepth-1]), and the preamble carries the pthread
+runtime with a __thread block pool. Method-call STATEMENTS (ch.send(v)) were
+added to hierc0's parser along the way. Gated by `make conc` (now ALSO a
+hierc0 parity differential per positive fixture, and part of `make ci` step
+5/8); fixpoint stays byte-identical (lambda/conc-free functions skip the
+lift). Reject fixtures stay hierc-gated (repo precedent for negative paths).
+Earlier hierc-only status:
 CC-4 channels: `ch := channel(T, cap)` (decl-only creation), `send(ch,v)` /
 `recv(ch) -> Option(T)` (None = closed+drained) / `close(ch)` + UFCS forms;
 `Channel(T)` param type syntax for workers. Bounded MPMC ring with PER-SLOT

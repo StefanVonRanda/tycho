@@ -1,14 +1,13 @@
 #!/bin/sh
-# Concurrency (spawn/wait) test runner — CC-1, hierc-only for now.
+# Concurrency (spawn/wait/parallel-for/channels) test runner — BOTH compilers.
 #
-# Lives OUTSIDE tests/*.hi on purpose: hierc0 has no spawn yet, and the
-# fixpoint differential runs every tests/*.hi fixture through BOTH compilers
-# — a spawn fixture there would go red until hierc0 parity lands. Fold these
-# into tests/ when it does.
-#
-# Per positive fixture: build native (-O3), ASan+UBSan (leaks on), and TSan
-# binaries; all three must produce the golden tests/conc/<name>.out and the
-# sanitizers must report nothing. Per reject fixture: hierc must FAIL.
+# Per positive fixture: hierc builds native (-O3), ASan+UBSan (leaks on), and
+# TSan binaries — all three must produce the golden tests/conc/<name>.out with
+# silent sanitizers — AND the hierc-built hierc0 compiles the same fixture,
+# whose output must match the same golden (the concurrency parity
+# differential). Reject fixtures: hierc must FAIL (repo precedent: negative
+# paths gate the C compiler only). Abort fixtures: compile, then die with the
+# message in the sibling .err file.
 set -u
 cd "$(dirname "$0")/../.."
 CC="${CC:-cc}"
@@ -18,6 +17,11 @@ trap 'rm -rf "$TMP"' EXIT
 export ASAN_OPTIONS=detect_leaks=1
 pass=0; fail=0
 note() { echo "FAIL $1 ($2)"; }
+
+# the self-hosted compiler, for the parity differential
+if ! $HIERC compiler/hierc0.hi -o "$TMP/hierc0" >/dev/null 2>&1; then
+    echo "FAIL hierc0 (build)"; exit 1
+fi
 
 for f in tests/conc/*.hi; do
     name=$(basename "$f" .hi)
@@ -42,6 +46,15 @@ for f in tests/conc/*.hi; do
             note "$name" "$tag output"; diff "$gold" "$TMP/$name.got" | sed 's/^/      /'; ok=0; break
         fi
     done
+    if [ $ok -eq 1 ]; then
+        # parity differential: the SELF-HOSTED compiler must agree on the golden
+        if ! "$TMP/hierc0" < "$f" > "$TMP/$name.h0.c" 2>"$TMP/$name.h0e" \
+           || ! $CC -O2 -pthread -o "$TMP/$name.h0" "$TMP/$name.h0.c" -lm 2>"$TMP/$name.h0e" \
+           || ! "$TMP/$name.h0" > "$TMP/$name.h0out" 2>&1 \
+           || ! cmp -s "$TMP/$name.h0out" "$gold"; then
+            note "$name" "hierc0 parity"; sed 's/^/      /' "$TMP/$name.h0e" 2>/dev/null | head -3; ok=0
+        fi
+    fi
     if [ $ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 done
 

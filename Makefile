@@ -42,9 +42,10 @@ demo: hierc
 test: hierc
 	@sh tests/run.sh
 
-# Concurrency (spawn/wait) suite — hierc-only until hierc0 grows spawn, so it
-# lives outside tests/*.hi (the fixpoint differential runs those through BOTH
-# compilers). Not in `make ci` yet for the same reason; run it explicitly.
+# Concurrency suite (spawn/wait, parallel for, channels): hierc builds each
+# positive fixture native + ASan/LSan + TSan against the goldens, the
+# hierc-built hierc0 must reproduce the same outputs (parity differential),
+# rejects must fail, aborts must die with their .err message. In `make ci`.
 conc: hierc
 	@sh tests/conc/run.sh
 

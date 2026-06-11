@@ -23,29 +23,32 @@ printf ' hier local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/7] build (make hierc)"
+step "[1/8] build (make hierc)"
 make -s hierc
 
-step "[2/7] make test  (golden output + ASan/UBSan/LeakSanitizer)"
+step "[2/8] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
-step "[3/7] make fixpoint  (self-host B==C + packages + standalone driver)"
+step "[3/8] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 
-step "[4/7] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
+step "[4/8] make corelib  (corelib packages: C compiler vs hierc0 + goldens)"
 make -s corelib
 
-step "[5/7] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
+step "[5/8] make conc  (spawn/parallel-for/channels: ASan+TSan + hierc0 parity)"
+make -s conc
+
+step "[6/8] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
 make -s ffi
 
 if [ "$N" -gt 0 ]; then
-    step "[6/7] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
+    step "[7/8] make fuzz N=$N  (differential hierc vs hierc0 + ASan/UBSan)"
     python3 fuzz/run.py "$N"
 else
-    step "[6/7] fuzz skipped (N=0)"
+    step "[7/8] fuzz skipped (N=0)"
 fi
 
-step "[7/7] bench-guard  (tree-alloc wall: hier must beat C -- perf regression gate)"
+step "[8/8] bench-guard  (tree-alloc wall: hier must beat C -- perf regression gate)"
 sh bench/guard.sh
 
 bar
