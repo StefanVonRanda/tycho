@@ -947,6 +947,11 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type (unspecified order); iterate it to walk the map. |
 | `reserve(arr, n)` | `([T], int) -> void` | Capacity hint: preallocate room for `n` elements (`[int]`/`[float]`/`[string]`; a map place `m[k]` works too — count-then-fill builds size each list once). A hint, not a length: contents and `len` are unchanged, pushing past `n` still grows. A capacity that can't be allocated aborts at runtime. |
 | `getenv(name)` | `string -> string` | The environment variable's value, or `""` if unset. |
+| `wait(t)` | `Task(T) -> T` | Join a spawned task; the result deep-copies into the waiting scope and the task's arena tree frees. Exactly once per task (a second wait dies loudly); see [Concurrency](#concurrency-spawn-parallel-for-channels). |
+| `channel(T, cap)` | `-> Channel(T)` | Create a bounded lock-free queue (capacity rounds up to a power of two). Only legal as a declaration's direct RHS — the creating scope frees it. |
+| `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` into the channel; blocks when full; dies if the channel is closed. |
+| `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive, deep-copied out; `None` means closed **and** drained. |
+| `close(ch)` | `Channel(T) -> void` | Receivers drain then see `None`; further sends (and a second close) die loudly. |
 | `read_file(path)` | `string -> string` | The whole file as a string, or `""` if it can't be opened. |
 | `write_file(path, s)` | `(string, string) -> bool` | Write `s`'s exact bytes to `path` (truncating); `true` on success, `false` if it can't be opened. |
 | `read_all()` | `-> string` | All of stdin as one string. |
@@ -1060,6 +1065,10 @@ examples/          hello, demo, accumulate, accumulate_big, arrays,
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
 tests/*.hi         dedicated regression programs, one per feature/bug (+ tests/pkg/ package fixtures, + optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
+tests/conc/        concurrency suite: spawn/parallel-for/channels/select under
+                   native + ASan/LSan + TSan, hierc0 parity differential,
+                   reject + abort fixtures (make conc; part of make ci)
+bench/conc/        concurrency head-to-head vs C/Go/Rust (make bench-conc)
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
 bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
 bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md

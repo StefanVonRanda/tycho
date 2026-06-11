@@ -1,263 +1,211 @@
-# Concurrency for hier — research & staged design
+# Concurrency in hier
 
-Status: CC-0 through CC-5 SHIPPED IN BOTH COMPILERS.
-CC-5: channels became a LOCK-FREE Vyukov bounded MPMC ring — per-cell
-sequence atomics + per-cell arenas, the deep copy runs in the claimed cell
-with no lock held, spin -> sched_yield -> 1ms-timed-park waiting with a
-parked-waiter count gating the wake path (zero syscalls uncontended;
-capacity rounds up to a power of two). Pipeline benchmark: 850 -> 242 ms,
-now 2.6x FASTER than the hand-written C mutex ring while still paying both
-deep copies; remaining 2.7x to Go is its userspace scheduler (see
-bench/conc/RESULTS.md). Plus `select` over recv arms with optional
-`default:` and `closed:` (all channels closed+drained) arms, built on a
-non-blocking try_recv + a bounded pause ladder (~50us worst-case wake;
-a select cannot park on N condvars); emitted as a goto loop so user
-break/continue in arm bodies bind to the user's enclosing loop. The
-generated programs need _DEFAULT_SOURCE before the includes (strict
--std=c11 hides clock_gettime/sched_yield/nanosleep — the runtime defines
-it). Both compilers; select.hi in the parity differential.
-Earlier status: hierc0 (self-hosted)
-reproduces the full model in its own emitted-C dialect: ESpawn/SParFor AST
-variants (every exhaustive match extended), the lift pass assigns spawn-site
-ids, extracts parallel-for chunk procs (__par<N>) and registers SpawnInfo/
-ParInfo side tables, the driver emits HSpawnA_<i> args structs + hier_spawn_<i>
-trampolines, channel send/recv inline the type-aware copies (cp_field) inside
-the runtime's mutex-held begin/commit bracket, CC-2 finalizers ride "!"-prefix
-sentinels in the names env (LIFO at gen_block ends, return paths, break/
-continue via bbases[loopdepth-1]), and the preamble carries the pthread
-runtime with a __thread block pool. Method-call STATEMENTS (ch.send(v)) were
-added to hierc0's parser along the way. Gated by `make conc` (now ALSO a
-hierc0 parity differential per positive fixture, and part of `make ci` step
-5/8); fixpoint stays byte-identical (lambda/conc-free functions skip the
-lift). Reject fixtures stay hierc-gated (repo precedent for negative paths).
-Earlier hierc-only status:
-CC-4 channels: `ch := channel(T, cap)` (decl-only creation), `send(ch,v)` /
-`recv(ch) -> Option(T)` (None = closed+drained) / `close(ch)` + UFCS forms;
-`Channel(T)` param type syntax for workers. Bounded MPMC ring with PER-SLOT
-arenas (memory bounded by cap x payload — fixes tycho's monotonic channel-
-arena growth), type-aware copy_into for EVERY element type on send (into the
-slot arena) and recv (into the receiver's arena), both under the channel
-mutex (generated per-type wrappers around runtime begin/commit pairs). The
-channel is the ONE shared object — freed at its creating scope's exit, sound
-because CC-2's implicit joins land first (LIFO finalizer order). Fail-closed:
-no return/containers/struct fields/enum payloads/newtypes/closure-capture/
-reassignment/inline-creation; send-on-closed and double-close die loudly.
-CC-3 `parallel for i in range(a,b)` / `parallel for x in xs` (foreach rides
-the existing desugar): the body lifts to a chunk proc `__par<N>(__plo, __phi,
-caps...) -> partials` spawned K = hier_ncpu() times (HIER_THREADS overrides)
-through the CC-1 trampoline; captures deep-copy into each task root (copy-in
-per chunk); reductions `acc = acc + e` / `acc = acc * e` (and +=/*=) on outer
-int/float locals run against chunk-local identity partials and fold at the
-in-order join. Any other outer write, break/return/or_return at parallel
-level, inout-of-capture, acc reads, and range steps are compile errors. Int
-reductions are K-independent (verified HIER_THREADS=1/7/8 identical); ~6.8x
-on 8 cores for a compute-bound loop. Earlier stages:
-`spawn f(args)` / `Task[T]` / `wait(t)` / `t.wait()`, thread-per-spawn,
-copy-in/copy-out, thread-local block pool. CC-2 affine tasks: a handle cannot
-be copied/re-bound/reassigned/discarded (compile errors); every scope exit
-(block end, loop iteration, break/continue, early return/or_return, proc end)
-implicitly joins+frees the tasks dying there (gen_block + return_frees +
-loop-entry marks); a waited handle stays alive to its scope exit so a second
-wait dies loudly at runtime ("task already waited") instead of UB. Gated by
-`make conc` (tests/conc/: native + ASan/LSan + TSan positives, 9 reject + 1
-abort fixtures); kept OUT of tests/*.hi and `make ci` until hierc0 parity
-lands (the fixpoint differential runs those fixtures through both compilers).
-hierc0 parity and CC-3+ still open. Goal: a concurrency model that
-*preserves the thesis* — value semantics, implicit arenas, zero manual
-memory management, no GC/RC — rather than bolting Go/Rust machinery on top.
+Status: **shipped, in both compilers** (CC-0 through CC-5). Gated by
+`make conc` — every positive fixture runs native, ASan+LSan, and
+ThreadSanitizer against goldens, and the hierc-built `hierc0` must reproduce
+the same outputs (the parity differential) — wired into `make ci` (step 5/8).
+Benchmarked against C, Go, and Rust in `bench/conc/`
+([RESULTS.md](../bench/conc/RESULTS.md)).
 
-Sources studied:
-- **Hylo** (formerly Val): structured concurrency on mutable value semantics.
-  Tour page (docs.hylo-lang.org/language-tour/concurrency), Teodorescu's
-  Overload 181 "Concurrency: From Theory to Practice" (concore2full),
-  hylo-lang discussions #746 (spawn requires Sinkable env) and #1604,
-  Racordon et al. "Implementation Strategies for Mutable Value Semantics"
-  (JOT 21, 2022).
-- **tycho** (local, ~/github/tycho): shipped goroutine-style `spawn:` +
-  bounded `Channel(T,N)` + `select:` over pthreads, per-thread TLS arenas
-  (`__thread TychoArena*`, runtime_c.zig:745-756), channel-owned arena that
-  deep-copies str payloads on send (RESULTS_concurrency.md).
-- Background: Swift Sendable/SE-0414 regions, Pony per-actor heaps + deny
-  capabilities, Erlang share-nothing copy, Cilk/Rayon scoped fork-join.
+## 1. The model
 
----
+hier's call convention — arguments deep-copied in, result copied out, a
+private arena per call — is already a sound thread boundary. Concurrency is
+that same convention run on other threads. After copy-in, a task shares zero
+bytes with its spawner, so race freedom falls out of value semantics: no
+`Sendable`, no lifetimes, no locks in the language. (Erlang gets the same
+guarantee from per-process heaps and message copying; Swift's
+Sendable/region machinery exists only to patch first-class aliasing, which
+hier doesn't have.)
 
-## 1. The core insight
+### spawn / wait (structured tasks)
 
-hier's call convention already IS a sound thread boundary:
-
-- Arguments are **deep-copied** into the callee's world (value semantics).
-- The callee allocates only in **its own arena tree** (per-scope arenas,
-  src/hierc.c S_RETURN codegen opens `Arena _scope = arena_child(_parent)`).
-- The result is **copied out** into the caller's arena (`copy_into`,
-  src/hierc.c:3800; closures re-home env via `copyenv` thunk, :3824).
-
-Run that same convention on another OS thread and you get race freedom *by
-construction*: the spawned task shares no mutable state with its parent,
-because hier values are independent (the MVS paper's "independence of
-values" property — hier already has it, more strongly than Hylo, since hier
-deep-copies where Hylo borrows). No `Sendable`, no region analysis, no
-capability annotations needed — those exist in Swift/Pony/Verona only to
-patch first-class aliasing, which hier doesn't have.
-
-Hylo converged on exactly this shape: structured `spawn`/`await`, no
-function colouring, no actors, no user-visible mutexes. Val's first
-concurrency design (#746) required the spawned environment to be
-**sink-only** — i.e. copy/move in, value out — which is precisely hier's
-only mode.
-
-Erlang validates the model at industrial scale: per-process heaps,
-messages copied on send, share nothing. hier's analogue: per-task arena
-trees, values copied at spawn/wait/send.
-
-## 2. What the current implementation forces
-
-From the runtime/compiler audit:
-
-1. **`g_block_pool` (runtime/hier_rt.c:93)** is the ONLY global mutable
-   state in the runtime — a freelist of recycled blocks, touched by every
-   `block_get`/arena free with no synchronization. Two threads allocating
-   ⇒ corruption. Fix (CC-0): make it `__thread` (tycho's exact approach,
-   runtime_c.zig:745). Thread-local pools mean zero contention and no
-   locks on the hot path; blocks simply don't migrate between threads.
-   Cost: a thread's pool dies with it (fine — spawn rejoins, pool freed).
-2. **Arenas are not thread-safe and must never be shared.** Per-arena
-   `bkt`/`freelist`/`nfree` are unsynchronized. Invariant: an arena tree is
-   owned by exactly one thread. The design below never shares one.
-3. **`str` is `char*` into an arena** (docs/ffi.md). Handing a str pointer
-   to another thread is a use-after-free once the source arena dies.
-   Copy-in at spawn / copy-out at wait makes this impossible by
-   construction — same rule as the FFI str-return arena-copy.
-4. **Closures**: env is deep-copied at construction into the owner arena
-   (src/hierc.c E_LAMBDA) and re-homed on escape via `copyenv`
-   (src/hierc.c:3824, :3061-3063). Spawning a closure = invoke `copyenv`
-   into the task's root arena before the thread starts. The machinery
-   exists; spawn is just another escape direction.
-5. **Dual-compiler tax**: every surface feature lands in both src/hierc.c
-   (~6.4k lines) and compiler/hierc0.hi (~6.3k lines) and must keep
-   `make fixpoint` green. This argues hard for a MINIMAL surface: one new
-   expression form, one builtin, one runtime section.
-
-## 3. The design: structured fork-join, share-nothing
-
-### Surface (CC-1)
-
-```hier
-fn count(path: string) -> int: ...
-
-let t = spawn count("a.txt")     # starts thread; args deep-copied NOW
-let u = spawn count("b.txt")
-let a = wait(t)                  # blocks; result deep-copied into waiter's arena
-let b = wait(u)
+```
+t := spawn count("a.txt")     # args deep-copied into the task's root arena, then the thread starts
+u := spawn count("b.txt")
+total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed
 ```
 
-- `spawn <call-expr>` — the operand is restricted to a direct call (named
-  fn, UFCS method, or closure-valued variable). No bare block form: the
-  call's argument list IS the capture list, explicit and by-value. This
-  sidesteps "what does a spawn block capture" entirely — the answer is
-  visible at the call site. (tycho's `spawn:` block + deep-copy-captures
-  is the same semantics with implicit capture; explicit is more honest
-  and far cheaper to implement twice.)
-- Type: `spawn f(args)` where `f(args): T` has type `Task[T]` — a new
-  opaque builtin generic like `Option[T]`. No methods, no fields; only
-  `wait` consumes it.
-- `wait(t: Task[T]) -> T` — joins, copies result out, frees the task's
-  arena tree. UFCS gives `t.wait()` for free.
+`spawn` takes a **direct call** to a named function — the argument list IS
+the capture list, explicit and by value (closure arguments work: their env
+re-homes into the task root via `copyenv`). The result is `Task(T)`, a type
+with no source syntax, so it can only live in a `let`-bound local.
 
-### Semantics / soundness rules
+Tasks are **affine and structured**:
 
-- **Copy-in**: at the spawn site, each argument is `copy_into`'d a *task
-  root arena* created by the spawner; only then does the thread start. The
-  spawned fn's normal codegen then runs against that root as `_parent`.
-  Closure operands additionally run `copyenv` into the task root. After
-  copy-in, parent and child share zero bytes.
-- **Copy-out**: the spawned fn's return value lands in the task root arena
-  (normal return-to-parent codegen). `wait` copies it from the task root
-  into the waiter's scope arena, then frees the task root. Identical to
-  the FFI str-return rule, generalized by the existing type-aware
-  `copy_into`.
-- **Tasks are affine, fail-closed**: a `Task[T]` must be waited exactly
-  once. Compile-time: reject `Task` in containers/struct fields/returns
-  initially (like the FFI composite rejection — fail closed, widen later).
-  Runtime backstop: scope exit with an un-waited task ⇒ implicit join
-  (never detach — Hylo's rule: dropping a handle must join-or-cancel,
-  never leak a running thread touching freed memory). Implicit join also
-  makes the construct *structured*: a function that spawns cannot return
-  while its children run, preserving local reasoning.
-- **No mutex, no atomic, no shared anything** in the language. tycho ships
-  none either; users who need shared services own them in one task behind
-  channels (CC-4) or via FFI.
-- **FFI `ptr`** may cross threads (opaque handle; the C library owns it
-  and its thread-safety). Document, don't police — consistent with FFI's
-  existing trust boundary.
+- compile errors: copying/re-binding (`u := t`), reassignment, storage in any
+  container/aggregate/closure, discarding a bare `spawn`, spawning builtins/
+  externs/`void` fns/fns with `inout` params;
+- **implicit join**: any task still unwaited when its variable's scope exits
+  — block end, each loop iteration, `break`, `continue`, early `return`,
+  `or_return` — is joined and freed right there. A function can never return
+  while its tasks run; an unwaited task can never leak or detach;
+- a second `wait` (e.g. wait-in-a-loop on an outer task) dies loudly at
+  runtime — `hier: task already waited` — never UB: the named handle's
+  struct outlives its wait (only the arena tree is reclaimed eagerly) and is
+  freed by the scope-exit finisher.
 
-### Runtime (CC-1)
+### parallel for (fork-join data parallelism)
 
-pthread per spawn. ~80 lines in runtime/hier_rt.c:
-
-```c
-typedef struct { pthread_t th; Arena *root; void *ret; } HTask;
-/* spawn codegen: root = arena_new(); copy args into root;
-   pthread_create(trampoline) -> trampoline calls fn(root, copied args),
-   stores result ptr/value into task->ret (allocated in root). */
-/* wait codegen: pthread_join; T out = copy_into(T, caller_arena, ret);
-   arena_free_tree(root); free pool blocks belonging to that thread? no —
-   blocks recycle into the WAITER's TLS pool on free (free happens on the
-   waiting thread), which is exactly right. */
+```
+total := 0
+parallel for i in range(400000000):   # K = ncpu chunk tasks; HIER_THREADS overrides
+    total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
 ```
 
-Thread-per-spawn is the honest v1: no scheduler, no colouring, matches
-tycho, and the parfetch benchmark shows OS threads are fine for fan-out
-workloads. Hylo's thread-hopping/work-stealing pool (Overload 181) solves
-*pool starvation under nested awaits* — a problem thread-per-spawn doesn't
-have (a blocked waiter is just a parked OS thread). Revisit pooling only
-if/when a benchmark shows spawn cost dominating (CC-5).
+Works over ranges and collections (`parallel for x in xs:` rides the foreach
+desugar). The body lifts into a chunk procedure: captures deep-copy into each
+task (the honest per-chunk cost), reduction accumulators — `acc = acc + e` /
+`acc = acc * e` (and `+=`/`*=`) on outer int/float locals, up to 4 — start
+from the op's identity per chunk and fold at the in-order join. Integer
+results are therefore **identical for any thread count**; float reductions
+may reassociate, like every parallel reduce. Everything else is fail-closed:
+any other outer write, reading an accumulator mid-loop, `break`/`return`/
+`or_return` at parallel-loop level, `inout`-of-capture, and range steps are
+compile errors. All chunk tasks join inside the statement.
 
-### Stages
+Measured: **exact C-pthreads parity** (same wall, same peak RSS) on the
+compute-bound reduction; ~6.8x on 8 threads.
 
-| Stage | Content | Risk gate |
-|---|---|---|
-| **CC-0** | `g_block_pool` → `__thread`. No language change. | `make ci` + fuzz; behaviour identical single-threaded. |
-| **CC-1** | `spawn` expr + `Task[T]` + `wait`, thread-per-spawn, copy-in/copy-out. Both compilers. | fixpoint green; ASan/TSan test: spawned task mutates copies, parent unaffected; str-across-spawn UAF test under ASan. |
-| **CC-2** | Structured enforcement: affine Task checking, implicit join at scope exit, `Task` rejected in composites. | tests/reject negative cases. |
-| **CC-3** | `parallel for` over int ranges/arrays: N body-tasks, each body a copy-in/copy-out spawn over its chunk, results merged by copy. (Hylo's `spawn(bulk:)`.) Sugar over CC-1 — no new runtime. | bench: tree/invindex parallel speedup; memory parity story. |
-| **CC-4** | `Channel[T]`, bounded, blocking send/recv. Send = `copy_into` the channel-owned arena (mutex-guarded); recv = copy out + recycle. hier does this *better* than tycho: tycho deep-copies only str payloads (its RESULTS_concurrency.md documents the dangling-pointer footgun for other types); hier's type-aware `copy_into` closes it for every T uniformly. | TSan; fuzz kind: spawn+channel weave. |
-| **CC-5** | (only if benchmarks demand) worker pool / work-stealing; `select`. | — |
+### channels (the one shared object)
 
-### Explicit non-goals (thesis-preserving by omission)
+```
+ch := channel(string, 256)        # bounded; created here, freed at THIS scope's exit
+w := spawn consumer(ch)           # fn consumer(ch: Channel(string)) -> int
+ch.send("item-" + str(i))         # deep copy IN (blocks when full; dies if closed)
+match recv(ch):                   # deep copy OUT -> Option(T)
+    Some(s): ...
+    None:    ...                  # closed AND drained
+close(ch)
+n := wait(w)
+```
 
-- No `async`/`await` colouring (Hylo and tycho both reject it).
-- No shared-memory primitives (mutex/atomic/RwLock) in the language.
-- No `inout`-to-disjoint-parts parallelism (Hylo's concurrent quicksort
-  trick): hier has no borrow machinery; chunk-copy + merge in CC-3 gives
-  the same expressiveness at a copy cost — that copy is *the thesis*,
-  measure it honestly in benchmarks rather than hide it.
-- No actors: per-task arenas + channels already give actor isolation
-  without a new abstraction.
+A channel is a bounded **lock-free MPMC queue** (see §2), internally
+synchronized so value semantics outside it are untouched. `send` deep-copies
+the payload into the claimed cell's arena — for *every* element type, which
+closes the dangling-payload class tycho documents for its str-only copies —
+and `recv` copies out into the receiver's arena. Channel memory is bounded
+by capacity × payload (per-cell arenas recycle on reuse); capacity rounds up
+to a power of two.
 
-## 4. The benchmark story (prove-the-arena north star)
+Lifetime is structural: `ch := channel(T, cap)` is the only legal creation
+form; the creating scope frees the channel at exit, which is sound because
+CC-2's implicit joins run first (the finalizer stack is LIFO — tasks
+declared after the channel join before it frees). Channels cannot be
+returned, stored in containers/fields/payloads/newtypes/fn-value types,
+captured by closures, or reassigned. `Channel(T)` is valid parameter syntax
+so workers can take one. Send-after-close and double-close die loudly.
 
-Concurrency is also a *memory-model* proof point: per-task arena trees
-mean parallel hier has no shared allocator contention (TLS pools), no GC
-pauses, and per-task peak memory = task working set. Head-to-heads worth
-building once CC-3 lands: parallel tree build, parallel invindex shard +
-merge, parfetch-style I/O fan-out (vs Go goroutines, Rust scoped threads,
-tycho spawn). The honest caveat to map: copy-in/copy-out cost on large
-arguments/results vs Go's free sharing — the boundary analogue of the
-invindex build-and-hold finding.
+### select (multi-channel fan-in)
 
-## 5. Open questions
+```
+for true:
+    select:
+        recv(jobs, j):
+            handle(j)
+        recv(events, e):
+            note(e)
+        closed:                   # every listed channel closed AND drained
+            break
+```
 
-1. Spawn of a closure that captures a closure (nested env re-home) —
-   `copyenv` is recursive via `copy_into` so this *should* fall out; needs
-   a dedicated test, not an assumption.
-2. `Task[T]` in the self-hosted compiler's type rep: cheapest as a new
-   one-payload builtin kind alongside Option/Result, reusing their codegen
-   paths.
-3. Does CC-2's affine check need dataflow, or is "wait-in-same-scope or
-   implicit-join" enough for v1? (Lean fail-closed: same-scope only.)
-4. Panics/aborts inside a task: v1 = whole-process abort (matches current
-   single-thread abort semantics); revisit with Result-returning wait.
-5. TLS (`__thread`) portability for the bootstrap path — hierc0 emits C;
-   `__thread` is GCC/Clang-universal on Linux. WASM (if ever) needs the
-   tycho-style fallback.
+Arms: one or more `recv(ch, x):`, plus at most one `default:` (runs when
+nothing is immediately ready — makes the select non-blocking) and at most
+one `closed:`. Without `default`, select waits on a bounded
+spin → yield → 50µs-sleep ladder (a select cannot park on N condvars;
+worst-case wake latency ~50µs — fine for fan-in servers, stated rather than
+hidden). `break`/`continue` inside an arm bind to the *user's* enclosing
+loop (select compiles to a goto loop, not a C `for(;;)`).
+
+## 2. Implementation map
+
+Everything exists twice — `src/hierc.c` and `compiler/hierc0.hi` emit
+different C dialects with identical semantics — plus once in the shared
+runtime (`runtime/hier_rt.c`, embedded into hierc's output; hierc0 emits the
+same runtime text from its preamble).
+
+**Runtime.**
+- The block pool (`g_block_pool` / `g_pool`) is `__thread` (CC-0): allocation
+  never contends; blocks may be freed on a different thread than they were
+  allocated on (wait() frees the task tree on the waiting thread — a block is
+  just malloc'd memory and lands in the releasing thread's pool); a spawned
+  thread flushes its pool before exiting.
+- `HTask { pthread_t; Arena root; void *ret; int done; }` — thread-per-spawn;
+  the `done` flag is the double-wait backstop.
+- `HChan` is a **Vyukov bounded MPMC ring** (CC-5): each `HCell` has an
+  atomic sequence counter and its own `Arena`. One CAS claims a cell; the
+  deep copy runs in the claimed cell with **no lock held** (claim ⇒ exclusive
+  until the seq store publishes); waiting is spin → `sched_yield` → 1ms timed
+  park, with a parked-waiter count gating the wake path — the uncontended
+  path does zero syscalls. The timed park turns the check-then-park race
+  into at most one extra retry, never a lost wakeup. `hier_chan_try_recv`
+  (for select) returns got / open-but-empty / closed-and-drained.
+- Generated programs `#define _DEFAULT_SOURCE` before the includes — strict
+  `-std=c11` would hide `clock_gettime`/`sched_yield`/`nanosleep`.
+
+**hierc.** `Task`/`Channel` are interned type ranges; spawn sites register at
+resolve (the lambda-lift pattern) and `gen_program` emits one `HSpawnA_<i>`
+args struct + `hier_spawn_<i>` trampoline per site; per-element-type
+`hier_chan_{send,recv,tryrecv}_<i>` wrappers wrap `copy_into` around the
+runtime claim/commit brackets; CC-2 finalizers live on a codegen stack
+mirroring the scope-arena stack (`gen_block` ends, `return_frees`,
+break/continue loop marks); `parallel for` lifts its body into a `__par<N>`
+chunk proc reusing the spawn-site machinery.
+
+**hierc0.** Types are strings (`"Task(T)"`, `"Channel(T)"`); `ESpawn`/
+`SParFor`/`SSelect` AST variants (every exhaustive match extended — the
+compiler's non-exhaustive-match errors enumerate the sites); the lift pass
+assigns spawn ids, extracts chunk procs, and fills `SpawnInfo`/`ParInfo`
+side tables; channel copies are inlined (`cp_field`) inside the claim/commit
+bracket; CC-2 finalizers ride `"!"`-prefixed sentinel entries in the names
+env, emitted LIFO at every scope exit. Method-call statements
+(`ch.send(v)` as a statement) were added to the parser for this.
+
+**Negative paths.** The reject fixtures (`tests/conc/reject/`) gate hierc
+only, matching the repo's precedent for `tests/reject` — hierc0 implements
+the soundness-critical validations but not every diagnostic. Abort fixtures
+(`tests/conc/abort/`) lock the runtime die messages in both.
+
+## 3. Measured
+
+`make bench-conc` (identical logic + cross-checked checksums in all four
+languages; AMD Ryzen 7 7735HS, 16 hw threads — details and honest reading in
+[bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
+
+| workload | hier | C | Go | Rust |
+|---|---:|---:|---:|---:|
+| parreduce (4×10⁸ int reduce) | **38 ms / 1.7 MB** | 37 ms / 1.6 MB | 62 ms | 43 ms |
+| pipeline (10⁶ strings, 1→4 consumers) | **242 ms / 2.8 MB** | 630 ms (mutex ring) | 91 ms / 7.7 MB | 143 ms |
+
+`parallel for` is at exact C parity. The lock-free channels beat the
+hand-written C mutex ring 2.6× while paying two deep copies per message that
+C doesn't; the remaining 2.7× to Go is its userspace goroutine scheduler —
+no longer the locking, and no longer a memory-model question.
+
+## 4. Design lineage
+
+- **Hylo / Val** (Teodorescu's structured concurrency, the MVS papers):
+  structured spawn/await with no function colouring; Val's first design
+  required sink-only spawn environments — exactly hier's only mode. hier
+  skips Hylo's `inout`-to-disjoint-parts (no borrow machinery; chunk-copy +
+  merge gives the expressiveness at a copy cost that *is* the thesis).
+- **tycho** (`~/github/tycho`): shipped pthread spawn + bounded channels +
+  select, `__thread` arenas — validated the shape; hier generalizes its
+  str-only channel copy to every type and bounds channel memory per-cell.
+- **Erlang/Pony**: share-nothing message copying at industrial scale.
+- **Vyukov's bounded MPMC queue**: the CC-5 channel core.
+
+## 5. Non-goals (thesis-preserving by omission)
+
+- No `async`/`await` colouring; no actors (per-task arenas + channels already
+  isolate); no mutex/atomic in the language; no work-stealing runtime (a
+  blocked waiter is a parked OS thread — fine without nested-await pools).
+- Deadlock (recv with no live sender and no close) is the user's bug and is
+  not detected. A panic/abort in any task kills the whole process.
+- Reject-grade diagnostics live in hierc; see §2.
+
+## 6. Possible next levers (perf only, model is closed)
+
+- Batched dequeues / per-consumer sub-rings to cut the dequeue-CAS contention
+  behind the remaining Go gap; send arms in `select`; per-channel waiter
+  registration to replace select's pause ladder with real parking.

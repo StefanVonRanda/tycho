@@ -243,3 +243,12 @@ the model eating its own dog food on a real, allocation-heavy, deeply-recursive
 program. **Head-to-head:** a cross-language benchmark suite (`bench/prongB/`,
 Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the compiler-vs-
 generated-code numbers are in [docs/perf.md](perf.md).
+
+**Concurrency as a corollary:** the same call convention (deep-copy in, copy
+out, a private arena per call) is already a sound thread boundary, so
+`spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
+on threads — race-free by construction, with no Sendable/lifetime/lock
+machinery in the language. Measured: `parallel for` at exact C-pthreads parity
+on a compute-bound reduction; lock-free channels 2.6x faster than a
+hand-written C mutex ring while still paying the value-semantic copies C
+doesn't ([docs/concurrency.md](concurrency.md), `bench/conc/`).
