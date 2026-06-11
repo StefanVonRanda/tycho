@@ -21,7 +21,11 @@ fn main():
 ```
 
 Python-looking syntax, Go/Odin semantics (static types, value semantics,
-explicit returns), arena memory underneath.
+explicit returns), arena memory underneath. The same idea carries the
+concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
+ordinary copy-in/copy-out call convention run on threads — race-free by
+construction, no locks or lifetime rules in the language (see
+[Concurrency](#concurrency-spawn-parallel-for-channels)).
 
 Why this works — value semantics is what lets the arenas be *implicit* — and
 where it doesn't, with measured numbers, is written up in
@@ -797,6 +801,72 @@ n.doubled()             # == doubled(n) — int receiver
 If the receiver's struct has a *fn-typed field* with the same name, the field
 wins: `b.doubled(7)` calls the stored function value, not the free `doubled`.
 See `tests/methods.hi`.
+
+### Concurrency (spawn, parallel for, channels)
+
+Hier's call convention — arguments deep-copied in, result copied out, a
+private arena per call — is already a sound thread boundary, so concurrency
+is that same convention run on another thread. After the copy-in, a task
+shares zero bytes with its spawner: race freedom falls out of value
+semantics, with no `Sendable`, no lifetimes, no locks in the language.
+
+```
+fn count(path: string) -> int: ...
+
+t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
+t2 := spawn count("b.txt")     # runs in parallel
+total := wait(t1) + t2.wait()  # blocks; result deep-copied back out
+```
+
+`spawn f(args)` takes a direct call — the argument list *is* the capture
+list, explicit and by value — and yields a `Task(T)` handle. Tasks are
+**affine and structured**: a handle can't be copied, reassigned, stored in a
+container, captured by a closure, or discarded; it is waited at most once
+(a second `wait` dies loudly at runtime), and any task still running when
+its variable's scope exits — block end, `break`/`continue`, early `return`,
+`or_return` — is implicitly joined there. A function can never return while
+its tasks run, and an un-waited task can never leak or detach.
+
+```
+total := 0
+parallel for i in range(1000000):   # K = ncpu chunk tasks (HIER_THREADS overrides)
+    total += score(i)               # reduction: chunk-local partials, folded at join
+```
+
+`parallel for` (over a range or a collection) lifts the body into a chunk
+procedure: captures deep-copy into each task, reduction accumulators (`+`
+or `*` on int/float) start from the op's identity per chunk and fold at the
+in-order join — so integer results are identical for any thread count. Any
+other write to an outer variable is a compile error: there is nothing to
+race on. On the compute-bound reduction benchmark this lands at **exact
+C-pthreads parity** (same wall, same peak RSS — see `bench/conc/`).
+
+```
+ch := channel(string, 256)          # bounded; the creating scope frees it
+w := spawn consumer(ch)             # fn consumer(ch: Channel(string)) -> int
+ch.send("item-" + str(i))           # deep copy in (blocks when full)
+match recv(ch):                     # deep copy out; None = closed and drained
+    Some(s): ...
+    None:    ...
+close(ch)
+n := wait(w)
+```
+
+A channel is the one deliberately shared object — a bounded queue,
+internally synchronized, so value semantics outside it are untouched.
+`send` deep-copies the payload into a per-slot arena (channel memory is
+bounded by capacity × payload, for *every* element type) and `recv` copies
+out into the receiver's arena, returning `Option(T)` with `None` meaning
+closed-and-drained. Channels can't be returned, stored, or captured; the
+creating scope frees the channel after the implicit joins above it, so the
+handle can never dangle.
+
+The price is stated, not hidden: every value crossing a thread boundary is
+a deep copy — the same rule as an ordinary call. `bench/conc/` measures it
+against C, Go, and Rust; design and staging in
+[docs/concurrency.md](docs/concurrency.md), tests in `tests/conc/` (golden
+output under ASan/LSan **and** ThreadSanitizer, in both compilers — the
+suite is part of `make ci`).
 
 ### FFI (calling C)
 

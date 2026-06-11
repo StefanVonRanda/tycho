@@ -63,8 +63,12 @@ Not cleanly benchmarkable, and why (honest negative space):
   `binary-trees`, where the arena's contiguous layout is part of why hier beats C
   25 vs 33 MB). So the arena's locality benefit is real but already captured, not a
   separable number.
-- **Concurrency/parallelism** — hier is single-threaded and value-semantic, a
-  non-goal, not a gap.
+- ~~**Concurrency/parallelism**~~ — no longer a gap: `spawn`/`wait`,
+  `parallel for`, and channels shipped (both compilers), and `conc/`
+  measures them head-to-head — `parallel for` lands at exact C-pthreads
+  parity on the compute-bound reduction; the channel pipeline maps the
+  honest cost of the per-message deep copies vs C/Go/Rust. See
+  `conc/RESULTS.md`.
 
 See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's
 `RESULTS.md` for the per-workload analysis.
