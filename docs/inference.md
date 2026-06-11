@@ -1,6 +1,12 @@
 # Hindley-Milner type inference for hier — feasibility study
 
-Status: INVESTIGATION (nothing implemented). Question: should hier adopt
+Status: DECIDED AND SHIPPED — stages **B-0, B-1, B-2 are implemented in both
+compilers** (bare `[]` empties consume expectations at decls/args/returns/
+stores/elements; int literals adapt to float contexts, literals only; lambda
+param/return elision from expected fn types). Gated by tests/inference.hi
+(through the fixpoint differential) and tests/reject/infer_*.hi (local
+"no expected type here" errors). B-3 (block-local grounding for bare
+`xs := []`) remains optional/unscheduled. Original investigation below. Question: should hier adopt
 HM-style inference — type variables, unification, let-generalization,
 principal types? Verdict up front: **full HM is infeasible for hier by its
 own prior decisions, function-local unification is feasible but poor ROI,

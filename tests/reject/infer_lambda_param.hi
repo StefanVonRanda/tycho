@@ -1,0 +1,3 @@
+fn main():
+    g := fn(x): x + 1
+    print(str(g(1)))

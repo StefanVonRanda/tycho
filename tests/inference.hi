@@ -1,0 +1,44 @@
+fn scale(xs: [float], k: float) -> [float]:
+    out := []float
+    for i in range(len(xs)):
+        push(out, xs[i] * k)
+    return out
+
+fn total(m: [string: int]) -> int:
+    t := 0
+    for true:
+        break
+    keysl := keys(m)
+    for i in range(len(keysl)):
+        t = t + map_get(m, keysl[i], 0)
+    return t
+
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn pick(flag: bool) -> [int]:
+    if flag:
+        return []
+    return [7]
+
+fn maybe(n: int) -> Option(int):
+    if n > 0:
+        return Some(n)
+    return None
+
+fn main():
+    e : [int] = []
+    print(str(len(e)))
+    print(str(len(pick(true))))
+    print(str(len(scale([], 2))))
+    f := 1.5
+    g := f + 2
+    print(str(to_int(g * 2)))
+    print(str(apply(fn(x): x * 2, 21)))
+    em : [string: int] = []
+    print(str(total(em)))
+    match maybe(5):
+        Some(v):
+            print(str(v))
+        None:
+            print("none")

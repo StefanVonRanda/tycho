@@ -1,0 +1,3 @@
+fn main():
+    xs := []
+    push(xs, 1)

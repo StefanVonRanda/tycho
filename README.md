@@ -607,6 +607,27 @@ raw number back with `to_int(x)` / `to_float(x)`. A newtype works anywhere a
 type does — parameter, return, struct field, array element. *Not yet:* `string`,
 `bool`, or aggregate underlying types (only `int`/`float`).
 
+### Type inference (bidirectional)
+
+Locals infer forward from their initializer (`x := e`). In the other
+direction, every position with a known destination type — declarations,
+assignments, call arguments, `return`, stores, literal elements — *checks*
+the expression against it (Pierce–Turner local inference; see
+[docs/inference.md](docs/inference.md)), which lets these elide:
+
+```
+xs : [int] = []          # bare [] takes the expected array/map type
+counts(em, [])           # ...in argument position too
+f := 1.5
+g := f + 2               # an int LITERAL adapts to a float context
+iter.map(xs, fn(x): x * 2)   # lambda params + return from the expected fn type
+```
+
+No type variables, no unification: every expression is typed at its own
+line (synthesized or checked), so errors stay local and the memory model's
+type-driven decisions are untouched. Function signatures stay explicit —
+they are the module interface and the inference seeds.
+
 ### Declarations and assignment
 
 ```

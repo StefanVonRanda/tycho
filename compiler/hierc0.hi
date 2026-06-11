@@ -704,8 +704,13 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
         return e
     elif t.kind == TLBracket:
         pos = pos + 1
-        if toks[pos].kind == TRBracket:          # []T : empty array  /  []K: V : empty map
+        if toks[pos].kind == TRBracket:          # []T : empty array  /  []K: V : empty map  /  bare []
             pos = pos + 1
+            # B-0 (docs/inference.md): `[]` not followed by a type-starter token
+            # is a bare empty literal, grounded from the destination type by the
+            # pre-lift checking pass (ground_pre) at every supplying position.
+            if toks[pos].kind != TIdent and toks[pos].kind != TLBracket and toks[pos].kind != TLParen:
+                return EArrEmpty("")
             kty := parse_type(toks, &pos)
             if toks[pos].kind == TColon:
                 pos = pos + 1
@@ -1353,14 +1358,24 @@ fn parse_lambda(toks: [Token], pos: inout int) -> Expr:
     params := []string
     ptypes := []string
     if toks[pos].kind != TRParen:
-        p := parse_param(toks, &pos)
-        push(params, p.name)
-        push(ptypes, p.ty)
+        # B-2: the `: T` is elidable -- "" is filled from the expected fn type
+        # by ground_pre before the lift (or dies with a local error there)
+        push(params, toks[pos].text)
+        pos = pos + 1
+        lt0 := ""
+        if toks[pos].kind == TColon:
+            pos = pos + 1
+            lt0 = parse_type(toks, &pos)
+        push(ptypes, lt0)
         for toks[pos].kind == TComma:
             pos = pos + 1
-            p2 := parse_param(toks, &pos)
-            push(params, p2.name)
-            push(ptypes, p2.ty)
+            push(params, toks[pos].text)
+            pos = pos + 1
+            lt1 := ""
+            if toks[pos].kind == TColon:
+                pos = pos + 1
+                lt1 = parse_type(toks, &pos)
+            push(ptypes, lt1)
     expect(toks, &pos, TRParen)
     ret := "void"
     if toks[pos].kind == TArrow:
@@ -2618,6 +2633,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         EArrLit(elems):
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
         EArrEmpty(ety):
+            if ety == "":                         # bare []: ground_pre had no destination type for it
+                die("type: cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")
             if is_soa(ety):                       # `soa []Struct` carries the full soa type
                 return ety
             return "[" + ety + "]"
@@ -6487,6 +6504,144 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                     sk = sk + 1
         i = i + 1
 
+# "fn(a,b->r)" -> fills `parts` with the param types, returns the return type.
+# Depth-aware over nested ([{ so a nested fn-type's own , and -> don't split.
+fn fnty_split(ft: string, parts: inout [string]) -> string:
+    inner := substr(ft, 3, len(ft) - 1)
+    d := 0
+    st := 0
+    i := 0
+    for i < len(inner):
+        c := inner[i]
+        if c == 40 or c == 91 or c == 123:        # ( [ {
+            d = d + 1
+        if c == 41 or c == 93 or c == 125:        # ) ] }
+            d = d - 1
+        if d == 0 and c == 44:                    # top-level comma
+            push(parts, substr(inner, st, i))
+            st = i + 1
+        if d == 0 and c == 45 and i + 1 < len(inner) and inner[i + 1] == 62:   # top-level ->
+            if i > st:
+                push(parts, substr(inner, st, i))
+            return substr(inner, i + 2, len(inner))
+        i = i + 1
+    return "void"
+
+# Pierce-Turner checking mode (docs/inference.md), the pre-lift grounding: a
+# known destination type `want` ("" = none) flows into the expressions that
+# can consume one -- bare [] empties, int literals in float contexts, lambdas
+# with elided param/return types -- BEFORE the lift, so capture analysis and
+# codegen only ever see ground types. Mirrors hierc's resolve_exp head.
+fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
+    if want == "":
+        return e
+    match e:
+        EArrEmpty(t):
+            if t != "":
+                return e
+            if is_map(want):
+                return EMapEmpty(map_key(want), map_val(want))
+            if is_soa(want):
+                return EArrEmpty(want)
+            if is_array(want):
+                return EArrEmpty(elem_ty(want))
+            return e
+        EInt(s):
+            if want == "float":
+                return EFloat(s + ".0")
+            return e
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            if not is_func(want):
+                return e
+            wp := []string
+            wr := fnty_split(want, &wp)
+            if len(wp) != len(ps):
+                return e
+            npts := []string
+            k := 0
+            for k < len(pts):
+                if pts[k] == "":
+                    push(npts, wp[k])
+                else:
+                    push(npts, pts[k])
+                k = k + 1
+            nret := ret
+            if ret == "void" and wr != "void":
+                nret = wr
+            return ELambda(id, ps, npts, nret, body, cn, ct)
+        EBool(t):
+            return e
+        EChar(t):
+            return e
+        EFloat(t):
+            return e
+        EStr(t):
+            return e
+        EVar(n):
+            return e
+        EBin(o, l, r):
+            return e
+        ECall(cn2, ca):
+            return e
+        EField(b, f):
+            return e
+        EIndex(b, ix):
+            return e
+        EArrLit(es):
+            return e
+        EMapEmpty(k2, v2):
+            return e
+        EMapLit(ks, vs):
+            return e
+        ETuple(es):
+            return e
+        ESlice(b, lo, hi):
+            return e
+        EAddr(x):
+            return e
+        ECallV(c2, a2):
+            return e
+        ESpawn(sid, snm, sa):
+            return e
+
+# Per-argument destination types for a call's grounding: user-fn params (from
+# the pre-lift Sig table), struct fields, enum payloads, and the typed builtins
+# (push/map_set/send). Builtins like Some/Ok/Err supply nothing (as in hierc).
+fn ground_args(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a: [Expr]) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(a):
+        w := ""
+        if nm == "push" and i == 1:
+            w = elem_ty(type_of(a[0], names, types, dc, ctx))
+        elif nm == "map_set" and i == 2:
+            w = map_val(type_of(a[0], names, types, dc, ctx))
+        elif nm == "send" and i == 1:
+            at := type_of(a[0], names, types, dc, ctx)
+            if is_chan(at):
+                w = chan_inner(at)
+        elif not is_builtin_call(nm):
+            si := map_get(dc.sigmap, nm, 0 - 1)
+            if si >= 0 and i < len(dc.sigs[si].ptypes):
+                w = base_ty(dc.sigs[si].ptypes[i])
+            else:
+                sj := 0
+                for sj < len(dc.structs):
+                    if dc.structs[sj].name == nm and i < len(dc.structs[sj].fields):
+                        w = dc.structs[sj].fields[i].ty
+                    sj = sj + 1
+                ej := 0
+                for ej < len(dc.enums):
+                    vk := 0
+                    for vk < len(dc.enums[ej].variants):
+                        if dc.enums[ej].variants[vk].name == nm and i < len(dc.enums[ej].variants[vk].ptypes):
+                            w = dc.enums[ej].variants[vk].ptypes[i]
+                        vk = vk + 1
+                    ej = ej + 1
+        push(out, ground_pre(dc, ctx, w, a[i]))
+        i = i + 1
+    return out
+
 fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
@@ -6516,13 +6671,25 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         EBin(o, l, r):
             return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ECall(n, a):
-            return ECall(n, lift_exprs(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            ga := ground_args(dc, ctx, names, types, n, a)   # B: per-arg destination types ground empties/literals/lambdas
+            return ECall(n, lift_exprs(ga, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EField(b, f):
             return EField(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), f)
         EIndex(b, ix):
             return EIndex(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EArrLit(es):
-            return EArrLit(lift_exprs(es, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            ges := []Expr                          # B-0: later elements take the first element's type
+            ew := ""
+            ek := 0
+            for ek < len(es):
+                ge := es[ek]
+                if ek > 0:
+                    if ew == "":
+                        ew = type_of(es[0], names, types, dc, ctx)
+                    ge = ground_pre(dc, ctx, ew, ge)
+                push(ges, ge)
+                ek = ek + 1
+            return EArrLit(lift_exprs(ges, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         EMapLit(ks, vs):
             return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ETuple(es):
@@ -6534,6 +6701,11 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         EAddr(x):
             return EAddr(lift_expr(x, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ELambda(id, ps, pts, ret, body, cn, ct):
+            kp0 := 0                              # B-2: an untyped param needed an expected fn type by now
+            for kp0 < len(pts):
+                if pts[kp0] == "":
+                    die("type: lambda parameter '" + ps[kp0] + "' needs a type here -- no expected fn type supplies it")
+                kp0 = kp0 + 1
             # push the lambda's own params so a nested lambda in the body can capture them
             mark := len(names)
             kp := 0
@@ -6625,15 +6797,19 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(types, nty)                          # OUTER decl, and names/types must stay in lockstep
             return SDecl(n, ne)
         SAssign(n, e):
-            return SAssign(n, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            aw := ""                              # B: the existing var's type checks the RHS
+            if has_str(names, n):
+                aw = base_ty(var_type(names, types, n))
+            return SAssign(n, lift_expr(ground_pre(dc, ctx, aw, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SFieldAssign(lv, rhs):
-            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(rhs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            fw := type_of(lv, names, types, dc, ctx)   # B: the place's type checks the stored value
+            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ground_pre(dc, ctx, fw, rhs), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SPrint(e):
             return SPrint(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SReturn(e):
             # A closure MAY escape: gen_stmt's SReturn re-homes its captured env into
             # _parent via copyenv (value semantics, sound). rule (a) lifted.
-            return SReturn(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            return SReturn(lift_expr(ground_pre(dc, ctx, fret, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         SReturnVoid:
             return s
         SIf(c, th, el):
@@ -6654,7 +6830,7 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         SExpr(e):
             return SExpr(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         STypedDecl(nm, ty, e):
-            ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            ne := lift_expr(ground_pre(dc, ctx, ty, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             push(names, nm)
             push(types, ty)
             return STypedDecl(nm, ty, ne)
@@ -6842,7 +7018,7 @@ fn expr_has_lambda(e: Expr) -> bool:
         EVar(n):
             return false
         EArrEmpty(t):
-            return false
+            return t == ""                        # a bare [] gates the lift: ground_pre runs there (B-0)
         EMapEmpty(k, v):
             return false
         ESpawn(sid, snm, sa):

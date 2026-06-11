@@ -1207,8 +1207,9 @@ static Expr *parse_primary(Parser *ps) {
         int cap = 0;
         while (!at(ps, TK_RPAREN)) {
             Tok *pn = eat(ps, TK_IDENT, "a lambda parameter name");
-            eat(ps, TK_COLON, "':' after parameter name");
-            Type pt = parse_type(ps);   /* lambdas take by-value params only */
+            Type pt = T_VOID;           /* B-2: an untyped param is filled from the expected fn type at resolve */
+            if (accept(ps, TK_COLON))
+                pt = parse_type(ps);    /* lambdas take by-value params only */
             if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
             pr->params[pr->nparams].name = pn->text;
             pr->params[pr->nparams].type = pt;
@@ -1265,8 +1266,17 @@ static Expr *parse_primary(Parser *ps) {
     if (t->kind == TK_LBRACKET) {            /* array or map literal */
         ps->p++;
         Expr *e = new_expr(E_ARRLIT, t->line);
-        if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string / []string: int */
+        if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string / []string: int / bare [] (typed by context) */
             ps->p++;
+            /* B-0 (docs/inference.md): a `[]` NOT followed by a type-starter
+             * token is a bare empty literal; resolve_exp grounds it from the
+             * expected type (checking mode), or dies with a local error. */
+            TokKind nk = cur(ps)->kind;
+            if (nk != TK_KW_INT && nk != TK_KW_BOOL && nk != TK_KW_STRING && nk != TK_KW_FLOAT
+                && nk != TK_KW_PTR && nk != TK_IDENT && nk != TK_LBRACKET && nk != TK_LPAREN && nk != TK_FN) {
+                e->ival = T_VOID;            /* the "untyped" marker */
+                return e;
+            }
             Type elem = parse_type(ps);
             if (at(ps, TK_COLON)) {          /* empty map literal []K: V */
                 ps->p++;
@@ -2453,6 +2463,10 @@ static Type resolve_expr(Expr *e) {
             Proc *pr = li->proc;
             int nlam = pr->nparams;
             if (nlam > 8) die_at(e->line, "a lambda has at most 8 parameters");
+            for (int i = 0; i < nlam; i++)     /* B-2: an untyped param needed an expected fn type */
+                if (pr->params[i].type == T_VOID)
+                    die_at(e->line, "lambda parameter '%s' needs a type here -- no expected fn type supplies it (annotate: fn(%s: T))",
+                           pr->params[i].name, pr->params[i].name);
             const char *ids[64]; int nids = 0;
             collect_idents(pr->body[0]->expr, ids, &nids, 64);
             Param caps[16]; int ncap = 0;
@@ -2600,8 +2614,11 @@ static Type resolve_expr(Expr *e) {
                 }
                 return e->type = map_of(kt, vt);
             }
-            if (e->nargs == 0)                 /* empty literal: type from []T / []K: V */
+            if (e->nargs == 0) {               /* empty literal: type from []T, or from context (bare []) */
+                if ((Type)e->ival == T_VOID)
+                    die_at(e->line, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)");
                 return e->type = (Type)e->ival;
+            }
             Type elem = resolve_expr(e->args[0]);
             if (elem == T_VOID || elem == T_BOOL)
                 die_at(e->line, "array elements must be int, float, string, a struct, an array, or an Option");
@@ -3207,6 +3224,16 @@ static Type resolve_expr(Expr *e) {
             if (lt == T_FLOAT && rt == T_FLOAT) return e->type = T_FLOAT;
             if (lt == rt && IS_NEWTYPE(lt) && (nt_under(lt) == T_INT || nt_under(lt) == T_FLOAT))
                 return e->type = lt;
+            /* B-1: an int LITERAL adapts to the float side (value-directional,
+             * literals only -- a float never narrows, a variable never widens) */
+            if (lt == T_FLOAT && rt == T_INT && e->rhs->kind == E_INT) {
+                e->rhs->kind = E_FLOAT; e->rhs->fval = (double)e->rhs->ival; e->rhs->type = T_FLOAT;
+                return e->type = T_FLOAT;
+            }
+            if (rt == T_FLOAT && lt == T_INT && e->lhs->kind == E_INT) {
+                e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; e->lhs->type = T_FLOAT;
+                return e->type = T_FLOAT;
+            }
             die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s)",
                    type_name(lt), type_name(rt));
         }
@@ -3220,6 +3247,31 @@ static Type resolve_expr(Expr *e) {
  * the one place None can learn which Option it is. The chosen type is written
  * back onto the E_NONE node so codegen emits the right HierOpt. */
 static Type resolve_exp(Expr *e, Type want) {
+    /* Pierce-Turner checking mode (docs/inference.md): a known destination
+     * type flows INTO the few expressions that can consume one, before
+     * synthesis would have to fail. Dispatch/receivers always synthesize;
+     * only literal-ish constructs consume — types stay ground at every line. */
+    if (e->kind == E_ARRLIT && e->nargs == 0 && e->ival == T_VOID) {   /* bare [] (B-0) */
+        if (is_array(want) || IS_SOA(want)) e->ival = want;
+        else if (is_map(want)) { e->ival = want; e->op = TK_COLON; }
+        /* else fall through: resolve_expr reports the no-context error */
+    }
+    if (e->kind == E_INT && want == T_FLOAT) {   /* int literal adapts to a float context (B-1; literals only) */
+        e->kind = E_FLOAT;
+        e->fval = (double)e->ival;
+        return e->type = T_FLOAT;
+    }
+    if (e->kind == E_LAMBDA && IS_FUNC(want)) {  /* lambda param/ret elision from the expected fn type (B-2) */
+        Proc *pr = g_laminfo[e->ival].proc;
+        if (g_laminfo[e->ival].ftype == T_VOID && pr->nparams == func_n(want)) {   /* not yet resolved */
+            for (int i = 0; i < pr->nparams; i++)
+                if (pr->params[i].type == T_VOID) pr->params[i].type = func_param(want, i);
+            if (!pr->has_ret && func_ret(want) != T_VOID) {
+                pr->ret = func_ret(want);          /* an elided return becomes the expected one; the */
+                pr->body[0]->kind = S_RETURN;      /* body flips from expression-statement to return */
+            }
+        }
+    }
     Type t = resolve_expr(e);
     if (t == T_NONE && IS_OPT(want)) return e->type = want;
     /* Ok(v)/Err(e): the value fixes one of Result's two params; `want` must be a
