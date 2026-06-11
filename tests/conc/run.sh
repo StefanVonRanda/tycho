@@ -45,16 +45,18 @@ for f in tests/conc/*.hi; do
     if [ $ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 done
 
-# abort fixtures: must compile, then DIE at runtime with the expected message
-# (the CC-2 double-wait backstop -- a defined loud failure, never UB).
+# abort fixtures: must compile, then DIE at runtime with the message in the
+# sibling .err file (the CC-2 double-wait and CC-4 closed-channel backstops --
+# defined loud failures, never UB).
 for f in tests/conc/abort/*.hi; do
     name=abort/$(basename "$f" .hi)
+    want=$(cat "${f%.hi}.err")
     if ! $HIERC "$f" -o "$TMP/ab" >/dev/null 2>&1; then
         note "$name" "hierc"; fail=$((fail+1)); continue
     fi
     "$TMP/ab" >/dev/null 2>"$TMP/ab.err"
-    if [ $? -eq 0 ] || ! grep -q "task already waited" "$TMP/ab.err"; then
-        note "$name" "expected runtime die 'task already waited'"; fail=$((fail+1))
+    if [ $? -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
+        note "$name" "expected runtime die '$want'"; fail=$((fail+1))
     else
         pass=$((pass+1))
     fi

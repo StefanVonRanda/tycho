@@ -435,6 +435,35 @@ static void task_container_err(void) {
     exit(1);
 }
 
+/* Channel(T) -- the bounded queue from `ch := channel(T, cap)` (CC-4). The
+ * ONE shared object in hier concurrency: the C representation is `HChan *`
+ * and copying the handle word ALIASES it on purpose (it is internally
+ * synchronized; send deep-copies in, recv deep-copies out, so values stay
+ * value-semantic). Has type syntax (a spawned worker takes `Channel(T)`),
+ * but may not be returned, stored in containers/aggregates, or captured by
+ * closures -- the handle must not outlive its creating scope, which frees
+ * it after CC-2's implicit joins. */
+#define T_CHAN_BASE 54272   /* above the task range (53248 + 64) */
+typedef struct { Type inner; } ChanType;
+static ChanType g_chantypes[64];
+static int g_nchantypes = 0;
+#define IS_CHAN(t) ((t) >= T_CHAN_BASE && (t) < T_CHAN_BASE + 64)
+#define CHAN_ID(t) ((int)((t) - T_CHAN_BASE))
+static void chan_container_err(void) {
+    fprintf(stderr, "hierc: a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead\n");
+    exit(1);
+}
+static Type chan_of(Type inner) {                /* find-or-create Channel(inner) */
+    if (IS_TASK(inner)) task_container_err();
+    if (IS_CHAN(inner)) chan_container_err();
+    for (int i = 0; i < g_nchantypes; i++)
+        if (g_chantypes[i].inner == inner) return T_CHAN_BASE + i;
+    if (g_nchantypes >= 64) { fprintf(stderr, "hierc: too many channel types\n"); exit(1); }
+    g_chantypes[g_nchantypes].inner = inner;
+    return T_CHAN_BASE + g_nchantypes++;
+}
+static Type chan_inner(Type t) { return g_chantypes[CHAN_ID(t)].inner; }
+
 /* Composite array types — arrays whose element is a struct or another array
  * ([Point], [[int]], ...). Unlike [int]/[float]/[string] (fixed enum values
  * with hand-written runtime), these are interned in a side table (mirroring
@@ -456,6 +485,7 @@ static int g_narrtypes = 0;
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
 static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
     if (IS_TASK(elem)) task_container_err();
+    if (IS_CHAN(elem)) chan_container_err();
     for (int i = 0; i < g_narrtypes; i++)
         if (g_arrtypes[i].elem == elem) return T_ARRC_BASE + i;
     if (g_narrtypes >= 256) { fprintf(stderr, "hierc: too many array types\n"); exit(1); }
@@ -482,6 +512,7 @@ static int g_nopttypes = 0;
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
     if (IS_TASK(inner)) task_container_err();
+    if (IS_CHAN(inner)) chan_container_err();
     for (int i = 0; i < g_nopttypes; i++)
         if (g_opttypes[i].inner == inner) return T_OPT_BASE + i;
     if (g_nopttypes >= 256) { fprintf(stderr, "hierc: too many option types\n"); exit(1); }
@@ -502,6 +533,7 @@ static int g_nrestypes = 0;
 #define RES_ID(t)  ((int)((t) - T_RES_BASE))
 static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, err) */
     if (IS_TASK(ok) || IS_TASK(err)) task_container_err();
+    if (IS_CHAN(ok) || IS_CHAN(err)) chan_container_err();
     for (int i = 0; i < g_nrestypes; i++)
         if (g_restypes[i].ok == ok && g_restypes[i].err == err) return T_RES_BASE + i;
     if (g_nrestypes >= 256) { fprintf(stderr, "hierc: too many result types\n"); exit(1); }
@@ -549,7 +581,10 @@ static int g_ntuptypes = 0;
 #define IS_TUP(t)  ((t) >= T_TUP_BASE && (t) < T_NT_BASE)
 #define TUP_ID(t)  ((int)((t) - T_TUP_BASE))
 static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
-    for (int i = 0; i < n; i++) if (IS_TASK(elems[i])) task_container_err();
+    for (int i = 0; i < n; i++) {
+        if (IS_TASK(elems[i])) task_container_err();
+        if (IS_CHAN(elems[i])) chan_container_err();
+    }
     for (int i = 0; i < g_ntuptypes; i++)
         if (g_tuptypes[i].n == n) {
             int same = 1;
@@ -674,6 +709,7 @@ static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
         if (g_maptypes[i].key == k && g_maptypes[i].val == v) return T_MAPC_BASE + i;
     if (g_nmaptypes >= 256) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }
     if (IS_TASK(v)) task_container_err();
+    if (IS_CHAN(v)) chan_container_err();
     g_maptypes[g_nmaptypes].key = k; g_maptypes[g_nmaptypes].val = v;
     return T_MAPC_BASE + g_nmaptypes++;
 }
@@ -690,6 +726,11 @@ static int g_nfunctypes = 0;
 #define IS_FUNC(t)  ((t) >= T_FUNC_BASE && (t) < T_FUNC_BASE + 256)
 #define FUNC_ID(t)  ((int)((t) - T_FUNC_BASE))
 static Type funcc_of(Type *params, int n, Type ret) {   /* find-or-create fn(params) -> ret */
+    /* fn VALUES are storable (containers, fields) -- a task/channel handle in
+     * a fn type could smuggle one past every lifetime guard. Fail closed. */
+    if (IS_TASK(ret) || IS_CHAN(ret)) { fprintf(stderr, "hierc: a function value cannot return a task or channel handle\n"); exit(1); }
+    for (int i = 0; i < n; i++)
+        if (IS_TASK(params[i]) || IS_CHAN(params[i])) { fprintf(stderr, "hierc: a function value cannot take a task or channel handle\n"); exit(1); }
     for (int i = 0; i < g_nfunctypes; i++) {
         if (g_functypes[i].n != n || g_functypes[i].ret != ret) continue;
         int same = 1;
@@ -783,6 +824,7 @@ static const char *c_type(Type t) {
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
     if (IS_FUNC(t))   return sfmt("FnC%d ", FUNC_ID(t));   /* a function-pointer typedef */
     if (IS_TASK(t))   return "HTask *";   /* opaque runtime task handle (spawn/wait) */
+    if (IS_CHAN(t))   return "HChan *";   /* shared bounded-queue handle (channels) */
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
@@ -805,6 +847,7 @@ static const char *c_type(Type t) {
 static const char *type_name(Type t) {
     if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
     if (IS_TASK(t))    return sfmt("Task(%s)", type_name(task_inner(t)));
+    if (IS_CHAN(t))    return sfmt("Channel(%s)", type_name(chan_inner(t)));
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_MAPC(t))   return sfmt("[%s: %s]", type_name(map_key(t)), type_name(map_val(t)));
@@ -1032,6 +1075,14 @@ static Type parse_type(Parser *ps) {
         eat(ps, TK_RPAREN, "')'");
         if (inner == T_VOID) die_at(t->line, "Option(void) is not a type");
         return opt_of(inner);
+    }
+    if (t->kind == TK_IDENT && !strcmp(t->text, "Channel")) {   /* Channel(T): a worker param's queue type (CC-4) */
+        ps->p++;
+        eat(ps, TK_LPAREN, "'(' after Channel");
+        Type inner = parse_type(ps);
+        eat(ps, TK_RPAREN, "')'");
+        if (inner == T_VOID) die_at(t->line, "Channel(void) is not a type");
+        return chan_of(inner);
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Result")) {   /* Result(T, E) */
         ps->p++;
@@ -1276,6 +1327,18 @@ static Expr *parse_primary(Parser *ps) {
             if (!IS_STRUCT(el)) die_at(t->line, "soa requires a struct element type, e.g. soa []Point");
             Expr *e = new_expr(E_ARRLIT, t->line);
             e->ival = soa_of(el);          /* empty: type carried to the resolver */
+            return e;
+        }
+        if (!strcmp(t->text, "channel") && at(ps, TK_LPAREN)) {   /* channel(T, cap): create a bounded queue (CC-4) */
+            ps->p++;
+            Expr *e = new_expr(E_CALL, t->line);
+            e->sval = "channel";
+            e->ival = (long)parse_type(ps);     /* the element type rides in ival */
+            eat(ps, TK_COMMA, "',' between the element type and the capacity");
+            e->args = (Expr **)xmalloc(sizeof(Expr *));
+            e->args[0] = parse_expr(ps); e->nargs = 1;
+            eat(ps, TK_RPAREN, "')'");
+            e->pkg = g_cur_pkg_prefix;
             return e;
         }
         if (!strcmp(t->text, "None"))      /* the bare None literal */
@@ -2360,6 +2423,7 @@ static Type resolve_expr(Expr *e) {
                 Type vt;
                 if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE (heap: deep-copied in) */
                     if (IS_TASK(vt)) die_at(e->line, "a closure cannot capture a task handle -- wait it first");
+                    if (IS_CHAN(vt)) die_at(e->line, "a closure cannot capture a channel handle -- take it as a parameter instead");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
                     caps[ncap].name = ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
                     ncap++;
@@ -2571,12 +2635,15 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
-            /* t.wait() sugar on a task-typed local: rewrite to wait(t) up front.
-             * A task has no fields/methods and `wait` lives outside the Sig
-             * table, so the UFCS machinery below could never resolve it. */
+            /* t.wait() / ch.send(v) / ch.recv() / ch.close() sugar on task- and
+             * channel-typed locals: rewrite to the free-call form up front.
+             * These live outside the Sig table, so the UFCS machinery below
+             * could never resolve them. */
             { Type _tv;
-              if (e->qual && !e->lhs && !strcmp(e->sval, "wait")
-                  && vars_find(e->qual, &_tv) && IS_TASK(_tv)) {
+              int _cm = e->sval && (!strcmp(e->sval, "wait") || !strcmp(e->sval, "send")
+                     || !strcmp(e->sval, "recv") || !strcmp(e->sval, "close"));   /* sval is NULL for a call-on-expression */
+              if (e->qual && !e->lhs && _cm
+                  && vars_find(e->qual, &_tv) && (IS_TASK(_tv) || IS_CHAN(_tv))) {
                   Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
                   Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
                   na[0] = recv;
@@ -2760,6 +2827,38 @@ static Type resolve_expr(Expr *e) {
                 if (e->args[0]->kind != E_IDENT && e->args[0]->kind != E_SPAWN)
                     die_at(e->line, "wait takes a task variable or a spawn expression");
                 return e->type = task_inner(at_);
+            }
+            /* channel(T, cap): legal only as the direct RHS of a declaration --
+             * the creating variable's scope owns the channel and frees it at
+             * scope exit (after CC-2's implicit joins). S_DECL marks that. */
+            if (!strcmp(e->sval, "channel") && e->ival) {
+                if (e->op != TK_COLONEQ)
+                    die_at(e->line, "a channel must be created directly in a declaration: ch := channel(T, cap)");
+                e->op = 0;   /* consume the marker */
+                if (resolve_exp(e->args[0], T_INT) != T_INT)
+                    die_at(e->line, "channel(T, cap) needs an int capacity");
+                return e->type = chan_of((Type)e->ival);
+            }
+            if (!strcmp(e->sval, "send")) {   /* send(ch, v): deep-copy v into the channel; blocks when full */
+                if (e->nargs != 2) die_at(e->line, "send(ch, v) takes a channel and a value");
+                Type ct = resolve_expr(e->args[0]);
+                if (!IS_CHAN(ct)) die_at(e->line, "send(ch, v) takes a channel, got %s", type_name(ct));
+                Type want = chan_inner(ct);
+                if (resolve_exp(e->args[1], want) != want)
+                    die_at(e->line, "send on %s needs a %s value", type_name(ct), type_name(want));
+                return e->type = T_VOID;
+            }
+            if (!strcmp(e->sval, "recv")) {   /* recv(ch) -> Option(T): blocks; None = closed and drained */
+                if (e->nargs != 1) die_at(e->line, "recv(ch) takes one channel");
+                Type ct = resolve_expr(e->args[0]);
+                if (!IS_CHAN(ct)) die_at(e->line, "recv(ch) takes a channel, got %s", type_name(ct));
+                return e->type = opt_of(chan_inner(ct));
+            }
+            if (!strcmp(e->sval, "close")) {  /* close(ch): receivers drain then see None; senders die */
+                if (e->nargs != 1) die_at(e->line, "close(ch) takes one channel");
+                Type ct = resolve_expr(e->args[0]);
+                if (!IS_CHAN(ct)) die_at(e->line, "close(ch) takes a channel, got %s", type_name(ct));
+                return e->type = T_VOID;
             }
             /* str is polymorphic (int or float); to_int/to_float convert
              * between the two (no implicit mixing exists). Handled inline so
@@ -3388,6 +3487,10 @@ static void resolve_parfor(Stmt *s) {
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_DECL: {
+            /* channel creation is legal exactly here (CC-4); the marker lets
+             * the channel(...) resolve case reject every other position */
+            if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
+                s->expr->op = TK_COLONEQ;
             Type t = s->typed_decl ? resolve_exp(s->expr, s->annot) : resolve_expr(s->expr);
             if (t == T_VOID) die_at(s->line, "cannot bind a void value");
             if (s->typed_decl) {
@@ -3457,6 +3560,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             }
             if (IS_TASK(vt))   /* CC-2: rebinding would orphan the running task (or alias another) */
                 die_at(s->line, "a task variable cannot be reassigned -- each task is waited exactly once");
+            if (IS_CHAN(vt))   /* CC-4: rebinding would orphan the created channel (freed once, at its decl's scope exit) */
+                die_at(s->line, "a channel variable cannot be reassigned");
             Type t = resolve_exp(s->expr, vt);
             if (t != vt)
                 die_at(s->line, "cannot assign %s to '%s' of type %s",
@@ -3652,9 +3757,28 @@ static void resolve_block(Stmt **body, int n, Type ret) {
 
 static void resolve_program(ProcVec *prog) {
     register_builtins();
+    /* CC-4: a channel handle must not outlive its creating scope. Channel(T)
+     * HAS type syntax (unlike Task), so reject the storable positions here. */
+    for (int i = 0; i < g_nstructs; i++)
+        for (int f = 0; f < g_structs[i].nfields; f++)
+            if (IS_CHAN(g_structs[i].fields[f].type))
+                die_at(g_structs[i].line, "a struct field cannot be a channel");
+    for (int i = 0; i < g_nenums; i++)
+        for (int v = 0; v < g_enums[i].nvariants; v++)
+            for (int p = 0; p < g_enums[i].variants[v].npayload; p++)
+                if (IS_CHAN(g_enums[i].variants[v].payload[p]))
+                    die_at(g_enums[i].line, "an enum payload cannot be a channel");
+    for (int i = 0; i < g_nnewtypes; i++)
+        if (IS_CHAN(g_newtypes[i].under))
+            die_at(0, "a newtype cannot wrap a channel");
     /* register every user proc up front so calls can be forward refs */
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
+        if (IS_CHAN(pr->ret))
+            die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
+        for (int j = 0; j < pr->nparams; j++)
+            if (pr->params[j].is_inout && IS_CHAN(pr->params[j].type))
+                die_at(pr->line, "a channel parameter cannot be inout (the handle is already shared)");
         if (sig_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
         if (g_nsigs >= 256) die_at(pr->line, "too many functions (max 256 including builtins)");
@@ -4548,6 +4672,23 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("({ HTask *_tk = %s; hier_task_join(_tk); %s_w = %s; arena_free(&_tk->root); _w; })",
                     tv, c_type(rt), res);
     }
+    if (!strcmp(e->sval, "channel") && IS_CHAN(e->type))   /* CC-4 */
+        return sfmt("hier_chan_new(%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "send") && e->nargs == 2 && IS_CHAN(e->args[0]->type)) {
+        /* the generated per-type wrapper deep-copies the value into the
+         * claimed slot's arena under the channel mutex */
+        return sfmt("hier_chan_send_%d(%s, %s)", CHAN_ID(e->args[0]->type),
+                    gen_expr(e->args[0], arena), gen_expr(e->args[1], g_cur_scope));
+    }
+    if (!strcmp(e->sval, "recv") && e->nargs == 1 && IS_CHAN(e->args[0]->type)) {
+        /* Option(T) result: has=0 (None) means closed and drained; the value
+         * is deep-copied straight into the destination arena */
+        return sfmt("({ HierOpt%d _co = {0}; _co.has = (char)hier_chan_recv_%d(%s, %s, &_co.val); _co; })",
+                    OPT_ID(e->type), CHAN_ID(e->args[0]->type),
+                    gen_expr(e->args[0], arena), arena);
+    }
+    if (!strcmp(e->sval, "close") && e->nargs == 1 && IS_CHAN(e->args[0]->type))
+        return sfmt("hier_chan_close(%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
         return sfmt("hier_write_file(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     }
@@ -4949,23 +5090,24 @@ static void ascope_push(const char *a) {
     g_ascope[g_nascope++] = a;
 }
 
-/* Live task-handle locals (CC-2 implicit join). Every scope exit emits
- * hier_task_finish for the tasks dying there -- gen_block covers normal block
- * ends (incl. each loop iteration and the proc body), return_frees covers
- * early return + or_return, and break/continue cover loop escapes via the
- * loop-entry mark. So a function can never return while its tasks run, and
- * an un-waited task can never leak or detach. Reset per proc. */
-static const char *g_taskvars[256];
+/* Live task/channel finalizer calls (CC-2 implicit join, CC-4 channel free).
+ * Every scope exit emits the stored calls for the handles dying there --
+ * gen_block covers normal block ends (incl. each loop iteration and the proc
+ * body), return_frees covers early return + or_return, and break/continue
+ * cover loop escapes via the loop-entry mark. Emission is LIFO, so a channel
+ * (declared before the tasks that use it) is freed AFTER those tasks join.
+ * Reset per proc. */
+static const char *g_taskvars[256];   /* full finalizer calls, e.g. "hier_task_finish(h_t)" */
 static int g_ntaskvars = 0;
 static int g_loop_taskmark[64];   /* g_ntaskvars at each enclosing loop's body entry */
-static void taskvar_push(const char *cname) {
-    if (g_ntaskvars >= 256) { fprintf(stderr, "hierc: too many live task variables\n"); exit(1); }
-    g_taskvars[g_ntaskvars++] = cname;
+static void taskvar_push(const char *call) {
+    if (g_ntaskvars >= 256) { fprintf(stderr, "hierc: too many live task/channel variables\n"); exit(1); }
+    g_taskvars[g_ntaskvars++] = call;
 }
 static char *task_finishes_from(int mark) {   /* "" when none are dying */
     char *s = sfmt("%s", "");
     for (int i = g_ntaskvars - 1; i >= mark; i--)
-        s = sfmt("%shier_task_finish(%s); ", s, g_taskvars[i]);
+        s = sfmt("%s%s; ", s, g_taskvars[i]);
     return s;
 }
 
@@ -5083,7 +5225,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     switch (s->kind) {
         case S_DECL: {
             if (IS_TASK(s->decl_type))   /* CC-2: track for implicit join at this var's scope exit */
-                taskvar_push(sfmt("h_%s", s->name));
+                taskvar_push(sfmt("hier_task_finish(h_%s)", s->name));
+            if (IS_CHAN(s->decl_type) && s->expr->kind == E_CALL
+                && s->expr->sval && !strcmp(s->expr->sval, "channel"))
+                taskvar_push(sfmt("hier_chan_free(h_%s)", s->name));   /* CC-4: creator scope owns + frees */
             /* return-slot optimization: a function-top-level heap local that
              * is returned by name is built directly in the caller's arena, so
              * the eventual `return` is a no-op move instead of a deep copy.
@@ -6548,6 +6693,22 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 c_type(s->ret), c_type(s->ret), c_type(s->ret));
     }
     if (g_nspawn) fputs("\n", o);
+    /* channel element-type wrappers (CC-4): the type-aware deep copies in and
+     * out of the slot arenas, run while the channel mutex is held (the
+     * begin/commit pairs in the runtime bracket them). */
+    for (int i = 0; i < g_nchantypes; i++) {
+        Type it = g_chantypes[i].inner;
+        fprintf(o, "static void hier_chan_send_%d(HChan *_ch, %s_v) { Arena *_slot = hier_chan_send_begin(_ch); "
+                   "%s*_p = (%s*)arena_alloc(_slot, sizeof(%s)); *_p = %s; hier_chan_send_commit(_ch, _p); }\n",
+                i, c_type(it), c_type(it), c_type(it), c_type(it),
+                copy_into(it, "_slot", sfmt("%s", "_v")));
+        fprintf(o, "static int hier_chan_recv_%d(HChan *_ch, Arena *_dst, %s*_out) { "
+                   "void *_p = hier_chan_recv_begin(_ch); if (!_p) return 0; "
+                   "*_out = %s; hier_chan_recv_commit(_ch); return 1; }\n",
+                i, c_type(it),
+                copy_into(it, "_dst", sfmt("(*(%s*)_p)", c_type(it))));
+    }
+    if (g_nchantypes) fputs("\n", o);
     for (int k = 0; k < g_nfnval; k++) {   /* fat-value thunks: <name>__clo wraps h_<name>, ignoring env */
         Sig *fs = sig_find(g_fnval[k]);
         if (!fs) continue;

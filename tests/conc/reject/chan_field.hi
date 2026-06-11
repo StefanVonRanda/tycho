@@ -1,0 +1,4 @@
+struct Box:
+    ch: Channel(int)
+fn main():
+    print("x")

@@ -1,6 +1,17 @@
 # Concurrency for hier — research & staged design
 
-Status: CC-0 through CC-3 SHIPPED in hierc (C compiler) + runtime —
+Status: CC-0 through CC-4 SHIPPED in hierc (C compiler) + runtime —
+CC-4 channels: `ch := channel(T, cap)` (decl-only creation), `send(ch,v)` /
+`recv(ch) -> Option(T)` (None = closed+drained) / `close(ch)` + UFCS forms;
+`Channel(T)` param type syntax for workers. Bounded MPMC ring with PER-SLOT
+arenas (memory bounded by cap x payload — fixes tycho's monotonic channel-
+arena growth), type-aware copy_into for EVERY element type on send (into the
+slot arena) and recv (into the receiver's arena), both under the channel
+mutex (generated per-type wrappers around runtime begin/commit pairs). The
+channel is the ONE shared object — freed at its creating scope's exit, sound
+because CC-2's implicit joins land first (LIFO finalizer order). Fail-closed:
+no return/containers/struct fields/enum payloads/newtypes/closure-capture/
+reassignment/inline-creation; send-on-closed and double-close die loudly.
 CC-3 `parallel for i in range(a,b)` / `parallel for x in xs` (foreach rides
 the existing desugar): the body lifts to a chunk proc `__par<N>(__plo, __phi,
 caps...) -> partials` spawned K = hier_ncpu() times (HIER_THREADS overrides)

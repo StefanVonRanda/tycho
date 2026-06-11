@@ -302,6 +302,92 @@ static void hier_task_finish(HTask *t) {
     free(t);
 }
 
+/* ---- channels (CC-4: `ch := channel(T, cap)` / send / recv / close) -----
+ * Bounded MPMC queue, the ONE intentionally shared object in hier's
+ * concurrency story -- internally synchronized, so value semantics outside
+ * it are undisturbed: send deep-copies the payload IN (generated per-type
+ * wrapper), recv deep-copies it OUT into the receiver's arena. Payload bytes
+ * live in PER-SLOT arenas, each reset when its ring slot is reclaimed by a
+ * later send -- so channel memory is bounded by cap * max payload (no
+ * monotonic growth). The generic begin/commit pairs below hold the mutex
+ * across the generated copy, which keeps slot reuse race-free.
+ *
+ * Lifetime: the channel is freed at its CREATING scope's exit (emitted by
+ * the compiler like a task finish). Sound because CC-2's implicit join means
+ * every task that could hold the handle has already joined by then.
+ * recv on a closed, drained channel reports 0 (surfaced as None in hier);
+ * send on a closed channel and double close die loudly. */
+typedef struct {
+    void **vals;          /* ring: slot value pointers (into the slot arenas) */
+    Arena *slots;         /* one arena per ring slot */
+    long   cap, head, count;
+    int    closed;
+    pthread_mutex_t mu;
+    pthread_cond_t  not_full, not_empty;
+} HChan;
+
+static HChan *hier_chan_new(long cap) {
+    if (cap < 1) { fprintf(stderr, "hier: channel capacity must be >= 1\n"); exit(1); }
+    HChan *ch = (HChan *)malloc(sizeof(HChan));
+    if (!ch) hier_oom();
+    ch->vals = (void **)malloc((size_t)cap * sizeof(void *));
+    ch->slots = (Arena *)malloc((size_t)cap * sizeof(Arena));
+    if (!ch->vals || !ch->slots) hier_oom();
+    for (long i = 0; i < cap; i++) ch->slots[i] = arena_new(0);
+    ch->cap = cap; ch->head = 0; ch->count = 0; ch->closed = 0;
+    pthread_mutex_init(&ch->mu, NULL);
+    pthread_cond_init(&ch->not_full, NULL);
+    pthread_cond_init(&ch->not_empty, NULL);
+    return ch;
+}
+/* lock; wait for space; reset the claimed slot's arena; RETURNS WITH THE
+ * MUTEX HELD -- the generated wrapper copies the payload in, then commits. */
+static Arena *hier_chan_send_begin(HChan *ch) {
+    pthread_mutex_lock(&ch->mu);
+    while (ch->count == ch->cap && !ch->closed) pthread_cond_wait(&ch->not_full, &ch->mu);
+    if (ch->closed) { fprintf(stderr, "hier: send on a closed channel\n"); exit(1); }
+    long tail = (ch->head + ch->count) % ch->cap;
+    arena_reset(&ch->slots[tail]);
+    return &ch->slots[tail];
+}
+static void hier_chan_send_commit(HChan *ch, void *val) {
+    long tail = (ch->head + ch->count) % ch->cap;
+    ch->vals[tail] = val;
+    ch->count++;
+    pthread_cond_signal(&ch->not_empty);
+    pthread_mutex_unlock(&ch->mu);
+}
+/* lock; wait for a value or close. NULL => closed and drained (mutex
+ * released); otherwise returns the head slot's value WITH THE MUTEX HELD. */
+static void *hier_chan_recv_begin(HChan *ch) {
+    pthread_mutex_lock(&ch->mu);
+    while (ch->count == 0 && !ch->closed) pthread_cond_wait(&ch->not_empty, &ch->mu);
+    if (ch->count == 0) { pthread_mutex_unlock(&ch->mu); return NULL; }
+    return ch->vals[ch->head];
+}
+static void hier_chan_recv_commit(HChan *ch) {
+    ch->head = (ch->head + 1) % ch->cap;
+    ch->count--;
+    pthread_cond_signal(&ch->not_full);
+    pthread_mutex_unlock(&ch->mu);
+}
+static void hier_chan_close(HChan *ch) {
+    pthread_mutex_lock(&ch->mu);
+    if (ch->closed) { fprintf(stderr, "hier: channel already closed\n"); exit(1); }
+    ch->closed = 1;
+    pthread_cond_broadcast(&ch->not_empty);   /* drain-then-None for blocked receivers */
+    pthread_cond_broadcast(&ch->not_full);    /* blocked senders die loudly */
+    pthread_mutex_unlock(&ch->mu);
+}
+static void hier_chan_free(HChan *ch) {
+    for (long i = 0; i < ch->cap; i++) arena_free(&ch->slots[i]);
+    free(ch->vals); free(ch->slots);
+    pthread_mutex_destroy(&ch->mu);
+    pthread_cond_destroy(&ch->not_full);
+    pthread_cond_destroy(&ch->not_empty);
+    free(ch);
+}
+
 /* CC-3 parallel for: how many chunk tasks to fan out. HIER_THREADS overrides
  * (useful for benchmarks and for pinning tests); otherwise online CPU count.
  * Integer +,* reductions are chunk-count-independent (associative, exact), so

@@ -1,0 +1,4 @@
+fn main():
+    ch := channel(int, 4)
+    ch = channel(int, 4)
+    close(ch)
