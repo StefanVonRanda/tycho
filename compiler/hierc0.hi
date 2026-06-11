@@ -384,6 +384,8 @@ enum Stmt:
     SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
     SBreak                   # break out of the nearest enclosing loop
     SContinue                # skip to the next iteration of the nearest loop
+    SSelect(string, [string], [Expr], [string], [[Stmt]])   # `select` (CC-5): uid, arm kinds ("recv"/"default"/"closed"),
+                             # per-arm channel exprs (dummy for non-recv), per-arm bind names ("" for non-recv), arm bodies
     SParFor(string, Expr, Expr, [Stmt], int)   # `parallel for` (CC-3): loopvar, start, stop, body, par-id
                              # (parse: body=original, par-id=-1; the lift pass moves the body into a
                              # lifted __par<N> chunk proc and stores caps/accs in the pars side table)
@@ -936,6 +938,42 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         then_body := parse_block(toks, &pos)
         else_body := parse_else(toks, &pos)
         return SIf(cond, then_body, else_body)
+    elif t.kind == TIdent and t.text == "select":   # select over channels (CC-5)
+        suid := str(pos)
+        pos = pos + 1
+        expect(toks, &pos, TColon)
+        expect(toks, &pos, TNewline)
+        expect(toks, &pos, TIndent)
+        svars := []string
+        schans := []Expr
+        sbinds := []string
+        sbodies := [][Stmt]
+        for toks[pos].kind != TDedent:
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+            else:
+                if toks[pos].kind != TIdent:
+                    die("parse: line " + str(toks[pos].line) + ": a select arm is `recv(ch, x):`, `default:`, or `closed:`")
+                av := toks[pos].text
+                pos = pos + 1
+                ach := EInt("0")
+                abind := ""
+                if av == "recv":
+                    expect(toks, &pos, TLParen)
+                    ach = parse_expr(toks, &pos)
+                    expect(toks, &pos, TComma)
+                    abind = toks[pos].text
+                    pos = pos + 1
+                    expect(toks, &pos, TRParen)
+                elif av != "default" and av != "closed":
+                    die("parse: line " + str(toks[pos].line) + ": a select arm is `recv(ch, x):`, `default:`, or `closed:`")
+                expect(toks, &pos, TColon)
+                push(svars, av)
+                push(schans, ach)
+                push(sbinds, abind)
+                push(sbodies, parse_block(toks, &pos))
+        pos = pos + 1
+        return SSelect(suid, svars, schans, sbinds, sbodies)
     elif t.kind == TIdent and t.text == "parallel":   # parallel for ... (CC-3)
         pos = pos + 1
         if not (toks[pos].kind == TIdent and toks[pos].text == "for"):
@@ -1685,6 +1723,8 @@ fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a
             return m
         SParFor(v, a, b, body, pid):
             return m
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            return m
 
 fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
     out := []Stmt
@@ -1767,6 +1807,17 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
             return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb)
         SParFor(v, a, b, body, pid):
             return SParFor(v, mangle_expr(m, a), mangle_expr(m, b), mangle_block(mctx_add(m, v), body), pid)
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            nch := mangle_args(m, schans)
+            nb := [][Stmt]
+            sk := 0
+            for sk < len(sbodies):
+                mm := m
+                if svars[sk] == "recv":
+                    mm = mctx_add(mm, sbinds[sk])
+                push(nb, mangle_block(mm, sbodies[sk]))
+                sk = sk + 1
+            return SSelect(uid, svars, nch, sbinds, nb)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs)   # body sees the params as locals (indirect calls stay unprefixed)
@@ -3219,17 +3270,17 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     wfree = "hier_task_free(_tk);"
                 return "({ HTask* _tk = " + gen_expr(args[0], names, types, dc, ctx) + "; hier_task_join(_tk); " + wct + "_w = " + cp_field(dc, ctx, wt, ctx.owner, "(*(" + wct + "*)_tk->ret)") + "; " + wfree + " _w; })"
             if name == "send" and len(args) == 2 and is_chan(type_of(args[0], names, types, dc, ctx)):
-                # deep-copy the payload into the claimed slot's arena UNDER the
-                # channel mutex (begin/commit bracket); every element type is covered
+                # deep-copy the payload into the CLAIMED cell's arena -- exclusive
+                # between claim and commit, no lock held (CC-5); every element type
                 sty := chan_inner(type_of(args[0], names, types, dc, ctx))
                 sct := cty(dc, ctx, sty)
-                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; Arena* _slot = hier_chan_send_begin(_ch); " + sct + "* _p = (" + sct + "*)amem(_slot, sizeof(" + sct + ")); *_p = " + cp_field(dc, ctx, sty, "_slot", gen_expr(args[1], names, types, dc, ctx)) + "; hier_chan_send_commit(_ch, _p); })"
+                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HCell* _c = hier_chan_send_cell(_ch); " + sct + "* _p = (" + sct + "*)amem(&_c->arena, sizeof(" + sct + ")); *_p = " + cp_field(dc, ctx, sty, "(&_c->arena)", gen_expr(args[1], names, types, dc, ctx)) + "; hier_chan_send_commit(_ch, _c, _p); })"
             if name == "recv" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
                 # Option(T): tag 0 (None) = closed and drained; the value deep-copies
-                # straight into the destination arena while the mutex is held
+                # out of the claimed cell into the destination arena before commit
                 rty := chan_inner(type_of(args[0], names, types, dc, ctx))
                 rct := cty(dc, ctx, rty)
-                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HOption _co; void* _rp = hier_chan_recv_begin(_ch); if (_rp) { " + rct + " _v = " + cp_field(dc, ctx, rty, ctx.owner, "(*(" + rct + "*)_rp)") + "; hier_chan_recv_commit(_ch); _co = hsome(hbox(" + ctx.owner + ", sizeof(" + rct + "), &_v)); } else { _co = hnone(); } _co; })"
+                return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HOption _co; HCell* _rc = hier_chan_recv_cell(_ch); if (_rc) { " + rct + " _v = " + cp_field(dc, ctx, rty, ctx.owner, "(*(" + rct + "*)_rc->val)") + "; hier_chan_recv_commit(_ch, _rc); _co = hsome(hbox(" + ctx.owner + ", sizeof(" + rct + "), &_v)); } else { _co = hnone(); } _co; })"
             if name == "close" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
                 return "hier_chan_close(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if is_newtype(dc, ctx, name):             # X(v) is zero-cost: identity
@@ -3853,6 +3904,8 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
                 i = i
             SParFor(v, a, b, body, pid):
                 i = i
+            SSelect(uid, svars, schans, sbinds, sbodies):
+                i = i
         i = i + 1
     return c
 
@@ -3901,6 +3954,8 @@ fn fuse_gather(stmts: [Stmt], out: inout [string]):
             SContinue:
                 i = i
             SParFor(v, a, b, body, pid):
+                i = i
+            SSelect(uid, svars, schans, sbinds, sbodies):
                 i = i
         i = i + 1
 
@@ -3963,6 +4018,8 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
                 i = i
             SParFor(v, a, b, body, pid):
                 return true   # a parallel for captures arrays by value -- any live fusion cursor would be stale; fail closed
+            SSelect(uid, svars, schans, sbinds, sbodies):
+                return true   # select arm bodies run between cursor writes -- fail closed, like parallel for
         i = i + 1
     return false
 
@@ -4156,6 +4213,12 @@ fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bo
             rd_expr(&reads, &loopreads, a, inloop)
             rd_expr(&reads, &loopreads, b, inloop)
             rd_block(&reads, &loopreads, body, true)   # captured reads run N times across chunks: never move-eligible
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            sk := 0
+            for sk < len(svars):
+                rd_expr(&reads, &loopreads, schans[sk], true)   # the retry loop re-reads the channel exprs
+                rd_block(&reads, &loopreads, sbodies[sk], inloop)
+                sk = sk + 1
 
 fn compute_movables(body: [Stmt]) -> [string]:
     reads := []string
@@ -4769,6 +4832,50 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + "        " + un(pf.accnames[ak]) + " = " + un(pf.accnames[ak]) + " " + pf.accops[ak] + " " + part + ";\n"
                 ak = ak + 1
             return out + "    }\n    }\n"
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            # CC-5: try every recv arm; closed when ALL drain; else default or
+            # pause+retry. A goto loop (not for(;;)) so a user break/continue in
+            # an arm body binds to the USER'S enclosing loop, never to select's.
+            sout := "    { "
+            sk := 0
+            for sk < len(svars):
+                if svars[sk] == "recv":
+                    sout = sout + "HChan* _sc" + uid + "_" + str(sk) + " = " + gen_expr(schans[sk], names, types, dc, ctx) + "; "
+                sk = sk + 1
+            sout = sout + "int _ssp" + uid + " = 0, _open" + uid + " = 0;\n"
+            sout = sout + "    _sel_retry_" + uid + ": ;\n    _open" + uid + " = 0;\n"
+            sk = 0
+            for sk < len(svars):
+                if svars[sk] == "recv":
+                    cit := chan_inner(type_of(schans[sk], names, types, dc, ctx))
+                    cct := cty(dc, ctx, cit)
+                    sout = sout + "    { HCell* _tc; int _st = hier_chan_try_recv(_sc" + uid + "_" + str(sk) + ", &_tc); if (_st == 1) {\n"
+                    sout = sout + "    " + cct + un(sbinds[sk]) + " = " + cp_field(dc, ctx, cit, cur_arena(dc, ctx), "(*(" + cct + "*)_tc->val)") + "; hier_chan_recv_commit(_sc" + uid + "_" + str(sk) + ", _tc);\n"
+                    bn := names
+                    bt := types
+                    push(bn, sbinds[sk])
+                    push(bt, cit)
+                    sout = sout + gen_block(sbodies[sk], bn, bt, dc, ctx)
+                    sout = sout + "    goto _sel_done_" + uid + ";\n    } if (_st == 0) _open" + uid + " = 1; }\n"
+                sk = sk + 1
+            sout = sout + "    if (!_open" + uid + ") {\n"
+            sk = 0
+            for sk < len(svars):
+                if svars[sk] == "closed":
+                    sout = sout + gen_block(sbodies[sk], names, types, dc, ctx)
+                sk = sk + 1
+            sout = sout + "    goto _sel_done_" + uid + "; }\n"
+            hasdef := false
+            sk = 0
+            for sk < len(svars):
+                if svars[sk] == "default":
+                    hasdef = true
+                    sout = sout + gen_block(sbodies[sk], names, types, dc, ctx)
+                    sout = sout + "    goto _sel_done_" + uid + ";\n"
+                sk = sk + 1
+            if not hasdef:
+                sout = sout + "    hier_select_pause(&_ssp" + uid + ");\n    goto _sel_retry_" + uid + ";\n"
+            return sout + "    _sel_done_" + uid + ": ;\n    }\n"
 
 fn ret_cty(dc: Decls, ctx: Ctx, ret: string) -> string:
     if ret == "void":
@@ -4986,6 +5093,8 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                 j = j + 1
         SParFor(v, a, b, body, pid):
             np := 0                               # reductions are int/float only -- never a string accumulator
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            np := 0                               # arm bodies are their own blocks; accumulators don't cross arms
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
@@ -5358,7 +5467,7 @@ fn gen_enum_eq(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
     return out + "    return 0;\n}\n"
 
 fn preamble() -> string:
-    out := "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n#include <pthread.h>\n#include <unistd.h>\n"
+    out := "#ifndef _DEFAULT_SOURCE\n#define _DEFAULT_SOURCE\n#endif\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stddef.h>\n#include <dirent.h>\n#include <pthread.h>\n#include <unistd.h>\n#include <stdatomic.h>\n#include <sched.h>\n#include <time.h>\n"
     # Math builtins (sqrt/pow/floor/fabs): declare ONLY these four with their
     # exact libc prototypes rather than `#include <math.h>`. The full header
     # drops dozens of names into the global namespace (yn, y0, j0, gamma, ...)
@@ -5411,17 +5520,26 @@ fn preamble() -> string:
     out = out + "static void hier_task_free(HTask* t) { arena_free(&t->root); free(t); }\n"
     out = out + "static void hier_task_finish(HTask* t) { if (!t->done) { pthread_join(t->th, 0); t->done = 1; } arena_free(&t->root); free(t); }\n"
     out = out + "static void hier_task_start(HTask* t, void* (*fn)(void*), void* arg) { if (pthread_create(&t->th, 0, fn, arg) != 0) { fprintf(stderr, \"hier: spawn failed (cannot create thread)\\n\"); exit(1); } }\n"
-    # Channels: bounded MPMC ring with PER-SLOT arenas (payload bytes freed when
-    # the slot is reclaimed by a later send -- memory bounded by cap x payload).
-    # The begin/commit pairs hold the mutex across the generated deep copy.
-    out = out + "typedef struct { void** vals; Arena* slots; long cap, head, count; int closed; pthread_mutex_t mu; pthread_cond_t not_full, not_empty; } HChan;\n"
-    out = out + "static HChan* hier_chan_new(long cap) { if (cap < 1) { fprintf(stderr, \"hier: channel capacity must be >= 1\\n\"); exit(1); } HChan* ch = malloc(sizeof(HChan)); ch->vals = malloc(cap * sizeof(void*)); ch->slots = malloc(cap * sizeof(Arena)); for (long i = 0; i < cap; i++) ch->slots[i] = arena_new(0); ch->cap = cap; ch->head = 0; ch->count = 0; ch->closed = 0; pthread_mutex_init(&ch->mu, 0); pthread_cond_init(&ch->not_full, 0); pthread_cond_init(&ch->not_empty, 0); return ch; }\n"
-    out = out + "static Arena* hier_chan_send_begin(HChan* ch) { pthread_mutex_lock(&ch->mu); while (ch->count == ch->cap && !ch->closed) pthread_cond_wait(&ch->not_full, &ch->mu); if (ch->closed) { fprintf(stderr, \"hier: send on a closed channel\\n\"); exit(1); } long tail = (ch->head + ch->count) % ch->cap; arena_free(&ch->slots[tail]); return &ch->slots[tail]; }\n"
-    out = out + "static void hier_chan_send_commit(HChan* ch, void* val) { long tail = (ch->head + ch->count) % ch->cap; ch->vals[tail] = val; ch->count++; pthread_cond_signal(&ch->not_empty); pthread_mutex_unlock(&ch->mu); }\n"
-    out = out + "static void* hier_chan_recv_begin(HChan* ch) { pthread_mutex_lock(&ch->mu); while (ch->count == 0 && !ch->closed) pthread_cond_wait(&ch->not_empty, &ch->mu); if (ch->count == 0) { pthread_mutex_unlock(&ch->mu); return 0; } return ch->vals[ch->head]; }\n"
-    out = out + "static void hier_chan_recv_commit(HChan* ch) { ch->head = (ch->head + 1) % ch->cap; ch->count--; pthread_cond_signal(&ch->not_full); pthread_mutex_unlock(&ch->mu); }\n"
-    out = out + "static void hier_chan_close(HChan* ch) { pthread_mutex_lock(&ch->mu); if (ch->closed) { fprintf(stderr, \"hier: channel already closed\\n\"); exit(1); } ch->closed = 1; pthread_cond_broadcast(&ch->not_empty); pthread_cond_broadcast(&ch->not_full); pthread_mutex_unlock(&ch->mu); }\n"
-    out = out + "static void hier_chan_free(HChan* ch) { for (long i = 0; i < ch->cap; i++) arena_free(&ch->slots[i]); free(ch->vals); free(ch->slots); pthread_mutex_destroy(&ch->mu); pthread_cond_destroy(&ch->not_full); pthread_cond_destroy(&ch->not_empty); free(ch); }\n"
+    # Channels (CC-5): a Vyukov bounded MPMC ring. Each cell has a sequence
+    # counter and its OWN arena -- a sender claims a cell with one CAS, deep-
+    # copies the payload in with NO lock held (cell-exclusive until the seq
+    # store publishes), receivers claim/copy-out/recycle symmetrically. The
+    # spin -> yield -> timed-park ladder plus the parked-waiter count means the
+    # uncontended fast path does zero syscalls. Capacity rounds up to a power
+    # of two. Mirrors runtime/hier_rt.c byte-for-byte in semantics + messages.
+    out = out + "typedef struct { _Atomic long seq; long pos; void* val; Arena arena; } HCell;\n"
+    out = out + "typedef struct { HCell* cells; long cap; _Atomic long enq; _Atomic long deq; _Atomic int closed; _Atomic int waiters; pthread_mutex_t mu; pthread_cond_t cv; } HChan;\n"
+    out = out + "static HChan* hier_chan_new(long cap) { if (cap < 1) { fprintf(stderr, \"hier: channel capacity must be >= 1\\n\"); exit(1); } long c2 = 1; while (c2 < cap) c2 <<= 1; HChan* ch = malloc(sizeof(HChan)); ch->cells = malloc(c2 * sizeof(HCell)); for (long i = 0; i < c2; i++) { atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed); ch->cells[i].pos = 0; ch->cells[i].val = 0; ch->cells[i].arena = arena_new(0); } ch->cap = c2; atomic_store_explicit(&ch->enq, 0, memory_order_relaxed); atomic_store_explicit(&ch->deq, 0, memory_order_relaxed); atomic_store_explicit(&ch->closed, 0, memory_order_relaxed); atomic_store_explicit(&ch->waiters, 0, memory_order_relaxed); pthread_mutex_init(&ch->mu, 0); pthread_cond_init(&ch->cv, 0); return ch; }\n"
+    out = out + "static void hier_chan_park(HChan* ch) { pthread_mutex_lock(&ch->mu); atomic_fetch_add_explicit(&ch->waiters, 1, memory_order_relaxed); struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_nsec += 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; } pthread_cond_timedwait(&ch->cv, &ch->mu, &ts); atomic_fetch_sub_explicit(&ch->waiters, 1, memory_order_relaxed); pthread_mutex_unlock(&ch->mu); }\n"
+    out = out + "static void hier_chan_wake(HChan* ch) { if (atomic_load_explicit(&ch->waiters, memory_order_relaxed) > 0) { pthread_mutex_lock(&ch->mu); pthread_cond_broadcast(&ch->cv); pthread_mutex_unlock(&ch->mu); } }\n"
+    out = out + "static HCell* hier_chan_send_cell(HChan* ch) { long pos = atomic_load_explicit(&ch->enq, memory_order_relaxed); int spins = 0; for (;;) { HCell* c = &ch->cells[pos & (ch->cap - 1)]; long d = atomic_load_explicit(&c->seq, memory_order_acquire) - pos; if (d == 0) { if (atomic_compare_exchange_weak_explicit(&ch->enq, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) { if (atomic_load_explicit(&ch->closed, memory_order_acquire)) { fprintf(stderr, \"hier: send on a closed channel\\n\"); exit(1); } arena_free(&c->arena); c->pos = pos; return c; } } else if (d < 0) { if (atomic_load_explicit(&ch->closed, memory_order_acquire)) { fprintf(stderr, \"hier: send on a closed channel\\n\"); exit(1); } if (++spins < 256) { } else if (spins < 512) sched_yield(); else { hier_chan_park(ch); spins = 0; } pos = atomic_load_explicit(&ch->enq, memory_order_relaxed); } else { pos = atomic_load_explicit(&ch->enq, memory_order_relaxed); } } }\n"
+    out = out + "static void hier_chan_send_commit(HChan* ch, HCell* c, void* val) { c->val = val; atomic_store_explicit(&c->seq, c->pos + 1, memory_order_release); hier_chan_wake(ch); }\n"
+    out = out + "static HCell* hier_chan_recv_cell(HChan* ch) { long pos = atomic_load_explicit(&ch->deq, memory_order_relaxed); int spins = 0; for (;;) { HCell* c = &ch->cells[pos & (ch->cap - 1)]; long d = atomic_load_explicit(&c->seq, memory_order_acquire) - (pos + 1); if (d == 0) { if (atomic_compare_exchange_weak_explicit(&ch->deq, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) { c->pos = pos; return c; } } else if (d < 0) { if (atomic_load_explicit(&ch->closed, memory_order_acquire) && atomic_load_explicit(&ch->enq, memory_order_acquire) == pos) return 0; if (++spins < 256) { } else if (spins < 512) sched_yield(); else { hier_chan_park(ch); spins = 0; } pos = atomic_load_explicit(&ch->deq, memory_order_relaxed); } else { pos = atomic_load_explicit(&ch->deq, memory_order_relaxed); } } }\n"
+    out = out + "static void hier_chan_recv_commit(HChan* ch, HCell* c) { atomic_store_explicit(&c->seq, c->pos + ch->cap, memory_order_release); hier_chan_wake(ch); }\n"
+    out = out + "static int hier_chan_try_recv(HChan* ch, HCell** out) { long pos = atomic_load_explicit(&ch->deq, memory_order_relaxed); for (;;) { HCell* c = &ch->cells[pos & (ch->cap - 1)]; long d = atomic_load_explicit(&c->seq, memory_order_acquire) - (pos + 1); if (d == 0) { if (atomic_compare_exchange_weak_explicit(&ch->deq, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) { c->pos = pos; *out = c; return 1; } } else if (d < 0) { if (atomic_load_explicit(&ch->closed, memory_order_acquire) && atomic_load_explicit(&ch->enq, memory_order_acquire) == pos) return 2; return 0; } else { pos = atomic_load_explicit(&ch->deq, memory_order_relaxed); } } }\n"
+    out = out + "static void hier_select_pause(int* spins) { (*spins)++; if (*spins < 64) return; if (*spins < 256) { sched_yield(); return; } struct timespec ts = { 0, 50000 }; nanosleep(&ts, 0); }\n"
+    out = out + "static void hier_chan_close(HChan* ch) { pthread_mutex_lock(&ch->mu); if (atomic_load_explicit(&ch->closed, memory_order_relaxed)) { fprintf(stderr, \"hier: channel already closed\\n\"); exit(1); } atomic_store_explicit(&ch->closed, 1, memory_order_release); pthread_cond_broadcast(&ch->cv); pthread_mutex_unlock(&ch->mu); }\n"
+    out = out + "static void hier_chan_free(HChan* ch) { for (long i = 0; i < ch->cap; i++) arena_free(&ch->cells[i].arena); free(ch->cells); pthread_mutex_destroy(&ch->mu); pthread_cond_destroy(&ch->cv); free(ch); }\n"
     out = out + "static long hier_ncpu(void) { const char* e = getenv(\"HIER_THREADS\"); if (e && *e) { long v = atol(e); if (v >= 1) return v; } long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ? n : 1; }\n"
     # String allocators take an arena; a NULL arena means malloc (the safe
     # fallback for not-yet-migrated contexts). owner-threading (ctx.owner) flips
@@ -5907,6 +6025,17 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
         SParFor(v, a, b, body, pid):              # the chunk proc (and its partial type) is a lifted Func,
             collect_expr(&acc, a, names, types, dc, ctx)   # walked separately; only the site's bounds remain here
             collect_expr(&acc, b, names, types, dc, ctx)
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            sk := 0
+            for sk < len(svars):
+                collect_expr(&acc, schans[sk], names, types, dc, ctx)
+                bn := names
+                bt := types
+                if svars[sk] == "recv":
+                    push(bn, sbinds[sk])
+                    push(bt, chan_inner(type_of(schans[sk], names, types, dc, ctx)))
+                collect_block(&acc, sbodies[sk], bn, bt, dc, ctx)
+                sk = sk + 1
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
 # practice) plus every array element type that appears in an annotation.
@@ -6253,6 +6382,12 @@ fn pf_body_evars(stmts: [Stmt], out: inout [string]):
                 collect_evars(a, &out)
                 collect_evars(b, &out)
                 pf_body_evars(body, &out)
+            SSelect(uid, svars, schans, sbinds, sbodies):
+                sk := 0
+                for sk < len(svars):
+                    collect_evars(schans[sk], &out)
+                    pf_body_evars(sbodies[sk], &out)
+                    sk = sk + 1
         i = i + 1
 
 # Reduction accumulators of a parallel-for body: assignments `n = n OP rest`
@@ -6345,6 +6480,11 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                     k = k + 1
             SParFor(v, a, b, body, pid):
                 pf_accs(body, outer, &accn, &accop)
+            SSelect(uid, svars, schans, sbinds, sbodies):
+                sk := 0
+                for sk < len(svars):
+                    pf_accs(sbodies[sk], outer, &accn, &accop)
+                    sk = sk + 1
         i = i + 1
 
 fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
@@ -6616,6 +6756,22 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(spawns, SpawnInfo("__par" + str(pid), cpt, rty))
             push(pars, ParInfo(sid, capn, capt, accn, accop, rty))
             return SParFor("", na, nbb, []Stmt, pid)
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            nch := []Expr
+            nb := [][Stmt]
+            sk := 0
+            for sk < len(svars):
+                push(nch, lift_expr(schans[sk], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+                mark := len(names)
+                if svars[sk] == "recv":
+                    bty := chan_inner(type_of(schans[sk], names, types, dc, ctx))
+                    push(names, sbinds[sk])
+                    push(types, bty)
+                push(nb, lift_block(sbodies[sk], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
+                names = names[0:mark]
+                types = types[0:mark]
+                sk = sk + 1
+            return SSelect(uid, svars, nch, sbinds, nb)
 
 # Does an expr / stmt / block contain a lambda anywhere? Used to skip the
 # scope-aware lift (which calls type_of) for lambda-free functions — keeping a
@@ -6745,6 +6901,13 @@ fn stmt_has_lambda(s: Stmt) -> bool:
             return false
         SParFor(v, a, b, body, pid):
             return true                           # a parallel for IS a lift job (chunk-proc extraction)
+        SSelect(uid, svars, schans, sbinds, sbodies):
+            sk := 0
+            for sk < len(svars):
+                if expr_has_lambda(schans[sk]) or block_has_lambda(sbodies[sk]):
+                    return true
+                sk = sk + 1
+            return false
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)

@@ -1,0 +1,39 @@
+fn feed(ch: Channel(int), base: int, n: int) -> int:
+    for i in range(n):
+        send(ch, base + i)
+    return n
+
+fn main():
+    a := channel(int, 8)
+    b := channel(int, 8)
+    ta := spawn feed(a, 100, 5)
+    tb := spawn feed(b, 200, 5)
+    n := wait(ta) + wait(tb)
+    close(a)
+    close(b)
+    suma := 0
+    sumb := 0
+    got := 0
+    for true:
+        select:
+            recv(a, x):
+                suma += x
+                got += 1
+            recv(b, y):
+                sumb += y
+                got += 1
+            closed:
+                break
+    print(str(n))
+    print(str(suma))
+    print(str(sumb))
+    print(str(got))
+    empty := channel(string, 2)
+    hits := 0
+    select:
+        recv(empty, s):
+            hits = 0 - 99
+        default:
+            hits = 7
+    print(str(hits))
+    close(empty)

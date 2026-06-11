@@ -852,14 +852,33 @@ close(ch)
 n := wait(w)
 ```
 
-A channel is the one deliberately shared object — a bounded queue,
-internally synchronized, so value semantics outside it are untouched.
-`send` deep-copies the payload into a per-slot arena (channel memory is
-bounded by capacity × payload, for *every* element type) and `recv` copies
-out into the receiver's arena, returning `Option(T)` with `None` meaning
-closed-and-drained. Channels can't be returned, stored, or captured; the
-creating scope frees the channel after the implicit joins above it, so the
-handle can never dangle.
+A channel is the one deliberately shared object — a bounded **lock-free**
+queue (a Vyukov MPMC ring: one CAS claims a cell, the deep copy runs with no
+lock held, a sequence store publishes; the uncontended path does zero
+syscalls), so value semantics outside it are untouched. `send` deep-copies
+the payload into the claimed cell's arena (channel memory is bounded by
+capacity × payload, for *every* element type) and `recv` copies out into the
+receiver's arena, returning `Option(T)` with `None` meaning
+closed-and-drained. On the 1M-message pipeline benchmark this is **2.6×
+faster than a hand-written C mutex ring** while still paying the two copies
+C doesn't (see `bench/conc/`). Channels can't be returned, stored, or
+captured; the creating scope frees the channel after the implicit joins
+above it, so the handle can never dangle.
+
+`select` waits on several channels at once — recv arms, plus optional
+`default` (non-blocking) and `closed` (every listed channel closed and
+drained) arms:
+
+```
+for true:
+    select:
+        recv(jobs, j):
+            handle(j)
+        recv(events, e):
+            note(e)
+        closed:
+            break
+```
 
 The price is stated, not hidden: every value crossing a thread boundary is
 a deep copy — the same rule as an ordinary call. `bench/conc/` measures it

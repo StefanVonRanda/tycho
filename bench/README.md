@@ -66,8 +66,9 @@ Not cleanly benchmarkable, and why (honest negative space):
 - ~~**Concurrency/parallelism**~~ — no longer a gap: `spawn`/`wait`,
   `parallel for`, and channels shipped (both compilers), and `conc/`
   measures them head-to-head — `parallel for` lands at exact C-pthreads
-  parity on the compute-bound reduction; the channel pipeline maps the
-  honest cost of the per-message deep copies vs C/Go/Rust. See
+  parity on the compute-bound reduction, and the lock-free channels beat a
+  hand-written C mutex ring 2.6x while still paying the per-message deep
+  copies (the remaining gap to Go is its userspace scheduler). See
   `conc/RESULTS.md`.
 
 See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's

@@ -35,29 +35,41 @@ payloads, checksum = total payload length.
 
 | lang | peak RSS | wall | checksum | payload discipline |
 |------|---------:|-----:|---------:|--------------------|
-| hier | 2.7 MB | 850 ms | 10888890 | deep copy in + deep copy out (value semantics) |
-| C    | 1.3 MB | 611 ms | 10888890 | raw pointer handoff, consumer frees |
+| hier | 2.8 MB | 242 ms | 10888890 | deep copy in + deep copy out (value semantics) |
+| C    | 1.5 MB | 630 ms | 10888890 | raw pointer handoff through a mutex ring, consumer frees |
 | Go   | 7.7 MB |  91 ms | 10888890 | string body shared under GC |
-| Rust | 2.1 MB | 141 ms | 10888890 | ownership move, no copy |
+| Rust | 2.1 MB | 143 ms | 10888890 | ownership move through a lock-wrapped mpsc |
 
-Honest reading, two separable effects:
+CC-5 replaced the mutex ring with a **Vyukov bounded MPMC queue**: each ring
+cell carries a sequence counter and its own arena, a sender claims a cell with
+one CAS and runs the deep copy with NO lock held (the claim makes the cell
+exclusive until the publish), and waiting is a spin -> yield -> timed-park
+ladder whose parked-waiter count gates the wake path — the uncontended fast
+path does zero syscalls. That took hier from 850 ms (mutex ring, copies under
+the lock) to 242 ms.
 
-1. **Primitive cost.** hier's channel is a mutex + condvars ring — the same
-   primitive as the hand-written C version, which lands at 611 ms. hier's
-   850 ms is 1.4x that; the delta is the two type-aware deep copies per
-   message plus the per-slot arena bookkeeping. That is the entire price of
-   "no dangling payload is expressible" — tycho documents exactly the
-   use-after-free this prevents, and covers only `str` payloads; hier's
-   copies cover every element type.
-2. **Scheduler gap.** Go's 9x lead over C (not just over hier) comes from
-   the goroutine scheduler: channel handoff parks/wakes goroutines in user
-   space instead of futex round-trips through the kernel. Rust's 141 ms
-   (ownership move through a lock-wrapped mpsc) brackets the same effect.
-   This is a CC-5 question (lighter wakeups, batched signals, possibly
-   spinning) — orthogonal to the memory model.
+Honest reading:
 
-Memory: hier holds 2.7 MB — bounded by design (cap x payload via per-slot
-arenas), 2.9x below Go's GC-driven 7.7 MB.
+1. **hier now beats the hand-written C mutex ring 2.6x** while still paying
+   two type-aware deep copies per message that C doesn't — the lock-free
+   claim/copy/publish structure more than buys back the copy cost. The
+   copies remain the entire price of "no dangling payload is expressible"
+   (covering every element type, not just strings).
+2. **The remaining 2.7x to Go** (242 vs 91 ms) is the userspace scheduler:
+   a goroutine handoff is a context-free switch, while hier's consumers are
+   OS threads that spin/yield between messages and contend on one dequeue
+   counter. Rust's 143 ms (lock-wrapped mpsc) now sits between hier and Go.
+   Closing further would mean batched dequeues or a thread-pool runtime —
+   possible, but no longer a memory-model question.
+
+Run-to-run variance on pipeline is ~±50 ms (4 consumers contending on the
+dequeue CAS); parreduce is stable. Memory: hier holds ~2.8 MB — bounded by
+design (cap x payload via per-cell arenas), 2.8x below Go's GC-driven 7.7 MB.
+
+`select` (CC-5) ships with the same machinery: recv arms + `default` +
+`closed` over a non-blocking `try_recv`, with a bounded pause ladder when
+every arm is open-but-empty (worst-case wake latency ~50us; a select cannot
+park on N condvars). See `tests/conc/select.hi`.
 
 ## Caveats
 

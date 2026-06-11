@@ -93,7 +93,7 @@ typedef enum {
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_BREAK, TK_CONTINUE,
-    TK_SPAWN, TK_PARALLEL,
+    TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
 } TokKind;
@@ -136,6 +136,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "continue")) return TK_CONTINUE;
     if (!strcmp(s, "spawn"))    return TK_SPAWN;
     if (!strcmp(s, "parallel")) return TK_PARALLEL;
+    if (!strcmp(s, "select"))   return TK_SELECT;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -933,7 +934,8 @@ struct Expr {
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
                S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN,
-               S_BREAK, S_CONTINUE } StmtKind;
+               S_BREAK, S_CONTINUE,
+               S_SELECT /* select over channel recv arms + default/closed (CC-5) */ } StmtKind;
 
 typedef struct Stmt Stmt;
 /* one arm of a `match`: a variant name (Some/None or an enum variant), the
@@ -953,7 +955,8 @@ struct Stmt {
     Type     mtypes[8];                  /* S_MDECL resolved element types */
     Stmt   **body; int nbody;
     Stmt   **els;  int nels;
-    MatchArm *arms; int narms;           /* S_MATCH */
+    MatchArm *arms; int narms;           /* S_MATCH / S_SELECT (variant = "recv"/"default"/"closed") */
+    Expr   **sel_ch;                     /* S_SELECT: per-arm channel expr (NULL for default/closed) */
     int      parallel;                   /* S_FORRANGE: `parallel for` (CC-3) */
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
 };
@@ -1693,6 +1696,43 @@ static Stmt *parse_stmt(Parser *ps) {
         ps->p++;
         Stmt *s = new_stmt(t->kind == TK_BREAK ? S_BREAK : S_CONTINUE, t->line);
         eat(ps, TK_NEWLINE, "newline");
+        return s;
+    }
+    if (t->kind == TK_SELECT) {          /* select over channels (CC-5): recv arms + default/closed */
+        ps->p++;
+        Stmt *s = new_stmt(S_SELECT, t->line);
+        eat(ps, TK_COLON, "':' before the select arms");
+        eat(ps, TK_NEWLINE, "newline");
+        eat(ps, TK_INDENT, "indented select arms");
+        int cap = 0;
+        while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+            if (accept(ps, TK_NEWLINE)) continue;
+            Tok *an = eat(ps, TK_IDENT, "a select arm: `recv(ch, x):`, `default:`, or `closed:`");
+            if (s->narms == cap) {
+                cap = cap ? cap * 2 : 4;
+                s->arms = (MatchArm *)xrealloc(s->arms, (size_t)cap * sizeof(MatchArm));
+                s->sel_ch = (Expr **)xrealloc(s->sel_ch, (size_t)cap * sizeof(Expr *));
+            }
+            MatchArm *arm = &s->arms[s->narms];
+            arm->variant = an->text; arm->nbinds = 0; arm->line = an->line;
+            Expr *che = NULL;
+            if (!strcmp(an->text, "recv")) {
+                eat(ps, TK_LPAREN, "'(' after recv");
+                che = parse_expr(ps);
+                eat(ps, TK_COMMA, "',' between the channel and the binding");
+                arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+                eat(ps, TK_RPAREN, "')'");
+            } else if (strcmp(an->text, "default") != 0 && strcmp(an->text, "closed") != 0) {
+                die_at(an->line, "a select arm is `recv(ch, x):`, `default:`, or `closed:`");
+            }
+            s->sel_ch[s->narms] = che;
+            s->narms++;
+            eat(ps, TK_COLON, "':' after the arm");
+            eat(ps, TK_NEWLINE, "newline");
+            arm->body = parse_block(ps, &arm->nbody);
+        }
+        eat(ps, TK_DEDENT, "end of the select arms");
+        if (s->narms == 0) die_at(t->line, "select needs at least one arm");
         return s;
     }
     if (t->kind == TK_MATCH) {
@@ -3670,6 +3710,28 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (resolve_expr(s->expr) != T_BOOL)
                 die_at(s->line, "for condition must be bool");
             resolve_block(s->body, s->nbody, ret);
+            break;
+        }
+        case S_SELECT: {   /* CC-5: blocks until a recv arm fires, all channels close+drain, or default */
+            int nrecv = 0, ndef = 0, nclosed = 0;
+            for (int i = 0; i < s->narms; i++) {
+                MatchArm *a = &s->arms[i];
+                if (!strcmp(a->variant, "recv")) {
+                    nrecv++;
+                    Type ct = resolve_expr(s->sel_ch[i]);
+                    if (!IS_CHAN(ct))
+                        die_at(a->line, "select recv needs a channel, got %s", type_name(ct));
+                    int m = vars_mark();
+                    vars_push(a->binds[0], chan_inner(ct), 1);
+                    resolve_block(a->body, a->nbody, ret);
+                    vars_restore(m);
+                } else {
+                    if (!strcmp(a->variant, "default")) ndef++; else nclosed++;
+                    resolve_block(a->body, a->nbody, ret);
+                }
+            }
+            if (nrecv == 0) die_at(s->line, "select needs at least one recv arm");
+            if (ndef > 1 || nclosed > 1) die_at(s->line, "select takes at most one default and one closed arm");
             break;
         }
         case S_FORRANGE: {
@@ -5859,6 +5921,55 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind); fprintf(o, "}\n");
             break;
         }
+        case S_SELECT: {   /* CC-5: try every recv arm; closed when ALL drain; else default or pause+retry.
+                            * A goto loop (not for(;;)) so a user break/continue in an arm body binds to
+                            * the USER'S enclosing loop, never to select's own retry machinery. */
+            int id = g_blk++;
+            indent(o, ind); fprintf(o, "{\n");
+            for (int i = 0; i < s->narms; i++)
+                if (s->sel_ch[i]) {   /* evaluate each channel expression exactly once */
+                    indent(o, ind + 1);
+                    fprintf(o, "HChan *_sc%d_%d = %s;\n", id, i, gen_expr(s->sel_ch[i], scope));
+                }
+            indent(o, ind + 1); fprintf(o, "int _ssp%d = 0, _open%d = 0;\n", id, id);
+            indent(o, ind + 1); fprintf(o, "_sel_retry_%d: ;\n", id);
+            indent(o, ind + 1); fprintf(o, "_open%d = 0;\n", id);
+            for (int i = 0; i < s->narms; i++) {
+                MatchArm *a = &s->arms[i];
+                if (!s->sel_ch[i]) continue;
+                Type it = chan_inner(s->sel_ch[i]->type);
+                indent(o, ind + 1);
+                fprintf(o, "{ %s_v; int _st = hier_chan_tryrecv_%d(_sc%d_%d, %s, &_v); if (_st == 1) {\n",
+                        c_type(it), CHAN_ID(s->sel_ch[i]->type), id, i, scope);
+                indent(o, ind + 2); fprintf(o, "%sh_%s = _v;\n", c_type(it), a->binds[0]);
+                int m = cv_mark();
+                cv_push(a->binds[0], scope);
+                gen_block(o, a->body, a->nbody, ind + 2, scope, ret);
+                cv_restore(m);
+                indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
+                indent(o, ind + 1); fprintf(o, "} if (_st == 0) _open%d = 1; }\n", id);
+            }
+            indent(o, ind + 1); fprintf(o, "if (!_open%d) {\n", id);
+            for (int i = 0; i < s->narms; i++)
+                if (!strcmp(s->arms[i].variant, "closed"))
+                    gen_block(o, s->arms[i].body, s->arms[i].nbody, ind + 2, scope, ret);
+            indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
+            indent(o, ind + 1); fprintf(o, "}\n");
+            int has_def = 0;
+            for (int i = 0; i < s->narms; i++)
+                if (!strcmp(s->arms[i].variant, "default")) {
+                    has_def = 1;
+                    gen_block(o, s->arms[i].body, s->arms[i].nbody, ind + 1, scope, ret);
+                    indent(o, ind + 1); fprintf(o, "goto _sel_done_%d;\n", id);
+                }
+            if (!has_def) {
+                indent(o, ind + 1); fprintf(o, "hier_select_pause(&_ssp%d);\n", id);
+                indent(o, ind + 1); fprintf(o, "goto _sel_retry_%d;\n", id);
+            }
+            indent(o, ind + 1); fprintf(o, "_sel_done_%d: ;\n", id);
+            indent(o, ind); fprintf(o, "}\n");
+            break;
+        }
         case S_FORRANGE: {
             if (s->parallel) { gen_parfor(o, s, ind, scope); break; }   /* CC-3 */
             int id = g_blk++;
@@ -6698,15 +6809,23 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * begin/commit pairs in the runtime bracket them). */
     for (int i = 0; i < g_nchantypes; i++) {
         Type it = g_chantypes[i].inner;
-        fprintf(o, "static void hier_chan_send_%d(HChan *_ch, %s_v) { Arena *_slot = hier_chan_send_begin(_ch); "
-                   "%s*_p = (%s*)arena_alloc(_slot, sizeof(%s)); *_p = %s; hier_chan_send_commit(_ch, _p); }\n",
+        /* the deep copy runs in the CLAIMED cell -- exclusive between claim
+         * and commit, no lock held (CC-5 lock-free fast path) */
+        fprintf(o, "static void hier_chan_send_%d(HChan *_ch, %s_v) { HCell *_c = hier_chan_send_cell(_ch); "
+                   "%s*_p = (%s*)arena_alloc(&_c->arena, sizeof(%s)); *_p = %s; hier_chan_send_commit(_ch, _c, _p); }\n",
                 i, c_type(it), c_type(it), c_type(it), c_type(it),
-                copy_into(it, "_slot", sfmt("%s", "_v")));
+                copy_into(it, "(&_c->arena)", sfmt("%s", "_v")));
         fprintf(o, "static int hier_chan_recv_%d(HChan *_ch, Arena *_dst, %s*_out) { "
-                   "void *_p = hier_chan_recv_begin(_ch); if (!_p) return 0; "
-                   "*_out = %s; hier_chan_recv_commit(_ch); return 1; }\n",
+                   "HCell *_c = hier_chan_recv_cell(_ch); if (!_c) return 0; "
+                   "*_out = %s; hier_chan_recv_commit(_ch, _c); return 1; }\n",
                 i, c_type(it),
-                copy_into(it, "_dst", sfmt("(*(%s*)_p)", c_type(it))));
+                copy_into(it, "_dst", sfmt("(*(%s*)_c->val)", c_type(it))));
+        /* select arm: 1 = got (value copied out), 0 = open but empty, 2 = closed + drained */
+        fprintf(o, "static int hier_chan_tryrecv_%d(HChan *_ch, Arena *_dst, %s*_out) { "
+                   "HCell *_c; int _st = hier_chan_try_recv(_ch, &_c); if (_st != 1) return _st; "
+                   "*_out = %s; hier_chan_recv_commit(_ch, _c); return 1; }\n",
+                i, c_type(it),
+                copy_into(it, "_dst", sfmt("(*(%s*)_c->val)", c_type(it))));
     }
     if (g_nchantypes) fputs("\n", o);
     for (int k = 0; k < g_nfnval; k++) {   /* fat-value thunks: <name>__clo wraps h_<name>, ignoring env */

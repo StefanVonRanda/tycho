@@ -27,6 +27,13 @@
  * and uses values, as if the language were dynamically managed.
  */
 
+/* strict -std=c11 (__STRICT_ANSI__) hides the POSIX declarations the
+ * concurrency runtime needs (clock_gettime, sched_yield, nanosleep, ...);
+ * _DEFAULT_SOURCE restores glibc's default visibility. Must precede every
+ * include -- this runtime is the first thing in each generated file. */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +42,9 @@
 #include <dirent.h>
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
+#include <stdatomic.h> /* lock-free channel fast path (CC-5) */
+#include <sched.h>     /* sched_yield in the spin-escalation ladder */
+#include <time.h>      /* timed parking */
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
 
@@ -317,74 +327,206 @@ static void hier_task_finish(HTask *t) {
  * every task that could hold the handle has already joined by then.
  * recv on a closed, drained channel reports 0 (surfaced as None in hier);
  * send on a closed channel and double close die loudly. */
+/* CC-5: the ring is a Vyukov bounded MPMC queue. Each cell carries a sequence
+ * counter and its OWN arena: a sender claims a cell with one CAS, deep-copies
+ * the payload into the cell arena with NO lock held (the claim makes the cell
+ * exclusive until the seq store publishes it), then releases the cell to
+ * receivers; a receiver symmetrically claims, copies out, and recycles the
+ * cell back to senders. Waiting is a spin -> sched_yield -> timed-park ladder;
+ * the parked-waiter COUNT gates the publisher's wake path, so the uncontended
+ * fast path does zero syscalls and takes zero locks (the mutex/cond exist only
+ * for parking). The 1ms timed wait makes the check-then-park race harmless
+ * (worst case one extra retry), never a lost wakeup. Capacity rounds up to a
+ * power of two (still bounded; blocking threshold may exceed the request). */
 typedef struct {
-    void **vals;          /* ring: slot value pointers (into the slot arenas) */
-    Arena *slots;         /* one arena per ring slot */
-    long   cap, head, count;
-    int    closed;
-    pthread_mutex_t mu;
-    pthread_cond_t  not_full, not_empty;
+    _Atomic long seq;     /* Vyukov sequence: ==pos -> sender may claim; ==pos+1 -> receiver may */
+    long  pos;            /* the claim ticket, stashed between claim and commit (cell-exclusive) */
+    void *val;
+    Arena arena;          /* payload bytes live here from send-copy until the cell is reused */
+} HCell;
+
+typedef struct {
+    HCell *cells;
+    long   cap;                    /* power of two >= requested capacity */
+    _Atomic long enq;              /* next send ticket */
+    _Atomic long deq;              /* next recv ticket */
+    _Atomic int  closed;
+    _Atomic int  waiters;          /* parked threads; >0 makes publishers take the wake slow path */
+    pthread_mutex_t mu;            /* parking only -- never held on the data path */
+    pthread_cond_t  cv;
 } HChan;
 
 static HChan *hier_chan_new(long cap) {
     if (cap < 1) { fprintf(stderr, "hier: channel capacity must be >= 1\n"); exit(1); }
+    long c2 = 1;
+    while (c2 < cap) c2 <<= 1;
     HChan *ch = (HChan *)malloc(sizeof(HChan));
     if (!ch) hier_oom();
-    ch->vals = (void **)malloc((size_t)cap * sizeof(void *));
-    ch->slots = (Arena *)malloc((size_t)cap * sizeof(Arena));
-    if (!ch->vals || !ch->slots) hier_oom();
-    for (long i = 0; i < cap; i++) ch->slots[i] = arena_new(0);
-    ch->cap = cap; ch->head = 0; ch->count = 0; ch->closed = 0;
+    ch->cells = (HCell *)malloc((size_t)c2 * sizeof(HCell));
+    if (!ch->cells) hier_oom();
+    for (long i = 0; i < c2; i++) {
+        atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed);
+        ch->cells[i].pos = 0;
+        ch->cells[i].val = NULL;
+        ch->cells[i].arena = arena_new(0);
+    }
+    ch->cap = c2;
+    atomic_store_explicit(&ch->enq, 0, memory_order_relaxed);
+    atomic_store_explicit(&ch->deq, 0, memory_order_relaxed);
+    atomic_store_explicit(&ch->closed, 0, memory_order_relaxed);
+    atomic_store_explicit(&ch->waiters, 0, memory_order_relaxed);
     pthread_mutex_init(&ch->mu, NULL);
-    pthread_cond_init(&ch->not_full, NULL);
-    pthread_cond_init(&ch->not_empty, NULL);
+    pthread_cond_init(&ch->cv, NULL);
     return ch;
 }
-/* lock; wait for space; reset the claimed slot's arena; RETURNS WITH THE
- * MUTEX HELD -- the generated wrapper copies the payload in, then commits. */
-static Arena *hier_chan_send_begin(HChan *ch) {
+
+/* Park after the spin budget. The 1ms cap turns the publisher's
+ * check-waiters-then-skip race into at most one extra retry. */
+static void hier_chan_park(HChan *ch) {
     pthread_mutex_lock(&ch->mu);
-    while (ch->count == ch->cap && !ch->closed) pthread_cond_wait(&ch->not_full, &ch->mu);
-    if (ch->closed) { fprintf(stderr, "hier: send on a closed channel\n"); exit(1); }
-    long tail = (ch->head + ch->count) % ch->cap;
-    arena_reset(&ch->slots[tail]);
-    return &ch->slots[tail];
-}
-static void hier_chan_send_commit(HChan *ch, void *val) {
-    long tail = (ch->head + ch->count) % ch->cap;
-    ch->vals[tail] = val;
-    ch->count++;
-    pthread_cond_signal(&ch->not_empty);
+    atomic_fetch_add_explicit(&ch->waiters, 1, memory_order_relaxed);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += 1000000;
+    if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+    pthread_cond_timedwait(&ch->cv, &ch->mu, &ts);
+    atomic_fetch_sub_explicit(&ch->waiters, 1, memory_order_relaxed);
     pthread_mutex_unlock(&ch->mu);
 }
-/* lock; wait for a value or close. NULL => closed and drained (mutex
- * released); otherwise returns the head slot's value WITH THE MUTEX HELD. */
-static void *hier_chan_recv_begin(HChan *ch) {
-    pthread_mutex_lock(&ch->mu);
-    while (ch->count == 0 && !ch->closed) pthread_cond_wait(&ch->not_empty, &ch->mu);
-    if (ch->count == 0) { pthread_mutex_unlock(&ch->mu); return NULL; }
-    return ch->vals[ch->head];
+
+static void hier_chan_wake(HChan *ch) {        /* publisher slow path: only when someone is parked */
+    if (atomic_load_explicit(&ch->waiters, memory_order_relaxed) > 0) {
+        pthread_mutex_lock(&ch->mu);
+        pthread_cond_broadcast(&ch->cv);
+        pthread_mutex_unlock(&ch->mu);
+    }
 }
-static void hier_chan_recv_commit(HChan *ch) {
-    ch->head = (ch->head + 1) % ch->cap;
-    ch->count--;
-    pthread_cond_signal(&ch->not_full);
-    pthread_mutex_unlock(&ch->mu);
+
+/* Claim a send cell: spins, escalates, parks; dies on a closed channel. The
+ * returned cell is EXCLUSIVE until hier_chan_send_commit -- the caller copies
+ * the payload into c->arena (already recycled here) with no lock held. */
+static HCell *hier_chan_send_cell(HChan *ch) {
+    long pos = atomic_load_explicit(&ch->enq, memory_order_relaxed);
+    int spins = 0;
+    for (;;) {
+        HCell *c = &ch->cells[pos & (ch->cap - 1)];
+        long d = atomic_load_explicit(&c->seq, memory_order_acquire) - pos;
+        if (d == 0) {
+            if (atomic_compare_exchange_weak_explicit(&ch->enq, &pos, pos + 1,
+                                                      memory_order_relaxed, memory_order_relaxed)) {
+                if (atomic_load_explicit(&ch->closed, memory_order_acquire)) {
+                    fprintf(stderr, "hier: send on a closed channel\n"); exit(1);
+                }
+                arena_free(&c->arena);          /* recycle the previous payload's bytes */
+                c->pos = pos;
+                return c;
+            }
+            /* CAS failure reloaded pos; retry */
+        } else if (d < 0) {                     /* full */
+            if (atomic_load_explicit(&ch->closed, memory_order_acquire)) {
+                fprintf(stderr, "hier: send on a closed channel\n"); exit(1);
+            }
+            if (++spins < 256) { /* tight spin */ }
+            else if (spins < 512) sched_yield();
+            else { hier_chan_park(ch); spins = 0; }
+            pos = atomic_load_explicit(&ch->enq, memory_order_relaxed);
+        } else {
+            pos = atomic_load_explicit(&ch->enq, memory_order_relaxed);
+        }
+    }
 }
+
+static void hier_chan_send_commit(HChan *ch, HCell *c, void *val) {
+    c->val = val;
+    atomic_store_explicit(&c->seq, c->pos + 1, memory_order_release);   /* publish to receivers */
+    hier_chan_wake(ch);
+}
+
+/* Claim the next ready cell, or NULL once the channel is closed AND drained
+ * (no committed value at deq and nothing in flight: enq == deq). The cell is
+ * exclusive until hier_chan_recv_commit -- copy the value out first. */
+static HCell *hier_chan_recv_cell(HChan *ch) {
+    long pos = atomic_load_explicit(&ch->deq, memory_order_relaxed);
+    int spins = 0;
+    for (;;) {
+        HCell *c = &ch->cells[pos & (ch->cap - 1)];
+        long d = atomic_load_explicit(&c->seq, memory_order_acquire) - (pos + 1);
+        if (d == 0) {
+            if (atomic_compare_exchange_weak_explicit(&ch->deq, &pos, pos + 1,
+                                                      memory_order_relaxed, memory_order_relaxed)) {
+                c->pos = pos;
+                return c;
+            }
+        } else if (d < 0) {                     /* nothing committed at pos */
+            if (atomic_load_explicit(&ch->closed, memory_order_acquire)
+                && atomic_load_explicit(&ch->enq, memory_order_acquire) == pos)
+                return NULL;                    /* closed + drained */
+            if (++spins < 256) { /* tight spin */ }
+            else if (spins < 512) sched_yield();
+            else { hier_chan_park(ch); spins = 0; }
+            pos = atomic_load_explicit(&ch->deq, memory_order_relaxed);
+        } else {
+            pos = atomic_load_explicit(&ch->deq, memory_order_relaxed);
+        }
+    }
+}
+
+static void hier_chan_recv_commit(HChan *ch, HCell *c) {
+    atomic_store_explicit(&c->seq, c->pos + ch->cap, memory_order_release);   /* recycle to senders */
+    hier_chan_wake(ch);
+}
+
+/* Non-blocking receive for `select`: 1 = got a cell (commit it after the
+ * copy-out), 0 = open but empty right now, 2 = closed and drained. */
+static int hier_chan_try_recv(HChan *ch, HCell **out) {
+    long pos = atomic_load_explicit(&ch->deq, memory_order_relaxed);
+    for (;;) {
+        HCell *c = &ch->cells[pos & (ch->cap - 1)];
+        long d = atomic_load_explicit(&c->seq, memory_order_acquire) - (pos + 1);
+        if (d == 0) {
+            if (atomic_compare_exchange_weak_explicit(&ch->deq, &pos, pos + 1,
+                                                      memory_order_relaxed, memory_order_relaxed)) {
+                c->pos = pos;
+                *out = c;
+                return 1;
+            }
+        } else if (d < 0) {
+            if (atomic_load_explicit(&ch->closed, memory_order_acquire)
+                && atomic_load_explicit(&ch->enq, memory_order_acquire) == pos)
+                return 2;
+            return 0;
+        } else {
+            pos = atomic_load_explicit(&ch->deq, memory_order_relaxed);
+        }
+    }
+}
+
+/* select's wait ladder when every arm is open-but-empty: tight retries, then
+ * yields, then a bounded sleep -- a select cannot park on N condvars, so this
+ * caps both the idle CPU burn and the worst-case wake latency (~50us). */
+static void hier_select_pause(int *spins) {
+    (*spins)++;
+    if (*spins < 64) return;
+    if (*spins < 256) { sched_yield(); return; }
+    struct timespec ts = { 0, 50000 };
+    nanosleep(&ts, NULL);
+}
+
 static void hier_chan_close(HChan *ch) {
     pthread_mutex_lock(&ch->mu);
-    if (ch->closed) { fprintf(stderr, "hier: channel already closed\n"); exit(1); }
-    ch->closed = 1;
-    pthread_cond_broadcast(&ch->not_empty);   /* drain-then-None for blocked receivers */
-    pthread_cond_broadcast(&ch->not_full);    /* blocked senders die loudly */
+    if (atomic_load_explicit(&ch->closed, memory_order_relaxed)) {
+        fprintf(stderr, "hier: channel already closed\n"); exit(1);
+    }
+    atomic_store_explicit(&ch->closed, 1, memory_order_release);
+    pthread_cond_broadcast(&ch->cv);            /* receivers drain then see None; senders die loudly */
     pthread_mutex_unlock(&ch->mu);
 }
+
 static void hier_chan_free(HChan *ch) {
-    for (long i = 0; i < ch->cap; i++) arena_free(&ch->slots[i]);
-    free(ch->vals); free(ch->slots);
+    for (long i = 0; i < ch->cap; i++) arena_free(&ch->cells[i].arena);
+    free(ch->cells);
     pthread_mutex_destroy(&ch->mu);
-    pthread_cond_destroy(&ch->not_full);
-    pthread_cond_destroy(&ch->not_empty);
+    pthread_cond_destroy(&ch->cv);
     free(ch);
 }
 

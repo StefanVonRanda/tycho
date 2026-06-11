@@ -1,6 +1,22 @@
 # Concurrency for hier — research & staged design
 
-Status: CC-0 through CC-4 SHIPPED IN BOTH COMPILERS. hierc0 (self-hosted)
+Status: CC-0 through CC-5 SHIPPED IN BOTH COMPILERS.
+CC-5: channels became a LOCK-FREE Vyukov bounded MPMC ring — per-cell
+sequence atomics + per-cell arenas, the deep copy runs in the claimed cell
+with no lock held, spin -> sched_yield -> 1ms-timed-park waiting with a
+parked-waiter count gating the wake path (zero syscalls uncontended;
+capacity rounds up to a power of two). Pipeline benchmark: 850 -> 242 ms,
+now 2.6x FASTER than the hand-written C mutex ring while still paying both
+deep copies; remaining 2.7x to Go is its userspace scheduler (see
+bench/conc/RESULTS.md). Plus `select` over recv arms with optional
+`default:` and `closed:` (all channels closed+drained) arms, built on a
+non-blocking try_recv + a bounded pause ladder (~50us worst-case wake;
+a select cannot park on N condvars); emitted as a goto loop so user
+break/continue in arm bodies bind to the user's enclosing loop. The
+generated programs need _DEFAULT_SOURCE before the includes (strict
+-std=c11 hides clock_gettime/sched_yield/nanosleep — the runtime defines
+it). Both compilers; select.hi in the parity differential.
+Earlier status: hierc0 (self-hosted)
 reproduces the full model in its own emitted-C dialect: ESpawn/SParFor AST
 variants (every exhaustive match extended), the lift pass assigns spawn-site
 ids, extracts parallel-for chunk procs (__par<N>) and registers SpawnInfo/
