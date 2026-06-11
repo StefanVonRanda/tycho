@@ -1,0 +1,6 @@
+fn f(n: int) -> int:
+    return n
+fn main():
+    t := spawn f(7)
+    print(str(wait(t)))
+    print(str(wait(t)))

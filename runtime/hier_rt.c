@@ -251,13 +251,14 @@ void arena_free(Arena *a) {
  * result OUT into the waiting scope's arena before freeing the whole tree.
  * After copy-in, spawner and task share zero bytes -- no locks needed beyond
  * the ones inside pthread create/join. */
-typedef struct { pthread_t th; Arena root; void *ret; } HTask;
+typedef struct { pthread_t th; Arena root; void *ret; int done; } HTask;
 
 static HTask *hier_task_new(void) {
     HTask *t = (HTask *)malloc(sizeof(HTask));
     if (!t) hier_oom();
     t->root = arena_new(0);
     t->ret = NULL;
+    t->done = 0;
     return t;
 }
 
@@ -277,9 +278,28 @@ static void hier_task_start(HTask *t, void *(*fn)(void *), void *arg) {
     }
 }
 
-static void hier_task_join(HTask *t) { pthread_join(t->th, NULL); }
+/* CC-2 affine backstop: a named task's handle struct stays alive until its
+ * variable's scope exit (hier_task_finish below frees it), so a second wait
+ * lands HERE on done==1 and dies loudly -- a defined error, never a freed
+ * read or a double pthread_join (UB). */
+static void hier_task_join(HTask *t) {
+    if (t->done) { fprintf(stderr, "hier: task already waited\n"); exit(1); }
+    pthread_join(t->th, NULL);
+    t->done = 1;
+}
 
 static void hier_task_free(HTask *t) { arena_free(&t->root); free(t); }
+
+/* CC-2 implicit join, emitted by the compiler at every scope exit (block end,
+ * break/continue, early return, proc end) for each task variable dying there:
+ * join if never waited, then release everything. arena_free on an already-
+ * freed root is a no-op (head/bkt/freelist are NULLed), so a waited task --
+ * whose tree was reclaimed eagerly at the wait -- just frees its handle. */
+static void hier_task_finish(HTask *t) {
+    if (!t->done) { pthread_join(t->th, NULL); t->done = 1; }
+    arena_free(&t->root);
+    free(t);
+}
 
 /* Allocate a string with `n` data bytes: an 8-byte length header sits just
  * before the returned pointer (hier_str_len reads it in O(1)), the data is

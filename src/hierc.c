@@ -2745,6 +2745,8 @@ static Type resolve_expr(Expr *e) {
                 if (e->nargs != 1) die_at(e->line, "wait(t) takes one task");
                 Type at_ = resolve_expr(e->args[0]);
                 if (!IS_TASK(at_)) die_at(e->line, "wait(t) takes a task from spawn, got %s", type_name(at_));
+                if (e->args[0]->kind != E_IDENT && e->args[0]->kind != E_SPAWN)
+                    die_at(e->line, "wait takes a task variable or a spawn expression");
                 return e->type = task_inner(at_);
             }
             /* str is polymorphic (int or float); to_int/to_float convert
@@ -3096,6 +3098,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
                        "(x : Result(T, E) = %s)", t == T_OK_PARTIAL ? "Ok(...)" : "Err(...)",
                        t == T_OK_PARTIAL ? "Ok(...)" : "Err(...)");
             }
+            /* CC-2 affine tasks: a handle is born from spawn and dies at its
+             * one wait (or the scope-exit implicit join). Binding an existing
+             * task to a second name would alias it -> two waits possible. */
+            if (IS_TASK(t) && s->expr->kind != E_SPAWN)
+                die_at(s->line, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))");
             s->decl_type = t;
             vars_push(s->name, t, 1);
             break;
@@ -3144,6 +3151,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (sg) die_at(s->line, "assignment to unknown variable '%s'; did you mean '%s'?", s->name, sg);
                 die_at(s->line, "assignment to unknown variable '%s'", s->name);
             }
+            if (IS_TASK(vt))   /* CC-2: rebinding would orphan the running task (or alias another) */
+                die_at(s->line, "a task variable cannot be reassigned -- each task is waited exactly once");
             Type t = resolve_exp(s->expr, vt);
             if (t != vt)
                 die_at(s->line, "cannot assign %s to '%s' of type %s",
@@ -3324,7 +3333,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_EXPR:
-            resolve_expr(s->expr);
+            if (IS_TASK(resolve_expr(s->expr)))   /* CC-2: a discarded handle could never be waited */
+                die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
             break;
     }
 }
@@ -4223,7 +4233,14 @@ static char *gen_call(Expr *e, const char *arena) {
         Type rt = task_inner(e->args[0]->type);
         char *tv = gen_expr(e->args[0], arena);
         char *res = copy_into(rt, arena, sfmt("(*(%s*)_tk->ret)", c_type(rt)));
-        return sfmt("({ HTask *_tk = %s; hier_task_join(_tk); %s_w = %s; hier_task_free(_tk); _w; })",
+        if (e->args[0]->kind == E_SPAWN)   /* anonymous wait(spawn ...): unaliasable -- free everything now */
+            return sfmt("({ HTask *_tk = %s; hier_task_join(_tk); %s_w = %s; hier_task_free(_tk); _w; })",
+                        tv, c_type(rt), res);
+        /* named task var (CC-2): reclaim the arena tree eagerly, but keep the
+         * handle struct alive until the variable's scope-exit hier_task_finish
+         * -- that makes a second wait a defined runtime error (done flag), and
+         * the finish's arena_free of the already-freed root is a no-op. */
+        return sfmt("({ HTask *_tk = %s; hier_task_join(_tk); %s_w = %s; arena_free(&_tk->root); _w; })",
                     tv, c_type(rt), res);
     }
     if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
@@ -4627,6 +4644,26 @@ static void ascope_push(const char *a) {
     g_ascope[g_nascope++] = a;
 }
 
+/* Live task-handle locals (CC-2 implicit join). Every scope exit emits
+ * hier_task_finish for the tasks dying there -- gen_block covers normal block
+ * ends (incl. each loop iteration and the proc body), return_frees covers
+ * early return + or_return, and break/continue cover loop escapes via the
+ * loop-entry mark. So a function can never return while its tasks run, and
+ * an un-waited task can never leak or detach. Reset per proc. */
+static const char *g_taskvars[256];
+static int g_ntaskvars = 0;
+static int g_loop_taskmark[64];   /* g_ntaskvars at each enclosing loop's body entry */
+static void taskvar_push(const char *cname) {
+    if (g_ntaskvars >= 256) { fprintf(stderr, "hierc: too many live task variables\n"); exit(1); }
+    g_taskvars[g_ntaskvars++] = cname;
+}
+static char *task_finishes_from(int mark) {   /* "" when none are dying */
+    char *s = sfmt("%s", "");
+    for (int i = g_ntaskvars - 1; i >= mark; i--)
+        s = sfmt("%shier_task_finish(%s); ", s, g_taskvars[i]);
+    return s;
+}
+
 /* The free sequence an (early) return must run: every enclosing block arena
  * innermost-first, then the proc's own _scope. The return value already lives
  * in _parent (built or deep-copied there), which strictly outlives all of
@@ -4634,7 +4671,7 @@ static void ascope_push(const char *a) {
  * level (g_nascope == 0) this is exactly "arena_free(&_scope);" — unchanged,
  * so a top-level return emits byte-identical C to before. */
 static char *return_frees(void) {
-    char *s = sfmt("%s", "");
+    char *s = task_finishes_from(0);   /* implicit join: a return first joins every live task (CC-2) */
     for (int i = g_nascope - 1; i >= 0; i--)
         s = sfmt("%sarena_free(%s); ", s, g_ascope[i]);
     return sfmt("%sarena_free(&_scope);", s);
@@ -4695,6 +4732,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     g_cur_scope = scope;
     switch (s->kind) {
         case S_DECL: {
+            if (IS_TASK(s->decl_type))   /* CC-2: track for implicit join at this var's scope exit */
+                taskvar_push(sfmt("h_%s", s->name));
             /* return-slot optimization: a function-top-level heap local that
              * is returned by name is built directly in the caller's arena, so
              * the eventual `return` is a no-op move instead of a deep copy.
@@ -5296,7 +5335,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* if/match blocks open no arena (they share the loop's scratch), and
              * the loop arena is arena_reset at the top of each iteration and
              * arena_free'd once after the loop -- so a bare C break/continue
-             * reclaims correctly with no extra cleanup. */
+             * reclaims correctly with no extra cleanup. Tasks are the exception
+             * (CC-2): a handle declared since this loop's body entry must be
+             * finished here, because the jump skips the block-end finishes. */
+            { int tmark = g_loop_taskmark[g_loop_depth - 1];
+              if (g_ntaskvars > tmark) { indent(o, ind); fprintf(o, "%s\n", task_finishes_from(tmark)); } }
             indent(o, ind); fprintf(o, "%s;\n", s->kind == S_BREAK ? "break" : "continue");
             break;
         }
@@ -5310,6 +5353,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             char *ss = sfmt("&_scr%d", id);
             ascope_push(ss);   /* a return inside the loop must free _scrN too */
+            g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
             g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
             g_loop_depth--;
@@ -5337,6 +5381,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             int m = cv_mark();
             cv_push(s->name, ss);   /* loop var is an int value; owner is irrelevant but tracked */
             ascope_push(ss);        /* a return inside the loop must free _scrN too */
+            g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
             g_loop_depth++;         /* moves are unsafe inside a loop (single read runs N times) */
             /* bounds-check elision: `for i in range(len(A)):` proves A[i] in-range
              * for the body, provided the body never reassigns/shadows A or i and
@@ -5368,7 +5413,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
 static void gen_block(FILE *o, Stmt **body, int n, int ind,
                       const char *scope, Type ret) {
     int m = cv_mark();
+    int tm = g_ntaskvars;
     for (int i = 0; i < n; i++) gen_stmt(o, body[i], ind, scope, ret);
+    if (g_ntaskvars > tm) {   /* CC-2 implicit join: tasks declared in this block die here
+                               * (after a trailing return this is dead C -- the return path
+                               * already finished them via return_frees) */
+        indent(o, ind); fprintf(o, "%s\n", task_finishes_from(tm));
+        g_ntaskvars = tm;
+    }
     cv_restore(m);   /* variables declared in this block go out of scope */
 }
 
@@ -5413,6 +5465,7 @@ static void gen_proc(FILE *o, Proc *pr) {
     g_loop_depth = 0;
     g_ncv = 0;
     g_nascope = 0;   /* no enclosing block arenas at the proc body top level */
+    g_ntaskvars = 0; /* CC-2: no live tasks at proc entry */
     /* return-slot optimization: which top-level locals escape via return */
     g_nesc = 0;
     collect_escapes(pr->body, pr->nbody);

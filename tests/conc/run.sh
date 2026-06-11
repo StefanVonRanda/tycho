@@ -45,6 +45,21 @@ for f in tests/conc/*.hi; do
     if [ $ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 done
 
+# abort fixtures: must compile, then DIE at runtime with the expected message
+# (the CC-2 double-wait backstop -- a defined loud failure, never UB).
+for f in tests/conc/abort/*.hi; do
+    name=abort/$(basename "$f" .hi)
+    if ! $HIERC "$f" -o "$TMP/ab" >/dev/null 2>&1; then
+        note "$name" "hierc"; fail=$((fail+1)); continue
+    fi
+    "$TMP/ab" >/dev/null 2>"$TMP/ab.err"
+    if [ $? -eq 0 ] || ! grep -q "task already waited" "$TMP/ab.err"; then
+        note "$name" "expected runtime die 'task already waited'"; fail=$((fail+1))
+    else
+        pass=$((pass+1))
+    fi
+done
+
 for f in tests/conc/reject/*.hi; do
     name=reject/$(basename "$f" .hi)
     if $HIERC "$f" -o "$TMP/rej" >/dev/null 2>&1; then

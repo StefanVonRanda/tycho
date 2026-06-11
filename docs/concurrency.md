@@ -1,11 +1,17 @@
 # Concurrency for hier — research & staged design
 
-Status: CC-0 and CC-1 SHIPPED in hierc (C compiler) + runtime — `spawn f(args)`
-/ `Task[T]` / `wait(t)` / `t.wait()`, thread-per-spawn, copy-in/copy-out,
-thread-local block pool. Gated by `make conc` (tests/conc/: native + ASan/LSan
-+ TSan + 6 reject fixtures); kept OUT of tests/*.hi and `make ci` until hierc0
-parity lands (the fixpoint differential runs those fixtures through both
-compilers). hierc0 and CC-2+ still open. Goal: a concurrency model that
+Status: CC-0, CC-1 and CC-2 SHIPPED in hierc (C compiler) + runtime —
+`spawn f(args)` / `Task[T]` / `wait(t)` / `t.wait()`, thread-per-spawn,
+copy-in/copy-out, thread-local block pool. CC-2 affine tasks: a handle cannot
+be copied/re-bound/reassigned/discarded (compile errors); every scope exit
+(block end, loop iteration, break/continue, early return/or_return, proc end)
+implicitly joins+frees the tasks dying there (gen_block + return_frees +
+loop-entry marks); a waited handle stays alive to its scope exit so a second
+wait dies loudly at runtime ("task already waited") instead of UB. Gated by
+`make conc` (tests/conc/: native + ASan/LSan + TSan positives, 9 reject + 1
+abort fixtures); kept OUT of tests/*.hi and `make ci` until hierc0 parity
+lands (the fixpoint differential runs those fixtures through both compilers).
+hierc0 parity and CC-3+ still open. Goal: a concurrency model that
 *preserves the thesis* — value semantics, implicit arenas, zero manual
 memory management, no GC/RC — rather than bolting Go/Rust machinery on top.
 
