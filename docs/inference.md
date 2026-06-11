@@ -115,44 +115,96 @@ build the Sig table from them up front, before bodies), they are what
 keeps errors local, and eliding them re-imports the generalization
 problem the moment two call sites disagree.
 
-## 5. Recommendation: spread the existing bidirectional channel
+## 5. The answer: bidirectional (local) type inference
 
-The `resolve_exp(e, expected)` mechanism already in both compilers covers
-the real pain if extended to more positions — no type variables, no
-unification, no new phase ordering, errors stay on the line:
+If not HM, then the mechanism is **bidirectional typing** (Pierce &
+Turner's *Local Type Inference*, 2000) — the road taken in practice by
+Kotlin, Scala, TypeScript's contextual typing, and operationally by Zig's
+result-location semantics. Two modes, no type variables ever:
 
-1. **Empty literals from expected type** (the 289 sites):
-   `xs : [int] = []`, `f([])` against a `[int]` param, `return []`
-   against the return type, `push`-arg positions. The literal types
-   itself from context exactly like `None` already does.
-2. **`channel(T, cap)` element elision where the decl is annotated**
-   (`ch : Channel(int) = channel(4)`) — symmetric with Option today.
-   (Low value; the current form is fine.)
-3. **Lambda parameter elision against an expected fn type**:
-   `apply(fn(x): x + 1, 5)` where `apply` declares `fn(int)->int` — the
-   expected type supplies param types. This is classic *bidirectional*
-   typing (Pierce-Turner local type inference), not HM, and it composes
-   with everything because the lambda's type is fully determined before
-   its body resolves.
-4. Keep `Some`/`Ok`/`Err`/`None` context-fixing as is; extend the same
-   sentinel trick to array literals of `None` (`[None, Some(3)]`) if it
-   ever bites.
+- **synthesis (⇑)** — bottom-up, "what type does this expression have?" —
+  what hier does everywhere today;
+- **checking (⇓)** — top-down, "this expression sits in a position whose
+  type is known; push that expectation into it."
 
-Each item is a contained, per-site change in both compilers with the
-existing test/fixpoint gates — the same shape as every shipped feature —
-rather than a cross-cutting inference engine.
+hier already runs checking mode in a handful of places — `resolve_exp(e,
+expected)` is what fixes `None` against `Option(T)`, completes partial
+`Ok`/`Err` against return types, and types match payloads. The design is
+to make this channel *systematic*: every position with a known
+destination type supplies an expectation, and a defined set of
+expressions consume one.
 
-## 6. Bottom line
+**Positions that supply an expected type** (most already plumbed):
+typed decls, assignment to an existing variable, call arguments (the
+param type), `return` (the fn's return type), field-set / index-set /
+`push` / `send` (the field / element / payload type), struct, enum,
+tuple, and array-literal construction arguments (component-wise), and
+the right operand of `==` (the left synthesizes).
 
-- **Full HM: no.** It contradicts the no-generics decision, and its only
-  escape hatches (monomorphization pass / uniform boxing) are
-  respectively a huge dual-compiler phase and a direct attack on the
-  arena thesis. Type-directed UFCS dispatch and the resolve-time AST
-  rewrites make deferred typing a structural rewrite of both compilers.
-- **Local unification: feasible, declined.** All of HM's implementation
-  cost minus most of its benefit; the corpus shows the annotations it
-  would remove number in the dozens.
-- **Do instead:** extend the existing expected-type channel to empty
-  literals and lambda parameters (§5) when ergonomics demand it. That is
-  bidirectional *checking*, hier already does it for Option/Result, and
-  it delivers the visible wins at per-feature cost.
+**Expressions that consume one:**
+
+| expression | under expectation | example that becomes legal |
+|---|---|---|
+| `[]` / `[:]` empty literals | takes the expected array/map type | `xs : [int] = []`, `f([])`, `return []`, `push(grid, [])` |
+| `None` / `Ok(v)` / `Err(e)` | already shipped | — |
+| integer literals | adapt to `float` in a float context (value-directional, literals only — never variables, never float→int) | `f + 2`, `sqrt(2)`, `scale(xs, 3)` |
+| array/map/tuple literals | recurse the expectation into elements | `[None, Some(3)]`, `((1, 2.5), [])` |
+| lambda literals | params + return from the expected `fn` type | `iter.map(xs, fn(x): x * 2)` |
+
+**Why this fits hier where HM doesn't:**
+
+- *Ground monotypes at every line.* An expression is typed the moment it
+  is visited — synthesized or checked, never deferred. `type_is_heap`,
+  `copy_into`, the monomorphized families, move-on-last-use: all
+  untouched.
+- *Type-directed dispatch stays eager.* UFCS receivers always
+  **synthesize** (the rule), so `x.foo()` resolves exactly as today;
+  expectations only flow *down* into literal-ish constructs that cannot
+  dispatch anything.
+- *Error locality.* If neither mode grounds a type, the error is at that
+  line — "cannot type `[]` here: no expected type" — never a unification
+  residue two functions away.
+- *It is the same implementation shape hier always lands*: per-site
+  extensions of an existing mechanism, in both compilers, gated by
+  test/fixpoint. (hierc0 note: its `type_of`/`gen_rhs` lack an expected
+  parameter — thread a `want: string` ("" = none) through the consuming
+  sites; contained, unlike a solver.)
+
+**What stays annotated — the seeds.** Function signatures (they are the
+module interface; packages build the Sig table from them before any body
+is typed, and they are what keeps errors local). And a *bare*
+`xs := []` or `t := None` with no context on the same line — annotate the
+decl or initialize meaningfully... unless stage B-3:
+
+**Optional extension — block-local grounding (B-3).** For exactly the
+bare-incomplete-decl case, a flow-sensitive rule with no unification: the
+decl defers, the first *grounding* use in the same block fixes the type
+(`xs := []` ... `push(xs, 3)` → `[int]`), and any use before grounding
+that needs the type is an error at that use. Implementable as a two-pass
+over the statement list. Honest assessment: moderate complexity for the
+last few dozen sites — do it only if B-0..B-2 leave it noticeable.
+
+## 6. Staged plan (when ergonomics demand)
+
+| stage | content | wins (corpus) |
+|---|---|---|
+| B-0 | empty literals consume expectations at every supplying position | the 289 `[]T` annotations |
+| B-1 | untyped integer literals adapt in float checking contexts | every `x + 2.0`-style wart |
+| B-2 | lambda param/return elision from expected fn types | closure call sites (core:iter et al) |
+| B-3 | (optional) block-local grounding for bare incomplete decls | the residue |
+
+Each stage: both compilers, `make test`/`fixpoint` gates, `tests/diag`
+goldens for the new "no expected type here" errors.
+
+## 7. Bottom line
+
+- **Full HM: no.** Let-generalization is generics by the back door
+  (rejected); its escape hatches are a dual-compiler monomorphization
+  phase or boxing that attacks the arena thesis; deferred types break the
+  resolve-time type-directed rewrites in both compilers.
+- **Local unification: feasible, declined.** Most of HM's cost, dozens of
+  sites of benefit.
+- **Bidirectional local inference: yes — it is hier's existing
+  `resolve_exp` channel made systematic.** No type variables, no solver,
+  monotypes at every line, eager dispatch, local errors, per-stage
+  landings. That is "how else".
