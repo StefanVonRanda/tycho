@@ -1,0 +1,4 @@
+fn main():
+    xs := [1, 2, 3]
+    parallel for i in range(3):
+        push(xs, i)

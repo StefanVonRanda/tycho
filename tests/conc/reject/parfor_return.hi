@@ -1,0 +1,7 @@
+fn f(n: int) -> int:
+    parallel for i in range(n):
+        if i > 3:
+            return i
+    return 0
+fn main():
+    print(str(f(5)))

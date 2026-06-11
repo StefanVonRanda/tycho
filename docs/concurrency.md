@@ -1,6 +1,16 @@
 # Concurrency for hier — research & staged design
 
-Status: CC-0, CC-1 and CC-2 SHIPPED in hierc (C compiler) + runtime —
+Status: CC-0 through CC-3 SHIPPED in hierc (C compiler) + runtime —
+CC-3 `parallel for i in range(a,b)` / `parallel for x in xs` (foreach rides
+the existing desugar): the body lifts to a chunk proc `__par<N>(__plo, __phi,
+caps...) -> partials` spawned K = hier_ncpu() times (HIER_THREADS overrides)
+through the CC-1 trampoline; captures deep-copy into each task root (copy-in
+per chunk); reductions `acc = acc + e` / `acc = acc * e` (and +=/*=) on outer
+int/float locals run against chunk-local identity partials and fold at the
+in-order join. Any other outer write, break/return/or_return at parallel
+level, inout-of-capture, acc reads, and range steps are compile errors. Int
+reductions are K-independent (verified HIER_THREADS=1/7/8 identical); ~6.8x
+on 8 cores for a compute-bound loop. Earlier stages:
 `spawn f(args)` / `Task[T]` / `wait(t)` / `t.wait()`, thread-per-spawn,
 copy-in/copy-out, thread-local block pool. CC-2 affine tasks: a handle cannot
 be copied/re-bound/reassigned/discarded (compile errors); every scope exit

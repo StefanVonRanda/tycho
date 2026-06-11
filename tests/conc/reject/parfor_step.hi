@@ -1,0 +1,4 @@
+fn main():
+    acc := 0
+    parallel for i in range(0, 10, 2):
+        acc = acc + i

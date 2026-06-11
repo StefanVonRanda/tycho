@@ -93,7 +93,7 @@ typedef enum {
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_BREAK, TK_CONTINUE,
-    TK_SPAWN,
+    TK_SPAWN, TK_PARALLEL,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
 } TokKind;
@@ -135,6 +135,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "break"))    return TK_BREAK;
     if (!strcmp(s, "continue")) return TK_CONTINUE;
     if (!strcmp(s, "spawn"))    return TK_SPAWN;
+    if (!strcmp(s, "parallel")) return TK_PARALLEL;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -910,6 +911,8 @@ struct Stmt {
     Stmt   **body; int nbody;
     Stmt   **els;  int nels;
     MatchArm *arms; int narms;           /* S_MATCH */
+    int      parallel;                   /* S_FORRANGE: `parallel for` (CC-3) */
+    int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
 };
 
 typedef struct { char *name; Type type; int is_inout; } Param;
@@ -1678,6 +1681,15 @@ static Stmt *parse_stmt(Parser *ps) {
     if (t->kind == TK_IF) {
         ps->p++;
         return parse_if(ps, t->line);
+    }
+    if (t->kind == TK_PARALLEL) {        /* parallel for ...: chunked fan-out + reduction merge (CC-3) */
+        ps->p++;
+        if (!at(ps, TK_FOR)) die_at(t->line, "expected 'for' after 'parallel'");
+        Stmt *s = parse_stmt(ps);        /* parses the for (range form, or foreach desugared to range) */
+        if (s->kind != S_FORRANGE)
+            die_at(t->line, "parallel supports 'for x in range(...)' and 'for x in collection' loops only");
+        s->parallel = 1;
+        return s;
     }
     if (t->kind == TK_FOR) {
         ps->p++;
@@ -3081,6 +3093,298 @@ static Type resolve_exp(Expr *e, Type want) {
 
 static void resolve_block(Stmt **body, int n, Type ret);
 
+/* ---- CC-3 `parallel for`: chunked fan-out with reduction merge -----------
+ * Pure sugar over the CC-1 machinery. The body is lifted to a top-level
+ * chunk proc
+ *     fn __par<N>(__plo: int, __phi: int, <captures...>) -> <partials>
+ * that runs the body over [__plo, __phi) against LOCAL accumulator partials
+ * (initialized to the op's identity) and returns them. The site spawns
+ * K = hier_ncpu() chunk tasks -- every capture deep-copied into each task's
+ * root arena (copy-in per chunk, the honest thesis cost) -- joins them in
+ * chunk order, and folds each partial into the real accumulator. The only
+ * permitted outer-variable writes are reductions `acc = acc + e` /
+ * `acc = acc * e` on int/float locals (incl. the += / *= sugar); everything
+ * else the body touches is a value-semantic snapshot, so chunks share zero
+ * mutable bytes. Int reductions are exact for any K; float reductions may
+ * reassociate (chunked sums), like every parallel-reduce. */
+typedef struct {
+    Sig  *sig;            /* the lifted chunk proc's signature (also the spawn-site Sig) */
+    Proc *proc;           /* the lifted proc (emitted with the lambda procs) */
+    Expr *caps[14];       /* resolved E_IDENT reads of the captured outer vars */
+    int   ncap;
+    const char *accs[4];  /* reduction accumulators (outer int/float vars) */
+    TokKind     accop[4]; /* TK_PLUS or TK_STAR */
+    Type        acct[4];
+    int         accn[4];  /* reduction-statement count per acc (read audit) */
+    int   nacc;
+    int   spawn_id;       /* index into g_spawn: reuses the CC-1 trampoline emission */
+} ParFor;
+static ParFor g_parfor[64];
+static int g_nparfor = 0;
+static ProcVec g_parprocs;   /* lifted chunk procs, emitted with the lambda procs */
+
+static int count_reads_e(Expr *e, const char *nm);
+static int count_reads_b(Stmt **body, int n, const char *nm);
+
+/* walker state. Nested parallel loops are safe: an outer parfor's walk
+ * completes (and is snapshotted into g_parfor) before its lifted body is
+ * resolved, which is when an inner parfor re-enters this state fresh. */
+static const char *g_pf_locals[128]; static int g_pf_nloc;
+static Expr *g_pf_caps[14]; static int g_pf_ncap;
+static const char *g_pf_accs[4]; static TokKind g_pf_accop[4];
+static Type g_pf_acct[4]; static int g_pf_accn[4]; static int g_pf_nacc;
+
+static int pf_local(const char *n) {
+    for (int i = 0; i < g_pf_nloc; i++) if (!strcmp(g_pf_locals[i], n)) return 1;
+    return 0;
+}
+static void pf_add_local(const char *n) {
+    if (g_pf_nloc >= 128) { fprintf(stderr, "hierc: parallel for body declares too many locals\n"); exit(1); }
+    g_pf_locals[g_pf_nloc++] = n;
+}
+static void pf_capture(Expr *id) {
+    for (int i = 0; i < g_pf_ncap; i++) if (!strcmp(g_pf_caps[i]->sval, id->sval)) return;
+    if (g_pf_ncap >= 14) die_at(id->line, "parallel for captures at most 14 outer variables");
+    g_pf_caps[g_pf_ncap++] = id;
+}
+static void pf_scan_expr(Expr *e) {
+    if (!e) return;
+    if (e->kind == E_ORRETURN)
+        die_at(e->line, "or_return cannot cross a parallel for (no early exit from a chunk)");
+    if (e->kind == E_ADDR) {
+        Expr *root = e->lhs;
+        while (root && (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX))
+            root = root->lhs;
+        if (root && root->kind == E_IDENT && !pf_local(root->sval))
+            die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
+    }
+    if (e->kind == E_IDENT) {
+        Type vt;
+        if (!pf_local(e->sval) && vars_find(e->sval, &vt)) {
+            if (IS_TASK(vt)) die_at(e->line, "a parallel for cannot capture a task handle -- wait it first");
+            pf_capture(e);
+        }
+        return;
+    }
+    if (e->kind == E_LAMBDA) {   /* a lambda body's outer reads must become chunk-proc params too */
+        LamInfo *li = &g_laminfo[e->ival];
+        int save = g_pf_nloc;
+        for (int i = 0; i < li->proc->nparams; i++) pf_add_local(li->proc->params[i].name);
+        pf_scan_expr(li->proc->body[0]->expr);
+        g_pf_nloc = save;
+        return;
+    }
+    pf_scan_expr(e->lhs); pf_scan_expr(e->rhs);
+    for (int i = 0; i < e->nargs; i++) pf_scan_expr(e->args[i]);
+}
+static void pf_scan_stmt(Stmt *s, int loopdepth);
+static void pf_scan_body(Stmt **body, int n, int loopdepth) {
+    int save = g_pf_nloc;
+    for (int i = 0; i < n; i++) pf_scan_stmt(body[i], loopdepth);
+    g_pf_nloc = save;   /* block locals go out of scope */
+}
+static void pf_scan_stmt(Stmt *s, int loopdepth) {
+    switch (s->kind) {
+        case S_RETURN:
+            die_at(s->line, "return cannot cross a parallel for");
+        case S_BREAK:
+            if (loopdepth == 0)
+                die_at(s->line, "break cannot apply to a parallel for (chunks cannot stop each other)");
+            return;
+        case S_CONTINUE: return;
+        case S_DECL:
+            pf_scan_expr(s->expr); pf_add_local(s->name); return;
+        case S_MDECL:
+            pf_scan_expr(s->expr);
+            for (int i = 0; i < s->nnames; i++) pf_add_local(s->names[i]);
+            return;
+        case S_MASSIGN:
+            pf_scan_expr(s->expr);
+            for (int i = 0; i < s->nnames; i++)
+                if (!pf_local(s->names[i]))
+                    die_at(s->line, "parallel for cannot assign to captured variable '%s'", s->names[i]);
+            return;
+        case S_ASSIGN: {
+            if (pf_local(s->name)) { pf_scan_expr(s->expr); return; }
+            Type vt;
+            if (!vars_find(s->name, &vt))
+                die_at(s->line, "assignment to unknown variable '%s'", s->name);
+            Expr *e = s->expr;
+            int red = (vt == T_INT || vt == T_FLOAT) && e->kind == E_BINOP
+                && (e->op == TK_PLUS || e->op == TK_STAR)
+                && e->lhs->kind == E_IDENT && !strcmp(e->lhs->sval, s->name)
+                && count_reads_e(e->rhs, s->name) == 0;
+            if (!red)
+                die_at(s->line, "parallel for may update an outer variable only as a reduction: "
+                       "%s = %s + e or %s = %s * e (int/float)", s->name, s->name, s->name, s->name);
+            int ai = -1;
+            for (int i = 0; i < g_pf_nacc; i++) if (!strcmp(g_pf_accs[i], s->name)) ai = i;
+            if (ai < 0) {
+                if (g_pf_nacc >= 4) die_at(s->line, "parallel for supports at most 4 reduction accumulators");
+                ai = g_pf_nacc++;
+                g_pf_accs[ai] = s->name; g_pf_accop[ai] = e->op;
+                g_pf_acct[ai] = vt; g_pf_accn[ai] = 0;
+            } else if (g_pf_accop[ai] != e->op) {
+                die_at(s->line, "accumulator '%s' must use one reduction op consistently", s->name);
+            }
+            g_pf_accn[ai]++;
+            pf_scan_expr(e->rhs);   /* the lhs read IS the reduction; only the rest is scanned */
+            return;
+        }
+        case S_INDEXSET: case S_FIELDSET: {
+            Expr *root = s->target;
+            while (root && (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX))
+                root = root->lhs;
+            const char *rn = (root && root->kind == E_IDENT) ? root->sval : s->name;
+            if (rn && !pf_local(rn))
+                die_at(s->line, "parallel for cannot mutate captured variable '%s' in place", rn);
+            pf_scan_expr(s->target); pf_scan_expr(s->expr);
+            return;
+        }
+        case S_IF:
+            pf_scan_expr(s->expr);
+            pf_scan_body(s->body, s->nbody, loopdepth);
+            pf_scan_body(s->els, s->nels, loopdepth);
+            return;
+        case S_WHILE:
+            pf_scan_expr(s->expr);
+            pf_scan_body(s->body, s->nbody, loopdepth + 1);
+            return;
+        case S_FORRANGE: {   /* incl. a nested parallel for: walk it like a loop; it lifts itself later */
+            pf_scan_expr(s->r_start); pf_scan_expr(s->r_stop); pf_scan_expr(s->r_step);
+            int save = g_pf_nloc;
+            pf_add_local(s->name);
+            pf_scan_body(s->body, s->nbody, loopdepth + 1);
+            g_pf_nloc = save;
+            return;
+        }
+        case S_MATCH: {
+            pf_scan_expr(s->expr);
+            for (int a = 0; a < s->narms; a++) {
+                int save = g_pf_nloc;
+                for (int b = 0; b < s->arms[a].nbinds; b++) pf_add_local(s->arms[a].binds[b]);
+                pf_scan_body(s->arms[a].body, s->arms[a].nbody, loopdepth);
+                g_pf_nloc = save;
+            }
+            return;
+        }
+        case S_EXPR:
+            pf_scan_expr(s->expr);
+            return;
+    }
+}
+
+static void resolve_parfor(Stmt *s) {
+    if (s->r_step) die_at(s->line, "parallel for does not support a range step");
+    if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
+        die_at(s->line, "parallel for needs an int range");
+    if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
+    if (g_nsigs >= 256)  die_at(s->line, "too many functions");
+    /* scan: captures, reduction accumulators, fail-closed rejections */
+    g_pf_nloc = 0; g_pf_ncap = 0; g_pf_nacc = 0;
+    pf_add_local(s->name);
+    pf_scan_body(s->body, s->nbody, 0);
+    /* an accumulator read anywhere outside its reductions would observe a
+     * chunk-local partial, not the global value -- reject */
+    for (int i = 0; i < g_pf_nacc; i++) {
+        for (int c = 0; c < g_pf_ncap; c++)
+            if (!strcmp(g_pf_caps[c]->sval, g_pf_accs[i]))
+                die_at(s->line, "reduction accumulator '%s' may only be updated, not read, inside parallel for", g_pf_accs[i]);
+        if (count_reads_b(s->body, s->nbody, g_pf_accs[i]) != g_pf_accn[i])
+            die_at(s->line, "reduction accumulator '%s' may only be updated, not read, inside parallel for", g_pf_accs[i]);
+    }
+    /* resolve capture reads in the ENCLOSING scope (sets their types; the
+     * spawn site gen_exprs them there, with inout deref handled as usual) */
+    for (int i = 0; i < g_pf_ncap; i++) resolve_expr(g_pf_caps[i]);
+    int id = g_nparfor++;
+    ParFor *pf = &g_parfor[id];
+    pf->ncap = g_pf_ncap; pf->nacc = g_pf_nacc;
+    for (int i = 0; i < pf->ncap; i++) pf->caps[i] = g_pf_caps[i];
+    for (int i = 0; i < pf->nacc; i++) {
+        pf->accs[i] = g_pf_accs[i]; pf->accop[i] = g_pf_accop[i];
+        pf->acct[i] = g_pf_acct[i]; pf->accn[i] = g_pf_accn[i];
+    }
+    /* the lifted chunk proc */
+    Proc *pr = (Proc *)xmalloc(sizeof(Proc));
+    memset(pr, 0, sizeof(Proc));
+    pr->name = sfmt("__par%d", id);
+    pr->line = s->line;
+    pr->nparams = 2 + pf->ncap;
+    pr->params = (Param *)xmalloc((size_t)pr->nparams * sizeof(Param));
+    pr->params[0] = (Param){ "__plo", T_INT, 0 };
+    pr->params[1] = (Param){ "__phi", T_INT, 0 };
+    for (int i = 0; i < pf->ncap; i++)
+        pr->params[2 + i] = (Param){ pf->caps[i]->sval, pf->caps[i]->type, 0 };
+    Type accts[4];
+    for (int i = 0; i < pf->nacc; i++) accts[i] = pf->acct[i];
+    pr->ret = pf->nacc == 0 ? T_INT : pf->nacc == 1 ? pf->acct[0] : tup_of(accts, pf->nacc);
+    pr->has_ret = 1;
+    /* body: partial decls (op identity), the chunk loop, return the partials */
+    pr->nbody = pf->nacc + 2;
+    pr->body = (Stmt **)xmalloc((size_t)pr->nbody * sizeof(Stmt *));
+    for (int i = 0; i < pf->nacc; i++) {
+        Stmt *d = new_stmt(S_DECL, s->line);
+        d->name = (char *)pf->accs[i];
+        if (pf->acct[i] == T_FLOAT) {
+            Expr *v = new_expr(E_FLOAT, s->line); v->fval = pf->accop[i] == TK_STAR ? 1.0 : 0.0;
+            d->expr = v;
+        } else {
+            Expr *v = new_expr(E_INT, s->line); v->ival = pf->accop[i] == TK_STAR ? 1 : 0;
+            d->expr = v;
+        }
+        pr->body[i] = d;
+    }
+    Stmt *loop = new_stmt(S_FORRANGE, s->line);
+    loop->name = s->name;
+    Expr *lo = new_expr(E_IDENT, s->line); lo->sval = "__plo";
+    Expr *hi = new_expr(E_IDENT, s->line); hi->sval = "__phi";
+    loop->r_start = lo; loop->r_stop = hi; loop->r_step = NULL;
+    loop->body = s->body; loop->nbody = s->nbody;
+    pr->body[pf->nacc] = loop;
+    Stmt *rst = new_stmt(S_RETURN, s->line);
+    if (pf->nacc == 0) {
+        Expr *z = new_expr(E_INT, s->line); z->ival = 0; rst->expr = z;
+    } else if (pf->nacc == 1) {
+        Expr *r = new_expr(E_IDENT, s->line); r->sval = (char *)pf->accs[0]; rst->expr = r;
+    } else {
+        Expr *tp = new_expr(E_TUPLE, s->line);
+        tp->args = (Expr **)xmalloc((size_t)pf->nacc * sizeof(Expr *));
+        for (int i = 0; i < pf->nacc; i++) {
+            Expr *r = new_expr(E_IDENT, s->line); r->sval = (char *)pf->accs[i];
+            tp->args[tp->nargs++] = r;
+        }
+        rst->expr = tp;
+    }
+    pr->body[pf->nacc + 1] = rst;
+    pf->proc = pr;
+    /* register the Sig and the spawn site -- the CC-1 trampoline emission
+     * (HSpawnA_<sid> + hier_spawn_<sid>) then serves parallel for verbatim */
+    Sig *sg = &g_sigs[g_nsigs++];
+    memset(sg, 0, sizeof(Sig));
+    sg->name = pr->name; sg->ret = pr->ret; sg->nparams = pr->nparams;
+    for (int i = 0; i < pr->nparams; i++) sg->params[i] = pr->params[i].type;
+    pf->sig = sg;
+    if (g_nspawn >= 256) die_at(s->line, "too many spawn sites (max 256)");
+    pf->spawn_id = g_nspawn;
+    g_spawn[g_nspawn++] = sg;
+    s->par_id = id;
+    /* resolve the lifted body (params shadow the enclosing originals) */
+    int mark = vars_mark();
+    for (int i = 0; i < pr->nparams; i++) {
+        Type pt = pr->params[i].type;
+        vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
+    }
+    Type saved = g_fn_ret; g_fn_ret = pr->ret;
+    resolve_block(pr->body, pr->nbody, pr->ret);
+    g_fn_ret = saved;
+    vars_restore(mark);
+    if (g_parprocs.n == g_parprocs.cap) {
+        g_parprocs.cap = g_parprocs.cap ? g_parprocs.cap * 2 : 8;
+        g_parprocs.v = (Proc **)xrealloc(g_parprocs.v, (size_t)g_parprocs.cap * sizeof(Proc *));
+    }
+    g_parprocs.v[g_parprocs.n++] = pr;
+}
+
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_DECL: {
@@ -3264,6 +3568,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_FORRANGE: {
+            if (s->parallel) { resolve_parfor(s); break; }   /* CC-3: body resolves inside the lifted chunk proc */
             if (resolve_expr(s->r_start) != T_INT ||
                 resolve_expr(s->r_stop)  != T_INT ||
                 (s->r_step && resolve_expr(s->r_step) != T_INT))
@@ -4724,6 +5029,51 @@ static char *gen_lvalue(Expr *e, const char *arena) {
     return gen_expr(e, arena);
 }
 
+/* CC-3 parallel for site: spawn K = hier_ncpu() chunk tasks of the lifted
+ * __par<N> proc through the CC-1 trampoline (HSpawnA_<sid>/hier_spawn_<sid>),
+ * deep-copying every capture into each task's root arena, then join in chunk
+ * order and fold the partials into the real accumulators. All tasks join
+ * inside this statement -- structured, nothing for CC-2 to track. */
+static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
+    ParFor *pf = &g_parfor[s->par_id];
+    int sid = pf->spawn_id;
+    char *lo = gen_expr(s->r_start, scope), *hi = gen_expr(s->r_stop, scope);
+    indent(o, ind); fprintf(o, "{\n");
+    indent(o, ind + 1); fprintf(o, "long _plo = %s, _phi = %s;\n", lo, hi);
+    indent(o, ind + 1); fprintf(o, "if (_phi < _plo) _phi = _plo;\n");
+    indent(o, ind + 1); fprintf(o, "long _pk = hier_ncpu();\n");
+    indent(o, ind + 1); fprintf(o, "if (_pk > _phi - _plo) _pk = _phi - _plo;\n");
+    indent(o, ind + 1); fprintf(o, "if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n");
+    indent(o, ind + 1); fprintf(o, "HTask *_pts[64];\n");
+    indent(o, ind + 1); fprintf(o, "for (long _pc = 0; _pc < _pk; _pc++) {\n");
+    indent(o, ind + 2); fprintf(o, "HTask *_tk = hier_task_new();\n");
+    indent(o, ind + 2); fprintf(o, "HSpawnA_%d *_sa = (HSpawnA_%d *)arena_alloc(&_tk->root, sizeof(HSpawnA_%d));\n", sid, sid, sid);
+    indent(o, ind + 2); fprintf(o, "_sa->t = _tk;\n");
+    indent(o, ind + 2); fprintf(o, "_sa->a0 = _plo + (_phi - _plo) * _pc / _pk;\n");
+    indent(o, ind + 2); fprintf(o, "_sa->a1 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n");
+    for (int i = 0; i < pf->ncap; i++) {
+        Type ct = pf->sig->params[2 + i];
+        char *cv = gen_expr(pf->caps[i], scope);
+        if (type_is_heap(ct)) cv = copy_into(ct, "(&_tk->root)", cv);
+        indent(o, ind + 2); fprintf(o, "_sa->a%d = %s;\n", 2 + i, cv);
+    }
+    indent(o, ind + 2); fprintf(o, "hier_task_start(_tk, hier_spawn_%d, _sa);\n", sid);
+    indent(o, ind + 2); fprintf(o, "_pts[_pc] = _tk;\n");
+    indent(o, ind + 1); fprintf(o, "}\n");
+    indent(o, ind + 1); fprintf(o, "for (long _pc = 0; _pc < _pk; _pc++) {\n");
+    indent(o, ind + 2); fprintf(o, "hier_task_join(_pts[_pc]);\n");
+    indent(o, ind + 2); fprintf(o, "%s_pp = *(%s*)_pts[_pc]->ret;\n", c_type(pf->sig->ret), c_type(pf->sig->ret));
+    indent(o, ind + 2); fprintf(o, "hier_task_free(_pts[_pc]);\n");
+    for (int i = 0; i < pf->nacc; i++) {
+        char *tgt = is_inout_param(pf->accs[i]) ? sfmt("(*h_%s)", pf->accs[i]) : sfmt("h_%s", pf->accs[i]);
+        char *part = pf->nacc == 1 ? sfmt("_pp") : sfmt("_pp._%d", i);
+        indent(o, ind + 2);
+        fprintf(o, "%s = %s %s %s;\n", tgt, tgt, pf->accop[i] == TK_STAR ? "*" : "+", part);
+    }
+    indent(o, ind + 1); fprintf(o, "}\n");
+    indent(o, ind); fprintf(o, "}\n");
+}
+
 static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     /* call arguments in this statement's expressions are transients owned by
      * the current scope (see g_cur_scope). Set before generating any expr;
@@ -5365,6 +5715,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_FORRANGE: {
+            if (s->parallel) { gen_parfor(o, s, ind, scope); break; }   /* CC-3 */
             int id = g_blk++;
             char *start = gen_expr(s->r_start, scope);
             char *stop  = gen_expr(s->r_stop,  scope);
@@ -6176,6 +6527,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
     }
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda prototypes */
         if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
+    for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk prototypes (CC-3) */
+        gen_proto(o, g_parprocs.v[i]);
     fputs("\n", o);
     /* spawn sites: one args struct + thread trampoline each. The trampoline
      * runs the call with the task's root arena as _parent (so the return value
@@ -6223,6 +6576,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) if (!prog->v[i]->is_extern) gen_proc(o, prog->v[i]);   /* FFI externs have no body */
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda bodies */
         if (g_laminfo[i].ftype != T_VOID) gen_proc(o, g_laminfo[i].proc);
+    for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk bodies (CC-3) */
+        gen_proc(o, g_parprocs.v[i]);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);

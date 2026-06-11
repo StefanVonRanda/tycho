@@ -34,6 +34,7 @@
 #include <math.h>
 #include <dirent.h>
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
+#include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
 
@@ -299,6 +300,17 @@ static void hier_task_finish(HTask *t) {
     if (!t->done) { pthread_join(t->th, NULL); t->done = 1; }
     arena_free(&t->root);
     free(t);
+}
+
+/* CC-3 parallel for: how many chunk tasks to fan out. HIER_THREADS overrides
+ * (useful for benchmarks and for pinning tests); otherwise online CPU count.
+ * Integer +,* reductions are chunk-count-independent (associative, exact), so
+ * results never depend on this value -- float reductions may reassociate. */
+static long hier_ncpu(void) {
+    const char *e = getenv("HIER_THREADS");
+    if (e && *e) { long v = atol(e); if (v >= 1) return v; }
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? n : 1;
 }
 
 /* Allocate a string with `n` data bytes: an 8-byte length header sits just

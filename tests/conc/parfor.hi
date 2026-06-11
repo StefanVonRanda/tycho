@@ -1,0 +1,28 @@
+fn score(n: int) -> int:
+    return n * n
+
+fn main():
+    total := 0
+    parallel for i in range(1000):
+        total += score(i)
+    print(str(total))
+
+    s := 0
+    p := 1
+    parallel for i in range(1, 11):
+        s = s + i
+        if i < 6:
+            p = p * i
+    print(str(s))
+    print(str(p))
+
+    xs := [3, 1, 4, 1, 5, 9, 2, 6]
+    sum := 0
+    parallel for x in xs:
+        sum += x * 10
+    print(str(sum))
+
+    f := 0.0
+    parallel for i in range(4):
+        f = f + 1.5
+    print(str(to_int(f)))
