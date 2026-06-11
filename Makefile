@@ -12,7 +12,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
 
 all: hierc
 
@@ -41,6 +41,12 @@ demo: hierc
 # tests/run.sh and docs/thesis.md §3.
 test: hierc
 	@sh tests/run.sh
+
+# Concurrency (spawn/wait) suite — hierc-only until hierc0 grows spawn, so it
+# lives outside tests/*.hi (the fixpoint differential runs those through BOTH
+# compilers). Not in `make ci` yet for the same reason; run it explicitly.
+conc: hierc
+	@sh tests/conc/run.sh
 
 # Re-record the expected-output goldens (tests/*.out) from current output.
 # Opt-in only: a normal `make test` never writes them, so a regression cannot

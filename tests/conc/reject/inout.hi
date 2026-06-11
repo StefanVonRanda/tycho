@@ -1,0 +1,7 @@
+fn bump(x: inout int) -> int:
+    x = x + 1
+    return x
+fn main():
+    n := 1
+    t := spawn bump(&n)
+    print(str(wait(t)))

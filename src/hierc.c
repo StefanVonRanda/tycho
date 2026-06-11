@@ -93,6 +93,7 @@ typedef enum {
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_BREAK, TK_CONTINUE,
+    TK_SPAWN,
     TK_DOT,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
 } TokKind;
@@ -133,6 +134,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "match"))  return TK_MATCH;
     if (!strcmp(s, "break"))    return TK_BREAK;
     if (!strcmp(s, "continue")) return TK_CONTINUE;
+    if (!strcmp(s, "spawn"))    return TK_SPAWN;
     if (!strcmp(s, "for"))    return TK_FOR;
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
@@ -403,6 +405,35 @@ static int struct_find(const char *name) {
     return -1;
 }
 
+/* Task(T) — the handle `spawn f(args)` returns; wait(t) consumes it. A task
+ * has NO source-level type syntax (it can only be held in a local inferred by
+ * `let`), so it can never appear in a param, return type, or struct field;
+ * the intern-time guards below close the remaining container routes. The C
+ * representation is an opaque `HTask *` (runtime struct: thread id + the
+ * task's private root arena + the result slot). Copying the handle word is a
+ * plain alias -- affine (exactly-one-wait) enforcement is CC-2. */
+#define T_TASK_BASE 53248   /* above the function-type range (49152 + 256) */
+typedef struct { Type inner; } TaskType;
+static TaskType g_tasktypes[64];
+static int g_ntasktypes = 0;
+#define IS_TASK(t) ((t) >= T_TASK_BASE && (t) < T_TASK_BASE + 64)
+#define TASK_ID(t) ((int)((t) - T_TASK_BASE))
+static Type task_of(Type inner) {                /* find-or-create Task(inner) */
+    for (int i = 0; i < g_ntasktypes; i++)
+        if (g_tasktypes[i].inner == inner) return T_TASK_BASE + i;
+    if (g_ntasktypes >= 64) { fprintf(stderr, "hierc: too many task types\n"); exit(1); }
+    g_tasktypes[g_ntasktypes].inner = inner;
+    return T_TASK_BASE + g_ntasktypes++;
+}
+static Type task_inner(Type t) { return g_tasktypes[TASK_ID(t)].inner; }
+/* A task that escapes into a container could be waited twice or never while
+ * aliased -- fail closed at the type-intern choke points (every aggregate
+ * containing a task would have to intern a type through one of these). */
+static void task_container_err(void) {
+    fprintf(stderr, "hierc: a task handle cannot be stored in a container or aggregate -- wait(t) first\n");
+    exit(1);
+}
+
 /* Composite array types — arrays whose element is a struct or another array
  * ([Point], [[int]], ...). Unlike [int]/[float]/[string] (fixed enum values
  * with hand-written runtime), these are interned in a side table (mirroring
@@ -423,6 +454,7 @@ static int g_narrtypes = 0;
 #define IS_ARRC(t)  ((t) >= T_ARRC_BASE && (t) < T_OPT_BASE)   /* options sit above */
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
 static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
+    if (IS_TASK(elem)) task_container_err();
     for (int i = 0; i < g_narrtypes; i++)
         if (g_arrtypes[i].elem == elem) return T_ARRC_BASE + i;
     if (g_narrtypes >= 256) { fprintf(stderr, "hierc: too many array types\n"); exit(1); }
@@ -448,6 +480,7 @@ static int g_nopttypes = 0;
 #define IS_OPT(t)  ((t) >= T_OPT_BASE && (t) < T_RES_BASE)   /* Results sit above */
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
+    if (IS_TASK(inner)) task_container_err();
     for (int i = 0; i < g_nopttypes; i++)
         if (g_opttypes[i].inner == inner) return T_OPT_BASE + i;
     if (g_nopttypes >= 256) { fprintf(stderr, "hierc: too many option types\n"); exit(1); }
@@ -467,6 +500,7 @@ static int g_nrestypes = 0;
 #define IS_RES(t)  ((t) >= T_RES_BASE && (t) < T_ENUM_BASE)
 #define RES_ID(t)  ((int)((t) - T_RES_BASE))
 static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, err) */
+    if (IS_TASK(ok) || IS_TASK(err)) task_container_err();
     for (int i = 0; i < g_nrestypes; i++)
         if (g_restypes[i].ok == ok && g_restypes[i].err == err) return T_RES_BASE + i;
     if (g_nrestypes >= 256) { fprintf(stderr, "hierc: too many result types\n"); exit(1); }
@@ -514,6 +548,7 @@ static int g_ntuptypes = 0;
 #define IS_TUP(t)  ((t) >= T_TUP_BASE && (t) < T_NT_BASE)
 #define TUP_ID(t)  ((int)((t) - T_TUP_BASE))
 static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
+    for (int i = 0; i < n; i++) if (IS_TASK(elems[i])) task_container_err();
     for (int i = 0; i < g_ntuptypes; i++)
         if (g_tuptypes[i].n == n) {
             int same = 1;
@@ -637,6 +672,7 @@ static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
     for (int i = 0; i < g_nmaptypes; i++)
         if (g_maptypes[i].key == k && g_maptypes[i].val == v) return T_MAPC_BASE + i;
     if (g_nmaptypes >= 256) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }
+    if (IS_TASK(v)) task_container_err();
     g_maptypes[g_nmaptypes].key = k; g_maptypes[g_nmaptypes].val = v;
     return T_MAPC_BASE + g_nmaptypes++;
 }
@@ -745,6 +781,7 @@ static const char *c_type(Type t) {
     if (IS_RES(t))    return sfmt("HierRes%d ", RES_ID(t));
     if (IS_TUP(t))    return sfmt("HierTup%d ", TUP_ID(t));
     if (IS_FUNC(t))   return sfmt("FnC%d ", FUNC_ID(t));   /* a function-pointer typedef */
+    if (IS_TASK(t))   return "HTask *";   /* opaque runtime task handle (spawn/wait) */
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
@@ -766,6 +803,7 @@ static const char *c_type(Type t) {
 }
 static const char *type_name(Type t) {
     if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
+    if (IS_TASK(t))    return sfmt("Task(%s)", type_name(task_inner(t)));
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_MAPC(t))   return sfmt("[%s: %s]", type_name(map_key(t)), type_name(map_val(t)));
@@ -831,7 +869,8 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, 
                E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
                E_SLICE,    /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */
                E_LAMBDA,   /* fn(p)->r: e closure literal; ival indexes g_laminfo */
-               E_NULL      /* `null`: the opaque ptr literal (void*)0 (FFI) */ } ExprKind;
+               E_NULL,     /* `null`: the opaque ptr literal (void*)0 (FFI) */
+               E_SPAWN     /* spawn f(args): run the call on a new thread; lhs = the E_CALL, ival = spawn-site id */ } ExprKind;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -1039,6 +1078,7 @@ static Expr *new_expr(ExprKind k, int line) {
 }
 
 static Expr *parse_expr(Parser *ps);
+static Expr *parse_postfix(Parser *ps);   /* spawn parses its callee through the postfix chain */
 
 /* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
  * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
@@ -1213,6 +1253,15 @@ static Expr *parse_primary(Parser *ps) {
             e->args[e->nargs++] = parse_expr(ps);
         }
         eat(ps, TK_RBRACKET, "']'");
+        return e;
+    }
+    if (t->kind == TK_SPAWN) {             /* spawn f(args): run the call on a new thread */
+        ps->p++;
+        Expr *call = parse_postfix(ps);
+        if (call->kind != E_CALL)
+            die_at(t->line, "spawn requires a direct call: spawn f(args)");
+        Expr *e = new_expr(E_SPAWN, t->line);
+        e->lhs = call;
         return e;
     }
     if (t->kind == TK_IDENT) {
@@ -2250,10 +2299,39 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     for (int i = 0; i < e->nargs; i++) collect_idents(e->args[i], out, n, cap);
 }
 
+/* spawn sites, registered at resolve time so gen_program can emit one args
+ * struct + thread trampoline per site (the lambda-lift pattern). */
+static Sig *g_spawn[256];
+static int g_nspawn = 0;
+
 static Type resolve_expr(Expr *e) {
     int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
+        case E_SPAWN: {   /* spawn f(args): a named user-proc call on a new thread -> Task(ret) */
+            Expr *c = e->lhs;
+            resolve_expr(c);
+            /* v1 fail-closed surface: a DIRECT call to a named user function.
+             * Resolution may have rewritten the call -- reject everything else:
+             * op==TK_FN (closure/indirect), TK_ENUM/TK_TYPE (ctor/newtype wrap),
+             * kind change (struct construction), lhs (call-on-expression). */
+            if (c->kind != E_CALL || c->lhs || c->op)
+                die_at(e->line, "spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)");
+            Sig *s = sig_find(c->sval);
+            if (!s || s->builtin)
+                die_at(e->line, "spawn requires a user-defined function ('%s' is not one)", c->sval);
+            if (s->is_extern)
+                die_at(e->line, "cannot spawn an extern (FFI) function");
+            if (s->ret == T_VOID)
+                die_at(e->line, "a spawned function must return a value (wait(t) yields it)");
+            for (int i = 0; i < s->nparams; i++)
+                if (s->inout[i])
+                    die_at(e->line, "cannot spawn a function with inout parameters (no shared state across threads)");
+            if (g_nspawn >= 256) die_at(e->line, "too many spawn sites (max 256)");
+            g_spawn[g_nspawn] = s;
+            e->ival = g_nspawn++;
+            return e->type = task_of(s->ret);
+        }
         case E_LAMBDA: {   /* a closure literal: capture analysis + lift the body to a top-level proc */
             LamInfo *li = &g_laminfo[e->ival];
             if (li->ftype != T_VOID) return e->type = li->ftype;   /* resolve once */
@@ -2269,6 +2347,7 @@ static Type resolve_expr(Expr *e) {
                 if (isparam) continue;
                 Type vt;
                 if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE (heap: deep-copied in) */
+                    if (IS_TASK(vt)) die_at(e->line, "a closure cannot capture a task handle -- wait it first");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
                     caps[ncap].name = ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
                     ncap++;
@@ -2480,6 +2559,18 @@ static Type resolve_expr(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            /* t.wait() sugar on a task-typed local: rewrite to wait(t) up front.
+             * A task has no fields/methods and `wait` lives outside the Sig
+             * table, so the UFCS machinery below could never resolve it. */
+            { Type _tv;
+              if (e->qual && !e->lhs && !strcmp(e->sval, "wait")
+                  && vars_find(e->qual, &_tv) && IS_TASK(_tv)) {
+                  Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
+                  Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
+                  na[0] = recv;
+                  for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
+                  e->args = na; e->nargs += 1; e->qual = NULL;
+              } }
             /* `h.field(args)` where `h` is a LOCAL VARIABLE (not a package): a call
              * through a fn-typed struct field. Rewrite to a call-on-expression of
              * the field access (the parser couldn't tell h from a package name). */
@@ -2646,6 +2737,15 @@ static Type resolve_expr(Expr *e) {
                     e->op = TK_ENUM; e->ival = evi;   /* mark as an enum ctor; carry the variant index */
                     return e->type = ENUM_TYPE(eid);
                 }
+            }
+            /* wait(t): join a spawned task and yield its result, deep-copied
+             * into the waiting scope's arena; the task's arena tree is freed.
+             * The one consumer of a Task value (which has no type syntax). */
+            if (!strcmp(e->sval, "wait")) {
+                if (e->nargs != 1) die_at(e->line, "wait(t) takes one task");
+                Type at_ = resolve_expr(e->args[0]);
+                if (!IS_TASK(at_)) die_at(e->line, "wait(t) takes a task from spawn, got %s", type_name(at_));
+                return e->type = task_inner(at_);
             }
             /* str is polymorphic (int or float); to_int/to_float convert
              * between the two (no implicit mixing exists). Handled inline so
@@ -4116,6 +4216,16 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "is_null")) {   /* FFI: opaque-handle NULL test */
         return sfmt("((%s) == 0)", gen_expr(e->args[0], arena));
     }
+    if (!strcmp(e->sval, "wait") && e->nargs == 1 && IS_TASK(e->args[0]->type)) {
+        /* join, deep-copy the result out of the task's root arena into the
+         * destination arena, then free the whole task tree (the blocks recycle
+         * into THIS thread's pool -- the freeing thread owns them now). */
+        Type rt = task_inner(e->args[0]->type);
+        char *tv = gen_expr(e->args[0], arena);
+        char *res = copy_into(rt, arena, sfmt("(*(%s*)_tk->ret)", c_type(rt)));
+        return sfmt("({ HTask *_tk = %s; hier_task_join(_tk); %s_w = %s; hier_task_free(_tk); _w; })",
+                    tv, c_type(rt), res);
+    }
     if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
         return sfmt("hier_write_file(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     }
@@ -4296,6 +4406,23 @@ static char *gen_expr(Expr *e, const char *arena) {
                       * array element to its buffer slot, so `&arr[i].x` is a
                       * real address, not the address of a `_get` temporary. */
             return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
+        case E_SPAWN: {   /* copy args into the task's root arena, then start the thread */
+            int id = (int)e->ival;
+            Sig *s = g_spawn[id];
+            Expr *c = e->lhs;
+            char *out = sfmt("({ HTask *_tk = hier_task_new(); "
+                             "HSpawnA_%d *_sa = (HSpawnA_%d *)arena_alloc(&_tk->root, sizeof(HSpawnA_%d)); "
+                             "_sa->t = _tk;", id, id, id);
+            for (int i = 0; i < c->nargs; i++) {
+                /* evaluate in the current scope, then deep-copy into the task
+                 * root: after this the spawner and the task share zero bytes
+                 * (a scalar's value word is already a complete copy). */
+                char *a = gen_expr(c->args[i], g_cur_scope);
+                if (type_is_heap(s->params[i])) a = copy_into(s->params[i], "(&_tk->root)", a);
+                out = sfmt("%s _sa->a%d = %s;", out, i, a);
+            }
+            return sfmt("%s hier_task_start(_tk, hier_spawn_%d, _sa); _tk; })", out, id);
+        }
         case E_CALL: return gen_call(e, arena);
         case E_INDEX: {
             if (IS_SOA(e->lhs->type)) {
@@ -5997,6 +6124,24 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda prototypes */
         if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
     fputs("\n", o);
+    /* spawn sites: one args struct + thread trampoline each. The trampoline
+     * runs the call with the task's root arena as _parent (so the return value
+     * lands in the root, like any return-to-caller), parks the result in a
+     * root-allocated slot, then flushes this thread's block pool (TLS dies
+     * with the thread; un-flushed free blocks would leak). */
+    for (int i = 0; i < g_nspawn; i++) {
+        Sig *s = g_spawn[i];
+        fprintf(o, "typedef struct { HTask *t;");
+        for (int j = 0; j < s->nparams; j++) fprintf(o, " %sa%d;", c_type(s->params[j]), j);
+        fprintf(o, " } HSpawnA_%d;\n", i);
+        fprintf(o, "static void *hier_spawn_%d(void *_p) { HSpawnA_%d *_a = (HSpawnA_%d *)_p; "
+                   "%s_r = h_%s(&_a->t->root", i, i, i, c_type(s->ret), s->name);
+        for (int j = 0; j < s->nparams; j++) fprintf(o, ", _a->a%d", j);
+        fprintf(o, "); %s*_s = (%s*)arena_alloc(&_a->t->root, sizeof(%s)); *_s = _r; "
+                   "_a->t->ret = _s; hier_pool_flush(); return 0; }\n",
+                c_type(s->ret), c_type(s->ret), c_type(s->ret));
+    }
+    if (g_nspawn) fputs("\n", o);
     for (int k = 0; k < g_nfnval; k++) {   /* fat-value thunks: <name>__clo wraps h_<name>, ignoring env */
         Sig *fs = sig_find(g_fnval[k]);
         if (!fs) continue;
@@ -6354,7 +6499,7 @@ int main(int argc, char **argv) {
      * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
     /* -O3 is the portable default; --native opts into -march=native (host-CPU only). */
     const char *march = native ? " -march=native" : "";
-    char *cmd = sfmt("%s -O3%s -o %s %s%s -lm%s%s", cc, march, base, c_path, shims, links, extra);
+    char *cmd = sfmt("%s -O3%s -pthread -o %s %s%s -lm%s%s", cc, march, base, c_path, shims, links, extra);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);

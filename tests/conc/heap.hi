@@ -1,0 +1,23 @@
+# CC-1 heap results and closure ARGUMENTS: a spawned fn may return a heap
+# struct (deep-copied out at wait) and may take a fn value (its captured env
+# is re-homed into the task's root arena via copyenv at the spawn site).
+
+struct Pair:
+    name: string
+    score: int
+
+fn mk(name: string, n: int) -> Pair:
+    return Pair(name + "!", n * 2)
+
+fn apply(g: fn(int) -> int, x: int) -> int:
+    return g(x) + g(x + 1)
+
+fn main():
+    t1 := spawn mk("hi", 21)
+    base := 10
+    g := fn(x: int) -> int: x + base
+    t2 := spawn apply(g, 5)
+    p := wait(t1)
+    print(p.name)
+    print(str(p.score))
+    print(str(wait(t2)))

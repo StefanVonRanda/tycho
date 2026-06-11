@@ -1,0 +1,34 @@
+# CC-1 smoke test: spawn/wait over scalar, string, and array-arg results.
+# The spawned call sees a deep-copied snapshot of its arguments (the parent
+# mutating xs after the spawn must not change the task's sum).
+
+fn fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fn shout(s: string, n: int) -> string:
+    acc := ""
+    for i in range(n):
+        acc = acc + s
+    return acc
+
+fn sum(xs: [int]) -> int:
+    t := 0
+    for i in range(len(xs)):
+        t = t + xs[i]
+    return t
+
+fn main():
+    t1 := spawn fib(25)
+    t2 := spawn shout("ab", 3)
+    xs := [1, 2, 3, 4]
+    t3 := spawn sum(xs)
+    push(xs, 100)
+    a := wait(t1)
+    s := t2.wait()
+    b := wait(t3)
+    print(str(a))
+    print(s)
+    print(str(b))
+    print(str(sum(xs)))

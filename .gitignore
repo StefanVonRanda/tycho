@@ -32,3 +32,5 @@
 # the sqlite FFI example's golden is tracked too
 !/examples/sqlite/*.out
 .koka/
+# concurrency suite goldens (tests/conc/<name>.out) are tracked too
+!/tests/conc/*.out

@@ -1,0 +1,4 @@
+fn main():
+    h := fn(x: int) -> int: x * 2
+    t := spawn h(3)
+    print(str(wait(t)))

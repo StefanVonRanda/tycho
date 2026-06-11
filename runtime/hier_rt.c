@@ -33,6 +33,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <dirent.h>
+#include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
 
@@ -89,8 +90,15 @@ static void hier_cap_check(long n, size_t elem) {
  * to the OS, reset/free hand them to this pool, and arena_alloc takes from it
  * first -- O(1) pointer ops, no malloc/free churn, no page re-faulting. Peak
  * live memory is unchanged (the pool holds at most what a scope just released);
- * pool blocks are reclaimed by the OS at process exit. Single-threaded. */
-static HBlock *g_block_pool = NULL;
+ * pool blocks are reclaimed by the OS at process exit.
+ *
+ * THREAD-LOCAL (CC-0): each thread owns a private pool, so allocation never
+ * contends and never races. A spawned task's arenas may be built on one thread
+ * and freed on another (wait() frees the task tree on the waiting thread) --
+ * that's fine: a block is just malloc'd memory; releasing it pushes it onto
+ * the *releasing* thread's pool. A spawned thread flushes its own pool to
+ * free() before exiting (hier_pool_flush) so nothing leaks with the TLS. */
+static __thread HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
     if (g_block_pool && g_block_pool->cap >= cap) {  /* fast path: head fits (uniform sizes) */
@@ -233,6 +241,45 @@ void arena_free(Arena *a) {
     block_release_chain(a->head);
     a->head = NULL;
 }
+
+/* ---- tasks (CC-1: `spawn f(args)` / `wait(t)`) --------------------------
+ * A task is one OS thread running one hier function call against a private
+ * arena tree rooted at `root`. The thread boundary is hier's existing call
+ * convention: arguments are deep-copied INTO root before the thread starts
+ * (the generated spawn site does this), the function's return value lands in
+ * root (root is passed as the callee's _parent), and wait() deep-copies the
+ * result OUT into the waiting scope's arena before freeing the whole tree.
+ * After copy-in, spawner and task share zero bytes -- no locks needed beyond
+ * the ones inside pthread create/join. */
+typedef struct { pthread_t th; Arena root; void *ret; } HTask;
+
+static HTask *hier_task_new(void) {
+    HTask *t = (HTask *)malloc(sizeof(HTask));
+    if (!t) hier_oom();
+    t->root = arena_new(0);
+    t->ret = NULL;
+    return t;
+}
+
+/* Free this thread's block pool back to the OS. Called as the LAST thing a
+ * spawned thread does: blocks its scopes released into the thread-local pool
+ * would otherwise become unreachable when the thread (and its TLS) dies.
+ * Blocks still owned by the task's root tree are NOT in the pool -- they're
+ * freed later by wait() on the waiting thread, into that thread's pool. */
+static void hier_pool_flush(void) {
+    while (g_block_pool) { HBlock *b = g_block_pool; g_block_pool = b->next; free(b); }
+}
+
+static void hier_task_start(HTask *t, void *(*fn)(void *), void *arg) {
+    if (pthread_create(&t->th, NULL, fn, arg) != 0) {
+        fprintf(stderr, "hier: spawn failed (cannot create thread)\n");
+        exit(1);
+    }
+}
+
+static void hier_task_join(HTask *t) { pthread_join(t->th, NULL); }
+
+static void hier_task_free(HTask *t) { arena_free(&t->root); free(t); }
 
 /* Allocate a string with `n` data bytes: an 8-byte length header sits just
  * before the returned pointer (hier_str_len reads it in O(1)), the data is

@@ -1,0 +1,3 @@
+fn main():
+    t := spawn print("x")
+    wait(t)
