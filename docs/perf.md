@@ -4,6 +4,10 @@ Measured after the Stage 4 self-host fixpoint (`make fixpoint`). Best-of-N wall
 time; peak RSS via `getrusage(RUSAGE_CHILDREN)`. One machine, `cc -O2`. These
 are indicative, not a rigorous benchmark suite.
 
+> Cross-LANGUAGE numbers live in `bench/`: `bench/prongB/` (vs C/Go/Rust/Koka),
+> `bench/dbquery/` (real SQLite via FFI), `bench/conc/` (concurrency vs
+> C/Go/Rust). This file tracks the self-hosted compiler only.
+
 > **STATUS (2026-06-02): sections (1)–(2) below are now a HISTORICAL baseline.**
 > They were measured when hierc0's codegen was still naive (`malloc`, no frees,
 > value-copy concat) — i.e. **B = naive**. Since then the memory-model migration

@@ -664,3 +664,18 @@ fixpoint.
       naive that C is. hierc0's straightforward malloc/value-copy output only
       affects the *performance* of the self-hosted compiler, not the fixpoint —
       so the optimization work is **orthogonal** to (and can follow) self-hosting.
+
+## Postscript: after the fixpoint
+
+Stages 0–4 are complete, and the fixpoint became the project's standing
+parity gate: every language feature since has landed **in both compilers**,
+differential-tested through it. In rough order: the arena memory-model
+migration (MM-0…MM-10, [memory-model.md](memory-model.md)), Odin-style
+packages + the standalone hierc0 package driver ([packages.md](packages.md)),
+filesystem/IO builtins, the corelib ([corelib.md](corelib.md)), FFI
+([ffi.md](ffi.md)), closures, UFCS methods, f-strings, diagnostics
+(caret + did-you-mean), the full concurrency model — spawn/wait, parallel
+for, lock-free channels, select ([concurrency.md](concurrency.md)) — and
+bidirectional type inference ([inference.md](inference.md)). The pattern each
+time: design doc, C-compiler implementation behind the gates, then the
+hierc0 port, then the shared fixtures move under the fixpoint differential.

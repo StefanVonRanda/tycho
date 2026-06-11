@@ -25,7 +25,11 @@ explicit returns), arena memory underneath. The same idea carries the
 concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
 ordinary copy-in/copy-out call convention run on threads — race-free by
 construction, no locks or lifetime rules in the language (see
-[Concurrency](#concurrency-spawn-parallel-for-channels)).
+[Concurrency](#concurrency-spawn-parallel-for-channels)). Types are inferred
+bidirectionally (Pierce–Turner local inference, not Hindley–Milner): locals
+from their initializers, literals/lambdas/bare empties from their destination
+— with every type ground at its own line (see
+[Type inference](#type-inference-bidirectional)).
 
 Why this works — value semantics is what lets the arenas be *implicit* — and
 where it doesn't, with measured numbers, is written up in
@@ -87,6 +91,22 @@ Apple's clang cannot statically link libc on macOS, so `make static`
 builds inside an Alpine container where `gcc -static` against musl yields
 a dependency-free ELF (`ldd` reports "not a dynamic program").
 
+## Documentation
+
+| doc | what it covers |
+| --- | --- |
+| [docs/thesis.md](docs/thesis.md) | why value semantics makes implicit arenas work — and where it doesn't, with measured numbers |
+| [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
+| [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
+| [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
+| [docs/bootstrap.md](docs/bootstrap.md) | the staged path to self-hosting (Stage 0–4) and what came after |
+| [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
+| [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
+| [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
+| [docs/perf.md](docs/perf.md) | self-hosted-compiler performance history; cross-language numbers live in `bench/` |
+| [docs/ideas.md](docs/ideas.md) | dated survey of neighbouring languages (Odin, Jai, Hylo, Koka, Vale) for fit |
+| [bench/README.md](bench/README.md) | the benchmark suite's map, incl. what is deliberately *not* measured and why |
+
 ## Self-hosting
 
 Besides the C reference compiler (`src/hierc.c`), Hier has a second compiler
@@ -98,6 +118,12 @@ emissions are byte-identical (B≡C) and that the Hier-built compiler reproduces
 the C compiler's output across every `tests/` and `examples/` program. The
 staged path to self-hosting (Stage 0–4) is written up in
 [docs/bootstrap.md](docs/bootstrap.md).
+
+The fixpoint is also the language's parity discipline: **every feature lands
+in both compilers or not at all** — concurrency, bidirectional inference,
+packages, closures, FFI all exist twice (the two compilers emit different C
+dialects with identical semantics), and shared test fixtures run through both
+via the fixpoint differential, so the compilers cannot drift.
 
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
@@ -384,7 +410,8 @@ the literal or annotation (`["a": 1]` is a `[string: int]`, `["a": "b"]` a
 
 ```
 counts := ["ada": 1, "alan": 2]   # literal: "key": value pairs
-empty := []string: int            # empty map (key/value types required)
+empty := []string: int            # empty map (or bare `[]` where context supplies
+                                  # the type -- see Type inference)
 
 map_get(counts, "ada", 0)         # value for "ada", or 0 if absent -> int
 map_has(counts, "ada")            # membership -> bool
@@ -733,7 +760,10 @@ values, and a function value can't be stored in a struct field or array.
 ### Closures (lambdas)
 
 A **lambda** is an anonymous function written inline; its body is a single
-expression (an implicit return):
+expression (an implicit return). Parameter and return types are elidable
+wherever an expected fn type supplies them — `apply(fn(x): x * 2, 21)` — see
+[Type inference](#type-inference-bidirectional); the examples below write
+them out:
 
 ```
 fn apply(f: fn(int) -> int, x: int) -> int:
@@ -1056,7 +1086,12 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No generics. Multi-file **Odin-style packages** are supported, though (see
+- No generics, and no Hindley–Milner inference — both **by decision**, not
+  omission: let-generalization is generics by the back door, and its
+  implementation escapes (monomorphization passes or uniform boxing) fight
+  the arena thesis. The shipped alternative is bidirectional local
+  inference; the analysis is [docs/inference.md](docs/inference.md).
+- Multi-file **Odin-style packages** are supported (see
   [Packages](#packages)); the self-hosted compiler itself is split into two
   packages (see Self-hosting). Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
