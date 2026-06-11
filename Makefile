@@ -71,6 +71,10 @@ bench-prongB: hierc
 bench-dbquery: hierc
 	@sh bench/dbquery/run.sh
 
+# Concurrency head-to-head (parallel reduce + channel pipeline) vs C/Go/Rust.
+bench-conc: hierc
+	@sh bench/conc/run.sh
+
 # Sliding-window eviction: the arena's weak point, mapped honestly (heap-record
 # window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.
 bench-window: hierc
