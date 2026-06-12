@@ -2711,6 +2711,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Option(" + chan_inner(type_of(args[0], names, types, dc, ctx)) + ")"
             if name == "send" or name == "close":
                 return "void"
+            if name == "to_under":                # generic newtype unwrap: the arg's type, seen through (type_of already resolves)
+                return type_of(args[0], names, types, dc, ctx)
             if name == "Some":
                 return "Option(" + type_of(args[0], names, types, dc, ctx) + ")"
             if name == "Ok":
@@ -3217,7 +3219,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
                 return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
-            if name == "to_str" or name == "to_bool":   # zero-cost newtype unwrap
+            if name == "to_str" or name == "to_bool" or name == "to_under":   # zero-cost newtype unwrap
                 return gen_expr(args[0], names, types, dc, ctx)
             if name == "substr":
                 return "substr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
@@ -6628,6 +6630,8 @@ fn arg_want(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a
             if i < len(fp):
                 return fp[i]
         return ""
+    if is_newtype(dc, ctx, nm):                   # X(v): the underlying type grounds the wrapped literal
+        return resolve_nt(dc, ctx, nm)
     si := map_get(dc.sigmap, nm, 0 - 1)
     if si >= 0 and i < len(dc.sigs[si].ptypes):
         return base_ty(dc.sigs[si].ptypes[i])

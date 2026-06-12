@@ -2168,8 +2168,9 @@ static void parse_typedecl(Parser *ps) {
     if (g_nnewtypes >= 128) die_at(nameT->line, "too many newtypes");
     eat(ps, TK_EQ, "'=' in a type declaration");
     Type under = parse_type(ps);
-    if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL)
-        die_at(nameT->line, "a newtype's underlying type must be int, float, string, or bool (got %s)", type_name(under));
+    if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL
+        && !is_array(under) && !is_map(under) && !IS_STRUCT(under))
+        die_at(nameT->line, "a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got %s)", type_name(under));
     eat(ps, TK_NEWLINE, "newline");
     g_newtypes[g_nnewtypes].name = pkg_mangle(nameT->text);
     g_newtypes[g_nnewtypes].under = under;
@@ -2876,7 +2877,7 @@ static Type resolve_expr(Expr *e) {
                 Type under = g_newtypes[ntid].under;
                 if (e->nargs != 1)
                     die_at(e->line, "%s(x) takes one %s", e->sval, type_name(under));
-                Type at_ = resolve_expr(e->args[0]);
+                Type at_ = resolve_exp(e->args[0], under);   /* expected type grounds a bare []/[:] literal */
                 if (at_ != under)
                     die_at(e->line, "%s(x) needs a %s, got %s", e->sval, type_name(under), type_name(at_));
                 e->op = TK_TYPE;   /* mark as a newtype wrap for codegen (identity) */
@@ -2996,6 +2997,13 @@ static Type resolve_expr(Expr *e) {
                 if (!(IS_NEWTYPE(at_) && nt_under(at_) == T_BOOL))
                     die_at(e->line, "to_bool(x) takes a bool newtype");
                 return e->type = T_BOOL;
+            }
+            if (!strcmp(e->sval, "to_under")) {   /* generic newtype unwrap -> its underlying type */
+                if (e->nargs != 1) die_at(e->line, "to_under(x) takes one argument");
+                Type at_ = resolve_expr(e->args[0]);
+                if (!IS_NEWTYPE(at_))
+                    die_at(e->line, "to_under(x) takes a newtype value, got %s", type_name(at_));
+                return e->type = nt_under(at_);
             }
             /* array builtins (don't fit the scalar Sig table) */
             if (!strcmp(e->sval, "len")) {
@@ -4914,7 +4922,7 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool"))   /* zero-cost newtype unwrap */
+    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under"))   /* zero-cost newtype unwrap */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
         return sfmt("%s(%s)", e->sval, gen_expr(e->args[0], arena));

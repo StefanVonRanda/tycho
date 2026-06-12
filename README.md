@@ -603,7 +603,8 @@ representation as its underlying type (zero cost — a `Meters` *is* a `double` 
 the generated C) but is type-incompatible with `float` and with every other
 newtype. This is exactly Odin's `Meters :: distinct f32` — Hier has no
 *transparent* alias, so `type` always means distinct (no keyword needed to say
-so). The underlying type is `int`, `float`, `string`, or `bool`.
+so). The underlying type is `int`, `float`, `string`, `bool`, an array, a map,
+or a struct.
 
 ```
 type Meters = float
@@ -624,9 +625,16 @@ A newtype value supports its base type's **arithmetic, ordering, `==`, and
 `str`** — but only between two values of the *same* newtype, so `Meters` and
 `Seconds` (or `Meters` and a bare `float`) never mix by accident. That is the
 whole point: zero-cost unit/ID safety. Construct one with `Meters(x)`; get the
-raw number back with `to_int(x)` / `to_float(x)`. A newtype works anywhere a
-type does — parameter, return, struct field, array element. *Not yet:* `string`,
-`bool`, or aggregate underlying types (only `int`/`float`).
+raw number back with `to_int(x)` / `to_float(x)` (`to_str(x)` / `to_bool(x)`
+for string/bool underlying). A newtype works anywhere a type does — parameter,
+return, struct field, array element.
+
+**Aggregate underlying** works the same way: `type Ids = [int]`,
+`type Env = [string: int]`, `type Pos = Pt` (a struct). Wrap with `Ids(v)` (a
+bare `[]` literal grounds to the underlying type), unwrap with the generic
+`to_under(x)` — zero-cost, works on *any* newtype — and operate on the
+unwrapped value; `==` stays deep between two values of the same newtype, and
+copies keep the underlying's value semantics (`tests/newtype_agg.hi`).
 
 ### Type inference (bidirectional)
 

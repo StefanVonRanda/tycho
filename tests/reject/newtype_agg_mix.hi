@@ -1,0 +1,10 @@
+# An aggregate newtype stays distinct from its underlying type: a bare
+# [int] is not an Ids, even though Ids = [int]. Must be a type error.
+type Ids = [int]
+
+fn total(xs: Ids) -> int:
+    return len(to_under(xs))
+
+fn main():
+    raw := [1, 2, 3]
+    print(str(total(raw)) + "\n")

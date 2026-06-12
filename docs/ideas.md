@@ -132,7 +132,10 @@ cluster of languages, and the differences are the interesting part:
    over **`string` and `bool`** underlying: `type UserId = string` /
    `type Active = bool`, unwrapped with `to_str` / `to_bool`, with `==` and
    (string) ordering seeing through to the base — self-hosting
-   (`tests/newtype_strbool.hi`). Aggregate underlying still deferred.
+   (`tests/newtype_strbool.hi`). **Aggregate underlying shipped too**: arrays,
+   maps, and structs (`type Ids = [int]`), wrapped with `Ids(v)`, unwrapped
+   with the generic zero-cost `to_under(x)`; `==` stays deep between two of
+   the same newtype — both compilers (`tests/newtype_agg.hi`).
 8. **Generalized reuse analysis (Perceus/FBIP).** ✅ *First step done:
    move-on-last-use.* `b := a` / `b = a` elides the deep copy and hands off
    `a`'s buffer when `a` is a uniquely-owned local read exactly once (last use on
