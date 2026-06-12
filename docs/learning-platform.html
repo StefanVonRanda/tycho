@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learn Hier — Interactive Guide</title>
+<style>
+/* ── Reset & Base ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;
+  --text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+  --accent:#58a6ff;--accent2:#388bfd;--green:#3fb950;--green-bg:rgba(63,185,80,.1);
+  --red:#f85149;--red-bg:rgba(248,81,73,.1);--orange:#d29922;--orange-bg:rgba(210,153,34,.1);
+  --purple:#bc8cff;--purple-bg:rgba(188,140,255,.1);
+  --code-bg:#0d1117;--code-border:#252b33;
+  --sidebar-w:280px;--topbar-h:0px;
+  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --radius:6px;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ── Layout ── */
+#sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:100;
+  transition:transform .25s ease;
+}
+#sidebar.collapsed{transform:translateX(calc(-1 * var(--sidebar-w)))}
+#sidebar-header{padding:20px 16px 12px;border-bottom:1px solid var(--border)}
+#sidebar-header h2{font-size:1.15rem;font-weight:700;color:var(--text)}
+#sidebar-header .subtitle{font-size:.8rem;color:var(--text2);margin-top:2px}
+#progress-bar-wrap{height:4px;background:var(--border);border-radius:2px;margin-top:10px}
+#progress-bar{height:100%;background:var(--green);border-radius:2px;transition:width .3s ease;width:0%}
+#progress-text{font-size:.75rem;color:var(--text2);margin-top:4px;text-align:right}
+#nav{flex:1;overflow-y:auto;padding:8px 0}
+#nav::-webkit-scrollbar{width:6px}
+#nav::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.nav-section{padding:4px 16px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:8px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:6px 16px 6px 24px;font-size:.85rem;color:var(--text2);cursor:pointer;border-left:3px solid transparent;transition:all .15s ease}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.06)}
+.nav-item .check{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;transition:all .15s ease}
+.nav-item.done .check{border-color:var(--green);background:var(--green);color:#fff}
+.nav-item.quiz-pending .check{border-color:var(--orange);background:var(--orange);color:#fff}
+#main{margin-left:var(--sidebar-w);transition:margin-left .25s ease;min-height:100vh}
+#main.expanded{margin-left:0}
+#menu-toggle{
+  position:fixed;top:12px;left:12px;z-index:200;
+  width:36px;height:36px;border-radius:var(--radius);
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text);cursor:pointer;display:none;
+  align-items:center;justify-content:center;font-size:1.2rem;
+}
+#menu-toggle:hover{background:var(--surface2)}
+@media(max-width:900px){
+  #sidebar{transform:translateX(calc(-1 * var(--sidebar-w)))}
+  #sidebar.open{transform:translateX(0)}
+  #main{margin-left:0!important}
+  #menu-toggle{display:flex}
+}
+
+/* ── Content ── */
+.content{max-width:860px;margin:0 auto;padding:40px 32px 80px}
+.section{display:none}
+.section.active{display:block}
+.section-num{font-size:.85rem;font-weight:600;color:var(--accent);margin-bottom:4px}
+.section h1{font-size:2rem;font-weight:800;margin-bottom:16px;line-height:1.25}
+.section h2{font-size:1.4rem;font-weight:700;margin:32px 0 12px;color:var(--text)}
+.section h3{font-size:1.1rem;font-weight:600;margin:24px 0 8px;color:var(--text)}
+.section p{margin:12px 0;color:var(--text)}
+.section ul,.section ol{margin:12px 0 12px 24px}
+.section li{margin:4px 0}
+.section strong{color:#fff;font-weight:600}
+.section code:not(.code-block code){background:var(--surface2);padding:2px 6px;border-radius:3px;font-family:var(--font-mono);font-size:.88em;color:var(--accent)}
+
+/* ── Code Blocks ── */
+.code-block{
+  background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius);
+  margin:16px 0;overflow:hidden;
+}
+.code-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--code-border);
+  font-size:.75rem;color:var(--text2);
+}
+.code-header .lang{font-weight:600;text-transform:uppercase}
+.code-header .copy-btn{
+  background:none;border:none;color:var(--text2);cursor:pointer;font-size:.75rem;
+  padding:2px 8px;border-radius:3px;
+}
+.code-header .copy-btn:hover{background:var(--surface2);color:var(--text)}
+.code-block pre{padding:14px 16px;overflow-x:auto;font-size:.875rem;line-height:1.55}
+.code-block code{font-family:var(--font-mono);color:var(--text)}
+
+/* Syntax highlighting */
+.kw{color:#ff7b72}  /* keywords: fn, return, if, for, struct, enum, match... */
+.ty{color:#79c0ff}  /* types: int, string, bool, float */
+.str{color:#a5d6ff}  /* strings */
+.num{color:#79c0ff}  /* numbers */
+.cm{color:#6e7681;font-style:italic}  /* comments */
+.fn{color:#d2a8ff}  /* function names */
+.op{color:#ff7b72}  /* operators */
+.bi{color:#ffa657}  /* builtins */
+.pp{color:#ffa657}  /* preprocessor / special */
+
+/* ── Tables ── */
+.table-wrap{overflow-x:auto;margin:16px 0}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;padding:8px 12px;background:var(--surface);border:1px solid var(--border);font-weight:600;color:var(--text2);font-size:.8rem;text-transform:uppercase;letter-spacing:.03em}
+td{padding:8px 12px;border:1px solid var(--border)}
+td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:.88em}
+
+/* ── Callouts ── */
+.callout{padding:14px 16px;border-radius:var(--radius);margin:16px 0;display:flex;gap:12px;font-size:.9rem;line-height:1.55}
+.callout-icon{font-size:1.1rem;flex-shrink:0;line-height:1.5}
+.callout.tip{background:var(--green-bg);border:1px solid rgba(63,185,80,.25)}
+.callout.tip .callout-icon{color:var(--green)}
+.callout.warn{background:var(--orange-bg);border:1px solid rgba(210,153,34,.25)}
+.callout.warn .callout-icon{color:var(--orange)}
+.callout.info{background:var(--purple-bg);border:1px solid rgba(188,140,255,.25)}
+.callout.info .callout-icon{color:var(--purple)}
+.callout.danger{background:var(--red-bg);border:1px solid rgba(248,81,73,.25)}
+.callout.danger .callout-icon{color:var(--red)}
+.callout-title{font-weight:700;margin-bottom:2px}
+
+/* ── Quizzes ── */
+.quiz{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;margin:32px 0 0}
+.quiz-title{font-size:1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.quiz-title .icon{font-size:1.1rem}
+.quiz-question{margin-bottom:16px}
+.quiz-question p{font-weight:600;margin-bottom:10px;font-size:.95rem}
+.quiz-option{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;margin:6px 0;border-radius:var(--radius);
+  border:1px solid var(--border);cursor:pointer;transition:all .15s ease;
+  font-size:.9rem;
+}
+.quiz-option:hover{border-color:var(--accent);background:rgba(88,166,255,.05)}
+.quiz-option.selected{border-color:var(--accent);background:rgba(88,166,255,.1)}
+.quiz-option.correct{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+.quiz-option.wrong{border-color:var(--red);background:var(--red-bg);color:var(--red)}
+.quiz-option .radio{
+  width:18px;height:18px;border-radius:50%;border:2px solid var(--border);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:all .15s ease;
+}
+.quiz-option.selected .radio{border-color:var(--accent);background:var(--accent)}
+.quiz-option.correct .radio{border-color:var(--green);background:var(--green)}
+.quiz-option.wrong .radio{border-color:var(--red);background:var(--red)}
+.quiz-explanation{
+  margin-top:12px;padding:12px 14px;border-radius:var(--radius);
+  font-size:.88rem;line-height:1.5;display:none;
+}
+.quiz-explanation.show{display:block}
+.quiz-explanation.correct-exp{background:var(--green-bg);border:1px solid rgba(63,185,80,.2);color:#7ee787}
+.quiz-explanation.wrong-exp{background:var(--red-bg);border:1px solid rgba(248,81,73,.2);color:#ffa198}
+.quiz-submit{
+  margin-top:16px;padding:8px 20px;border-radius:var(--radius);
+  background:var(--accent2);color:#fff;border:none;cursor:pointer;
+  font-weight:600;font-size:.9rem;transition:background .15s ease;
+}
+.quiz-submit:hover{background:var(--accent)}
+.quiz-submit:disabled{opacity:.5;cursor:default}
+
+/* ── Navigation Buttons ── */
+.nav-buttons{display:flex;justify-content:space-between;align-items:center;margin-top:40px;padding-top:20px;border-top:1px solid var(--border)}
+.nav-btn{
+  padding:10px 20px;border-radius:var(--radius);border:1px solid var(--border);
+  background:var(--surface);color:var(--text);cursor:pointer;
+  font-size:.9rem;font-weight:600;display:flex;align-items:center;gap:6px;
+  transition:all .15s ease;
+}
+.nav-btn:hover{background:var(--surface2);border-color:var(--accent)}
+.nav-btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+.nav-btn.primary:hover{background:var(--accent)}
+.nav-btn:disabled{opacity:.3;cursor:default;pointer-events:none}
+
+/* ── Welcome Screen ── */
+.welcome{text-align:center;padding:60px 32px 40px}
+.welcome h1{font-size:2.5rem;font-weight:800;margin-bottom:8px}
+.welcome .tagline{font-size:1.1rem;color:var(--text2);margin-bottom:32px}
+.welcome .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;max-width:700px;margin:0 auto 32px}
+.welcome .feat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:left}
+.welcome .feat .icon{font-size:1.3rem;margin-bottom:6px}
+.welcome .feat h3{font-size:.95rem;font-weight:700;margin-bottom:4px}
+.welcome .feat p{font-size:.8rem;color:var(--text2);line-height:1.4}
+.start-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:14px 32px;border-radius:var(--radius);
+  background:var(--accent2);color:#fff;border:none;
+  font-size:1rem;font-weight:700;cursor:pointer;
+  transition:all .15s ease;
+}
+.start-btn:hover{background:var(--accent);transform:translateY(-1px)}
+
+/* ── Challenge Blocks ── */
+.challenge{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 20px;margin:16px 0;
+}
+.challenge-header{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:8px;font-size:.95rem}
+.challenge .challenge-header .icon{color:var(--purple)}
+.challenge p{font-size:.9rem;color:var(--text2);line-height:1.5}
+.challenge code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:.88em;color:var(--accent)}
+</style>
+</head>
+<body>
+
+<button id="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<nav id="sidebar">
+  <div id="sidebar-header">
+    <h2>Learn Hier</h2>
+    <div class="subtitle">Interactive Guide</div>
+    <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+    <div id="progress-text">0 / 17 complete</div>
+  </div>
+  <div id="nav"></div>
+</nav>
+
+<div id="main">
+<div class="content">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- WELCOME                                    -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section active" id="sec-welcome">
+<div class="welcome">
+  <h1>Learn <span style="color:var(--accent)">Hier</span></h1>
+  <div class="tagline">A systems language with Python syntax and zero manual memory management.</div>
+  <div class="features">
+    <div class="feat"><div class="icon">&#9889;</div><h3>Fast</h3><p>AOT-compiled to native code. No GC pauses, no interpreter overhead.</p></div>
+    <div class="feat"><div class="icon">&#128274;</div><h3>Safe</h3><p>No null, no exceptions, no races. Option, Result, and copy-in/copy-out concurrency.</p></div>
+    <div class="feat"><div class="icon">&#129504;</div><h3>Simple</h3><p>One loop keyword. One way to do each thing. Learn the whole language in an afternoon.</p></div>
+  </div>
+  <button class="start-btn" onclick="goTo(0)">&#9654;&nbsp; Start Learning</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 0: WHAT IS HIER                    -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-0">
+<div class="section-num">Chapter 1</div>
+<h1>What is Hier?</h1>
+
+<p>Hier is a <strong>systems language</strong> &mdash; it compiles to native machine code, like C or Rust. But its syntax looks like Python:</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">greet</span>(name: <span class="ty">string</span>) -> <span class="ty">string</span>:
+    <span class="kw">return</span> <span class="str">"hello "</span> + name + <span class="str">"\n"</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">print</span>(<span class="str">"what is your name: "</span>)
+    name := <span class="fn">input</span>()
+    <span class="fn">print</span>(<span class="fn">greet</span>(name))</code></pre></div>
+
+<p>Three things make Hier different from the languages you know:</p>
+
+<div class="table-wrap"><table>
+<tr><th>Concept</th><th>JS / Python</th><th>Rust</th><th>Hier</th></tr>
+<tr><td>Memory</td><td>Garbage collector</td><td>Borrow checker + lifetimes</td><td><strong>Implicit arenas</strong> (automatic)</td></tr>
+<tr><td>Types</td><td>Dynamic</td><td>Static, inferred</td><td>Static, inferred</td></tr>
+<tr><td>Null</td><td><code>null</code> / <code>None</code></td><td><code>Option&lt;T&gt;</code></td><td><code>Option(T)</code></td></tr>
+<tr><td>Errors</td><td>Exceptions</td><td><code>Result&lt;T,E&gt;</code></td><td><code>Result(T, E)</code></td></tr>
+<tr><td>Concurrency</td><td>Shared mutable state</td><td><code>Send</code>/<code>Sync</code> + lifetimes</td><td>Copy-in/copy-out (race-free)</td></tr>
+</table></div>
+
+<div class="callout info">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">The Key Insight: Value Semantics</div>
+Every value is independently owned. When you assign <code>b = a</code>, <code>b</code> gets its own deep copy. Two variables <strong>never</strong> share storage. This lets the compiler manage memory automatically &mdash; each scope gets an arena (a memory pool) that frees everything at once when the scope ends. No <code>free()</code>, no GC, no lifetimes.
+</div></div>
+
+<div class="quiz" id="quiz-0">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. How does Hier manage memory?</p>
+<div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Garbage collection, like JavaScript</div>
+<div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Manual malloc/free, like C</div>
+<div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Implicit arenas &mdash; the compiler inserts all allocation and reclamation</div>
+<div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Borrow checker with lifetimes, like Rust</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Hier uses lexical arenas &mdash; one per scope &mdash; that free everything at once when the scope exits. The programmer never sees an arena API.</div>
+<div class="quiz-explanation" data-wrong="1">Not quite. Hier uses <strong>implicit hierarchical arenas</strong> &mdash; one per scope, freed automatically. No GC, no lifetimes, no manual free.</div>
+<button class="quiz-submit" onclick="submitQuiz(0)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 1: SETUP & HELLO WORLD             -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-1">
+<div class="section-num">Chapter 2</div>
+<h1>Setup &amp; Hello World</h1>
+
+<h2>Building the compiler</h2>
+<p>You need a C compiler (<code>gcc</code> or <code>clang</code>) and <code>make</code>:</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>git clone &lt;repo-url&gt; hier
+cd hier
+make</code></pre></div>
+
+<p>This produces <code>./hierc</code>, the Hier compiler.</p>
+
+<h2>Hello World</h2>
+<p>Create <code>hello.hi</code>:</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">print</span>(<span class="str">"Hello, world!\n"</span>)</code></pre></div>
+
+<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>./hierc hello.hi     # compiles to ./hello
+./hello              # Hello, world!</code></pre></div>
+
+<div class="callout tip">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">Key Differences from JavaScript/Python</div>
+<ul>
+<li><code>fn</code> instead of <code>function</code> / <code>def</code></li>
+<li><code>-&gt; type</code> declares the return type</li>
+<li>Indentation is significant (spaces only &mdash; tabs are an error)</li>
+<li>Every block header ends with <code>:</code></li>
+<li><code>#</code> starts a comment</li>
+<li><code>print()</code> takes a string &mdash; no implicit newline (add <code>\n</code> yourself)</li>
+<li>Every program needs a <code>fn main():</code> as the entry point</li>
+</ul>
+</div></div>
+
+<div class="challenge">
+<div class="challenge-header"><span class="icon">&#128170;</span> Try It</div>
+<p>Create a file <code>greet.hi</code> that asks for the user's name with <code>input()</code> and prints a greeting. Compile and run it. Hint: <code>input()</code> reads one line from stdin.</p>
+</div>
+
+<div class="quiz" id="quiz-1">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. What does <code>./hierc hello.hi</code> produce?</p>
+<div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A native binary called <code>hello</code></div>
+<div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A bytecode file <code>hello.hic</code></div>
+<div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>An optimized AST in memory</div>
+<div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A JavaScript file <code>hello.js</code></div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! <code>hierc</code> transpiles Hier to C, then compiles to a native binary with <code>cc</code>.</div>
+<div class="quiz-explanation" data-wrong="1">Not quite. Hier is AOT-compiled: it transpiles to C, then compiles to a <strong>native binary</strong> with your system C compiler.</div>
+<button class="quiz-submit" onclick="submitQuiz(1)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 2: VARIABLES & TYPES               -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-2">
+<div class="section-num">Chapter 3</div>
+<h1>Variables, Types, and Arithmetic</h1>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="cm"># declarations</span>
+    x := <span class="num">41</span>              <span class="cm"># type inferred (int)</span>
+    y : <span class="ty">int</span> = <span class="num">10</span>         <span class="cm"># explicit type</span>
+    name := <span class="str">"Ada"</span>
+    pi := <span class="num">3.14</span>
+    flag := <span class="ty">true</span>
+
+    <span class="cm"># assignment (variable must already exist)</span>
+    x = x + <span class="num">1</span>            <span class="cm"># x is 42</span>
+    x += <span class="num">1</span>               <span class="cm"># compound: x is 43</span>
+
+    <span class="cm"># arithmetic</span>
+    a := <span class="num">10</span> + <span class="num">3</span>           <span class="cm"># 13</span>
+    b := <span class="num">10</span> - <span class="num">3</span>           <span class="cm"># 7</span>
+    c := <span class="num">10</span> * <span class="num">3</span>           <span class="cm"># 30</span>
+    d := <span class="num">10</span> / <span class="num">3</span>           <span class="cm"># 3 (truncates)</span>
+    e := <span class="num">10</span> % <span class="num">3</span>           <span class="cm"># 1 (remainder)</span>
+
+    <span class="cm"># floats</span>
+    f := <span class="num">10.0</span> / <span class="num">3.0</span>       <span class="cm"># 3.333... (true division)</span>
+    n := <span class="fn">to_float</span>(x)      <span class="cm"># int -> float</span>
+    m := <span class="fn">to_int</span>(f)        <span class="cm"># float -> int (truncates)</span>
+
+    <span class="cm"># comparisons produce bool</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(x == <span class="num">43</span>) + <span class="str">"\n"</span>)    <span class="cm"># "true"</span></code></pre></div>
+
+<h2>Built-in Types</h2>
+<div class="table-wrap"><table>
+<tr><th>Type</th><th>Description</th><th>Example</th></tr>
+<tr><td><code>int</code></td><td>64-bit signed integer</td><td><code>42</code>, <code>0</code>, <code>-7</code></td></tr>
+<tr><td><code>float</code></td><td>64-bit IEEE double</td><td><code>3.14</code>, <code>0.0</code></td></tr>
+<tr><td><code>bool</code></td><td><code>true</code> or <code>false</code></td><td><code>true</code></td></tr>
+<tr><td><code>string</code></td><td>Immutable byte buffer</td><td><code>"hello"</code></td></tr>
+<tr><td><code>char</code></td><td>Single byte</td><td><code>'A'</code>, <code>'\n'</code></td></tr>
+<tr><td><code>[T]</code></td><td>Dynamic array</td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td><code>[K: V]</code></td><td>Map</td><td><code>["a": 1]</code></td></tr>
+<tr><td><code>Option(T)</code></td><td>Value or nothing</td><td><code>Some(5)</code>, <code>None</code></td></tr>
+<tr><td><code>Result(T, E)</code></td><td>Value or error</td><td><code>Ok(5)</code>, <code>Err("bad")</code></td></tr>
+</table></div>
+
+<div class="callout warn">
+<div class="callout-icon">&#9888;&#65039;</div>
+<div>
+<div class="callout-title">int and float never mix</div>
+You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. The exception: an <code>int</code> <em>literal</em> adapts to a float context, so <code>f := 1.5; g := f + 2</code> works (the <code>2</code> becomes a float).
+</div></div>
+
+<div class="quiz" id="quiz-2">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. What does <code>x := 42</code> do?</p>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>Declares a new variable <code>x</code> with type inferred as <code>int</code></div>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>Reassigns an existing variable <code>x</code> to 42</div>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>Creates a mutable reference to the value 42</div>
+</div>
+<div class="quiz-question" data-answer="2">
+<p>2. What is <code>10 / 3</code> in Hier?</p>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3.333...</div>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3 (with a runtime error for the remainder)</div>
+<div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3 (truncates toward zero)</div>
+</div>
+<div class="quiz-explanation" data-correct="2">Correct! <code>:=</code> declares a new variable with type inferred from the initializer. Integer division truncates toward zero.</div>
+<div class="quiz-explanation" data-wrong="2"><code>:=</code> declares a new variable (inferred type). <code>=</code> assigns to an existing one. Integer <code>/</code> truncates toward zero (no error).</div>
+<button class="quiz-submit" onclick="submitQuiz(2)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 3: FUNCTIONS                       -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-3">
+<div class="section-num">Chapter 4</div>
+<h1>Functions</h1>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># returns an int</span>
+<span class="kw">fn</span> <span class="fn">add</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>:
+    <span class="kw">return</span> a + b
+
+<span class="cm"># returns nothing (no -> type)</span>
+<span class="kw">fn</span> <span class="fn">say</span>(s: <span class="ty">string</span>):
+    <span class="fn">print</span>(s + <span class="str">"\n"</span>)
+
+<span class="cm"># inout: mutate the caller's variable</span>
+<span class="kw">fn</span> <span class="fn">incr</span>(n: <span class="kw">inout</span> <span class="ty">int</span>):
+    n = n + <span class="num">1</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>)) + <span class="str">"\n"</span>)   <span class="cm"># 7</span>
+    x := <span class="num">10</span>
+    <span class="fn">incr</span>(&amp;x)                  <span class="cm"># x is now 11</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(x) + <span class="str">"\n"</span>)    <span class="cm"># 11</span></code></pre></div>
+
+<h2>Web Developer Mental Model</h2>
+<ul>
+<li><code>fn foo(x: int)</code> &mdash; like passing a primitive in JS. The function gets its own copy.</li>
+<li><code>fn foo(xs: [int])</code> &mdash; like a read-only view. You can read but not mutate.</li>
+<li><code>fn foo(xs: inout [int])</code> &mdash; like passing by reference. The function can mutate the caller's array. Mark the call with <code>&</code>.</li>
+</ul>
+
+<h2>String Interpolation</h2>
+<p>Like template literals in JS:</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>name := <span class="str">"Ada"</span>
+age := <span class="num">36</span>
+<span class="fn">print</span>(<span class="str">f"{name} is {age}\n"</span>)           <span class="cm"># Ada is 36</span>
+<span class="fn">print</span>(<span class="str">f"2 + 3 = {2 + 3}\n"</span>)          <span class="cm"># 2 + 3 = 5</span></code></pre></div>
+
+<p>Use <code>f"..."</code> to interpolate. <code>{expr}</code> inserts the value. Plain <code>"..."</code> strings are never interpolated.</p>
+
+<div class="quiz" id="quiz-3">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. How do you mark that a variable should be mutated by a function?</p>
+<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Pass it without any special syntax</div>
+<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>&amp;variable</code> at the call site and <code>inout</code> in the parameter</div>
+<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Declare the variable with <code>var</code> instead of <code>:=</code></div>
+<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>mut</code> like in Rust</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! <code>inout</code> in the parameter + <code>&amp;</code> at the call site. This is copy-in/copy-out, preserving value semantics.</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <code>inout</code> in the function signature and <code>&amp;variable</code> at the call site. No <code>mut</code>, no implicit mutation.</div>
+<button class="quiz-submit" onclick="submitQuiz(3)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 4: CONTROL FLOW                    -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-4">
+<div class="section-num">Chapter 5</div>
+<h1>Control Flow</h1>
+
+<h2>if / elif / else</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">classify</span>(n: <span class="ty">int</span>) -> <span class="ty">string</span>:
+    <span class="kw">if</span> n &lt; <span class="num">0</span>:
+        <span class="kw">return</span> <span class="str">"negative"</span>
+    <span class="kw">elif</span> n == <span class="num">0</span>:
+        <span class="kw">return</span> <span class="str">"zero"</span>
+    <span class="kw">else</span>:
+        <span class="kw">return</span> <span class="str">"positive"</span></code></pre></div>
+
+<h2>One Loop Keyword: <code>for</code></h2>
+
+<div class="callout tip">
+<div class="callout-icon">&#128161;</div>
+<div>There is no <code>while</code> keyword in Hier. <code>for</code> does everything.</div></div>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># 1. Condition form (like while)</span>
+x := <span class="num">10</span>
+<span class="kw">for</span> x > <span class="num">0</span>:
+    <span class="fn">print</span>(<span class="fn">str</span>(x) + <span class="str">" "</span>)
+    x = x - <span class="num">1</span>
+
+<span class="cm"># 2. Counting form</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):          <span class="cm"># 0..4</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(i))
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">2</span>, <span class="num">7</span>):       <span class="cm"># 2..6</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(i))
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>, <span class="num">0</span>, -<span class="num">2</span>):  <span class="cm"># 10,8,6,4,2</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(i))
+
+<span class="cm"># 3. Foreach form</span>
+names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <span class="str">"Alan"</span>]
+<span class="kw">for</span> name <span class="kw">in</span> names:
+    <span class="fn">print</span>(name + <span class="str">"\n"</span>)</code></pre></div>
+
+<h2>break, continue, and logical operators</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    <span class="kw">if</span> i == <span class="num">5</span>:
+        <span class="kw">continue</span>        <span class="cm"># skip 5</span>
+    <span class="kw">if</span> i > <span class="num">10</span>:
+        <span class="kw">break</span>           <span class="cm"># stop</span>
+
+<span class="cm"># Logical: and, or, not (short-circuit)</span>
+<span class="cm"># Precedence: comparisons > not > and > or</span>
+<span class="kw">if</span> x > <span class="num">0</span> <span class="kw">and</span> <span class="kw">not</span> done:
+    <span class="fn">print</span>(<span class="str">"active\n"</span>)</code></pre></div>
+
+<div class="challenge">
+<div class="challenge-header"><span class="icon">&#128170;</span> Challenge</div>
+<p>Write a function <code>fizzbuzz(n: int)</code> that prints "Fizz" for multiples of 3, "Buzz" for multiples of 5, "FizzBuzz" for both, and the number otherwise. Use <code>for i in range(1, n + 1)</code>.</p>
+</div>
+
+<div class="quiz" id="quiz-4">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. How many loop keywords does Hier have?</p>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>One: <code>for</code> (in three shapes)</div>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Two: <code>for</code> and <code>while</code></div>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Three: <code>for</code>, <code>while</code>, and <code>loop</code></div>
+</div>
+<div class="quiz-question" data-answer="1">
+<p>2. What does <code>for x > 0:</code> do?</p>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Compile error &mdash; you need <code>while</code></div>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Repeats the body while <code>x > 0</code> is true</div>
+<div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Runs exactly once if <code>x > 0</code></div>
+</div>
+<div class="quiz-explanation" data-correct="2">Correct! <code>for cond:</code> is the condition form (like <code>while</code> in other languages). <code>for i in range(n):</code> is the counting form. <code>for x in xs:</code> is foreach.</div>
+<div class="quiz-explanation" data-wrong="2">Hier has <strong>one</strong> loop keyword: <code>for</code>. It comes in three shapes: condition (<code>for cond:</code>), counting (<code>for i in range(n):</code>), and foreach (<code>for x in xs:</code>).</div>
+<button class="quiz-submit" onclick="submitQuiz(4)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 5: STRINGS                         -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-5">
+<div class="section-num">Chapter 6</div>
+<h1>Strings</h1>
+
+<p>Strings are <strong>immutable byte buffers</strong>. You build new ones with <code>+</code>.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(s)) + <span class="str">"\n"</span>)         <span class="cm"># 5</span>
+<span class="fn">print</span>(<span class="fn">str</span>(s[<span class="num">0</span>]) + <span class="str">"\n"</span>)           <span class="cm"># 104 (byte value of 'h')</span>
+s2 := s + <span class="str">" world"</span>               <span class="cm"># "hello world"</span>
+<span class="fn">print</span>(<span class="fn">substr</span>(<span class="str">"hello world"</span>, <span class="num">0</span>, <span class="num">5</span>)) <span class="cm"># "hello"</span>
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">find</span>(s2, <span class="str">"world"</span>)))   <span class="cm"># 6</span>
+parts := <span class="fn">split</span>(<span class="str">"a,b,c"</span>, <span class="str">","</span>)      <span class="cm"># ["a", "b", "c"]</span></code></pre></div>
+
+<h2>The Secret Optimization: In-Place Append</h2>
+
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">O(n) string building, automatically</div>
+When you write <code>total = total + x</code> in a loop, the compiler grows <code>total</code>'s buffer in place &mdash; O(n) total, not O(n&sup2;). This is automatic: the source just looks like normal string concatenation.
+</div></div>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+    total := <span class="str">""</span>
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">6</span>):
+        total = total + <span class="fn">str</span>(i)        <span class="cm"># O(n), not O(n^2)!</span>
+        <span class="kw">if</span> i &lt; <span class="num">5</span>:
+            total = total + <span class="str">", "</span>
+    <span class="fn">print</span>(total + <span class="str">"\n"</span>)           <span class="cm"># "1, 2, 3, 4, 5"</span></code></pre></div>
+
+<h2>The <code>char</code> Type</h2>
+<p><code>char</code> is a single byte. Use <code>'x'</code> syntax. Appending a char to a string is a zero-alloc byte push:</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
+s = s + <span class="str">'\n'</span>             <span class="cm"># zero-alloc byte append</span>
+s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <span class="cm"># appends '5' (char arithmetic)</span></code></pre></div>
+
+<div class="quiz" id="quiz-5">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. What happens when you build a string with <code>total = total + x</code> in a loop?</p>
+<div class="quiz-option" onclick="selectOption(this,5)"><div class="radio"></div>It's O(n&sup2;) &mdash; each step copies the whole string</div>
+<div class="quiz-option" onclick="selectOption(this,5)"><div class="radio"></div>It's O(n) &mdash; the compiler grows the buffer in place</div>
+<div class="quiz-option" onclick="selectOption(this,5)"><div class="radio"></div>It's a compile error &mdash; strings are immutable</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! The self-append pattern <code>acc = acc + x</code> is optimized by the compiler to grow the buffer in place, so it's O(n) total.</div>
+<div class="quiz-explanation" data-wrong="1">Hier optimizes the <code>total = total + x</code> self-rebind pattern to grow the buffer in place &mdash; O(n) total, not O(n&sup2;). The source looks like normal concatenation.</div>
+<button class="quiz-submit" onclick="submitQuiz(5)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 6: ARRAYS                          -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-6">
+<div class="section-num">Chapter 7</div>
+<h1>Arrays</h1>
+
+<p>Arrays are <strong>dynamic, heap-allocated, value-semantic</strong> lists. Assigning one makes a deep copy.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]           <span class="cm"># [int] literal</span>
+empty := []<span class="ty">int</span>               <span class="cm"># empty (type required)</span>
+<span class="fn">push</span>(xs, <span class="num">40</span>)                 <span class="cm"># [10, 20, 30, 40]</span>
+last := <span class="fn">pop</span>(xs)              <span class="cm"># 40</span>
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(xs)))           <span class="cm"># 3</span>
+xs[<span class="num">0</span>] = <span class="num">99</span>                   <span class="cm"># write (bounds-checked)</span>
+
+<span class="cm"># VALUE SEMANTICS: assignment is a deep copy</span>
+ys := xs                      <span class="cm"># independent copy</span>
+ys[<span class="num">0</span>] = <span class="num">0</span>                    <span class="cm"># never touches xs</span></code></pre></div>
+
+<div class="callout warn">
+<div class="callout-icon">&#9888;&#65039;</div>
+<div>
+<div class="callout-title">Array parameters are read-only borrows</div>
+A <code>[int]</code> parameter is a borrow &mdash; no copy, but you can't mutate it. Copy first (<code>b := a</code>) to get a mutable local, or take it <code>inout</code>.
+</div></div>
+
+<h2>Slices</h2>
+<p><code>xs[a:b]</code> is a sub-range. Passed to a read-only parameter: <strong>zero-copy view</strong>. Stored in a variable: <strong>deep copy</strong>.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">sum</span>(xs[<span class="num">1</span>:<span class="num">4</span>])))     <span class="cm"># 90 &mdash; zero-copy view</span>
+mid := xs[<span class="num">1</span>:<span class="num">4</span>]                <span class="cm"># deep copy: [20, 30, 40]</span></code></pre></div>
+
+<h2>Returning Arrays</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">make_squares</span>(n: <span class="ty">int</span>) -> [<span class="ty">int</span>]:
+    r := []<span class="ty">int</span>
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="fn">push</span>(r, i * i)
+    <span class="kw">return</span> r              <span class="cm"># promoted into caller's arena</span></code></pre></div>
+
+<div class="quiz" id="quiz-6">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. What happens when you assign <code>ys := xs</code> where <code>xs</code> is <code>[int]</code>?</p>
+<div class="quiz-option" onclick="selectOption(this,6)"><div class="radio"></div><code>ys</code> gets an independent deep copy of <code>xs</code></div>
+<div class="quiz-option" onclick="selectOption(this,6)"><div class="radio"></div><code>ys</code> becomes a reference to the same array</div>
+<div class="quiz-option" onclick="selectOption(this,6)"><div class="radio"></div>Compile error &mdash; arrays can't be assigned</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Hier has value semantics: assignment always deep-copies. <code>ys</code> is completely independent of <code>xs</code>.</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <strong>value semantics</strong>: <code>ys := xs</code> makes an independent deep copy. Mutating <code>ys</code> never affects <code>xs</code>.</div>
+<button class="quiz-submit" onclick="submitQuiz(6)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 7: STRUCTS                         -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-7">
+<div class="section-num">Chapter 8</div>
+<h1>Structs</h1>
+
+<p>Structs are <strong>named product types</strong> with value semantics. Think plain objects that are always deep-copied.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>:
+    x: <span class="ty">int</span>
+    y: <span class="ty">int</span>
+
+<span class="kw">struct</span> <span class="ty">Rect</span>:
+    lo: <span class="ty">Point</span>
+    hi: <span class="ty">Point</span>
+
+<span class="kw">fn</span> <span class="fn">area</span>(r: <span class="ty">Rect</span>) -> <span class="ty">int</span>:
+    <span class="kw">return</span> (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    a := <span class="ty">Point</span>(<span class="num">1</span>, <span class="num">2</span>)              <span class="cm"># positional construction</span>
+    r := <span class="ty">Rect</span>(a, <span class="ty">Point</span>(<span class="num">4</span>, <span class="num">6</span>))
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">area</span>(r)) + <span class="str">"\n"</span>)   <span class="cm"># 9</span>
+    b := a                         <span class="cm"># deep copy</span>
+    b.x = <span class="num">99</span>                      <span class="cm"># never touches a</span></code></pre></div>
+
+<div class="callout info">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">Structs with heap fields</div>
+A struct can own strings, arrays, and other structs. On assignment, <strong>everything is deep-copied</strong> &mdash; the copy is independent at every nesting level.
+</div></div>
+
+<div class="quiz" id="quiz-7">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. Are struct copies shallow or deep?</p>
+<div class="quiz-option" onclick="selectOption(this,7)"><div class="radio"></div>Shallow &mdash; only the top-level fields are copied</div>
+<div class="quiz-option" onclick="selectOption(this,7)"><div class="radio"></div>Deep &mdash; all fields, strings, arrays, and nested structs are fully copied</div>
+<div class="quiz-option" onclick="selectOption(this,7)"><div class="radio"></div>Depends on whether the field is a value type or reference type</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Every copy in Hier is deep &mdash; all strings, arrays, and nested structs are duplicated. The copy is 100% independent.</div>
+<div class="quiz-explanation" data-wrong="1">All copies in Hier are <strong>deep</strong>. There are no reference types. Strings, arrays, nested structs &mdash; everything is duplicated.</div>
+<button class="quiz-submit" onclick="submitQuiz(7)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 8: MAPS                            -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-8">
+<div class="section-num">Chapter 9</div>
+<h1>Maps</h1>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := [<span class="str">"ada"</span>: <span class="num">1</span>, <span class="str">"alan"</span>: <span class="num">2</span>]     <span class="cm"># [string: int]</span>
+empty := []<span class="ty">string</span>: <span class="ty">int</span>              <span class="cm"># empty map</span>
+
+v := <span class="fn">map_get</span>(counts, <span class="str">"ada"</span>, <span class="num">0</span>)       <span class="cm"># 1 (0 = default)</span>
+<span class="fn">map_has</span>(counts, <span class="str">"grace"</span>)             <span class="cm"># false</span>
+counts = <span class="fn">map_set</span>(counts, <span class="str">"grace"</span>, <span class="num">5</span>)  <span class="cm"># add/overwrite</span>
+counts = <span class="fn">map_del</span>(counts, <span class="str">"alan"</span>)     <span class="cm"># remove</span>
+ks := <span class="fn">keys</span>(counts)                     <span class="cm"># [string] of keys</span>
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(counts)))                 <span class="cm"># entry count</span></code></pre></div>
+
+<h2>The Counter Idiom</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># canonical word-frequency pattern</span>
+counts := []<span class="ty">string</span>: <span class="ty">int</span>
+words := <span class="fn">split</span>(<span class="str">"the cat sat on the mat"</span>, <span class="str">" "</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(words)):
+    w := words[i]
+    counts = <span class="fn">map_set</span>(counts, w, <span class="fn">map_get</span>(counts, w, <span class="num">0</span>) + <span class="num">1</span>)</code></pre></div>
+
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">In-place optimization</div>
+Despite looking like it builds a fresh map each step, the compiler <strong>mutates in place</strong> when it sees the <code>m = map_set(m, ...)</code> self-rebind &mdash; O(n) total, not O(n&sup2;).
+</div></div>
+
+<div class="quiz" id="quiz-8">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. How do you add a key to a map?</p>
+<div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts["key"] = value</code></div>
+<div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts = map_set(counts, "key", value)</code></div>
+<div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts.set("key", value)</code></div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! <code>map_set</code> returns a new map. The <code>m = map_set(m, k, v)</code> self-rebind is optimized to in-place mutation.</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <code>map_set(m, k, v)</code> which returns a new map. The self-rebind <code>m = map_set(m, k, v)</code> is optimized to mutate in place.</div>
+<button class="quiz-submit" onclick="submitQuiz(8)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 9: OPTION & RESULT                 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-9">
+<div class="section-num">Chapter 10</div>
+<h1>Option and Result</h1>
+
+<h2>Option(T) &mdash; the no-null story</h2>
+<p>Instead of <code>null</code>, Hier uses <code>Option(T)</code>: either <code>Some(value)</code> or <code>None</code>.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">index_of</span>(xs: [<span class="ty">int</span>], target: <span class="ty">int</span>) -> <span class="ty">Option</span>(<span class="ty">int</span>):
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(xs)):
+        <span class="kw">if</span> xs[i] == target:
+            <span class="kw">return</span> <span class="ty">Some</span>(i)
+    <span class="kw">return</span> <span class="ty">None</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="kw">match</span> <span class="fn">index_of</span>([<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>], <span class="num">20</span>):
+        <span class="ty">Some</span>(i):
+            <span class="fn">print</span>(<span class="str">"found at "</span> + <span class="fn">str</span>(i) + <span class="str">"\n"</span>)
+        <span class="ty">None</span>:
+            <span class="fn">print</span>(<span class="str">"not found\n"</span>)</code></pre></div>
+
+<div class="callout warn">
+<div class="callout-icon">&#9888;&#65039;</div>
+<div>The <code>match</code> is <strong>exhaustive</strong> &mdash; you must handle both arms. The compiler won't let you forget the null check.</div></div>
+
+<h2>Result(T, E) &mdash; the no-exceptions story</h2>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">checked_div</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">Result</span>(<span class="ty">int</span>, <span class="ty">string</span>):
+    <span class="kw">if</span> b == <span class="num">0</span>:
+        <span class="kw">return</span> <span class="ty">Err</span>(<span class="str">"divide by zero"</span>)
+    <span class="kw">return</span> <span class="ty">Ok</span>(a / b)
+
+<span class="cm"># or_return: unwrap or propagate the error</span>
+<span class="kw">fn</span> <span class="fn">add_two</span>(a: <span class="ty">string</span>, b: <span class="ty">string</span>) -> <span class="ty">Result</span>(<span class="ty">int</span>, <span class="ty">string</span>):
+    x := <span class="fn">parse_digit</span>(a) <span class="kw">or_return</span>  <span class="cm"># unwrap or return Err</span>
+    y := <span class="fn">parse_digit</span>(b) <span class="kw">or_return</span>
+    <span class="kw">return</span> <span class="ty">Ok</span>(x + y)</code></pre></div>
+
+<div class="quiz" id="quiz-9">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="2">
+<p>1. What is Hier's equivalent of <code>null</code>?</p>
+<div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div>A special <code>null</code> literal</div>
+<div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div><code>undefined</code></div>
+<div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div><code>None</code> (as <code>Option(T)</code>)</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! There is no <code>null</code>. Use <code>Option(T)</code> with <code>Some(value)</code> or <code>None</code>, and exhaustive <code>match</code> to handle both cases.</div>
+<div class="quiz-explanation" data-wrong="1">Hier has no <code>null</code>. Use <code>Option(T)</code> &mdash; either <code>Some(value)</code> or <code>None</code>. The exhaustive <code>match</code> ensures you never forget to check.</div>
+<button class="quiz-submit" onclick="submitQuiz(9)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 10: ENUMS                          -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-10">
+<div class="section-num">Chapter 11</div>
+<h1>Enums and Pattern Matching</h1>
+
+<p>An <code>enum</code> is a tagged union &mdash; a value that is exactly one of several variants, each carrying data. Think of it as a type-safe <code>switch</code> on steroids.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Shape</span>:
+    <span class="ty">Circle</span>(<span class="ty">float</span>)
+    <span class="ty">Rect</span>(<span class="ty">float</span>, <span class="ty">float</span>)
+
+<span class="kw">fn</span> <span class="fn">area</span>(s: <span class="ty">Shape</span>) -> <span class="ty">float</span>:
+    <span class="kw">match</span> s:
+        <span class="ty">Circle</span>(r):
+            <span class="kw">return</span> <span class="num">3.14159</span> * r * r
+        <span class="ty">Rect</span>(w, h):
+            <span class="kw">return</span> w * h</code></pre></div>
+
+<h2>Recursive Enums (Trees / ASTs)</h2>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Expr</span>:
+    <span class="ty">Num</span>(<span class="ty">int</span>)
+    <span class="ty">Add</span>(<span class="ty">Expr</span>, <span class="ty">Expr</span>)
+    <span class="ty">Mul</span>(<span class="ty">Expr</span>, <span class="ty">Expr</span>)
+
+<span class="kw">fn</span> <span class="fn">eval</span>(e: <span class="ty">Expr</span>) -> <span class="ty">int</span>:
+    <span class="kw">match</span> e:
+        <span class="ty">Num</span>(v):
+            <span class="kw">return</span> v
+        <span class="ty">Add</span>(l, r):
+            <span class="kw">return</span> <span class="fn">eval</span>(l) + <span class="fn">eval</span>(r)
+        <span class="ty">Mul</span>(l, r):
+            <span class="kw">return</span> <span class="fn">eval</span>(l) * <span class="fn">eval</span>(r)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="cm"># (2 + 3) * 4 = 20</span>
+    expr := <span class="ty">Mul</span>(<span class="ty">Add</span>(<span class="ty">Num</span>(<span class="num">2</span>), <span class="ty">Num</span>(<span class="num">3</span>)), <span class="ty">Num</span>(<span class="num">4</span>))
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">eval</span>(expr)) + <span class="str">"\n"</span>)  <span class="cm"># 20</span></code></pre></div>
+
+<div class="callout tip">
+<div class="callout-icon">&#128161;</div>
+<div>Every <code>match</code> must be <strong>exhaustive</strong> &mdash; every variant needs an arm. The compiler won't let you forget a case. Enums are value-semantic too: copying one deep-copies the whole tree.</div></div>
+
+<div class="quiz" id="quiz-10">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. What happens if you forget a variant in a <code>match</code>?</p>
+<div class="quiz-option" onclick="selectOption(this,10)"><div class="radio"></div>The missing variant falls through to a default</div>
+<div class="quiz-option" onclick="selectOption(this,10)"><div class="radio"></div>Compile error &mdash; every match must be exhaustive</div>
+<div class="quiz-option" onclick="selectOption(this,10)"><div class="radio"></div>Runtime panic when that variant is encountered</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Hier requires exhaustive matches. If you forget a variant, the compiler rejects the program.</div>
+<div class="quiz-explanation" data-wrong="1">Hier requires <strong>exhaustive</strong> matches. Every variant must have an arm. Missing one is a compile error, not a runtime issue.</div>
+<button class="quiz-submit" onclick="submitQuiz(10)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 11: TUPLES & TYPE INFERENCE        -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-11">
+<div class="section-num">Chapter 12 &ndash; 13</div>
+<h1>Tuples and Type Inference</h1>
+
+<h2>Tuples</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">divmod</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> (<span class="ty">int</span>, <span class="ty">int</span>):
+    q := a / b
+    <span class="kw">return</span> q, a - q * b
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    quot, rem := <span class="fn">divmod</span>(<span class="num">17</span>, <span class="num">5</span>)   <span class="cm"># 3, 2</span>
+    t := <span class="fn">divmod</span>(<span class="num">17</span>, <span class="num">5</span>)             <span class="cm"># (3, 2)</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(t.<span class="num">0</span>) + <span class="str">" "</span> + <span class="fn">str</span>(t.<span class="num">1</span>)) <span class="cm"># 3 2</span></code></pre></div>
+
+<h2>Type Inference</h2>
+<p>Locals infer from their initializer. Empty collections need a type hint. Function signatures are always explicit.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># int</span>
+s := <span class="str">"hello"</span>           <span class="cm"># string</span>
+f := <span class="num">1.5</span>               <span class="cm"># float</span>
+g := f + <span class="num">2</span>             <span class="cm"># float (2 adapts to float context)</span>
+
+ys : [<span class="ty">int</span>] = []        <span class="cm"># annotation required for empty</span>
+m := []<span class="ty">string</span>: <span class="ty">int</span>     <span class="cm"># empty map</span></code></pre></div>
+
+<div class="quiz" id="quiz-11">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. When do you need an explicit type annotation?</p>
+<div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>On function signatures and empty collections</div>
+<div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>On every variable declaration</div>
+<div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>Never &mdash; Hier infers everything</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Function signatures are always explicit (they're the module interface). Locals infer from initializers, except empty collections which need a hint.</div>
+<div class="quiz-explanation" data-wrong="1">Function signatures are always explicit. Locals with non-empty initializers infer their type. Empty collections (<code>[]int</code>, <code>[]string: int</code>) need a type hint.</div>
+<button class="quiz-submit" onclick="submitQuiz(11)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 12: VALUE SEMANTICS                -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-12">
+<div class="section-num">Chapter 14</div>
+<h1>Value Semantics: The Mental Model</h1>
+
+<div class="callout info">
+<div class="callout-icon">&#127919;</div>
+<div>This is the <strong>most important concept</strong> in Hier. Internalize these three rules and everything else follows.</div></div>
+
+<h2>Rule 1: Assignment copies</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+b := a              <span class="cm"># independent copy</span>
+<span class="fn">push</span>(b, <span class="num">4</span>)
+<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(a)))  <span class="cm"># 3 &mdash; a is unchanged</span></code></pre></div>
+
+<h2>Rule 2: Parameters are copies (unless inout)</h2>
+<p>A <code>[int]</code> parameter is a read-only borrow. To mutate, copy first or use <code>inout</code>.</p>
+
+<h2>Rule 3: No two variables ever share storage</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := <span class="ty">Person</span>(<span class="str">"Ada"</span>, [<span class="str">"x"</span>])
+b := a               <span class="cm"># deep copy</span>
+b.name = <span class="str">"Alan"</span>
+b.tags[<span class="num">0</span>] = <span class="str">"y"</span>
+<span class="cm"># a.name is still "Ada", a.tags[0] is still "x"</span></code></pre></div>
+
+<h2>Why This Matters</h2>
+<p>Because every value has exactly one owner, the compiler can attach each value to a <strong>scope</strong>. When the scope ends, all its values are freed at once &mdash; no GC, no refcounts, no <code>free()</code>. A loop running a million iterations does so in <strong>constant memory</strong> because each iteration's scratch arena resets.</p>
+
+<div class="quiz" id="quiz-12">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. Can two variables share storage in Hier?</p>
+<div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>No &mdash; every assignment makes an independent deep copy</div>
+<div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>Yes &mdash; arrays and strings are shared by default</div>
+<div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>Only through explicit reference types</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! This is value semantics: two variables never share storage. Every assignment deep-copies. This is what makes implicit arenas sound.</div>
+<div class="quiz-explanation" data-wrong="1"><strong>No two variables ever share storage.</strong> Every assignment deep-copies. This is the core of value semantics and what makes implicit arenas possible.</div>
+<button class="quiz-submit" onclick="submitQuiz(12)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 13: CLOSURES                       -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-13">
+<div class="section-num">Chapter 15</div>
+<h1>Closures and Higher-Order Functions</h1>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">apply</span>(f: <span class="kw">fn</span>(<span class="ty">int</span>) -> <span class="ty">int</span>, x: <span class="ty">int</span>) -> <span class="ty">int</span>:
+    <span class="kw">return</span> f(x)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="cm"># lambda with inferred types</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">apply</span>(<span class="kw">fn</span>(x): x * <span class="num">2</span>, <span class="num">5</span>)))  <span class="cm"># 10</span>
+
+    <span class="cm"># closure captures by VALUE (deep copy)</span>
+    n := <span class="num">10</span>
+    addn := <span class="kw">fn</span>(x: <span class="ty">int</span>) -> <span class="ty">int</span>: x + n
+    <span class="fn">print</span>(<span class="fn">str</span>(addn(<span class="num">5</span>)))              <span class="cm"># 15</span>
+
+    <span class="cm"># closures can escape (be returned)</span>
+    <span class="cm"># captured state is re-homed automatically</span></code></pre></div>
+
+<div class="callout tip">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">Capture by value</div>
+Closures deep-copy captured variables when created. Mutating the original afterward doesn't affect the closure. This keeps the value-semantic memory model intact.
+</div></div>
+
+<div class="quiz" id="quiz-13">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. How do closures capture variables?</p>
+<div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>By value &mdash; deep-copied when the closure is created</div>
+<div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>By reference &mdash; the closure sees later mutations</div>
+<div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>Closures can't capture variables in Hier</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Closures capture by value (deep copy). This means the closure is independent of later changes to the captured variable.</div>
+<div class="quiz-explanation" data-wrong="1">Hier closures capture <strong>by value</strong> (deep copy). The captured variable is frozen at closure-creation time. Mutating the original doesn't affect the closure.</div>
+<button class="quiz-submit" onclick="submitQuiz(13)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 14: METHODS (UFCS)                 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-14">
+<div class="section-num">Chapter 16</div>
+<h1>Methods (UFCS)</h1>
+
+<p><code>x.foo(a, b)</code> is sugar for <code>foo(x, a, b)</code> &mdash; Uniform Function Call Syntax. No classes, no <code>self</code>.</p>
+
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Vec3</span>:
+    x: <span class="ty">float</span>
+    y: <span class="ty">float</span>
+    z: <span class="ty">float</span>
+
+<span class="kw">fn</span> <span class="fn">vadd</span>(a: <span class="ty">Vec3</span>, b: <span class="ty">Vec3</span>) -> <span class="ty">Vec3</span>:
+    <span class="kw">return</span> <span class="ty">Vec3</span>(a.x + b.x, a.y + b.y, a.z + b.z)
+
+<span class="kw">fn</span> <span class="fn">vlen</span>(v: <span class="ty">Vec3</span>) -> <span class="ty">float</span>:
+    <span class="kw">return</span> <span class="fn">sqrt</span>(v.x * v.x + v.y * v.y + v.z * v.z)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    a := <span class="ty">Vec3</span>(<span class="num">1.0</span>, <span class="num">2.0</span>, <span class="num">3.0</span>)
+    b := <span class="ty">Vec3</span>(<span class="num">4.0</span>, <span class="num">5.0</span>, <span class="num">6.0</span>)
+    c := a.<span class="fn">vadd</span>(b)        <span class="cm"># sugar for vadd(a, b)</span>
+    <span class="fn">print</span>(<span class="fn">str</span>(c.<span class="fn">vlen</span>()))  <span class="cm"># sugar for vlen(c)</span></code></pre></div>
+
+<p>Calls chain naturally: <code>a.vadd(b).vlen()</code> = <code>vlen(vadd(a, b))</code>.</p>
+
+<div class="quiz" id="quiz-14">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. What does <code>p.distance()</code> desugar to?</p>
+<div class="quiz-option" onclick="selectOption(this,14)"><div class="radio"></div><code>distance(p)</code></div>
+<div class="quiz-option" onclick="selectOption(this,14)"><div class="radio"></div><code>p.distance(self)</code></div>
+<div class="quiz-option" onclick="selectOption(this,14)"><div class="radio"></div>A method call on a <code>p</code> object's class</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! UFCS means <code>x.foo(args)</code> desugars to <code>foo(x, args)</code>. The first argument becomes the receiver.</div>
+<div class="quiz-explanation" data-wrong="1"><code>p.distance()</code> desugars to <code>distance(p)</code>. There are no classes or methods &mdash; just free functions whose first parameter matches the receiver type.</div>
+<button class="quiz-submit" onclick="submitQuiz(14)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 15: CONCURRENCY                    -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-15">
+<div class="section-num">Chapter 17</div>
+<h1>Concurrency</h1>
+
+<p>Hier's concurrency is <strong>race-free by construction</strong>. Every value crossing a thread boundary is deep-copied. No locks, no lifetimes.</p>
+
+<h2>spawn / wait</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">fib</span>(n: <span class="ty">int</span>) -> <span class="ty">int</span>:
+    <span class="kw">if</span> n &lt; <span class="num">2</span>: <span class="kw">return</span> n
+    <span class="kw">return</span> <span class="fn">fib</span>(n-<span class="num">1</span>) + <span class="fn">fib</span>(n-<span class="num">2</span>)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    t1 := <span class="kw">spawn</span> <span class="fn">fib</span>(<span class="num">30</span>)       <span class="cm"># runs on another thread</span>
+    t2 := <span class="kw">spawn</span> <span class="fn">fib</span>(<span class="num">28</span>)       <span class="cm"># in parallel</span>
+    a := <span class="fn">wait</span>(t1)              <span class="cm"># blocks, result deep-copied back</span>
+    b := t2.<span class="fn">wait</span>()             <span class="cm"># alternative syntax</span></code></pre></div>
+
+<h2>parallel for</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>total := <span class="num">0</span>
+<span class="kw">parallel for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1000000</span>):
+    total += <span class="fn">score</span>(i)          <span class="cm"># reduction: safe</span></code></pre></div>
+
+<h2>Channels</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>ch := <span class="fn">channel</span>(<span class="ty">string</span>, <span class="num">16</span>)     <span class="cm"># bounded lock-free queue</span>
+ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <span class="cm"># deep-copies in</span>
+<span class="kw">match</span> <span class="fn">recv</span>(ch):                <span class="cm"># deep-copies out</span>
+    <span class="ty">Some</span>(s): ...
+    <span class="ty">None</span>: ...                  <span class="cm"># closed and drained</span>
+<span class="fn">close</span>(ch)                       <span class="cm"># signal no more sends</span></code></pre></div>
+
+<div class="quiz" id="quiz-15">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. How does Hier prevent data races?</p>
+<div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>A borrow checker rejects unsafe code at compile time</div>
+<div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>Every value crossing a thread boundary is deep-copied</div>
+<div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>Runtime locks are automatically inserted</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! The copy-in/copy-out convention means a task shares zero bytes with its spawner. Race freedom falls out of value semantics.</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <strong>copy-in/copy-out</strong>: arguments are deep-copied into the task, results are deep-copied back. No shared state = no races. No borrow checker needed.</div>
+<button class="quiz-submit" onclick="submitQuiz(15)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 16: PACKAGES & FFI                 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-16">
+<div class="section-num">Chapter 18 &ndash; 19</div>
+<h1>Packages, Corelib, and FFI</h1>
+
+<h2>Packages</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">package</span> main
+<span class="kw">import</span> <span class="str">"core:math"</span>
+<span class="kw">import</span> s <span class="str">"core:sort"</span>          <span class="cm"># alias</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">print</span>(<span class="fn">str</span>(math.<span class="fn">gcd</span>(<span class="num">12</span>, <span class="num">18</span>)))  <span class="cm"># 6</span>
+    idx := s.<span class="fn">argsort</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>])</code></pre></div>
+
+<h2>Corelib Packages</h2>
+<div class="table-wrap"><table>
+<tr><th>Package</th><th>What it provides</th></tr>
+<tr><td><code>core:math</code></td><td><code>abs</code>, <code>imin</code>, <code>imax</code>, <code>clamp</code>, <code>gcd</code>, <code>ipow</code></td></tr>
+<tr><td><code>core:strings</code></td><td><code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>trim</code>, <code>replace</code></td></tr>
+<tr><td><code>core:arrays</code></td><td><code>[int]</code> utilities: <code>contains</code>, <code>sum</code>, <code>sort</code>, <code>reverse</code></td></tr>
+<tr><td><code>core:iter</code></td><td>Higher-order: <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>any</code></td></tr>
+<tr><td><code>core:sort</code></td><td><code>argsort</code>, <code>argsort_str</code>, <code>by_key</code></td></tr>
+<tr><td><code>core:rand</code></td><td><code>seed</code>, <code>next</code>, <code>below</code>, <code>shuffle</code> (xorshift32)</td></tr>
+</table></div>
+
+<h2>Calling C (FFI)</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">extern fn</span> <span class="fn">getpid</span>() -> <span class="ty">int</span>
+<span class="kw">extern</span> <span class="str">"m"</span> <span class="kw">fn</span> <span class="fn">cos</span>(x: <span class="ty">float</span>) -> <span class="ty">float</span>  <span class="cm"># links -lm</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">getpid</span>()) + <span class="str">"\n"</span>)
+    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">cos</span>(<span class="num">0.0</span>)))             <span class="cm"># 1.0</span></code></pre></div>
+
+<div class="quiz" id="quiz-16">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="0">
+<p>1. How do you import a standard library package?</p>
+<div class="quiz-option" onclick="selectOption(this,16)"><div class="radio"></div><code>import "core:math"</code></div>
+<div class="quiz-option" onclick="selectOption(this,16)"><div class="radio"></div><code>use math</code></div>
+<div class="quiz-option" onclick="selectOption(this,16)"><div class="radio"></div><code>require("math")</code></div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Use <code>import "core:name"</code> for standard library packages. Access with <code>name.symbol</code> (or an alias).</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <code>import "core:name"</code> for the standard library. Symbols are accessed as <code>name.symbol</code> (qualified access).</div>
+<button class="quiz-submit" onclick="submitQuiz(16)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 17: CHEAT SHEET & NEXT STEPS       -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-17">
+<div class="section-num">Reference</div>
+<h1>Cheat Sheet</h1>
+
+<h2>Declarations</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># inferred declaration</span>
+y : <span class="ty">int</span> = <span class="num">10</span>           <span class="cm"># explicit type</span>
+x = <span class="num">43</span>                 <span class="cm"># assignment</span>
+x += <span class="num">1</span>                 <span class="cm"># compound: += -= *= /= %=</span></code></pre></div>
+
+<h2>Functions</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">name</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>: <span class="kw">return</span> a + b
+<span class="kw">fn</span> <span class="fn">void_fn</span>(): <span class="fn">print</span>(<span class="str">"ok\n"</span>)
+<span class="kw">fn</span> <span class="fn">mutate</span>(x: <span class="kw">inout</span> <span class="ty">int</span>): x += <span class="num">1</span></code></pre></div>
+
+<h2>Control Flow</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">if</span> cond: ... <span class="kw">elif</span> cond: ... <span class="kw">else</span>: ...
+<span class="kw">for</span> cond: ...                          <span class="cm"># while</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n): ...               <span class="cm"># 0..n-1</span>
+<span class="kw">for</span> x <span class="kw">in</span> xs: ...                      <span class="cm"># foreach</span>
+<span class="kw">break</span>    <span class="kw">continue</span>
+<span class="kw">match</span> expr: <span class="ty">Some</span>(v): ... <span class="ty">None</span>: ...</code></pre></div>
+
+<h2>Strings</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="str">"hello"</span> + <span class="str">" world"</span>       <span class="cm"># concat</span>
+<span class="str">f"{name} is {age}"</span>       <span class="cm"># interpolate</span>
+<span class="fn">len</span>(s)  <span class="fn">substr</span>(s,a,b)  <span class="fn">find</span>(s,sub)  <span class="fn">split</span>(s,sep)
+<span class="fn">str</span>(<span class="num">42</span>)  <span class="fn">chr</span>(<span class="num">65</span>)  s[i]     <span class="cm"># byte at index</span></code></pre></div>
+
+<h2>Arrays &amp; Maps</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># Arrays</span>
+[<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]    []<span class="ty">int</span>     <span class="fn">push</span> <span class="fn">pop</span> <span class="fn">len</span>  xs[i]  xs[a:b]
+<span class="cm"># Maps</span>
+[<span class="str">"a"</span>: <span class="num">1</span>]    []<span class="ty">string</span>: <span class="ty">int</span>
+<span class="fn">map_set</span>(m,k,v)  <span class="fn">map_get</span>(m,k,d)  <span class="fn">map_has</span>(m,k)  <span class="fn">map_del</span>(m,k)  <span class="fn">keys</span>(m)</code></pre></div>
+
+<h2>Structs &amp; Enums</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>: x: <span class="ty">int</span>; y: <span class="ty">int</span>
+p := <span class="ty">Point</span>(<span class="num">1</span>,<span class="num">2</span>)   q := p    <span class="cm"># deep copy</span>
+<span class="kw">enum</span> <span class="ty">Expr</span>: <span class="ty">Num</span>(<span class="ty">int</span>); <span class="ty">Add</span>(<span class="ty">Expr</span>,<span class="ty">Expr</span>)
+<span class="kw">match</span> e: <span class="ty">Num</span>(v): ...  <span class="cm"># exhaustive</span></code></pre></div>
+
+<h2>Concurrency</h2>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>t := <span class="kw">spawn</span> <span class="fn">f</span>(args)       <span class="fn">wait</span>(t)
+<span class="kw">parallel for</span> i <span class="kw">in</span> <span class="fn">range</span>(n): total += work(i)
+ch := <span class="fn">channel</span>(<span class="ty">T</span>, cap)  ch.<span class="fn">send</span>(v)  <span class="fn">recv</span>(ch)  <span class="fn">close</span>(ch)</code></pre></div>
+
+<h2>Memory Model Rules</h2>
+<ol>
+<li><strong>Every scope</strong> gets its own arena &mdash; functions, blocks, loop iterations.</li>
+<li><strong>Assignment copies</strong> &mdash; <code>b = a</code> gives <code>b</code> an independent deep copy.</li>
+<li><strong>Parameters are borrows</strong> (read-only) &mdash; copy first or use <code>inout</code> to mutate.</li>
+<li><strong>Return values are promoted</strong> into the caller's arena &mdash; no dangling pointers.</li>
+<li><strong>Loop scratch arenas reset</strong> each iteration &mdash; bounded memory in loops.</li>
+<li><strong>The programmer never sees any of this</strong> &mdash; no <code>malloc</code>, <code>free</code>, or arena API.</li>
+</ol>
+
+<hr style="border:none;border-top:1px solid var(--border);margin:32px 0">
+<h2>Where to Go Next</h2>
+<ul>
+<li><strong>Read the examples:</strong> <code>examples/</code> has 20 programs, from trivial to substantial.</li>
+<li><strong>Read the tests:</strong> <code>tests/*.hi</code> covers every language feature with focused examples.</li>
+<li><strong>Read the thesis:</strong> <code>docs/thesis.md</code> explains <em>why</em> value semantics makes implicit arenas work.</li>
+<li><strong>Read the source:</strong> The self-hosted compiler <code>compiler/hierc0.hi</code> is ~3,500 lines of Hier written in Hier.</li>
+<li><strong>Run the benchmarks:</strong> <code>make bench</code> to see the performance properties.</li>
+</ul>
+
+<div style="text-align:center;margin-top:32px;padding:20px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">
+<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">&#127881; You've completed the guide!</div>
+<div style="color:var(--text2)">Welcome to systems programming without the memory management.</div>
+</div>
+</div>
+
+</div><!-- .content -->
+</div><!-- #main -->
+
+<script>
+/* ── Data ── */
+const SECTIONS = [
+  {id:'sec-0',  title:'What is Hier?',             nav:'1. What is Hier'},
+  {id:'sec-1',  title:'Setup & Hello World',       nav:'2. Setup & Hello World'},
+  {id:'sec-2',  title:'Variables & Types',          nav:'3. Variables & Types'},
+  {id:'sec-3',  title:'Functions',                  nav:'4. Functions'},
+  {id:'sec-4',  title:'Control Flow',               nav:'5. Control Flow'},
+  {id:'sec-5',  title:'Strings',                    nav:'6. Strings'},
+  {id:'sec-6',  title:'Arrays',                     nav:'7. Arrays'},
+  {id:'sec-7',  title:'Structs',                    nav:'8. Structs'},
+  {id:'sec-8',  title:'Maps',                       nav:'9. Maps'},
+  {id:'sec-9',  title:'Option & Result',            nav:'10. Option & Result'},
+  {id:'sec-10', title:'Enums & Matching',           nav:'11. Enums & Matching'},
+  {id:'sec-11', title:'Tuples & Inference',         nav:'12. Tuples & Inference'},
+  {id:'sec-12', title:'Value Semantics',            nav:'13. Value Semantics'},
+  {id:'sec-13', title:'Closures',                   nav:'14. Closures'},
+  {id:'sec-14', title:'Methods (UFCS)',             nav:'15. Methods (UFCS)'},
+  {id:'sec-15', title:'Concurrency',                nav:'16. Concurrency'},
+  {id:'sec-16', title:'Packages & FFI',             nav:'17. Packages & FFI'},
+  {id:'sec-17', title:'Cheat Sheet',                nav:'Cheat Sheet'},
+];
+const QUIZ_COUNT = SECTIONS.length; // one quiz per section
+let current = -1; // -1 = welcome
+let progress = loadProgress();
+
+/* ── Persistence ── */
+function loadProgress() {
+  try { return JSON.parse(localStorage.getItem('hier-learn') || '{}'); } catch { return {}; }
+}
+function saveProgress() {
+  try { localStorage.setItem('hier-learn', JSON.stringify(progress)); } catch {}
+}
+
+/* ── Navigation ── */
+function buildNav() {
+  const nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  SECTIONS.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'nav-item' + (progress[i] === 'done' ? ' done' : '') + (progress[i] === 'quiz' ? ' quiz-pending' : '');
+    div.innerHTML = `<span class="check">${progress[i] === 'done' ? '&#10003;' : progress[i] === 'quiz' ? '&#10067;' : ''}</span>${s.nav}`;
+    div.onclick = () => goTo(i);
+    div.id = `nav-${i}`;
+    nav.appendChild(div);
+  });
+  updateProgressBar();
+}
+
+function goTo(idx) {
+  current = idx;
+  // Hide all sections
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.getElementById('sec-welcome').classList.remove('active');
+  // Show target
+  if (idx < 0) {
+    document.getElementById('sec-welcome').classList.add('active');
+  } else {
+    document.getElementById(SECTIONS[idx].id).classList.add('active');
+    // Reset quiz state
+    resetQuiz(idx);
+  }
+  // Update nav highlight
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  if (idx >= 0) {
+    const navEl = document.getElementById(`nav-${idx}`);
+    if (navEl) navEl.classList.add('active');
+  }
+  // Close mobile sidebar
+  document.getElementById('sidebar').classList.remove('open');
+  window.scrollTo(0, 0);
+  renderNavButtons();
+}
+
+function updateProgressBar() {
+  const done = Object.values(progress).filter(v => v === 'done').length;
+  const pct = SECTIONS.length > 0 ? (done / SECTIONS.length * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = `${done} / ${SECTIONS.length} complete`;
+}
+
+function renderNavButtons() {
+  // Remove existing nav buttons
+  document.querySelectorAll('.nav-buttons').forEach(el => el.remove());
+  if (current < 0) return;
+
+  const section = document.getElementById(SECTIONS[current].id);
+  const div = document.createElement('div');
+  div.className = 'nav-buttons';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'nav-btn';
+  prevBtn.innerHTML = '&#8592; Previous';
+  prevBtn.disabled = current === 0;
+  prevBtn.onclick = () => goTo(current - 1);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'nav-btn primary';
+  if (current < SECTIONS.length - 1) {
+    nextBtn.innerHTML = 'Next &#8594;';
+    nextBtn.onclick = () => goTo(current + 1);
+  } else {
+    nextBtn.innerHTML = 'Finish &#10003;';
+    nextBtn.disabled = true;
+  }
+
+  div.appendChild(prevBtn);
+  div.appendChild(nextBtn);
+  section.appendChild(div);
+}
+
+/* ── Sidebar toggle ── */
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+/* ── Quiz Logic ── */
+function selectOption(el, quizIdx) {
+  const q = el.closest('.quiz-question');
+  if (q.classList.contains('answered')) return;
+  q.querySelectorAll('.quiz-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function submitQuiz(quizIdx) {
+  const quizEl = document.getElementById(`quiz-${quizIdx}`);
+  const questions = quizEl.querySelectorAll('.quiz-question');
+  let allCorrect = true;
+
+  questions.forEach(q => {
+    const selected = q.querySelector('.quiz-option.selected');
+    if (!selected) { allCorrect = false; return; }
+    const correctIdx = parseInt(q.dataset.answer);
+    const options = q.querySelectorAll('.quiz-option');
+    const selectedIdx = Array.from(options).indexOf(selected);
+
+    q.classList.add('answered');
+    options.forEach(o => {
+      o.style.pointerEvents = 'none';
+    });
+
+    if (selectedIdx === correctIdx) {
+      selected.classList.add('correct');
+    } else {
+      selected.classList.add('wrong');
+      options[correctIdx].classList.add('correct');
+      allCorrect = false;
+    }
+  });
+
+  // Show explanation
+  quizEl.querySelectorAll('.quiz-explanation').forEach(el => {
+    el.classList.add('show');
+    if (!el.classList.contains(allCorrect ? 'correct-exp' : 'wrong-exp')) {
+      // swap class
+      el.classList.remove('correct-exp', 'wrong-exp');
+      el.classList.add(allCorrect ? 'correct-exp' : 'wrong-exp');
+    }
+  });
+
+  // Disable submit
+  quizEl.querySelector('.quiz-submit').disabled = true;
+
+  // Update progress
+  if (allCorrect) {
+    progress[quizIdx] = 'done';
+  } else {
+    progress[quizIdx] = 'quiz';
+  }
+  saveProgress();
+  buildNav();
+}
+
+function resetQuiz(quizIdx) {
+  const quizEl = document.getElementById(`quiz-${quizIdx}`);
+  if (!quizEl) return;
+  quizEl.querySelectorAll('.quiz-question').forEach(q => {
+    q.classList.remove('answered');
+    q.querySelectorAll('.quiz-option').forEach(o => {
+      o.classList.remove('selected', 'correct', 'wrong');
+      o.style.pointerEvents = '';
+    });
+  });
+  quizEl.querySelectorAll('.quiz-explanation').forEach(el => el.classList.remove('show'));
+  const btn = quizEl.querySelector('.quiz-submit');
+  if (btn) btn.disabled = false;
+}
+
+/* ── Copy Code ── */
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  const text = pre.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+}
+
+/* ── Init ── */
+buildNav();
+</script>
+</body>
+</html>
