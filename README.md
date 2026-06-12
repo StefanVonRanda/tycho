@@ -636,6 +636,11 @@ bare `[]` literal grounds to the underlying type), unwrap with the generic
 unwrapped value; `==` stays deep between two values of the same newtype, and
 copies keep the underlying's value semantics (`tests/newtype_agg.hi`).
 
+A newtype over `string` or `int` is also a valid **map key**
+(`[UserId: int]`): the map type carries the declared key, so a raw base
+value is rejected at the door, while storage and hashing are the base's —
+`keys()` returns `[UserId]`, still wrapped (`tests/newtype_key.hi`).
+
 ### Type inference (bidirectional)
 
 Locals infer forward from their initializer (`x := e`). In the other
@@ -1098,9 +1103,10 @@ None of this appears in Hier source.
   packages (see Self-hosting). Arrays nest (`[int]`, `[float]`,
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
-  string- or int-keyed with values of any type
+  string- or int-keyed — directly or through a newtype (`[UserId: int]`: the
+  key stays distinct, a raw base value is rejected) — with values of any type
   (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
-  type yet. They support
+  type. They support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`/`==`, in-place
   accumulator rebinds, and `inout`.
   `inout` covers int, bool, pure-value structs, and the heap aggregates

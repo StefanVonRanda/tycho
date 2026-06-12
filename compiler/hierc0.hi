@@ -2092,6 +2092,11 @@ fn mstruct(ty: string) -> string:                # map C struct name
 fn mfam(ty: string) -> string:                   # map runtime function prefix
     return "map_" + map_key(ty) + "_" + mangle(map_val(ty))
 
+fn mtag(k: string) -> string:                    # slotptr family tag: 1-char for the base keys,
+    if k == "int" or k == "str":                 # the full (distinct) name for a newtype key
+        return substr(k, 0, 1)                   # (1-char tags would collide across newtypes)
+    return k
+
 fn is_cmp(op: string) -> bool:
     return op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">="
 
@@ -3055,7 +3060,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # slotptr allocates (rehash + key copy + value zero) into the MAP's owning
                 # arena, so the inserted value lives as long as the map. This is a C lvalue,
                 # so it serves both as a write target (m[k]=v / push) and the op= read-half.
-                sp := "m" + substr(map_key(bt), 0, 1) + "_" + mangle(map_val(bt)) + "_slotptr"
+                sp := "m" + mtag(map_key(bt)) + "_" + mangle(map_val(bt)) + "_slotptr"
                 return "(*" + sp + "(" + owner_arena_of(base, names, types, dc, ctx) + ", &(" + gen_expr(base, names, types, dc, ctx) + "), " + gen_expr(idx, names, types, dc, ctx) + "))"
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
         EArrLit(elems):
@@ -5764,7 +5769,7 @@ fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
     M := "Map_" + k + "_" + mangle(v)            # named-tag body; typedef forward-declared in the driver (fn([K:V])->R)
-    if k == "int":                               # int keys: a value array + occupancy bytes (0 is a real key)
+    if resolve_nt(dc, ctx, k) == "int":          # int(-rep) keys: a value array + occupancy bytes (0 is a real key)
         return "struct " + M + "_ { long* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; };\n"
     return "struct " + M + "_ { char** keys; " + cv + "* vals; long len; long cap; };\n"
 
@@ -5780,12 +5785,13 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     cv := substr(cvs, 0, len(cvs) - 1)
     M := "Map_" + k + "_" + mangle(v)
     f := "map_" + k + "_" + mangle(v)
-    s := "m" + substr(k, 0, 1) + "_" + mangle(v)
+    s := "m" + mtag(k) + "_" + mangle(v)
+    ka := "Arr_" + mangle(k)                     # keys() returns [K] (a newtype key stays wrapped)
     vcopy := cp_field(dc, ctx, v, "ar", "val")   # deep-copy the value into ar (passthrough for scalars)
     vcmp := " || !(" + eq_field(dc, ctx, v, "b.vals[t]", "a.vals[i]") + ")"   # heap value: deep equality
     if v == "int" or v == "float" or v == "char":
         vcmp = " || b.vals[t] != a.vals[i]"      # scalar: byte-identical to before
-    if k == "int":
+    if resolve_nt(dc, ctx, k) == "int":
         out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(long) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
         out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
         out = out + "static long " + s + "_slot(" + M + " m, long k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(ikhash(k) & mask); while (m.occ[i] != 0) { if (m.keys[i] == k) return i; i = (long)((i + 1) & mask); } return i; }\n"
@@ -5797,7 +5803,7 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
         out = out + "static " + cv + " " + f + "_get(" + M + " m, long k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.occ[t] ? m.vals[t] : def; }\n"
         out = out + "static int " + f + "_has(" + M + " m, long k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.occ[t] != 0; }\n"
         out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, long k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.occ[i] && m.keys[i] != k) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
-        out = out + "static Arr_int " + f + "_keys(Arena* ar, " + M + " m) { Arr_int r = Arr_int_new(); for (long i = 0; i < m.cap; i++) if (m.occ[i]) Arr_int_push(ar, &r, m.keys[i]); return r; }\n"
+        out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.cap; i++) if (m.occ[i]) " + ka + "_push(ar, &r, m.keys[i]); return r; }\n"
         out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.occ[i]) { long t = " + s + "_slot(b, a.keys[i]); if (b.occ[t] == 0" + vcmp + ") return 0; } return 1; }\n"
         return out
     out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
@@ -5811,7 +5817,7 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
     out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
-    out = out + "static Arr_str " + f + "_keys(Arena* ar, " + M + " m) { Arr_str r = Arr_str_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) Arr_str_push(ar, &r, scopy(ar, m.keys[i])); return r; }\n"
+    out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + ka + "_push(ar, &r, scopy(ar, m.keys[i])); return r; }\n"
     # structural equality: same length, and every live key in a present in b with
     # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
     out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.keys[i] != 0) { long t = " + s + "_slot(b, a.keys[i]); if (b.keys[t] == 0" + vcmp + ") return 0; } return 1; }\n"

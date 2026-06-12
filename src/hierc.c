@@ -772,14 +772,23 @@ static char *map_rt(Type t, const char *op) {
 }
 static Type map_val(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].val : (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
 static Type map_key(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].key : (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
-/* the map type for a (key, value) pair. Only string and int keys, int and float
- * values exist; an unsupported pair returns T_VOID (the caller rejects it).
- * Step 2/3 will route non-int/float values to mapc_of once emit + codegen land. */
+/* the map type for a (key, value) pair. Only string and int keys (directly or
+ * through a newtype), int and float values exist; an unsupported pair returns
+ * T_VOID (the caller rejects it). */
+static Type arr_of(Type elem);   /* defined below; used to intern a newtype key's [K] */
 static Type map_of(Type k, Type v) {
     if (k == T_STRING && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_SF : T_MAP_SI;
     if (k == T_INT    && (v == T_INT || v == T_FLOAT)) return v == T_FLOAT ? T_MAP_IF : T_MAP_II;
     if (k == T_STRING) return mapc_of(T_STRING, v);   /* [string: V] composite, any value type */
     if (k == T_INT)    return mapc_of(T_INT, v);      /* [int: V] composite (occupancy-array scheme) */
+    if (IS_NEWTYPE(k) && (nt_under(k) == T_INT || nt_under(k) == T_STRING)) {
+        /* newtype key (base int or string): ALWAYS a composite, so the map type
+         * carries the declared key and map_set/get/has/del stay distinct (a raw
+         * base value is rejected). Storage and hashing are the base's. */
+        Type mt = mapc_of(k, v);
+        arr_of(k);   /* intern [K] now: the emitted keys() helper returns it */
+        return mt;
+    }
     return T_VOID;
 }
 
@@ -1065,7 +1074,7 @@ static Type parse_type(Parser *ps) {
             eat(ps, TK_RBRACKET, "']'");
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
-                die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
+                die_at(t->line, "map keys must be string or int (directly or through a newtype); int-keyed maps support only int/float values");
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
@@ -1284,7 +1293,7 @@ static Expr *parse_primary(Parser *ps) {
                 ps->p++;
                 Type val = parse_type(ps);
                 Type mt = map_of(elem, val);
-                if (mt == T_VOID) die_at(t->line, "map keys must be string or int; int-keyed maps support only int/float values");
+                if (mt == T_VOID) die_at(t->line, "map keys must be string or int (directly or through a newtype); int-keyed maps support only int/float values");
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
@@ -3067,7 +3076,7 @@ static Type resolve_expr(Expr *e) {
                 Type mt = resolve_expr(e->args[0]);
                 if (!is_map(mt))
                     die_at(e->line, "keys's argument must be a map");
-                return e->type = map_key(mt) == T_INT ? T_ARRAY_INT : T_ARRAY_STRING;
+                return e->type = arr_of(map_key(mt));   /* [K]: a newtype key stays wrapped */
             }
             if (!strcmp(e->sval, "push")) {
                 if (e->nargs != 2) die_at(e->line, "push(arr, value) takes two arguments");
@@ -6463,7 +6472,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "struct HierArrC%d_ { %s*data; long len; long cap; };\n",
                 i, c_type(g_arrtypes[i].elem));
     for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] */
-        if (g_maptypes[i].key == T_INT)             /* int keys: occupancy array (0 is a real key) */
+        if (base_of(g_maptypes[i].key) == T_INT)    /* int(-rep) keys: occupancy array (0 is a real key) */
             fprintf(o, "struct HierMapC%d_ { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; };\n",
                     i, c_type(g_maptypes[i].val));
         else
@@ -6658,7 +6667,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nmaptypes; i++) {
         const char *ct = c_type(g_maptypes[i].val);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
-        if (g_maptypes[i].key == T_INT) {   /* int keys: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
+        if (base_of(g_maptypes[i].key) == T_INT) {   /* int(-rep) keys: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
             fprintf(o,
                 "static HierMapC%d hier_mapc%d_with_cap(Arena *a, long cap) {\n"
                 "    HierMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
@@ -6706,11 +6715,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    long s = hier_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
             fprintf(o,
                 "static int hier_mapc%d_has(HierMapC%d m, long k) { return hier_mapc%d_find(m, k) >= 0; }\n", i, i, i);
-            fprintf(o,
-                "static HierArrInt hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
-                "    HierArrInt r = hier_arr_int_with_cap(a, m.len);\n"
-                "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_int_push(a, &r, m.keys[i]);\n"
-                "    return r;\n}\n", i, i);
+            {   /* keys() returns [K] — HierArrInt, or HierArrC<n> when K is a newtype */
+                Type kat = arr_of(g_maptypes[i].key);
+                fprintf(o,
+                    "static %shier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
+                    "    %sr = hier_arr_%s_with_cap(a, m.len);\n"
+                    "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_%s_push(a, &r, m.keys[i]);\n"
+                    "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
+            }
             fprintf(o,
                 "static int hier_mapc%d_eq(HierMapC%d x, HierMapC%d y) {\n"
                 "    if (x.len != y.len) return 0;\n"
@@ -6774,11 +6786,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    long s = hier_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
         fprintf(o,
             "static int hier_mapc%d_has(HierMapC%d m, const char *k) { return hier_mapc%d_find(m, k) >= 0; }\n", i, i, i);
-        fprintf(o,
-            "static HierArrStr hier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
-            "    HierArrStr r = hier_arr_str_with_cap(a, m.len);\n"
-            "    for (long i = 0; i < m.cap; i++) if (hier_map_live(m.keys[i])) hier_arr_str_push(a, &r, m.keys[i]);\n"
-            "    return r;\n}\n", i, i);
+        {   /* keys() returns [K] — HierArrStr, or HierArrC<n> when K is a newtype */
+            Type kat = arr_of(g_maptypes[i].key);
+            fprintf(o,
+                "static %shier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
+                "    %sr = hier_arr_%s_with_cap(a, m.len);\n"
+                "    for (long i = 0; i < m.cap; i++) if (hier_map_live(m.keys[i])) hier_arr_%s_push(a, &r, m.keys[i]);\n"
+                "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
+        }
         fprintf(o,
             "static int hier_mapc%d_eq(HierMapC%d x, HierMapC%d y) {\n"
             "    if (x.len != y.len) return 0;\n"
