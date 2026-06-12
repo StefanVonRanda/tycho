@@ -1,0 +1,10 @@
+# An enum with a payload-carrying variant cannot key a map: two values with
+# equal tags are not equal values. Must be a type error.
+enum Shape:
+    Dot
+    Circle(int)
+
+fn main():
+    m : [Shape: int] = []
+    m = map_set(m, Dot, 1)
+    print(str(len(m)) + "\n")

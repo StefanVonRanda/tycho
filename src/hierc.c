@@ -560,6 +560,16 @@ static int g_nenums = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
 #define ENUM_ID(t)    ((int)((t) - T_ENUM_BASE))
 #define ENUM_TYPE(id) (T_ENUM_BASE + (id))
+/* every variant nullary: usable as a map key (the tag IS the value; the cells
+ * are per-variant immortal singletons). A payload enum is rejected as a key —
+ * equal tags would not mean equal values. */
+static int enum_fieldless(Type t) {
+    if (!IS_ENUM(t)) return 0;
+    EnumDef *ed = &g_enums[ENUM_ID(t)];
+    for (int v = 0; v < ed->nvariants; v++)
+        if (ed->variants[v].npayload != 0) return 0;
+    return 1;
+}
 static int enum_find(const char *name) {
     for (int i = 0; i < g_nenums; i++)
         if (!strcmp(g_enums[i].name, name)) return i;
@@ -773,6 +783,12 @@ static char *map_rt(Type t, const char *op) {
 }
 static Type map_val(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].val : (t == T_MAP_SF || t == T_MAP_IF) ? T_FLOAT : T_INT; }
 static Type map_key(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].key : (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
+/* does this map key ride the int-key (occupancy/long) storage scheme? */
+static int mapkey_intrep(Type k) { return base_of(k) == T_INT || enum_fieldless(k); }
+/* a map key expression as the runtime stores it: a fieldless-enum key passes its TAG */
+static char *key_rt(Type mt, char *kexpr) {
+    return IS_ENUM(map_key(mt)) ? sfmt("((%s)->tag)", kexpr) : kexpr;
+}
 /* the map type for a (key, value) pair. Only string and int keys (directly or
  * through a newtype), int and float values exist; an unsupported pair returns
  * T_VOID (the caller rejects it). */
@@ -788,6 +804,14 @@ static Type map_of(Type k, Type v) {
          * base value is rejected). Storage and hashing are the base's. */
         Type mt = mapc_of(k, v);
         arr_of(k);   /* intern [K] now: the emitted keys() helper returns it */
+        return mt;
+    }
+    if (enum_fieldless(k)) {
+        /* fieldless-enum key: stored and hashed as its TAG (a long), riding the
+         * int-key occupancy scheme; keys() rebuilds [E] from the per-variant
+         * singleton table (immortal, share-safe). */
+        Type mt = mapc_of(k, v);
+        arr_of(k);
         return mt;
     }
     return T_VOID;
@@ -1076,7 +1100,7 @@ static Type parse_type(Parser *ps) {
             eat(ps, TK_RBRACKET, "']'");
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
-                die_at(t->line, "map keys must be string or int (directly or through a newtype); int-keyed maps support only int/float values");
+                die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum; int-keyed maps support only int/float values");
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
@@ -1295,7 +1319,7 @@ static Expr *parse_primary(Parser *ps) {
                 ps->p++;
                 Type val = parse_type(ps);
                 Type mt = map_of(elem, val);
-                if (mt == T_VOID) die_at(t->line, "map keys must be string or int (directly or through a newtype); int-keyed maps support only int/float values");
+                if (mt == T_VOID) die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum; int-keyed maps support only int/float values");
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
@@ -4777,14 +4801,14 @@ static char *gen_call(Expr *e, const char *arena) {
      * accumulator pass rewrites a self-rebind to an in-place put separately. */
     if (!strcmp(e->sval, "map_set")) {
         char *m = gen_expr(e->args[0], arena);
-        char *k = gen_expr(e->args[1], arena);
+        char *k = key_rt(e->type, gen_expr(e->args[1], arena));
         char *v = gen_expr(e->args[2], arena);   /* runtime put deep-copies v into the map arena */
         return sfmt("%s(%s, %s, %s, %s)", map_rt(e->type, "set"), arena, m, k, v);
     }
     if (!strcmp(e->sval, "map_get")) {
         Type mt = e->args[0]->type;
         char *m = gen_expr(e->args[0], arena);
-        char *k = gen_expr(e->args[1], arena);
+        char *k = key_rt(mt, gen_expr(e->args[1], arena));
         char *d = gen_expr(e->args[2], arena);
         /* the get returns a BORROW into m's table (or the default); deep-copy it
          * into the current arena so it outlives any later mutation/free of m. For
@@ -4794,14 +4818,14 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "map_has")) {
         char *m = gen_expr(e->args[0], arena);
-        char *k = gen_expr(e->args[1], arena);
+        char *k = key_rt(e->args[0]->type, gen_expr(e->args[1], arena));
         return sfmt("%s(%s, %s)", map_rt(e->args[0]->type, "has"), m, k);
     }
     /* map_del pure: deep-copy + delete into `arena`; the accumulator pass
      * rewrites a self-rebind to an in-place tombstone delete separately. */
     if (!strcmp(e->sval, "map_del")) {
         char *m = gen_expr(e->args[0], arena);
-        char *k = gen_expr(e->args[1], arena);
+        char *k = key_rt(e->type, gen_expr(e->args[1], arena));
         return sfmt("%s(%s, %s, %s)", map_rt(e->type, "del_pure"), arena, m, k);
     }
     if (!strcmp(e->sval, "keys")) {
@@ -5210,7 +5234,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                                  c_type(e->type), id, map_rt(e->type, "with_cap"), arena);
                 for (int i = 0; i + 1 < e->nargs; i += 2)
                     out = sfmt("%s %s(%s, &_l%d, %s, %s);",
-                               out, map_rt(e->type, "put"), arena, id, gen_expr(e->args[i], arena),
+                               out, map_rt(e->type, "put"), arena, id,
+                               key_rt(e->type, gen_expr(e->args[i], arena)),
                                gen_expr(e->args[i + 1], arena));
                 return sfmt("%s _l%d; })", out, id);
             }
@@ -5398,7 +5423,7 @@ static char *gen_lvalue(Expr *e, const char *arena) {
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
             return sfmt("(*%s(%s, &(%s), %s))",
                         map_rt(e->lhs->type, "slotptr"), owner,
-                        gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
+                        gen_lvalue(e->lhs, arena), key_rt(e->lhs->type, gen_expr(e->rhs, arena)));
         }
         if (index_in_range(e->lhs, e->rhs))   /* monotone loop index: project without the bounds check */
             return sfmt("((%s).data[%s])", gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
@@ -5647,7 +5672,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 const char *mo = owner_arena_of(s->name);
                 const char *mp = is_heap_inout_param(s->name) ? sfmt("h_%s", s->name)
                                                               : sfmt("&h_%s", s->name);
-                char *k = gen_expr(s->expr->args[1], mo);
+                char *k = key_rt(s->expr->type, gen_expr(s->expr->args[1], mo));
                 char *v = gen_expr(s->expr->args[2], mo);
                 indent(o, ind);
                 fprintf(o, "%s(%s, %s, %s, %s);\n", map_rt(s->expr->type, "put"), mo, mp, k, v);
@@ -5660,7 +5685,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 const char *mo = owner_arena_of(s->name);
                 const char *mp = is_heap_inout_param(s->name) ? sfmt("h_%s", s->name)
                                                               : sfmt("&h_%s", s->name);
-                char *k = gen_expr(s->expr->args[1], mo);
+                char *k = key_rt(s->expr->type, gen_expr(s->expr->args[1], mo));
                 indent(o, ind);
                 fprintf(o, "%s(%s, %s);\n", map_rt(s->expr->type, "del"), mp, k);
                 break;
@@ -5756,7 +5781,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                      * through it (no double lookup). Scalar value, so a plain C operator. */
                     int id = g_blk++;
                     char *mb  = gen_lvalue(arrx, scope);
-                    char *key = gen_expr(s->target->rhs, scope);
+                    char *key = key_rt(arrx->type, gen_expr(s->target->rhs, scope));
                     char *rhs = gen_expr(s->expr->rhs, scope);
                     indent(o, ind);
                     fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = *_mp%d %s %s; }\n",
@@ -6498,7 +6523,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "struct HierArrC%d_ { %s*data; long len; long cap; };\n",
                 i, c_type(g_arrtypes[i].elem));
     for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] */
-        if (base_of(g_maptypes[i].key) == T_INT)    /* int(-rep) keys: occupancy array (0 is a real key) */
+        if (mapkey_intrep(g_maptypes[i].key))       /* int(-rep) keys incl. enum tags: occupancy array (0 is a real key) */
             fprintf(o, "struct HierMapC%d_ { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; };\n",
                     i, c_type(g_maptypes[i].val));
         else
@@ -6563,6 +6588,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int v = 0; v < ed->nvariants; v++)         /* shared singleton per nullary variant */
             if (ed->variants[v].npayload == 0)
                 fprintf(o, "static E_%s _sing_%s_%d = { %d };\n", ed->name, ed->name, v, v);
+        for (int mi = 0; mi < g_nmaptypes; mi++)        /* this (fieldless) enum keys a map: the
+            * mapc stores TAGS; keys() rebuilds the wrapped values from this table */
+            if (g_maptypes[mi].key == ENUM_TYPE(i)) {
+                fprintf(o, "static E_%s *const _sing_tab_%s[] = {", ed->name, ed->name);
+                for (int v = 0; v < ed->nvariants; v++)
+                    fprintf(o, "%s&_sing_%s_%d", v ? ", " : " ", ed->name, v);
+                fprintf(o, " };\n");
+                break;
+            }
     }
     fputs("\n", o);
     /* (3d) function-value typedefs were emitted early (2a') so containers can embed them. */
@@ -6693,7 +6727,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nmaptypes; i++) {
         const char *ct = c_type(g_maptypes[i].val);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
-        if (base_of(g_maptypes[i].key) == T_INT) {   /* int(-rep) keys: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
+        if (mapkey_intrep(g_maptypes[i].key)) {   /* int(-rep) keys incl. enum tags: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
             fprintf(o,
                 "static HierMapC%d hier_mapc%d_with_cap(Arena *a, long cap) {\n"
                 "    HierMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
@@ -6741,13 +6775,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    long s = hier_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
             fprintf(o,
                 "static int hier_mapc%d_has(HierMapC%d m, long k) { return hier_mapc%d_find(m, k) >= 0; }\n", i, i, i);
-            {   /* keys() returns [K] — HierArrInt, or HierArrC<n> when K is a newtype */
-                Type kat = arr_of(g_maptypes[i].key);
+            {   /* keys() returns [K] — HierArrInt, HierArrC<n> for a newtype, or [E] for a
+                 * fieldless-enum key, rebuilt from the singleton table (tags are stored) */
+                Type kt = g_maptypes[i].key;
+                Type kat = arr_of(kt);
+                char *kv = IS_ENUM(kt) ? sfmt("_sing_tab_%s[m.keys[i]]", g_enums[ENUM_ID(kt)].name)
+                                       : sfmt("m.keys[i]");
                 fprintf(o,
                     "static %shier_mapc%d_keys(Arena *a, HierMapC%d m) {\n"
                     "    %sr = hier_arr_%s_with_cap(a, m.len);\n"
-                    "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_%s_push(a, &r, m.keys[i]);\n"
-                    "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
+                    "    for (long i = 0; i < m.cap; i++) if (m.occ[i] == 1) hier_arr_%s_push(a, &r, %s);\n"
+                    "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat), kv);
             }
             fprintf(o,
                 "static int hier_mapc%d_eq(HierMapC%d x, HierMapC%d y) {\n"

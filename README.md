@@ -644,6 +644,12 @@ A newtype over `string` or `int` is also a valid **map key**
 value is rejected at the door, while storage and hashing are the base's —
 `keys()` returns `[UserId]`, still wrapped (`tests/newtype_key.hi`).
 
+A **fieldless enum** keys a map the same way (`[Color: int]`): the key is
+stored and hashed as its tag — deterministic, never pointer-dependent — and
+`keys()` rebuilds the wrapped values from the variant singletons, so they
+round-trip through `match` (`tests/enum_key.hi`). An enum with a payload
+variant is rejected as a key: equal tags would not mean equal values.
+
 ### Type inference (bidirectional)
 
 Locals infer forward from their initializer (`x := e`). In the other
@@ -1115,7 +1121,9 @@ None of this appears in Hier source.
   `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
   `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
   string- or int-keyed — directly or through a newtype (`[UserId: int]`: the
-  key stays distinct, a raw base value is rejected) — with values of any type
+  key stays distinct, a raw base value is rejected) — or keyed by a
+  **fieldless enum** (`[Color: int]`, stored as its tag; payload enums are
+  rejected) — with values of any type
   (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
   type. They support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`/`==`, in-place

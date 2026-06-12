@@ -307,6 +307,8 @@ class Gen:
         kinds += ["tern_heap"]                      # ternary with heap arms (arena placement)
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
+        if self.fenum:
+            kinds += ["enumkey_use"]                # fieldless-enum-keyed map ([FzColor: int])
         if str_vars:
             kinds += ["inout_str"]                  # inout string: reassignment through the borrow
         # value-semantics self-check candidates: a mutable-heap var with a
@@ -375,6 +377,28 @@ class Gen:
             i = self.fresh("i")
             self.emit(ind, "for " + i + " in range(len(" + ks + ")):")
             self.emit(ind+1, "acc = acc + len(to_under(" + ks + "[" + i + "]))")
+            return
+        if k == "enumkey_use":         # fieldless-enum key: stored as its TAG, keys() rebuilds the
+            # wrapped singletons (which must round-trip through match and map_get)
+            m = self.fresh("em")
+            self.emit(ind, m + " : [FzColor: int] = []")
+            self.emit(ind, m + " = map_set(" + m + ", FzA, " + self.gen_expr("int", env, 2) + ")")
+            self.emit(ind, m + "[FzB] = " + str(self.r.randint(0, 9)))
+            self.emit(ind, "acc = acc + map_get(" + m + ", FzA, 0) + map_get(" + m + ", FzB, 0) + len(" + m + ")")
+            if self.r.random() < 0.5:
+                self.emit(ind, m + " = map_del(" + m + ", FzA)")
+                self.emit(ind, "acc = acc + len(" + m + ")")
+            ks = self.fresh("ek")
+            self.emit(ind, ks + " := keys(" + m + ")")
+            i = self.fresh("i")
+            self.emit(ind, "for " + i + " in range(len(" + ks + ")):")
+            self.emit(ind+1, "match " + ks + "[" + i + "]:")
+            self.emit(ind+2, "FzA:")
+            self.emit(ind+3, "acc = acc + 1")
+            self.emit(ind+2, "FzB:")
+            self.emit(ind+3, "acc = acc + 2")
+            self.emit(ind+2, "FzC:")
+            self.emit(ind+3, "acc = acc + 3")
             return
         if k == "inout_str":           # callee reassigns the caller's string through the borrow;
             # the new bytes must land in the CALLER's arena (dangle -> ASan)
@@ -869,6 +893,9 @@ class Gen:
         for _ in range(self.r.randint(0, 2)):
             # distinct newtypes over scalar AND aggregate underlying (int-biased)
             self.newtypes["Nt" + str(len(self.newtypes))] = self.r.choice(["int", "int", "string", "[int]"])
+        self.fenum = self.r.random() < 0.5          # a fieldless enum, usable as a map key
+        if self.fenum:
+            self.out += ["enum FzColor:", "    FzA", "    FzB", "    FzC", ""]
         for name, base in self.newtypes.items():
             self.out.append("type " + name + " = " + base)
         if self.newtypes:
