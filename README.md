@@ -1,8 +1,8 @@
 # Hier
 
 A tiny AOT-compiled, statically typed systems language. The compiler is
-written in C, transpiles Hier to C, and the C is compiled to a native or
-fully static binary.
+written in C, transpiles Hier to C, and the C is compiled to a native
+binary.
 
 Hier's defining idea: **memory is managed by implicit hierarchical
 arenas**, one per scope, with scratch arenas for loops. The programmer
@@ -51,8 +51,6 @@ hello Ada
 | `./hierc f.hi` | Transpile `f.hi` → `f.c`, then compile to native `f` with `cc`. |
 | `./hierc f.hi --emit-c` | Only write `f.c`. |
 | `./hierc f.hi -o name` | Write `name.c` and binary `name`. |
-| `make image` | Build the Alpine/musl podman image used for static builds. |
-| `make static HI=f.hi` | Produce a **fully static** Linux binary via podman. |
 | `make demo` | Build and run `examples/hello.hi`. |
 | `make test` | Run the test suite (see below). |
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
@@ -86,10 +84,6 @@ bounds catch order-of-magnitude regressions, not jitter: the in-place append
 holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
 bound sits firmly between a working and a broken optimization; likewise the
 `move` bench holds ~126 MB where deep-copying the dead local would be ~187 MB.
-
-Apple's clang cannot statically link libc on macOS, so `make static`
-builds inside an Alpine container where `gcc -static` against musl yields
-a dependency-free ELF (`ldd` reports "not a dynamic program").
 
 ## Documentation
 
@@ -1115,7 +1109,6 @@ runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
 compiler/hierc0.hi the self-hosted compiler, written in Hier (see make fixpoint)
 compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
-podman/Dockerfile  Alpine/musl image for static builds
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
                    inout, memo, collect, context, optimize, json, raytrace,

@@ -2,8 +2,6 @@
 #
 #   make            -> build ./hierc (native, macOS/Linux host)
 #   make demo       -> compile + run examples/hello.hi natively
-#   make image      -> build the alpine static-build podman image
-#   make static HI=examples/hello.hi  -> produce a static linux binary
 #   make clean
 
 CC      ?= cc
@@ -12,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks image static clean
+.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
 
 all: hierc
 
@@ -135,17 +133,6 @@ ci:
 hooks:
 	@git config core.hooksPath .githooks
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
-
-image:
-	podman build -t hier-build -f podman/Dockerfile .
-
-# Produce a fully static linux binary from a .hi file using the alpine
-# image. HI defaults to the hello example.
-HI ?= examples/hello.hi
-static: hierc image
-	./hierc $(HI) --emit-c
-	podman run --rm -v "$(CURDIR)":/work -w /work hier-build \
-	    sh -c 'gcc -static -O2 -o $(basename $(HI)) $(basename $(HI)).c -lm && echo "static build ok:" && file $(basename $(HI))'
 
 clean:
 	rm -f hierc build/hier_rt_embed.h
