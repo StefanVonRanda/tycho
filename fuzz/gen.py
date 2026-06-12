@@ -123,8 +123,6 @@ class Gen:
                 choices.append(("fzslen",    lambda: "fz_slen(" + se() + ")"))
                 choices.append(("fzecholen", lambda: "len(fz_echo(" + se() + "))"))
                 choices.append(("fznulllen", lambda: "len(fz_nullify(" + se() + "))"))
-                # ternary: lowest precedence, lazy; arms may nest further ternaries
-                choices.append(("tern", lambda: "(" + ie() + " < " + ie() + " ? " + ie() + " : " + ie() + ")"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -137,8 +135,6 @@ class Gen:
             if depth < 2:
                 choices.append(("cat", lambda: "(" + self.gen_expr("string", env, depth+1) + " + " + self.gen_expr("string", env, depth+1) + ")"))
                 choices.append(("s", lambda: "str(" + self.gen_expr("int", env, depth+1) + ")"))
-                choices.append(("tern", lambda: "(" + self.gen_expr("int", env, depth+1) + " < " + self.gen_expr("int", env, depth+1)
-                                                + " ? " + self.gen_expr("string", env, depth+1) + " : " + self.gen_expr("string", env, depth+1) + ")"))
                 # FFI: an arena-copied C string return woven into the string flow
                 choices.append(("fzecho", lambda: "fz_echo(" + self.gen_expr("string", env, depth+1) + ")"))
         elif t == "float":
@@ -304,7 +300,6 @@ class Gen:
         if ind <= 1:
             kinds += ["spawn_use", "parfor_use", "chan_use"]
         kinds += ["infer_ground", "infer_lambda", "float_adapt"]
-        kinds += ["tern_heap"]                      # ternary with heap arms (arena placement)
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -353,14 +348,6 @@ class Gen:
             self.emit(ind, "reserve(" + self.r.choice(res_vars) + ", " + str(self.r.randint(0, 9)) + ")")
             return
 
-        if k == "tern_heap":           # `cond ? [..] : [..]` -- heap arms build in the same arena, only one runs
-            v = self.fresh("ta")
-            cond = self.gen_expr("int", env, 1) + " < " + self.gen_expr("int", env, 1)
-            self.emit(ind, v + " := " + cond + " ? " + self.gen_expr("[int]", env, 2)
-                           + " : " + self.gen_expr("[int]", env, 2))
-            env[v] = "[int]"
-            self.checksum_into(ind, v, "[int]", env)
-            return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
             n0 = self.r.choice([n for n, b in self.newtypes.items() if b == "string"])

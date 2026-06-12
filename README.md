@@ -710,12 +710,6 @@ array element (`a[i] += 1`), or a struct field (`p.x *= 2`).
   short-circuit (the right operand is not evaluated when the left already
   decides it). Precedence, tightest first: comparisons, then `not`, `and`,
   `or` — so `a < b and not done` is `(a < b) and (not done)`.
-- `cond ? a : b` — the C-style conditional expression, at the lowest
-  precedence (below `or`) and right-associative. The condition must be a
-  `bool`; the arms must agree in type (the then-arm's type grounds a bare
-  `[]`-literal else-arm: `n > 0 ? [n] : []` works). Lazy — only the taken
-  arm evaluates. A `:` after `?` belongs to the ternary, so a ternary inside
-  a slice bound needs parentheses.
 - Calls: `f(a, b)`.
 
 ### Control flow

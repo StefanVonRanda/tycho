@@ -1,6 +1,0 @@
-# '?:' arms must agree in type: an int then-arm with a string else-arm
-# must be a type error.
-fn main():
-    x := 1
-    y := x > 0 ? 1 : "one"
-    print(str(y) + "\n")

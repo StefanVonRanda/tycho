@@ -85,7 +85,7 @@ static char *xstrndup(const char *s, size_t n) {
 typedef enum {
     TK_EOF, TK_NEWLINE, TK_INDENT, TK_DEDENT,
     TK_IDENT, TK_INT, TK_FLOAT, TK_STR, TK_CHAR,
-    TK_COLONCOLON, TK_COLONEQ, TK_COLON, TK_EQ, TK_QUESTION,
+    TK_COLONCOLON, TK_COLONEQ, TK_COLON, TK_EQ,
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_PERCENT,
     TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
@@ -357,7 +357,6 @@ static TokVec lex(const char *src) {
             else if (c == '|') k = TK_PIPE;
             else if (c == '^') k = TK_CARET;
             else if (c == '~') k = TK_TILDE;
-            else if (c == '?') k = TK_QUESTION;
             else { g_err_col = tcol; die_at(line, "unexpected character '%c'", c); }
             tv_push(&out, (Tok){k, NULL, 0, line, 0, tcol});
             p += len;
@@ -951,7 +950,6 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, 
                E_SLICE,    /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */
                E_LAMBDA,   /* fn(p)->r: e closure literal; ival indexes g_laminfo */
                E_NULL,     /* `null`: the opaque ptr literal (void*)0 (FFI) */
-               E_TERNARY,  /* cond ? a : b (lhs=cond, rhs=then-arm, args[0]=else-arm) */
                E_SPAWN     /* spawn f(args): run the call on a new thread; lhs = the E_CALL, ival = spawn-site id */ } ExprKind;
 
 typedef struct Expr Expr;
@@ -1602,24 +1600,13 @@ static Expr *parse_and(Parser *ps) {
     return l;
 }
 
-static Expr *parse_expr(Parser *ps) {           /* ?: over logical-or: the top level */
+static Expr *parse_expr(Parser *ps) {           /* logical-or: the top level */
     Expr *l = parse_and(ps);
     while (at(ps, TK_OR)) {
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
         e->op = TK_OR; e->lhs = l; e->rhs = parse_and(ps);
         l = e;
-    }
-    if (at(ps, TK_QUESTION)) {   /* cond ? a : b — right-associative, lowest precedence */
-        Tok *t = cur(ps); ps->p++;
-        Expr *e = new_expr(E_TERNARY, t->line);
-        e->lhs = l;
-        e->rhs = parse_expr(ps);
-        eat(ps, TK_COLON, "':' in a '?:' expression");
-        e->args = (Expr **)xmalloc(sizeof(Expr *));
-        e->args[0] = parse_expr(ps);
-        e->nargs = 1;
-        return e;
     }
     return l;
 }
@@ -2617,16 +2604,6 @@ static Type resolve_expr(Expr *e) {
                 elems[i] = et;
             }
             return e->type = tup_of(elems, e->nargs);
-        }
-        case E_TERNARY: {   /* cond ? a : b — bool condition, same-typed arms */
-            Type ct = resolve_expr(e->lhs);
-            if (ct != T_BOOL)
-                die_at(e->line, "the condition of '?:' must be a bool, got %s", type_name(ct));
-            Type a = resolve_expr(e->rhs);
-            Type b = resolve_exp(e->args[0], a);   /* the then-arm grounds a bare-literal else-arm */
-            if (a != b)
-                die_at(e->line, "'?:' arms must have the same type (got %s and %s)", type_name(a), type_name(b));
-            return e->type = a;
         }
         case E_TUPIDX: {   /* t.0 / t.1 */
             g_place = _place;                  /* t.i is a place iff t is (spine) */
@@ -5304,9 +5281,6 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("(strcmp(%s, %s) %s 0)", l, r, op_str(e->op));
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }
-        case E_TERNARY:   /* both arms build in the same arena; only one runs */
-            return sfmt("(%s ? %s : %s)", gen_expr(e->lhs, arena),
-                        gen_expr(e->rhs, arena), gen_expr(e->args[0], arena));
     }
     return sfmt("0");
 }
