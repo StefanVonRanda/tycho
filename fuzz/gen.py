@@ -288,6 +288,15 @@ class Gen:
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
         # constructs hierc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
+        # concurrency (CC-1..5) + bidirectional inference (B-0..3) coverage.
+        # All deterministic by construction: int reductions and channel SUMS are
+        # thread-count/interleaving independent, so the differential oracle holds.
+        # Conc kinds only at the function top level (ind == 1): inside generated
+        # NESTED loops they multiply OS-thread creation (a parallel for spawns
+        # ncpu threads per iteration) into wall-clock timeouts on both sides.
+        if ind <= 1:
+            kinds += ["spawn_use", "parfor_use", "chan_use"]
+        kinds += ["infer_ground", "infer_lambda", "float_adapt"]
         # value-semantics self-check candidates: a mutable-heap var with a
         # checksum-changing mutation (push to an array, or to a struct's array field).
         vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -596,6 +605,73 @@ class Gen:
             env[a] = "[int]"
             self.emit(ind, "fillA(&" + a + ", " + str(self.r.randint(1, 6)) + ")")
             return
+        if k == "spawn_use":                        # CC-1/2: spawn/wait, t.wait(), and an UNWAITED task (implicit join)
+            t1 = self.fresh("tk")
+            a = self.r.randint(1, 5); b = self.r.randint(0, 9)
+            self.emit(ind, t1 + " := spawn fz_work(mkarr(" + str(a) + "), " + str(b) + ")")
+            if self.r.random() < 0.5:               # a second task with a heap (string) result, waited UFCS-style
+                t2 = self.fresh("tk")
+                self.emit(ind, t2 + " := spawn fz_join(\"s\", " + str(self.r.randint(0, 6)) + ")")
+                self.emit(ind, "acc = acc + len(" + t2 + ".wait())")
+            if self.r.random() < 0.3:               # never waited: CC-2 joins+frees it at this block's end
+                self.emit(ind, self.fresh("uw") + " := spawn fz_work(mkarr(2), 1)")
+            self.emit(ind, "acc = acc + wait(" + t1 + ")")
+            return
+        if k == "parfor_use":                       # CC-3: reduction partials (K-independent ints) + optional capture
+            p = self.fresh("pf")
+            self.emit(ind, p + " := 0")
+            ints = [n0 for n0, t0 in arr_vars if t0 == "[int]"]
+            if ints and self.r.random() < 0.5:      # capture an env array: per-chunk deep copy
+                src = self.r.choice(ints)
+                self.emit(ind, "parallel for i" + p + " in range(len(" + src + ")):")
+                self.emit(ind + 1, p + " += " + src + "[i" + p + "] % 50")
+            else:
+                self.emit(ind, "parallel for i" + p + " in range(" + str(self.r.randint(3, 25)) + "):")
+                self.emit(ind + 1, p + " += (i" + p + " * 7 + 3) % 97")
+            self.emit(ind, "acc = acc + " + p)
+            return
+        if k == "chan_use":                         # CC-4/5: lock-free channel; the consumer drains while main
+            ch = self.fresh("ch")                   # sends, so small capacities hit park/wake deadlock-free
+            co = self.fresh("co")
+            n = self.r.randint(1, 12); base = self.r.randint(0, 20)
+            self.emit(ind, ch + " := channel(int, " + str(self.r.choice([1, 2, 4, 8])) + ")")
+            self.emit(ind, co + " := spawn fz_drain(" + ch + ")")
+            self.emit(ind, "for i" + ch + " in range(" + str(n) + "):")
+            self.emit(ind + 1, "send(" + ch + ", i" + ch + " + " + str(base) + ")")
+            self.emit(ind, "close(" + ch + ")")
+            self.emit(ind, "acc = acc + wait(" + co + ")")
+            return
+        if k == "infer_ground":                     # B-0/B-3: bare [] / [] map / None ground from first use
+            e = self.fresh("ig")
+            self.emit(ind, e + " := []")
+            for _ in range(self.r.randint(1, 3)):
+                self.emit(ind, "push(" + e + ", " + str(self.r.randint(0, 30)) + ")")
+            self.emit(ind, "acc = acc + " + e + "[0] + len(" + e + ")")
+            env[e] = "[int]"                        # grounded: an ordinary [int] for the kinds that follow
+            if self.r.random() < 0.5:
+                m = self.fresh("im")
+                self.emit(ind, m + " := []")
+                self.emit(ind, m + " = map_set(" + m + ", \"g\", " + str(self.r.randint(0, 30)) + ")")
+                self.emit(ind, "acc = acc + map_get(" + m + ", \"g\", 0)")
+            if self.r.random() < 0.5:
+                o = self.fresh("io")
+                self.emit(ind, o + " := None")
+                self.emit(ind, o + " = Some(" + str(self.r.randint(0, 30)) + ")")
+                self.emit(ind, "match " + o + ":")
+                self.emit(ind + 1, "Some(x" + o + "):")
+                self.emit(ind + 2, "acc = acc + x" + o)
+                self.emit(ind + 1, "None:")
+                self.emit(ind + 2, "acc = acc + 0")
+            return
+        if k == "infer_lambda":                     # B-2: lambda param/ret elision at a typed call site
+            self.emit(ind, "acc = acc + fz_apply(fn(x): x * " + str(self.r.randint(1, 9))
+                      + " + 1, " + str(self.r.randint(0, 9)) + ")")
+            return
+        if k == "float_adapt":                      # B-1: int LITERALS adapt in float arithmetic (exact .5 halves)
+            f = self.fresh("fl")
+            self.emit(ind, f + " := " + str(self.r.randint(1, 9)) + ".5")
+            self.emit(ind, "acc = acc + to_int((" + f + " + " + str(self.r.randint(1, 9)) + ") * 2)")
+            return
         if k == "call_ret":                         # bind a heap value returned from a helper (return-slot)
             a = self.fresh("a")
             self.emit(ind, a + " := mkarr(" + str(self.r.randint(1, 6)) + ")")
@@ -711,6 +787,16 @@ class Gen:
         # scalar; mksum captures a heap array (its env array re-homes too).
         self.out += ["fn mkadder(n: int) -> fn(int) -> int:", "    return fn(x: int) -> int: x + n", ""]
         self.out += ["fn mksum(a: [int]) -> fn(int) -> int:", "    return fn(x: int) -> int: x + len(a)", ""]
+        # concurrency + inference fuzz vocabulary (the CC/B kinds); deterministic
+        # by construction (sums are interleaving/thread-count independent).
+        self.out += ["fn fz_work(a: [int], k: int) -> int:", "    s := 0", "    for i in range(len(a)):",
+                     "        s = s + a[i] * k", "    return s % 1000", ""]
+        self.out += ["fn fz_join(s: string, n: int) -> string:", "    r := s", "    for i in range(n):",
+                     "        r = r + \"x\"", "    return r", ""]
+        self.out += ["fn fz_drain(ch: Channel(int)) -> int:", "    s := 0", "    for true:",
+                     "        match recv(ch):", "            Some(v):", "                s = s + v",
+                     "            None:", "                return s", "    return s", ""]
+        self.out += ["fn fz_apply(f: fn(int) -> int, x: int) -> int:", "    return f(x)", ""]
         # FFI: a fixed extern vocabulary (backed by fuzz/ffi_shim.c, linked by
         # run.py). gen_expr weaves calls to these into typed expressions so the
         # differential + ASan oracle exercises the extern / ptr / string-return
