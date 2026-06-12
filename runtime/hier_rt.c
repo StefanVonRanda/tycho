@@ -358,7 +358,12 @@ typedef struct {
 
 static HChan *hier_chan_new(long cap) {
     if (cap < 1) { fprintf(stderr, "hier: channel capacity must be >= 1\n"); exit(1); }
-    long c2 = 1;
+    /* Minimum ring size 2: with one cell the published state (seq == pos+1)
+     * and the recycled next-lap state (seq == pos+cap) are the same value, so
+     * a second send claims the cell before the receiver takes the first value
+     * (freeing its payload) and the receiver waits forever. Vyukov's queue
+     * requires buffer_size >= 2 for exactly this reason. */
+    long c2 = 2;
     while (c2 < cap) c2 <<= 1;
     HChan *ch = (HChan *)malloc(sizeof(HChan));
     if (!ch) hier_oom();
