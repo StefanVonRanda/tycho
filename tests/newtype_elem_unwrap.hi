@@ -1,0 +1,15 @@
+# Fuzz-found regression: to_under on an ARRAY-ELEMENT read of a newtype.
+# hierc0's type_of resolves a newtype at a VAR read but an element read
+# (ts[i] over [Tag]) returned the bare "Tag", so len() on the unwrapped
+# value once generated the array path (.len on a char*). Both compilers
+# must agree the unwrap yields the underlying string.
+type Tag = string
+
+fn main():
+    ts := [Tag("ab"), Tag("c")]
+    total := 0
+    i := 0
+    for i < len(ts):
+        total = total + len(to_under(ts[i]))
+        i = i + 1
+    print(str(total) + "\n")

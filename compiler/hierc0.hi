@@ -2737,8 +2737,11 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Option(" + chan_inner(type_of(args[0], names, types, dc, ctx)) + ")"
             if name == "send" or name == "close":
                 return "void"
-            if name == "to_under":                # generic newtype unwrap: the arg's type, seen through (type_of already resolves)
-                return type_of(args[0], names, types, dc, ctx)
+            if name == "to_under":                # generic newtype unwrap -> the underlying type. resolve_nt is
+                # NOT redundant: type_of resolves a newtype at a VAR read, but an
+                # array-element read (to_under(ks[i]) over ks: [Nt]) returns the
+                # bare elem type "Nt" (fuzz-found: len() then gen'd the array path)
+                return resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
             if name == "Some":
                 return "Option(" + type_of(args[0], names, types, dc, ctx) + ")"
             if name == "Ok":

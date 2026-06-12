@@ -123,6 +123,8 @@ class Gen:
                 choices.append(("fzslen",    lambda: "fz_slen(" + se() + ")"))
                 choices.append(("fzecholen", lambda: "len(fz_echo(" + se() + "))"))
                 choices.append(("fznulllen", lambda: "len(fz_nullify(" + se() + "))"))
+                # ternary: lowest precedence, lazy; arms may nest further ternaries
+                choices.append(("tern", lambda: "(" + ie() + " < " + ie() + " ? " + ie() + " : " + ie() + ")"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -135,6 +137,8 @@ class Gen:
             if depth < 2:
                 choices.append(("cat", lambda: "(" + self.gen_expr("string", env, depth+1) + " + " + self.gen_expr("string", env, depth+1) + ")"))
                 choices.append(("s", lambda: "str(" + self.gen_expr("int", env, depth+1) + ")"))
+                choices.append(("tern", lambda: "(" + self.gen_expr("int", env, depth+1) + " < " + self.gen_expr("int", env, depth+1)
+                                                + " ? " + self.gen_expr("string", env, depth+1) + " : " + self.gen_expr("string", env, depth+1) + ")"))
                 # FFI: an arena-copied C string return woven into the string flow
                 choices.append(("fzecho", lambda: "fz_echo(" + self.gen_expr("string", env, depth+1) + ")"))
         elif t == "float":
@@ -199,8 +203,11 @@ class Gen:
             add(ind, name)
         elif t == "float":
             add(ind, "to_int(" + name + ")")   # truncates; identical in both compilers
-        elif t in self.newtypes:                                  # `type Nt = int`: unwrap to base int
-            add(ind, "to_int(" + name + ")")
+        elif t in self.newtypes:                                  # unwrap (zero-cost) and checksum as the base
+            u = self.fresh("u")
+            self.emit(ind, u + " := to_under(" + name + ")")
+            env2 = dict(env); env2[u] = self.newtypes[t]
+            self.checksum_into(ind, u, self.newtypes[t], env2, acc)
         elif t == "string":
             add(ind, "len(" + name + ")")
         elif t.startswith("[") and t[1:-1] == "int":
@@ -297,6 +304,11 @@ class Gen:
         if ind <= 1:
             kinds += ["spawn_use", "parfor_use", "chan_use"]
         kinds += ["infer_ground", "infer_lambda", "float_adapt"]
+        kinds += ["tern_heap"]                      # ternary with heap arms (arena placement)
+        if any(b == "string" for b in self.newtypes.values()):
+            kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
+        if str_vars:
+            kinds += ["inout_str"]                  # inout string: reassignment through the borrow
         # value-semantics self-check candidates: a mutable-heap var with a
         # checksum-changing mutation (push to an array, or to a struct's array field).
         vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -337,6 +349,42 @@ class Gen:
             # length, or the checksum -- the differential + ASan/LSan + vscheck
             # catch any miscompile (bad copy on regrow, recycle corruption).
             self.emit(ind, "reserve(" + self.r.choice(res_vars) + ", " + str(self.r.randint(0, 9)) + ")")
+            return
+
+        if k == "tern_heap":           # `cond ? [..] : [..]` -- heap arms build in the same arena, only one runs
+            v = self.fresh("ta")
+            cond = self.gen_expr("int", env, 1) + " < " + self.gen_expr("int", env, 1)
+            self.emit(ind, v + " := " + cond + " ? " + self.gen_expr("[int]", env, 2)
+                           + " : " + self.gen_expr("[int]", env, 2))
+            env[v] = "[int]"
+            self.checksum_into(ind, v, "[int]", env)
+            return
+        if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
+            # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
+            n0 = self.r.choice([n for n, b in self.newtypes.items() if b == "string"])
+            m = self.fresh("nm")
+            self.emit(ind, m + " : [" + n0 + ": int] = []")
+            self.emit(ind, m + " = map_set(" + m + ", " + n0 + "(\"a\"), " + self.gen_expr("int", env, 2) + ")")
+            self.emit(ind, m + "[" + n0 + "(\"b\")] = " + str(self.r.randint(0, 9)))
+            self.emit(ind, "acc = acc + map_get(" + m + ", " + n0 + "(\"a\"), 0) + len(" + m + ")")
+            if self.r.random() < 0.5:
+                self.emit(ind, "if map_has(" + m + ", " + n0 + "(\"b\")):")
+                self.emit(ind+1, "acc = acc + 1")
+            ks = self.fresh("ks")
+            self.emit(ind, ks + " := keys(" + m + ")")
+            i = self.fresh("i")
+            self.emit(ind, "for " + i + " in range(len(" + ks + ")):")
+            self.emit(ind+1, "acc = acc + len(to_under(" + ks + "[" + i + "]))")
+            return
+        if k == "inout_str":           # callee reassigns the caller's string through the borrow;
+            # the new bytes must land in the CALLER's arena (dangle -> ASan)
+            cands = [n for n in str_vars if n not in self.loop_vars]
+            if not cands:
+                self.emit(ind, "acc = acc + 0")
+                return
+            sv = self.r.choice(cands)
+            self.emit(ind, "fz_sgrow(&" + sv + ", " + str(self.r.randint(1, 4)) + ")")
+            self.emit(ind, "acc = acc + len(" + sv + ")")
             return
 
         if k == "compound":            # x op= e on a var / array element / struct field
@@ -763,6 +811,7 @@ class Gen:
 
     def emit_helpers(self):
         self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
+        self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
         # transform [int]->[int] used by the `arr_rebuild` kind: `a = xform(a)`
         # reassigns a loop-carried array from a CALL, exercising the liveness-
@@ -818,7 +867,8 @@ class Gen:
         for _ in range(self.r.randint(0, 2)):
             self.enums["E" + str(len(self.enums))] = self.r.choice(["int", "string"])
         for _ in range(self.r.randint(0, 2)):
-            self.newtypes["Nt" + str(len(self.newtypes))] = "int"   # `type Nt = int`, distinct alias
+            # distinct newtypes over scalar AND aggregate underlying (int-biased)
+            self.newtypes["Nt" + str(len(self.newtypes))] = self.r.choice(["int", "int", "string", "[int]"])
         for name, base in self.newtypes.items():
             self.out.append("type " + name + " = " + base)
         if self.newtypes:
