@@ -29,3 +29,31 @@ fn main():
     print(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}\n")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
     # is_space covers \v (11) and \f (12) too: trim strips them
     print("vt=[" + strings.trim(chr(11) + "x" + chr(12)) + "]\n")   # vt=[x]
+    # ---- builtin split shapes (corelib composes with it; empty sep aborts by design) ----
+    print("s1=[" + jn(split("a,b,c", ",")) + "]\n")            # s1=[a|b|c]
+    print("s2=[" + jn(split(",a,", ",")) + "]\n")              # s2=[|a|] (empty pieces kept)
+    print("s3=[" + jn(split("abc", ",")) + "]\n")              # s3=[abc]
+    print("s4=" + str(len(split("", ","))) + "\n")             # s4=1 (one empty piece)
+    print("s5=[" + jn(split("a::b::c", "::")) + "]\n")         # s5=[a|b|c] (multi-char sep)
+    # ---- lines: every documented shape ----
+    print("l1=[" + jn(strings.lines("a" + chr(10) + "b")) + "]\n")                       # l1=[a|b]
+    print("l2=[" + jn(strings.lines("a" + chr(10) + "b" + chr(10))) + "]\n")             # l2=[a|b]
+    print("l3=[" + jn(strings.lines("a" + chr(13) + chr(10) + "b")) + "]\n")             # l3=[a|b]
+    print("l4=" + str(len(strings.lines(""))) + "\n")                                    # l4=0
+    print("l5=" + str(len(strings.lines(chr(10)))) + "\n")                               # l5=1 (one empty line)
+    # ---- replace (package) + find (builtin substring search) ----
+    print("r1=" + strings.replace("a-b-c", "-", "+") + "\n")   # r1=a+b+c
+    print("r2=" + strings.replace("aaa", "aa", "b") + "\n")    # r2=ba (no rescan)
+    print("r3=" + strings.replace("x", "", "y") + "\n")        # r3=x (empty old: unchanged)
+    i1 := find("hello", "ll")
+    i2 := find("hello", "zz")
+    i3 := find("hello", "")
+    print(f"i1={i1} i2={i2} i3={i3}\n")                        # i1=2 i2=-1 i3=0
+
+fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
+    r := ""
+    for i in range(len(xs)):
+        if i > 0:
+            r = r + "|"
+        r = r + xs[i]
+    return r

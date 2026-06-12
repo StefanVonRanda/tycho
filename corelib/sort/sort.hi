@@ -1,0 +1,61 @@
+package sort
+
+# Sorting beyond the per-type arrays packages. The centerpiece is argsort: it
+# returns the index permutation that sorts the KEYS, which is the no-generics
+# way to order anything -- keep your data in parallel arrays, argsort one of
+# them, and walk every array through the permutation.
+#   ord := sort.argsort_desc(counts)
+#   for i in range(len(ord)): use(words[ord[i]], counts[ord[i]])
+# All sorts are stable (equal keys keep their original order) and return new
+# arrays; inputs are never mutated.
+
+fn argsort(keys: [int]) -> [int]:               # ascending, stable
+    ord := []int
+    for i in range(len(keys)):
+        push(ord, i)
+    for i in range(1, len(ord)):
+        cur := ord[i]
+        j := i - 1
+        for j >= 0 and keys[ord[j]] > keys[cur]:
+            ord[j + 1] = ord[j]
+            j = j - 1
+        ord[j + 1] = cur
+    return ord
+
+fn argsort_desc(keys: [int]) -> [int]:          # descending, stable
+    ord := []int
+    for i in range(len(keys)):
+        push(ord, i)
+    for i in range(1, len(ord)):
+        cur := ord[i]
+        j := i - 1
+        for j >= 0 and keys[ord[j]] < keys[cur]:
+            ord[j + 1] = ord[j]
+            j = j - 1
+        ord[j + 1] = cur
+    return ord
+
+fn argsort_str(keys: [string]) -> [int]:        # ascending lexicographic, stable
+    ord := []int
+    for i in range(len(keys)):
+        push(ord, i)
+    for i in range(1, len(ord)):
+        cur := ord[i]
+        j := i - 1
+        for j >= 0 and keys[ord[j]] > keys[cur]:
+            ord[j + 1] = ord[j]
+            j = j - 1
+        ord[j + 1] = cur
+    return ord
+
+fn by_key(xs: [int], key: fn(int) -> int) -> [int]:   # sort ints by a derived key, ascending, stable
+    out := xs
+    for i in range(1, len(out)):
+        cur := out[i]
+        kc := key(cur)
+        j := i - 1
+        for j >= 0 and key(out[j]) > kc:
+            out[j + 1] = out[j]
+            j = j - 1
+        out[j + 1] = cur
+    return out

@@ -1,0 +1,41 @@
+# corelib test: core:rand. Deterministic xorshift32 -- the golden locks the
+# exact stream, so a change to the algorithm is a visible diff, not drift.
+package main
+import "core:rand"
+
+fn main():
+    st := rand.seed(42)
+    a := rand.next(&st)
+    b := rand.next(&st)
+    c := rand.next(&st)
+    print(f"a={a} b={b} c={c}\n")
+    # same seed -> same stream (determinism)
+    st2 := rand.seed(42)
+    a2 := rand.next(&st2)
+    print(f"again={a2}\n")
+    # seed edges: 0 and negatives still yield a valid nonzero state
+    z := rand.seed(0)
+    n := rand.seed(-7)
+    zr := rand.next(&z)
+    nr := rand.next(&n)
+    print(f"z={zr} n={nr}\n")
+    # below: range respected over many draws; n<=0 fail-closed
+    st3 := rand.seed(7)
+    mx := 0
+    mn := 99
+    for i in range(200):
+        v := rand.below(&st3, 10)
+        if v > mx:
+            mx = v
+        if v < mn:
+            mn = v
+    bz := rand.below(&st3, 0)
+    print(f"mn={mn} mx={mx} bz={bz}\n")     # mn=0 mx=9 bz=0
+    # shuffle: permutation of the input (sum preserved), input unmutated
+    st4 := rand.seed(99)
+    xs := [1, 2, 3, 4, 5, 6, 7, 8]
+    sh := rand.shuffle(&st4, xs)
+    s := 0
+    for v in sh:
+        s = s + v
+    print(f"sum={s} len={len(sh)} orig0={xs[0]}\n")   # sum=36 len=8 orig0=1

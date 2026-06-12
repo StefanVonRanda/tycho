@@ -39,8 +39,10 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
 - **`math`** — integer utilities: `abs`, `imin`, `imax`, `clamp(x, lo, hi)`, `sign`,
   `gcd`, `ipow(base, exp)` (exp ≥ 0). (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
-  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`. (`split`/`find`/
-  `substr`/`len`/`chr` are builtins.)
+  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`, `lines` (splits on
+  `\n`, drops one trailing `\r` per line, trailing newline adds no empty line), `replace`
+  (non-overlapping, left to right; empty `old` returns the input unchanged). (`split`/
+  `find`/`substr`/`len`/`chr` are builtins.)
 - **`arrays`** — `[int]` utilities: `contains`, `index_of` (−1 if absent), `count`, `sum`,
   `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending). `reverse`/`sort` return a new
   array — value semantics, the input is never mutated. (`push`/`pop`/`len`/`range` are
@@ -51,7 +53,18 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
 - **`arrays_float`** — the same over `[float]`: `contains`, `index_of`, `count`, `sum`,
   `fmin`, `fmax`, `reverse`, `is_sorted`, `sort`. (Equality/`contains` use exact float `==`.)
 - **`iter`** — higher-order over `[int]`, each taking a `fn`/closure: `map`, `filter`,
-  `reduce`, `count`, `any`.
+  `reduce`, `count`, `any`. (Lambdas in hier are expression-bodied; pass a named fn for a
+  multi-line predicate.)
+- **`iter_str`**, **`iter_float`** — the same five over `[string]` / `[float]`.
+- **`sort`** — `argsort(keys)` / `argsort_desc(keys)` (`[int]`) / `argsort_str(keys)`:
+  return the index permutation that orders the keys — the no-generics way to sort
+  anything (keep data in parallel arrays, argsort one, walk all through the permutation).
+  All stable. Plus `by_key(xs, key)`: sort `[int]` by a derived key fn/closure.
+- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in hier, so the
+  state is an explicit int threaded via `inout`: `st := rand.seed(42)`,
+  `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
+  (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
+  signed 64-bit int, so the generator is UB-free by construction.
 
 ## Testing
 

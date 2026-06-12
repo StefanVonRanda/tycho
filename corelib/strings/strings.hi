@@ -89,3 +89,43 @@ fn parse_int(s: string) -> int:              # decimal int, optional leading '-'
     if v == min64:                           # +9223372036854775808 does not fit
         return 0
     return 0 - v
+
+# (split(s, sep) and find(s, sub) are language builtins -- not duplicated here.)
+
+fn lines(s: string) -> [string]:
+    # Split on '\n', dropping one trailing '\r' per line (so CRLF input works).
+    # Shapes: "a\nb" -> ["a","b"]; "a\nb\n" -> ["a","b"] (trailing newline adds
+    # no empty line); "a\r\nb" -> ["a","b"]; "" -> []; "\n" -> [""]
+    out := []string
+    start := 0
+    for i in range(len(s)):
+        if s[i] == 10:
+            stop := i
+            if stop > start and s[stop - 1] == 13:
+                stop = stop - 1
+            push(out, substr(s, start, stop))
+            start = i + 1
+    if start < len(s):
+        stop := len(s)
+        if s[stop - 1] == 13:
+            stop = stop - 1
+        push(out, substr(s, start, stop))
+    return out
+
+fn replace(s: string, old: string, new: string) -> string:
+    # Replace every non-overlapping occurrence, left to right.
+    # Shapes: replace("a-b-c","-","+") -> "a+b+c"; replace("aaa","aa","b") -> "ba"
+    # (no rescan of the replacement); old == "" returns s unchanged (fail-closed:
+    # never an infinite insertion).
+    if len(old) == 0:
+        return s
+    r := ""
+    i := 0
+    for i < len(s):
+        if i + len(old) <= len(s) and substr(s, i, i + len(old)) == old:
+            r = r + new
+            i = i + len(old)
+        else:
+            r = r + substr(s, i, i + 1)
+            i = i + 1
+    return r
