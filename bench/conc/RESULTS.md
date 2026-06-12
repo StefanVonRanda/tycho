@@ -35,10 +35,10 @@ payloads, checksum = total payload length.
 
 | lang | peak RSS | wall | checksum | payload discipline |
 |------|---------:|-----:|---------:|--------------------|
-| hier | 2.8 MB | 242 ms | 10888890 | deep copy in + deep copy out (value semantics) |
-| C    | 1.5 MB | 630 ms | 10888890 | raw pointer handoff through a mutex ring, consumer frees |
-| Go   | 7.7 MB |  91 ms | 10888890 | string body shared under GC |
-| Rust | 2.1 MB | 143 ms | 10888890 | ownership move through a lock-wrapped mpsc |
+| hier | 2.8 MB |  73 ms | 10888890 | deep copy in + deep copy out (value semantics) |
+| C    | 1.4 MB | 654 ms | 10888890 | raw pointer handoff through a mutex ring, consumer frees |
+| Go   | 7.5 MB |  91 ms | 10888890 | string body shared under GC |
+| Rust | 2.3 MB | 141 ms | 10888890 | ownership move through a lock-wrapped mpsc |
 
 CC-5 replaced the mutex ring with a **Vyukov bounded MPMC queue**: each ring
 cell carries a sequence counter and its own arena, a sender claims a cell with
@@ -48,23 +48,36 @@ ladder whose parked-waiter count gates the wake path — the uncontended fast
 path does zero syscalls. That took hier from 850 ms (mutex ring, copies under
 the lock) to 242 ms.
 
+A follow-up pass closed the rest with **cache-line layout, not a scheduler**:
+`enq` and `deq` were adjacent fields, so the producer's enqueue CAS and all
+four consumers' dequeue CASes false-shared one line — worst exactly when the
+ring runs near-empty (consumers outpace the producer) and both sides hammer
+the same head cell. Padding `enq`/`deq` onto their own lines (Vyukov's
+original layout) took 242 -> ~85 ms, and line-aligning the cells themselves
+(`HCell` is exactly 64 bytes, but malloc only guarantees 16, so cells
+straddled lines) took it to ~73 ms. A profile drove both: 22% of CPU was
+`sched_yield` from starved consumers respinning, all of it downstream of the
+line ping-pong. (`pthread_cond_signal` instead of `broadcast` in the wake
+path also landed — one cell published wakes one waiter — measured neutral
+here but strictly less herd under heavy parking.)
+
 Honest reading:
 
-1. **hier now beats the hand-written C mutex ring 2.6x** while still paying
-   two type-aware deep copies per message that C doesn't — the lock-free
-   claim/copy/publish structure more than buys back the copy cost. The
-   copies remain the entire price of "no dangling payload is expressible"
-   (covering every element type, not just strings).
-2. **The remaining 2.7x to Go** (242 vs 91 ms) is the userspace scheduler:
-   a goroutine handoff is a context-free switch, while hier's consumers are
-   OS threads that spin/yield between messages and contend on one dequeue
-   counter. Rust's 143 ms (lock-wrapped mpsc) now sits between hier and Go.
-   Closing further would mean batched dequeues or a thread-pool runtime —
-   possible, but no longer a memory-model question.
+1. **hier is now the fastest of the four** (73 ms vs Go's 91) while still
+   paying two type-aware deep copies per message that the others don't —
+   the lock-free claim/copy/publish structure plus the cache-conscious
+   layout more than buy back the copy cost. The copies remain the entire
+   price of "no dangling payload is expressible" (covering every element
+   type, not just strings).
+2. **The "scheduler gap" to Go turned out not to be one.** What looked like
+   goroutine-handoff magic was false sharing on hier's side; OS threads with
+   a spin -> yield -> timed-park ladder are fully competitive at this
+   message rate once the hot counters stop sharing lines. Batched dequeues /
+   a thread pool remain available levers, but nothing here demands them.
 
-Run-to-run variance on pipeline is ~±50 ms (4 consumers contending on the
-dequeue CAS); parreduce is stable. Memory: hier holds ~2.8 MB — bounded by
-design (cap x payload via per-cell arenas), 2.8x below Go's GC-driven 7.7 MB.
+parreduce is stable; pipeline run-to-run variance is now ~±5 ms. Memory:
+hier holds ~2.8 MB — bounded by design (cap x payload via per-cell arenas),
+2.7x below Go's GC-driven 7.5 MB.
 
 `select` (CC-5) ships with the same machinery: recv arms + `default` +
 `closed` over a non-blocking `try_recv`, with a bounded pause ladder when

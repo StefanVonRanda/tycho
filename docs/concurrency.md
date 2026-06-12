@@ -174,13 +174,15 @@ languages; AMD Ryzen 7 7735HS, 16 hw threads — details and honest reading in
 
 | workload | hier | C | Go | Rust |
 |---|---:|---:|---:|---:|
-| parreduce (4×10⁸ int reduce) | **38 ms / 1.7 MB** | 37 ms / 1.6 MB | 62 ms | 43 ms |
-| pipeline (10⁶ strings, 1→4 consumers) | **242 ms / 2.8 MB** | 630 ms (mutex ring) | 91 ms / 7.7 MB | 143 ms |
+| parreduce (4×10⁸ int reduce) | **37 ms / 1.6 MB** | 36 ms / 1.6 MB | 62 ms | 43 ms |
+| pipeline (10⁶ strings, 1→4 consumers) | **73 ms / 2.8 MB** | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
 
-`parallel for` is at exact C parity. The lock-free channels beat the
-hand-written C mutex ring 2.6× while paying two deep copies per message that
-C doesn't; the remaining 2.7× to Go is its userspace goroutine scheduler —
-no longer the locking, and no longer a memory-model question.
+`parallel for` is at exact C parity. The lock-free channels beat everything —
+including Go — while paying two deep copies per message that the others
+don't. What looked like a 2.7× "goroutine scheduler gap" (242 ms before) was
+false sharing on hier's side: `enq`/`deq` packed on one cache line, plus
+cells straddling lines. Padding them apart (Vyukov's original layout) closed
+it — not the locking, not a scheduler, and not a memory-model question.
 
 ## 4. Design lineage
 

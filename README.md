@@ -930,9 +930,11 @@ syscalls), so value semantics outside it are untouched. `send` deep-copies
 the payload into the claimed cell's arena (channel memory is bounded by
 capacity × payload, for *every* element type) and `recv` copies out into the
 receiver's arena, returning `Option(T)` with `None` meaning
-closed-and-drained. On the 1M-message pipeline benchmark this is **2.6×
-faster than a hand-written C mutex ring** while still paying the two copies
-C doesn't (see `bench/conc/`). Channels can't be returned, stored, or
+closed-and-drained. On the 1M-message pipeline benchmark this is the
+**fastest of hier/C/Go/Rust (73 ms vs Go's 91)** — 9× a hand-written C mutex
+ring — while still paying the two copies the others don't (the queue's hot
+counters and cells are cache-line padded, Vyukov's layout; see
+`bench/conc/`). Channels can't be returned, stored, or
 captured; the creating scope frees the channel after the implicit joins
 above it, so the handle can never dangle.
 

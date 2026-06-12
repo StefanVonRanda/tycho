@@ -338,18 +338,27 @@ static void hier_task_finish(HTask *t) {
  * for parking). The 1ms timed wait makes the check-then-park race harmless
  * (worst case one extra retry), never a lost wakeup. Capacity rounds up to a
  * power of two (still bounded; blocking threshold may exceed the request). */
-typedef struct {
+typedef struct __attribute__((aligned(64))) {
     _Atomic long seq;     /* Vyukov sequence: ==pos -> sender may claim; ==pos+1 -> receiver may */
     long  pos;            /* the claim ticket, stashed between claim and commit (cell-exclusive) */
     void *val;
     Arena arena;          /* payload bytes live here from send-copy until the cell is reused */
-} HCell;
+} HCell;                  /* line-aligned: a consumer's seq store on cell k must not contend with
+                           * the producer touching cell k+1 through a straddled line */
 
 typedef struct {
     HCell *cells;
     long   cap;                    /* power of two >= requested capacity */
+    /* enq and deq each get their own cache line (Vyukov's original layout):
+     * the producer CASes enq while every consumer CASes deq -- packed together
+     * they false-share one line and the ping-pong throttles BOTH sides,
+     * worst exactly when the ring runs near-empty (consumers outpace the
+     * producer) or near-full. */
+    char _pad0[64];
     _Atomic long enq;              /* next send ticket */
+    char _pad1[64];
     _Atomic long deq;              /* next recv ticket */
+    char _pad2[64];
     _Atomic int  closed;
     _Atomic int  waiters;          /* parked threads; >0 makes publishers take the wake slow path */
     pthread_mutex_t mu;            /* parking only -- never held on the data path */
@@ -367,7 +376,7 @@ static HChan *hier_chan_new(long cap) {
     while (c2 < cap) c2 <<= 1;
     HChan *ch = (HChan *)malloc(sizeof(HChan));
     if (!ch) hier_oom();
-    ch->cells = (HCell *)malloc((size_t)c2 * sizeof(HCell));
+    ch->cells = (HCell *)aligned_alloc(64, (size_t)c2 * sizeof(HCell));   /* HCell is aligned(64) */
     if (!ch->cells) hier_oom();
     for (long i = 0; i < c2; i++) {
         atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed);
@@ -402,7 +411,10 @@ static void hier_chan_park(HChan *ch) {
 static void hier_chan_wake(HChan *ch) {        /* publisher slow path: only when someone is parked */
     if (atomic_load_explicit(&ch->waiters, memory_order_relaxed) > 0) {
         pthread_mutex_lock(&ch->mu);
-        pthread_cond_broadcast(&ch->cv);
+        pthread_cond_signal(&ch->cv);          /* ONE waiter: a commit publishes one cell, so waking
+                                                * all N is a thundering herd (N-1 respin + repark per
+                                                * item). close() still broadcasts. The timed park
+                                                * (1ms) self-heals any wake the signal/park race drops. */
         pthread_mutex_unlock(&ch->mu);
     }
 }
