@@ -229,12 +229,13 @@ byte — `'x'` literals with `\n \t \r \0 \\ \'` escapes; `char ± int → char`
 `string + char` appends in place without allocating, so `s = s + ('0' + d)` is a
 zero-alloc byte append), arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), maps
-(`[string: V]` for any value type `V`; `[int: int]`, `[int: float]`), `Option(T)` (a value or nothing — the
+(`[string: V]` / `[int: V]` for any value type `V`, newtype keys too), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
 no-exceptions error story), tuples `(T1, ..., Tn)` (anonymous products — the
 multiple-return-values story), user-defined `struct`s, user-defined `enum`s
 (sum types / tagged unions, including recursive ones — ASTs), and `type`
-newtypes (distinct, zero-cost aliases of `int`/`float`).
+newtypes (distinct, zero-cost wrappers over `int`/`float`/`string`/`bool` or
+an array/map/struct).
 
 **String interpolation:** an `f"..."` string interpolates `{expr}` holes —
 `f"point=({p.x},{p.y}) sum={a + b}"` — desugaring to `"point=(" + str(p.x) + ...`.
