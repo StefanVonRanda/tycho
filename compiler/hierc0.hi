@@ -46,6 +46,7 @@ enum Tok:
     TPipe
     TCaret
     TTilde
+    TQuestion
     TShl
     TShr
     TNewline
@@ -284,6 +285,9 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int) -> in
     elif c == 126:
         push(toks, Token(TTilde, "~", line))
         return i + 1
+    elif c == 63:
+        push(toks, Token(TQuestion, "?", line))
+        return i + 1
     else:
         lex_err(src, tok0, "lex: unexpected character")
         return i + 1
@@ -365,6 +369,7 @@ enum Expr:
     ELambda(int, [string], [string], string, Expr, [string], [string])   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
     ECallV(Expr, [Expr])     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
     ESpawn(int, string, [Expr])   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
+    ETernary(Expr, Expr, Expr)    # `cond ? a : b` -- lowest precedence, right-associative; arms same-typed
 
 enum Stmt:
     SDecl(string, Expr)
@@ -652,6 +657,8 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                     die("parse: spawn requires a direct call: spawn f(args)")
                 ESpawn(sid, sn2, sa2):
                     die("parse: spawn requires a direct call: spawn f(args)")
+                ETernary(tc, ta, tb):
+                    die("parse: spawn requires a direct call: spawn f(args)")
             return EInt("0")
         if name == "channel" and toks[pos].kind == TLParen:   # channel(T, cap) (CC-4); the type rides the name
             pos = pos + 1
@@ -834,6 +841,12 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
         pos = pos + 1
         r := parse_and(toks, &pos)
         l = EBin("||", l, r)
+    if toks[pos].kind == TQuestion:              # cond ? a : b -- right-associative, lowest precedence
+        pos = pos + 1
+        a := parse_expr(toks, &pos)
+        expect(toks, &pos, TColon)
+        b := parse_expr(toks, &pos)
+        return ETernary(l, a, b)
     return l
 
 # `for x in COLL:` desugars to a collection-temp decl plus a range loop over its
@@ -1685,6 +1698,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return EAddr(mangle_expr(m, x))
         ESpawn(id, nm, a):
             return ESpawn(id, mangle_ref(m, nm), mangle_args(m, a))
+        ETernary(tc, ta, tb):
+            return ETernary(mangle_expr(m, tc), mangle_expr(m, ta), mangle_expr(m, tb))
 
 fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a new binding shadows a package name)
     nl := []string
@@ -2507,6 +2522,8 @@ fn efield_fname(e: Expr) -> string:               # field name if e is EField, e
             return ""
         ESpawn(id, nm, a):
             return ""
+        ETernary(tc, ta, tb):
+            return ""
 
 fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller guards via efield_fname)
     match e:
@@ -2549,6 +2566,8 @@ fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller gu
         ECallV(c, a):
             return e
         ESpawn(id, nm, a):
+            return e
+        ETernary(tc, ta, tb):
             return e
 
 fn struct_fn_field(dc: Decls, sname: string, fname: string) -> bool:   # sname has a fn-typed field fname?
@@ -2676,6 +2695,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
         ESpawn(id, nm, sargs):
             return "Task(" + resolve_nt(dc, ctx, sig_ret(dc, ctx, nm)) + ")"
+        ETernary(tc, ta, tb):
+            return type_of(ta, names, types, dc, ctx)   # arms same-typed; the then-arm answers
         EAddr(inner):
             return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r):
@@ -2786,6 +2807,8 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
             return ""
         ESpawn(id, nm, a):
             return ""
+        ETernary(tc, ta, tb):
+            return ""
 
 # Like gen_args, but after each inout-container arg, interleave its home arena
 # (the hidden _ina_ param) — kept positionally in sync with gen_params.
@@ -2892,6 +2915,8 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
         EAddr(x):
             return ""
         ESpawn(id, nm, a):
+            return ""
+        ETernary(tc, ta, tb):
             return ""
 
 # gather a whole struct value from the soa's field buffers at index `ix`.
@@ -3333,6 +3358,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
+        ETernary(tc, ta, tb):
+            return "(" + gen_expr(tc, names, types, dc, ctx) + " ? " + gen_expr(ta, names, types, dc, ctx) + " : " + gen_expr(tb, names, types, dc, ctx) + ")"
         ESpawn(id, nm, sargs):
             # CC-1 spawn site: copy every argument into the task's private root
             # arena (after this, spawner and task share zero bytes), then start
@@ -3389,6 +3416,8 @@ fn root_var(e: Expr) -> string:
         ESlice(b, lo, hi):
             return ""
         ESpawn(id, nm, a):
+            return ""
+        ETernary(tc, ta, tb):
             return ""
 
 # The arena a container place lives in: an inout-param container is the caller's
@@ -3572,6 +3601,8 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
             return false
         ESpawn(id, nm, a):
             return false
+        ETernary(tc, ta, tb):
+            return false
 
 # Is `e` an index into a STRING array (a heap-element slot)? Overwriting such a
 # slot can recycle the evicted element back to the array's arena (MM-9), so peak
@@ -3619,6 +3650,8 @@ fn is_str_arr_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: C
             return false
         ESpawn(id, nm, a):
             return false
+        ETernary(tc, ta, tb):
+            return false
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
@@ -3663,6 +3696,8 @@ fn is_place(e: Expr) -> bool:
         EAddr(inner):
             return false
         ESpawn(id, nm, a):
+            return false
+        ETernary(tc, ta, tb):
             return false
 
 # A slice expression already MATERIALIZES an owning copy in ctx.owner
@@ -3711,6 +3746,8 @@ fn is_eslice(e: Expr) -> bool:
             return false
         ESpawn(sid, nm, a):
             return false
+        ETernary(tc, ta, tb):
+            return false
 
 fn is_evar(e: Expr, name: string) -> bool:
     match e:
@@ -3753,6 +3790,8 @@ fn is_evar(e: Expr, name: string) -> bool:
         EAddr(x):
             return false
         ESpawn(sid, snm, sa):
+            return false
+        ETernary(tc, ta, tb):
             return false
 
 # Deep-copy a C expression `code` of Hier type `ty` (value semantics for a bind
@@ -3821,6 +3860,8 @@ fn evar_name(e: Expr) -> string:
             return ""
         ESpawn(sid, snm, sa):
             return ""
+        ETernary(tc, ta, tb):
+            return ""
 
 fn count_str_occ(xs: [string], s: string) -> int:
     c := 0
@@ -3881,6 +3922,8 @@ fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), el
         EAddr(x):
             return ""
         ESpawn(sid, snm, sa):
+            return ""
+        ETernary(tc, ta, tb):
             return ""
 
 fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
@@ -4179,6 +4222,10 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
             for j < len(sa):                      # site always deep-copies into the task root -- keep it that way)
                 rd_expr(&reads, &loopreads, sa[j], true)
                 j = j + 1
+        ETernary(tc, ta, tb):
+            rd_expr(&reads, &loopreads, tc, inloop)
+            rd_expr(&reads, &loopreads, ta, inloop)
+            rd_expr(&reads, &loopreads, tb, inloop)
 
 fn rd_block(reads: inout [string], loopreads: inout [string], stmts: [Stmt], inloop: bool):
     i := 0
@@ -4373,6 +4420,8 @@ fn expr_has_call(e: Expr) -> bool:
             return false
         ESpawn(sid, snm, sa):
             return true                           # a spawn site allocates (task root + arg copies)
+        ETernary(tc, ta, tb):
+            return expr_has_call(tc) or expr_has_call(ta) or expr_has_call(tb)
 
 fn any_has_call(es: [Expr]) -> bool:
     i := 0
@@ -4440,6 +4489,8 @@ fn expr_refs(e: Expr, name: string) -> bool:
             return false
         ESpawn(sid, snm, sa):
             return any_refs(sa, name)
+        ETernary(tc, ta, tb):
+            return expr_refs(tc, name) or expr_refs(ta, name) or expr_refs(tb, name)
 
 fn any_refs(es: [Expr], name: string) -> bool:
     i := 0
@@ -4610,6 +4661,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ELambda(id, ps, pts, ret, body, cn, ct):
                     return deflt
                 ESpawn(sid, snm, sa):
+                    return deflt
+                ETernary(tc, ta, tb):
                     return deflt
         SFieldAssign(lv, rhs):
             # storing into a (malloc) struct field / array element: the value must
@@ -5006,6 +5059,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
         EAddr(x):
             push(out, e)
         ESpawn(sid, snm, sa):
+            push(out, e)
+        ETernary(tc, ta, tb):
             push(out, e)
 
 # If `e` is `name + p1 + p2 + ...` (an all-'+' chain whose leftmost leaf is the
@@ -5905,6 +5960,10 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EBin(op, l, r):
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
+        ETernary(tc, ta, tb):
+            collect_expr(&acc, tc, names, types, dc, ctx)
+            collect_expr(&acc, ta, names, types, dc, ctx)
+            collect_expr(&acc, tb, names, types, dc, ctx)
         ECall(nm, args):
             j := 0
             for j < len(args):
@@ -6292,6 +6351,10 @@ fn collect_evars(e: Expr, out: inout [string]):
         EBin(o, l, r):
             collect_evars(l, &out)
             collect_evars(r, &out)
+        ETernary(tc, ta, tb):
+            collect_evars(tc, &out)
+            collect_evars(ta, &out)
+            collect_evars(tb, &out)
         ECall(n, a):
             j := 0
             for j < len(a):
@@ -6469,6 +6532,8 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                             i = i
                         ESpawn(sid, snm, sa):
                             i = i
+                        ETernary(tc, ta, tb):
+                            i = i
             SDecl(n, e):
                 i = i
             SFieldAssign(lv, r):
@@ -6560,6 +6625,8 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
             if want == "float":
                 return EFloat(s + ".0")
             return e
+        ETernary(tc, ta, tb):                     # the destination type flows into both arms
+            return ETernary(tc, ground_pre(dc, ctx, want, ta), ground_pre(dc, ctx, want, tb))
         ELambda(id, ps, pts, ret, body, cn, ct):
             if not is_func(want):
                 return e
@@ -6695,6 +6762,11 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             return e
         EBin(o, l, r):
             return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+        ETernary(tc, ta, tb):
+            lc := lift_expr(tc, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            la := lift_expr(ta, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            gb := ground_pre(dc, ctx, type_of(la, names, types, dc, ctx), tb)   # the then-arm grounds a bare-literal else-arm (mirrors hierc)
+            return ETernary(lc, la, lift_expr(gb, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
         ECall(n, a):
             ga := ground_args(dc, ctx, names, types, n, a)   # B: per-arg destination types ground empties/literals/lambdas
             return ECall(n, lift_exprs(ga, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
@@ -6830,6 +6902,8 @@ fn pend_init_kind(e: Expr) -> int:
             if t == "":
                 return 1
             return 0
+        ETernary(tc, ta, tb):
+            return 0
         ECall(nm, a):
             if nm == "None" and len(a) == 0:
                 return 2
@@ -6942,6 +7016,14 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                         return r
                 j = j + 1
             return ""
+        ETernary(tc, ta, tb):
+            tr := pend_seek_expr(dc, ctx, n2, t2, nm, tc)
+            if tr != "":
+                return tr
+            tr = pend_seek_expr(dc, ctx, n2, t2, nm, ta)
+            if tr != "":
+                return tr
+            return pend_seek_expr(dc, ctx, n2, t2, nm, tb)
         EBin(o, l, r):
             lr := pend_seek_expr(dc, ctx, n2, t2, nm, l)
             if lr != "":
@@ -7388,6 +7470,8 @@ fn expr_has_lambda(e: Expr) -> bool:
             return true
         EBin(o, l, r):
             return expr_has_lambda(l) or expr_has_lambda(r)
+        ETernary(tc, ta, tb):
+            return expr_has_lambda(tc) or expr_has_lambda(ta) or expr_has_lambda(tb)
         ECall(n, a):
             if has_prefix(n, "channel:"):         # channel creation gates the lift (its decl needs gen support)
                 return true
