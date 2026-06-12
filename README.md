@@ -217,8 +217,10 @@ value semantics: the `&` argument must name a mutable variable, and the same
 variable can't be passed to two `inout` parameters of one call (that would
 be overlapping mutable access). `inout` covers `int`, `bool`, pure-value
 structs, and the heap aggregates `[int]`/`[string]` and heap-bearing structs —
-including `push`/growth and element/field mutation through the borrow. Only
-plain `inout string` is excluded (a string is immutable, so it buys nothing).
+including `push`/growth and element/field mutation through the borrow.
+`inout string` works too: the string value itself stays immutable, but
+reassignment through the borrow (`s = s + "."`) reaches the caller, with the
+new bytes built in the caller's arena (`tests/inout_string.hi`).
 
 ### Types
 
@@ -1113,7 +1115,8 @@ None of this appears in Hier source.
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,
   e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
-  `examples/context.hi`). Only plain `inout string` is excluded (immutable).
+  `examples/context.hi`). `inout string` reassigns through the borrow (the
+  value itself stays immutable).
 
 ## Repository layout
 

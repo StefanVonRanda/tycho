@@ -4009,13 +4009,10 @@ static void resolve_program(ProcVec *prog) {
              * aggregates [int]/[string]/heap-bearing structs. A heap inout
              * carries its value's owning arena (_ina_<name>), so any
              * allocating mutation (element copy, field copy, regrow/push)
-             * lands in the caller's arena where the value lives. Plain
-             * `string` stays excluded: it's immutable (only reassignable), so
-             * an inout buys nothing. */
-            if (pr->params[j].is_inout && pr->params[j].type == T_STRING)
-                die_at(pr->line, "inout parameter '%s': `string` is immutable; "
-                       "inout supports int/bool/struct and [int]/[string]",
-                       pr->params[j].name);
+             * lands in the caller's arena where the value lives. `string`
+             * rides the same machinery: the value itself is immutable, but
+             * REASSIGNMENT through the borrow (s = s + ".") reaches the
+             * caller, and the new bytes build in _ina_<name>. */
             if (pr->params[j].is_inout && IS_FUNC(pr->params[j].type))
                 die_at(pr->line, "inout parameter '%s': a function value can't be inout "
                        "(a callee could write a closure back into the caller and it would dangle)",
@@ -5561,7 +5558,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * the function still sees an ordinary NUL-terminated char*. e is
              * fully evaluated before the buffer is touched (handles acc=acc+acc
              * and acc=acc+f(acc)). */
-            if (is_accum(s->name) && is_self_append(s)) {
+            /* (an inout param is excluded: its _len_/_cap_ trackers are never
+             * declared and the target is (*h_x) — the generic path below
+             * concats into _ina_ instead, which is correct, just not in-place) */
+            if (is_accum(s->name) && is_self_append(s) && !is_inout_param(s->name)) {
                 Expr *ops[64];
                 int nops = collect_append_ops(s->expr, s->name, ops, 64);
                 /* Multi-piece (k>=2) in-place is sound only if no operand reads
@@ -5710,7 +5710,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* a non-self assignment to a tracked accumulator rebinds its
              * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
              * grow in place — forces the next append to allocate). */
-            if (is_accum(s->name) && s->expr->type == T_STRING)
+            if (is_accum(s->name) && s->expr->type == T_STRING && !is_inout_param(s->name))
                 fprintf(o, "%*s_len_h_%s = (long)strlen(h_%s); _cap_h_%s = 0;\n",
                         ind * 4, "", s->name, s->name, s->name);
             break;

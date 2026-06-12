@@ -2749,7 +2749,7 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
             return ""
         EAddr(inner):
             b := base_ty(type_of(inner, names, types, dc, ctx))
-            if is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b)):   # mirrors inout_container_param
+            if resolve_nt(dc, ctx, b) == "str" or is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b)):   # mirrors inout_container_param
                 return ", " + owner_arena_of(inner, names, types, dc, ctx)
             return ""
         EVar(n):
@@ -4914,6 +4914,8 @@ fn inout_container_param(dc: Decls, ctx: Ctx, ptype: string) -> bool:
     if not is_inout(ptype):
         return false
     b := base_ty(ptype)
+    if resolve_nt(dc, ctx, b) == "str":          # inout string: reassignment bytes build in _ina_
+        return true
     return is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b))   # a heap struct's field-containers grow in _ina_
 
 fn gen_params(f: Func, dc: Decls, ctx: Ctx) -> string:
