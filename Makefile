@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
+.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
 
 all: hierc
 
@@ -73,6 +73,11 @@ bench-dbquery: hierc
 # Concurrency head-to-head (parallel reduce + channel pipeline) vs C/Go/Rust.
 bench-conc: hierc
 	@sh bench/conc/run.sh
+
+# Parallel text indexer dogfood (channel fan-out -> worker maps -> inout merge)
+# vs C/Go over an identical synthetic corpus. See bench/indexer/RESULTS.md.
+bench-indexer: hierc
+	@sh bench/indexer/run.sh
 
 # Sliding-window eviction: the arena's weak point, mapped honestly (heap-record
 # window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.
