@@ -3334,8 +3334,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                             return "({ if (_fl" + suf + " == _fc" + suf + ") " + gname + "(" + ow + ", &_fd" + suf + ", &_fc" + suf + ", _fl" + suf + "); _fd" + suf + "[_fl" + suf + "++] = " + v + "; })"
                         fi = fi + 1
                 oa := owner_arena_of(args[0], names, types, dc, ctx)   # array's home arena (buffer + deep-copied elements)
-                vo := "0"                          # non-deep-copy elements stay immortal (owner 0);
-                if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str) live in the array's arena
+                vo := ctx.owner                    # a scalar element needs no arena, but a nested TRANSIENT alloc
+                                                   # (e.g. str() consumed by len()) must be freed with the current
+                                                   # scope, not malloc'd at owner-0 and leaked (leak fuzzer found it)
+                if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str/struct) are STORED in the array's arena
                     vo = oa
                 return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
             if name == "pop":                     # pop(arr): remove + return the last element
