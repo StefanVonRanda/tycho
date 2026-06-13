@@ -129,6 +129,13 @@ fuzz: hierc
 fuzz-reject: hierc
 	@python3 fuzz/run_reject.py $(N)
 
+# Leak lane: run the SOUNDNESS generator's valid programs (gen.py) under
+# ASan+LeakSanitizer, SEQUENTIALLY, and assert nothing leaks at exit -- the one
+# class the differential lane (detect_leaks=0) can't see. Slow; NOT yet in `make
+# ci` pending the leaks it surfaces. Smaller N is plenty: `make fuzz-leak N=200`.
+fuzz-leak: hierc
+	@python3 fuzz/run_leak.py $(N)
+
 # Wall-time regression guard: asserts hier beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
 # fuzz/fixpoint can't (they check output, not speed -- see commit 6ff7aa1). In CI.
