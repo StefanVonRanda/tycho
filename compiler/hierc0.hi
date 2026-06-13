@@ -2750,7 +2750,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if name == "map_get":                 # returns the map's value type
                 return map_val(type_of(args[0], names, types, dc, ctx))
             if name == "pop":                      # pop(arr) -> the array's element type
-                return elem_ty(type_of(args[0], names, types, dc, ctx))
+                pt := type_of(args[0], names, types, dc, ctx)
+                if is_soa(pt):                     # pop(soa) yields the struct value
+                    return soa_struct(pt)
+                return elem_ty(pt)
             if name == "keys":                     # returns [K] (the map's key array)
                 return "[" + map_key(type_of(args[0], names, types, dc, ctx)) + "]"
             if has_prefix(name, "channel:"):      # channel(T, cap) creation (the type rides the name)
@@ -3313,7 +3316,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "pop":                     # pop(arr): remove + return the last element
                 pat := type_of(args[0], names, types, dc, ctx)
                 if is_soa(pat):
-                    die("codegen: pop on a soa array is not supported yet")
+                    return "Soa_" + soa_struct(pat) + "_pop(&" + gen_place(args[0], names, types, dc, ctx) + ")"
                 # result is deep-copied into ctx.owner (the array buffer may recycle), so
                 # the popped value is independent of the (shrunk) array. Scalars pass through.
                 return "Arr_" + mangle(elem_ty(pat)) + "_pop(" + ctx.owner + ", &" + gen_place(args[0], names, types, dc, ctx) + ")"
@@ -5930,6 +5933,12 @@ fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
                 out = out + "        if (!(" + eq_field(dc, ctx, flds[i].ty, "a.f" + str(i) + "[j]", "b.f" + str(i) + "[j]") + ")) return 0;\n"
                 i = i + 1
             out = out + "    }\n    return 1;\n}\n"
+            # pop: shrink len, gather the (new) last element, deep-copy it into `ar`
+            # (heap fields outlive a later push that overwrites the freed slot).
+            out = out + "static " + ust(sn) + " " + nm + "_pop(" + nm + "* s) {\n"
+            out = out + "    if (s->len == 0) { fprintf(stderr, \"hier: pop from an empty array\\n\"); exit(1); }\n"
+            out = out + "    s->len = s->len - 1;\n"
+            out = out + "    return " + gen_soa_gather(dc, ctx, ty, "(*s)", "s->len") + ";\n}\n"
             return out
         si = si + 1
     die("codegen: soa of unknown struct")

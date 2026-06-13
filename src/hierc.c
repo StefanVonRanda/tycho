@@ -3175,15 +3175,15 @@ static Type resolve_expr(Expr *e) {
                 g_place = 1;
                 Type arrt = resolve_expr(e->args[0]);
                 g_place = 0;
-                if (!is_array(arrt))
-                    die_at(e->line, "pop's first argument must be an array");   /* soa pop not supported yet */
+                if (!is_array(arrt) && !IS_SOA(arrt))
+                    die_at(e->line, "pop's first argument must be an array or soa");
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot pop through this expression — the array must be a "
                                     "variable, field, or composite-array element");
                 if (!vars_can_mutate(root->sval))
                     die_at(e->line, "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)",
                            root->sval, root->sval);
-                return e->type = arr_elem(arrt);
+                return e->type = IS_SOA(arrt) ? soa_struct(arrt) : arr_elem(arrt);
             }
             if (!strcmp(e->sval, "reserve")) {
                 if (e->nargs != 2) die_at(e->line, "reserve(arr, n) takes two arguments");
@@ -4890,6 +4890,8 @@ static char *gen_call(Expr *e, const char *arena) {
          * CURRENT arena (a heap element must outlive a later push that recycles
          * the buffer); scalars pass through. The array (root's arena) only shrinks. */
         char *arr = gen_lvalue(e->args[0], arena);
+        if (IS_SOA(e->args[0]->type))   /* soa pop: shrink len, gather the last element (struct value) */
+            return sfmt("Soa%d_pop(&(%s))", SOA_ID(e->args[0]->type), arr);
         return sfmt("hier_arr_%s_pop(%s, &(%s))", arr_fn(e->args[0]->type), arena, arr);
     }
     if (!strcmp(e->sval, "reserve")) {           /* preallocate exact capacity (same shape as push) */
@@ -6653,6 +6655,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static void Soa%d_push(Arena*, Soa%d*, S_%s);\n", i, i, sn);
         fprintf(o, "static Soa%d Soa%d_copy(Arena*, Soa%d);\n", i, i, i);
         fprintf(o, "static int Soa%d_eq(Soa%d, Soa%d);\n", i, i, i);
+        fprintf(o, "static S_%s Soa%d_pop(Soa%d *);\n", sn, i, i);
     }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         const char *ct = c_type(g_arrtypes[i].elem);
@@ -6922,6 +6925,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    s->f%d[s->len] = %s;\n", f,
                     copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
         fprintf(o, "    s->len++;\n}\n");
+        /* pop: shrink len, then gather the (new) last element as a struct value */
+        fprintf(o, "static S_%s Soa%d_pop(Soa%d *s) {\n", sn, i, i);
+        fprintf(o, "    if (s->len == 0) { fprintf(stderr, \"hier: pop from an empty array\\n\"); exit(1); }\n");
+        fprintf(o, "    s->len--;\n    return (S_%s){", sn);
+        for (int f = 0; f < sd->nfields; f++)
+            fprintf(o, "%s s->f%d[s->len]", f ? "," : "", f);
+        fprintf(o, " };\n}\n");
         /* deep-copy a soa value (value semantics on bind/pass/return): each
          * field buffer is reallocated in the target arena and its elements
          * copied (deep for heap fields via copy_into). */
