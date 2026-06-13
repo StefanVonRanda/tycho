@@ -131,8 +131,9 @@ fuzz-reject: hierc
 
 # Leak lane: run the SOUNDNESS generator's valid programs (gen.py) under
 # ASan+LeakSanitizer, SEQUENTIALLY, and assert nothing leaks at exit -- the one
-# class the differential lane (detect_leaks=0) can't see. Slow; NOT yet in `make
-# ci` pending the leaks it surfaces. Smaller N is plenty: `make fuzz-leak N=200`.
+# class the differential lane (detect_leaks=0) can't see. Slowest lane (sequential
+# ASan+LSan); wired into `make ci` (scripts/ci.sh step 9/10) capped at N=150 there.
+# Run a deeper sweep directly: `make fuzz-leak N=500`.
 fuzz-leak: hierc
 	@python3 fuzz/run_leak.py $(N)
 
