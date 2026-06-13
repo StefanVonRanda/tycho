@@ -367,26 +367,26 @@ enum Expr:
     ESpawn(int, string, [Expr])   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
 
 enum Stmt:
-    SDecl(string, Expr)
-    SAssign(string, Expr)
-    SFieldAssign(Expr, Expr) # `lvalue = rhs`, lvalue an EField path
-    SPrint(Expr)             # the Expr is a string expression
-    SReturn(Expr)
+    SDecl(string, Expr, int)
+    SAssign(string, Expr, int)
+    SFieldAssign(Expr, Expr, int) # `lvalue = rhs`, lvalue an EField path
+    SPrint(Expr, int)             # the Expr is a string expression
+    SReturn(Expr, int)
     SReturnVoid              # bare `return` (no value)
-    SIf(Expr, [Stmt], [Stmt])
-    SWhile(Expr, [Stmt])     # condition-form `for COND:` (Hier's while loop)
-    SForRange(string, Expr, Expr, Expr, [Stmt])   # `for i in range(start, stop, step):`
-    SExpr(Expr)              # bare expression statement, e.g. a call `f(x)`
-    STypedDecl(string, string, Expr)   # `name : Type = expr` (annotation fixes the type)
-    SOrReturn(string, Expr)  # `name := result_expr or_return` (unwrap Ok or propagate Err)
-    SDestructure([string], Expr)       # `a, b := tuple_expr`
-    SMultiAssign([string], Expr)       # `a, b = tuple_expr` (assign existing vars)
-    SMatch(Expr, [string], [[string]], [[Stmt]])  # subj, arm variants, arm binds, arm bodies
+    SIf(Expr, [Stmt], [Stmt], int)
+    SWhile(Expr, [Stmt], int)     # condition-form `for COND:` (Hier's while loop)
+    SForRange(string, Expr, Expr, Expr, [Stmt], int)   # `for i in range(start, stop, step):`
+    SExpr(Expr, int)              # bare expression statement, e.g. a call `f(x)`
+    STypedDecl(string, string, Expr, int)   # `name : Type = expr` (annotation fixes the type)
+    SOrReturn(string, Expr, int)  # `name := result_expr or_return` (unwrap Ok or propagate Err)
+    SDestructure([string], Expr, int)       # `a, b := tuple_expr`
+    SMultiAssign([string], Expr, int)       # `a, b = tuple_expr` (assign existing vars)
+    SMatch(Expr, [string], [[string]], [[Stmt]], int)  # subj, arm variants, arm binds, arm bodies
     SBreak                   # break out of the nearest enclosing loop
     SContinue                # skip to the next iteration of the nearest loop
-    SSelect(string, [string], [Expr], [string], [[Stmt]])   # `select` (CC-5): uid, arm kinds ("recv"/"default"/"closed"),
+    SSelect(string, [string], [Expr], [string], [[Stmt]], int)   # `select` (CC-5): uid, arm kinds ("recv"/"default"/"closed"),
                              # per-arm channel exprs (dummy for non-recv), per-arm bind names ("" for non-recv), arm bodies
-    SParFor(string, Expr, Expr, [Stmt], int)   # `parallel for` (CC-3): loopvar, start, stop, body, par-id
+    SParFor(string, Expr, Expr, [Stmt], int, int)   # `parallel for` (CC-3): loopvar, start, stop, body, par-id
                              # (parse: body=original, par-id=-1; the lift pass moves the body into a
                              # lifted __par<N> chunk proc and stores caps/accs in the pars side table)
 
@@ -474,6 +474,7 @@ struct Ctx:                   # mutable per-scope / per-function state only
     fusearr: [string]         # push-loop fusion: array names whose cursor is live (cached data/len/cap)
     fusesuf: [string]         # parallel: the C cursor suffix (e.g. "3_0") -> _fd3_0/_fl3_0/_fc3_0
     fusety: [string]          # parallel: scalar element type ("int" | "float") for the grow hook
+    line: int               # current statement source line, for resolve/codegen diagnostics
 
 struct Program:
     structs: [StructDef]
@@ -842,6 +843,7 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
 # evaluated exactly once; the element read `x := _fc[_fi]` reuses array/string
 # indexing. The temp id is the `for` token position -- unique per occurrence.
 fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
+    _sl := toks[pos].line
     uid := str(pos)
     pos = pos + 1                            # 'for'
     varname := toks[pos].text
@@ -855,13 +857,13 @@ fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
     largs := []Expr
     push(largs, EVar(cn))                    # len(_fc)
     fbody := []Stmt
-    push(fbody, SDecl(varname, EIndex(EVar(cn), EVar(iv))))   # x := _fc[_fi]
+    push(fbody, SDecl(varname, EIndex(EVar(cn), EVar(iv)), _sl))   # x := _fc[_fi]
     k := 0
     for k < len(body):
         push(fbody, body[k])
         k = k + 1
-    push(out, SDecl(cn, coll))                                # _fc := COLL  (the prelude)
-    push(out, SForRange(iv, EInt("0"), ECall("len", largs), EInt("1"), fbody))
+    push(out, SDecl(cn, coll, _sl))                                # _fc := COLL  (the prelude)
+    push(out, SForRange(iv, EInt("0"), ECall("len", largs), EInt("1"), fbody, _sl))
 
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
@@ -893,6 +895,7 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     return stmts
 
 fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
+    _sl := toks[pos].line
     t := toks[pos]
     if t.kind == TIdent and t.text == "elif":
         pos = pos + 1
@@ -901,7 +904,7 @@ fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
         then_body := parse_block(toks, &pos)
         rest := parse_else(toks, &pos)
         inner := []Stmt
-        push(inner, SIf(cond, then_body, rest))
+        push(inner, SIf(cond, then_body, rest, _sl))
         return inner
     elif t.kind == TIdent and t.text == "else":
         pos = pos + 1
@@ -916,19 +919,20 @@ fn is_caop_kind(k: Tok) -> bool:
     return k == TPlus or k == TMinus or k == TStar or k == TSlash or k == TPercent or k == TAmp or k == TPipe or k == TCaret or k == TShl or k == TShr
 
 fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
+    _sl := toks[pos].line
     t := toks[pos]
     if t.kind == TIdent and t.text == "print":
         pos = pos + 1
         expect(toks, &pos, TLParen)
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
-        return SPrint(e)
+        return SPrint(e, _sl)
     elif t.kind == TIdent and t.text == "println":   # desugar: print(x + "\n")
         pos = pos + 1
         expect(toks, &pos, TLParen)
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
-        return SPrint(EBin("+", e, EStr("\\n")))
+        return SPrint(EBin("+", e, EStr("\\n")), _sl)
     elif t.kind == TIdent and t.text == "return":
         pos = pos + 1
         if toks[pos].kind == TNewline:           # bare `return` (void)
@@ -940,15 +944,15 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             for toks[pos].kind == TComma:
                 pos = pos + 1
                 push(elems, parse_expr(toks, &pos))
-            return SReturn(ETuple(elems))
-        return SReturn(re)
+            return SReturn(ETuple(elems), _sl)
+        return SReturn(re, _sl)
     elif t.kind == TIdent and t.text == "if":
         pos = pos + 1
         cond := parse_expr(toks, &pos)
         expect(toks, &pos, TColon)
         then_body := parse_block(toks, &pos)
         else_body := parse_else(toks, &pos)
-        return SIf(cond, then_body, else_body)
+        return SIf(cond, then_body, else_body, _sl)
     elif t.kind == TIdent and t.text == "select":   # select over channels (CC-5)
         suid := str(pos)
         pos = pos + 1
@@ -984,7 +988,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 push(sbinds, abind)
                 push(sbodies, parse_block(toks, &pos))
         pos = pos + 1
-        return SSelect(suid, svars, schans, sbinds, sbodies)
+        return SSelect(suid, svars, schans, sbinds, sbodies, _sl)
     elif t.kind == TIdent and t.text == "parallel":   # parallel for ... (CC-3)
         pos = pos + 1
         if not (toks[pos].kind == TIdent and toks[pos].text == "for"):
@@ -1009,7 +1013,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 expect(toks, &pos, TRParen)
                 expect(toks, &pos, TColon)
                 pbody := parse_block(toks, &pos)
-                return SParFor(pvar, pstart, pstop, pbody, 0 - 1)
+                return SParFor(pvar, pstart, pstop, pbody, 0 - 1, _sl)
             # foreach form: `parallel for x in COLL:` -> prelude `_fc := COLL`
             # (via `pending`) + a parallel range loop, mirroring parse_foreach
             pcoll := parse_expr(toks, &pos)
@@ -1021,13 +1025,13 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             plargs := []Expr
             push(plargs, EVar(pcn))
             pfbody := []Stmt
-            push(pfbody, SDecl(pvar, EIndex(EVar(pcn), EVar(piv))))
+            push(pfbody, SDecl(pvar, EIndex(EVar(pcn), EVar(piv)), _sl))
             pk := 0
             for pk < len(pubody):
                 push(pfbody, pubody[pk])
                 pk = pk + 1
-            push(pending, SDecl(pcn, pcoll))
-            return SParFor(piv, EInt("0"), ECall("len", plargs), pfbody, 0 - 1)
+            push(pending, SDecl(pcn, pcoll, _sl))
+            return SParFor(piv, EInt("0"), ECall("len", plargs), pfbody, 0 - 1, _sl)
         die("parse: line " + str(t.line) + ": parallel supports 'for x in range(...)' and 'for x in collection' loops")
         return SBreak
     elif t.kind == TIdent and t.text == "for":
@@ -1052,11 +1056,11 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             expect(toks, &pos, TRParen)
             expect(toks, &pos, TColon)
             body := parse_block(toks, &pos)
-            return SForRange(varname, start, stop, step, body)
+            return SForRange(varname, start, stop, step, body, _sl)
         cond := parse_expr(toks, &pos)      # condition form: for COND:
         expect(toks, &pos, TColon)
         body := parse_block(toks, &pos)
-        return SWhile(cond, body)
+        return SWhile(cond, body, _sl)
     elif t.kind == TIdent and t.text == "match":
         return parse_match(toks, &pos)
     elif t.kind == TIdent and t.text == "break":
@@ -1079,29 +1083,29 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 pos = pos + 1
             if toks[pos].kind == TWalrus:        # `:=` declares new vars
                 pos = pos + 1
-                return SDestructure(names, parse_expr(toks, &pos))
+                return SDestructure(names, parse_expr(toks, &pos), _sl)
             expect(toks, &pos, TEq)              # `=` assigns existing vars
-            return SMultiAssign(names, parse_expr(toks, &pos))
+            return SMultiAssign(names, parse_expr(toks, &pos), _sl)
         if toks[pos].kind == TWalrus:
             pos = pos + 1
             rhs := parse_expr(toks, &pos)
             if toks[pos].kind == TIdent and toks[pos].text == "or_return":
                 pos = pos + 1
-                return SOrReturn(name, rhs)
-            return SDecl(name, rhs)
+                return SOrReturn(name, rhs, _sl)
+            return SDecl(name, rhs, _sl)
         elif toks[pos].kind == TColon:           # `name : Type = expr` typed decl
             pos = pos + 1
             ty := parse_type(toks, &pos)
             expect(toks, &pos, TEq)
-            return STypedDecl(name, ty, parse_expr(toks, &pos))
+            return STypedDecl(name, ty, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TEq:
             pos = pos + 1
-            return SAssign(name, parse_expr(toks, &pos))
+            return SAssign(name, parse_expr(toks, &pos), _sl)
         elif is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # x OP= rhs -> x = x OP rhs
             op := toks[pos].text
             pos = pos + 1
             expect(toks, &pos, TEq)
-            return SAssign(name, EBin(op, EVar(name), parse_expr(toks, &pos)))
+            return SAssign(name, EBin(op, EVar(name), parse_expr(toks, &pos)), _sl)
         elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
             # collect the place steps first (a.b[i].c ...) so that, for a compound
             # assignment, a call-bearing index can be hoisted to a temp -- the place
@@ -1136,7 +1140,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                                 pos = pos + 1
                                 push(margs, parse_expr(toks, &pos))
                         expect(toks, &pos, TRParen)
-                        return SExpr(ECallV(EField(mb, pflds[len(pflds) - 1]), margs))
+                        return SExpr(ECallV(EField(mb, pflds[len(pflds) - 1]), margs), _sl)
                 else:
                     pos = pos + 1
                     push(pkinds, 1)
@@ -1155,7 +1159,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     if iscomp and expr_has_call(ix):   # bind a side-effecting index once
                         tn := "_cx" + str(pos) + "_" + str(ci)
                         ci = ci + 1
-                        push(pending, SDecl(tn, ix))
+                        push(pending, SDecl(tn, ix, _sl))
                         ix = EVar(tn)
                     lv = EIndex(lv, ix)
                 j = j + 1
@@ -1163,9 +1167,9 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 op := toks[pos].text
                 pos = pos + 1
                 expect(toks, &pos, TEq)
-                return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos)))
+                return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos)), _sl)
             expect(toks, &pos, TEq)
-            return SFieldAssign(lv, parse_expr(toks, &pos))
+            return SFieldAssign(lv, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
             pos = pos + 1
             args := []Expr
@@ -1175,13 +1179,13 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     pos = pos + 1
                     push(args, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return SExpr(ECall(name, args))
+            return SExpr(ECall(name, args), _sl)
         else:
             die("parse: line " + str(toks[pos].line) + ": expected ':=', '=', or '('")
-            return SReturn(EInt("0"))
+            return SReturn(EInt("0"), _sl)
     else:
         die("parse: line " + str(toks[pos].line) + ": expected a statement")
-        return SReturn(EInt("0"))
+        return SReturn(EInt("0"), _sl)
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
     if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
@@ -1417,6 +1421,7 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     return StructDef(name, fields)
 
 fn parse_match(toks: [Token], pos: inout int) -> Stmt:
+    _sl := toks[pos].line
     expect_ident(toks, &pos, "match")
     subj := parse_expr(toks, &pos)
     expect(toks, &pos, TColon)
@@ -1455,7 +1460,7 @@ fn parse_match(toks: [Token], pos: inout int) -> Stmt:
             push(allbinds, binds)
             push(bodies, parse_block(toks, &pos))
     pos = pos + 1                                # consume TDedent
-    return SMatch(subj, variants, allbinds, bodies)
+    return SMatch(subj, variants, allbinds, bodies, _sl)
 
 fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
     expect_ident(toks, &pos, "enum")
@@ -1703,28 +1708,28 @@ fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a
 
 fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a statement introduces (visible to later siblings)
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             return mctx_add(m, n)
-        STypedDecl(n, ty, e):
+        STypedDecl(n, ty, e, _sl):
             return mctx_add(m, n)
-        SOrReturn(n, e):
+        SOrReturn(n, e, _sl):
             return mctx_add(m, n)
-        SDestructure(ns, e):
+        SDestructure(ns, e, _sl):
             mm := m
             i := 0
             for i < len(ns):
                 mm = mctx_add(mm, ns[i])
                 i = i + 1
             return mm
-        SMultiAssign(ns, e):
+        SMultiAssign(ns, e, _sl):
             return m
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             return m
-        SFieldAssign(lv, r):
+        SFieldAssign(lv, r, _sl):
             return m
-        SPrint(e):
+        SPrint(e, _sl):
             return m
-        SReturn(e):
+        SReturn(e, _sl):
             return m
         SReturnVoid:
             return m
@@ -1732,19 +1737,19 @@ fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a
             return m
         SContinue:
             return m
-        SIf(c, t, el):
+        SIf(c, t, el, _sl):
             return m
-        SWhile(c, b):
+        SWhile(c, b, _sl):
             return m
-        SForRange(v, a, b, st, body):
+        SForRange(v, a, b, st, body, _sl):
             return m
-        SExpr(e):
+        SExpr(e, _sl):
             return m
-        SMatch(subj, vars, binds, bodies):
+        SMatch(subj, vars, binds, bodies, _sl):
             return m
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             return m
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             return m
 
 fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
@@ -1782,39 +1787,39 @@ fn mangle_bodies(m: Mctx, bs: [[Stmt]]) -> [[Stmt]]:
 
 fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
     match s:
-        SDecl(n, e):
-            return SDecl(n, mangle_expr(m, e))
-        SAssign(n, e):
-            return SAssign(n, mangle_expr(m, e))
-        SFieldAssign(lv, r):
-            return SFieldAssign(mangle_expr(m, lv), mangle_expr(m, r))
-        SPrint(e):
-            return SPrint(mangle_expr(m, e))
-        SReturn(e):
-            return SReturn(mangle_expr(m, e))
+        SDecl(n, e, _sl):
+            return SDecl(n, mangle_expr(m, e), _sl)
+        SAssign(n, e, _sl):
+            return SAssign(n, mangle_expr(m, e), _sl)
+        SFieldAssign(lv, r, _sl):
+            return SFieldAssign(mangle_expr(m, lv), mangle_expr(m, r), _sl)
+        SPrint(e, _sl):
+            return SPrint(mangle_expr(m, e), _sl)
+        SReturn(e, _sl):
+            return SReturn(mangle_expr(m, e), _sl)
         SReturnVoid:
             return SReturnVoid
         SBreak:
             return SBreak
         SContinue:
             return SContinue
-        SIf(c, t, el):
-            return SIf(mangle_expr(m, c), mangle_block(m, t), mangle_block(m, el))
-        SWhile(c, b):
-            return SWhile(mangle_expr(m, c), mangle_block(m, b))
-        SForRange(v, a, b, st, body):
-            return SForRange(v, mangle_expr(m, a), mangle_expr(m, b), mangle_expr(m, st), mangle_block(mctx_add(m, v), body))
-        SExpr(e):
-            return SExpr(mangle_expr(m, e))
-        STypedDecl(n, ty, e):
-            return STypedDecl(n, mangle_type(m, ty), mangle_expr(m, e))
-        SOrReturn(n, e):
-            return SOrReturn(n, mangle_expr(m, e))
-        SDestructure(ns, e):
-            return SDestructure(ns, mangle_expr(m, e))
-        SMultiAssign(ns, e):
-            return SMultiAssign(ns, mangle_expr(m, e))
-        SMatch(subj, vars, binds, bodies):
+        SIf(c, t, el, _sl):
+            return SIf(mangle_expr(m, c), mangle_block(m, t), mangle_block(m, el), _sl)
+        SWhile(c, b, _sl):
+            return SWhile(mangle_expr(m, c), mangle_block(m, b), _sl)
+        SForRange(v, a, b, st, body, _sl):
+            return SForRange(v, mangle_expr(m, a), mangle_expr(m, b), mangle_expr(m, st), mangle_block(mctx_add(m, v), body), _sl)
+        SExpr(e, _sl):
+            return SExpr(mangle_expr(m, e), _sl)
+        STypedDecl(n, ty, e, _sl):
+            return STypedDecl(n, mangle_type(m, ty), mangle_expr(m, e), _sl)
+        SOrReturn(n, e, _sl):
+            return SOrReturn(n, mangle_expr(m, e), _sl)
+        SDestructure(ns, e, _sl):
+            return SDestructure(ns, mangle_expr(m, e), _sl)
+        SMultiAssign(ns, e, _sl):
+            return SMultiAssign(ns, mangle_expr(m, e), _sl)
+        SMatch(subj, vars, binds, bodies, _sl):
             nb := [][Stmt]                            # each arm's payload binds are locals in that arm's body
             k := 0
             for k < len(bodies):
@@ -1825,10 +1830,10 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
                     bi = bi + 1
                 push(nb, mangle_block(mm, bodies[k]))
                 k = k + 1
-            return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb)
-        SParFor(v, a, b, body, pid):
-            return SParFor(v, mangle_expr(m, a), mangle_expr(m, b), mangle_block(mctx_add(m, v), body), pid)
-        SSelect(uid, svars, schans, sbinds, sbodies):
+            return SMatch(mangle_expr(m, subj), mangle_variants(m, vars), binds, nb, _sl)
+        SParFor(v, a, b, body, pid, _sl):
+            return SParFor(v, mangle_expr(m, a), mangle_expr(m, b), mangle_block(mctx_add(m, v), body), pid, _sl)
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             nch := mangle_args(m, schans)
             nb := [][Stmt]
             sk := 0
@@ -1838,7 +1843,7 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
                     mm = mctx_add(mm, sbinds[sk])
                 push(nb, mangle_block(mm, sbodies[sk]))
                 sk = sk + 1
-            return SSelect(uid, svars, nch, sbinds, nb)
+            return SSelect(uid, svars, nch, sbinds, nb, _sl)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs)   # body sees the params as locals (indirect calls stay unprefixed)
@@ -2350,7 +2355,7 @@ fn var_type(names: [string], types: [string], name: string) -> string:
         if names[i] == name:
             return types[i]
         i = i - 1
-    die("type: unknown variable")
+    die("type: unknown variable '" + name + "'")
     return "int"
 
 fn is_struct(dc: Decls, ctx: Ctx, name: string) -> bool:
@@ -2370,9 +2375,9 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 if dc.structs[i].fields[j].name == fld:
                     return dc.structs[i].fields[j].ty
                 j = j + 1
-            die("type: no such field")
+            die_at(ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
         i = i + 1
-    die("type: field access on a non-struct")
+    die_at(ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
     return "int"
 
 # A struct is "heap-bearing" if any field owns heap memory (a string, an array,
@@ -2460,7 +2465,7 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     si := map_get(dc.sigmap, name, -1)                # O(1) user-function lookup (was a linear scan)
     if si >= 0:
         return dc.sigs[si].ret
-    die("type: unknown function")
+    die_at(ctx.line, "type: unknown function '" + name + "'")
     return "int"
 
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
@@ -2965,7 +2970,59 @@ fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hi
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(dc: Decls, ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
+
+# set the current statement source line (for resolve/codegen diagnostics)
+fn with_line(ctx: Ctx, n: int) -> Ctx:
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, n)
+
+# a statement's source line (0 for the no-payload variants -- callers fall back to ctx.line)
+fn stmt_line(s: Stmt) -> int:
+    match s:
+        SDecl(a, b, ln):
+            return ln
+        SAssign(a, b, ln):
+            return ln
+        SFieldAssign(a, b, ln):
+            return ln
+        SPrint(a, ln):
+            return ln
+        SReturn(a, ln):
+            return ln
+        SReturnVoid:
+            return 0
+        SIf(a, b, c, ln):
+            return ln
+        SWhile(a, b, ln):
+            return ln
+        SForRange(a, b, c, d, e, ln):
+            return ln
+        SExpr(a, ln):
+            return ln
+        STypedDecl(a, b, c, ln):
+            return ln
+        SOrReturn(a, b, ln):
+            return ln
+        SDestructure(a, b, ln):
+            return ln
+        SMultiAssign(a, b, ln):
+            return ln
+        SMatch(a, b, c, d, ln):
+            return ln
+        SBreak:
+            return 0
+        SContinue:
+            return 0
+        SSelect(a, b, c, d, e, ln):
+            return ln
+        SParFor(a, b, c, d, e, ln):
+            return ln
+
+# abort with a source line prefix (resolve/codegen diagnostics). line 0 = unknown.
+fn die_at(ln: int, msg: string):
+    if ln > 0:
+        die("line " + str(ln) + ": " + msg)
+    die(msg)
 
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
@@ -2975,7 +3032,7 @@ fn enter_block(dc: Decls, ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
 
 # C lvalue of the current block's arena.
 fn cur_arena(dc: Decls, ctx: Ctx) -> string:
@@ -3010,7 +3067,7 @@ fn loop_frees(dc: Decls, ctx: Ctx) -> string:
 # Mark a block ctx as a loop body: its own depth becomes the boundary that an
 # enclosed break/continue frees down to (nested if-blocks inherit it via enter_block).
 fn in_loop(ctx: Ctx) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth, ctx.fusearr, ctx.fusesuf, ctx.fusety)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
 
 # Emitted C name for a USER variable / parameter / function identifier. Prefixed so a
 # user name can never collide with hierc0's emitted runtime helpers (sc/hs/amem/i2s/
@@ -4004,47 +4061,47 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
     i := 0
     for i < len(stmts):
         match stmts[i]:
-            SExpr(e):
+            SExpr(e, _sl):
                 if push_target(e) == name:
                     c = c + 1
-            SIf(cnd, b, els):
+            SIf(cnd, b, els, _sl):
                 c = c + fuse_pushcount(b, name) + fuse_pushcount(els, name)
-            SWhile(cnd, b):
+            SWhile(cnd, b, _sl):
                 c = c + fuse_pushcount(b, name)
-            SForRange(n, a, bb, st, b):
+            SForRange(n, a, bb, st, b, _sl):
                 c = c + fuse_pushcount(b, name)
-            SMatch(subj, vs, bs, bodies):
+            SMatch(subj, vs, bs, bodies, _sl):
                 j := 0
                 for j < len(bodies):
                     c = c + fuse_pushcount(bodies[j], name)
                     j = j + 1
-            SDecl(n, e):
+            SDecl(n, e, _sl):
                 i = i
-            SAssign(n, e):
+            SAssign(n, e, _sl):
                 i = i
-            SFieldAssign(lv, r):
+            SFieldAssign(lv, r, _sl):
                 i = i
-            SPrint(e):
+            SPrint(e, _sl):
                 i = i
-            SReturn(e):
+            SReturn(e, _sl):
                 i = i
             SReturnVoid:
                 i = i
-            STypedDecl(n, t, e):
+            STypedDecl(n, t, e, _sl):
                 i = i
-            SOrReturn(n, e):
+            SOrReturn(n, e, _sl):
                 i = i
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 i = i
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 i = i
             SBreak:
                 i = i
             SContinue:
                 i = i
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 i = i
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 i = i
         i = i + 1
     return c
@@ -4053,49 +4110,49 @@ fn fuse_gather(stmts: [Stmt], out: inout [string]):
     i := 0
     for i < len(stmts):
         match stmts[i]:
-            SExpr(e):
+            SExpr(e, _sl):
                 t := push_target(e)
                 if t != "" and count_str_occ(out, t) == 0:
                     push(out, t)
-            SIf(cnd, b, els):
+            SIf(cnd, b, els, _sl):
                 fuse_gather(b, &out)
                 fuse_gather(els, &out)
-            SWhile(cnd, b):
+            SWhile(cnd, b, _sl):
                 fuse_gather(b, &out)
-            SForRange(n, a, bb, st, b):
+            SForRange(n, a, bb, st, b, _sl):
                 fuse_gather(b, &out)
-            SMatch(subj, vs, bs, bodies):
+            SMatch(subj, vs, bs, bodies, _sl):
                 j := 0
                 for j < len(bodies):
                     fuse_gather(bodies[j], &out)
                     j = j + 1
-            SDecl(n, e):
+            SDecl(n, e, _sl):
                 i = i
-            SAssign(n, e):
+            SAssign(n, e, _sl):
                 i = i
-            SFieldAssign(lv, r):
+            SFieldAssign(lv, r, _sl):
                 i = i
-            SPrint(e):
+            SPrint(e, _sl):
                 i = i
-            SReturn(e):
+            SReturn(e, _sl):
                 i = i
             SReturnVoid:
                 i = i
-            STypedDecl(n, t, e):
+            STypedDecl(n, t, e, _sl):
                 i = i
-            SOrReturn(n, e):
+            SOrReturn(n, e, _sl):
                 i = i
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 i = i
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 i = i
             SBreak:
                 i = i
             SContinue:
                 i = i
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 i = i
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 i = i
         i = i + 1
 
@@ -4103,38 +4160,38 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
     i := 0
     for i < len(stmts):
         match stmts[i]:
-            SDecl(n, e):
+            SDecl(n, e, _sl):
                 if n == name:
                     return true
-            SAssign(n, e):
+            SAssign(n, e, _sl):
                 if n == name:
                     return true
-            STypedDecl(n, t, e):
+            STypedDecl(n, t, e, _sl):
                 if n == name:
                     return true
-            SOrReturn(n, e):
+            SOrReturn(n, e, _sl):
                 if n == name:
                     return true
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 if count_str_occ(ns, name) > 0:
                     return true
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 if count_str_occ(ns, name) > 0:
                     return true
-            SForRange(n, a, bb, st, b):
+            SForRange(n, a, bb, st, b, _sl):
                 if n == name:
                     return true
                 if fuse_defines(b, name):
                     return true
-            SIf(cnd, b, els):
+            SIf(cnd, b, els, _sl):
                 if fuse_defines(b, name):
                     return true
                 if fuse_defines(els, name):
                     return true
-            SWhile(cnd, b):
+            SWhile(cnd, b, _sl):
                 if fuse_defines(b, name):
                     return true
-            SMatch(subj, vs, bs, bodies):
+            SMatch(subj, vs, bs, bodies, _sl):
                 j := 0
                 for j < len(bodies):
                     if count_str_occ(bs[j], name) > 0:
@@ -4142,23 +4199,23 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
                     if fuse_defines(bodies[j], name):
                         return true
                     j = j + 1
-            SFieldAssign(lv, r):
+            SFieldAssign(lv, r, _sl):
                 i = i
-            SPrint(e):
+            SPrint(e, _sl):
                 i = i
-            SReturn(e):
+            SReturn(e, _sl):
                 i = i
             SReturnVoid:
                 i = i
-            SExpr(e):
+            SExpr(e, _sl):
                 i = i
             SBreak:
                 i = i
             SContinue:
                 i = i
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 return true   # a parallel for captures arrays by value -- any live fusion cursor would be stale; fail closed
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 return true   # select arm bodies run between cursor writes -- fail closed, like parallel for
         i = i + 1
     return false
@@ -4178,7 +4235,7 @@ fn add_fuse(ctx: Ctx, nm: string, suf: string, ety: string) -> Ctx:
     push(fa, nm)
     push(fs, suf)
     push(ft, ety)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, fa, fs, ft)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, fa, fs, ft, ctx.line)
 
 # Return the fusible scalar arrays of `body` as parallel (name, cursor-suffix,
 # elem-type) lists. A candidate qualifies iff: scalar int/float local (the env
@@ -4304,16 +4361,16 @@ fn rd_block(reads: inout [string], loopreads: inout [string], stmts: [Stmt], inl
 
 fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bool):
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SFieldAssign(lv, rhs):
+        SFieldAssign(lv, rhs, _sl):
             rd_expr(&reads, &loopreads, lv, inloop)
             rd_expr(&reads, &loopreads, rhs, inloop)
-        SPrint(e):
+        SPrint(e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SReturn(e):
+        SReturn(e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
         SReturnVoid:
             j := 0
@@ -4321,39 +4378,39 @@ fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bo
             j := 0
         SContinue:
             j := 0
-        SExpr(e):
+        SExpr(e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        STypedDecl(n, t, e):
+        STypedDecl(n, t, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SOrReturn(n, e):
+        SOrReturn(n, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SDestructure(dnames, e):
+        SDestructure(dnames, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SMultiAssign(mnames, e):
+        SMultiAssign(mnames, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
-        SIf(c, tb, eb):
+        SIf(c, tb, eb, _sl):
             rd_expr(&reads, &loopreads, c, inloop)
             rd_block(&reads, &loopreads, tb, inloop)
             rd_block(&reads, &loopreads, eb, inloop)
-        SWhile(c, body):
+        SWhile(c, body, _sl):
             rd_expr(&reads, &loopreads, c, true)
             rd_block(&reads, &loopreads, body, true)
-        SForRange(n, a, b, st, body):
+        SForRange(n, a, b, st, body, _sl):
             rd_expr(&reads, &loopreads, a, inloop)
             rd_expr(&reads, &loopreads, b, inloop)
             rd_expr(&reads, &loopreads, st, inloop)
             rd_block(&reads, &loopreads, body, true)
-        SMatch(subj, variants, allbinds, bodies):
+        SMatch(subj, variants, allbinds, bodies, _sl):
             rd_expr(&reads, &loopreads, subj, inloop)
             j := 0
             for j < len(bodies):
                 rd_block(&reads, &loopreads, bodies[j], inloop)
                 j = j + 1
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             rd_expr(&reads, &loopreads, a, inloop)
             rd_expr(&reads, &loopreads, b, inloop)
             rd_block(&reads, &loopreads, body, true)   # captured reads run N times across chunks: never move-eligible
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             sk := 0
             for sk < len(svars):
                 rd_expr(&reads, &loopreads, schans[sk], true)   # the retry loop re-reads the channel exprs
@@ -4611,8 +4668,9 @@ fn conc_loop_finals(names: [string], ctx: Ctx) -> string:   # finals since the i
     return conc_finals(names, ctx.bbases[ctx.loopdepth - 1])
 
 fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
+    ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
     match s:
-        SDecl(name, e):
+        SDecl(name, e, _sl):
             ty := type_of(e, names, types, dc, ctx)
             if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
@@ -4641,7 +4699,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(names, "!hier_chan_free(" + un(name) + ")")
                 push(types, "!")
             return code
-        SAssign(name, e):
+        SAssign(name, e, _sl):
             lhs := gen_expr(EVar(name), names, types, dc, ctx)
             if is_scalar_ty(dc, ctx, type_of(EVar(name), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
                 return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
@@ -4727,7 +4785,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     return deflt
                 ESpawn(sid, snm, sa):
                     return deflt
-        SFieldAssign(lv, rhs):
+        SFieldAssign(lv, rhs, _sl):
             # storing into a (malloc) struct field / array element: the value must
             # be malloc'd (owner "0"), not left in _scope which frees at return.
             # EXCEPT a map-place m[k]: its slot lives in the map's own arena, so
@@ -4749,13 +4807,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if is_map_index(lv, names, types, dc, ctx):
                 sfo = owner_arena_of(lv, names, types, dc, ctx)
             return "    " + gen_place(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
-        SPrint(e):
+        SPrint(e, _sl):
             if type_of(e, names, types, dc, ctx) != "str":
-                die("codegen: print expects a string")
+                die_at(ctx.line, "codegen: print expects a string")
             # transient arena: the print arg's string temporaries are consumed by
             # fputs and never escape, so build them in _t and free it right after.
             return "    { Arena _t = arena_new(0); fputs(" + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + ", stdout); arena_free(&_t); }\n"
-        SReturn(e):
+        SReturn(e, _sl):
             # deep-copy a returned heap PLACE (a field/element/variable): the
             # return value outlives the callee, so it must not alias the source's
             # buffer (`return b.items` then the caller mutates the result must not
@@ -4788,9 +4846,9 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "break;\n"
         SContinue:
             return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "continue;\n"
-        SExpr(e):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches hierc S_EXPR + scalar_transient)
+        SExpr(e, _sl):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches hierc S_EXPR + scalar_transient)
             return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
-        STypedDecl(name, ty, e):                  # annotation fixes the var's type
+        STypedDecl(name, ty, e, _sl):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
                 push(names, name)
                 push(types, ty)
@@ -4806,7 +4864,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             push(names, name)
             push(types, ty)
             return code
-        SDestructure(dnames, e):                  # a, b := tuple_expr
+        SDestructure(dnames, e, _sl):                  # a, b := tuple_expr
             tt := type_of(e, names, types, dc, ctx)
             parts := tuple_parts(tt)
             tmp := "_d_" + dnames[0]
@@ -4818,7 +4876,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(types, parts[j])
                 j = j + 1
             return code
-        SMultiAssign(mnames, e):                  # a, b = tuple_expr (existing vars)
+        SMultiAssign(mnames, e, _sl):                  # a, b = tuple_expr (existing vars)
             tt := type_of(e, names, types, dc, ctx)
             tmp := "_ma_" + mnames[0]
             # brace-scope the temp: two multi-assigns with the same first target in
@@ -4829,7 +4887,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 code = code + "    " + un(mnames[j]) + " = " + tmp + ".f" + str(j) + ";\n"
                 j = j + 1
             return code + "    }\n"
-        SOrReturn(name, e):                       # unwrap Ok/Some, or propagate Err/None upward
+        SOrReturn(name, e, _sl):                       # unwrap Ok/Some, or propagate Err/None upward
             rty := type_of(e, names, types, dc, ctx)
             tmp := "_or_" + name
             # the early return leaves the function like SReturn does: flush any
@@ -4859,7 +4917,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             push(names, name)
             push(types, result_ok(rty))
             return code
-        SIf(cond, then_body, else_body):
+        SIf(cond, then_body, else_body, _sl):
             d1 := str(ctx.depth + 1)              # each branch is its own block arena
             bc := enter_block(dc, ctx, len(names))
             op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n"
@@ -4868,7 +4926,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if len(else_body) > 0:
                 out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
-        SWhile(cond, body):
+        SWhile(cond, body, _sl):
             fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, cond, true)
             d1 := str(ctx.depth + 1)              # per-iteration block arena
             bc := in_loop(enter_block(dc, ctx, len(names)))
@@ -4885,7 +4943,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if len(fnm) == 0:
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
-        SForRange(name, start, stop, step, body):
+        SForRange(name, start, stop, step, body, _sl):
             fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, start, false)
             bn := names                           # loop var is scoped to body
             bt := types
@@ -4912,7 +4970,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if len(fnm) == 0:
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
-        SMatch(subj, variants, allbinds, bodies):  # tag-dispatch over an enum value
+        SMatch(subj, variants, allbinds, bodies, _sl):  # tag-dispatch over an enum value
             sty := type_of(subj, names, types, dc, ctx)
             # evaluate the subject ONCE into a brace-scoped temp: a side-effecting
             # subject (match pop(s):) must not run once per arm test (hierc: _m<id>)
@@ -4942,7 +5000,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
                 i = i + 1
             return out + "\n    }\n"
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             # CC-3: K = hier_ncpu() chunk tasks of the lifted __par chunk proc,
             # through the same HSpawnA/hier_spawn trampolines as CC-1 spawn;
             # captures deep-copy into each task root; partials fold at the
@@ -4972,7 +5030,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + "        " + un(pf.accnames[ak]) + " = " + un(pf.accnames[ak]) + " " + pf.accops[ak] + " " + part + ";\n"
                 ak = ak + 1
             return out + "    }\n    }\n"
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             # CC-5: try every recv arm; closed when ALL drain; else default or
             # pause+retry. A goto loop (not for(;;)) so a user break/continue in
             # an arm body binds to the USER'S enclosing loop, never to select's.
@@ -5152,19 +5210,19 @@ fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [strin
 
 fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             dty := type_of(e, names, types, dc, ctx)   # compute BEFORE pushing n (keep names/types in sync)
             push(names, n)
             push(types, dty)
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             if var_type(names, types, n) == "str":
                 if len(sacc_pieces(e, n)) > 0:
                     push(acc, n)
-        SFieldAssign(lv, rhs):
+        SFieldAssign(lv, rhs, _sl):
             i := 0
-        SPrint(e):
+        SPrint(e, _sl):
             i := 0
-        SReturn(e):
+        SReturn(e, _sl):
             i := 0
         SReturnVoid:
             i := 0
@@ -5172,12 +5230,12 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             i := 0
         SContinue:
             i := 0
-        SExpr(e):
+        SExpr(e, _sl):
             i := 0
-        STypedDecl(n, t, e):
+        STypedDecl(n, t, e, _sl):
             push(names, n)
             push(types, t)
-        SOrReturn(n, e):
+        SOrReturn(n, e, _sl):
             ety := type_of(e, names, types, dc, ctx)
             ty := ""
             if is_option(ety):
@@ -5186,27 +5244,27 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                 ty = result_ok(ety)
             push(names, n)
             push(types, ty)
-        SDestructure(dn, e):
+        SDestructure(dn, e, _sl):
             parts := tuple_parts(type_of(e, names, types, dc, ctx))
             i := 0
             for i < len(dn):
                 push(names, dn[i])
                 push(types, parts[i])
                 i = i + 1
-        SMultiAssign(mn, e):
+        SMultiAssign(mn, e, _sl):
             i := 0
-        SIf(c, tb, eb):
+        SIf(c, tb, eb, _sl):
             sacc_block(&acc, tb, names, types, dc, ctx)
             sacc_block(&acc, eb, names, types, dc, ctx)
-        SWhile(c, body):
+        SWhile(c, body, _sl):
             sacc_block(&acc, body, names, types, dc, ctx)
-        SForRange(n, a, b, st, body):
+        SForRange(n, a, b, st, body, _sl):
             bn := names
             bt := types
             push(bn, n)
             push(bt, "int")
             sacc_block(&acc, body, bn, bt, dc, ctx)
-        SMatch(subj, variants, allbinds, bodies):
+        SMatch(subj, variants, allbinds, bodies, _sl):
             sty := type_of(subj, names, types, dc, ctx)
             j := 0
             for j < len(bodies):
@@ -5233,9 +5291,9 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                         k = k + 1
                 sacc_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             np := 0                               # reductions are int/float only -- never a string accumulator
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             np := 0                               # arm bodies are their own blocks; accumulators don't cross arms
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
@@ -5273,7 +5331,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
             push(saccums, raw[si])
         si = si + 1
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
-    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string)
+    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string, 0)
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(int argc, char **argv) {\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -6097,19 +6155,19 @@ fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [st
 
 fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             ty := type_of(e, names, types, dc, ctx)
             push(names, n)
             push(types, ty)
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
-        SFieldAssign(lv, rhs):
+        SFieldAssign(lv, rhs, _sl):
             collect_expr(&acc, lv, names, types, dc, ctx)
             collect_expr(&acc, rhs, names, types, dc, ctx)
-        SPrint(e):
+        SPrint(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
-        SReturn(e):
+        SReturn(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
         SReturnVoid:
             j := 0
@@ -6117,14 +6175,14 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             j := 0
         SContinue:
             j := 0
-        SExpr(e):
+        SExpr(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
-        STypedDecl(n, t, e):
+        STypedDecl(n, t, e, _sl):
             note_arr_types(&acc, t)
             collect_expr(&acc, e, names, types, dc, ctx)
             push(names, n)
             push(types, t)
-        SOrReturn(n, e):
+        SOrReturn(n, e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             ety := type_of(e, names, types, dc, ctx)
             ty := ""
@@ -6134,7 +6192,7 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                 ty = result_ok(ety)               # (result_ok on a non-Result substrs out of range)
             push(names, n)
             push(types, ty)
-        SDestructure(dnames, e):
+        SDestructure(dnames, e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             parts := tuple_parts(type_of(e, names, types, dc, ctx))
             j := 0
@@ -6142,16 +6200,16 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                 push(names, dnames[j])
                 push(types, parts[j])
                 j = j + 1
-        SMultiAssign(mnames, e):                  # vars already exist; just collect the RHS
+        SMultiAssign(mnames, e, _sl):                  # vars already exist; just collect the RHS
             collect_expr(&acc, e, names, types, dc, ctx)
-        SIf(c, tb, eb):
+        SIf(c, tb, eb, _sl):
             collect_expr(&acc, c, names, types, dc, ctx)
             collect_block(&acc, tb, names, types, dc, ctx)
             collect_block(&acc, eb, names, types, dc, ctx)
-        SWhile(c, body):
+        SWhile(c, body, _sl):
             collect_expr(&acc, c, names, types, dc, ctx)
             collect_block(&acc, body, names, types, dc, ctx)
-        SForRange(n, a, b, st, body):
+        SForRange(n, a, b, st, body, _sl):
             collect_expr(&acc, a, names, types, dc, ctx)
             collect_expr(&acc, b, names, types, dc, ctx)
             collect_expr(&acc, st, names, types, dc, ctx)
@@ -6160,7 +6218,7 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             push(bn, n)
             push(bt, "int")
             collect_block(&acc, body, bn, bt, dc, ctx)
-        SMatch(subj, variants, allbinds, bodies):
+        SMatch(subj, variants, allbinds, bodies, _sl):
             collect_expr(&acc, subj, names, types, dc, ctx)
             sty := type_of(subj, names, types, dc, ctx)
             j := 0
@@ -6188,10 +6246,10 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                         k = k + 1
                 collect_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
-        SParFor(v, a, b, body, pid):              # the chunk proc (and its partial type) is a lifted Func,
+        SParFor(v, a, b, body, pid, _sl):              # the chunk proc (and its partial type) is a lifted Func,
             collect_expr(&acc, a, names, types, dc, ctx)   # walked separately; only the site's bounds remain here
             collect_expr(&acc, b, names, types, dc, ctx)
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             sk := 0
             for sk < len(svars):
                 collect_expr(&acc, schans[sk], names, types, dc, ctx)
@@ -6499,16 +6557,16 @@ fn pf_body_evars(stmts: [Stmt], out: inout [string]):
     i := 0
     for i < len(stmts):
         match stmts[i]:
-            SDecl(n, e):
+            SDecl(n, e, _sl):
                 collect_evars(e, &out)
-            SAssign(n, e):
+            SAssign(n, e, _sl):
                 collect_evars(e, &out)
-            SFieldAssign(lv, r):
+            SFieldAssign(lv, r, _sl):
                 collect_evars(lv, &out)
                 collect_evars(r, &out)
-            SPrint(e):
+            SPrint(e, _sl):
                 collect_evars(e, &out)
-            SReturn(e):
+            SReturn(e, _sl):
                 collect_evars(e, &out)
             SReturnVoid:
                 i = i
@@ -6516,39 +6574,39 @@ fn pf_body_evars(stmts: [Stmt], out: inout [string]):
                 i = i
             SContinue:
                 i = i
-            SIf(c, t, el):
+            SIf(c, t, el, _sl):
                 collect_evars(c, &out)
                 pf_body_evars(t, &out)
                 pf_body_evars(el, &out)
-            SWhile(c, b):
+            SWhile(c, b, _sl):
                 collect_evars(c, &out)
                 pf_body_evars(b, &out)
-            SForRange(v, a, b, st, body):
+            SForRange(v, a, b, st, body, _sl):
                 collect_evars(a, &out)
                 collect_evars(b, &out)
                 collect_evars(st, &out)
                 pf_body_evars(body, &out)
-            SExpr(e):
+            SExpr(e, _sl):
                 collect_evars(e, &out)
-            STypedDecl(n, ty, e):
+            STypedDecl(n, ty, e, _sl):
                 collect_evars(e, &out)
-            SOrReturn(n, e):
+            SOrReturn(n, e, _sl):
                 collect_evars(e, &out)
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 collect_evars(e, &out)
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 collect_evars(e, &out)
-            SMatch(subj, vars, binds, bodies):
+            SMatch(subj, vars, binds, bodies, _sl):
                 collect_evars(subj, &out)
                 k := 0
                 for k < len(bodies):
                     pf_body_evars(bodies[k], &out)
                     k = k + 1
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 collect_evars(a, &out)
                 collect_evars(b, &out)
                 pf_body_evars(body, &out)
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 sk := 0
                 for sk < len(svars):
                     collect_evars(schans[sk], &out)
@@ -6563,7 +6621,7 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
     i := 0
     for i < len(stmts):
         match stmts[i]:
-            SAssign(n, e):
+            SAssign(n, e, _sl):
                 if has_str(outer, n) and not has_str(accn, n):
                     match e:
                         EBin(op, l, r):
@@ -6608,13 +6666,13 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                             i = i
                         ESpawn(sid, snm, sa):
                             i = i
-            SDecl(n, e):
+            SDecl(n, e, _sl):
                 i = i
-            SFieldAssign(lv, r):
+            SFieldAssign(lv, r, _sl):
                 i = i
-            SPrint(e):
+            SPrint(e, _sl):
                 i = i
-            SReturn(e):
+            SReturn(e, _sl):
                 i = i
             SReturnVoid:
                 i = i
@@ -6622,31 +6680,31 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                 i = i
             SContinue:
                 i = i
-            SIf(c, t, el):
+            SIf(c, t, el, _sl):
                 pf_accs(t, outer, &accn, &accop)
                 pf_accs(el, outer, &accn, &accop)
-            SWhile(c, b):
+            SWhile(c, b, _sl):
                 pf_accs(b, outer, &accn, &accop)
-            SForRange(v, a, b, st, body):
+            SForRange(v, a, b, st, body, _sl):
                 pf_accs(body, outer, &accn, &accop)
-            SExpr(e):
+            SExpr(e, _sl):
                 i = i
-            STypedDecl(n, ty, e):
+            STypedDecl(n, ty, e, _sl):
                 i = i
-            SOrReturn(n, e):
+            SOrReturn(n, e, _sl):
                 i = i
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 i = i
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 i = i
-            SMatch(subj, vars, binds, bodies):
+            SMatch(subj, vars, binds, bodies, _sl):
                 k := 0
                 for k < len(bodies):
                     pf_accs(bodies[k], outer, &accn, &accop)
                     k = k + 1
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 pf_accs(body, outer, &accn, &accop)
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 sk := 0
                 for sk < len(svars):
                     pf_accs(sbodies[sk], outer, &accn, &accop)
@@ -6815,6 +6873,7 @@ fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [Lam
     return out
 
 fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
+    _sl := 0
     match e:
         EInt(t):
             return e
@@ -6934,9 +6993,9 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 pj = pj + 1
             lbody := []Stmt
             if ret == "void":
-                push(lbody, SExpr(nb))
+                push(lbody, SExpr(nb, _sl))
             else:
-                push(lbody, SReturn(nb))
+                push(lbody, SReturn(nb, _sl))
             push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
@@ -7016,46 +7075,46 @@ fn pend_init_kind(e: Expr) -> int:
 # initializer ("" otherwise), with the initializer handed back via `ex`.
 fn pend_probe(s: Stmt, ex: inout Expr) -> string:
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             if pend_init_kind(e) != 0:
                 ex = e
                 return n
             return ""
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             return ""
-        SFieldAssign(lv, r):
+        SFieldAssign(lv, r, _sl):
             return ""
-        SPrint(e):
+        SPrint(e, _sl):
             return ""
-        SReturn(e):
+        SReturn(e, _sl):
             return ""
         SReturnVoid:
             return ""
-        SIf(c, t, el):
+        SIf(c, t, el, _sl):
             return ""
-        SWhile(c, b):
+        SWhile(c, b, _sl):
             return ""
-        SForRange(v, a, b, st, body):
+        SForRange(v, a, b, st, body, _sl):
             return ""
-        SExpr(e):
+        SExpr(e, _sl):
             return ""
-        STypedDecl(n, ty, e):
+        STypedDecl(n, ty, e, _sl):
             return ""
-        SOrReturn(n, e):
+        SOrReturn(n, e, _sl):
             return ""
-        SDestructure(ns, e):
+        SDestructure(ns, e, _sl):
             return ""
-        SMultiAssign(ns, e):
+        SMultiAssign(ns, e, _sl):
             return ""
-        SMatch(subj, vars, binds, bodies):
+        SMatch(subj, vars, binds, bodies, _sl):
             return ""
         SBreak:
             return ""
         SContinue:
             return ""
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             return ""
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             return ""
 
 # B-3 seek, expression half: the first typed use of pending var `nm` inside
@@ -7184,7 +7243,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
     i := from
     for i < len(stmts):
         match stmts[i]:
-            SAssign(x, e):
+            SAssign(x, e, _sl):
                 if x == nm:
                     r0 := pend_seek_expr(dc, ctx, n2, t2, nm, e)   # m = map_set(m, k, v): the rhs READS nm --
                     if r0 != "":                                   # the call form grounds, not the (pending) type
@@ -7193,19 +7252,19 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
-            SReturn(e):
+            SReturn(e, _sl):
                 if evar_name(e) == nm:
                     return fret
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
-            SFieldAssign(lv, rhs):
+            SFieldAssign(lv, rhs, _sl):
                 if evar_name(rhs) == nm:
                     return type_of(lv, n2, t2, dc, ctx)
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, rhs)
                 if r != "":
                     return r
-            SDecl(x, e):
+            SDecl(x, e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
@@ -7216,7 +7275,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     push(t2, "?")
                 else:
                     push(t2, type_of(e, n2, t2, dc, ctx))
-            STypedDecl(x, ty, e):
+            STypedDecl(x, ty, e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
@@ -7224,7 +7283,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     return ""
                 push(n2, x)
                 push(t2, ty)
-            SOrReturn(x, e):
+            SOrReturn(x, e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
@@ -7234,7 +7293,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     push(t2, option_inner(rt2))
                 else:
                     push(t2, result_ok(rt2))
-            SDestructure(ns, e):
+            SDestructure(ns, e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
@@ -7245,19 +7304,19 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     push(n2, ns[dk])
                     push(t2, dp[dk])
                     dk = dk + 1
-            SMultiAssign(ns, e):
+            SMultiAssign(ns, e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
-            SPrint(e):
+            SPrint(e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
-            SExpr(e):
+            SExpr(e, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, e)
                 if r != "":
                     return r
-            SIf(c, t, el):
+            SIf(c, t, el, _sl):
                 bn := n2
                 bt := t2
                 r := pend_seek(dc, ctx, &bn, &bt, nm, t, 0, fret)
@@ -7268,13 +7327,13 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                 r = pend_seek(dc, ctx, &bn2, &bt2, nm, el, 0, fret)
                 if r != "":
                     return r
-            SWhile(c, b):
+            SWhile(c, b, _sl):
                 bn := n2
                 bt := t2
                 r := pend_seek(dc, ctx, &bn, &bt, nm, b, 0, fret)
                 if r != "":
                     return r
-            SForRange(v, a, b, st, body):
+            SForRange(v, a, b, st, body, _sl):
                 if v != nm:
                     bn := n2
                     bt := t2
@@ -7283,7 +7342,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     r := pend_seek(dc, ctx, &bn, &bt, nm, body, 0, fret)
                     if r != "":
                         return r
-            SMatch(subj, vars, binds, bodies):
+            SMatch(subj, vars, binds, bodies, _sl):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, subj)
                 if r != "":
                     return r
@@ -7306,7 +7365,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     if r != "":
                         return r
                     mk = mk + 1
-            SSelect(uid, svars, schans, sbinds, sbodies):
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 sk := 0
                 for sk < len(svars):
                     bn := n2
@@ -7318,7 +7377,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
                     if r != "":
                         return r
                     sk = sk + 1
-            SParFor(v, a, b, body, pid):
+            SParFor(v, a, b, body, pid, _sl):
                 if v != nm:
                     bn := n2
                     bt := t2
@@ -7337,6 +7396,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
     return ""
 
 fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
+    _sl := 0
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
     i := 0
@@ -7350,7 +7410,7 @@ fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [
             pty := pend_seek(dc, ctx, &sn, &stt, pn, stmts, i + 1, fret)
             if pty == "":
                 die("type: could not infer the type of '" + pn + "' -- no grounding use in its block (annotate the declaration)")
-            st = STypedDecl(pn, pty, pe)              # the annotated form; ground_pre types the initializer
+            st = STypedDecl(pn, pty, pe, _sl)              # the annotated form; ground_pre types the initializer
         push(out, lift_stmt(st, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
         i = i + 1
     names = names[0:mark]
@@ -7359,33 +7419,33 @@ fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [
 
 fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nty := type_of(e, names, types, dc, ctx)  # type BEFORE pushing the name (sacc_stmt order):
             push(names, n)                            # a shadowing `y := y + 2` must resolve y to the
             push(types, nty)                          # OUTER decl, and names/types must stay in lockstep
-            return SDecl(n, ne)
-        SAssign(n, e):
+            return SDecl(n, ne, _sl)
+        SAssign(n, e, _sl):
             aw := ""                              # B: the existing var's type checks the RHS
             if has_str(names, n):
                 aw = base_ty(var_type(names, types, n))
-            return SAssign(n, lift_expr(ground_pre(dc, ctx, aw, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SFieldAssign(lv, rhs):
+            return SAssign(n, lift_expr(ground_pre(dc, ctx, aw, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SFieldAssign(lv, rhs, _sl):
             fw := type_of(lv, names, types, dc, ctx)   # B: the place's type checks the stored value
-            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ground_pre(dc, ctx, fw, rhs), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SPrint(e):
-            return SPrint(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SReturn(e):
+            return SFieldAssign(lift_expr(lv, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ground_pre(dc, ctx, fw, rhs), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SPrint(e, _sl):
+            return SPrint(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SReturn(e, _sl):
             # A closure MAY escape: gen_stmt's SReturn re-homes its captured env into
             # _parent via copyenv (value semantics, sound). rule (a) lifted.
-            return SReturn(lift_expr(ground_pre(dc, ctx, fret, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
+            return SReturn(lift_expr(ground_pre(dc, ctx, fret, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
         SReturnVoid:
             return s
-        SIf(c, th, el):
-            return SIf(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(th, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret), lift_block(el, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
-        SWhile(c, b):
-            return SWhile(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
-        SForRange(nm, a, b, st, body):
+        SIf(c, th, el, _sl):
+            return SIf(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(th, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret), lift_block(el, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret), _sl)
+        SWhile(c, b, _sl):
+            return SWhile(lift_expr(c, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_block(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret), _sl)
+        SForRange(nm, a, b, st, body, _sl):
             na := lift_expr(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nbb := lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nst := lift_expr(st, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
@@ -7395,33 +7455,33 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             nbody := lift_block(body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret)
             names = names[0:mark]
             types = types[0:mark]
-            return SForRange(nm, na, nbb, nst, nbody)
-        SExpr(e):
-            return SExpr(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        STypedDecl(nm, ty, e):
+            return SForRange(nm, na, nbb, nst, nbody, _sl)
+        SExpr(e, _sl):
+            return SExpr(lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        STypedDecl(nm, ty, e, _sl):
             ne := lift_expr(ground_pre(dc, ctx, ty, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             push(names, nm)
             push(types, ty)
-            return STypedDecl(nm, ty, ne)
-        SOrReturn(nm, e):
-            return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SDestructure(nms, e):
-            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SMultiAssign(nms, e):
-            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        SMatch(subj, vars, binds, bodies):
+            return STypedDecl(nm, ty, ne, _sl)
+        SOrReturn(nm, e, _sl):
+            return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SDestructure(nms, e, _sl):
+            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SMultiAssign(nms, e, _sl):
+            return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SMatch(subj, vars, binds, bodies, _sl):
             ns := lift_expr(subj, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nb := [][Stmt]
             k := 0
             for k < len(bodies):
                 push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
                 k = k + 1
-            return SMatch(ns, vars, binds, nb)
+            return SMatch(ns, vars, binds, nb, _sl)
         SBreak:
             return s
         SContinue:
             return s
-        SParFor(v, a, b, body, pid0):
+        SParFor(v, a, b, body, pid0, _sl):
             # CC-3: lift the body to a chunk proc __par<pid>(__plo, __phi,
             # captures...) -> partial(s); register its spawn site (the driver
             # emits the trampoline) and the ParInfo the site codegen reads.
@@ -7479,20 +7539,20 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                     idv = EFloat("0.0")
                     if accop[j] == "*":
                         idv = EFloat("1.0")
-                push(cbody, SDecl(accn[j], idv))
+                push(cbody, SDecl(accn[j], idv, _sl))
                 j = j + 1
-            push(cbody, SForRange(v, EVar("__plo"), EVar("__phi"), EInt("1"), body))
+            push(cbody, SForRange(v, EVar("__plo"), EVar("__phi"), EInt("1"), body, _sl))
             if len(accn) == 0:
-                push(cbody, SReturn(EInt("0")))
+                push(cbody, SReturn(EInt("0"), _sl))
             if len(accn) == 1:
-                push(cbody, SReturn(EVar(accn[0])))
+                push(cbody, SReturn(EVar(accn[0]), _sl))
             if len(accn) > 1:
                 tup := []Expr
                 j = 0
                 for j < len(accn):
                     push(tup, EVar(accn[j]))
                     j = j + 1
-                push(cbody, SReturn(ETuple(tup)))
+                push(cbody, SReturn(ETuple(tup), _sl))
             cn2 := cps
             ct2 := cpt
             cbody = lift_block(cbody, &lifted, &ctr, &lams, &spawns, &pars, &cn2, &ct2, dc, ctx, rty)
@@ -7500,8 +7560,8 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             sid := len(spawns)
             push(spawns, SpawnInfo("__par" + str(pid), cpt, rty))
             push(pars, ParInfo(sid, capn, capt, accn, accop, rty))
-            return SParFor("", na, nbb, []Stmt, pid)
-        SSelect(uid, svars, schans, sbinds, sbodies):
+            return SParFor("", na, nbb, []Stmt, pid, _sl)
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             nch := []Expr
             nb := [][Stmt]
             sk := 0
@@ -7516,7 +7576,7 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 names = names[0:mark]
                 types = types[0:mark]
                 sk = sk + 1
-            return SSelect(uid, svars, nch, sbinds, nb)
+            return SSelect(uid, svars, nch, sbinds, nb, _sl)
 
 # Does an expr / stmt / block contain a lambda anywhere? Used to skip the
 # scope-aware lift (which calls type_of) for lambda-free functions — keeping a
@@ -7603,37 +7663,37 @@ fn block_has_lambda(stmts: [Stmt]) -> bool:
 
 fn stmt_has_lambda(s: Stmt) -> bool:
     match s:
-        SDecl(n, e):
+        SDecl(n, e, _sl):
             if pend_init_kind(e) != 0:            # B-3: a bare decl gates the lift (pend_seek runs there);
                 return true                       # decl-position ONLY -- `return None` etc never re-gates
             return expr_has_lambda(e)
-        SAssign(n, e):
+        SAssign(n, e, _sl):
             return expr_has_lambda(e)
-        SFieldAssign(lv, rhs):
+        SFieldAssign(lv, rhs, _sl):
             return expr_has_lambda(lv) or expr_has_lambda(rhs)
-        SPrint(e):
+        SPrint(e, _sl):
             return expr_has_lambda(e)
-        SReturn(e):
+        SReturn(e, _sl):
             return expr_has_lambda(e)
         SReturnVoid:
             return false
-        SIf(c, th, el):
+        SIf(c, th, el, _sl):
             return expr_has_lambda(c) or block_has_lambda(th) or block_has_lambda(el)
-        SWhile(c, b):
+        SWhile(c, b, _sl):
             return expr_has_lambda(c) or block_has_lambda(b)
-        SForRange(nm, a, b, st, body):
+        SForRange(nm, a, b, st, body, _sl):
             return expr_has_lambda(a) or expr_has_lambda(b) or expr_has_lambda(st) or block_has_lambda(body)
-        SExpr(e):
+        SExpr(e, _sl):
             return expr_has_lambda(e)
-        STypedDecl(nm, ty, e):
+        STypedDecl(nm, ty, e, _sl):
             return expr_has_lambda(e)
-        SOrReturn(nm, e):
+        SOrReturn(nm, e, _sl):
             return expr_has_lambda(e)
-        SDestructure(nms, e):
+        SDestructure(nms, e, _sl):
             return expr_has_lambda(e)
-        SMultiAssign(nms, e):
+        SMultiAssign(nms, e, _sl):
             return expr_has_lambda(e)
-        SMatch(subj, vars, binds, bodies):
+        SMatch(subj, vars, binds, bodies, _sl):
             if expr_has_lambda(subj):
                 return true
             k := 0
@@ -7646,9 +7706,9 @@ fn stmt_has_lambda(s: Stmt) -> bool:
             return false
         SContinue:
             return false
-        SParFor(v, a, b, body, pid):
+        SParFor(v, a, b, body, pid, _sl):
             return true                           # a parallel for IS a lift job (chunk-proc extraction)
-        SSelect(uid, svars, schans, sbinds, sbodies):
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             sk := 0
             for sk < len(svars):
                 if expr_has_lambda(schans[sk]) or block_has_lambda(sbodies[sk]):
@@ -7705,7 +7765,7 @@ fn main():
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
     dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo)
-    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
+    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
     pars := []ParInfo                                 # CC-3: parallel-for sites
@@ -7720,7 +7780,7 @@ fn main():
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars)
-    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string)
+    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
