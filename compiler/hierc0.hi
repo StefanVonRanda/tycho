@@ -4876,6 +4876,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 nv := gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, oa))
                 return "    { char* _o = " + slot + "; " + slot + " = " + nv + "; if (_o && _o != " + slot + " && arena_owns(" + oa + ", _o - 8)) arena_recycle(" + oa + ", _o - 8, (size_t)(((const long*)_o)[-1] + 16) & ~(size_t)7); }\n"
             sfo := "0"
+            if is_scalar_ty(dc, ctx, type_of(lv, names, types, dc, ctx)):
+                sfo = ctx.owner    # a scalar slot stores a value word; build the RHS (and any nested transient, e.g. str() inside len()) in the current scope so it frees, not malloc'd at owner-0 and leaked
             if is_map_index(lv, names, types, dc, ctx):
                 sfo = owner_arena_of(lv, names, types, dc, ctx)
             return "    " + gen_place(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
