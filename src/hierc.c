@@ -2376,6 +2376,10 @@ static void register_builtins(void) {
 typedef struct { char *name; Type type; int can_mutate; } Var;
 static Var g_vars[1024];
 static int g_nvars = 0;
+/* >=0: the next resolve_block dup-checks declarations from this g_vars index
+ * (a function's top block uses its param base, so a local `:=` colliding with a
+ * parameter is caught); a nested block uses its own start. Reset after one use. */
+static int g_dup_base = -1;
 
 static int  vars_mark(void) { return g_nvars; }
 static void vars_restore(int m) { g_nvars = m; }
@@ -2588,6 +2592,7 @@ static Type resolve_expr(Expr *e) {
                 vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
             }
             Type saved = g_fn_ret; g_fn_ret = pr->ret;
+            g_dup_base = mark;   /* lambda body shares its caps+params scope (same lifted C function) */
             resolve_block(pr->body, pr->nbody, pr->ret);
             g_fn_ret = saved;
             vars_restore(mark);
@@ -3699,6 +3704,7 @@ static void resolve_parfor(Stmt *s) {
         vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
     }
     Type saved = g_fn_ret; g_fn_ret = pr->ret;
+    g_dup_base = mark;   /* parallel-for body shares its params scope (same lifted C function) */
     resolve_block(pr->body, pr->nbody, pr->ret);
     g_fn_ret = saved;
     vars_restore(mark);
@@ -4016,8 +4022,16 @@ static void resolve_stmt(Stmt *s, Type ret) {
 
 static void resolve_block(Stmt **body, int n, Type ret) {
     int m = vars_mark();
+    int dbase = g_dup_base >= 0 ? g_dup_base : m;   /* fn top block: params included; nested block: own start */
+    g_dup_base = -1;
     int pm = g_npend;
-    for (int i = 0; i < n; i++) resolve_stmt(body[i], ret);
+    for (int i = 0; i < n; i++) {
+        if (body[i]->kind == S_DECL)   /* fail-closed: a same-scope re-`:=` would emit a duplicate C local */
+            for (int v = dbase; v < g_nvars; v++)
+                if (!strcmp(g_vars[v].name, body[i]->name))
+                    die_at(body[i]->line, "'%s' is already declared in this scope", body[i]->name);
+        resolve_stmt(body[i], ret);
+    }
     for (int i = pm; i < g_npend; i++)   /* B-3 audit: a pending decl must ground in its own block */
         if (!g_pend[i].done)
             die_at(g_pend[i].decl->line, "could not infer the type of '%s' -- no grounding use in its block (annotate: %s : [T] = [] / Option(T) = None)",
@@ -4095,11 +4109,15 @@ static void resolve_program(ProcVec *prog) {
              * (`local := param`). */
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt))
                           || pr->params[j].is_inout;
+            for (int v = 0; v < g_nvars; v++)   /* fail-closed: a duplicate parameter emits a duplicate C param */
+                if (!strcmp(g_vars[v].name, pr->params[j].name))
+                    die_at(pr->line, "duplicate parameter '%s'", pr->params[j].name);
             vars_push(pr->params[j].name, pt, mutable);
         }
         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
             die_at(pr->line, "'main' must be 'fn main():' with no return");
         g_fn_ret = pr->ret;
+        g_dup_base = 0;   /* the top body shares the param scope (same C function): a decl colliding with a param is a redeclaration */
         resolve_block(pr->body, pr->nbody, pr->ret);
     }
 }

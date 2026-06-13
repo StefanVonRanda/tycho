@@ -4713,6 +4713,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
     ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
     match s:
         SDecl(name, e, _sl):
+            di := 0                                   # fail-closed: a same-scope re-`:=` (incl. shadowing a param at the top level, both depth 0) would emit a duplicate C local; nested-block shadowing stays legal (different depth)
+            for di < len(names):
+                if names[di] == name and var_block_depth(dc, ctx, di) == ctx.depth:
+                    die("'" + name + "' is already declared in this scope")
+                di = di + 1
             ty := type_of(e, names, types, dc, ctx)
             if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
@@ -7850,6 +7855,14 @@ fn check_dups(prog: Program):
         if has_str(fns, nm):
             die("'" + nm + "' is already defined")
         push(fns, nm)
+        pnames := []string                            # duplicate parameter name -> duplicate C param
+        j := 0
+        for j < len(prog.funcs[i].params):
+            pn := prog.funcs[i].params[j]
+            if has_str(pnames, pn):
+                die("duplicate parameter '" + pn + "' in function '" + nm + "'")
+            push(pnames, pn)
+            j = j + 1
         i = i + 1
 
 fn main():
