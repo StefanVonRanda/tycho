@@ -1,0 +1,7 @@
+# both compilers must reject two statements on one line (a missing newline);
+# the trailing stmt here is a misplaced continue.
+fn main():
+    i := 0
+    for i < 3:
+        print("x")  continue
+        i = i + 1

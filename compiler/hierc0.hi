@@ -903,6 +903,9 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
             if isfe:
                 parse_foreach(toks, &pos, &stmts)
             else:
+                firstkw := ""                        # the stmt's leading keyword (compound stmts self-terminate via their block)
+                if toks[pos].kind == TIdent:
+                    firstkw = toks[pos].text
                 pend := []Stmt                       # preludes (e.g. hoisted index temps)
                 st := parse_stmt(toks, &pos, &pend)
                 pj := 0
@@ -910,6 +913,13 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
                     push(stmts, pend[pj])
                     pj = pj + 1
                 push(stmts, st)
+                # fail-closed: a SIMPLE statement must end at a newline; without this
+                # two statements on one line (`print(x)  continue`) were silently
+                # accepted. Compound stmts (if/for/while/match/select) end at their
+                # block's dedent, so the next token is the following stmt -- exempt.
+                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select"
+                if not cmpd and toks[pos].kind != TNewline and toks[pos].kind != TDedent:
+                    die("parse: line " + str(toks[pos].line) + ": expected newline")
             if toks[pos].kind == TNewline:
                 pos = pos + 1
     pos = pos + 1
