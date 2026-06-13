@@ -345,26 +345,26 @@ fn lex(src: string) -> [Token]:
 # ------------------------------------------------------------------ AST ----
 
 enum Expr:
-    EInt(string)
-    EBool(string)             # bool literal `true`/`false`, carried as "1"/"0" (distinct from int so str() prints true/false)
-    EChar(string)             # char literal `'x'`, carried as the byte value in decimal text
-    EFloat(string)            # float literal, emitted verbatim (round-trips as a double)
-    EStr(string)              # string literal (raw content, escapes preserved)
-    EVar(string)
-    EBin(string, Expr, Expr)
-    ECall(string, [Expr])    # function call OR struct construction `Point(1,2)`
-    EField(Expr, string)     # field access `base.field` (nests: `r.lo.x`)
-    EIndex(Expr, Expr)       # array index `base[idx]`
-    EArrLit([Expr])          # array literal `[1, 2, 3]` (int elements)
-    EArrEmpty(string)        # empty typed array `[]int`
-    EMapEmpty(string, string) # empty typed map `[]string: int` (key, value types)
-    EMapLit([Expr], [Expr])  # non-empty map literal `[k0: v0, k1: v1]` (keys, vals)
-    ETuple([Expr])           # tuple literal `(a, b, ...)` / `return a, b`
-    ESlice(Expr, Expr, Expr) # `base[lo:hi]` sub-array (owning copy)
-    EAddr(Expr)              # `&place` at a call site (pass to an inout param)
-    ELambda(int, [string], [string], string, Expr, [string], [string])   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
-    ECallV(Expr, [Expr])     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
-    ESpawn(int, string, [Expr])   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
+    EInt(string, int)
+    EBool(string, int)             # bool literal `true`/`false`, carried as "1"/"0" (distinct from int so str() prints true/false)
+    EChar(string, int)             # char literal `'x'`, carried as the byte value in decimal text
+    EFloat(string, int)            # float literal, emitted verbatim (round-trips as a double)
+    EStr(string, int)              # string literal (raw content, escapes preserved)
+    EVar(string, int)
+    EBin(string, Expr, Expr, int)
+    ECall(string, [Expr], int)    # function call OR struct construction `Point(1,2)`
+    EField(Expr, string, int)     # field access `base.field` (nests: `r.lo.x`)
+    EIndex(Expr, Expr, int)       # array index `base[idx]`
+    EArrLit([Expr], int)          # array literal `[1, 2, 3]` (int elements)
+    EArrEmpty(string, int)        # empty typed array `[]int`
+    EMapEmpty(string, string, int) # empty typed map `[]string: int` (key, value types)
+    EMapLit([Expr], [Expr], int)  # non-empty map literal `[k0: v0, k1: v1]` (keys, vals)
+    ETuple([Expr], int)           # tuple literal `(a, b, ...)` / `return a, b`
+    ESlice(Expr, Expr, Expr, int) # `base[lo:hi]` sub-array (owning copy)
+    EAddr(Expr, int)              # `&place` at a call site (pass to an inout param)
+    ELambda(int, [string], [string], string, Expr, [string], [string], int)   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
+    ECallV(Expr, [Expr], int)     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
+    ESpawn(int, string, [Expr], int)   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
 
 enum Stmt:
     SDecl(string, Expr, int)
@@ -507,6 +507,7 @@ fn open_block(toks: [Token], pos: inout int):
 # `{{`/`}}` are literal braces; each `{e}` is lexed+parsed as a sub-expression and
 # wrapped in str() (identity on a string, i2s/f2s on int/float). No new AST node.
 fn desugar_interp(s: string) -> Expr:
+    _el := 0
     pieces := []Expr
     n := len(s)
     buf := ""
@@ -523,7 +524,7 @@ fn desugar_interp(s: string) -> Expr:
             die("interp: unmatched } in an f-string (use }} for a literal brace)")
         elif c == 123:                                        # {expr}
             if len(buf) > 0:
-                push(pieces, EStr(buf))
+                push(pieces, EStr(buf, _el))
                 buf = ""
             i = i + 1
             estart := i
@@ -559,47 +560,48 @@ fn desugar_interp(s: string) -> Expr:
             ex := parse_expr(etoks, &ep)
             args := []Expr
             push(args, ex)
-            push(pieces, ECall("str", args))
+            push(pieces, ECall("str", args, _el))
         else:
             buf = buf + chr(c)
             i = i + 1
     if len(buf) > 0:
-        push(pieces, EStr(buf))
+        push(pieces, EStr(buf, _el))
     if len(pieces) == 0:
-        return EStr("")
+        return EStr("", _el)
     acc := pieces[0]
     j := 1
     for j < len(pieces):
-        acc = EBin("+", acc, pieces[j])
+        acc = EBin("+", acc, pieces[j], _el)
         j = j + 1
     return acc
 
 fn parse_atom(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     t := toks[pos]
     if t.kind == TStr:
         pos = pos + 1
-        return EStr(t.text)
+        return EStr(t.text, _el)
     elif t.kind == TFStr:                        # f"a{e}b" -> ("a" + str(e) + "b")
         pos = pos + 1
         return desugar_interp(t.text)
     elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
         pos = pos + 1
-        return EBin("-", EInt("0"), parse_atom(toks, &pos))
+        return EBin("-", EInt("0", _el), parse_atom(toks, &pos), _el)
     elif t.kind == TTilde:                       # unary bitwise NOT: ~E ==> ((0 - E) - 1)
         pos = pos + 1
-        return EBin("-", EBin("-", EInt("0"), parse_atom(toks, &pos)), EInt("1"))
+        return EBin("-", EBin("-", EInt("0", _el), parse_atom(toks, &pos), _el), EInt("1", _el), _el)
     elif t.kind == TAmp:                         # &place : pass to an inout param
         pos = pos + 1
-        return EAddr(parse_postfix(toks, &pos))
+        return EAddr(parse_postfix(toks, &pos), _el)
     elif t.kind == TInt:
         pos = pos + 1
-        return EInt(t.text)
+        return EInt(t.text, _el)
     elif t.kind == TChar:
         pos = pos + 1
-        return EChar(t.text)
+        return EChar(t.text, _el)
     elif t.kind == TFloat:
         pos = pos + 1
-        return EFloat(t.text)
+        return EFloat(t.text, _el)
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
@@ -609,51 +611,51 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             expect(toks, &pos, TLBracket)
             expect(toks, &pos, TRBracket)
             st := parse_type(toks, &pos)
-            return EArrEmpty("soa[" + st + "]")
+            return EArrEmpty("soa[" + st + "]", _el)
         if name == "spawn":                      # spawn f(args): run the call on a new thread (CC-1)
             sp := parse_postfix(toks, &pos)
             match sp:
-                ECall(sn, sa):
-                    return ESpawn(0, sn, sa)     # site id assigned by the lift pass
-                EInt(t):
+                ECall(sn, sa, _el):
+                    return ESpawn(0, sn, sa, _el)     # site id assigned by the lift pass
+                EInt(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EBool(t):
+                EBool(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EChar(t):
+                EChar(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EFloat(t):
+                EFloat(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EStr(t):
+                EStr(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EVar(t):
+                EVar(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EBin(o, l, r):
+                EBin(o, l, r, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EField(b, f):
+                EField(b, f, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EIndex(b, ix):
+                EIndex(b, ix, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EArrLit(es):
+                EArrLit(es, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EArrEmpty(t):
+                EArrEmpty(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EMapEmpty(k, mv):
+                EMapEmpty(k, mv, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EMapLit(ks, vs):
+                EMapLit(ks, vs, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                ETuple(es):
+                ETuple(es, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                ESlice(b, lo, hi):
+                ESlice(b, lo, hi, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EAddr(x):
+                EAddr(x, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                ELambda(lid, ps, pts, ret, bx, cn, ct):
+                ELambda(lid, ps, pts, ret, bx, cn, ct, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                ECallV(c, a):
+                ECallV(c, a, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                ESpawn(sid, sn2, sa2):
+                ESpawn(sid, sn2, sa2, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-            return EInt("0")
+            return EInt("0", _el)
         if name == "channel" and toks[pos].kind == TLParen:   # channel(T, cap) (CC-4); the type rides the name
             pos = pos + 1
             chty := parse_type(toks, &pos)
@@ -661,13 +663,13 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             chargs := []Expr
             push(chargs, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return ECall("channel:" + chty, chargs)
+            return ECall("channel:" + chty, chargs, _el)
         if name == "true":
-            return EBool("1")
+            return EBool("1", _el)
         if name == "false":
-            return EBool("0")
+            return EBool("0", _el)
         if name == "null":                       # FFI opaque ptr literal -> a 0-arg builtin call
-            return ECall("null", []Expr)
+            return ECall("null", []Expr, _el)
         if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TLParen:
             qn := name + "." + toks[pos + 1].text     # qualified call pkg.name(args); resolved by the mangler
             pos = pos + 3
@@ -678,7 +680,7 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                     pos = pos + 1
                     push(qargs, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return ECall(qn, qargs)
+            return ECall(qn, qargs, _el)
         if toks[pos].kind == TLParen:
             pos = pos + 1
             args := []Expr
@@ -688,8 +690,8 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                     pos = pos + 1
                     push(args, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return ECall(name, args)
-        return EVar(name)
+            return ECall(name, args, _el)
+        return EVar(name, _el)
     elif t.kind == TLParen:
         pos = pos + 1
         e := parse_expr(toks, &pos)
@@ -700,7 +702,7 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                 pos = pos + 1
                 push(elems, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return ETuple(elems)
+            return ETuple(elems, _el)
         expect(toks, &pos, TRParen)
         return e
     elif t.kind == TLBracket:
@@ -711,13 +713,13 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
             # is a bare empty literal, grounded from the destination type by the
             # pre-lift checking pass (ground_pre) at every supplying position.
             if toks[pos].kind != TIdent and toks[pos].kind != TLBracket and toks[pos].kind != TLParen:
-                return EArrEmpty("")
+                return EArrEmpty("", _el)
             kty := parse_type(toks, &pos)
             if toks[pos].kind == TColon:
                 pos = pos + 1
                 vty := parse_type(toks, &pos)
-                return EMapEmpty(kty, vty)
-            return EArrEmpty(kty)
+                return EMapEmpty(kty, vty, _el)
+            return EArrEmpty(kty, _el)
         first := parse_expr(toks, &pos)
         if toks[pos].kind == TColon:             # [k0: v0, k1: v1] : map literal
             keys := []Expr
@@ -731,19 +733,20 @@ fn parse_atom(toks: [Token], pos: inout int) -> Expr:
                 expect(toks, &pos, TColon)
                 push(vals, parse_expr(toks, &pos))
             expect(toks, &pos, TRBracket)
-            return EMapLit(keys, vals)
+            return EMapLit(keys, vals, _el)
         elems := []Expr                          # [e0, e1, ...] : array literal
         push(elems, first)
         for toks[pos].kind == TComma:
             pos = pos + 1
             push(elems, parse_expr(toks, &pos))
         expect(toks, &pos, TRBracket)
-        return EArrLit(elems)
+        return EArrLit(elems, _el)
     else:
         die("parse: line " + str(toks[pos].line) + ": expected an atom")
-        return EInt("0")
+        return EInt("0", _el)
 
 fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     e := parse_atom(toks, &pos)
     for toks[pos].kind == TDot or toks[pos].kind == TLBracket or toks[pos].kind == TLParen:
         if toks[pos].kind == TLParen:            # call-on-expression: <expr>(args) -- indirect call on a fn value
@@ -755,12 +758,12 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
                     pos = pos + 1
                     push(cargs, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            e = ECallV(e, cargs)
+            e = ECallV(e, cargs, _el)
         elif toks[pos].kind == TDot:             # field access: a.b  /  tuple index: a.0
             pos = pos + 1
             if toks[pos].kind != TIdent and toks[pos].kind != TInt:
                 die("parse: line " + str(toks[pos].line) + ": expected a field name or index after '.'")
-            e = EField(e, toks[pos].text)
+            e = EField(e, toks[pos].text, _el)
             pos = pos + 1
         else:                                    # index a[i]  or  slice a[lo:hi]
             pos = pos + 1
@@ -768,73 +771,79 @@ fn parse_postfix(toks: [Token], pos: inout int) -> Expr:
             push(lenargs, e)
             if toks[pos].kind == TColon:         # a[:hi] / a[:]
                 pos = pos + 1
-                hi := ECall("len", lenargs)
+                hi := ECall("len", lenargs, _el)
                 if toks[pos].kind != TRBracket:
                     hi = parse_expr(toks, &pos)
                 expect(toks, &pos, TRBracket)
-                e = ESlice(e, EInt("0"), hi)
+                e = ESlice(e, EInt("0", _el), hi, _el)
             else:
                 idx := parse_expr(toks, &pos)
                 if toks[pos].kind == TColon:     # a[lo:hi] / a[lo:]
                     pos = pos + 1
-                    hi := ECall("len", lenargs)
+                    hi := ECall("len", lenargs, _el)
                     if toks[pos].kind != TRBracket:
                         hi = parse_expr(toks, &pos)
                     expect(toks, &pos, TRBracket)
-                    e = ESlice(e, idx, hi)
+                    e = ESlice(e, idx, hi, _el)
                 else:
                     expect(toks, &pos, TRBracket)
-                    e = EIndex(e, idx)
+                    e = EIndex(e, idx, _el)
     return e
 
 fn parse_mul(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     l := parse_postfix(toks, &pos)
     for toks[pos].kind == TStar or toks[pos].kind == TSlash or toks[pos].kind == TPercent or toks[pos].kind == TShl or toks[pos].kind == TShr or toks[pos].kind == TAmp:
         op := toks[pos].text
         pos = pos + 1
         r := parse_postfix(toks, &pos)
-        l = EBin(op, l, r)
+        l = EBin(op, l, r, _el)
     return l
 
 fn parse_add(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     l := parse_mul(toks, &pos)
     for toks[pos].kind == TPlus or toks[pos].kind == TMinus or toks[pos].kind == TPipe or toks[pos].kind == TCaret:
         op := toks[pos].text
         pos = pos + 1
         r := parse_mul(toks, &pos)
-        l = EBin(op, l, r)
+        l = EBin(op, l, r, _el)
     return l
 
 fn parse_cmp(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     l := parse_add(toks, &pos)
     k := toks[pos].kind
     if k == TEqEq or k == TLt or k == TGt or k == TLe or k == TGe or k == TNe:
         op := toks[pos].text
         pos = pos + 1
         r := parse_add(toks, &pos)
-        return EBin(op, l, r)
+        return EBin(op, l, r, _el)
     return l
 
 fn parse_not(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     if toks[pos].kind == TIdent and toks[pos].text == "not":
         pos = pos + 1
-        return EBin("==", parse_not(toks, &pos), EInt("0"))   # logical not: (X == 0)
+        return EBin("==", parse_not(toks, &pos), EInt("0", _el), _el)   # logical not: (X == 0)
     return parse_cmp(toks, &pos)
 
 fn parse_and(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     l := parse_not(toks, &pos)
     for toks[pos].kind == TIdent and toks[pos].text == "and":
         pos = pos + 1
         r := parse_not(toks, &pos)
-        l = EBin("&&", l, r)
+        l = EBin("&&", l, r, _el)
     return l
 
 fn parse_expr(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     l := parse_and(toks, &pos)
     for toks[pos].kind == TIdent and toks[pos].text == "or":
         pos = pos + 1
         r := parse_and(toks, &pos)
-        l = EBin("||", l, r)
+        l = EBin("||", l, r, _el)
     return l
 
 # `for x in COLL:` desugars to a collection-temp decl plus a range loop over its
@@ -843,6 +852,7 @@ fn parse_expr(toks: [Token], pos: inout int) -> Expr:
 # evaluated exactly once; the element read `x := _fc[_fi]` reuses array/string
 # indexing. The temp id is the `for` token position -- unique per occurrence.
 fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
+    _el := toks[pos].line
     _sl := toks[pos].line
     uid := str(pos)
     pos = pos + 1                            # 'for'
@@ -855,15 +865,15 @@ fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
     cn := "_fc" + uid
     iv := "_fi" + uid
     largs := []Expr
-    push(largs, EVar(cn))                    # len(_fc)
+    push(largs, EVar(cn, _el))                    # len(_fc)
     fbody := []Stmt
-    push(fbody, SDecl(varname, EIndex(EVar(cn), EVar(iv)), _sl))   # x := _fc[_fi]
+    push(fbody, SDecl(varname, EIndex(EVar(cn, _el), EVar(iv, _el), _el), _sl))   # x := _fc[_fi]
     k := 0
     for k < len(body):
         push(fbody, body[k])
         k = k + 1
     push(out, SDecl(cn, coll, _sl))                                # _fc := COLL  (the prelude)
-    push(out, SForRange(iv, EInt("0"), ECall("len", largs), EInt("1"), fbody, _sl))
+    push(out, SForRange(iv, EInt("0", _el), ECall("len", largs, _el), EInt("1", _el), fbody, _sl))
 
 fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
@@ -919,6 +929,7 @@ fn is_caop_kind(k: Tok) -> bool:
     return k == TPlus or k == TMinus or k == TStar or k == TSlash or k == TPercent or k == TAmp or k == TPipe or k == TCaret or k == TShl or k == TShr
 
 fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
+    _el := toks[pos].line
     _sl := toks[pos].line
     t := toks[pos]
     if t.kind == TIdent and t.text == "print":
@@ -932,7 +943,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         expect(toks, &pos, TLParen)
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
-        return SPrint(EBin("+", e, EStr("\\n")), _sl)
+        return SPrint(EBin("+", e, EStr("\\n", _el), _el), _sl)
     elif t.kind == TIdent and t.text == "return":
         pos = pos + 1
         if toks[pos].kind == TNewline:           # bare `return` (void)
@@ -944,7 +955,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             for toks[pos].kind == TComma:
                 pos = pos + 1
                 push(elems, parse_expr(toks, &pos))
-            return SReturn(ETuple(elems), _sl)
+            return SReturn(ETuple(elems, _el), _sl)
         return SReturn(re, _sl)
     elif t.kind == TIdent and t.text == "if":
         pos = pos + 1
@@ -971,7 +982,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     die("parse: line " + str(toks[pos].line) + ": a select arm is `recv(ch, x):`, `default:`, or `closed:`")
                 av := toks[pos].text
                 pos = pos + 1
-                ach := EInt("0")
+                ach := EInt("0", _el)
                 abind := ""
                 if av == "recv":
                     expect(toks, &pos, TLParen)
@@ -1002,7 +1013,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 pos = pos + 1
                 expect(toks, &pos, TLParen)
                 pa1 := parse_expr(toks, &pos)
-                pstart := EInt("0")
+                pstart := EInt("0", _el)
                 pstop := pa1
                 if toks[pos].kind == TComma:
                     pos = pos + 1
@@ -1023,15 +1034,15 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             pcn := "_fc" + puid
             piv := "_fi" + puid
             plargs := []Expr
-            push(plargs, EVar(pcn))
+            push(plargs, EVar(pcn, _el))
             pfbody := []Stmt
-            push(pfbody, SDecl(pvar, EIndex(EVar(pcn), EVar(piv)), _sl))
+            push(pfbody, SDecl(pvar, EIndex(EVar(pcn, _el), EVar(piv, _el), _el), _sl))
             pk := 0
             for pk < len(pubody):
                 push(pfbody, pubody[pk])
                 pk = pk + 1
             push(pending, SDecl(pcn, pcoll, _sl))
-            return SParFor(piv, EInt("0"), ECall("len", plargs), pfbody, 0 - 1, _sl)
+            return SParFor(piv, EInt("0", _el), ECall("len", plargs, _el), pfbody, 0 - 1, _sl)
         die("parse: line " + str(t.line) + ": parallel supports 'for x in range(...)' and 'for x in collection' loops")
         return SBreak
     elif t.kind == TIdent and t.text == "for":
@@ -1043,9 +1054,9 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             expect_ident(toks, &pos, "range")
             expect(toks, &pos, TLParen)
             a1 := parse_expr(toks, &pos)
-            start := EInt("0")              # range(n): 0..n
+            start := EInt("0", _el)              # range(n): 0..n
             stop := a1
-            step := EInt("1")
+            step := EInt("1", _el)
             if toks[pos].kind == TComma:    # range(a, b[, c])
                 pos = pos + 1
                 start = a1
@@ -1105,7 +1116,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             op := toks[pos].text
             pos = pos + 1
             expect(toks, &pos, TEq)
-            return SAssign(name, EBin(op, EVar(name), parse_expr(toks, &pos)), _sl)
+            return SAssign(name, EBin(op, EVar(name, _el), parse_expr(toks, &pos), _el), _sl)
         elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
             # collect the place steps first (a.b[i].c ...) so that, for a compound
             # assignment, a call-bearing index can be hoisted to a temp -- the place
@@ -1121,16 +1132,16 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                         die("parse: line " + str(toks[pos].line) + ": expected a field name or tuple index after '.'")
                     push(pkinds, 0)
                     push(pflds, toks[pos].text)   # TInt -> tuple element place (t.0 = v)
-                    push(pidxs, EInt("0"))        # placeholder; unused for a field step
+                    push(pidxs, EInt("0", _el))        # placeholder; unused for a field step
                     pos = pos + 1
                     if toks[pos].kind == TLParen:   # method-call STATEMENT (ch.send(v), t.wait(), x.foo(a)):
-                        mb := EVar(name)            # rebuild the receiver from the steps before the method name
+                        mb := EVar(name, _el)            # rebuild the receiver from the steps before the method name
                         mj := 0
                         for mj < len(pkinds) - 1:
                             if pkinds[mj] == 0:
-                                mb = EField(mb, pflds[mj])
+                                mb = EField(mb, pflds[mj], _el)
                             else:
-                                mb = EIndex(mb, pidxs[mj])
+                                mb = EIndex(mb, pidxs[mj], _el)
                             mj = mj + 1
                         pos = pos + 1
                         margs := []Expr
@@ -1140,7 +1151,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                                 pos = pos + 1
                                 push(margs, parse_expr(toks, &pos))
                         expect(toks, &pos, TRParen)
-                        return SExpr(ECallV(EField(mb, pflds[len(pflds) - 1]), margs), _sl)
+                        return SExpr(ECallV(EField(mb, pflds[len(pflds) - 1], _el), margs, _el), _sl)
                 else:
                     pos = pos + 1
                     push(pkinds, 1)
@@ -1148,26 +1159,26 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     push(pidxs, parse_expr(toks, &pos))
                     expect(toks, &pos, TRBracket)
             iscomp := is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq
-            lv := EVar(name)
+            lv := EVar(name, _el)
             ci := 0
             j := 0
             for j < len(pkinds):
                 if pkinds[j] == 0:
-                    lv = EField(lv, pflds[j])
+                    lv = EField(lv, pflds[j], _el)
                 else:
                     ix := pidxs[j]
                     if iscomp and expr_has_call(ix):   # bind a side-effecting index once
                         tn := "_cx" + str(pos) + "_" + str(ci)
                         ci = ci + 1
                         push(pending, SDecl(tn, ix, _sl))
-                        ix = EVar(tn)
-                    lv = EIndex(lv, ix)
+                        ix = EVar(tn, _el)
+                    lv = EIndex(lv, ix, _el)
                 j = j + 1
             if iscomp:                           # lv OP= rhs -> lv = lv OP rhs
                 op := toks[pos].text
                 pos = pos + 1
                 expect(toks, &pos, TEq)
-                return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos)), _sl)
+                return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos), _el), _sl)
             expect(toks, &pos, TEq)
             return SFieldAssign(lv, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
@@ -1179,13 +1190,13 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     pos = pos + 1
                     push(args, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
-            return SExpr(ECall(name, args), _sl)
+            return SExpr(ECall(name, args, _el), _sl)
         else:
             die("parse: line " + str(toks[pos].line) + ": expected ':=', '=', or '('")
-            return SReturn(EInt("0"), _sl)
+            return SReturn(EInt("0", _el), _sl)
     else:
         die("parse: line " + str(toks[pos].line) + ": expected a statement")
-        return SReturn(EInt("0"), _sl)
+        return SReturn(EInt("0", _el), _sl)
 
 fn parse_type(toks: [Token], pos: inout int) -> string:
     if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
@@ -1364,6 +1375,7 @@ fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
 # return). The leading `fn` and the opening `(` have already been consumed-checked
 # by the caller (parse_atom). id is a placeholder (0); the lift pass assigns it.
 fn parse_lambda(toks: [Token], pos: inout int) -> Expr:
+    _el := toks[pos].line
     expect(toks, &pos, TLParen)
     params := []string
     ptypes := []string
@@ -1393,7 +1405,7 @@ fn parse_lambda(toks: [Token], pos: inout int) -> Expr:
         ret = parse_type(toks, &pos)
     expect(toks, &pos, TColon)
     bexpr := parse_expr(toks, &pos)
-    return ELambda(0, params, ptypes, ret, bexpr, []string, []string)   # body is the single expr; lift wraps it in a Func
+    return ELambda(0, params, ptypes, ret, bexpr, []string, []string, _el)   # body is the single expr; lift wraps it in a Func
 
 fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     expect_ident(toks, &pos, "struct")
@@ -1643,59 +1655,59 @@ fn mangle_args(m: Mctx, es: [Expr]) -> [Expr]:
 
 fn mangle_expr(m: Mctx, e: Expr) -> Expr:
     match e:
-        EInt(s):
-            return EInt(s)
-        EBool(s):
-            return EBool(s)
-        EChar(s):
-            return EChar(s)
-        EFloat(s):
-            return EFloat(s)
-        EStr(s):
-            return EStr(s)
-        EVar(s):
+        EInt(s, _el):
+            return EInt(s, _el)
+        EBool(s, _el):
+            return EBool(s, _el)
+        EChar(s, _el):
+            return EChar(s, _el)
+        EFloat(s, _el):
+            return EFloat(s, _el)
+        EStr(s, _el):
+            return EStr(s, _el)
+        EVar(s, _el):
             if is_known_variant(m, m.prefix + s):   # a bare payload-less variant value in this package
-                return EVar(m.prefix + s)
+                return EVar(m.prefix + s, _el)
             if has_str(m.locals, s) or s == "None":  # a local var / None: never package-qualified
-                return EVar(s)
-            return EVar(m.prefix + s)                # a bare same-package fn name used as a VALUE (e.g. `g := base`)
-        EBin(op, l, r):
-            return EBin(op, mangle_expr(m, l), mangle_expr(m, r))
-        ECall(nm, a):
+                return EVar(s, _el)
+            return EVar(m.prefix + s, _el)                # a bare same-package fn name used as a VALUE (e.g. `g := base`)
+        EBin(op, l, r, _el):
+            return EBin(op, mangle_expr(m, l), mangle_expr(m, r), _el)
+        ECall(nm, a, _el):
             di := find(nm, ".")
             if di >= 0 and has_str(m.locals, substr(nm, 0, di)):   # `h.cb(args)` where h is a LOCAL var (not a package): call through a fn-typed struct field
-                return ECallV(EField(EVar(substr(nm, 0, di)), substr(nm, di + 1, len(nm))), mangle_args(m, a))
-            return ECall(mangle_ref(m, nm), mangle_args(m, a))
-        EField(b, f):
+                return ECallV(EField(EVar(substr(nm, 0, di), _el), substr(nm, di + 1, len(nm)), _el), mangle_args(m, a), _el)
+            return ECall(mangle_ref(m, nm), mangle_args(m, a), _el)
+        EField(b, f, _el):
             bn := evar_name(b)
             # `pkg.Variant` (no parens) parses as a field access; if `pkg` is an
             # imported package and `pkg.Variant` names a real variant, it is a
             # qualified payload-less variant VALUE, not a struct field read.
             if bn != "" and is_pkg_ref(m, bn) and is_known_variant(m, resolve_pkg(m, bn) + "__" + f):
-                return EVar(resolve_pkg(m, bn) + "__" + f)
-            return EField(mangle_expr(m, b), f)
-        EIndex(b, ix):
-            return EIndex(mangle_expr(m, b), mangle_expr(m, ix))
-        EArrLit(es):
-            return EArrLit(mangle_args(m, es))
-        EArrEmpty(ty):
-            return EArrEmpty(mangle_type(m, ty))
-        EMapEmpty(k, v):
-            return EMapEmpty(k, v)
-        EMapLit(ks, vs):
-            return EMapLit(mangle_args(m, ks), mangle_args(m, vs))
-        ETuple(es):
-            return ETuple(mangle_args(m, es))
-        ESlice(b, lo, hi):
-            return ESlice(mangle_expr(m, b), mangle_expr(m, lo), mangle_expr(m, hi))
-        ELambda(id, ps, pts, ret, body, cn, ct):
-            return ELambda(id, ps, mangle_types(m, pts), mangle_type(m, ret), mangle_expr(m, body), cn, ct)
-        ECallV(callee, cargs):
-            return ECallV(mangle_expr(m, callee), mangle_args(m, cargs))
-        EAddr(x):
-            return EAddr(mangle_expr(m, x))
-        ESpawn(id, nm, a):
-            return ESpawn(id, mangle_ref(m, nm), mangle_args(m, a))
+                return EVar(resolve_pkg(m, bn) + "__" + f, _el)
+            return EField(mangle_expr(m, b), f, _el)
+        EIndex(b, ix, _el):
+            return EIndex(mangle_expr(m, b), mangle_expr(m, ix), _el)
+        EArrLit(es, _el):
+            return EArrLit(mangle_args(m, es), _el)
+        EArrEmpty(ty, _el):
+            return EArrEmpty(mangle_type(m, ty), _el)
+        EMapEmpty(k, v, _el):
+            return EMapEmpty(k, v, _el)
+        EMapLit(ks, vs, _el):
+            return EMapLit(mangle_args(m, ks), mangle_args(m, vs), _el)
+        ETuple(es, _el):
+            return ETuple(mangle_args(m, es), _el)
+        ESlice(b, lo, hi, _el):
+            return ESlice(mangle_expr(m, b), mangle_expr(m, lo), mangle_expr(m, hi), _el)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return ELambda(id, ps, mangle_types(m, pts), mangle_type(m, ret), mangle_expr(m, body), cn, ct, _el)
+        ECallV(callee, cargs, _el):
+            return ECallV(mangle_expr(m, callee), mangle_args(m, cargs), _el)
+        EAddr(x, _el):
+            return EAddr(mangle_expr(m, x), _el)
+        ESpawn(id, nm, a, _el):
+            return ESpawn(id, mangle_ref(m, nm), mangle_args(m, a), _el)
 
 fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a new binding shadows a package name)
     nl := []string
@@ -2498,88 +2510,88 @@ fn sig_functype(dc: Decls, name: string) -> string:
 # method would need its prefix threaded — deferred, like hierc's scope.)
 fn efield_fname(e: Expr) -> string:               # field name if e is EField, else ""
     match e:
-        EField(b, f):
+        EField(b, f, _el):
             return f
-        EInt(s):
+        EInt(s, _el):
             return ""
-        EBool(s):
+        EBool(s, _el):
             return ""
-        EChar(s):
+        EChar(s, _el):
             return ""
-        EFloat(s):
+        EFloat(s, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EVar(s):
+        EVar(s, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return ""
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        EAddr(x):
+        EAddr(x, _el):
             return ""
-        ELambda(id, ps, pts, r, bx, cn, ct):
+        ELambda(id, ps, pts, r, bx, cn, ct, _el):
             return ""
-        ECallV(c, a):
+        ECallV(c, a, _el):
             return ""
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return ""
 
 fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller guards via efield_fname)
     match e:
-        EField(b, f):
+        EField(b, f, _el):
             return b
-        EInt(s):
+        EInt(s, _el):
             return e
-        EBool(s):
+        EBool(s, _el):
             return e
-        EChar(s):
+        EChar(s, _el):
             return e
-        EFloat(s):
+        EFloat(s, _el):
             return e
-        EStr(s):
+        EStr(s, _el):
             return e
-        EVar(s):
+        EVar(s, _el):
             return e
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return e
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return e
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             return e
-        EArrLit(es):
+        EArrLit(es, _el):
             return e
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return e
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return e
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return e
-        ETuple(es):
+        ETuple(es, _el):
             return e
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return e
-        EAddr(x):
+        EAddr(x, _el):
             return e
-        ELambda(id, ps, pts, r, bx, cn, ct):
+        ELambda(id, ps, pts, r, bx, cn, ct, _el):
             return e
-        ECallV(c, a):
+        ECallV(c, a, _el):
             return e
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return e
 
 fn struct_fn_field(dc: Decls, sname: string, fname: string) -> bool:   # sname has a fn-typed field fname?
@@ -2618,17 +2630,17 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
 
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
-        EInt(t):
+        EInt(t, _el):
             return "int"
-        EBool(t):
+        EBool(t, _el):
             return "bool"
-        EChar(t):
+        EChar(t, _el):
             return "char"
-        EFloat(f):
+        EFloat(f, _el):
             return "float"
-        EStr(s):
+        EStr(s, _el):
             return "str"
-        EVar(name):
+        EVar(name, _el):
             if name == "None":
                 return "Option()"
             if is_variant(dc, ctx, name):            # bare no-payload variant (e.g. Green)
@@ -2637,9 +2649,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ft := sig_functype(dc, name)
                 if ft != "":
                     return ft
+                die_at(_el, "type: unknown variable '" + name + "'")
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(dc, ctx, vt)
-        EField(base, fld):
+        EField(base, fld, _el):
             bt := type_of(base, names, types, dc, ctx)
             if is_tuple(bt):                      # tuple index t.0 -> the i-th part type
                 # parse the FULL index and range-check it (fail closed): the old
@@ -2657,7 +2670,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     die("type: tuple index ." + fld + " out of range (the tuple has " + str(len(parts)) + " elements)")
                 return parts[tidx]
             return resolve_nt(dc, ctx, field_type(dc, ctx, bt, fld))
-        EIndex(base, idx):
+        EIndex(base, idx, _el):
             bt := type_of(base, names, types, dc, ctx)
             if bt == "str":
                 return "int"                      # s[i] is the byte value (ord)
@@ -2666,19 +2679,19 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if is_map(bt):                        # m[k] place -> the value type (#2)
                 return map_val(bt)
             return substr(bt, 1, len(bt) - 1)     # else array element type
-        EArrLit(elems):
+        EArrLit(elems, _el):
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
-        EArrEmpty(ety):
+        EArrEmpty(ety, _el):
             if ety == "":                         # bare []: ground_pre had no destination type for it
                 die("type: cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")
             if is_soa(ety):                       # `soa []Struct` carries the full soa type
                 return ety
             return "[" + ety + "]"
-        EMapEmpty(kty, vty):
+        EMapEmpty(kty, vty, _el):
             return "{" + kty + ":" + vty + "}"
-        EMapLit(keys, vals):
+        EMapLit(keys, vals, _el):
             return "{" + type_of(keys[0], names, types, dc, ctx) + ":" + type_of(vals[0], names, types, dc, ctx) + "}"
-        ETuple(elems):
+        ETuple(elems, _el):
             out := "("
             j := 0
             for j < len(elems):
@@ -2687,11 +2700,11 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 out = out + type_of(elems[j], names, types, dc, ctx)
                 j = j + 1
             return out + ")"
-        ESlice(base, lo, hi):
+        ESlice(base, lo, hi, _el):
             return type_of(base, names, types, dc, ctx)   # same array type
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return mk_functype(pts, ret)
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             cfn := efield_fname(callee)           # t.wait() / ch.send(v) ...: a task/chan "method" (CC)
             if is_conc_method(cfn):
                 cbt := type_of(efield_base(callee), names, types, dc, ctx)
@@ -2705,11 +2718,11 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if mn != "":                          # UFCS method: its return type
                 return resolve_nt(dc, ctx, sig_ret(dc, ctx, mn))
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
-        ESpawn(id, nm, sargs):
+        ESpawn(id, nm, sargs, _el):
             return "Task(" + resolve_nt(dc, ctx, sig_ret(dc, ctx, nm)) + ")"
-        EAddr(inner):
+        EAddr(inner, _el):
             return type_of(inner, names, types, dc, ctx)
-        EBin(op, l, r):
+        EBin(op, l, r, _el):
             lt := type_of(l, names, types, dc, ctx)
             rt := type_of(r, names, types, dc, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
@@ -2723,10 +2736,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if is_cmp(op) or op == "&&" or op == "||":
                 return "bool"                     # comparisons / and / or -> bool
             return "int"                          # %, <<, >>, &, |, ^ -> int
-        ECall(name, args):
+        ECall(name, args, _el):
             di := find(name, ".")
             if di >= 0 and has_str(names, substr(name, 0, di)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
-                return type_of(ECallV(EField(EVar(substr(name, 0, di)), substr(name, di + 1, len(name))), args), names, types, dc, ctx)
+                return type_of(ECallV(EField(EVar(substr(name, 0, di), _el), substr(name, di + 1, len(name)), _el), args, _el), names, types, dc, ctx)
             if has_str(names, name):              # indirect call through a function-typed variable
                 vt := base_ty(var_type(names, types, name))
                 if is_func(vt):
@@ -2758,7 +2771,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Result(" + type_of(args[0], names, types, dc, ctx) + ",)"
             if name == "Err":
                 return "Result(," + type_of(args[0], names, types, dc, ctx) + ")"
-            return resolve_nt(dc, ctx, sig_ret(dc, ctx, name))
+            return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
 
 fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
@@ -2777,48 +2790,48 @@ fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx)
 # inout_container_param exactly so call arity matches the callee signature.
 fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match arg:
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return ""
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return ""
-        EAddr(inner):
+        EAddr(inner, _el):
             b := base_ty(type_of(inner, names, types, dc, ctx))
             if resolve_nt(dc, ctx, b) == "str" or is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b)):   # mirrors inout_container_param
                 return ", " + owner_arena_of(inner, names, types, dc, ctx)
             return ""
-        EVar(n):
+        EVar(n, _el):
             return ""
-        EInt(t):
+        EInt(t, _el):
             return ""
-        EBool(t):
+        EBool(t, _el):
             return ""
-        EChar(t):
+        EChar(t, _el):
             return ""
-        EFloat(f):
+        EFloat(f, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return ""
-        EField(b, f):
+        EField(b, f, _el):
             return ""
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return ""
 
 # Like gen_args, but after each inout-container arg, interleave its home arena
@@ -2883,49 +2896,49 @@ fn soa_field_index(dc: Decls, ctx: Ctx, sname: string, fld: string) -> int:
 # (Hier has no wildcard match, so every Expr arm is listed.)
 fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string], types: [string]) -> string:
     match base:
-        EIndex(sb, ix):
+        EIndex(sb, ix, _el):
             sbt := type_of(sb, names, types, dc, ctx)
             if is_soa(sbt):
                 fi := soa_field_index(dc, ctx, soa_struct(sbt), fld)
                 return "(" + gen_expr(sb, names, types, dc, ctx) + ").f" + str(fi) + "[" + gen_expr(ix, names, types, dc, ctx) + "]"
             return ""
-        EInt(t):
+        EInt(t, _el):
             return ""
-        EBool(t):
+        EBool(t, _el):
             return ""
-        EChar(t):
+        EChar(t, _el):
             return ""
-        EFloat(f):
+        EFloat(f, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EVar(n):
+        EVar(n, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return ""
-        EField(b, f):
+        EField(b, f, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return ""
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return ""
-        EAddr(x):
+        EAddr(x, _el):
             return ""
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return ""
 
 # gather a whole struct value from the soa's field buffers at index `ix`.
@@ -3106,17 +3119,17 @@ fn teq(dc: Decls, ctx: Ctx, ty: string) -> string:
 
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
-        EInt(t):
+        EInt(t, _el):
             return t
-        EBool(t):
+        EBool(t, _el):
             return t
-        EChar(t):
+        EChar(t, _el):
             return t
-        EFloat(f):
+        EFloat(f, _el):
             return f
-        EStr(s):                                    # length-headered, interned once per occurrence (cached static)
+        EStr(s, _el):                                    # length-headered, interned once per occurrence (cached static)
             return "({ static char* _l = 0; if (!_l) _l = hi_intern(\"" + s + "\"); _l; })"
-        EVar(name):
+        EVar(name, _el):
             if name == "None":
                 return "hnone()"
             if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
@@ -3129,14 +3142,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + un(name) + ")"
             return un(name)
-        EField(base, fld):
+        EField(base, fld, _el):
             sf := soa_field_access(dc, ctx, base, fld, names, types)   # soa[i].f -> (soa).fN[i]
             if sf != "":
                 return sf
             if is_tuple(type_of(base, names, types, dc, ctx)):   # tuple index t.0 -> t.f0
                 return gen_expr(base, names, types, dc, ctx) + ".f" + fld
             return gen_expr(base, names, types, dc, ctx) + "." + uf(fld)
-        EIndex(base, idx):
+        EIndex(base, idx, _el):
             bt := type_of(base, names, types, dc, ctx)
             if bt == "str":                                 # s[i] -> the byte as an int, bounds-checked via the length header
                 return "hi_sidx(" + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(idx, names, types, dc, ctx) + ")"
@@ -3151,19 +3164,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # lvalue instead, so reaching gen_expr here is always a read.
                 return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
-        EArrLit(elems):
+        EArrLit(elems, _el):
             et := type_of(elems[0], names, types, dc, ctx)
             eo := "0"                              # deep-copied element temporaries
             if elem_deepcopy(dc, ctx, et):             # live in the array's arena (no leak);
                 eo = ctx.owner                     # _from re-copies them into `ar` anyway
             return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(dc, ctx, et) + "[]){" + gen_store_args_owner(elems, names, types, dc, ctx, eo) + "}, " + str(len(elems)) + ")"
-        EArrEmpty(ety):
+        EArrEmpty(ety, _el):
             if is_soa(ety):                       # empty soa: zeroed descriptor
                 return "(" + cty(dc, ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
-        EMapEmpty(kty, vty):                      # value type must be mangled to match the family ([int] -> arr_int)
+        EMapEmpty(kty, vty, _el):                      # value type must be mangled to match the family ([int] -> arr_int)
             return "map_" + kty + "_" + mangle(vty) + "_new()"
-        EMapLit(keys, vals):                      # chain of _set onto a fresh map
+        EMapLit(keys, vals, _el):                      # chain of _set onto a fresh map
             mt := type_of(e, names, types, dc, ctx)
             f := mfam(mt)
             out := f + "_new()"
@@ -3175,7 +3188,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 out = f + "_set(" + ctx.owner + ", " + out + ", " + krt(dc, ctx, mt, gen_expr(keys[j], names, types, dc, ctx)) + ", " + gen_rhs(vals[j], names, types, dc, ctx) + ")"
                 j = j + 1
             return out
-        ETuple(elems):                            # a tuple owns its fields: deep-copy place elements
+        ETuple(elems, _el):                            # a tuple owns its fields: deep-copy place elements
             out := "(Tup_" + tup_suffix(type_of(e, names, types, dc, ctx)) + "){"
             j := 0
             for j < len(elems):
@@ -3184,14 +3197,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 out = out + gen_rhs(elems[j], names, types, dc, ctx)   # fields inherit the ambient arena (Tup_*_copy re-homes them on any cross-arena move; enum/box/field-store set owner 0 first to keep stored tuples immortal)
                 j = j + 1
             return out + "}"
-        ESlice(base, lo, hi):
+        ESlice(base, lo, hi, _el):
             bt := type_of(base, names, types, dc, ctx)
             if bt == "str":                       # s[a:b] -> a fresh substring
                 return "substr(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
             if is_soa(bt):
                 return gen_soa_slice(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(lo, names, types, dc, ctx), gen_expr(hi, names, types, dc, ctx))
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             suffix := func_suffix(mk_functype(pts, ret))
             if len(cn) == 0:
                 return "(Fn_" + suffix + "){0, " + un("__lam" + str(id)) + "__clo, 0}"
@@ -3204,14 +3217,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             for j < len(cn):
                 if j > 0:
                     env = env + ", "
-                cv := gen_expr(EVar(cn[j]), names, types, dc, ctx)
+                cv := gen_expr(EVar(cn[j], _el), names, types, dc, ctx)
                 if elem_deepcopy(dc, ctx, ct[j]):                          # heap capture: own a deep copy in the env arena (value semantics)
                     cv = cp_field(dc, ctx, ct[j], ctx.owner, cv)
                 env = env + cv
                 j = j + 1
             env = env + "}"
             return "(Fn_" + suffix + "){hbox(" + ctx.owner + ", sizeof(Env_" + str(id) + "), " + env + "), " + un("__lam" + str(id)) + "__clo, Env_" + str(id) + "_copy}"
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             cfn := efield_fname(callee)           # t.wait() / ch.send(v) / ch.recv() / ch.close() (CC):
             if is_conc_method(cfn):               # rewrite to the free-call form and recurse
                 cbt := type_of(efield_base(callee), names, types, dc, ctx)
@@ -3222,7 +3235,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     for cci < len(cargs):
                         push(nca, cargs[cci])
                         cci = cci + 1
-                    return gen_expr(ECall(cfn, nca), names, types, dc, ctx)
+                    return gen_expr(ECall(cfn, nca, _el), names, types, dc, ctx)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method call: foo(recv, args)
                 allargs := []Expr
@@ -3237,9 +3250,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(cargs) > 0:
                 code = code + ", " + gen_call_args(cargs, names, types, dc, ctx)
             return code + "); })"
-        EAddr(inner):                             # &(*p) == p, so passing an inout param onward works
+        EAddr(inner, _el):                             # &(*p) == p, so passing an inout param onward works
             return "&" + gen_expr(inner, names, types, dc, ctx)
-        EBin(op, l, r):
+        EBin(op, l, r, _el):
             lt := type_of(l, names, types, dc, ctx)
             if op == "+" and type_of(e, names, types, dc, ctx) == "str":
                 if type_of(r, names, types, dc, ctx) == "char":   # str + char: append one byte
@@ -3256,10 +3269,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "(!(" + eqx + "))"
                 return eqx
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
-        ECall(name, args):
+        ECall(name, args, _el):
             cdi := find(name, ".")
             if cdi >= 0 and has_str(names, substr(name, 0, cdi)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
-                return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi)), substr(name, cdi + 1, len(name))), args), names, types, dc, ctx)
+                return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi), _el), substr(name, cdi + 1, len(name)), _el), args, _el), names, types, dc, ctx)
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
@@ -3422,7 +3435,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
-        ESpawn(id, nm, sargs):
+        ESpawn(id, nm, sargs, _el):
             # CC-1 spawn site: copy every argument into the task's private root
             # arena (after this, spawner and task share zero bytes), then start
             # the thread on the per-site trampoline emitted by the driver.
@@ -3439,45 +3452,45 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
 # place rooted in a variable. Used to find which arena a container lives in.
 fn root_var(e: Expr) -> string:
     match e:
-        EVar(n):
+        EVar(n, _el):
             return n
-        EField(b, f):
+        EField(b, f, _el):
             return root_var(b)
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return root_var(b)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return ""
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return ""
-        EAddr(x):
+        EAddr(x, _el):
             return root_var(x)
-        EInt(t):
+        EInt(t, _el):
             return ""
-        EBool(t):
+        EBool(t, _el):
             return ""
-        EChar(t):
+        EChar(t, _el):
             return ""
-        EFloat(f):
+        EFloat(f, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        ECall(n, a):
+        ECall(n, a, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return ""
 
 # The arena a container place lives in: an inout-param container is the caller's
@@ -3648,55 +3661,55 @@ fn gen_map_slotptr(b: Expr, i: Expr, bt: string, names: [string], types: [string
 # leaf (a variable) and non-map indices/fields are already real lvalues.
 fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match lv:
-        EIndex(b, i):
+        EIndex(b, i, _el):
             bt := type_of(b, names, types, dc, ctx)
             if is_map(bt):
                 return gen_map_slotptr(b, i, bt, names, types, dc, ctx)
             if is_soa(bt):                          # soa element place: handled via field access (soa[i].f); bare soa[i] target is not a thing
                 return gen_expr(lv, names, types, dc, ctx)
             return gen_place(b, names, types, dc, ctx) + ".data[" + gen_expr(i, names, types, dc, ctx) + "]"
-        EField(b, f):
+        EField(b, f, _el):
             sf := soa_field_access(dc, ctx, b, f, names, types)   # soa[i].f -> (soa).fN[i], a real lvalue
             if sf != "":
                 return sf
             if is_tuple(type_of(b, names, types, dc, ctx)):
                 return gen_place(b, names, types, dc, ctx) + ".f" + f
             return gen_place(b, names, types, dc, ctx) + "." + uf(f)
-        EVar(n):
+        EVar(n, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EInt(t):
+        EInt(t, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EBool(t):
+        EBool(t, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EChar(t):
+        EChar(t, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EFloat(f):
+        EFloat(f, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EStr(s):
+        EStr(s, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ECall(nm, ar):
+        ECall(nm, ar, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EArrLit(es):
+        EArrLit(es, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EArrEmpty(ty):
+        EArrEmpty(ty, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ETuple(es):
+        ETuple(es, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        EAddr(inr):
+        EAddr(inr, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return gen_expr(lv, names, types, dc, ctx)
 
 # Is `e` a map-place `m[k]` (an EIndex whose base is a map)? Such a place's slot
@@ -3705,45 +3718,45 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
 # map literal's chained `_set` copies leak their abandoned intermediate tables.
 fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
     match e:
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return is_map(type_of(b, names, types, dc, ctx))
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EVar(n):
+        EVar(n, _el):
             return false
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return false
-        ECall(nm, ar):
+        ECall(nm, ar, _el):
             return false
-        EField(b, f):
+        EField(b, f, _el):
             return false
-        EArrLit(es):
+        EArrLit(es, _el):
             return false
-        EArrEmpty(ty):
+        EArrEmpty(ty, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return false
-        ETuple(es):
+        ETuple(es, _el):
             return false
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return false
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return false
-        EAddr(inr):
+        EAddr(inr, _el):
             return false
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return false
 
 # Is `e` an index into a STRING array (a heap-element slot)? Overwriting such a
@@ -3751,91 +3764,91 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
 # RSS tracks the live window not the whole stream. Mirrors hierc's hier_arr_str_set.
 fn is_str_arr_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
     match e:
-        EIndex(b, i):
+        EIndex(b, i, _el):
             bt := type_of(b, names, types, dc, ctx)
             return is_array(bt) and elem_ty(bt) == "str"
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EVar(n):
+        EVar(n, _el):
             return false
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return false
-        ECall(nm, ar):
+        ECall(nm, ar, _el):
             return false
-        EField(b, f):
+        EField(b, f, _el):
             return false
-        EArrLit(es):
+        EArrLit(es, _el):
             return false
-        EArrEmpty(ty):
+        EArrEmpty(ty, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return false
-        ETuple(es):
+        ETuple(es, _el):
             return false
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return false
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return false
-        EAddr(inr):
+        EAddr(inr, _el):
             return false
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return false
 
 # Is `e` an existing storage location (vs a fresh value)? Assigning FROM a
 # place needs a value-semantic deep copy so the two bindings stay independent.
 fn is_place(e: Expr) -> bool:
     match e:
-        EVar(n):
+        EVar(n, _el):
             return true
-        EField(b, f):
+        EField(b, f, _el):
             return true
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return true
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return false
-        ECall(n, a):
+        ECall(n, a, _el):
             return false
-        EArrLit(es):
+        EArrLit(es, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return false
-        ETuple(es):
+        ETuple(es, _el):
             return false
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return true                          # a slice aliases its source; binding it copies
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return false
-        EAddr(inner):
+        EAddr(inner, _el):
             return false
-        ESpawn(id, nm, a):
+        ESpawn(id, nm, a, _el):
             return false
 
 # A slice expression already MATERIALIZES an owning copy in ctx.owner
@@ -3844,88 +3857,88 @@ fn is_place(e: Expr) -> bool:
 # and leaks the intermediate. gen_rhs returns the slice code directly.
 fn is_eslice(e: Expr) -> bool:
     match e:
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return true
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EVar(n):
+        EVar(n, _el):
             return false
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return false
-        ECall(n, a):
+        ECall(n, a, _el):
             return false
-        EField(b, f):
+        EField(b, f, _el):
             return false
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return false
-        EArrLit(es):
+        EArrLit(es, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return false
-        ETuple(es):
+        ETuple(es, _el):
             return false
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return false
-        EAddr(inner):
+        EAddr(inner, _el):
             return false
-        ESpawn(sid, nm, a):
+        ESpawn(sid, nm, a, _el):
             return false
 
 fn is_evar(e: Expr, name: string) -> bool:
     match e:
-        EVar(n):
+        EVar(n, _el):
             return n == name
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return false
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return false
-        EField(b, f):
+        EField(b, f, _el):
             return false
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return false
-        EArrLit(es):
+        EArrLit(es, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return false
-        ETuple(es):
+        ETuple(es, _el):
             return false
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return false
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return false
-        EAddr(x):
+        EAddr(x, _el):
             return false
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return false
 
 # Deep-copy a C expression `code` of Hier type `ty` (value semantics for a bind
@@ -3954,45 +3967,45 @@ fn cp_typed(dc: Decls, ctx: Ctx, ty: string, code: string) -> string:
 # fixpoint differential catches any over-aggressive move.
 fn evar_name(e: Expr) -> string:
     match e:
-        EVar(n):
+        EVar(n, _el):
             return n
-        EInt(t):
+        EInt(t, _el):
             return ""
-        EBool(t):
+        EBool(t, _el):
             return ""
-        EChar(t):
+        EChar(t, _el):
             return ""
-        EFloat(f):
+        EFloat(f, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return ""
-        EField(b, f):
+        EField(b, f, _el):
             return ""
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return ""
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return ""
-        EAddr(x):
+        EAddr(x, _el):
             return ""
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return ""
 
 fn count_str_occ(xs: [string], s: string) -> int:
@@ -4013,47 +4026,47 @@ fn count_str_occ(xs: [string], s: string) -> int:
 # defined/shadowed in the body, and (while) the condition does not read it.
 fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), else ""
     match e:
-        ECall(nm, a):
+        ECall(nm, a, _el):
             if nm == "push" and len(a) >= 1:
                 return evar_name(a[0])
             return ""
-        EVar(n):
+        EVar(n, _el):
             return ""
-        EInt(t):
+        EInt(t, _el):
             return ""
-        EBool(t):
+        EBool(t, _el):
             return ""
-        EChar(t):
+        EChar(t, _el):
             return ""
-        EFloat(f):
+        EFloat(f, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return ""
-        EField(b, f):
+        EField(b, f, _el):
             return ""
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return ""
-        EArrLit(es):
+        EArrLit(es, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return ""
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return ""
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return ""
-        EAddr(x):
+        EAddr(x, _el):
             return ""
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return ""
 
 fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
@@ -4283,71 +4296,71 @@ fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: C
 # move candidate. (Decl/loop-var/assign-target NAMES are writes — not collected.)
 fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bool):
     match e:
-        EVar(n):
+        EVar(n, _el):
             push(reads, n)
             if inloop:
                 push(loopreads, n)
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             rd_expr(&reads, &loopreads, l, inloop)
             rd_expr(&reads, &loopreads, r, inloop)
-        ECall(nm, args):
+        ECall(nm, args, _el):
             j := 0
             for j < len(args):
                 rd_expr(&reads, &loopreads, args[j], inloop)
                 j = j + 1
-        EField(b, f):
+        EField(b, f, _el):
             rd_expr(&reads, &loopreads, b, inloop)
-        EIndex(b, idx):
+        EIndex(b, idx, _el):
             rd_expr(&reads, &loopreads, b, inloop)
             rd_expr(&reads, &loopreads, idx, inloop)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             rd_expr(&reads, &loopreads, b, inloop)
             rd_expr(&reads, &loopreads, lo, inloop)
             rd_expr(&reads, &loopreads, hi, inloop)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             j := 0
             for j < len(cn):
                 push(reads, cn[j])
                 j = j + 1
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             rd_expr(&reads, &loopreads, callee, inloop)
             j := 0
             for j < len(cargs):
                 rd_expr(&reads, &loopreads, cargs[j], inloop)
                 j = j + 1
-        EAddr(x):
+        EAddr(x, _el):
             rd_expr(&reads, &loopreads, x, inloop)
-        EArrLit(es):
+        EArrLit(es, _el):
             j := 0
             for j < len(es):
                 rd_expr(&reads, &loopreads, es[j], inloop)
                 j = j + 1
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             j := 0
             for j < len(vs):
                 rd_expr(&reads, &loopreads, ks[j], inloop)
                 rd_expr(&reads, &loopreads, vs[j], inloop)
                 j = j + 1
-        ETuple(es):
+        ETuple(es, _el):
             j := 0
             for j < len(es):
                 rd_expr(&reads, &loopreads, es[j], inloop)
                 j = j + 1
-        EInt(t):
+        EInt(t, _el):
             j := 0
-        EBool(t):
+        EBool(t, _el):
             j := 0
-        EChar(t):
+        EChar(t, _el):
             j := 0
-        EFloat(f):
+        EFloat(f, _el):
             j := 0
-        EStr(s):
+        EStr(s, _el):
             j := 0
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             j := 0
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             j := 0
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             j := 0                                # spawn args read as if in a loop: never move-eligible (the
             for j < len(sa):                      # site always deep-copies into the task root -- keep it that way)
                 rd_expr(&reads, &loopreads, sa[j], true)
@@ -4506,45 +4519,45 @@ fn is_scalar_ty(dc: Decls, ctx: Ctx, ty: string) -> bool:
 # arena — this keeps the hot loop-counter assignments allocation-free.
 fn expr_has_call(e: Expr) -> bool:
     match e:
-        ECall(n, a):
+        ECall(n, a, _el):
             return true
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return expr_has_call(l) or expr_has_call(r)
-        EField(b, f):
+        EField(b, f, _el):
             return expr_has_call(b)
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return expr_has_call(b) or expr_has_call(i)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return expr_has_call(b) or expr_has_call(lo) or expr_has_call(hi)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             return true
-        EAddr(x):
+        EAddr(x, _el):
             return expr_has_call(x)
-        EArrLit(es):
+        EArrLit(es, _el):
             return any_has_call(es)
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return any_has_call(ks) or any_has_call(vs)
-        ETuple(es):
+        ETuple(es, _el):
             return any_has_call(es)
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EVar(n):
+        EVar(n, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return true                           # a spawn site allocates (task root + arg copies)
 
 fn any_has_call(es: [Expr]) -> bool:
@@ -4561,26 +4574,26 @@ fn any_has_call(es: [Expr]) -> bool:
 # it. Mirrors expr_has_call's exhaustive structure.
 fn expr_refs(e: Expr, name: string) -> bool:
     match e:
-        EVar(n):
+        EVar(n, _el):
             return n == name
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return expr_refs(l, name) or expr_refs(r, name)
-        ECall(nm, a):
+        ECall(nm, a, _el):
             return any_refs(a, name)
-        EField(b, f):
+        EField(b, f, _el):
             return expr_refs(b, name)
-        EIndex(b, i):
+        EIndex(b, i, _el):
             return expr_refs(b, name) or expr_refs(i, name)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return expr_refs(b, name) or expr_refs(lo, name) or expr_refs(hi, name)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             j := 0
             for j < len(cn):
                 if cn[j] == name:
                     return true
                 j = j + 1
             return false
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             if expr_refs(callee, name):
                 return true
             j := 0
@@ -4589,29 +4602,29 @@ fn expr_refs(e: Expr, name: string) -> bool:
                     return true
                 j = j + 1
             return false
-        EAddr(x):
+        EAddr(x, _el):
             return expr_refs(x, name)
-        EArrLit(es):
+        EArrLit(es, _el):
             return any_refs(es, name)
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return any_refs(ks, name) or any_refs(vs, name)
-        ETuple(es):
+        ETuple(es, _el):
             return any_refs(es, name)
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(f):
+        EFloat(f, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return false
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return any_refs(sa, name)
 
 fn any_refs(es: [Expr], name: string) -> bool:
@@ -4668,6 +4681,7 @@ fn conc_loop_finals(names: [string], ctx: Ctx) -> string:   # finals since the i
     return conc_finals(names, ctx.bbases[ctx.loopdepth - 1])
 
 fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
+    _el := 0
     ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
     match s:
         SDecl(name, e, _sl):
@@ -4675,7 +4689,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
                 push(types, ty)
-                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked)
+                aar := owner_arena_of(EVar(name, _el), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked)
                 code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
@@ -4700,11 +4714,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(types, "!")
             return code
         SAssign(name, e, _sl):
-            lhs := gen_expr(EVar(name), names, types, dc, ctx)
-            if is_scalar_ty(dc, ctx, type_of(EVar(name), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
+            lhs := gen_expr(EVar(name, _el), names, types, dc, ctx)
+            if is_scalar_ty(dc, ctx, type_of(EVar(name, _el), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
                 return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
             if has_str(ctx.saccums, name):        # string accumulator
-                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # the var's home arena (consistent with its decl)
+                aar := owner_arena_of(EVar(name, _el), names, types, dc, ctx)   # the var's home arena (consistent with its decl)
                 pieces := sacc_pieces(e, name)
                 # multi-piece in-place is sound only if no piece names the
                 # accumulator: the first append grows its buffer, so a later
@@ -4723,7 +4737,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
                 return "    " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + un(name) + " = strlen(" + un(name) + ");\n    _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
-            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
+            deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name, _el), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             # liveness-driven recycle (ANY array RHS: call / slice / copybind / literal).
             # a's old buffer is dead and -- value semantics -- uniquely owned, GATED on
             # NOT movable so `name` is never a move source whose buffer is shared via
@@ -4732,8 +4746,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             # `.data != .data` guard. Eval the RHS into a { }-scoped temp FIRST (it may
             # read the old buffer), THEN recycle, THEN assign. is_array excludes maps, so
             # the map_set in-place put below is unaffected.
-            rnty := type_of(EVar(name), names, types, dc, ctx)
-            rown := owner_arena_of(EVar(name), names, types, dc, ctx)
+            rnty := type_of(EVar(name, _el), names, types, dc, ctx)
+            rown := owner_arena_of(EVar(name, _el), names, types, dc, ctx)
             if is_array(rnty) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
                 return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data && " + lhs + ".data != _r.data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
@@ -4743,47 +4757,47 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 # those we fall through to `deflt` (pure map_set = deep-copy+put),
                 # matching the C compiler (src/hierc.c:3556 drops non-inout params
                 # from accums). Locals and inout map params still grow in place.
-                ECall(fname, args):
+                ECall(fname, args, _el):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
-                        return "    " + mfam(type_of(EVar(name), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name), names, types, dc, ctx) + ", &" + lhs + ", " + krt(dc, ctx, type_of(EVar(name), names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
+                        return "    " + mfam(type_of(EVar(name, _el), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name, _el), names, types, dc, ctx) + ", &" + lhs + ", " + krt(dc, ctx, type_of(EVar(name, _el), names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
                     return deflt
-                EInt(t):
+                EInt(t, _el):
                     return deflt
-                EBool(t):
+                EBool(t, _el):
                     return deflt
-                EChar(t):
+                EChar(t, _el):
                     return deflt
-                EFloat(f):
+                EFloat(f, _el):
                     return deflt
-                EStr(s):
+                EStr(s, _el):
                     return deflt
-                EVar(n):
+                EVar(n, _el):
                     return deflt
-                EBin(o, l, r):
+                EBin(o, l, r, _el):
                     return deflt
-                EField(b, f):
+                EField(b, f, _el):
                     return deflt
-                EIndex(b, i):
+                EIndex(b, i, _el):
                     return deflt
-                EArrLit(es):
+                EArrLit(es, _el):
                     return deflt
-                EArrEmpty(t):
+                EArrEmpty(t, _el):
                     return deflt
-                EMapEmpty(k, v):
+                EMapEmpty(k, v, _el):
                     return deflt
-                EMapLit(ks, vs):
+                EMapLit(ks, vs, _el):
                     return deflt
-                ETuple(es):
+                ETuple(es, _el):
                     return deflt
-                ESlice(b, lo, hi):
+                ESlice(b, lo, hi, _el):
                     return deflt
-                ECallV(callee, cargs):
+                ECallV(callee, cargs, _el):
                     return deflt
-                EAddr(x):
+                EAddr(x, _el):
                     return deflt
-                ELambda(id, ps, pts, ret, body, cn, ct):
+                ELambda(id, ps, pts, ret, body, cn, ct, _el):
                     return deflt
-                ESpawn(sid, snm, sa):
+                ESpawn(sid, snm, sa, _el):
                     return deflt
         SFieldAssign(lv, rhs, _sl):
             # storing into a (malloc) struct field / array element: the value must
@@ -4852,7 +4866,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars
                 push(names, name)
                 push(types, ty)
-                aar := owner_arena_of(EVar(name), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked) — mirrors the SDecl saccum path; scopy(0,...) here was a malloc leak
+                aar := owner_arena_of(EVar(name, _el), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked) — mirrors the SDecl saccum path; scopy(0,...) here was a malloc leak
                 code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement
@@ -5018,7 +5032,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             out = out + "        _sa->t = _tk;\n        _sa->a0 = _plo + (_phi - _plo) * _pc / _pk;\n        _sa->a1 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n"
             ck := 0
             for ck < len(pf.capnames):
-                out = out + "        _sa->a" + str(ck + 2) + " = " + cp_field(dc, ctx, pf.captypes[ck], "(&_tk->root)", gen_expr(EVar(pf.capnames[ck]), names, types, dc, ctx)) + ";\n"
+                out = out + "        _sa->a" + str(ck + 2) + " = " + cp_field(dc, ctx, pf.captypes[ck], "(&_tk->root)", gen_expr(EVar(pf.capnames[ck], _el), names, types, dc, ctx)) + ";\n"
                 ck = ck + 1
             out = out + "        hier_task_start(_tk, hier_spawn_" + sid + ", _sa);\n        _pts[_pc] = _tk;\n    }\n"
             out = out + "    for (long _pc = 0; _pc < _pk; _pc++) {\n        hier_task_join(_pts[_pc]);\n        " + rct + "_pp = *(" + rct + "*)_pts[_pc]->ret;\n        hier_task_free(_pts[_pc]);\n"
@@ -5137,49 +5151,49 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
 # but `(a - b) + c` -> [(a-b), c].
 fn plus_flatten(e: Expr, out: inout [Expr]):
     match e:
-        EBin(op, l, r):
+        EBin(op, l, r, _el):
             if op == "+":
                 plus_flatten(l, &out)
                 push(out, r)
             else:
                 push(out, e)
-        EInt(t):
+        EInt(t, _el):
             push(out, e)
-        EBool(t):
+        EBool(t, _el):
             push(out, e)
-        EChar(t):
+        EChar(t, _el):
             push(out, e)
-        EFloat(f):
+        EFloat(f, _el):
             push(out, e)
-        EStr(s):
+        EStr(s, _el):
             push(out, e)
-        EVar(n):
+        EVar(n, _el):
             push(out, e)
-        ECall(nm, args):
+        ECall(nm, args, _el):
             push(out, e)
-        EField(b, fl):
+        EField(b, fl, _el):
             push(out, e)
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             push(out, e)
-        EArrLit(es):
+        EArrLit(es, _el):
             push(out, e)
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             push(out, e)
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             push(out, e)
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             push(out, e)
-        ETuple(es):
+        ETuple(es, _el):
             push(out, e)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             push(out, e)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             push(out, e)
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             push(out, e)
-        EAddr(x):
+        EAddr(x, _el):
             push(out, e)
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             push(out, e)
 
 # If `e` is `name + p1 + p2 + ...` (an all-'+' chain whose leftmost leaf is the
@@ -6076,70 +6090,70 @@ fn note_arr_types(acc: inout [string], ty: string):
 # type_of resolves variables inside tuple/array literals (e.g. t := (a, b)).
 fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
-        EArrLit(elems):
+        EArrLit(elems, _el):
             note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(elems):
                 collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
-        EArrEmpty(ety):
+        EArrEmpty(ety, _el):
             note_arr_types(&acc, "[" + ety + "]")
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             note_arr_types(&acc, "{" + k + ":" + v + "}")
-        EMapLit(keys, vals):
+        EMapLit(keys, vals, _el):
             note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(vals):
                 collect_expr(&acc, keys[j], names, types, dc, ctx)
                 collect_expr(&acc, vals[j], names, types, dc, ctx)
                 j = j + 1
-        ETuple(elems):
+        ETuple(elems, _el):
             note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(elems):
                 collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
-        EBin(op, l, r):
+        EBin(op, l, r, _el):
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
-        ECall(nm, args):
+        ECall(nm, args, _el):
             j := 0
             for j < len(args):
                 collect_expr(&acc, args[j], names, types, dc, ctx)
                 j = j + 1
-        EField(b, f):
+        EField(b, f, _el):
             collect_expr(&acc, b, names, types, dc, ctx)
-        EIndex(b, idx):
+        EIndex(b, idx, _el):
             collect_expr(&acc, b, names, types, dc, ctx)
             collect_expr(&acc, idx, names, types, dc, ctx)
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             collect_expr(&acc, b, names, types, dc, ctx)
             collect_expr(&acc, lo, names, types, dc, ctx)
             collect_expr(&acc, hi, names, types, dc, ctx)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             note_arr_types(&acc, mk_functype(pts, ret))   # dedups + collects param/ret families
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             collect_expr(&acc, callee, names, types, dc, ctx)
             j := 0
             for j < len(cargs):
                 collect_expr(&acc, cargs[j], names, types, dc, ctx)
                 j = j + 1
-        EAddr(inner):
+        EAddr(inner, _el):
             collect_expr(&acc, inner, names, types, dc, ctx)
-        EInt(t):
+        EInt(t, _el):
             j := 0
-        EBool(t):
+        EBool(t, _el):
             j := 0
-        EChar(t):
+        EChar(t, _el):
             j := 0
-        EFloat(f):
+        EFloat(f, _el):
             j := 0
-        EStr(s):
+        EStr(s, _el):
             j := 0
-        EVar(n):
+        EVar(n, _el):
             if not has_str(names, n):              # a bare top-level fn name used as a value: collect its fn type
                 note_arr_types(&acc, type_of(e, names, types, dc, ctx))
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
                 collect_expr(&acc, sa[j], names, types, dc, ctx)
@@ -6484,66 +6498,66 @@ fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string
 # enclosing scope). Used for capture analysis (free-var scan).
 fn collect_evars(e: Expr, out: inout [string]):
     match e:
-        EVar(n):
+        EVar(n, _el):
             push(out, n)
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             collect_evars(l, &out)
             collect_evars(r, &out)
-        ECall(n, a):
+        ECall(n, a, _el):
             j := 0
             for j < len(a):
                 collect_evars(a[j], &out)
                 j = j + 1
-        EField(b, f):
+        EField(b, f, _el):
             collect_evars(b, &out)
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             collect_evars(b, &out)
             collect_evars(ix, &out)
-        EArrLit(es):
+        EArrLit(es, _el):
             j := 0
             for j < len(es):
                 collect_evars(es[j], &out)
                 j = j + 1
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             j := 0
             for j < len(ks):
                 collect_evars(ks[j], &out)
                 collect_evars(vs[j], &out)
                 j = j + 1
-        ETuple(es):
+        ETuple(es, _el):
             j := 0
             for j < len(es):
                 collect_evars(es[j], &out)
                 j = j + 1
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             collect_evars(b, &out)
             collect_evars(lo, &out)
             collect_evars(hi, &out)
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             collect_evars(callee, &out)
             j := 0
             for j < len(cargs):
                 collect_evars(cargs[j], &out)
                 j = j + 1
-        EAddr(x):
+        EAddr(x, _el):
             collect_evars(x, &out)
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             collect_evars(body, &out)
-        EInt(t):
+        EInt(t, _el):
             return
-        EBool(t):
+        EBool(t, _el):
             return
-        EChar(t):
+        EChar(t, _el):
             return
-        EFloat(t):
+        EFloat(t, _el):
             return
-        EStr(s):
+        EStr(s, _el):
             return
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
                 collect_evars(sa[j], &out)
@@ -6624,47 +6638,47 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
             SAssign(n, e, _sl):
                 if has_str(outer, n) and not has_str(accn, n):
                     match e:
-                        EBin(op, l, r):
+                        EBin(op, l, r, _el):
                             if (op == "+" or op == "*") and is_evar(l, n):
                                 push(accn, n)
                                 push(accop, op)
-                        EInt(t):
+                        EInt(t, _el):
                             i = i
-                        EBool(t):
+                        EBool(t, _el):
                             i = i
-                        EChar(t):
+                        EChar(t, _el):
                             i = i
-                        EFloat(f):
+                        EFloat(f, _el):
                             i = i
-                        EStr(s):
+                        EStr(s, _el):
                             i = i
-                        EVar(vn):
+                        EVar(vn, _el):
                             i = i
-                        ECall(cn, ca):
+                        ECall(cn, ca, _el):
                             i = i
-                        EField(b, f):
+                        EField(b, f, _el):
                             i = i
-                        EIndex(b, ix):
+                        EIndex(b, ix, _el):
                             i = i
-                        EArrLit(es):
+                        EArrLit(es, _el):
                             i = i
-                        EArrEmpty(t):
+                        EArrEmpty(t, _el):
                             i = i
-                        EMapEmpty(k, v):
+                        EMapEmpty(k, v, _el):
                             i = i
-                        EMapLit(ks, vs):
+                        EMapLit(ks, vs, _el):
                             i = i
-                        ETuple(es):
+                        ETuple(es, _el):
                             i = i
-                        ESlice(b, lo, hi):
+                        ESlice(b, lo, hi, _el):
                             i = i
-                        EAddr(x):
+                        EAddr(x, _el):
                             i = i
-                        ELambda(lid, ps, pts, ret, bx, cn2, ct2):
+                        ELambda(lid, ps, pts, ret, bx, cn2, ct2, _el):
                             i = i
-                        ECallV(c, a):
+                        ECallV(c, a, _el):
                             i = i
-                        ESpawn(sid, snm, sa):
+                        ESpawn(sid, snm, sa, _el):
                             i = i
             SDecl(n, e, _sl):
                 i = i
@@ -6743,21 +6757,21 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
     if want == "":
         return e
     match e:
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             if t != "":
                 return e
             if is_map(want):
-                return EMapEmpty(map_key(want), map_val(want))
+                return EMapEmpty(map_key(want), map_val(want), _el)
             if is_soa(want):
-                return EArrEmpty(want)
+                return EArrEmpty(want, _el)
             if is_array(want):
-                return EArrEmpty(elem_ty(want))
+                return EArrEmpty(elem_ty(want), _el)
             return e
-        EInt(s):
+        EInt(s, _el):
             if want == "float":
-                return EFloat(s + ".0")
+                return EFloat(s + ".0", _el)
             return e
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             if not is_func(want):
                 return e
             wp := []string
@@ -6775,40 +6789,40 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
             nret := ret
             if ret == "void" and wr != "void":
                 nret = wr
-            return ELambda(id, ps, npts, nret, body, cn, ct)
-        EBool(t):
+            return ELambda(id, ps, npts, nret, body, cn, ct, _el)
+        EBool(t, _el):
             return e
-        EChar(t):
+        EChar(t, _el):
             return e
-        EFloat(t):
+        EFloat(t, _el):
             return e
-        EStr(t):
+        EStr(t, _el):
             return e
-        EVar(n):
+        EVar(n, _el):
             return e
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return e
-        ECall(cn2, ca):
+        ECall(cn2, ca, _el):
             return e
-        EField(b, f):
+        EField(b, f, _el):
             return e
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             return e
-        EArrLit(es):
+        EArrLit(es, _el):
             return e
-        EMapEmpty(k2, v2):
+        EMapEmpty(k2, v2, _el):
             return e
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return e
-        ETuple(es):
+        ETuple(es, _el):
             return e
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return e
-        EAddr(x):
+        EAddr(x, _el):
             return e
-        ECallV(c2, a2):
+        ECallV(c2, a2, _el):
             return e
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return e
 
 # The destination type of argument `i` of a call to `nm`: user-fn params
@@ -6875,32 +6889,32 @@ fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [Lam
 fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
     _sl := 0
     match e:
-        EInt(t):
+        EInt(t, _el):
             return e
-        EBool(t):
+        EBool(t, _el):
             return e
-        EChar(t):
+        EChar(t, _el):
             return e
-        EFloat(t):
+        EFloat(t, _el):
             return e
-        EStr(s):
+        EStr(s, _el):
             return e
-        EVar(n):
+        EVar(n, _el):
             return e
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return e
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return e
-        EBin(o, l, r):
-            return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        ECall(n, a):
+        EBin(o, l, r, _el):
+            return EBin(o, lift_expr(l, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(r, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        ECall(n, a, _el):
             ga := ground_args(dc, ctx, names, types, n, a)   # B: per-arg destination types ground empties/literals/lambdas
-            return ECall(n, lift_exprs(ga, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        EField(b, f):
-            return EField(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), f)
-        EIndex(b, ix):
-            return EIndex(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        EArrLit(es):
+            return ECall(n, lift_exprs(ga, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        EField(b, f, _el):
+            return EField(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), f, _el)
+        EIndex(b, ix, _el):
+            return EIndex(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        EArrLit(es, _el):
             ges := []Expr                          # B-0: later elements take the first element's type
             ew := ""
             ek := 0
@@ -6912,14 +6926,14 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                     ge = ground_pre(dc, ctx, ew, ge)
                 push(ges, ge)
                 ek = ek + 1
-            return EArrLit(lift_exprs(ges, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        EMapLit(ks, vs):
-            return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        ETuple(es):
-            return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        ESlice(b, lo, hi):
-            return ESlice(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        ECallV(callee, cargs):
+            return EArrLit(lift_exprs(ges, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        EMapLit(ks, vs, _el):
+            return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        ETuple(es, _el):
+            return ETuple(lift_exprs(es, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        ESlice(b, lo, hi, _el):
+            return ESlice(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(lo, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(hi, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        ECallV(callee, cargs, _el):
             # B: a call-on-expression's params ground its args too. EField
             # callees are method forms (UFCS / ch.send) -- their dispatch
             # resolves later, and type_of on the field would die; skip those.
@@ -6939,10 +6953,10 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                     push(gc2, ground_pre(dc, ctx, cw, cargs[gk]))
                     gk = gk + 1
                 gca = gc2
-            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(gca, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        EAddr(x):
-            return EAddr(lift_expr(x, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx))
-        ELambda(id, ps, pts, ret, body, cn, ct):
+            return ECallV(lift_expr(callee, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(gca, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        EAddr(x, _el):
+            return EAddr(lift_expr(x, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             kp0 := 0                              # B-2: an untyped param needed an expected fn type by now
             for kp0 < len(pts):
                 if pts[kp0] == "":
@@ -6998,8 +7012,8 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 push(lbody, SReturn(nb, _sl))
             push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
-            return ELambda(myid, ps, pts, ret, nb, capnames, captypes)
-        ESpawn(id, nm, sargs):
+            return ELambda(myid, ps, pts, ret, nb, capnames, captypes, _el)
+        ESpawn(id, nm, sargs, _el):
             # CC-1: assign the spawn-site id and record the SpawnInfo that drives
             # the HSpawnA_<id> args-struct + hier_spawn_<id> trampoline emission.
             nsa := lift_exprs(sargs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
@@ -7017,58 +7031,58 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 sj = sj + 1
             sid := len(spawns)
             push(spawns, SpawnInfo(nm, dc.sigs[si].ptypes, dc.sigs[si].ret))
-            return ESpawn(sid, nm, nsa)
+            return ESpawn(sid, nm, nsa, _el)
 
 # B-3 (docs/inference.md): is `e` a bare incomplete initializer? 1 = bare [],
 # 2 = bare None, 0 = neither. (hierc parses None as an E_NONE node; hierc0
-# parses it as the 0-arg builtin call ECall("None", []).)
+# parses it as the 0-arg builtin call ECall("None", [], _el).)
 fn pend_init_kind(e: Expr) -> int:
     match e:
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             if t == "":
                 return 1
             return 0
-        ECall(nm, a):
+        ECall(nm, a, _el):
             if nm == "None" and len(a) == 0:
                 return 2
             return 0
-        EInt(s):
+        EInt(s, _el):
             return 0
-        EBool(s):
+        EBool(s, _el):
             return 0
-        EChar(s):
+        EChar(s, _el):
             return 0
-        EFloat(s):
+        EFloat(s, _el):
             return 0
-        EStr(s):
+        EStr(s, _el):
             return 0
-        EVar(s):
-            if s == "None":                       # a bare None parses as EVar("None") in hierc0
+        EVar(s, _el):
+            if s == "None":                       # a bare None parses as EVar("None", _el) in hierc0
                 return 2
             return 0
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return 0
-        EField(b, f):
+        EField(b, f, _el):
             return 0
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             return 0
-        EArrLit(es):
+        EArrLit(es, _el):
             return 0
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return 0
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             return 0
-        ETuple(es):
+        ETuple(es, _el):
             return 0
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return 0
-        EAddr(x):
+        EAddr(x, _el):
             return 0
-        ELambda(id, ps, pts, ret, bx, cn, ct):
+        ELambda(id, ps, pts, ret, bx, cn, ct, _el):
             return 0
-        ECallV(c, a2):
+        ECallV(c, a2, _el):
             return 0
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return 0
 
 # B-3 probe: the declared name if `s` is an untyped decl with a bare
@@ -7123,7 +7137,7 @@ fn pend_probe(s: Stmt, ex: inout Expr) -> string:
 # error; hierc gates programs, so here we just keep seeking.
 fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e: Expr) -> string:
     match e:
-        ECall(cn, a):
+        ECall(cn, a, _el):
             if cn == "push" and len(a) == 2 and evar_name(a[0]) == nm:        # push(xs, v) -> [typeof v]
                 return "[" + type_of(a[1], n2, t2, dc, ctx) + "]"
             if cn == "map_set" and len(a) == 3 and evar_name(a[0]) == nm:     # map_set(m, k, v) -> {K:V}
@@ -7140,19 +7154,19 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                         return r
                 j = j + 1
             return ""
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             lr := pend_seek_expr(dc, ctx, n2, t2, nm, l)
             if lr != "":
                 return lr
             return pend_seek_expr(dc, ctx, n2, t2, nm, r)
-        EField(b, f):
+        EField(b, f, _el):
             return pend_seek_expr(dc, ctx, n2, t2, nm, b)
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             br := pend_seek_expr(dc, ctx, n2, t2, nm, b)
             if br != "":
                 return br
             return pend_seek_expr(dc, ctx, n2, t2, nm, ix)
-        EArrLit(es):
+        EArrLit(es, _el):
             j := 0
             for j < len(es):
                 if j > 0 and evar_name(es[j]) == nm and evar_name(es[0]) != nm:
@@ -7162,7 +7176,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                     return r
                 j = j + 1
             return ""
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             j := 0
             for j < len(ks):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, ks[j])
@@ -7173,7 +7187,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                     return r
                 j = j + 1
             return ""
-        ETuple(es):
+        ETuple(es, _el):
             j := 0
             for j < len(es):
                 r := pend_seek_expr(dc, ctx, n2, t2, nm, es[j])
@@ -7181,11 +7195,11 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                     return r
                 j = j + 1
             return ""
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return pend_seek_expr(dc, ctx, n2, t2, nm, b)
-        EAddr(x):
+        EAddr(x, _el):
             return pend_seek_expr(dc, ctx, n2, t2, nm, x)
-        ECallV(c, a):
+        ECallV(c, a, _el):
             cvt := "void"                         # a call-on-expression's param types ground a pending arg;
             if efield_fname(c) == "":             # EField callees are method forms -- type_of would die there
                 cvt = type_of(c, n2, t2, dc, ctx)
@@ -7201,7 +7215,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                     return r
                 j = j + 1
             return ""
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
                 if evar_name(sa[j]) == nm:
@@ -7214,23 +7228,23 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                         return r
                 j = j + 1
             return ""
-        EInt(s):
+        EInt(s, _el):
             return ""
-        EBool(s):
+        EBool(s, _el):
             return ""
-        EChar(s):
+        EChar(s, _el):
             return ""
-        EFloat(s):
+        EFloat(s, _el):
             return ""
-        EStr(s):
+        EStr(s, _el):
             return ""
-        EVar(s):
+        EVar(s, _el):
             return ""
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return ""
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return ""
-        ELambda(id, ps, pts, ret, bx, cn, ct):
+        ELambda(id, ps, pts, ret, bx, cn, ct, _el):
             return ""
 
 # B-3 seek, statement half: walk forward from a pending decl maintaining a
@@ -7396,13 +7410,14 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: st
     return ""
 
 fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
+    _el := 0
     _sl := 0
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
     out := []Stmt
     i := 0
     for i < len(stmts):
         st := stmts[i]
-        pe := EInt("0")
+        pe := EInt("0", _el)
         pn := pend_probe(st, &pe)
         if pn != "":                                  # B-3: a bare decl grounds from its first use in this block
             sn := names
@@ -7418,6 +7433,7 @@ fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [
     return out
 
 fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
+    _el := 0
     match s:
         SDecl(n, e, _sl):
             ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
@@ -7532,27 +7548,27 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             cbody := []Stmt
             j = 0
             for j < len(accn):
-                idv := EInt("0")
+                idv := EInt("0", _el)
                 if accop[j] == "*":
-                    idv = EInt("1")
+                    idv = EInt("1", _el)
                 if accty[j] == "float":
-                    idv = EFloat("0.0")
+                    idv = EFloat("0.0", _el)
                     if accop[j] == "*":
-                        idv = EFloat("1.0")
+                        idv = EFloat("1.0", _el)
                 push(cbody, SDecl(accn[j], idv, _sl))
                 j = j + 1
-            push(cbody, SForRange(v, EVar("__plo"), EVar("__phi"), EInt("1"), body, _sl))
+            push(cbody, SForRange(v, EVar("__plo", _el), EVar("__phi", _el), EInt("1", _el), body, _sl))
             if len(accn) == 0:
-                push(cbody, SReturn(EInt("0"), _sl))
+                push(cbody, SReturn(EInt("0", _el), _sl))
             if len(accn) == 1:
-                push(cbody, SReturn(EVar(accn[0]), _sl))
+                push(cbody, SReturn(EVar(accn[0], _el), _sl))
             if len(accn) > 1:
                 tup := []Expr
                 j = 0
                 for j < len(accn):
-                    push(tup, EVar(accn[j]))
+                    push(tup, EVar(accn[j], _el))
                     j = j + 1
-                push(cbody, SReturn(ETuple(tup), _sl))
+                push(cbody, SReturn(ETuple(tup, _el), _sl))
             cn2 := cps
             ct2 := cpt
             cbody = lift_block(cbody, &lifted, &ctr, &lams, &spawns, &pars, &cn2, &ct2, dc, ctx, rty)
@@ -7583,11 +7599,11 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
 # lambda-free program (incl. hierc0.hi itself) byte-identical and crash-free.
 fn expr_has_lambda(e: Expr) -> bool:
     match e:
-        ELambda(id, ps, pts, ret, body, cn, ct):
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return true
-        EBin(o, l, r):
+        EBin(o, l, r, _el):
             return expr_has_lambda(l) or expr_has_lambda(r)
-        ECall(n, a):
+        ECall(n, a, _el):
             if has_prefix(n, "channel:"):         # channel creation gates the lift (its decl needs gen support)
                 return true
             j := 0
@@ -7596,34 +7612,34 @@ fn expr_has_lambda(e: Expr) -> bool:
                     return true
                 j = j + 1
             return false
-        EField(b, f):
+        EField(b, f, _el):
             return expr_has_lambda(b)
-        EIndex(b, ix):
+        EIndex(b, ix, _el):
             return expr_has_lambda(b) or expr_has_lambda(ix)
-        EArrLit(es):
+        EArrLit(es, _el):
             j := 0
             for j < len(es):
                 if expr_has_lambda(es[j]):
                     return true
                 j = j + 1
             return false
-        EMapLit(ks, vs):
+        EMapLit(ks, vs, _el):
             j := 0
             for j < len(ks):
                 if expr_has_lambda(ks[j]) or expr_has_lambda(vs[j]):
                     return true
                 j = j + 1
             return false
-        ETuple(es):
+        ETuple(es, _el):
             j := 0
             for j < len(es):
                 if expr_has_lambda(es[j]):
                     return true
                 j = j + 1
             return false
-        ESlice(b, lo, hi):
+        ESlice(b, lo, hi, _el):
             return expr_has_lambda(b) or expr_has_lambda(lo) or expr_has_lambda(hi)
-        ECallV(callee, cargs):
+        ECallV(callee, cargs, _el):
             if expr_has_lambda(callee):
                 return true
             j := 0
@@ -7632,25 +7648,25 @@ fn expr_has_lambda(e: Expr) -> bool:
                     return true
                 j = j + 1
             return false
-        EAddr(x):
+        EAddr(x, _el):
             return expr_has_lambda(x)
-        EInt(t):
+        EInt(t, _el):
             return false
-        EBool(t):
+        EBool(t, _el):
             return false
-        EChar(t):
+        EChar(t, _el):
             return false
-        EFloat(t):
+        EFloat(t, _el):
             return false
-        EStr(s):
+        EStr(s, _el):
             return false
-        EVar(n):
+        EVar(n, _el):
             return false
-        EArrEmpty(t):
+        EArrEmpty(t, _el):
             return t == ""                        # a bare [] gates the lift: ground_pre runs there (B-0)
-        EMapEmpty(k, v):
+        EMapEmpty(k, v, _el):
             return false
-        ESpawn(sid, snm, sa):
+        ESpawn(sid, snm, sa, _el):
             return true                           # conc gates the lift too: spawn sites get their ids there
 
 fn block_has_lambda(stmts: [Stmt]) -> bool:
