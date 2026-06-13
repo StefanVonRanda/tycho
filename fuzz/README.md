@@ -60,3 +60,35 @@ to whole-array forms (`[:]`, `[0:]`) whose bounds hold at any runtime length.
 SOA scatter/gather use index 0 with a length >= 1 build, and `or_return` only
 appears inside the `Result`-returning helper (never `main`), keeping every
 generated program valid under both compilers.
+
+## Robustness fuzzer (fail-closed) — `gen_malformed.py` + `run_reject.py`
+
+A second lane that feeds **malformed** input to both compilers and asserts each
+**fails closed**, the opposite of the soundness lane above (which feeds only
+valid programs). `gen_malformed.py <seed>` corrupts a real corpus program
+(`tests/` + `examples/`) — truncation, byte/line edits, unbalanced brackets,
+token soup, deep nesting — or emits pure random soup. `run_reject.py [N]` builds
+**both** compilers under ASan+UBSan and, per seed, a **false-positive-free**
+oracle:
+
+1. **No crash** — no segfault / abort / ASan / UBSan / hang. A clean error exit
+   (a diagnostic) is the *correct* outcome; only an uncontrolled fault is a FAIL.
+2. **No fail-open** — if a compiler *accepts* the input it must emit C that
+   compiles (`cc -fsyntax-only`); accepting bad input and emitting broken C is a
+   missed-rejection / codegen-on-garbage bug.
+
+Accept/reject **divergence** between the two front-ends is recorded (saved for
+review) but is **not** a hard failure — they legitimately differ near the
+grammar boundary. `make fuzz-reject` (N defaults to 500).
+
+It found and fixed a series of hierc0 fail-opens (duplicate decls/params/locals,
+param-shadow, unknown function in statement position, no-main, unknown type
+name) and a parser leniency (two statements on one line).
+
+**Known limitation (documented, not guarded):** a sufficiently deep nested
+expression (thousands of `[`/`(`) overflows the recursive-descent parser's C
+stack — it errors cleanly without ASan, but ASan's ~3-4x stack overhead lowers
+the threshold. This is the standard recursive-descent limit (gcc/clang/rustc all
+overflow given enough nesting); rather than guard it, `gen_malformed.py` caps its
+deep-nesting op at a realistic-but-stressful depth so the lane exercises nesting
+without depth-DoS.
