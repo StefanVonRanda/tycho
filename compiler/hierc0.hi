@@ -923,6 +923,12 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e)
+    elif t.kind == TIdent and t.text == "println":   # desugar: print(x + "\n")
+        pos = pos + 1
+        expect(toks, &pos, TLParen)
+        e := parse_expr(toks, &pos)
+        expect(toks, &pos, TRParen)
+        return SPrint(EBin("+", e, EStr("\\n")))
     elif t.kind == TIdent and t.text == "return":
         pos = pos + 1
         if toks[pos].kind == TNewline:           # bare `return` (void)

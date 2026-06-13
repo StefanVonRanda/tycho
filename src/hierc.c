@@ -2344,6 +2344,7 @@ static void register_builtins(void) {
     /* designated initializers: robust to field order (inout[] sits between
      * params and nparams). All builtins are by-value (no inout). */
     g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="println",.ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="input",  .ret=T_STRING,       .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="read_all",.ret=T_STRING,      .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
@@ -4881,6 +4882,12 @@ static char *gen_call(Expr *e, const char *arena) {
             return sfmt("hier_print(({ const char *_x = %s; _x ? _x : \"\"; }))", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
         return sfmt("hier_print(%s)", a);
+    }
+    if (!strcmp(e->sval, "println")) {   /* print + a trailing newline */
+        if (is_extern_str_call(e->args[0]))
+            return sfmt("(hier_print(({ const char *_x = %s; _x ? _x : \"\"; })), hier_print(\"\\n\"))", gen_extern_raw(e->args[0]));
+        char *a = gen_expr(e->args[0], arena);
+        return sfmt("(hier_print(%s), hier_print(\"\\n\"))", a);
     }
     if (!strcmp(e->sval, "input")) {
         return sfmt("hier_input(%s)", arena);
