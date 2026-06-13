@@ -233,7 +233,5 @@ MM-7f). Since then: a `char` type, comprehensive differential + ASan/UBSan fuzzi
 a ~3.1× self-compile speedup, and a real-workload demo (`examples/json.hi`). The
 **Odin-style packages & modules** that the frontier then moved to have shipped
 too — as have closures, UFCS methods, C FFI ([ffi.md](ffi.md)), and a corelib —
-so the open items left in *this* doc are the deferred streaming-codegen rewrite
-(scoped in [perf.md](perf.md), to *outperform* the C compiler) and the remaining
-Tier-4 ideas: compile-time execution and a demo interpreter. Generics are
-decided-against.
+so the open items left in *this* doc are the remaining Tier-4 ideas: compile-time
+execution and a demo interpreter. Generics are decided-against.

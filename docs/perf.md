@@ -262,11 +262,10 @@ model.
 > loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
 > became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**; fixpoint
 > B≡C + 58 tests + fuzz green. What remains (`gen_expr`/`type_of` + a large
-> unattributed `memcpy`/`malloc` chunk) is the inherent string-building codegen —
-> hierc0 returns `sc()`-concatenated strings where hierc streams to a buffer via
-> `fprintf`, so bytes are copied once per nesting level. Eliminating that is the
-> streaming-codegen refactor (assessed large + non-uniform — wrapping patterns like
-> `EMapLit` don't stream — for a ~10–15% gain); banked, not yet done.
+> unattributed `memcpy`/`malloc` chunk) is the inherent string-building codegen:
+> hierc0 returns `sc()`-concatenated owned strings, so output bytes are copied once
+> per nesting level — the value-semantic string-copy floor. No logic-level change
+> moves it.
 
 ### Push-loop fusion — register-resident array building (2026-06, both compilers)
 
@@ -351,20 +350,15 @@ returned strings are copied*, not their own compute.
 allocation/copying, dominated by `scopy` return-value copies (~5:1 over `sc` concats).
 This is the **value-semantic string-copy floor**: hierc0's codegen builds output by
 returning and concatenating owned strings (each copied once per nesting level, plus a
-deep-copy on every string-returning `return`), whereas the C compiler streams bytes to
-a buffer via `fprintf` with raw pointers. No logic-level change moves it. The only
-levers that would are (a) the **streaming-codegen refactor** (convert the output
-builders to append into one buffer instead of returning strings — banked above as a
-major, multi-session effort with a ~15–20% ceiling that still leaves ~2× hierc), or
-(b) the language gaining first-class mutable string-builder ergonomics. Outperforming a
-streaming C compiler with a value-semantic self-hosted one is likely not reachable
-incrementally.
+deep-copy on every string-returning `return`), whereas the C compiler writes output
+through `fprintf` with raw pointers. No logic-level change moves it; outperforming the
+C compiler with a value-semantic self-hosted one is likely not reachable incrementally.
 
 **Decision (2026): the C compiler `src/hierc.c` stays the DEFAULT / production
 compiler.** hierc0 remains the self-hosting proof (`make fixpoint` B≡C, the definitive
 dogfood of the value-semantic + arena model on a real 9.3k-line-of-C compiler) and the
 differential oracle's counterpart — it is NOT retired and is NOT on the
 correctness-critical path for production. Per the standing project constraint, retiring
-the C compiler requires hierc0 to *outperform* it, not merely match; that gap is now
-documented as a fundamental property to revisit only if/when the streaming refactor or
-string-builder ergonomics land. Perf work on the self-compile path is closed for now.
+the C compiler requires hierc0 to *outperform* it, not merely match; that gap is
+documented as a fundamental property of the value-semantic model. Perf work on the
+self-compile path is closed.

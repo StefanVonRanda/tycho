@@ -152,8 +152,8 @@ it safe to add O(1) lookup maps to it, retiring an O(reads²) move-analysis pass
 and a linear signature scan). Net: `hierc0` self-compiling its own ~3.5k-line
 source went from ~62 ms to ~20 ms (~3.1×), every step verified by the fixpoint +
 the fuzzer. What remains is the inherent string-building codegen (each function
-deep-copies its result on return); closing it is a streaming-codegen rewrite,
-scoped and measured in [docs/perf.md](docs/perf.md) but deliberately deferred.
+deep-copies its result on return) — the value-semantic string-copy floor,
+measured in [docs/perf.md](docs/perf.md); no logic-level change moves it.
 
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in six languages, built optimized, peak RSS + best-of-3 wall time;
