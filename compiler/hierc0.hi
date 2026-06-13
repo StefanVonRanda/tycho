@@ -3085,12 +3085,17 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_sidx(" + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(idx, names, types, dc, ctx) + ")"
             if is_soa(bt):                                  # soa[i] -> gather a struct value
                 return gen_soa_gather(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(idx, names, types, dc, ctx))
-            if is_map(bt):                                  # m[k] place: find-or-insert, deref the value slot (#2)
-                # slotptr allocates (rehash + key copy + value zero) into the MAP's owning
-                # arena, so the inserted value lives as long as the map. This is a C lvalue,
-                # so it serves both as a write target (m[k]=v / push) and the op= read-half.
-                sp := "m" + mtag(map_key(bt)) + "_" + mangle(map_val(bt)) + "_slotptr"
-                return "(*" + sp + "(" + owner_arena_of(base, names, types, dc, ctx) + ", &(" + gen_expr(base, names, types, dc, ctx) + "), " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + "))"
+            if is_map(bt):                                  # m[k]: scalar value -> PURE read; composite -> slot lvalue
+                z := map_read_zero(map_val(bt))
+                if z != "":
+                    # rvalue read of a scalar-value map: map_get with the value-type zero --
+                    # returns zero on a missing key and NEVER inserts (a pure read, like the
+                    # C compiler's m[k] desugar). Write targets route through
+                    # gen_target_lvalue -> the slot lvalue instead, so this is only a read.
+                    return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
+                # composite value: the slot lvalue (write target / op= read-half / push).
+                # slotptr allocates (rehash + key copy + value zero) into the MAP's arena.
+                return gen_map_slotptr(base, idx, bt, names, types, dc, ctx)
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, dc, ctx)
@@ -3555,6 +3560,80 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx
     if d == 0:
         return "&_scope"
     return "&_b" + str(d)
+
+# C zero literal for a scalar map VALUE type, for lowering an rvalue read `m[k]`
+# to <family>_get(m, k, <zero>) -- a PURE read (zero on a missing key, NO insert).
+# "" => the value is not a scalar (composite/newtype): keep the slot-lvalue path
+# (a composite m[k] read still needs an explicit map_get at the source, which the
+# C compiler enforces; this stays the find-or-insert slot, as before).
+fn map_read_zero(vt: string) -> string:
+    if vt == "int":
+        return "0"
+    elif vt == "bool":
+        return "0"
+    elif vt == "float":
+        return "0.0"
+    elif vt == "str":
+        return "hi_intern(\"\")"
+    return ""
+
+# The slot lvalue for a map place `m[k]`: find-or-insert, deref the value slot
+# (#2). A real C lvalue, so it serves a write target / `op=` read-half / push.
+# `bt` is the map type of `b`.
+fn gen_map_slotptr(b: Expr, i: Expr, bt: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    sp := "m" + mtag(map_key(bt)) + "_" + mangle(map_val(bt)) + "_slotptr"
+    return "(*" + sp + "(" + owner_arena_of(b, names, types, dc, ctx) + ", &(" + gen_expr(b, names, types, dc, ctx) + "), " + krt(dc, ctx, bt, gen_expr(i, names, types, dc, ctx)) + "))"
+
+# C lvalue for an assignment TARGET. gen_expr now lowers a scalar-value `m[k]` to
+# a pure map_get (a read), so a write target must take the slot lvalue instead:
+# force the slot for ANY map index here. Everything else (struct field, array
+# element, tuple, nested `m[k].f` where the composite m[k] is still a slot) is
+# already a real lvalue through gen_expr.
+fn gen_target_lvalue(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    match lv:
+        EIndex(b, i):
+            bt := type_of(b, names, types, dc, ctx)
+            if is_map(bt):
+                return gen_map_slotptr(b, i, bt, names, types, dc, ctx)
+            return gen_expr(lv, names, types, dc, ctx)
+        EInt(t):
+            return gen_expr(lv, names, types, dc, ctx)
+        EBool(t):
+            return gen_expr(lv, names, types, dc, ctx)
+        EChar(t):
+            return gen_expr(lv, names, types, dc, ctx)
+        EFloat(f):
+            return gen_expr(lv, names, types, dc, ctx)
+        EStr(s):
+            return gen_expr(lv, names, types, dc, ctx)
+        EVar(n):
+            return gen_expr(lv, names, types, dc, ctx)
+        EBin(o, l, r):
+            return gen_expr(lv, names, types, dc, ctx)
+        ECall(nm, ar):
+            return gen_expr(lv, names, types, dc, ctx)
+        EField(b, f):
+            return gen_expr(lv, names, types, dc, ctx)
+        EArrLit(es):
+            return gen_expr(lv, names, types, dc, ctx)
+        EArrEmpty(ty):
+            return gen_expr(lv, names, types, dc, ctx)
+        EMapEmpty(k, v):
+            return gen_expr(lv, names, types, dc, ctx)
+        EMapLit(ks, vs):
+            return gen_expr(lv, names, types, dc, ctx)
+        ETuple(es):
+            return gen_expr(lv, names, types, dc, ctx)
+        ESlice(b, lo, hi):
+            return gen_expr(lv, names, types, dc, ctx)
+        ELambda(id, ps, pts, ret, body, cn, ct):
+            return gen_expr(lv, names, types, dc, ctx)
+        ECallV(callee, cargs):
+            return gen_expr(lv, names, types, dc, ctx)
+        EAddr(inr):
+            return gen_expr(lv, names, types, dc, ctx)
+        ESpawn(id, nm, a):
+            return gen_expr(lv, names, types, dc, ctx)
 
 # Is `e` a map-place `m[k]` (an EIndex whose base is a map)? Such a place's slot
 # lives in the MAP's arena, so a value stored there must be built in that arena —
@@ -4662,7 +4741,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             sfo := "0"
             if is_map_index(lv, names, types, dc, ctx):
                 sfo = owner_arena_of(lv, names, types, dc, ctx)
-            return "    " + gen_expr(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
+            return "    " + gen_target_lvalue(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
         SPrint(e):
             if type_of(e, names, types, dc, ctx) != "str":
                 die("codegen: print expects a string")

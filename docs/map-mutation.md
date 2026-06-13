@@ -9,11 +9,18 @@ index (no side array — the wall invindex hit, closed the natural way).
 
 ## Design decisions (made up front — the crux of #2)
 
-1. **`m[k]` is a PLACE only (lvalue), not an rvalue.** Reads stay `map_get(m, k,
-   default)` (which needs the explicit default). Using `m[k]` in value position is
-   a compile error ("read with map_get(m, k, default)"). This avoids an
-   auto-insert side effect hiding in a read. (Alternative — operator[]-style read
-   that auto-inserts — is rejected for least surprise.)
+1. **`m[k]` as a place (lvalue) is the write/compound path; as an rvalue read it
+   lowers to a PURE `map_get`.** Writes/compounds (`m[k] = v`, `m[k] op= v`,
+   `push(m[k], v)`, `m[k].f = x`) take the in-place slot below. A *read* `x = m[k]`
+   for a **scalar value type** (int/float/string/bool) desugars to
+   `map_get(m, k, <value-type zero>)` — it returns the zero on a missing key and
+   **never inserts** (no auto-insert side effect hiding in a read — the original
+   least-surprise concern, now satisfied rather than sidestepped). This makes the
+   counter idiom `cnt[w] = cnt[w] + 1` read naturally. A read of a **composite**
+   value (array/struct/map) still requires an explicit `map_get(m, k, default)`
+   (no unambiguous zero to synthesize). Both compilers; scalar read desugar in
+   hierc at resolve (E_INDEX→map_get) and hierc0 in gen (`gen_expr` EIndex-map →
+   `map_get`+zero, with write targets routed through `gen_target_lvalue` → slot).
 2. **Absent key ⇒ auto-insert the value's zero, then project** (C++ `operator[]`).
    `push(m[k], v)` on a fresh map creates an empty `[int]` then pushes. The zero is
    C `(V){0}` — an empty array/string descriptor (len 0, NULL data) or a zeroed

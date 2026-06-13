@@ -2439,6 +2439,20 @@ static int is_lvalue(Expr *e) {
     return 0;
 }
 
+/* A literal of type t's zero value, for desugaring an rvalue read `m[k]` into
+ * map_get(m, k, <zero>) -- a PURE read that yields the value-type zero on a
+ * missing key without inserting. Only scalar value types have an unambiguous
+ * zero; returns NULL otherwise (composite/newtype values keep requiring an
+ * explicit map_get(m, k, default)). */
+static Expr *scalar_zero_expr(Type t, int line) {
+    Expr *z = NULL;
+    if (t == T_INT)         { z = new_expr(E_INT,   line); z->ival = 0; }
+    else if (t == T_FLOAT)  { z = new_expr(E_FLOAT, line); z->fval = 0.0; }
+    else if (t == T_STRING) { z = new_expr(E_STR,   line); z->sval = ""; }
+    else if (t == T_BOOL)   { z = new_expr(E_BOOL,  line); z->ival = 0; }
+    return z;
+}
+
 static void resolve_block(Stmt **body, int n, Type ret);   /* fwd: the lambda body resolves as a block */
 
 /* collect the (deduped) identifier names referenced anywhere in `e` — the basis of
@@ -2711,14 +2725,28 @@ static Type resolve_expr(Expr *e) {
             Type bt = resolve_expr(e->lhs);
             g_place = 0;                        /* the subscript/key is always an rvalue */
             Type kt = resolve_expr(e->rhs);
-            if (is_map(bt)) {                  /* m[k] -> the value type, but a PLACE only (#2) */
+            if (is_map(bt)) {                  /* m[k] -> the value type (#2) */
                 Type wantk = map_key(bt);
                 if (kt != wantk)
                     die_at(e->line, "map key must be %s, got %s", type_name(wantk), type_name(kt));
-                e->type = map_val(bt);
-                if (!_place)
-                    die_at(e->line, "m[k] is a mutation target only (assign / push / m[k] op= ...); "
-                                    "to READ a value use map_get(m, k, default)");
+                Type vt = map_val(bt);
+                if (!_place) {
+                    /* rvalue read: desugar to a PURE map_get(m, k, <zero of vt>) -- yields the
+                     * value-type zero on a missing key, never inserts. Scalar value types only;
+                     * composite/newtype values still need an explicit map_get(m, k, default).
+                     * Place uses (m[k]=v, m[k] op= v, push/reserve) set g_place and skip this. */
+                    Expr *zero = scalar_zero_expr(vt, e->line);
+                    if (!zero)
+                        die_at(e->line, "m[k] read needs a scalar value type (int/float/string/bool); "
+                                        "for %s use map_get(m, k, default)", type_name(vt));
+                    Expr *base = e->lhs, *key = e->rhs;
+                    e->kind = E_CALL; e->sval = "map_get";
+                    e->args = (Expr **)xmalloc(3 * sizeof(Expr *));
+                    e->args[0] = base; e->args[1] = key; e->args[2] = zero;
+                    e->nargs = 3; e->lhs = NULL; e->rhs = NULL;
+                    return resolve_expr(e);
+                }
+                e->type = vt;
                 return e->type;
             }
             if (kt != T_INT)
