@@ -305,25 +305,33 @@ outputs identical, no regression; differential fuzz 300 seeds FAIL=0 (×2, one p
 compiler); `tests/push_fusion.hi` covers break/continue/return/nested/two-array/
 while/bail.
 
-**Heap-element extension — `[string]` arrays now fuse too** (both compilers). The
-grow hook is element-generic (`hier_arr_str_grow` / generated `Arr_str_grow`:
-regrow the `char*` *spine*, recycle the old spine; the strings it points to were
-already copied into the array's arena, so the shallow pointer memcpy keeps them).
-The copy/recycle interplay that kept this out of scope resolves cleanly: a push
-only *appends*, so no element is ever overwritten (the MM-9 element-recycle path is
-overwrite-only and untouched), and the fused store deep-copies the element into the
-array's owning arena — `hier_str_copy(ow, v)` (hierc) / `gen_rhs(.., with_owner ow)`
-(hierc0) — exactly as the non-fused `hier_arr_str_push` does, preserving value
-semantics. Eligibility unchanged (used solely as a push target); the cursor is
-`char**` instead of `long*`/`double*`. Win is smaller than for scalars (the
-per-element `scopy`/malloc dominates, so descriptor-elision is a smaller fraction)
-— this is a completeness/consistency close, not a hot-path multiplier. Verified:
-`make fixpoint` B≡C byte-identical (str-fusion fires on `hierc0.hi`'s own `[str]`
-loops, +200 lines C, still self-reproduces); `make test` 136 green incl
-`tests/str_fuse.hi` (3 spine grows + value-semantics: push a var, mutate it, array
-unchanged) under ASan/UBSan; corelib (`wordfreq`/`strings`) green; differential
-fuzz 500 FAIL=0. Still out of scope: struct/tuple/option element arrays (ARRC) —
-the spine-regrow generalizes, but left for when a workload needs it.
+**Heap-element extension — EVERY element type now fuses** (both compilers): not
+just scalars, but `[string]`, structs, tuples, nested arrays, options/results,
+enums — any array whose element family has a `_grow` hook (i.e. all of them). The
+grow hook is element-generic: regrow the *spine* (the element buffer), recycle the
+old spine; the heap each element points to was already deep-copied into the array's
+arena, so the shallow per-element spine copy (`memcpy` / `nd[i]=(*data)[i]`) keeps
+it valid. The "copy/recycle interplay" that kept this out of scope was a non-issue:
+a push only *appends*, so no element is ever overwritten (the MM-9 element-recycle
+path is overwrite-only and untouched), and the fused store deep-copies the element
+into the array's owning arena exactly as the non-fused push does, preserving value
+semantics. It unifies cleanly: hierc's fused store is one
+`copy_into(arr_elem, ow, gen_expr(v))` (identity for scalars/pure structs → int/float
+emission stays byte-identical; the right deep-copy for str/struct/tuple/ARRC/…) and
+one `hier_arr_<arr_fn>_grow` (runtime `int`/`float`/`str`; generated `C<id>`); hierc0
+generates `Arr_<mangle(et)>_grow` for every element type and deep-copies via
+`gen_rhs(.., with_owner ow)` when `elem_deepcopy(et)`. Cursor type is
+`c_type(arr_elem(t))` (uniform). Eligibility is now simply `is_array` (soa + inout
+excluded). Win is largest for scalars; for heap elements the per-element deep-copy
+(`scopy`/`hier_copy_S_*`/…) dominates, so the descriptor-elision is a smaller
+fraction — a completeness/consistency close more than a hot-path multiplier, though
+it does cut a call + descriptor write-back per push on the very common build-a-list
+loop. Verified: `make fixpoint` B≡C byte-identical (composite fusion fires on
+`hierc0.hi`'s own struct/tuple array push loops, +400 lines C vs scalar-only, still
+self-reproduces); `make test` 137 green incl `tests/str_fuse.hi` +
+`tests/comp_fuse.hi` (pure struct / heap struct / nested array / value-semantics)
+under ASan/UBSan; corelib, conc, ffi, bench-guard green; differential fuzz 500
+FAIL=0. Nothing left deferred here — every array element type fuses.
 
 ## The self-compile gap: status and decision (closed for now)
 

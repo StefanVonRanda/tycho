@@ -1,0 +1,71 @@
+struct P:
+    x: int
+    y: int
+
+struct Person:
+    name: string
+    age: int
+
+# pure-struct array (no heap fields -> value copy in the fused store)
+fn pts(n: int) -> [P]:
+    acc := []P
+    i := 0
+    for i < n:
+        push(acc, P(i, i * 2))
+        i = i + 1
+    return acc
+
+# heap-struct array (string field -> deep-copy via the struct copy fn)
+fn people(n: int) -> [Person]:
+    acc := []Person
+    i := 0
+    for i < n:
+        push(acc, Person("p" + str(i), i))
+        i = i + 1
+    return acc
+
+# nested-array array ([[int]] -> deep-copy each inner array)
+fn rows(n: int) -> [[int]]:
+    acc := [][int]
+    i := 0
+    for i < n:
+        inner := []int
+        push(inner, i)
+        push(inner, i + 1)
+        push(acc, inner)
+        i = i + 1
+    return acc
+
+fn main():
+    ps := pts(6)
+    sx := 0
+    sy := 0
+    i := 0
+    for i < len(ps):
+        sx = sx + ps[i].x
+        sy = sy + ps[i].y
+        i = i + 1
+    println("pts " + str(sx) + " " + str(sy))         # 0+1+..5=15 ; *2 = 30
+
+    pp := people(5)
+    j := 0
+    for j < len(pp):
+        println(pp[j].name + ":" + str(pp[j].age))
+        j = j + 1
+
+    rs := rows(4)
+    k := 0
+    for k < len(rs):
+        println(str(rs[k][0]) + "," + str(rs[k][1]))
+        k = k + 1
+
+    # value semantics on a heap struct: a pushed struct is independent of a
+    # later rebinding of the variable that supplied its string field.
+    nm := "alpha"
+    hs := []Person
+    m := 0
+    for m < 3:
+        push(hs, Person(nm, m))
+        m = m + 1
+    nm = "BETA"
+    println(hs[0].name + hs[1].name + hs[2].name)      # alphaalphaalpha

@@ -4302,7 +4302,7 @@ fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: C
         nm := cand[i]
         et := fuse_envtype(names, types, nm)
         ok := true
-        if et != "[int]" and et != "[float]" and et != "[str]":
+        if not is_array(et):                          # any array element type (scalar/str/struct/tuple/...); inout + soa excluded by is_array
             ok = false
         if count_str_occ(ctx.fusearr, nm) > 0:
             ok = false
@@ -5864,8 +5864,9 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
         out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n) { " + nm + " a; a.len = n; a.cap = n > 0 ? n : 0; a.data = n ? amem(ar, sizeof(" + ct + ") * n) : 0; if (n) memcpy(a.data, s, sizeof(" + ct + ") * n); return a; }\n"
     out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a) { return " + nm + "_from(ar, a.data, a.len); }\n"
     out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* a, " + ct + "v) { if (a->len == a->cap) { long nc = a->cap ? a->cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = nc; } a->data[a->len++] = v; }\n"
-    if et == "int" or et == "float" or et == "str":         # push-loop fusion grow hook (scalar + str elems)
-        out = out + "static void " + nm + "_grow(Arena* ar, " + ct + "** data, long* cap, long len) { long nc = *cap ? *cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (len) memcpy(nd, *data, sizeof(" + ct + ") * len); if (ar && *cap) arena_recycle(ar, *data, sizeof(" + ct + ") * (size_t)*cap); *data = nd; *cap = nc; }\n"
+    # push-loop fusion grow hook (every element type: shallow spine memcpy; the
+    # element heap was already deep-copied into `ar` at each fused store)
+    out = out + "static void " + nm + "_grow(Arena* ar, " + ct + "** data, long* cap, long len) { long nc = *cap ? *cap * 2 : 4; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * nc); if (len) memcpy(nd, *data, sizeof(" + ct + ") * len); if (ar && *cap) arena_recycle(ar, *data, sizeof(" + ct + ") * (size_t)*cap); *data = nd; *cap = nc; }\n"
     popv := "a->data[a->len]"                        # scalar: the value; heap: a deep copy into `ar`
     if elem_deepcopy(dc, ctx, et):                   # (so the popped value outlives a later array recycle)
         popv = elem_copy_expr(dc, ctx, et, "ar", "a->data[a->len]")

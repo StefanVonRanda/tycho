@@ -4368,7 +4368,7 @@ static void fuse_gather(Stmt **body, int n, const char **names, Type *tys, int *
         Expr *e = s->expr;
         if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
             && e->args[0]->kind == E_IDENT && e->args[0]->sval
-            && (e->args[0]->type == T_ARRAY_INT || e->args[0]->type == T_ARRAY_FLOAT || e->args[0]->type == T_ARRAY_STRING)) {
+            && is_array(e->args[0]->type)) {   /* any array element family (int/float/str/composite); soa + inout excluded by is_array */
             const char *nm = e->args[0]->sval; int seen = 0;
             for (int k = 0; k < *cnt; k++) if (!strcmp(names[k], nm)) { seen = 1; break; }
             if (!seen && *cnt < 16) { names[*cnt] = nm; tys[*cnt] = e->args[0]->type; (*cnt)++; }
@@ -4402,7 +4402,7 @@ static int fuse_open(FILE *o, Stmt **body, int n, int ind, Expr *guard) {
         int id = g_blk++;
         indent(o, ind);
         fprintf(o, "%s*_fd%d = h_%s.data; long _fl%d = h_%s.len, _fc%d = h_%s.cap;\n",
-                tys[i] == T_ARRAY_FLOAT ? "double " : tys[i] == T_ARRAY_STRING ? "char* " : "long ", id, nm, id, nm, id, nm);
+                c_type(arr_elem(tys[i])), id, nm, id, nm, id, nm);
         g_fuse[g_nfuse].arr = nm; g_fuse[g_nfuse].id = id; g_fuse[g_nfuse].ty = tys[i];
         g_nfuse++; opened++;
     }
@@ -4865,11 +4865,13 @@ static char *gen_call(Expr *e, const char *arena) {
             int fi = fuse_idx(e->args[0]->sval);
             if (fi >= 0) {
                 int id = g_fuse[fi].id;
-                const char *gf = g_fuse[fi].ty == T_ARRAY_FLOAT ? "hier_arr_float_grow" : g_fuse[fi].ty == T_ARRAY_STRING ? "hier_arr_str_grow" : "hier_arr_int_grow";
+                /* grow-fn + element deep-copy unify across every element family:
+                 * arr_fn -> int/float/str/C<id>; copy_into is identity for scalars
+                 * (so int/float emission is byte-identical) and the right per-element
+                 * deep-copy into the array's arena for str/struct/tuple/ARRC/... */
+                const char *gf = sfmt("hier_arr_%s_grow", arr_fn(g_fuse[fi].ty));
                 const char *ow = owner_arena_of(e->args[0]->sval);
-                char *v = gen_expr(e->args[1], arena);
-                if (g_fuse[fi].ty == T_ARRAY_STRING)   /* deep-copy the element bytes into the array's arena (mirrors hier_arr_str_push) */
-                    v = sfmt("hier_str_copy(%s, %s)", ow, v);
+                char *v = copy_into(arr_elem(g_fuse[fi].ty), ow, gen_expr(e->args[1], arena));
                 return sfmt("({ if (_fl%d == _fc%d) %s(%s, &_fd%d, &_fc%d, _fl%d); _fd%d[_fl%d++] = %s; })",
                             id, id, gf, ow, id, id, id, id, id, v);
             }
@@ -6663,6 +6665,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
         fprintf(o, "static void hier_arr_C%d_push(Arena*, HierArrC%d*, %s);\n", i, i, ct);
+        fprintf(o, "static void hier_arr_C%d_grow(Arena*, %s**, long*, long);\n", i, ct);
         fprintf(o, "static %shier_arr_C%d_pop(Arena*, HierArrC%d*);\n", ct, i, i);
         fprintf(o, "static %shier_arr_C%d_get(HierArrC%d, long);\n", ct, i, i);
         fprintf(o, "static %s*hier_arr_C%d_ptr(HierArrC%d*, long);\n", ct, i, i);
@@ -6723,6 +6726,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
+        fprintf(o,   /* push-loop fusion grow hook: regrow the spine (shallow copy); elements were already deep-copied into `a` at each fused store */
+            "static void hier_arr_C%d_grow(Arena *a, %s**data, long *cap, long len) {\n"
+            "    long nc = *cap ? *cap * 2 : 4;\n"
+            "    %s*nd = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s));\n"
+            "    for (long i = 0; i < len; i++) nd[i] = (*data)[i];\n"
+            "    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(%s));\n"
+            "    *data = nd; *cap = nc;\n}\n",
+            i, ct, ct, ct, ct, ct);
         fprintf(o,   /* pop: shrink + return the last element, deep-copied into `a` */
             "static %shier_arr_C%d_pop(Arena *a, HierArrC%d *xs) {\n"
             "    if (xs->len == 0) { fprintf(stderr, \"hier: pop from an empty array\\n\"); exit(1); }\n"
