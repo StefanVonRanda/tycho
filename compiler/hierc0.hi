@@ -915,9 +915,10 @@ fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
                 push(stmts, st)
                 # fail-closed: a SIMPLE statement must end at a newline; without this
                 # two statements on one line (`print(x)  continue`) were silently
-                # accepted. Compound stmts (if/for/while/match/select) end at their
-                # block's dedent, so the next token is the following stmt -- exempt.
-                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select"
+                # accepted. Compound stmts (if/for/while/match/select/parallel-for)
+                # end at their block's dedent, so the next token is the following
+                # stmt -- exempt them (keyed on the leading keyword).
+                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select" or firstkw == "parallel"
                 if not cmpd and toks[pos].kind != TNewline and toks[pos].kind != TDedent:
                     die("parse: line " + str(toks[pos].line) + ": expected newline")
             if toks[pos].kind == TNewline:
