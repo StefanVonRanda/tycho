@@ -6026,6 +6026,8 @@ fn gen_mhash() -> string:                        # shared string FNV-1a + int Sp
 
 fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     k := map_key(ty)
+    if resolve_nt(dc, ctx, k) != "int" and resolve_nt(dc, ctx, k) != "str" and not enum_fieldless(dc, ctx, k):
+        die_at(dc, ctx.line, "type: map keys must be string, int (directly or through a newtype), or a fieldless enum")   # fail-closed: a payload enum / struct / float key fell through to the string-key layout and emitted broken C
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
