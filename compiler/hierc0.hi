@@ -3085,17 +3085,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_sidx(" + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(idx, names, types, dc, ctx) + ")"
             if is_soa(bt):                                  # soa[i] -> gather a struct value
                 return gen_soa_gather(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(idx, names, types, dc, ctx))
-            if is_map(bt):                                  # m[k]: scalar value -> PURE read; composite -> slot lvalue
-                z := map_read_zero(map_val(bt))
-                if z != "":
-                    # rvalue read of a scalar-value map: map_get with the value-type zero --
-                    # returns zero on a missing key and NEVER inserts (a pure read, like the
-                    # C compiler's m[k] desugar). Write targets route through
-                    # gen_target_lvalue -> the slot lvalue instead, so this is only a read.
-                    return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
-                # composite value: the slot lvalue (write target / op= read-half / push).
-                # slotptr allocates (rehash + key copy + value zero) into the MAP's arena.
-                return gen_map_slotptr(base, idx, bt, names, types, dc, ctx)
+            if is_map(bt):                                  # m[k] rvalue READ -> a PURE map_get (never inserts)
+                vt := map_val(bt)
+                z := map_read_zero(vt)                       # scalar value: literal zero (0 / 0.0 / "" / false)
+                if z == "":                                  # composite value: the empty/zeroed (V){0} -- the SAME
+                    z = "(" + cty(dc, ctx, vt) + "){0}"      # value slotptr inserts (empty array / zeroed struct)
+                # Write targets / push / reserve route through gen_place -> the slot
+                # lvalue instead, so reaching gen_expr here is always a read.
+                return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
             return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
         EArrLit(elems):
             et := type_of(elems[0], names, types, dc, ctx)
@@ -3209,7 +3206,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
                 if is_soa(at):                    # soa push: grow each field buffer + scatter
-                    return "Soa_" + soa_struct(at) + "_push(&" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
+                    return "Soa_" + soa_struct(at) + "_push(&" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 et := elem_ty(at)
                 pv := evar_name(args[0])              # push-loop fusion: register-resident cursor write
                 if pv != "" and count_str_occ(ctx.fusearr, pv) > 0:
@@ -3226,18 +3223,18 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 vo := "0"                          # non-deep-copy elements stay immortal (owner 0);
                 if elem_deepcopy(dc, ctx, et):         # deep-copy elements (str) live in the array's arena
                     vo = oa
-                return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
+                return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
             if name == "pop":                     # pop(arr): remove + return the last element
                 pat := type_of(args[0], names, types, dc, ctx)
                 if is_soa(pat):
                     die("codegen: pop on a soa array is not supported yet")
                 # result is deep-copied into ctx.owner (the array buffer may recycle), so
                 # the popped value is independent of the (shrunk) array. Scalars pass through.
-                return "Arr_" + mangle(elem_ty(pat)) + "_pop(" + ctx.owner + ", &" + gen_expr(args[0], names, types, dc, ctx) + ")"
+                return "Arr_" + mangle(elem_ty(pat)) + "_pop(" + ctx.owner + ", &" + gen_place(args[0], names, types, dc, ctx) + ")"
             if name == "reserve":                 # reserve(arr, n): preallocate exact capacity
                 rt := elem_ty(type_of(args[0], names, types, dc, ctx))
                 ra := owner_arena_of(args[0], names, types, dc, ctx)
-                return "Arr_" + mangle(rt) + "_reserve(" + ra + ", &" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
+                return "Arr_" + mangle(rt) + "_reserve(" + ra + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "len":
                 if type_of(args[0], names, types, dc, ctx) == "str":
                     return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
@@ -3582,19 +3579,33 @@ fn map_read_zero(vt: string) -> string:
 # `bt` is the map type of `b`.
 fn gen_map_slotptr(b: Expr, i: Expr, bt: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     sp := "m" + mtag(map_key(bt)) + "_" + mangle(map_val(bt)) + "_slotptr"
-    return "(*" + sp + "(" + owner_arena_of(b, names, types, dc, ctx) + ", &(" + gen_expr(b, names, types, dc, ctx) + "), " + krt(dc, ctx, bt, gen_expr(i, names, types, dc, ctx)) + "))"
+    # the base is a PLACE (gen_place), so a nested map-of-map m1[k1][k2] threads
+    # slotptr through, never the read-side map_get from gen_expr.
+    return "(*" + sp + "(" + owner_arena_of(b, names, types, dc, ctx) + ", &(" + gen_place(b, names, types, dc, ctx) + "), " + krt(dc, ctx, bt, gen_expr(i, names, types, dc, ctx)) + "))"
 
-# C lvalue for an assignment TARGET. gen_expr now lowers a scalar-value `m[k]` to
-# a pure map_get (a read), so a write target must take the slot lvalue instead:
-# force the slot for ANY map index here. Everything else (struct field, array
-# element, tuple, nested `m[k].f` where the composite m[k] is still a slot) is
-# already a real lvalue through gen_expr.
-fn gen_target_lvalue(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+# C lvalue for a PLACE (assignment target, or the first arg of push/reserve/pop).
+# gen_expr lowers ANY `m[k]` read (scalar OR composite) to a pure map_get, so a
+# place must instead take the slot lvalue at every map index. This RECURSES the
+# field/index spine so chains like `m[k].f = v`, `m[k][j] = v`, and
+# `push(m[k], v)` thread slotptr through the map index instead of map_get. The
+# leaf (a variable) and non-map indices/fields are already real lvalues.
+fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match lv:
         EIndex(b, i):
             bt := type_of(b, names, types, dc, ctx)
             if is_map(bt):
                 return gen_map_slotptr(b, i, bt, names, types, dc, ctx)
+            if is_soa(bt):                          # soa element place: handled via field access (soa[i].f); bare soa[i] target is not a thing
+                return gen_expr(lv, names, types, dc, ctx)
+            return gen_place(b, names, types, dc, ctx) + ".data[" + gen_expr(i, names, types, dc, ctx) + "]"
+        EField(b, f):
+            sf := soa_field_access(dc, ctx, b, f, names, types)   # soa[i].f -> (soa).fN[i], a real lvalue
+            if sf != "":
+                return sf
+            if is_tuple(type_of(b, names, types, dc, ctx)):
+                return gen_place(b, names, types, dc, ctx) + ".f" + f
+            return gen_place(b, names, types, dc, ctx) + "." + uf(f)
+        EVar(n):
             return gen_expr(lv, names, types, dc, ctx)
         EInt(t):
             return gen_expr(lv, names, types, dc, ctx)
@@ -3606,13 +3617,9 @@ fn gen_target_lvalue(lv: Expr, names: [string], types: [string], dc: Decls, ctx:
             return gen_expr(lv, names, types, dc, ctx)
         EStr(s):
             return gen_expr(lv, names, types, dc, ctx)
-        EVar(n):
-            return gen_expr(lv, names, types, dc, ctx)
         EBin(o, l, r):
             return gen_expr(lv, names, types, dc, ctx)
         ECall(nm, ar):
-            return gen_expr(lv, names, types, dc, ctx)
-        EField(b, f):
             return gen_expr(lv, names, types, dc, ctx)
         EArrLit(es):
             return gen_expr(lv, names, types, dc, ctx)
@@ -4741,7 +4748,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             sfo := "0"
             if is_map_index(lv, names, types, dc, ctx):
                 sfo = owner_arena_of(lv, names, types, dc, ctx)
-            return "    " + gen_target_lvalue(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
+            return "    " + gen_place(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
         SPrint(e):
             if type_of(e, names, types, dc, ctx) != "str":
                 die("codegen: print expects a string")

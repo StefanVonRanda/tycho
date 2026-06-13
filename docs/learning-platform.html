@@ -990,7 +990,7 @@ miss := counts[<span class="str">"nope"</span>]       <span class="cm"># READ of
 <div class="callout-icon">&#9889;</div>
 <div>
 <div class="callout-title">Reading <code>m[k]</code> is a pure zero-default read</div>
-A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <code>""</code>, <code>false</code>) and <strong>never inserts</strong> &mdash; it is exactly <code>map_get(m, k, &lt;zero&gt;)</code>. Reads work for scalar value types (int/float/string/bool); for array/struct/map values, read with <code>map_get(m, k, default)</code>. So the counter idiom reads most naturally as <code>counts[w] += 1</code>.
+A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <code>""</code>, <code>false</code>, or an empty array / zeroed struct) and <strong>never inserts</strong> &mdash; it is exactly <code>map_get(m, k, &lt;zero&gt;)</code>. This works for any value type, so <code>len(m[k])</code> and <code>m[k].field</code> read naturally too. So the counter idiom reads most naturally as <code>counts[w] += 1</code>.
 </div></div>
 
 <div class="exercise" id="ex-map">

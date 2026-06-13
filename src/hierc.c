@@ -2731,20 +2731,20 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "map key must be %s, got %s", type_name(wantk), type_name(kt));
                 Type vt = map_val(bt);
                 if (!_place) {
-                    /* rvalue read: desugar to a PURE map_get(m, k, <zero of vt>) -- yields the
-                     * value-type zero on a missing key, never inserts. Scalar value types only;
-                     * composite/newtype values still need an explicit map_get(m, k, default).
-                     * Place uses (m[k]=v, m[k] op= v, push/reserve) set g_place and skip this. */
+                    /* rvalue read -> a PURE map_get (yields the value's zero on a missing
+                     * key, never inserts; place uses set g_place and skip this). A SCALAR
+                     * value desugars to map_get(m, k, <literal zero>) here; a COMPOSITE
+                     * value is left as E_INDEX and lowered in gen_expr to map_get with
+                     * (V){0} (no literal Expr for an empty array/struct). */
                     Expr *zero = scalar_zero_expr(vt, e->line);
-                    if (!zero)
-                        die_at(e->line, "m[k] read needs a scalar value type (int/float/string/bool); "
-                                        "for %s use map_get(m, k, default)", type_name(vt));
-                    Expr *base = e->lhs, *key = e->rhs;
-                    e->kind = E_CALL; e->sval = "map_get";
-                    e->args = (Expr **)xmalloc(3 * sizeof(Expr *));
-                    e->args[0] = base; e->args[1] = key; e->args[2] = zero;
-                    e->nargs = 3; e->lhs = NULL; e->rhs = NULL;
-                    return resolve_expr(e);
+                    if (zero) {
+                        Expr *base = e->lhs, *key = e->rhs;
+                        e->kind = E_CALL; e->sval = "map_get";
+                        e->args = (Expr **)xmalloc(3 * sizeof(Expr *));
+                        e->args[0] = base; e->args[1] = key; e->args[2] = zero;
+                        e->nargs = 3; e->lhs = NULL; e->rhs = NULL;
+                        return resolve_expr(e);
+                    }
                 }
                 e->type = vt;
                 return e->type;
@@ -5180,6 +5180,18 @@ static char *gen_expr(Expr *e, const char *arena) {
                 for (int f = 0; f < sd->nfields; f++)
                     out = sfmt("%s%s_g%d->f%d[_gi%d]", out, f ? ", " : "", id, f, id);
                 return sfmt("%s }; })", out);
+            }
+            if (is_map(e->lhs->type)) {
+                /* rvalue m[k] read for a COMPOSITE value type: a PURE map_get with the
+                 * value's zero/empty (V){0} -- never inserts (the place path is
+                 * gen_lvalue, not here). Scalar values were desugared to map_get at
+                 * resolve, so only composites reach this. Deep-copy the borrow out, as
+                 * map_get's codegen does, so it outlives a later mutation/free of m. */
+                Type mt = e->lhs->type, vt = map_val(mt);
+                char *m = gen_expr(e->lhs, arena);
+                char *k = key_rt(mt, gen_expr(e->rhs, arena));
+                char *call = sfmt("%s(%s, %s, (%s){0})", map_rt(mt, "get"), m, k, c_type(vt));
+                return copy_into(vt, arena, call);
             }
             char *a = gen_expr(e->lhs, arena);
             char *ix = gen_expr(e->rhs, arena);

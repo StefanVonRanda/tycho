@@ -586,10 +586,11 @@ Two things to know about reading `m[k]`:
   — and **does not insert anything** (the `nope` read above leaves `len` at 2).
   This is exactly `map_get(m, k, <zero>)`; use `map_get(m, k, myDefault)`
   directly when you want a different default.
-- **Reads work for scalar value types only** (int/float/string/bool). For a map
-  whose values are arrays/structs/maps, a read still goes through
-  `map_get(m, k, default)` (there's no single obvious "zero" to hand back), while
-  writes — `m[k] = v`, `m[k].field = x`, `push(m[k], v)` — work for any value type.
+- **Reads work for any value type.** For composite values (arrays, structs,
+  maps) a missing key gives the empty/zeroed value — an empty array, a struct
+  with zero fields — still without inserting. So `len(counts[k])`, `m[k].field`,
+  and passing `m[k]` along all read naturally; writes (`m[k] = v`,
+  `m[k].field = x`, `push(m[k], v)`, `m[k][j] = x`) work for any value type too.
 
 So the counter idiom reads most naturally as:
 
