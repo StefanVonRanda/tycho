@@ -5324,7 +5324,10 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
         SParFor(v, a, b, body, pid, _sl):
             np := 0                               # reductions are int/float only -- never a string accumulator
         SSelect(uid, svars, schans, sbinds, sbodies, _sl):
-            np := 0                               # arm bodies are their own blocks; accumulators don't cross arms
+            j := 0                                # recurse arm bodies so an OUTER-local string accumulator
+            for j < len(sbodies):                 # appended inside a select arm grows in place (matches hierc's
+                sacc_block(&acc, sbodies[j], names, types, dc, ctx)   # collect_accums, which walks select arms)
+                j = j + 1
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
