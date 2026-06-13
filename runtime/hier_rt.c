@@ -1064,6 +1064,17 @@ void hier_arr_str_push(Arena *a, HierArrStr *xs, const char *v) {
     xs->data[xs->len++] = hier_str_copy(a, v);   /* copy bytes into owner arena */
 }
 
+/* push-loop fusion grow hook (see hier_arr_int_grow): regrows the SPINE (the
+ * char* pointer buffer) in `a`; the strings it points to were already copied
+ * into `a` at each fused store, so the shallow pointer memcpy keeps them. */
+void hier_arr_str_grow(Arena *a, char ***data, long *cap, long len) {
+    long nc = *cap ? *cap * 2 : 4;
+    char **nd = (char **)arena_alloc(a, (size_t)nc * sizeof(char *));
+    if (len) memcpy(nd, *data, (size_t)len * sizeof(char *));
+    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(char *));
+    *data = nd; *cap = nc;
+}
+
 char *hier_arr_str_pop(Arena *a, HierArrStr *xs) {
     if (xs->len == 0) { fprintf(stderr, "hier: pop from an empty array\n"); exit(1); }
     xs->len--;

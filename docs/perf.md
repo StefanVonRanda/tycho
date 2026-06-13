@@ -303,8 +303,27 @@ both compilers (fusion correctly compiles the push-heavy `hierc0.hi`, which
 self-reproduces byte-identically and compiles itself faster); `bench-prongB` all
 outputs identical, no regression; differential fuzz 300 seeds FAIL=0 (×2, one per
 compiler); `tests/push_fusion.hi` covers break/continue/return/nested/two-array/
-while/bail. Open extension: heap-element arrays (`[string]`/struct) — deferred to
-keep the element copy/recycle interplay out of scope.
+while/bail.
+
+**Heap-element extension — `[string]` arrays now fuse too** (both compilers). The
+grow hook is element-generic (`hier_arr_str_grow` / generated `Arr_str_grow`:
+regrow the `char*` *spine*, recycle the old spine; the strings it points to were
+already copied into the array's arena, so the shallow pointer memcpy keeps them).
+The copy/recycle interplay that kept this out of scope resolves cleanly: a push
+only *appends*, so no element is ever overwritten (the MM-9 element-recycle path is
+overwrite-only and untouched), and the fused store deep-copies the element into the
+array's owning arena — `hier_str_copy(ow, v)` (hierc) / `gen_rhs(.., with_owner ow)`
+(hierc0) — exactly as the non-fused `hier_arr_str_push` does, preserving value
+semantics. Eligibility unchanged (used solely as a push target); the cursor is
+`char**` instead of `long*`/`double*`. Win is smaller than for scalars (the
+per-element `scopy`/malloc dominates, so descriptor-elision is a smaller fraction)
+— this is a completeness/consistency close, not a hot-path multiplier. Verified:
+`make fixpoint` B≡C byte-identical (str-fusion fires on `hierc0.hi`'s own `[str]`
+loops, +200 lines C, still self-reproduces); `make test` 136 green incl
+`tests/str_fuse.hi` (3 spine grows + value-semantics: push a var, mutate it, array
+unchanged) under ASan/UBSan; corelib (`wordfreq`/`strings`) green; differential
+fuzz 500 FAIL=0. Still out of scope: struct/tuple/option element arrays (ARRC) —
+the spine-regrow generalizes, but left for when a workload needs it.
 
 ## The self-compile gap: status and decision (closed for now)
 

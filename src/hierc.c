@@ -4368,7 +4368,7 @@ static void fuse_gather(Stmt **body, int n, const char **names, Type *tys, int *
         Expr *e = s->expr;
         if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
             && e->args[0]->kind == E_IDENT && e->args[0]->sval
-            && (e->args[0]->type == T_ARRAY_INT || e->args[0]->type == T_ARRAY_FLOAT)) {
+            && (e->args[0]->type == T_ARRAY_INT || e->args[0]->type == T_ARRAY_FLOAT || e->args[0]->type == T_ARRAY_STRING)) {
             const char *nm = e->args[0]->sval; int seen = 0;
             for (int k = 0; k < *cnt; k++) if (!strcmp(names[k], nm)) { seen = 1; break; }
             if (!seen && *cnt < 16) { names[*cnt] = nm; tys[*cnt] = e->args[0]->type; (*cnt)++; }
@@ -4402,7 +4402,7 @@ static int fuse_open(FILE *o, Stmt **body, int n, int ind, Expr *guard) {
         int id = g_blk++;
         indent(o, ind);
         fprintf(o, "%s*_fd%d = h_%s.data; long _fl%d = h_%s.len, _fc%d = h_%s.cap;\n",
-                tys[i] == T_ARRAY_FLOAT ? "double " : "long ", id, nm, id, nm, id, nm);
+                tys[i] == T_ARRAY_FLOAT ? "double " : tys[i] == T_ARRAY_STRING ? "char* " : "long ", id, nm, id, nm, id, nm);
         g_fuse[g_nfuse].arr = nm; g_fuse[g_nfuse].id = id; g_fuse[g_nfuse].ty = tys[i];
         g_nfuse++; opened++;
     }
@@ -4865,9 +4865,11 @@ static char *gen_call(Expr *e, const char *arena) {
             int fi = fuse_idx(e->args[0]->sval);
             if (fi >= 0) {
                 int id = g_fuse[fi].id;
-                const char *gf = g_fuse[fi].ty == T_ARRAY_FLOAT ? "hier_arr_float_grow" : "hier_arr_int_grow";
+                const char *gf = g_fuse[fi].ty == T_ARRAY_FLOAT ? "hier_arr_float_grow" : g_fuse[fi].ty == T_ARRAY_STRING ? "hier_arr_str_grow" : "hier_arr_int_grow";
                 const char *ow = owner_arena_of(e->args[0]->sval);
                 char *v = gen_expr(e->args[1], arena);
+                if (g_fuse[fi].ty == T_ARRAY_STRING)   /* deep-copy the element bytes into the array's arena (mirrors hier_arr_str_push) */
+                    v = sfmt("hier_str_copy(%s, %s)", ow, v);
                 return sfmt("({ if (_fl%d == _fc%d) %s(%s, &_fd%d, &_fc%d, _fl%d); _fd%d[_fl%d++] = %s; })",
                             id, id, gf, ow, id, id, id, id, id, v);
             }
