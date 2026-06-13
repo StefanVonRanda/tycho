@@ -3317,8 +3317,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi), _el), substr(name, cdi + 1, len(name)), _el), args, _el), names, types, dc, ctx)
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
-                if is_soa(at):                    # soa push: grow each field buffer + scatter
-                    return "Soa_" + soa_struct(at) + "_push(&" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
+                if is_soa(at):                    # soa push: grow each field buffer (in the soa's arena) + scatter
+                    return "Soa_" + soa_struct(at) + "_push(" + owner_arena_of(args[0], names, types, dc, ctx) + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 et := elem_ty(at)
                 pv := evar_name(args[0])              # push-loop fusion: register-resident cursor write
                 if pv != "" and count_str_occ(ctx.fusearr, pv) > 0:
@@ -3648,7 +3648,7 @@ fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
         ect := cty(dc, ctx, result_err(rt))
         return "(" + src + ".tag == 1 ? hok(hbox(" + ar + ", sizeof(" + oct + "), " + box_payload(dc, ctx, result_ok(rt), ar, src + ".ok") + ")) : herr(hbox(" + ar + ", sizeof(" + ect + "), " + box_payload(dc, ctx, result_err(rt), ar, src + ".err") + ")))"
     if is_soa(rt):
-        return "Soa_" + soa_struct(rt) + "_copy(" + src + ")"
+        return "Soa_" + soa_struct(rt) + "_copy(" + ar + ", " + src + ")"
     return src                                              # scalar / bool / non-heap struct
 
 # The block-nesting depth at which env index `vi` was declared: the deepest block
@@ -4548,7 +4548,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
     if is_tuple(ty) and is_place(e):             # value-semantic tuple copy (b := a)
         return "Tup_" + tup_suffix(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_soa(ty) and is_place(e):               # value-semantic soa copy (bind/pass/return)
-        return "Soa_" + soa_struct(ty) + "_copy(" + code + ")"
+        return "Soa_" + soa_struct(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_enum(dc, ctx, ty) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL enum place (var/
         return tcopy(dc, ctx, ty) + "(" + ctx.owner + ", " + code + ")"   # field/elem) escaping -> deep-copy. NOT a bare nullary-variant ctor (`return Leaf`), which is already fresh. Match arms BORROW (cp_typed).
     if (is_option(ty) or is_result(ty)) and is_place(e) and var_index(names, root_var(e)) >= 0:   # a REAL option/result
@@ -5476,7 +5476,7 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
         elif is_map(f.ty):
             out = out + "    r." + uf(f.name) + " = " + mfam(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_soa(f.ty):
-            out = out + "    r." + uf(f.name) + " = Soa_" + soa_struct(f.ty) + "_copy(s." + uf(f.name) + ");\n"
+            out = out + "    r." + uf(f.name) + " = Soa_" + soa_struct(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_enum(dc, ctx, f.ty):                  # deep-copy the enum node tree into `ar`
             out = out + "    r." + uf(f.name) + " = " + tcopy(dc, ctx, f.ty) + "(ar, s." + uf(f.name) + ");\n"
         elif is_struct(dc, ctx, f.ty) and struct_is_heap(dc, ctx, f.ty):
@@ -5922,16 +5922,18 @@ fn gen_soa_decl(dc: Decls, ctx: Ctx, ty: string) -> string:
                 out = out + " " + cty(dc, ctx, flds[i].ty) + "* f" + str(i) + ";"
                 i = i + 1
             out = out + " long len; long cap; } " + nm + ";\n"
-            out = out + "static void " + nm + "_push(" + nm + "* s, " + ust(sn) + " v);\n"
-            out = out + "static " + nm + " " + nm + "_copy(" + nm + " s);\n"
+            out = out + "static void " + nm + "_push(Arena* ar, " + nm + "* s, " + ust(sn) + " v);\n"
+            out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s);\n"
             out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b);\n"
             return out
         si = si + 1
     return ""
 
 # SOA family for `soa [Struct]`: one growable buffer per struct field (f0, f1,
-# ...) + a shared len/cap, instead of an array of records. Naive (realloc/leak)
-# like the Arr families. push grows each buffer and scatters the struct's fields.
+# ...) + a shared len/cap, instead of an array of records. Arena-backed (each
+# field buffer lives in the owner arena, freed with its scope) like the Arr
+# families -- earlier this was naive realloc/malloc and LEAKED (the leak fuzzer
+# found it). push grows each buffer and scatters the struct's (scalar) fields.
 fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
     sn := soa_struct(ty)
     nm := "Soa_" + sn
@@ -5939,26 +5941,26 @@ fn gen_soa(dc: Decls, ctx: Ctx, ty: string) -> string:
     for si < len(dc.structs):
         if dc.structs[si].name == sn:
             flds := dc.structs[si].fields       # typedef + decls emitted by gen_soa_decl (early)
-            out := "static void " + nm + "_push(" + nm + "* s, " + ust(sn) + " v) {\n"
-            out = out + "    if (s->len == s->cap) { s->cap = s->cap ? s->cap * 2 : 4;\n"
+            out := "static void " + nm + "_push(Arena* ar, " + nm + "* s, " + ust(sn) + " v) {\n"
+            out = out + "    if (s->len == s->cap) { long nc = s->cap ? s->cap * 2 : 4;\n"
             i := 0
             for i < len(flds):
                 ct := cty(dc, ctx, flds[i].ty)
-                out = out + "        s->f" + str(i) + " = realloc(s->f" + str(i) + ", sizeof(" + ct + ") * s->cap);\n"
+                out = out + "        " + ct + "* n" + str(i) + " = amem(ar, sizeof(" + ct + ") * nc); for (long j = 0; j < s->len; j = j + 1) n" + str(i) + "[j] = s->f" + str(i) + "[j]; if (ar && s->cap) arena_recycle(ar, s->f" + str(i) + ", sizeof(" + ct + ") * (size_t)s->cap); s->f" + str(i) + " = n" + str(i) + ";\n"
                 i = i + 1
-            out = out + "    }\n"
+            out = out + "        s->cap = nc;\n    }\n"
             i = 0
             for i < len(flds):
                 out = out + "    s->f" + str(i) + "[s->len] = v." + uf(flds[i].name) + ";\n"
                 i = i + 1
             out = out + "    s->len = s->len + 1;\n}\n"
             # copy: deep-copy each field buffer (value semantics on bind/pass/return)
-            out = out + "static " + nm + " " + nm + "_copy(" + nm + " s) {\n"
+            out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " s) {\n"
             out = out + "    " + nm + " r; r.len = s.len; r.cap = s.len;\n"
             i = 0
             for i < len(flds):
                 ct := cty(dc, ctx, flds[i].ty)
-                out = out + "    r.f" + str(i) + " = s.len ? malloc(sizeof(" + ct + ") * s.len) : 0;\n"
+                out = out + "    r.f" + str(i) + " = s.len ? amem(ar, sizeof(" + ct + ") * s.len) : 0;\n"
                 out = out + "    for (long j = 0; j < s.len; j = j + 1) r.f" + str(i) + "[j] = s.f" + str(i) + "[j];\n"
                 i = i + 1
             out = out + "    return r;\n}\n"
