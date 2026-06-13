@@ -125,8 +125,7 @@ fuzz: hierc
 
 # Robustness lane: feed MALFORMED input to BOTH compilers (built under
 # ASan+UBSan) and assert each FAILS CLOSED -- never crashes, and any input it
-# accepts must emit valid C. Not yet in `make ci` (scripts/ci.sh) pending the
-# remaining fail-open fixes it surfaces (e.g. duplicate-local `:=`).
+# accepts must emit valid C. Wired into `make ci` (scripts/ci.sh, step 8/9).
 fuzz-reject: hierc
 	@python3 fuzz/run_reject.py $(N)
 

@@ -127,13 +127,26 @@ done
 # index, pop from empty, reserve out of range. Abort programs run native-only:
 # a deliberate exit(1) leaves live arenas, so LeakSanitizer would (correctly,
 # uselessly) report them.
+# BOTH compilers must reject these (the reject path is now differential too --
+# the malformed-input fuzzer found hierc0 had been fail-opening on many of these
+# where hierc rejects). Build hierc0 once for the hierc0-side assertion.
+# SKIP-LIST: newtype distinctness -- hierc0 stores zero-cost newtypes as their
+# underlying type (identity erased at declaration), so it cannot distinguish a
+# UserId from str; a documented less-strict limitation, with hierc as the
+# validating oracle. See tests/reject/newtype_{agg,key}_mix.hi.
+"$HIERC" compiler/hierc0.hi -o "$TMP/h0" >/dev/null 2>&1 || { echo "could not build hierc0 for reject checks"; exit 2; }
+H0_REJECT_SKIP=" newtype_agg_mix newtype_key_mix "
 for hi in tests/reject/*.hi; do
     [ -e "$hi" ] || continue
-    name="reject_$(basename "$hi" .hi)"
+    base="$(basename "$hi" .hi)"
+    name="reject_$base"
+    skip0=0; case "$H0_REJECT_SKIP" in *" $base "*) skip0=1 ;; esac
     if "$HIERC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
-        note "$name" "compiler ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "hierc ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rj.log" ]; then
-        note "$name" "rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "hierc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+    elif [ "$skip0" = 0 ] && "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/rj0.log"; then
+        note "$name" "hierc0 ACCEPTED an invalid program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi

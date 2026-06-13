@@ -1,4 +1,8 @@
 # A newtype-keyed map rejects a raw base-typed key: "ana" is not a UserId.
+# NOTE: hierc rejects this; hierc0 does NOT (it stores zero-cost newtypes as
+# their underlying type, so newtype identity is erased at declaration -- a
+# documented less-strict limitation, with hierc as the validating oracle).
+# Skip-listed in tests/run.sh's hierc0 reject check.
 type UserId = string
 
 fn main():
