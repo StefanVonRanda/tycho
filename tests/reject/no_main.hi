@@ -1,0 +1,3 @@
+# both compilers must reject a program with no main procedure.
+fn helper() -> int:
+    return 1

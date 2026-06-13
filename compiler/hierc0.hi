@@ -2370,7 +2370,12 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "Fn_" + func_suffix(ty) + " "
     if is_enum(dc, ctx, ty):                          # enum value -> pointer to node
         return uet(ty) + "* "
-    return ust(ty) + " "                         # struct type: its own typedef
+    if ty == "void":
+        return "void "
+    if is_struct(dc, ctx, ty):                        # struct type: its own typedef
+        return ust(ty) + " "
+    die_at(dc, ctx.line, "type: unknown type '" + ty + "'")   # fail-closed: an unknown bare name would emit a dangling S_<name>
+    return ust(ty) + " "
 
 fn var_type(names: [string], types: [string], name: string) -> string:
     i := len(names) - 1                          # newest-first (shadowing)
@@ -7871,6 +7876,8 @@ fn check_dups(prog: Program):
             push(pnames, pn)
             j = j + 1
         i = i + 1
+    if not has_str(fns, "main"):                  # fail-closed: a program with no main emits main-less C (parity with hierc)
+        die("no 'main' procedure")
 
 fn main():
     a := args()
