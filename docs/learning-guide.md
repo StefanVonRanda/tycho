@@ -106,6 +106,7 @@ Compile and run:
 - Every block header ends with `:`
 - `#` starts a comment
 - `print()` takes a string and writes it — no implicit newline (add `\n` yourself)
+- `println()` is `print()` plus a trailing newline: `println("hi")` ≡ `print("hi" + "\n")` (still string-only, so `println(str(x))` for non-strings)
 - Every program needs a `fn main():` as the entry point (no return type)
 
 ---
@@ -561,6 +562,42 @@ for i in range(len(words)):
 ```
 
 Despite looking like it builds a fresh map each step, the compiler **mutates in place** when it sees the `counts = map_set(counts, ...)` self-rebind pattern — O(n) total, not O(n²).
+
+### Bracket syntax: `m[k]`
+
+You can also use bracket syntax instead of the `map_set`/`map_get` calls:
+
+```
+fn main():
+    counts := []string: int
+    counts["ada"] = 1          # write  (same as map_set(counts, "ada", 1))
+    counts["ada"] += 1         # compound update -> 2
+    counts["new"] += 5         # missing key starts at 0, then += 5 -> 5
+
+    n := counts["ada"]         # READ -> 2
+    miss := counts["nope"]     # READ of a missing key -> 0 (the value type's zero)
+    print(str(n) + " " + str(miss) + " " + str(len(counts)) + "\n")   # 2 0 2
+```
+
+Two things to know about reading `m[k]`:
+
+- **It's a pure read with a zero default.** A missing key yields the value
+  type's zero — `0` for int, `0.0` for float, `""` for string, `false` for bool
+  — and **does not insert anything** (the `nope` read above leaves `len` at 2).
+  This is exactly `map_get(m, k, <zero>)`; use `map_get(m, k, myDefault)`
+  directly when you want a different default.
+- **Reads work for scalar value types only** (int/float/string/bool). For a map
+  whose values are arrays/structs/maps, a read still goes through
+  `map_get(m, k, default)` (there's no single obvious "zero" to hand back), while
+  writes — `m[k] = v`, `m[k].field = x`, `push(m[k], v)` — work for any value type.
+
+So the counter idiom reads most naturally as:
+
+```
+counts := []string: int
+for i in range(len(words)):
+    counts[words[i]] += 1          # or: counts[w] = counts[w] + 1
+```
 
 ### Maps with `inout`
 
