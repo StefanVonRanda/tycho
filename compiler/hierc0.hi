@@ -458,6 +458,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     sigmap: [string: int]     # function name -> index in `sigs`, built once: O(1) sig_ret
     pars: [ParInfo]           # parallel-for sites from the lift pass (CC-3), indexed by SParFor's par-id
                               # (safe to map here precisely because Decls is never rebuilt)
+    src_lines: [string]       # the source split into lines (bundle-relative), for die_at snippet + caret
 
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
@@ -2387,9 +2388,9 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 if dc.structs[i].fields[j].name == fld:
                     return dc.structs[i].fields[j].ty
                 j = j + 1
-            die_at(ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
+            die_at(dc, ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
         i = i + 1
-    die_at(ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
+    die_at(dc, ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
     return "int"
 
 # A struct is "heap-bearing" if any field owns heap memory (a string, an array,
@@ -2477,7 +2478,7 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     si := map_get(dc.sigmap, name, -1)                # O(1) user-function lookup (was a linear scan)
     if si >= 0:
         return dc.sigs[si].ret
-    die_at(ctx.line, "type: unknown function '" + name + "'")
+    die_at(dc, ctx.line, "type: unknown function '" + name + "'")
     return "int"
 
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
@@ -2649,7 +2650,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ft := sig_functype(dc, name)
                 if ft != "":
                     return ft
-                die_at(_el, "type: unknown variable '" + name + "'")
+                die_at(dc, _el, "type: unknown variable '" + name + "'")
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(dc, ctx, vt)
         EField(base, fld, _el):
@@ -3031,8 +3032,23 @@ fn stmt_line(s: Stmt) -> int:
         SParFor(a, b, c, d, e, ln):
             return ln
 
-# abort with a source line prefix (resolve/codegen diagnostics). line 0 = unknown.
-fn die_at(ln: int, msg: string):
+# abort with "line N: msg" + the source line and a caret under its first
+# non-blank char (resolve/codegen diagnostics). line 0 / out of range = no snippet.
+fn die_at(dc: Decls, ln: int, msg: string):
+    nl := chr(10)
+    if ln > 0 and ln <= len(dc.src_lines):
+        txt := dc.src_lines[ln - 1]
+        ind := 0
+        for ind < len(txt):
+            if txt[ind] != 32 and txt[ind] != 9:
+                break
+            ind = ind + 1
+        pad := ""
+        c := 0
+        for c < ind:
+            pad = pad + " "
+            c = c + 1
+        die("line " + str(ln) + ": " + msg + nl + "    " + txt + nl + "    " + pad + "^")
     if ln > 0:
         die("line " + str(ln) + ": " + msg)
     die(msg)
@@ -4823,7 +4839,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    " + gen_place(lv, names, types, dc, ctx) + " = " + gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, sfo)) + ";\n"
         SPrint(e, _sl):
             if type_of(e, names, types, dc, ctx) != "str":
-                die_at(ctx.line, "codegen: print expects a string")
+                die_at(dc, ctx.line, "codegen: print expects a string")
             # transient arena: the print arg's string temporaries are consumed by
             # fputs and never escape, so build them in _t and free it right after.
             return "    { Arena _t = arena_new(0); fputs(" + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + ", stdout); arena_free(&_t); }\n"
@@ -7780,7 +7796,8 @@ fn main():
         if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
-    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo)
+    src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines)
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
@@ -7795,7 +7812,7 @@ fn main():
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines)
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
