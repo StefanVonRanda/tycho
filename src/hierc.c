@@ -2140,6 +2140,9 @@ static void parse_struct(Parser *ps) {
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *fn = eat(ps, TK_IDENT, "a field name");
+        for (int fi = 0; fi < sd->nfields; fi++)   /* fail-closed: a dup field name would emit a duplicate C member */
+            if (!strcmp(sd->fields[fi].name, fn->text))
+                die_at(fn->line, "duplicate field '%s'", fn->text);
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
         if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");

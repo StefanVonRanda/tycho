@@ -123,6 +123,13 @@ N ?= 500
 fuzz: hierc
 	@python3 fuzz/run.py $(N)
 
+# Robustness lane: feed MALFORMED input to BOTH compilers (built under
+# ASan+UBSan) and assert each FAILS CLOSED -- never crashes, and any input it
+# accepts must emit valid C. Not yet in `make ci` (scripts/ci.sh) pending the
+# remaining fail-open fixes it surfaces (e.g. duplicate-local `:=`).
+fuzz-reject: hierc
+	@python3 fuzz/run_reject.py $(N)
+
 # Wall-time regression guard: asserts hier beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
 # fuzz/fixpoint can't (they check output, not speed -- see commit 6ff7aa1). In CI.

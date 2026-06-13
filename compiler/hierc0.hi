@@ -7795,6 +7795,63 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo], spawn
         i = i + 1
     return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder)
 
+# Fail-closed declaration checks (parity with the C compiler's parse-time
+# guards): reject duplicate type names (struct/enum/newtype share one
+# namespace), duplicate variant names (package-scoped), duplicate function
+# names (no overloading), and duplicate struct field names. Without these,
+# hierc0 accepted such programs and emitted C with duplicate symbols/members
+# that cc then rejected (a fail-open). Message-only: the decl AST carries no
+# position. Never fires on valid input, so fixpoint output is unchanged.
+fn check_dups(prog: Program):
+    tnames := []string
+    i := 0
+    for i < len(prog.structs):
+        nm := prog.structs[i].name
+        if has_str(tnames, nm):
+            die("type '" + nm + "' is already defined")
+        push(tnames, nm)
+        fnames := []string
+        j := 0
+        for j < len(prog.structs[i].fields):
+            fnm := prog.structs[i].fields[j].name
+            if has_str(fnames, fnm):
+                die("duplicate field '" + fnm + "' in struct '" + nm + "'")
+            push(fnames, fnm)
+            j = j + 1
+        i = i + 1
+    i = 0
+    for i < len(prog.enums):
+        nm := prog.enums[i].name
+        if has_str(tnames, nm):
+            die("type '" + nm + "' is already defined")
+        push(tnames, nm)
+        i = i + 1
+    i = 0
+    for i < len(prog.ntnames):
+        if has_str(tnames, prog.ntnames[i]):
+            die("type '" + prog.ntnames[i] + "' is already defined")
+        push(tnames, prog.ntnames[i])
+        i = i + 1
+    vnames := []string
+    i = 0
+    for i < len(prog.enums):
+        j := 0
+        for j < len(prog.enums[i].variants):
+            vn := prog.enums[i].variants[j].name
+            if has_str(vnames, vn):
+                die("variant name '" + vn + "' is already used in this package")
+            push(vnames, vn)
+            j = j + 1
+        i = i + 1
+    fns := []string
+    i = 0
+    for i < len(prog.funcs):
+        nm := prog.funcs[i].name
+        if has_str(fns, nm):
+            die("'" + nm + "' is already defined")
+        push(fns, nm)
+        i = i + 1
+
 fn main():
     a := args()
     src := ""
@@ -7810,6 +7867,7 @@ fn main():
     toks := lex(src)
     pos := 0
     prog0 := parse_program(toks, &pos)
+    check_dups(prog0)                                 # fail-closed: reject duplicate decls before codegen
     sigs0 := []Sig                                    # sigs over the ORIGINAL funcs: capture-type lookups during the lift
     sigmap0 := []string: int
     i := 0
