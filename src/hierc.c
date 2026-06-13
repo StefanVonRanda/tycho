@@ -4561,6 +4561,12 @@ static void collect_accums(Stmt **body, int n) {
         if ((is_self_append(s) || is_self_mapset(s) || is_self_mapdel(s)) && g_naccum < 256) g_accum[g_naccum++] = s->name;
         if (s->body) collect_accums(s->body, s->nbody);
         if (s->els)  collect_accums(s->els, s->nels);
+        /* match/select arm bodies are nested blocks too (s->arms[a].body, not
+         * s->body) -- without this an accumulator inside a `match` arm silently
+         * falls back to the pure O(n)-copy map_set/append, turning a channel-
+         * drain loop O(n^2). Same soundness as the if/for case: an arm is a
+         * scoped block whose binds are fresh locals, never aliases of acc. */
+        for (int a = 0; a < s->narms; a++) collect_accums(s->arms[a].body, s->arms[a].nbody);
     }
 }
 static int is_accum(const char *nm) {
