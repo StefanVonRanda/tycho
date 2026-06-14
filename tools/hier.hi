@@ -5,8 +5,9 @@
 #   hier build <file.hi> [-o out]    build a binary (default name = file sans .hi)
 #   hier check <file.hi>             front-end only: parse/type, no cc (fast)
 #   hier watch <file.hi>             re-check whenever the file changes
+#   hier fmt   <file.hi> [-w]        format to stdout, or safely in-place with -w
 #
-# Set HIERC to pick the compiler (default "hierc"). Shell-out + sleep come from
+# Set HIERC/HIERFMT to pick the compiler/formatter. Shell-out + sleep come from
 # tools/hier_shim.c (libc system()/usleep() the FFI can't name directly); build
 # this with:  hierc tools/hier.hi --shim tools/hier_shim.c -o hier
 
@@ -19,6 +20,13 @@ fn compiler() -> string:
     if c == "":
         return "hierc"
     return c
+
+# the formatter to invoke (HIERFMT override, else "hierfmt" off PATH)
+fn formatter() -> string:
+    f := getenv("HIERFMT")
+    if f == "":
+        return "hierfmt"
+    return f
 
 # output binary name for `build`: drop the directory and a trailing ".hi"
 fn out_name(file: string) -> string:
@@ -48,7 +56,8 @@ fn usage():
     print("  hier build <file.hi> [-o out]    build to a binary\n")
     print("  hier check <file.hi>             parse/type only, no cc (fast)\n")
     print("  hier watch <file.hi>             re-check on change\n")
-    print("  (HIERC overrides the compiler; default 'hierc')\n")
+    print("  hier fmt   <file.hi> [-w]        format to stdout (-w: safe in-place write)\n")
+    print("  (HIERC/HIERFMT override compiler/formatter; defaults 'hierc'/'hierfmt')\n")
 
 fn cmd_run(a: [string], cc: string):
     file := a[2]
@@ -75,6 +84,47 @@ fn cmd_check(a: [string], cc: string):
     if hier_run(cc + " " + file + " --emit-c -o /tmp/.hier_check > /dev/null") != 0:
         die("hier check: " + file + " has errors")
     print("ok: " + file + "\n")
+
+# `hier fmt <file>` prints the formatted source (safe, works on any file).
+# `hier fmt -w <file>` rewrites it IN PLACE -- but only after proving the program
+# is unchanged: format to a sibling temp, emit-C the original AND the formatted
+# from the SAME path (controls for the filename), require byte-identical C, then
+# atomically rename. Any failure leaves the original untouched (fail closed).
+fn cmd_fmt(a: [string], cc: string):
+    fmtr := formatter()
+    write := false
+    file := ""
+    i := 2
+    for i < len(a):
+        if a[i] == "-w":
+            write = true
+        else:
+            file = a[i]
+        i = i + 1
+    if file == "":
+        die("hier fmt: no file given")
+    if not write:
+        hier_run(fmtr + " " + file)                          # preview to stdout
+        return
+    tmp := file + ".hierfmt~"                                # sibling temp -> same FS -> atomic mv
+    if hier_run(fmtr + " " + file + " > " + tmp) != 0:
+        hier_run("rm -f " + tmp)
+        die("hier fmt -w: formatter failed on " + file)
+    chk := "/tmp/.hierfmt_check.hi"
+    hier_run("cp " + file + " " + chk)
+    if hier_run(cc + " " + chk + " --emit-c -o /tmp/.hierfmt_a > /dev/null 2>&1") != 0:
+        hier_run("rm -f " + tmp)
+        die("hier fmt -w: " + file + " does not compile -- fix it first (preview with: hier fmt " + file + ")")
+    hier_run("cp " + tmp + " " + chk)
+    if hier_run(cc + " " + chk + " --emit-c -o /tmp/.hierfmt_b > /dev/null 2>&1") != 0:
+        hier_run("rm -f " + tmp)
+        die("hier fmt -w: REFUSED -- formatted output does not compile; " + file + " left unchanged")
+    if hier_run("diff -q /tmp/.hierfmt_a.c /tmp/.hierfmt_b.c > /dev/null 2>&1") != 0:
+        hier_run("rm -f " + tmp)
+        die("hier fmt -w: REFUSED -- formatting would change the program; " + file + " left unchanged")
+    if hier_run("mv " + tmp + " " + file) != 0:
+        die("hier fmt -w: failed to replace " + file)
+    print("formatted " + file + "\n")
 
 fn cmd_watch(a: [string], cc: string):
     file := a[2]
@@ -103,6 +153,8 @@ fn main():
         cmd_check(a, cc)
     elif cmd == "watch":
         cmd_watch(a, cc)
+    elif cmd == "fmt":
+        cmd_fmt(a, cc)
     else:
         print("hier: unknown command '" + cmd + "'\n")
         usage()

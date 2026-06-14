@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
+.PHONY: all tools demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
 
 all: hierc
 
@@ -39,6 +39,9 @@ hier: hierc tools/hier.hi tools/hier_shim.c
 # tools/hierfmt.hi. `./hierfmt <file.hi>` (currently re-emits unchanged).
 hierfmt: hierc tools/hierfmt.hi
 	./hierc tools/hierfmt.hi -o hierfmt
+
+# build the whole daily-driver toolchain (driver + formatter)
+tools: hier hierfmt
 
 demo: hierc
 	./hierc examples/hello.hi
