@@ -214,6 +214,21 @@ fn jat(j: Json, i: int) -> Json:                # i-th element of a JArr, else J
         JObj(ks, vs):
             return JNull
 
+fn as_num(j: Json) -> int:
+    match j:
+        JNum(x):
+            return x
+        JNull:
+            return 0
+        JBool(b):
+            return 0
+        JStr(s):
+            return 0
+        JArr(xs):
+            return 0
+        JObj(ks, vs):
+            return 0
+
 # ---- small string helpers ---------------------------------------------------
 fn trim_eol(s: string) -> string:
     n := len(s)
@@ -318,8 +333,111 @@ fn diagnose(uri: string, text: string, cc: string):
                 nd = nd + 1
     send_msg("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + esc(uri) + "\",\"diagnostics\":[" + diags + "]}}")
 
+# ---- symbol navigation (hover + go-to-definition) --------------------------
+# Lightweight, buffer-only: scan the open document for top-level definitions
+# (fn/struct/enum/type <name>) and answer hover with the definition's signature
+# line + go-to-definition with its location. No compiler symbol table needed;
+# local/param/expression types would require type export from the compiler.
+
+fn ltrim(s: string) -> string:
+    i := 0
+    for i < len(s) and (s[i] == 32 or s[i] == 9):
+        i = i + 1
+    return substr(s, i, len(s))
+
+fn is_ident_ch(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95
+
+# the identifier under the cursor (0-based line/character), or ""
+fn word_at(text: string, ln: int, ch: int) -> string:
+    lines := split(text, "\n")
+    if ln < 0 or ln >= len(lines):
+        return ""
+    s := lines[ln]
+    n := len(s)
+    if ch < 0 or ch > n:
+        return ""
+    a := ch
+    for a > 0 and is_ident_ch(s[a - 1]):
+        a = a - 1
+    b := ch
+    for b < n and is_ident_ch(s[b]):
+        b = b + 1
+    if a >= b:
+        return ""
+    return substr(s, a, b)
+
+# does `line` define `name` with keyword `kw` (fn/struct/enum/type)?
+fn def_matches(line: string, kw: string, name: string) -> bool:
+    s := ltrim(line)
+    pre := kw + " "
+    if not starts_with(s, pre):
+        return false
+    rest := substr(s, len(pre), len(s))
+    if not starts_with(rest, name):
+        return false
+    after := len(name)
+    if after >= len(rest):
+        return true
+    return not is_ident_ch(rest[after])
+
+# 0-based line where `name` is defined (fn/struct/enum/type), else -1
+fn find_def(text: string, name: string) -> int:
+    lines := split(text, "\n")
+    for i in range(len(lines)):
+        s := lines[i]
+        if def_matches(s, "fn", name) or def_matches(s, "struct", name) or def_matches(s, "enum", name) or def_matches(s, "type", name):
+            return i
+    return 0 - 1
+
+# document store (uri -> latest buffer text), parallel arrays
+fn doc_set(uris: inout [string], texts: inout [string], uri: string, text: string):
+    for i in range(len(uris)):
+        if uris[i] == uri:
+            texts[i] = text
+            return
+    push(uris, uri)
+    push(texts, text)
+
+fn doc_get(uris: [string], texts: [string], uri: string) -> string:
+    for i in range(len(uris)):
+        if uris[i] == uri:
+            return texts[i]
+    return ""
+
+fn handle_hover(id: Json, uris: [string], texts: [string], params: Json):
+    text := doc_get(uris, texts, as_str(get(get(params, "textDocument"), "uri")))
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    dln := 0 - 1
+    if w != "":
+        dln = find_def(text, w)
+    if dln < 0:
+        send_result(id, "null")
+        return
+    lines := split(text, "\n")
+    md := "```hier\n" + ltrim(lines[dln]) + "\n```"
+    send_result(id, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"" + esc(md) + "\"}}")
+
+fn handle_definition(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    dln := 0 - 1
+    if w != "":
+        dln = find_def(text, w)
+    if dln < 0:
+        send_result(id, "null")
+        return
+    lines := split(text, "\n")
+    ec := len(lines[dln])
+    send_result(id, "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(dln) + ",\"character\":0},\"end\":{\"line\":" + str(dln) + ",\"character\":" + str(ec) + "}}}")
+
 fn main():
     cc := compiler()
+    uris := []string
+    texts := []string
     for true:
         body := read_message()
         if body == "":
@@ -330,13 +448,22 @@ fn main():
         id := get(msg, "id")
         params := get(msg, "params")
         if method == "initialize":
-            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1}}")
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true}}")
         elif method == "textDocument/didOpen":
             td := get(params, "textDocument")
-            diagnose(as_str(get(td, "uri")), as_str(get(td, "text")), cc)
+            u := as_str(get(td, "uri"))
+            t := as_str(get(td, "text"))
+            doc_set(&uris, &texts, u, t)
+            diagnose(u, t, cc)
         elif method == "textDocument/didChange":
-            uri := as_str(get(get(params, "textDocument"), "uri"))
-            diagnose(uri, as_str(get(jat(get(params, "contentChanges"), 0), "text")), cc)
+            u := as_str(get(get(params, "textDocument"), "uri"))
+            t := as_str(get(jat(get(params, "contentChanges"), 0), "text"))
+            doc_set(&uris, &texts, u, t)
+            diagnose(u, t, cc)
+        elif method == "textDocument/hover":
+            handle_hover(id, uris, texts, params)
+        elif method == "textDocument/definition":
+            handle_definition(id, uris, texts, params)
         elif method == "shutdown":
             send_result(id, "null")
         elif method == "exit":
