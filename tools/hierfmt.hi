@@ -150,14 +150,120 @@ fn lex(src: string) -> [Tok]:
             col = col + (i - start)
     return toks
 
-# Stage 1 render = concatenate raw text (identity / round-trip). Stage 2 replaces
-# this with the actual pretty-printer.
-fn render(toks: [Tok]) -> string:
+# ---- Stage 2: pretty-printer ------------------------------------------------
+# Within a line hier is whitespace-insensitive (only LEADING indentation carries
+# meaning), so re-spacing a line can never change the program -- the one hazard is
+# merging two tokens by dropping a separator, which we avoid by only COLLAPSING
+# existing whitespace to one space, never removing a separator that was there.
+# Indentation IS semantic, so we re-derive block depth from the source's own
+# indent structure (an indent stack of leading widths) and re-emit it as 4 spaces
+# per level. Proof it preserves the program: `hierc --emit-c` yields identical C
+# before and after (verified across the whole corpus).
+
+fn indent_str(depth: int) -> string:
+    s := ""
+    k := 0
+    for k < depth:
+        s = s + "    "
+        k = k + 1
+    return s
+
+fn is_blank(line: [Tok]) -> bool:
+    i := 0
+    for i < len(line):
+        if not (line[i].kind == KWS):
+            return false
+        i = i + 1
+    return true
+
+# a line whose only non-whitespace token is a comment (a full-line comment)
+fn is_comment_only(line: [Tok]) -> bool:
+    sawc := false
+    i := 0
+    for i < len(line):
+        k := line[i].kind
+        if k == KComment:
+            sawc = true
+        elif not (k == KWS):
+            return false
+        i = i + 1
+    return sawc
+
+# full-line comments pass through verbatim: their indentation is often deliberate
+# (aligned continuations of a trailing comment), they don't affect the program, and
+# leaving them out of the indent stack keeps depth derivation purely code-driven.
+fn comment_line(line: [Tok]) -> string:
     out := ""
     i := 0
-    for i < len(toks):
-        out = out + toks[i].text
+    for i < len(line):
+        out = out + line[i].text
         i = i + 1
+    return out
+
+# format one non-blank line: canonical 4-space indent + content with collapsed
+# inter-token spacing (inline-comment leading space is preserved, for alignment).
+fn fmt_line(line: [Tok], levels: inout [int]) -> string:
+    w := 0
+    start := 0
+    if len(line) > 0:
+        if line[0].kind == KWS:
+            w = len(line[0].text)
+            start = 1
+    # indent stack: push on deeper, pop on shallower; depth = stack height - 1
+    if w > levels[len(levels) - 1]:
+        push(levels, w)
+    else:
+        for len(levels) > 1 and w < levels[len(levels) - 1]:
+            pop(levels)
+        if w > levels[len(levels) - 1]:
+            push(levels, w)            # inconsistent indent (not valid hier): treat as new level
+    out := indent_str(len(levels) - 1)
+    endp := len(line)
+    for endp > start and line[endp - 1].kind == KWS:
+        endp = endp - 1
+    prevReal := false
+    pendingWs := ""
+    j := start
+    for j < endp:
+        t := line[j]
+        if t.kind == KWS:
+            pendingWs = pendingWs + t.text
+        else:
+            if prevReal:
+                if t.kind == KComment:
+                    out = out + pendingWs        # keep inline-comment alignment verbatim
+                else:
+                    if pendingWs != "":
+                        out = out + " "          # collapse a whitespace run to one space
+            out = out + t.text
+            prevReal = true
+            pendingWs = ""
+        j = j + 1
+    return out
+
+fn fmt(toks: [Tok]) -> string:
+    levels := [0]
+    out := ""
+    blanks := 0
+    i := 0
+    n := len(toks)
+    for i < n:
+        line := []Tok
+        for i < n and not (toks[i].kind == KNL):
+            push(line, toks[i])
+            i = i + 1
+        if i < n:
+            i = i + 1                            # consume the KNL
+        if is_blank(line):
+            blanks = blanks + 1
+            if blanks <= 1:                      # collapse runs of blank lines to one
+                out = out + "\n"
+        elif is_comment_only(line):
+            blanks = 0
+            out = out + comment_line(line) + "\n"    # preserve full-line comments as written
+        else:
+            blanks = 0
+            out = out + fmt_line(line, &levels) + "\n"
     return out
 
 fn main():
@@ -167,4 +273,4 @@ fn main():
         return
     src := read_file(a[1])
     toks := lex(src)
-    print(render(toks))
+    print(fmt(toks))
