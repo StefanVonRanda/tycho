@@ -45,11 +45,13 @@ def frame(o):
     b = json.dumps(o).encode(); return b"Content-Length: %d\r\n\r\n%b" % (len(b), b)
 ok = "fn f(x: int) -> int:\n    y := x + 1\n    return y\n\nfn main():\n    print(str(f(1)))\n"
 bad = "fn main():\n    x := \n"
+loopy = "fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n"   # missing increment -> warning
 def tp(idn, meth, ln, ch):
     return frame({"jsonrpc":"2.0","id":idn,"method":meth,"params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":ln,"character":ch}}})
 msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
         + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///ok.hi","text":ok}}})
         + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///bad.hi","text":bad}}})
+        + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///loop.hi","text":loopy}}})
         + tp(2, "textDocument/hover", 1, 4)        # local `y` -> inferred type
         + tp(3, "textDocument/hover", 5, 14)       # `f` call -> resolved signature
         + tp(4, "textDocument/definition", 5, 14)  # -> fn f line
@@ -72,8 +74,9 @@ flagged = len(diags.get("file:///bad.hi", [])) >= 1
 loc_ok = bool(hloc) and "y: int" in json.dumps(hloc)
 fn_ok = bool(hfn) and "f(x: int)" in json.dumps(hfn)
 def_ok = bool(defn) and defn.get("range", {}).get("start", {}).get("line") == 0
-print("    init=%s  diag(valid->[]=%s invalid->diag=%s)  hover(local=%s fn=%s)  def=%s" % (init, clean, flagged, loc_ok, fn_ok, def_ok))
-sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok) else 1)
+warn_ok = any(d.get("severity") == 2 for d in diags.get("file:///loop.hi", []))
+print("    init=%s  diag(valid->[]=%s invalid->diag=%s loop-warn=%s)  hover(local=%s fn=%s)  def=%s" % (init, clean, flagged, warn_ok, loc_ok, fn_ok, def_ok))
+sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok) else 1)
 PY
 
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi

@@ -53,6 +53,25 @@ static void die_at(int line, const char *fmt, ...) {
     exit(1);
 }
 
+/* Like die_at but non-fatal: a `<file>:<line>: warning: ...` diagnostic (+ source
+ * snippet) that the language server parses the same way it parses errors. */
+__attribute__((format(printf, 2, 3)))
+static void warn_at(int line, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    fprintf(stderr, "%s:%d: warning: ", g_srcname, line);
+    vfprintf(stderr, fmt, ap);
+    fputc('\n', stderr);
+    va_end(ap);
+    if (g_src && line > 0) {
+        const char *p = g_src; int ln = 1;
+        while (ln < line && *p) { if (*p++ == '\n') ln++; }
+        if (ln == line && *p && *p != '\n') {
+            const char *eol = p; while (*eol && *eol != '\n') eol++;
+            fprintf(stderr, "  %4d | %.*s\n", line, (int)(eol - p), p);
+        }
+    }
+}
+
 static char *sfmt(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     char *s = NULL;
@@ -3715,6 +3734,85 @@ static void resolve_parfor(Stmt *s) {
     g_parprocs.v[g_parprocs.n++] = pr;
 }
 
+/* --- loop-progress warning -------------------------------------------------
+ * Flag a `for <cond>:` (while-form) that can't make progress: a real comparison
+ * whose variables are never changed in the body, with no break/return/die to end
+ * it. SOUND because value semantics means a variable changes only by assignment
+ * to it, a place-mutation of it (v[i]=, v.f=), or being passed by `&` (inout) --
+ * there is no aliasing, so a body that does none of those to a condition variable
+ * truly cannot move it. `for true:` (a constant condition, no variables) and
+ * call-bearing conditions (e.g. `for len(q) > 0:`) are deliberately skipped. */
+#define WL_MAX 32
+
+static void wl_cond_vars(Expr *e, const char *v[], int *n, int *has_call) {
+    if (!e) return;
+    if (e->kind == E_CALL || e->kind == E_SPAWN) { *has_call = 1; return; }
+    if (e->kind == E_IDENT) { if (*n < WL_MAX) v[(*n)++] = e->sval; return; }
+    wl_cond_vars(e->lhs, v, n, has_call);
+    wl_cond_vars(e->rhs, v, n, has_call);
+    for (int i = 0; i < e->nargs; i++) wl_cond_vars(e->args[i], v, n, has_call);
+}
+
+static const char *wl_root(Expr *e) {     /* base identifier of a place: v / v[i] / v.f / v[i].f */
+    while (e && (e->kind == E_INDEX || e->kind == E_FIELD)) e = e->lhs;
+    return (e && e->kind == E_IDENT) ? e->sval : NULL;
+}
+
+static void wl_add(const char *v[], int *n, const char *name) {
+    if (name && *n < WL_MAX) v[(*n)++] = name;
+}
+
+/* mutations/exits hiding in an expression: &v (inout), push/pop(v,...), die(...) */
+static void wl_scan_expr(Expr *e, const char *mut[], int *nm, int *exit) {
+    if (!e) return;
+    if (e->kind == E_ADDR) wl_add(mut, nm, wl_root(e->lhs));
+    if (e->kind == E_CALL && e->sval) {
+        if (!strcmp(e->sval, "die")) *exit = 1;
+        if ((!strcmp(e->sval, "push") || !strcmp(e->sval, "pop")) && e->nargs >= 1)
+            wl_add(mut, nm, wl_root(e->args[0]));
+    }
+    wl_scan_expr(e->lhs, mut, nm, exit);
+    wl_scan_expr(e->rhs, mut, nm, exit);
+    for (int i = 0; i < e->nargs; i++) wl_scan_expr(e->args[i], mut, nm, exit);
+}
+
+static void wl_scan_body(Stmt **body, int n, const char *mut[], int *nm, int *exit) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (!s) continue;
+        switch (s->kind) {
+            case S_ASSIGN: case S_DECL: case S_FORRANGE: wl_add(mut, nm, s->name); break;
+            case S_MDECL: case S_MASSIGN:
+                for (int j = 0; j < s->nnames; j++) wl_add(mut, nm, s->names[j]); break;
+            case S_INDEXSET: case S_FIELDSET: wl_add(mut, nm, wl_root(s->target)); break;
+            case S_RETURN: case S_BREAK: *exit = 1; break;
+            default: break;
+        }
+        wl_scan_expr(s->expr, mut, nm, exit);
+        wl_scan_expr(s->target, mut, nm, exit);
+        wl_scan_expr(s->r_start, mut, nm, exit);
+        wl_scan_expr(s->r_stop, mut, nm, exit);
+        wl_scan_expr(s->r_step, mut, nm, exit);
+        wl_scan_body(s->body, s->nbody, mut, nm, exit);
+        wl_scan_body(s->els, s->nels, mut, nm, exit);
+        for (int a = 0; a < s->narms; a++) wl_scan_body(s->arms[a].body, s->arms[a].nbody, mut, nm, exit);
+    }
+}
+
+static void wl_check(Stmt *s) {           /* s is an S_WHILE */
+    const char *cv[WL_MAX]; int ncv = 0, has_call = 0;
+    wl_cond_vars(s->expr, cv, &ncv, &has_call);
+    if (ncv == 0 || has_call) return;     /* constant cond (`for true:`) or a call in it: skip */
+    const char *mut[WL_MAX]; int nm = 0, exit = 0;
+    wl_scan_body(s->body, s->nbody, mut, &nm, &exit);
+    if (exit) return;                     /* a break/return/die can end the loop */
+    for (int i = 0; i < ncv; i++)
+        for (int j = 0; j < nm; j++)
+            if (!strcmp(cv[i], mut[j])) return;   /* a condition variable is changed -> progresses */
+    warn_at(s->line, "loop condition never changes; this `for` may run forever "
+                     "(forgot to advance a variable? consider `for x in range(...)`)");
+}
+
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_DECL: {
@@ -3919,6 +4017,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             if (resolve_expr(s->expr) != T_BOOL)
                 die_at(s->line, "for condition must be bool");
             resolve_block(s->body, s->nbody, ret);
+            wl_check(s);
             break;
         }
         case S_SELECT: {   /* CC-5: blocks until a recv arm fires, all channels close+drain, or default */
