@@ -8,6 +8,10 @@
 /hier
 /hier.c
 
+# The compiled `hierfmt` formatter + its intermediate C (built by `make hierfmt`)
+/hierfmt
+/hierfmt.c
+
 # Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
 /build/
 

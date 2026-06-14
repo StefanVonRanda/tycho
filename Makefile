@@ -34,6 +34,12 @@ hierc: src/hierc.c $(EMBED)
 hier: hierc tools/hier.hi tools/hier_shim.c
 	./hierc tools/hier.hi --shim tools/hier_shim.c -o hier
 
+# hierfmt -- the source formatter. STAGE 1: a lossless, comment-preserving lexer
+# (round-trips every .hi file byte-for-byte); STAGE 2 will pretty-print. See
+# tools/hierfmt.hi. `./hierfmt <file.hi>` (currently re-emits unchanged).
+hierfmt: hierc tools/hierfmt.hi
+	./hierc tools/hierfmt.hi -o hierfmt
+
 demo: hierc
 	./hierc examples/hello.hi
 	@echo "--- running examples/hello (type a name) ---"
@@ -160,7 +166,7 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
 
 clean:
-	rm -f hierc hier hier.c build/hier_rt_embed.h
+	rm -f hierc hier hier.c hierfmt hierfmt.c build/hier_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c
