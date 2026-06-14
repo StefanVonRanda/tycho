@@ -6944,6 +6944,7 @@ fn collect_evars(e: Expr, out: inout [string]):
             collect_evars(l, &out)
             collect_evars(r, &out)
         ECall(n, a, _el):
+            push(out, n)                           # callee may be a captured fn-value local (g(x) where g is a closure); the lift filter keeps only enclosing locals
             j := 0
             for j < len(a):
                 collect_evars(a[j], &out)

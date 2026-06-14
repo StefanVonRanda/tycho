@@ -2497,6 +2497,13 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
         collect_idents(g_laminfo[e->ival].proc->body[0]->expr, out, n, cap);
         return;
     }
+    if (e->kind == E_CALL && e->sval) {   /* a call's callee may itself be a captured fn-value local
+                                           * (`g(x)` where g is a closure); vars_find later keeps only
+                                           * real locals — global fns/builtins/constructors are dropped. */
+        int dup = 0;
+        for (int i = 0; i < *n; i++) if (!strcmp(out[i], e->sval)) { dup = 1; break; }
+        if (!dup && *n < cap) out[(*n)++] = e->sval;
+    }
     collect_idents(e->lhs, out, n, cap);
     collect_idents(e->rhs, out, n, cap);
     for (int i = 0; i < e->nargs; i++) collect_idents(e->args[i], out, n, cap);
