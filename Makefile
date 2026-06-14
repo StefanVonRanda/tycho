@@ -40,8 +40,13 @@ hier: hierc tools/hier.hi tools/hier_shim.c
 hierfmt: hierc tools/hierfmt.hi
 	./hierc tools/hierfmt.hi -o hierfmt
 
-# build the whole daily-driver toolchain (driver + formatter)
-tools: hier hierfmt
+# hier-lsp -- the language server (JSON-RPC over stdin/stdout, dogfooded in hier).
+# STAGE 1: lifecycle handshake; stage 2 adds diagnostics. Any LSP client drives it.
+hier-lsp: hierc tools/lsp.hi tools/lsp_shim.c
+	./hierc tools/lsp.hi --shim tools/lsp_shim.c -o hier-lsp
+
+# build the whole daily-driver toolchain (driver + formatter + language server)
+tools: hier hierfmt hier-lsp
 
 demo: hierc
 	./hierc examples/hello.hi
@@ -169,7 +174,7 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
 
 clean:
-	rm -f hierc hier hier.c hierfmt hierfmt.c build/hier_rt_embed.h
+	rm -f hierc hier hier.c hierfmt hierfmt.c hier-lsp hier-lsp.c build/hier_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c

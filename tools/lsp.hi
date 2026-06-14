@@ -1,0 +1,260 @@
+# hier-lsp — a Language Server for hier, written in hier (dogfood). STAGE 1:
+# JSON-RPC transport + the lifecycle handshake (initialize / shutdown / exit).
+# STAGE 2 adds diagnostics (run the compiler on each buffer -> publishDiagnostics);
+# later: hover, go-to-definition. One server, driven by any LSP client (VS Code,
+# Zed, ...). Build:  hierc tools/lsp.hi --shim tools/lsp_shim.c -o hier-lsp
+#
+# The JSON value model + parser + serializer are reused verbatim from
+# examples/json.hi (a proven recursive value-semantic parser); only the transport,
+# a couple of accessors (as_str), and the dispatch loop are new.
+
+extern fn hier_read_line() -> string          # one stdin line (through \n); "" on EOF
+extern fn hier_read_n(n: int) -> string       # exactly n stdin bytes (the JSON body)
+extern fn hier_write(s: string) -> int        # write to stdout + flush
+
+# ---- JSON (from examples/json.hi) -------------------------------------------
+enum Json:
+    JNull
+    JBool(bool)
+    JNum(int)
+    JStr(string)
+    JArr([Json])
+    JObj([string], [Json])
+
+fn skip_ws(s: string, n: int, pos: inout int):
+    for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+        pos = pos + 1
+
+fn parse_string(s: string, n: int, pos: inout int) -> string:
+    pos = pos + 1
+    r := ""
+    for pos < n and s[pos] != 34:
+        if s[pos] == 92:
+            pos = pos + 1
+            e := s[pos]
+            if e == 110:
+                r = r + '\n'
+            elif e == 116:
+                r = r + '\t'
+            elif e == 114:
+                r = r + '\r'
+            elif e == 34:
+                r = r + '"'
+            elif e == 92:
+                r = r + '\\'
+            elif e == 47:
+                r = r + '/'
+            else:
+                r = r + ('\0' + e)
+        else:
+            r = r + ('\0' + s[pos])
+        pos = pos + 1
+    pos = pos + 1
+    return r
+
+fn parse_number(s: string, n: int, pos: inout int) -> int:
+    neg := false
+    if s[pos] == 45:
+        neg = true
+        pos = pos + 1
+    v := 0
+    for pos < n and s[pos] >= 48 and s[pos] <= 57:
+        v = v * 10 + (s[pos] - 48)
+        pos = pos + 1
+    if neg:
+        return 0 - v
+    return v
+
+fn parse_array(s: string, n: int, pos: inout int) -> Json:
+    pos = pos + 1
+    xs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 93:
+        push(xs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1
+    return JArr(xs)
+
+fn parse_object(s: string, n: int, pos: inout int) -> Json:
+    pos = pos + 1
+    ks := []string
+    vs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 125:
+        k := parse_string(s, n, &pos)
+        skip_ws(s, n, &pos)
+        pos = pos + 1                          # skip :
+        push(ks, k)
+        push(vs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1
+    return JObj(ks, vs)
+
+fn parse_value(s: string, n: int, pos: inout int) -> Json:
+    skip_ws(s, n, &pos)
+    if pos >= n:
+        return JNull
+    c := s[pos]
+    if c == 123:
+        return parse_object(s, n, &pos)
+    if c == 91:
+        return parse_array(s, n, &pos)
+    if c == 34:
+        return JStr(parse_string(s, n, &pos))
+    if c == 116:
+        pos = pos + 4
+        return JBool(true)
+    if c == 102:
+        pos = pos + 5
+        return JBool(false)
+    if c == 110:
+        pos = pos + 4
+        return JNull
+    return JNum(parse_number(s, n, &pos))
+
+fn esc(s: string) -> string:
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if c == 34:
+            out = out + "\\\""
+        elif c == 92:
+            out = out + "\\\\"
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        elif c == 13:
+            out = out + "\\r"
+        else:
+            out = out + ('\0' + c)
+    return out
+
+fn to_json(j: Json) -> string:
+    match j:
+        JNull:
+            return "null"
+        JBool(b):
+            if b:
+                return "true"
+            return "false"
+        JNum(x):
+            return str(x)
+        JStr(s):
+            return "\"" + esc(s) + "\""
+        JArr(xs):
+            out := "["
+            for i in range(len(xs)):
+                if i > 0:
+                    out = out + ","
+                out = out + to_json(xs[i])
+            return out + "]"
+        JObj(ks, vs):
+            out := "{"
+            for i in range(len(ks)):
+                if i > 0:
+                    out = out + ","
+                out = out + "\"" + esc(ks[i]) + "\":" + to_json(vs[i])
+            return out + "}"
+
+fn get(j: Json, key: string) -> Json:
+    match j:
+        JObj(ks, vs):
+            for i in range(len(ks)):
+                if ks[i] == key:
+                    return vs[i]
+            return JNull
+        JNull:
+            return JNull
+        JBool(b):
+            return JNull
+        JNum(x):
+            return JNull
+        JStr(s):
+            return JNull
+        JArr(xs):
+            return JNull
+
+fn as_str(j: Json) -> string:
+    match j:
+        JStr(s):
+            return s
+        JNull:
+            return ""
+        JBool(b):
+            return ""
+        JNum(x):
+            return ""
+        JArr(xs):
+            return ""
+        JObj(ks, vs):
+            return ""
+
+# ---- small string helpers ---------------------------------------------------
+fn trim_eol(s: string) -> string:
+    n := len(s)
+    for n > 0 and (s[n - 1] == 10 or s[n - 1] == 13 or s[n - 1] == 32):
+        n = n - 1
+    return substr(s, 0, n)
+
+fn starts_with(s: string, p: string) -> bool:
+    if len(s) < len(p):
+        return false
+    return substr(s, 0, len(p)) == p
+
+fn digits_to_int(s: string) -> int:
+    v := 0
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 48 and c <= 57:
+            v = v * 10 + (c - 48)
+    return v
+
+# ---- JSON-RPC transport -----------------------------------------------------
+fn crlf() -> string:
+    return "" + '\r' + '\n'                     # string literals can't carry \r; char literals can
+
+fn send_msg(body: string):
+    hier_write("Content-Length: " + str(len(body)) + crlf() + crlf() + body)
+
+fn send_result(id: Json, result: string):
+    send_msg("{\"jsonrpc\":\"2.0\",\"id\":" + to_json(id) + ",\"result\":" + result + "}")
+
+# read one framed message body; "" on EOF
+fn read_message() -> string:
+    clen := 0 - 1
+    for true:
+        line := hier_read_line()
+        if line == "":
+            return ""                          # EOF
+        t := trim_eol(line)
+        if t == "":
+            break                              # blank line ends the headers
+        if starts_with(t, "Content-Length:"):
+            clen = digits_to_int(substr(t, 15, len(t)))
+    if clen < 0:
+        return ""
+    return hier_read_n(clen)
+
+fn main():
+    for true:
+        body := read_message()
+        if body == "":
+            return                             # client closed the pipe
+        pos := 0
+        msg := parse_value(body, len(body), &pos)
+        method := as_str(get(msg, "method"))
+        id := get(msg, "id")
+        if method == "initialize":
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1}}")
+        elif method == "shutdown":
+            send_result(id, "null")
+        elif method == "exit":
+            return
+        # initialized / others: ignored in stage 1

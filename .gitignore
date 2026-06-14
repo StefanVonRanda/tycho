@@ -12,6 +12,10 @@
 /hierfmt
 /hierfmt.c
 
+# The compiled `hier-lsp` language server + its intermediate C (`make hier-lsp`)
+/hier-lsp
+/hier-lsp.c
+
 # Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
 /build/
 
