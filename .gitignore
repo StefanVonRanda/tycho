@@ -4,6 +4,10 @@
 # The compiled Hier compiler (built by `make`)
 /hierc
 
+# The compiled `hier` daily-driver CLI + its intermediate C (built by `make hier`)
+/hier
+/hier.c
+
 # Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
 /build/
 

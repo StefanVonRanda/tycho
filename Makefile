@@ -28,6 +28,12 @@ build:
 hierc: src/hierc.c $(EMBED)
 	$(CC) $(CFLAGS) -Ibuild src/hierc.c -o hierc
 
+# The `hier` daily-driver CLI (run/build/check/watch) -- itself a Hier program,
+# built with hierc + the FFI shell-out shim. Run as `./hier <cmd> <file.hi>`
+# (set HIERC=./hierc to use the in-repo compiler). See tools/hier.hi.
+hier: hierc tools/hier.hi tools/hier_shim.c
+	./hierc tools/hier.hi --shim tools/hier_shim.c -o hier
+
 demo: hierc
 	./hierc examples/hello.hi
 	@echo "--- running examples/hello (type a name) ---"
@@ -154,7 +160,7 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
 
 clean:
-	rm -f hierc build/hier_rt_embed.h
+	rm -f hierc hier hier.c build/hier_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c
