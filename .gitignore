@@ -33,6 +33,8 @@
 # the Conway's Life example is also a shim dir (own .gitignore drops the binary +
 # intermediate C; the root *.out exception below keeps its golden).
 !/examples/life
+# the Snake example is a shim dir too (termios input shim + own .gitignore).
+!/examples/snake
 
 # Editor/OS noise
 *.o
@@ -52,6 +54,8 @@
 !/examples/sqlite/*.out
 # the Conway's Life example's golden is tracked too
 !/examples/life/*.out
+# the Snake example's golden is tracked too
+!/examples/snake/*.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out

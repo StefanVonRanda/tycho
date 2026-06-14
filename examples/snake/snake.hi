@@ -1,0 +1,204 @@
+# Snake in Hier — dogfooding the value-semantic arena model with a real-time
+# INTERACTIVE game. Each tick builds a fresh snake body and discards the old one;
+# the arena reclaims it with no free and no GC (the same build-and-discard pattern
+# as Conway's Life, but now steered by live keyboard input).
+#
+#   ./snake          # deterministic scripted demo (the golden — no terminal needed)
+#   ./snake play     # interactive: WASD to steer, q to quit
+#
+# Real-time play needs raw (non-canonical, non-blocking) terminal input, which hier
+# has no builtin for, so it comes from snake_shim.c via FFI (termios + a non-blocking
+# read + a millisecond sleep) — the same shim pattern as Life's sleep. The demo does
+# NOT call the raw functions, so it runs deterministically without a tty.
+
+extern fn snake_raw_on() -> int        # terminal -> raw + non-blocking stdin
+extern fn snake_raw_off() -> int       # restore the saved terminal mode
+extern fn snake_read_key() -> int      # one byte, or -1 if none ready (non-blocking)
+extern fn snake_sleep_ms(ms: int) -> int
+
+# directions: 0 = up, 1 = right, 2 = down, 3 = left
+struct Game:
+    w: int
+    h: int
+    body: [int]        # head at index 0; each cell encoded as y * w + x
+    dir: int
+    food: int          # y * w + x  (0 - 1 = none)
+    rng: int           # PRNG state (LCG)
+    score: int
+    alive: int         # 1 = playing, 0 = game over
+
+fn xnext(s: int) -> int:               # LCG: stays within 63 bits, no bit ops needed
+    return (s * 1103515245 + 12345) % 2147483648
+
+fn contains(xs: [int], v: int) -> bool:
+    for i in range(0, len(xs)):
+        if xs[i] == v:
+            return true
+    return false
+
+fn hits_body(nb: [int]) -> bool:       # does the head (nb[0]) collide with the rest?
+    for i in range(1, len(nb)):
+        if nb[i] == nb[0]:
+            return true
+    return false
+
+fn spawn_food(g: inout Game):          # place food on a free cell; advance the rng
+    r := g.rng
+    f := 0 - 1
+    for tries in range(0, 10000):
+        r = xnext(r)
+        cand := r % (g.w * g.h)
+        if not contains(g.body, cand):
+            f = cand
+            break
+    g.rng = r
+    g.food = f
+
+fn new_game(w: int, h: int, seed: int) -> Game:
+    cx := w / 2
+    cy := h / 2
+    body := []int
+    push(body, cy * w + cx)            # a single-cell snake at the centre, heading right
+    g := Game(w, h, body, 1, 0 - 1, seed, 0, 1)
+    spawn_food(&g)
+    return g
+
+fn turn(g: inout Game, nd: int):       # change heading, but never a 180-degree reversal
+    d := g.dir
+    if not ((d == 0 and nd == 2) or (d == 2 and nd == 0) or (d == 1 and nd == 3) or (d == 3 and nd == 1)):
+        g.dir = nd
+
+fn step(g: inout Game):
+    if g.alive == 0:
+        return
+    hx := g.body[0] % g.w
+    hy := g.body[0] / g.w
+    if g.dir == 0:
+        hy = hy - 1
+    if g.dir == 1:
+        hx = hx + 1
+    if g.dir == 2:
+        hy = hy + 1
+    if g.dir == 3:
+        hx = hx - 1
+    if hx < 0 or hx >= g.w or hy < 0 or hy >= g.h:   # wall
+        g.alive = 0
+        return
+    nh := hy * g.w + hx
+    grew := nh == g.food
+    nb := []int                        # build a brand-new body (head, then the old cells)
+    push(nb, nh)
+    keep := len(g.body)
+    if not grew:
+        keep = keep - 1                # drop the tail unless we just ate
+    for i in range(0, keep):
+        push(nb, g.body[i])
+    g.body = nb
+    if hits_body(nb):                  # ran into itself
+        g.alive = 0
+        return
+    if grew:
+        g.score = g.score + 1
+        g.food = 0 - 1
+        spawn_food(&g)
+
+fn dirname(d: int) -> string:
+    if d == 0:
+        return "up"
+    if d == 1:
+        return "right"
+    if d == 2:
+        return "down"
+    return "left"
+
+fn render(g: Game) -> string:
+    out := ""
+    for i in range(0, g.w + 2):        # top border
+        out = out + "#"
+    out = out + "\n"
+    for y in range(0, g.h):
+        out = out + "#"
+        for x in range(0, g.w):
+            cell := y * g.w + x
+            if cell == g.body[0]:
+                out = out + "O"        # head
+            elif contains(g.body, cell):
+                out = out + "o"        # body
+            elif cell == g.food:
+                out = out + "*"        # food
+            else:
+                out = out + " "
+        out = out + "#\n"
+    for i in range(0, g.w + 2):        # bottom border
+        out = out + "#"
+    out = out + "\n"
+    out = out + "score: " + str(g.score) + "\n"
+    return out
+
+# deterministic scripted demo — drives the same logic with a fixed seed + a fixed
+# move list, dumping plain frames to stdout. This is the golden (no tty, no sleep).
+fn run_demo():
+    g := new_game(12, 6, 7)
+    g.food = g.body[0] + 3             # force the first food into the snake's path
+    print("start:\n")
+    print(render(g))
+    print("\n")
+    moves := []int
+    push(moves, 1)                     # right x3 -> eat the food, grow to length 2
+    push(moves, 1)
+    push(moves, 1)
+    push(moves, 2)                     # down x2
+    push(moves, 2)
+    push(moves, 3)                     # left x2
+    push(moves, 3)
+    push(moves, 0)                     # up x6 -> run into the top wall, game over
+    push(moves, 0)
+    push(moves, 0)
+    push(moves, 0)
+    push(moves, 0)
+    push(moves, 0)
+    for i in range(0, len(moves)):
+        turn(&g, moves[i])
+        step(&g)
+        print("move " + str(i) + " " + dirname(moves[i]) + ":\n")
+        print(render(g))
+        print("\n")
+        if g.alive == 0:
+            print("game over — final score " + str(g.score) + "\n")
+            break
+
+# interactive — raw terminal, redraw each frame, read steering, sleep, advance.
+fn run_play():
+    snake_raw_on()
+    g := new_game(30, 16, 1)
+    esc := chr(27)
+    clear := esc + "[2J" + esc + "[H"           # ANSI clear screen + cursor home
+    for tick in range(0, 1000000):
+        for k in range(0, 64):                  # drain whatever keys are buffered this frame
+            key := snake_read_key()
+            if key == 0 - 1:
+                break
+            if key == 119:                      # w
+                turn(&g, 0)
+            if key == 100:                      # d
+                turn(&g, 1)
+            if key == 115:                      # s
+                turn(&g, 2)
+            if key == 97:                       # a
+                turn(&g, 3)
+            if key == 113:                      # q
+                g.alive = 0
+        if g.alive == 0:
+            break
+        step(&g)
+        print(clear + render(g) + "WASD to steer, q to quit\n")
+        snake_sleep_ms(120)
+    snake_raw_off()
+    print("game over — final score: " + str(g.score) + "\n")
+
+fn main():
+    a := args()
+    if len(a) >= 2 and a[1] == "play":
+        run_play()
+    else:
+        run_demo()
