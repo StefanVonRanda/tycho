@@ -469,6 +469,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     pars: [ParInfo]           # parallel-for sites from the lift pass (CC-3), indexed by SParFor's par-id
                               # (safe to map here precisely because Decls is never rebuilt)
     src_lines: [string]       # the source split into lines (bundle-relative), for die_at snippet + caret
+    vmap: [string: int]       # variant name -> enum index, built once (sibling of sigmap): O(1) is_variant/variant_enum, was a nested linear scan over all enums x variants (~7% of self-compile)
 
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
@@ -2040,28 +2041,28 @@ fn is_enum(dc: Decls, ctx: Ctx, name: string) -> bool:
         i = i + 1
     return false
 
-fn is_variant(dc: Decls, ctx: Ctx, name: string) -> bool:
+# Build the variant-name -> enum-index map once (called at Decls construction).
+# Variant names are globally unique (check_dups rejects duplicates), so a flat
+# map is exact -- last-write equals the old scan's first-match.
+fn build_vmap(enums: [EnumDef]) -> [string: int]:
+    m : [string: int] = []
     i := 0
-    for i < len(dc.enums):
+    for i < len(enums):
         j := 0
-        for j < len(dc.enums[i].variants):
-            if dc.enums[i].variants[j].name == name:
-                return true
+        for j < len(enums[i].variants):
+            m = map_set(m, enums[i].variants[j].name, i)
             j = j + 1
         i = i + 1
-    return false
+    return m
+
+fn is_variant(dc: Decls, ctx: Ctx, name: string) -> bool:
+    return map_get(dc.vmap, name, -1) >= 0
 
 fn variant_enum(dc: Decls, ctx: Ctx, vname: string) -> string:
-    i := 0
-    for i < len(dc.enums):
-        j := 0
-        for j < len(dc.enums[i].variants):
-            if dc.enums[i].variants[j].name == vname:
-                return dc.enums[i].name
-            j = j + 1
-        i = i + 1
-    die("type: unknown variant")
-    return "int"
+    i := map_get(dc.vmap, vname, -1)
+    if i < 0:
+        die("type: unknown variant")
+    return dc.enums[i].name
 
 fn variant_tag(dc: Decls, ctx: Ctx, vname: string) -> int:
     i := 0
@@ -7923,7 +7924,7 @@ fn main():
             sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
-    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines)
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums))
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
@@ -7938,7 +7939,7 @@ fn main():
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap = map_set(sigmap, funcs[i].name, i)
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
