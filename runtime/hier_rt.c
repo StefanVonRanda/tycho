@@ -660,6 +660,7 @@ char *hier_str_intern(const char *s) {
 }
 
 void hier_print(const char *s) { fputs(s, stdout); }
+void hier_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr write (warnings) */
 
 /* --- string builtins ------------------------------------------------------
  * Strings are NUL-terminated byte buffers (char *). len/index are byte-

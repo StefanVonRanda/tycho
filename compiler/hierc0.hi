@@ -1564,7 +1564,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -2492,6 +2492,8 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "bool"
     if name == "die":
         return "int"
+    if name == "eprint":
+        return "int"
     if name == "len":
         return "int"
     if name == "input":
@@ -3080,6 +3082,311 @@ fn die_at(dc: Decls, code: int, msg: string):
         die("line " + str(lineno) + ": " + msg)
     die(msg)
 
+# warn_at: non-fatal diagnostic. Mirrors die_at (same tloc decode + snippet/caret)
+# but writes stderr via eprint and does NOT exit. Used by the loop-progress check.
+fn warn_at(dc: Decls, code: int, msg: string):
+    nl := chr(10)
+    lineno := code / 100000                        # decode tloc: 1-based line, 0-based col
+    col := code % 100000
+    if lineno > 0 and lineno <= len(dc.src_lines):
+        txt := dc.src_lines[lineno - 1]
+        pad := ""
+        c := 0
+        for c < col:
+            pad = pad + " "
+            c = c + 1
+        eprint("line " + str(lineno) + ": warning: " + msg + nl + "    " + txt + nl + "    " + pad + "^" + nl)
+        return
+    if lineno > 0:
+        eprint("line " + str(lineno) + ": warning: " + msg + nl)
+        return
+    eprint("warning: " + msg + nl)
+
+# Loop-progress check (1:1 port of src/hierc.c wl_*): a `for COND:` whose condition
+# variables are never changed in the body (and which can't break/return/die) may
+# spin forever. Sound under value semantics: a var changes only by assign-to-it,
+# place-mutation (v[i]=/v.f=), push/pop(v,..), or &v passed to an inout param.
+fn wl_root(e: Expr) -> string:                     # base identifier of a place: v / v[i] / v.f
+    match e:
+        EIndex(b, ix, p):
+            return wl_root(b)
+        EField(b, fld, p):
+            return wl_root(b)
+        EVar(n, p):
+            return n
+        EInt(t, p):
+            return ""
+        EBool(t, p):
+            return ""
+        EChar(t, p):
+            return ""
+        EFloat(t, p):
+            return ""
+        EStr(t, p):
+            return ""
+        EBin(op, l, r, p):
+            return ""
+        ECall(nm, args, p):
+            return ""
+        EArrLit(es, p):
+            return ""
+        EArrEmpty(t, p):
+            return ""
+        EMapEmpty(kt, vt, p):
+            return ""
+        EMapLit(ks, vls, p):
+            return ""
+        ETuple(es, p):
+            return ""
+        ESlice(b, lo, hi, p):
+            return ""
+        EAddr(x, p):
+            return ""
+        ELambda(lid, ps, pts, ret, lb, cn, ct, p):
+            return ""
+        ECallV(callee, cargs, p):
+            return ""
+        ESpawn(sid, snm, sargs, p):
+            return ""
+
+fn wl_cond_vars(e: Expr, vs: inout [string], hc: inout bool):   # collect cond idents; flag a call/spawn
+    match e:
+        ECall(nm, args, p):
+            hc = true
+        ECallV(callee, cargs, p):
+            hc = true
+        ESpawn(sid, snm, sargs, p):
+            hc = true
+        EVar(n, p):
+            push(vs, n)
+        EBin(op, l, r, p):
+            wl_cond_vars(l, &vs, &hc)
+            wl_cond_vars(r, &vs, &hc)
+        EField(b, fld, p):
+            wl_cond_vars(b, &vs, &hc)
+        EIndex(b, ix, p):
+            wl_cond_vars(b, &vs, &hc)
+            wl_cond_vars(ix, &vs, &hc)
+        ESlice(b, lo, hi, p):
+            wl_cond_vars(b, &vs, &hc)
+            wl_cond_vars(lo, &vs, &hc)
+            wl_cond_vars(hi, &vs, &hc)
+        EAddr(x, p):
+            wl_cond_vars(x, &vs, &hc)
+        ETuple(es, p):
+            k := 0
+            for k < len(es):
+                wl_cond_vars(es[k], &vs, &hc)
+                k = k + 1
+        EArrLit(es, p):
+            k := 0
+            for k < len(es):
+                wl_cond_vars(es[k], &vs, &hc)
+                k = k + 1
+        EMapLit(ks, vls, p):
+            k := 0
+            for k < len(ks):
+                wl_cond_vars(ks[k], &vs, &hc)
+                k = k + 1
+            j := 0
+            for j < len(vls):
+                wl_cond_vars(vls[j], &vs, &hc)
+                j = j + 1
+        EInt(t, p):
+            hc = hc
+        EBool(t, p):
+            hc = hc
+        EChar(t, p):
+            hc = hc
+        EFloat(t, p):
+            hc = hc
+        EStr(t, p):
+            hc = hc
+        EArrEmpty(t, p):
+            hc = hc
+        EMapEmpty(kt, vt, p):
+            hc = hc
+        ELambda(lid, ps, pts, ret, lb, cn, ct, p):
+            hc = hc
+
+fn wl_scan_expr(e: Expr, mut: inout [string], ex: inout bool):   # &v / push/pop(v) / die hiding in an expr
+    match e:
+        EAddr(x, p):
+            r := wl_root(x)
+            if r != "":
+                push(mut, r)
+            wl_scan_expr(x, &mut, &ex)
+        ECall(nm, args, p):
+            if nm == "die":
+                ex = true
+            if (nm == "push" or nm == "pop") and len(args) >= 1:
+                r := wl_root(args[0])
+                if r != "":
+                    push(mut, r)
+            k := 0
+            for k < len(args):
+                wl_scan_expr(args[k], &mut, &ex)
+                k = k + 1
+        ECallV(callee, cargs, p):
+            wl_scan_expr(callee, &mut, &ex)
+            k := 0
+            for k < len(cargs):
+                wl_scan_expr(cargs[k], &mut, &ex)
+                k = k + 1
+        ESpawn(sid, snm, sargs, p):
+            k := 0
+            for k < len(sargs):
+                wl_scan_expr(sargs[k], &mut, &ex)
+                k = k + 1
+        EBin(op, l, r, p):
+            wl_scan_expr(l, &mut, &ex)
+            wl_scan_expr(r, &mut, &ex)
+        EField(b, fld, p):
+            wl_scan_expr(b, &mut, &ex)
+        EIndex(b, ix, p):
+            wl_scan_expr(b, &mut, &ex)
+            wl_scan_expr(ix, &mut, &ex)
+        ESlice(b, lo, hi, p):
+            wl_scan_expr(b, &mut, &ex)
+            wl_scan_expr(lo, &mut, &ex)
+            wl_scan_expr(hi, &mut, &ex)
+        ETuple(es, p):
+            k := 0
+            for k < len(es):
+                wl_scan_expr(es[k], &mut, &ex)
+                k = k + 1
+        EArrLit(es, p):
+            k := 0
+            for k < len(es):
+                wl_scan_expr(es[k], &mut, &ex)
+                k = k + 1
+        EMapLit(ks, vls, p):
+            k := 0
+            for k < len(ks):
+                wl_scan_expr(ks[k], &mut, &ex)
+                k = k + 1
+            j := 0
+            for j < len(vls):
+                wl_scan_expr(vls[j], &mut, &ex)
+                j = j + 1
+        ELambda(lid, ps, pts, ret, lb, cn, ct, p):
+            wl_scan_expr(lb, &mut, &ex)
+        EVar(n, p):
+            ex = ex
+        EInt(t, p):
+            ex = ex
+        EBool(t, p):
+            ex = ex
+        EChar(t, p):
+            ex = ex
+        EFloat(t, p):
+            ex = ex
+        EStr(t, p):
+            ex = ex
+        EArrEmpty(t, p):
+            ex = ex
+        EMapEmpty(kt, vt, p):
+            ex = ex
+
+fn wl_scan_body(stmts: [Stmt], mut: inout [string], ex: inout bool):
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SDecl(n, e, p):
+                push(mut, n)
+                wl_scan_expr(e, &mut, &ex)
+            SAssign(n, e, p):
+                push(mut, n)
+                wl_scan_expr(e, &mut, &ex)
+            STypedDecl(n, t, e, p):
+                push(mut, n)
+                wl_scan_expr(e, &mut, &ex)
+            SOrReturn(n, e, p):
+                push(mut, n)
+                wl_scan_expr(e, &mut, &ex)
+            SForRange(n, a, b, st, body, p):
+                push(mut, n)
+                wl_scan_expr(a, &mut, &ex)
+                wl_scan_expr(b, &mut, &ex)
+                wl_scan_expr(st, &mut, &ex)
+                wl_scan_body(body, &mut, &ex)
+            SMultiAssign(ns, e, p):
+                k := 0
+                for k < len(ns):
+                    push(mut, ns[k])
+                    k = k + 1
+                wl_scan_expr(e, &mut, &ex)
+            SDestructure(ns, e, p):
+                k := 0
+                for k < len(ns):
+                    push(mut, ns[k])
+                    k = k + 1
+                wl_scan_expr(e, &mut, &ex)
+            SFieldAssign(lv, r, p):
+                rt := wl_root(lv)
+                if rt != "":
+                    push(mut, rt)
+                wl_scan_expr(lv, &mut, &ex)
+                wl_scan_expr(r, &mut, &ex)
+            SReturn(e, p):
+                ex = true
+            SReturnVoid:
+                ex = true
+            SBreak:
+                ex = true
+            SContinue:
+                i = i
+            SIf(cnd, b, els, p):
+                wl_scan_expr(cnd, &mut, &ex)
+                wl_scan_body(b, &mut, &ex)
+                wl_scan_body(els, &mut, &ex)
+            SWhile(cnd, b, p):
+                wl_scan_expr(cnd, &mut, &ex)
+                wl_scan_body(b, &mut, &ex)
+            SMatch(subj, vsn, bs, bodies, p):
+                wl_scan_expr(subj, &mut, &ex)
+                k := 0
+                for k < len(bodies):
+                    wl_scan_body(bodies[k], &mut, &ex)
+                    k = k + 1
+            SExpr(e, p):
+                wl_scan_expr(e, &mut, &ex)
+            SPrint(e, p):
+                wl_scan_expr(e, &mut, &ex)
+            SParFor(v, a, b, body, pid, p):
+                push(mut, v)
+                wl_scan_expr(a, &mut, &ex)
+                wl_scan_expr(b, &mut, &ex)
+                wl_scan_body(body, &mut, &ex)
+            SSelect(uid, svars, schans, sbinds, sbodies, p):
+                k := 0
+                for k < len(schans):
+                    wl_scan_expr(schans[k], &mut, &ex)
+                    k = k + 1
+                j := 0
+                for j < len(sbodies):
+                    wl_scan_body(sbodies[j], &mut, &ex)
+                    j = j + 1
+        i = i + 1
+
+fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the loop body of a `for COND:`
+    cv := []string
+    hc := false
+    wl_cond_vars(cond, &cv, &hc)
+    if len(cv) == 0 or hc:                          # constant cond (`for true:`) or a call in it: skip
+        return
+    mut := []string
+    ex := false
+    wl_scan_body(body, &mut, &ex)
+    if ex:                                          # a break/return/die can end the loop
+        return
+    i := 0
+    for i < len(cv):
+        if count_str_occ(mut, cv[i]) > 0:           # a condition variable is changed -> progresses
+            return
+        i = i + 1
+    warn_at(dc, pos, "loop condition never changes; this `for` may run forever (forgot to advance a variable? consider `for x in range(...)`)")
+
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
 # (vars declared from here on are block-local). Sibling blocks reuse the same
@@ -3402,6 +3709,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "die":
                 return "hi_die(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "eprint":
+                return "hi_eprint(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "read_all":
                 return "hi_read_all(" + ctx.owner + ")"
             if name == "read_file":
@@ -5002,6 +5311,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
         SWhile(cond, body, _sl):
+            wl_check(cond, body, _sl, dc)         # warn on a `for COND:` whose cond never advances
             fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, cond, true)
             d1 := str(ctx.depth + 1)              # per-iteration block arena
             bc := in_loop(enter_block(dc, ctx, len(names)))
@@ -5851,6 +6161,7 @@ fn preamble() -> string:
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
     out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return scopy(ar, v ? v : \"\"); }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
+    out = out + "static void hi_eprint(const char* m) { fputs(m, stderr); }\n"
     out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
     out = out + "static long hi_write_file(const char* path, const char* data) { FILE* f = fopen(path, \"wb\"); if (!f) return 0; long n = ((const long*)data)[-1]; size_t w = fwrite(data, 1, (size_t)n, f); fclose(f); return (w == (size_t)n) ? 1 : 0; }\n"

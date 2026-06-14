@@ -79,5 +79,19 @@ print("    init=%s  diag(valid->[]=%s invalid->diag=%s loop-warn=%s)  hover(loca
 sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok) else 1)
 PY
 
+echo ">>> loop-warning: hierc + hierc0 both warn on a non-advancing for-loop"
+# Guards the loop-progress diagnostic in BOTH compilers. It is stderr-only, so
+# `make fixpoint` (which compares emitted C on stdout) can't catch a regression
+# that silently disables it -- this can. Bad loop must warn; good loop must not.
+"$HIERC" compiler/hierc0.hi -o "$TMP/hierc0" >/dev/null 2>&1 || { echo "  hierc0 build FAILED"; fail=1; }
+printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n' > "$TMP/badloop.hi"
+printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n        i = i + 1\n' > "$TMP/goodloop.hi"
+"$HIERC"      "$TMP/badloop.hi"  --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/e1"; cbw=$(grep -c 'warning:' "$TMP/e1")
+"$HIERC"      "$TMP/goodloop.hi" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/e2"; cgw=$(grep -c 'warning:' "$TMP/e2")
+"$TMP/hierc0" "$TMP/badloop.hi"  --emit-c 1>/dev/null 2>"$TMP/e3"; zbw=$(grep -c 'warning:' "$TMP/e3")
+"$TMP/hierc0" "$TMP/goodloop.hi" --emit-c 1>/dev/null 2>"$TMP/e4"; zgw=$(grep -c 'warning:' "$TMP/e4")
+echo "    hierc: bad=$cbw good=$cgw   hierc0: bad=$zbw good=$zgw"
+{ [ "$cbw" -ge 1 ] && [ "$cgw" -eq 0 ] && [ "$zbw" -ge 1 ] && [ "$zgw" -eq 0 ]; } || { echo "  LOOP-WARN PARITY FAIL"; fail=1; }
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"
