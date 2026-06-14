@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all tools demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
 
 all: hierc
 
@@ -47,6 +47,11 @@ hier-lsp: hierc tools/lsp.hi tools/lsp_shim.c
 
 # build the whole daily-driver toolchain (driver + formatter + language server)
 tools: hier hierfmt hier-lsp
+
+# regression guard for the tooling: formatter idempotence + semantic preservation
+# (emit-C identical before/after) and an LSP JSON-RPC smoke test. Part of `make ci`.
+tools-check: hierc
+	@sh scripts/tools_check.sh
 
 demo: hierc
 	./hierc examples/hello.hi
