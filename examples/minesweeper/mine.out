@@ -1,0 +1,55 @@
+=== game A: 9x9, 10 mines, seed 42 ===
+
+initial (all hidden):
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+ .  .  .  .  .  .  .  .  . 
+
+after flood-fill from the first empty cell:
+ .  1                      
+ 1  1                      
+                      1  1 
+ 1  1  1           1  2  . 
+ .  .  1           1  .  . 
+ .  2  1        1  2  .  . 
+ .  1           1  .  .  . 
+ .  1  1  1     1  1  3  . 
+ .  .  .  1           1  . 
+
+flagged (0,0):
+ F  1                      
+ 1  1                      
+                      1  1 
+ 1  1  1           1  2  . 
+ .  .  1           1  .  . 
+ .  2  1        1  2  .  . 
+ .  1           1  .  .  . 
+ .  1  1  1     1  1  3  . 
+ .  .  .  1           1  . 
+
+stepped on the first mine -> board revealed:
+ F  1                      
+ 1  1                      
+                      1  1 
+ 1  1  1           1  2  * 
+ .  *  1           1  *  . 
+ *  2  1        1  2  .  * 
+ .  1           1  *  .  * 
+ .  1  1  1     1  1  3  . 
+ .  .  *  1           1  * 
+result: LOSS
+
+=== game B: 5x5, 3 mines, seed 7 (clear all safe cells) ===
+
+       1  1  1 
+       2  .  2 
+ 1  1  3  .  2 
+ 1  .  2  1  1 
+ 1  1  1       
+result: WIN

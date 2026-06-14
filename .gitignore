@@ -35,6 +35,8 @@
 !/examples/life
 # the Snake example is a shim dir too (termios input shim + own .gitignore).
 !/examples/snake
+# the Minesweeper example is a shim dir too (termios input shim + own .gitignore).
+!/examples/minesweeper
 
 # Editor/OS noise
 *.o
@@ -56,6 +58,8 @@
 !/examples/life/*.out
 # the Snake example's golden is tracked too
 !/examples/snake/*.out
+# the Minesweeper example's golden is tracked too
+!/examples/minesweeper/*.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out

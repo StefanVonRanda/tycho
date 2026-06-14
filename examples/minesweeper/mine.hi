@@ -1,0 +1,227 @@
+# Minesweeper in Hier — dogfooding RECURSION over a mutable grid (the flood-fill
+# reveal). reveal() recurses with an `inout Game`; if hier copied the struct per
+# call instead of threading it, the flood wouldn't propagate — so the demo's
+# flood frame is the real test. Cursor UI reuses Snake's termios raw-input shim.
+#
+#   ./mine          # deterministic scripted demo (the golden — no terminal needed)
+#   ./mine play     # interactive: WASD move cursor, space reveal, f flag, q quit
+
+extern fn mine_raw_on() -> int         # terminal -> raw, blocking 1-byte reads
+extern fn mine_raw_off() -> int
+extern fn mine_read_key() -> int       # one byte (blocks), or -1 on EOF
+
+struct Game:
+    w: int
+    h: int
+    mine: [int]        # 1 = a mine
+    cnt: [int]         # adjacent-mine count (meaningful for non-mine cells)
+    shown: [int]       # 1 = revealed
+    flag: [int]        # 1 = flagged
+    cx: int            # cursor x
+    cy: int            # cursor y
+    state: int         # 0 = playing, 1 = won, 2 = lost
+    nmines: int
+    rng: int
+
+fn xnext(s: int) -> int:               # LCG, fits 63 bits, no overflow/mask needed
+    return (s * 1103515245 + 12345) % 2147483648
+
+fn place_mines(g: inout Game):
+    r := g.rng
+    placed := 0
+    for tries in range(0, 1000000):
+        if placed >= g.nmines:
+            break
+        r = xnext(r)
+        idx := r % (g.w * g.h)
+        if g.mine[idx] == 0:
+            g.mine[idx] = 1
+            placed = placed + 1
+    g.rng = r
+
+fn compute_counts(g: inout Game):
+    for y in range(0, g.h):
+        for x in range(0, g.w):
+            c := 0
+            for dy in range(0 - 1, 2):
+                for dx in range(0 - 1, 2):
+                    nx := x + dx
+                    ny := y + dy
+                    if nx >= 0 and nx < g.w and ny >= 0 and ny < g.h:
+                        if g.mine[ny * g.w + nx] == 1:
+                            c = c + 1
+            g.cnt[y * g.w + x] = c
+
+fn new_game(w: int, h: int, nmines: int, seed: int) -> Game:
+    mine := []int
+    cnt := []int
+    shown := []int
+    flag := []int
+    for i in range(0, w * h):
+        push(mine, 0)
+        push(cnt, 0)
+        push(shown, 0)
+        push(flag, 0)
+    g := Game(w, h, mine, cnt, shown, flag, 0, 0, 0, nmines, seed)
+    place_mines(&g)
+    compute_counts(&g)
+    return g
+
+# the flood fill: reveal (x,y); if it has no adjacent mines, recurse into all 8
+# neighbours. Recurses with an inout Game — the dogfood's recursion stress.
+fn reveal(g: inout Game, x: int, y: int):
+    if x < 0 or x >= g.w or y < 0 or y >= g.h:
+        return
+    idx := y * g.w + x
+    if g.shown[idx] == 1 or g.flag[idx] == 1:
+        return
+    g.shown[idx] = 1
+    if g.mine[idx] == 1:
+        g.state = 2
+        return
+    if g.cnt[idx] == 0:
+        for dy in range(0 - 1, 2):
+            for dx in range(0 - 1, 2):
+                if not (dx == 0 and dy == 0):
+                    reveal(&g, x + dx, y + dy)
+
+fn check_win(g: inout Game):
+    if g.state != 0:
+        return
+    hidden_safe := 0
+    for i in range(0, g.w * g.h):
+        if g.mine[i] == 0 and g.shown[i] == 0:
+            hidden_safe = hidden_safe + 1
+    if hidden_safe == 0:
+        g.state = 1
+
+fn play_reveal(g: inout Game, x: int, y: int):
+    reveal(&g, x, y)
+    check_win(&g)
+
+fn toggle_flag(g: inout Game, x: int, y: int):
+    idx := y * g.w + x
+    if g.shown[idx] == 0:
+        if g.flag[idx] == 1:
+            g.flag[idx] = 0
+        else:
+            g.flag[idx] = 1
+
+fn count_flags(g: Game) -> int:
+    c := 0
+    for i in range(0, g.w * g.h):
+        if g.flag[i] == 1:
+            c = c + 1
+    return c
+
+# one cell -> a 3-char field. cursor cell is bracketed when show_cursor.
+fn render(g: Game, show_cursor: bool, reveal_all: bool) -> string:
+    out := ""
+    for y in range(0, g.h):
+        for x in range(0, g.w):
+            idx := y * g.w + x
+            ch := "."
+            if g.flag[idx] == 1 and g.shown[idx] == 0:
+                ch = "F"
+            elif g.shown[idx] == 1:
+                if g.mine[idx] == 1:
+                    ch = "*"
+                elif g.cnt[idx] == 0:
+                    ch = " "
+                else:
+                    ch = str(g.cnt[idx])
+            elif reveal_all and g.mine[idx] == 1:
+                ch = "*"
+            if show_cursor and x == g.cx and y == g.cy:
+                out = out + "[" + ch + "]"
+            else:
+                out = out + " " + ch + " "
+        out = out + "\n"
+    return out
+
+fn status(g: Game) -> string:
+    return "mines: " + str(g.nmines) + "  flags: " + str(count_flags(g)) + "  (WASD move, space reveal, f flag, q quit)\n"
+
+# deterministic scripted demo (the golden): exercises flood fill, flagging, a
+# loss (stepping on a mine), and a win (clearing all safe cells).
+fn run_demo():
+    print("=== game A: 9x9, 10 mines, seed 42 ===\n\n")
+    g := new_game(9, 9, 10, 42)
+    print("initial (all hidden):\n")
+    print(render(g, false, false))
+    print("\n")
+    # reveal the first empty (count-0) cell -> triggers the flood fill
+    for i in range(0, g.w * g.h):
+        if g.mine[i] == 0 and g.cnt[i] == 0:
+            play_reveal(&g, i % g.w, i / g.w)
+            break
+    print("after flood-fill from the first empty cell:\n")
+    print(render(g, false, false))
+    print("\n")
+    toggle_flag(&g, 0, 0)
+    print("flagged (0,0):\n")
+    print(render(g, false, false))
+    print("\n")
+    # step on the first UNFLAGGED mine -> loss (a flagged mine is protected from
+    # reveal, so we must pick one we didn't flag); show the whole board
+    for i in range(0, g.w * g.h):
+        if g.mine[i] == 1 and g.flag[i] == 0:
+            play_reveal(&g, i % g.w, i / g.w)
+            break
+    print("stepped on the first mine -> board revealed:\n")
+    print(render(g, false, true))
+    if g.state == 2:
+        print("result: LOSS\n")
+    print("\n=== game B: 5x5, 3 mines, seed 7 (clear all safe cells) ===\n\n")
+    gb := new_game(5, 5, 3, 7)
+    for i in range(0, gb.w * gb.h):
+        if gb.mine[i] == 0:
+            play_reveal(&gb, i % gb.w, i / gb.w)
+    print(render(gb, false, false))
+    if gb.state == 1:
+        print("result: WIN\n")
+
+fn run_play():
+    mine_raw_on()
+    g := new_game(12, 9, 15, 12345)
+    esc := chr(27)
+    clear := esc + "[2J" + esc + "[H"
+    for tick in range(0, 1000000):
+        print(clear + render(g, true, g.state == 2) + status(g))
+        if g.state != 0:
+            break
+        key := mine_read_key()
+        if key == 0 - 1:
+            break
+        if key == 113:                 # q
+            break
+        if key == 119:                 # w
+            if g.cy > 0:
+                g.cy = g.cy - 1
+        if key == 115:                 # s
+            if g.cy < g.h - 1:
+                g.cy = g.cy + 1
+        if key == 97:                  # a
+            if g.cx > 0:
+                g.cx = g.cx - 1
+        if key == 100:                 # d
+            if g.cx < g.w - 1:
+                g.cx = g.cx + 1
+        if key == 32:                  # space -> reveal
+            play_reveal(&g, g.cx, g.cy)
+        if key == 102:                 # f -> flag
+            toggle_flag(&g, g.cx, g.cy)
+    mine_raw_off()
+    if g.state == 1:
+        print("you win!\n")
+    elif g.state == 2:
+        print("boom -- game over\n")
+    else:
+        print("bye\n")
+
+fn main():
+    a := args()
+    if len(a) >= 2 and a[1] == "play":
+        run_play()
+    else:
+        run_demo()
