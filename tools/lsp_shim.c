@@ -45,3 +45,6 @@ long hier_write(char *s) {
     fflush(stdout);
     return 0;
 }
+
+/* Run a command (to invoke the compiler on a buffer for diagnostics). */
+long hier_run(char *cmd) { return (long)system(cmd); }

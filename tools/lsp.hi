@@ -11,6 +11,7 @@
 extern fn hier_read_line() -> string          # one stdin line (through \n); "" on EOF
 extern fn hier_read_n(n: int) -> string       # exactly n stdin bytes (the JSON body)
 extern fn hier_write(s: string) -> int        # write to stdout + flush
+extern fn hier_run(cmd: string) -> int        # run the compiler on a buffer (diagnostics)
 
 # ---- JSON (from examples/json.hi) -------------------------------------------
 enum Json:
@@ -196,6 +197,23 @@ fn as_str(j: Json) -> string:
         JObj(ks, vs):
             return ""
 
+fn jat(j: Json, i: int) -> Json:                # i-th element of a JArr, else JNull
+    match j:
+        JArr(xs):
+            if i >= 0 and i < len(xs):
+                return xs[i]
+            return JNull
+        JNull:
+            return JNull
+        JBool(b):
+            return JNull
+        JNum(x):
+            return JNull
+        JStr(s):
+            return JNull
+        JObj(ks, vs):
+            return JNull
+
 # ---- small string helpers ---------------------------------------------------
 fn trim_eol(s: string) -> string:
     n := len(s)
@@ -242,7 +260,66 @@ fn read_message() -> string:
         return ""
     return hier_read_n(clen)
 
+fn compiler() -> string:
+    c := getenv("HIERC")
+    if c == "":
+        return "hierc"
+    return c
+
+# length of 1-based source line `ln` in `text` (for a full-line diagnostic range)
+fn line_len(text: string, ln: int) -> int:
+    lines := split(text, "\n")
+    idx := ln - 1
+    if idx >= 0 and idx < len(lines):
+        return len(lines[idx])
+    return 0
+
+# ---- diagnostics: compile the buffer, parse errors, publish -----------------
+# Write the buffer to a temp, run the compiler (front-end only, no cc), and turn
+# each `path:line: error: msg` header line of its stderr into an LSP diagnostic
+# (full-line range, 0-based). Always publishes -- an empty array clears stale
+# errors once the buffer is clean again.
+fn diagnose(uri: string, text: string, cc: string):
+    tmp := "/tmp/.hierlsp_doc.hi"
+    errf := "/tmp/.hierlsp_err.txt"
+    write_file(tmp, text)
+    hier_run(cc + " " + tmp + " --emit-c -o /tmp/.hierlsp_out > /dev/null 2> " + errf)
+    errtext := read_file(errf)
+    diags := ""
+    nd := 0
+    elines := split(errtext, "\n")
+    for i in range(len(elines)):
+        el := elines[i]
+        if starts_with(el, tmp):                       # a diagnostic header (not a snippet/caret line)
+            sev := 1
+            mskip := 7                                 # len(" error:")
+            p := find(el, " error:")
+            if p < 0:
+                p = find(el, " warning:")
+                sev = 2
+                mskip = 9                              # len(" warning:")
+            if p >= 0:
+                head := substr(el, 0, p)               # "<tmp>:<line>:"
+                msg := substr(el, p + mskip, len(el))
+                if len(msg) > 0 and msg[0] == 32:
+                    msg = substr(msg, 1, len(msg))     # drop the leading space
+                parts := split(head, ":")              # [tmp, line, ""]  (tmp has no ':')
+                ln := 1
+                if len(parts) >= 2:
+                    ln = digits_to_int(parts[len(parts) - 2])
+                l0 := ln - 1
+                if l0 < 0:
+                    l0 = 0
+                ec := line_len(text, ln)
+                d := "{\"range\":{\"start\":{\"line\":" + str(l0) + ",\"character\":0},\"end\":{\"line\":" + str(l0) + ",\"character\":" + str(ec) + "}},\"severity\":" + str(sev) + ",\"message\":\"" + esc(msg) + "\"}"
+                if nd > 0:
+                    diags = diags + ","
+                diags = diags + d
+                nd = nd + 1
+    send_msg("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + esc(uri) + "\",\"diagnostics\":[" + diags + "]}}")
+
 fn main():
+    cc := compiler()
     for true:
         body := read_message()
         if body == "":
@@ -251,10 +328,17 @@ fn main():
         msg := parse_value(body, len(body), &pos)
         method := as_str(get(msg, "method"))
         id := get(msg, "id")
+        params := get(msg, "params")
         if method == "initialize":
             send_result(id, "{\"capabilities\":{\"textDocumentSync\":1}}")
+        elif method == "textDocument/didOpen":
+            td := get(params, "textDocument")
+            diagnose(as_str(get(td, "uri")), as_str(get(td, "text")), cc)
+        elif method == "textDocument/didChange":
+            uri := as_str(get(get(params, "textDocument"), "uri"))
+            diagnose(uri, as_str(get(jat(get(params, "contentChanges"), 0), "text")), cc)
         elif method == "shutdown":
             send_result(id, "null")
         elif method == "exit":
             return
-        # initialized / others: ignored in stage 1
+        # initialized / didSave / others: ignored
