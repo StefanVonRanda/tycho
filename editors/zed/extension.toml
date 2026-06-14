@@ -1,0 +1,19 @@
+id = "hier"
+name = "Hier"
+version = "0.0.1"
+schema_version = 1
+authors = ["Hier"]
+description = "Hier language support for Zed: tree-sitter highlighting + diagnostics via hier-lsp."
+repository = "https://github.com/StefanVonRanda/hier"
+
+# The tree-sitter grammar. Zed fetches + builds it from a git repo, so the grammar
+# in ../grammars/hier (grammar.js + generated src/) must be published as its own
+# repo (e.g. tree-sitter-hier); set `rev` to that repo's commit. See README.md.
+[grammars.hier]
+repository = "https://github.com/StefanVonRanda/tree-sitter-hier"
+rev = "0000000000000000000000000000000000000000"
+
+# Register hier-lsp as the language server for Hier files.
+[language_servers.hier-lsp]
+name = "hier-lsp"
+languages = ["Hier"]

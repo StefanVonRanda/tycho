@@ -1,0 +1,13 @@
+[package]
+name = "hier"
+version = "0.0.1"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Match this to your Zed version's extension API (see README.md if the build fails).
+zed_extension_api = "0.1.0"
