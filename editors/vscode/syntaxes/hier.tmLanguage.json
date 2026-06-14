@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Hier",
+  "scopeName": "source.hier",
+  "patterns": [
+    { "name": "comment.line.number-sign.hier", "match": "#.*$" },
+    {
+      "name": "string.interpolated.hier",
+      "begin": "f\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.hier", "match": "\\\\." },
+        {
+          "name": "meta.interpolation.hier",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.double.hier",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.hier", "match": "\\\\." }]
+    },
+    { "name": "constant.character.hier", "match": "'(\\\\.|[^'])'" },
+    { "name": "constant.numeric.hier", "match": "\\b[0-9]+(\\.[0-9]+)?\\b" },
+    {
+      "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.other.fn.hier" },
+        "2": { "name": "entity.name.function.hier" }
+      }
+    },
+    { "name": "keyword.control.hier", "match": "\\b(if|elif|else|for|while|in|match|select|parallel|spawn|return|break|continue|or_return)\\b" },
+    { "name": "keyword.other.hier", "match": "\\b(fn|struct|enum|type|import|package|extern|inout|soa)\\b" },
+    { "name": "keyword.operator.word.hier", "match": "\\b(and|or|not)\\b" },
+    { "name": "constant.language.hier", "match": "\\b(true|false|null)\\b" },
+    { "name": "storage.type.hier", "match": "\\b(int|float|string|bool|char|ptr|void)\\b" },
+    { "name": "support.function.builtin.hier", "match": "\\b(print|println|str|len|push|pop|range|split|substr|find|read_file|write_file|read_all|list_dir|args|getenv|input|chr|die|is_null|sqrt|pow|floor|fabs|map_get|map_set|reserve)\\b" },
+    { "name": "keyword.operator.hier", "match": ":=|->|==|!=|<=|>=|[-+*/%<>=&|^~]" }
+  ]
+}

@@ -16,6 +16,10 @@
 /hier-lsp
 /hier-lsp.c
 
+# Editor-extension dev artifacts (the sources under editors/ ARE tracked)
+/editors/**/node_modules/
+/editors/**/*.vsix
+
 # Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
 /build/
 

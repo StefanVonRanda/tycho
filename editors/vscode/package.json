@@ -1,0 +1,52 @@
+{
+  "name": "hier",
+  "displayName": "Hier",
+  "description": "Hier language support: syntax highlighting + live diagnostics via hier-lsp.",
+  "version": "0.0.1",
+  "publisher": "hier",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:hier"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "hier",
+        "aliases": ["Hier", "hier"],
+        "extensions": [".hi"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "hier",
+        "scopeName": "source.hier",
+        "path": "./syntaxes/hier.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Hier",
+      "properties": {
+        "hier.lspPath": {
+          "type": "string",
+          "default": "hier-lsp",
+          "description": "Path to the hier-lsp language server binary (built by `make hier-lsp`)."
+        },
+        "hier.compilerPath": {
+          "type": "string",
+          "default": "hierc",
+          "description": "Path to the hier compiler the server runs for diagnostics (passed as HIERC)."
+        },
+        "hier.enableServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run hier-lsp for live diagnostics. Disable for highlighting only."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
