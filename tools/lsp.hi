@@ -390,54 +390,132 @@ fn find_def(text: string, name: string) -> int:
             return i
     return 0 - 1
 
-# document store (uri -> latest buffer text), parallel arrays
-fn doc_set(uris: inout [string], texts: inout [string], uri: string, text: string):
+# document store: parallel arrays uri -> (buffer text, --symbols index)
+fn doc_set(uris: inout [string], texts: inout [string], syms: inout [string], uri: string, text: string, sym: string):
     for i in range(len(uris)):
         if uris[i] == uri:
             texts[i] = text
+            syms[i] = sym
             return
     push(uris, uri)
     push(texts, text)
+    push(syms, sym)
 
-fn doc_get(uris: [string], texts: [string], uri: string) -> string:
+fn doc_get(uris: [string], arr: [string], uri: string) -> string:
     for i in range(len(uris)):
         if uris[i] == uri:
-            return texts[i]
+            return arr[i]
     return ""
 
-fn handle_hover(id: Json, uris: [string], texts: [string], params: Json):
-    text := doc_get(uris, texts, as_str(get(get(params, "textDocument"), "uri")))
-    pos := get(params, "position")
-    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
-    dln := 0 - 1
-    if w != "":
-        dln = find_def(text, w)
-    if dln < 0:
-        send_result(id, "null")
-        return
-    lines := split(text, "\n")
-    md := "```hier\n" + ltrim(lines[dln]) + "\n```"
-    send_result(id, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"" + esc(md) + "\"}}")
+# run `hierc --symbols` on the buffer; "" if it doesn't parse (hover falls back)
+fn compute_syms(text: string, cc: string) -> string:
+    write_file("/tmp/.hierlsp_doc.hi", text)
+    hier_run(cc + " /tmp/.hierlsp_doc.hi --symbols > /tmp/.hierlsp_syms.txt 2>/dev/null")
+    return read_file("/tmp/.hierlsp_syms.txt")
 
-fn handle_definition(id: Json, uris: [string], texts: [string], params: Json):
+# --- symbol-index queries (TAB-separated records from `hierc --symbols`) ------
+# 1-based start line of the fn enclosing 0-based cursor line cl, or -1
+fn sym_enclosing_fn(syms: string, cl: int) -> int:
+    lines := split(syms, "\n")
+    best := 0 - 1
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and f[0] == "fn":
+            fl := digits_to_int(f[2])
+            if fl <= cl + 1 and fl > best:
+                best = fl
+    return best
+
+# type of param `name` in the function whose start line is `fnline`, or ""
+fn sym_param_type(syms: string, name: string, fnline: int) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "param" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return f[2]
+    return ""
+
+# resolved description of a top-level `name` (fn sig / struct / enum / type), or ""
+fn sym_describe(syms: string, name: string) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "fn" and f[1] == name:
+            return f[3]
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 2 and f[1] == name:
+            if f[0] == "struct":
+                return "struct " + name
+            if f[0] == "enum":
+                return "enum " + name
+            if f[0] == "type" and len(f) >= 3:
+                return "type " + name + " = " + f[2]
+    return ""
+
+# 0-based def line of a top-level `name` (fn/struct/enum) from the index, or -1
+fn sym_def_line(syms: string, name: string) -> int:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and f[1] == name and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
+            return digits_to_int(f[2]) - 1
+    return 0 - 1
+
+fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
     uri := as_str(get(get(params, "textDocument"), "uri"))
     text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
+    pos := get(params, "position")
+    cl := as_num(get(pos, "line"))
+    w := word_at(text, cl, as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "null")
+        return
+    info := ""
+    efn := sym_enclosing_fn(sx, cl)            # a param of the enclosing function?
+    if efn >= 0:
+        info = sym_param_type(sx, w, efn)
+        if info != "":
+            info = w + ": " + info
+    if info == "":                             # a top-level fn/struct/enum/type?
+        info = sym_describe(sx, w)
+    if info == "":                             # buffer-side fallback: the def's source line
+        dln := find_def(text, w)
+        if dln >= 0:
+            lines := split(text, "\n")
+            info = ltrim(lines[dln])
+    if info == "":
+        send_result(id, "null")
+        return
+    md := "```hier\n" + info + "\n```"
+    send_result(id, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"" + esc(md) + "\"}}")
+
+fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
     pos := get(params, "position")
     w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
     dln := 0 - 1
     if w != "":
-        dln = find_def(text, w)
+        dln = sym_def_line(sx, w)              # resolved def line from the index
+        if dln < 0:
+            dln = find_def(text, w)            # buffer-side fallback (types, or no index)
     if dln < 0:
         send_result(id, "null")
         return
     lines := split(text, "\n")
-    ec := len(lines[dln])
+    ec := 0
+    if dln < len(lines):
+        ec = len(lines[dln])
     send_result(id, "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(dln) + ",\"character\":0},\"end\":{\"line\":" + str(dln) + ",\"character\":" + str(ec) + "}}}")
 
 fn main():
     cc := compiler()
     uris := []string
     texts := []string
+    syms := []string
     for true:
         body := read_message()
         if body == "":
@@ -453,17 +531,17 @@ fn main():
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
             t := as_str(get(td, "text"))
-            doc_set(&uris, &texts, u, t)
+            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
             diagnose(u, t, cc)
         elif method == "textDocument/didChange":
             u := as_str(get(get(params, "textDocument"), "uri"))
             t := as_str(get(jat(get(params, "contentChanges"), 0), "text"))
-            doc_set(&uris, &texts, u, t)
+            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
             diagnose(u, t, cc)
         elif method == "textDocument/hover":
-            handle_hover(id, uris, texts, params)
+            handle_hover(id, uris, texts, syms, params)
         elif method == "textDocument/definition":
-            handle_definition(id, uris, texts, params)
+            handle_definition(id, uris, texts, syms, params)
         elif method == "shutdown":
             send_result(id, "null")
         elif method == "exit":

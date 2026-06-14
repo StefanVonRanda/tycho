@@ -7410,11 +7410,49 @@ static char *pkg_config_flags(const char *name) {
     return xstrndup(buf, n);
 }
 
+/* --symbols: a TAB-separated symbol index for the language server (hover +
+ * go-to-definition). Emitted post-resolve so types are concrete. Records:
+ *   fn<TAB>name<TAB>line<TAB>signature
+ *   param<TAB>name<TAB>type<TAB>fn-line          (scope = the enclosing fn)
+ *   struct<TAB>name<TAB>line   /  field<TAB>struct<TAB>name<TAB>type
+ *   enum<TAB>name<TAB>line     /  variant<TAB>enum<TAB>name
+ *   type<TAB>name<TAB>underlying
+ * Locals (`:=`) are intentionally out of scope here (they need body-level type
+ * inference); params + signatures + members cover the common hover cases. */
+static void emit_symbols(ProcVec *prog) {
+    for (int i = 0; i < prog->n; i++) {
+        Proc *p = prog->v[i];
+        char *sig = sfmt("fn %s(", p->name);
+        for (int j = 0; j < p->nparams; j++)
+            sig = sfmt("%s%s%s: %s", sig, j ? ", " : "", p->params[j].name, type_name(p->params[j].type));
+        sig = sfmt("%s)", sig);
+        if (p->has_ret) sig = sfmt("%s -> %s", sig, type_name(p->ret));
+        printf("fn\t%s\t%d\t%s\n", p->name, p->line, sig);
+        for (int j = 0; j < p->nparams; j++)
+            printf("param\t%s\t%s\t%d\n", p->params[j].name, type_name(p->params[j].type), p->line);
+    }
+    for (int i = 0; i < g_nstructs; i++) {
+        StructDef *s = &g_structs[i];
+        printf("struct\t%s\t%d\n", s->name, s->line);
+        for (int j = 0; j < s->nfields; j++)
+            printf("field\t%s\t%s\t%s\n", s->name, s->fields[j].name, type_name(s->fields[j].type));
+    }
+    for (int i = 0; i < g_nenums; i++) {
+        EnumDef *e = &g_enums[i];
+        printf("enum\t%s\t%d\n", e->name, e->line);
+        for (int j = 0; j < e->nvariants; j++)
+            printf("variant\t%s\t%s\n", e->name, e->variants[j].name);
+    }
+    for (int i = 0; i < g_nnewtypes; i++)
+        printf("type\t%s\t%s\n", g_newtypes[i].name, type_name(g_newtypes[i].under));
+}
+
 int main(int argc, char **argv) {
     const char *input = NULL;
     const char *out   = NULL;
     const char *cc    = "cc";
     int emit_c_only = 0;
+    int want_symbols = 0;
     int bundle = 0;
     int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
     char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
@@ -7423,6 +7461,7 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
+        else if (!strcmp(argv[i], "--symbols")) want_symbols = 1;
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
@@ -7464,6 +7503,8 @@ int main(int argc, char **argv) {
                        : parse_program(toks.v);        /* single file: unchanged */
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
+
+    if (want_symbols) { emit_symbols(&prog); return 0; }   /* LSP index; no codegen */
 
     FILE *o = fopen(c_path, "wb");
     if (!o) { fprintf(stderr, "hierc: cannot write %s\n", c_path); return 1; }
