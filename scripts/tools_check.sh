@@ -43,33 +43,37 @@ import subprocess, json, os, sys
 lsp = sys.argv[1]
 def frame(o):
     b = json.dumps(o).encode(); return b"Content-Length: %d\r\n\r\n%b" % (len(b), b)
-ok = "fn f(x: int) -> int:\n    return x\n\nfn main():\n    print(str(f(1)))\n"
+ok = "fn f(x: int) -> int:\n    y := x + 1\n    return y\n\nfn main():\n    print(str(f(1)))\n"
 bad = "fn main():\n    x := \n"
-# cursor on the `f` call at line 4 (0-based): "    print(str(f(1)))"
+def tp(idn, meth, ln, ch):
+    return frame({"jsonrpc":"2.0","id":idn,"method":meth,"params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":ln,"character":ch}}})
 msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
         + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///ok.hi","text":ok}}})
         + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///bad.hi","text":bad}}})
-        + frame({"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":4,"character":14}}})
-        + frame({"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":4,"character":14}}})
+        + tp(2, "textDocument/hover", 1, 4)        # local `y` -> inferred type
+        + tp(3, "textDocument/hover", 5, 14)       # `f` call -> resolved signature
+        + tp(4, "textDocument/definition", 5, 14)  # -> fn f line
         + frame({"jsonrpc":"2.0","method":"exit"}))
 p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, HIERC="./hierc"))
-out = p.stdout.decode(); i = 0; init = False; diags = {}; hover = None; defn = None
+out = p.stdout.decode(); i = 0; init = False; diags = {}; hloc = None; hfn = None; defn = None
 while True:
     k = out.find("Content-Length: ", i)
     if k < 0: break
     j = out.find("\r\n\r\n", k); n = int(out[k+16:j]); body = out[j+4:j+4+n]; i = j+4+n
     o = json.loads(body)
     if o.get("id") == 1 and "result" in o: init = True
-    if o.get("id") == 2: hover = o.get("result")
-    if o.get("id") == 3: defn = o.get("result")
+    if o.get("id") == 2: hloc = o.get("result")
+    if o.get("id") == 3: hfn = o.get("result")
+    if o.get("id") == 4: defn = o.get("result")
     if o.get("method") == "textDocument/publishDiagnostics":
         diags[o["params"]["uri"]] = o["params"]["diagnostics"]
 clean = diags.get("file:///ok.hi") == []
 flagged = len(diags.get("file:///bad.hi", [])) >= 1
-hov_ok = bool(hover) and "f(x: int)" in json.dumps(hover)
+loc_ok = bool(hloc) and "y: int" in json.dumps(hloc)
+fn_ok = bool(hfn) and "f(x: int)" in json.dumps(hfn)
 def_ok = bool(defn) and defn.get("range", {}).get("start", {}).get("line") == 0
-print("    initialize=%s  valid->[]=%s  invalid->diag=%s  hover=%s  definition=%s" % (init, clean, flagged, hov_ok, def_ok))
-sys.exit(0 if (init and clean and flagged and hov_ok and def_ok) else 1)
+print("    init=%s  diag(valid->[]=%s invalid->diag=%s)  hover(local=%s fn=%s)  def=%s" % (init, clean, flagged, loc_ok, fn_ok, def_ok))
+sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok) else 1)
 PY
 
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi

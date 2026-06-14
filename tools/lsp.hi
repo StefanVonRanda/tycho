@@ -462,6 +462,24 @@ fn sym_def_line(syms: string, name: string) -> int:
             return digits_to_int(f[2]) - 1
     return 0 - 1
 
+# inferred type of local `name` in the function whose start line is `fnline`, or ""
+fn sym_local_type(syms: string, name: string, fnline: int) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return f[2]
+    return ""
+
+# 0-based decl line of local `name` in the function at `fnline`, or -1
+fn sym_local_defline(syms: string, name: string, fnline: int) -> int:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 5 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return digits_to_int(f[4]) - 1
+    return 0 - 1
+
 fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
     uri := as_str(get(get(params, "textDocument"), "uri"))
     text := doc_get(uris, texts, uri)
@@ -473,11 +491,13 @@ fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], param
         send_result(id, "null")
         return
     info := ""
-    efn := sym_enclosing_fn(sx, cl)            # a param of the enclosing function?
+    efn := sym_enclosing_fn(sx, cl)            # a local or param of the enclosing function?
     if efn >= 0:
-        info = sym_param_type(sx, w, efn)
-        if info != "":
-            info = w + ": " + info
+        lt := sym_local_type(sx, w, efn)
+        if lt == "":
+            lt = sym_param_type(sx, w, efn)
+        if lt != "":
+            info = w + ": " + lt
     if info == "":                             # a top-level fn/struct/enum/type?
         info = sym_describe(sx, w)
     if info == "":                             # buffer-side fallback: the def's source line
@@ -496,12 +516,19 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
     text := doc_get(uris, texts, uri)
     sx := doc_get(uris, syms, uri)
     pos := get(params, "position")
-    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    cl := as_num(get(pos, "line"))
+    w := word_at(text, cl, as_num(get(pos, "character")))
     dln := 0 - 1
     if w != "":
-        dln = sym_def_line(sx, w)              # resolved def line from the index
+        efn := sym_enclosing_fn(sx, cl)
+        if efn >= 0:
+            dln = sym_local_defline(sx, w, efn)        # local -> its decl line
+            if dln < 0 and sym_param_type(sx, w, efn) != "":
+                dln = efn - 1                          # param -> the enclosing fn line
         if dln < 0:
-            dln = find_def(text, w)            # buffer-side fallback (types, or no index)
+            dln = sym_def_line(sx, w)                  # top-level fn/struct/enum
+        if dln < 0:
+            dln = find_def(text, w)                    # buffer-side fallback
     if dln < 0:
         send_result(id, "null")
         return

@@ -7419,6 +7419,27 @@ static char *pkg_config_flags(const char *name) {
  *   type<TAB>name<TAB>underlying
  * Locals (`:=`) are intentionally out of scope here (they need body-level type
  * inference); params + signatures + members cover the common hover cases. */
+/* Recursively emit `local<TAB>name<TAB>type<TAB>fn-line<TAB>decl-line` for every
+ * S_DECL / S_MDECL binding in a body (descending into if/while/for/match blocks),
+ * scoped to the enclosing function's start line. decl_type/mtypes are already
+ * resolved post-resolve_program, so the type is the inferred one. (Loop vars and
+ * match-arm binds aren't covered yet -- foreach desugars to an S_DECL so it is.) */
+static void emit_locals(Stmt **body, int n, int fnline) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (!s) continue;
+        if (s->kind == S_DECL)
+            printf("local\t%s\t%s\t%d\t%d\n", s->name, type_name(s->decl_type), fnline, s->line);
+        else if (s->kind == S_MDECL)
+            for (int j = 0; j < s->nnames; j++)
+                printf("local\t%s\t%s\t%d\t%d\n", s->names[j], type_name(s->mtypes[j]), fnline, s->line);
+        if (s->body) emit_locals(s->body, s->nbody, fnline);
+        if (s->els)  emit_locals(s->els, s->nels, fnline);
+        for (int a = 0; a < s->narms; a++)
+            emit_locals(s->arms[a].body, s->arms[a].nbody, fnline);
+    }
+}
+
 static void emit_symbols(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *p = prog->v[i];
@@ -7430,6 +7451,7 @@ static void emit_symbols(ProcVec *prog) {
         printf("fn\t%s\t%d\t%s\n", p->name, p->line, sig);
         for (int j = 0; j < p->nparams; j++)
             printf("param\t%s\t%s\t%d\n", p->params[j].name, type_name(p->params[j].type), p->line);
+        emit_locals(p->body, p->nbody, p->line);
     }
     for (int i = 0; i < g_nstructs; i++) {
         StructDef *s = &g_structs[i];
