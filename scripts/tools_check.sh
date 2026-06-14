@@ -93,5 +93,17 @@ printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n        i
 echo "    hierc: bad=$cbw good=$cgw   hierc0: bad=$zbw good=$zgw"
 { [ "$cbw" -ge 1 ] && [ "$cgw" -eq 0 ] && [ "$zbw" -ge 1 ] && [ "$zgw" -eq 0 ]; } || { echo "  LOOP-WARN PARITY FAIL"; fail=1; }
 
+echo ">>> pure-result: both compilers warn on a discarded pure-builtin result"
+# Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
+# A bare `map_set(m,k,v)` discards the new map it returns -> must warn; `m[k]=v` must not.
+printf 'fn main():\n    m := []string: int\n    map_set(m, "a", 1)\n' > "$TMP/pure.hi"
+printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str(map_has(m, "a")))\n' > "$TMP/nopure.hi"
+"$HIERC"      "$TMP/pure.hi"   --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p1"; cpw=$(grep -c 'warning:' "$TMP/p1")
+"$HIERC"      "$TMP/nopure.hi" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p2"; cpn=$(grep -c 'warning:' "$TMP/p2")
+"$TMP/hierc0" "$TMP/pure.hi"   --emit-c 1>/dev/null 2>"$TMP/p3"; zpw=$(grep -c 'warning:' "$TMP/p3")
+"$TMP/hierc0" "$TMP/nopure.hi" --emit-c 1>/dev/null 2>"$TMP/p4"; zpn=$(grep -c 'warning:' "$TMP/p4")
+echo "    hierc: bad=$cpw good=$cpn   hierc0: bad=$zpw good=$zpn"
+{ [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ] && [ "$zpw" -ge 1 ] && [ "$zpn" -eq 0 ]; } || { echo "  PURE-RESULT PARITY FAIL"; fail=1; }
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

@@ -3387,6 +3387,57 @@ fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the lo
         i = i + 1
     warn_at(dc, pos, "loop condition never changes; this `for` may run forever (forgot to advance a variable? consider `for x in range(...)`)")
 
+# "pure" builtins: no side effect, so discarding the result in statement position
+# is a no-op (map_set/map_del return a NEW map — a common footgun). Mirrors
+# is_pure_builtin in src/hierc.c.
+fn is_pure_bi(n: string) -> bool:
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bool" or n == "is_null" or n == "len"
+
+fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e is such a call, else ""
+    match e:
+        ECall(name, args, p):
+            if is_pure_bi(name):
+                return name
+            return ""
+        EInt(t, p):
+            return ""
+        EBool(t, p):
+            return ""
+        EChar(t, p):
+            return ""
+        EFloat(t, p):
+            return ""
+        EStr(t, p):
+            return ""
+        EVar(n, p):
+            return ""
+        EBin(op, l, r, p):
+            return ""
+        EField(b, fld, p):
+            return ""
+        EIndex(b, ix, p):
+            return ""
+        EArrLit(es, p):
+            return ""
+        EArrEmpty(t, p):
+            return ""
+        EMapEmpty(kt, vt, p):
+            return ""
+        EMapLit(ks, vls, p):
+            return ""
+        ETuple(es, p):
+            return ""
+        ESlice(b, lo, hi, p):
+            return ""
+        EAddr(x, p):
+            return ""
+        ELambda(lid, ps, pts, ret, lb, cn, ct, p):
+            return ""
+        ECallV(callee, cargs, p):
+            return ""
+        ESpawn(sid, snm, sargs, p):
+            return ""
+
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
 # (vars declared from here on are block-local). Sibling blocks reuse the same
@@ -5231,6 +5282,9 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
         SContinue:
             return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "continue;\n"
         SExpr(e, _sl):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches hierc S_EXPR + scalar_transient)
+            pn := pure_call_name(e)                     # warn on a discarded pure-builtin result (no-op statement)
+            if pn != "":
+                warn_at(dc, _sl, "result of " + pn + " is discarded; it has no side effects, so this statement does nothing (map_set/map_del return a new map: use m = map_set(...) or m[k] = v)")
             return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
         STypedDecl(name, ty, e, _sl):                  # annotation fixes the var's type
             if has_str(ctx.saccums, name):        # string accumulator (annotated): same heap buffer + sidecars

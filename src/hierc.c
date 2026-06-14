@@ -3814,6 +3814,18 @@ static void wl_check(Stmt *s) {           /* s is an S_WHILE */
                      "(forgot to advance a variable? consider `for x in range(...)`)");
 }
 
+/* "pure" builtins have no side effect, so discarding the result in statement
+ * position is always a no-op -- e.g. map_set/map_del return a NEW map (a common
+ * footgun: `map_set(m,k,v)` as a bare statement does nothing). */
+static int is_pure_builtin(const char *n) {
+    if (!n) return 0;
+    static const char *pure[] = { "str", "substr", "chr", "split", "keys", "find",
+        "map_get", "map_has", "map_set", "map_del", "sqrt", "pow", "floor", "fabs",
+        "to_float", "to_int", "to_str", "to_bool", "is_null", "len", 0 };
+    for (int i = 0; pure[i]; i++) if (!strcmp(n, pure[i])) return 1;
+    return 0;
+}
+
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_DECL: {
@@ -4114,6 +4126,10 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_EXPR:
+            if (s->expr && s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
+                warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
+                                       "nothing (map_set/map_del return a new map -- use `m = map_set(...)` or `m[k] = v`)",
+                        s->expr->sval);
             if (IS_TASK(resolve_expr(s->expr)))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
             break;
