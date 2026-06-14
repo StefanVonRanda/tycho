@@ -1,0 +1,7 @@
+number on '123abc': matched '123', rest 'abc'
+number on 'abc': FAILED
+ident on 'foo42 bar': matched 'foo42', rest ' bar'
+token on 'x9': matched 'x9', rest ''
+token on '42x': matched '42', rest 'x'
+banged on 'hello world': matched 'hello!', rest ' world'
+pair on 'abc   def': matched 'abc   ', rest 'def'
