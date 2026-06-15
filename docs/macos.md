@@ -16,7 +16,7 @@ its performance thesis on macOS/arm64 — not just Linux. Run on 2026-06-15.
 
 ```sh
 make                 # build the C compiler (hierc) — clang -O2, clean
-make test            # 151/151 correctness + golden + native-vs-ASan differential
+make test            # 153/153 correctness + golden + native-vs-ASan differential
 make bootstrap       # self-hosted hierc0 matches the C compiler
 make fixpoint        # B == C byte-identical; single files + packages
 make conc            # 31/31 concurrency (spawn / parallel-for / channels)
@@ -30,9 +30,9 @@ make bench-prongB    # cross-language head-to-head (C / Rust / Go)
 
 | gate | result |
 |---|---|
-| `make test` | **151 / 151** passed |
+| `make test` | **153 / 153** passed |
 | `make bootstrap` | hierc0 matches the C compiler |
-| `make fixpoint` | B == C byte-identical (18,797 lines C); single files + packages |
+| `make fixpoint` | B == C byte-identical (18,806 lines C); single files + packages |
 | `make conc` | 31 / 31 |
 | `make ffi` | green (hierc + hierc0 agree, ASan-clean, match golden) |
 | `make corelib` | green |
@@ -50,13 +50,20 @@ make bench-prongB    # cross-language head-to-head (C / Rust / Go)
 2. **A latent codegen UB the macOS toolchain exposed.**
    A self-referential shadowing decl `y := y + 2` (shadowing an outer `y`)
    emitted `long h_y = (h_y + 2L);` — a C local read in its own initializer
-   (use-before-init). Linux happened to read a zeroed stack slot (→ 2, baked
-   into the golden); macOS read stack garbage, and the harness's
-   native-vs-sanitizer differential check caught the divergence. Per Hier's
-   value semantics the new binding starts at its type's zero value, so the fix
-   zero-initializes it first (`long h_y = {0}; h_y = (h_y + 2L);`). Applied to
-   **both** compilers (`src/hierc.c`, `compiler/hierc0.hi`) so the self-host
-   fixpoint stays byte-identical. Test: `tests/lambda_shadow_decl.hi`.
+   (use-before-init). Linux happened to read a zeroed stack slot; macOS read
+   stack garbage, and the harness's native-vs-sanitizer differential check
+   caught the divergence. The correct semantics (Go/Odin lexical scope + value
+   semantics — and what the typechecker already does, resolving the RHS against
+   the *enclosing* binding before the new name is in scope): the RHS reads the
+   outer `y` and binds a fresh independent value, so `y := y + 2` with outer
+   `y = 1` is **3**, with the outer `y` unchanged. The fix evaluates the RHS
+   into a temp *before* the new C local exists
+   (`long _sh_y = (h_y + 2L); long h_y = _sh_y;`), in both the plain and the
+   transient (has-call) decl paths, applied to **both** compilers
+   (`src/hierc.c`, `compiler/hierc0.hi`). Tests:
+   `tests/lambda_shadow_decl.hi` (plain, golden `3`), `tests/shadow_string.hi`
+   (heap), `tests/shadow_call.hi` (has-call). Verified: fixpoint B==C, both
+   compilers agree on output, 150-seed differential fuzz clean.
 
 Neither was a macOS-specific defect in the language — (1) was a harness
 assumption, (2) was platform-independent UB that Linux had been silently
@@ -120,6 +127,6 @@ Peak RSS (MB) — `hier/C` is the headline thesis metric:
 ## Conclusion
 
 macOS/Apple Silicon is a first-class Hier target: clean build, full self-host
-fixpoint, 151/151 tests, and the memory/speed thesis holds. The only changes
+fixpoint, 153/153 tests, and the memory/speed thesis holds. The only changes
 needed were harness portability (leak detection) and fixing one platform-
 independent UB that Linux had been masking.
