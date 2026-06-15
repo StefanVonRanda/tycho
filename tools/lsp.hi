@@ -1,8 +1,11 @@
-# hier-lsp — a Language Server for hier, written in hier (dogfood). STAGE 1:
-# JSON-RPC transport + the lifecycle handshake (initialize / shutdown / exit).
-# STAGE 2 adds diagnostics (run the compiler on each buffer -> publishDiagnostics);
-# later: hover, go-to-definition. One server, driven by any LSP client (VS Code,
-# Zed, ...). Build:  hierc tools/lsp.hi --shim tools/lsp_shim.c -o hier-lsp
+# hier-lsp — a Language Server for hier, written in hier (dogfood). One server,
+# driven by any LSP client (VS Code, Zed, ...). JSON-RPC transport + lifecycle,
+# and these features: diagnostics (compile the buffer -> publishDiagnostics),
+# hover, go-to-definition, documentSymbol (outline), completion, references,
+# documentHighlight, rename, and inlay type hints. Navigation/types come from
+# `hierc --symbols` (post-resolve index); references/rename scan the buffer with
+# string/comment awareness so they never edit text inside a literal or comment.
+# Build:  hierc tools/lsp.hi --shim tools/lsp_shim.c -o hier-lsp
 #
 # The JSON value model + parser + serializer are reused verbatim from
 # examples/json.hi (a proven recursive value-semantic parser); only the transport,
@@ -538,6 +541,213 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
         ec = len(lines[dln])
     send_result(id, "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(dln) + ",\"character\":0},\"end\":{\"line\":" + str(dln) + ",\"character\":" + str(ec) + "}}}")
 
+# ---- occurrence scanning (references / rename / highlight) ------------------
+# Whole-word identifier occurrences of `name`, skipping string literals and `#`
+# comments so a rename never edits text inside a string or comment. Returned as a
+# flat [line, startCol, endCol, ...] triple list. (f-strings are skipped whole, so
+# identifiers inside f"...{hole}..." are conservatively not matched -- safe for
+# rename, at the cost of missing those refs; a known limitation.)
+fn find_occurrences(text: string, name: string) -> [int]:
+    out := []int
+    lines := split(text, "\n")
+    for li in range(len(lines)):
+        s := lines[li]
+        n := len(s)
+        c := 0
+        for c < n:
+            ch := s[c]
+            if ch == 35:                                   # '#' -> rest of line is a comment
+                c = n
+            elif ch == 34 or ch == 39:                     # "..." or '...' string literal
+                q := ch
+                c = c + 1
+                for c < n and s[c] != q:
+                    if s[c] == 92:
+                        c = c + 1
+                    c = c + 1
+                if c < n:
+                    c = c + 1                              # closing quote
+            elif is_ident_ch(ch) and not (ch >= 48 and ch <= 57):   # identifier (not a number)
+                a := c
+                for c < n and is_ident_ch(s[c]):
+                    c = c + 1
+                if substr(s, a, c) == name:
+                    push(out, li)
+                    push(out, a)
+                    push(out, c)
+            else:
+                c = c + 1
+    return out
+
+# end column of the first whole-word `name` on line `s`, or -1
+fn name_end_col(s: string, name: string) -> int:
+    n := len(s)
+    nl := len(name)
+    c := 0
+    for c + nl <= n:
+        if substr(s, c, c + nl) == name and (c == 0 or not is_ident_ch(s[c - 1])) and (c + nl >= n or not is_ident_ch(s[c + nl])):
+            return c + nl
+        c = c + 1
+    return 0 - 1
+
+# append space-separated `words` as completion items of `kind`
+fn add_items_from(words: string, kind: int, out: inout string, nd: inout int):
+    ws := split(words, " ")
+    for wi in range(len(ws)):
+        w := ws[wi]
+        if w != "":
+            if nd > 0:
+                out = out + ","
+            out = out + "{\"label\":\"" + esc(w) + "\",\"kind\":" + str(kind) + "}"
+            nd = nd + 1
+
+fn comp_item(label: string, kind: int, detail: string) -> string:
+    return "{\"label\":\"" + esc(label) + "\",\"kind\":" + str(kind) + ",\"detail\":\"" + esc(detail) + "\"}"
+
+# ---- handlers for the new capabilities --------------------------------------
+# documentSymbol: an outline of the top-level fn/struct/enum from the index.
+fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    sx := doc_get(uris, syms, uri)
+    out := ""
+    nd := 0
+    lines := split(sx, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
+            kind := 12                                     # SymbolKind.Function
+            if f[0] == "struct":
+                kind = 23                                  # .Struct
+            elif f[0] == "enum":
+                kind = 10                                  # .Enum
+            l0 := digits_to_int(f[2]) - 1
+            if nd > 0:
+                out = out + ","
+            out = out + "{\"name\":\"" + esc(f[1]) + "\",\"kind\":" + str(kind) + ",\"location\":{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(l0) + ",\"character\":0},\"end\":{\"line\":" + str(l0) + ",\"character\":0}}}}"
+            nd = nd + 1
+    send_result(id, "[" + out + "]")
+
+# completion: enclosing-fn locals/params + top-level defs + builtins/keywords.
+# (The client filters by the typed prefix; cross-package members aren't indexed.)
+fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    sx := doc_get(uris, syms, uri)
+    cl := as_num(get(get(params, "position"), "line"))
+    efn := sym_enclosing_fn(sx, cl)
+    out := ""
+    nd := 0
+    lines := split(sx, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and (f[0] == "local" or f[0] == "param") and digits_to_int(f[3]) == efn:
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 6, f[2])           # Variable
+            nd = nd + 1
+        elif len(f) >= 4 and f[0] == "fn":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 3, f[3])           # Function (detail = signature)
+            nd = nd + 1
+        elif len(f) >= 2 and f[0] == "struct":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 22, "struct")
+            nd = nd + 1
+        elif len(f) >= 2 and f[0] == "enum":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 13, "enum")
+            nd = nd + 1
+        elif len(f) >= 3 and f[0] == "enum_arm":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[2], 20, "variant of " + f[1])   # EnumMember
+            nd = nd + 1
+    add_items_from("print println eprint input read_all read_file write_file list_dir args getenv len push pop range str substr find split chr sqrt pow floor fabs clock now is_null Some Ok Err None", 3, &out, &nd)
+    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in or_return spawn wait true false soa select", 14, &out, &nd)
+    send_result(id, "{\"isIncomplete\":false,\"items\":[" + out + "]}")
+
+# references: every whole-word use in the buffer (string/comment-aware).
+fn handle_references(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "[]")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}}}"
+        k = k + 3
+    send_result(id, "[" + out + "]")
+
+# documentHighlight: same occurrences, as in-file highlights.
+fn handle_highlight(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "[]")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}},\"kind\":1}"
+        k = k + 3
+    send_result(id, "[" + out + "]")
+
+# rename: a WorkspaceEdit replacing every occurrence with newName.
+fn handle_rename(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    newname := as_str(get(params, "newName"))
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "" or newname == "":
+        send_result(id, "null")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}},\"newText\":\"" + esc(newname) + "\"}"
+        k = k + 3
+    send_result(id, "{\"changes\":{\"" + esc(uri) + "\":[" + out + "]}}")
+
+# inlayHint: a `: type` hint after each inferred (`:=`) local, from the index.
+fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
+    lines := split(text, "\n")
+    slines := split(sx, "\n")
+    out := ""
+    nd := 0
+    for i in range(len(slines)):
+        f := split(slines[i], "\t")
+        if len(f) >= 5 and f[0] == "local":
+            l0 := digits_to_int(f[4]) - 1                  # decl line, 0-based
+            if l0 >= 0 and l0 < len(lines):
+                ec := name_end_col(lines[l0], f[1])
+                if ec >= 0:
+                    if nd > 0:
+                        out = out + ","
+                    out = out + "{\"position\":{\"line\":" + str(l0) + ",\"character\":" + str(ec) + "},\"label\":\": " + esc(f[2]) + "\",\"kind\":1,\"paddingLeft\":false}"
+                    nd = nd + 1
+    send_result(id, "[" + out + "]")
+
 fn main():
     cc := compiler()
     uris := []string
@@ -553,7 +763,7 @@ fn main():
         id := get(msg, "id")
         params := get(msg, "params")
         if method == "initialize":
-            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true}}")
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
         elif method == "textDocument/didOpen":
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
@@ -569,6 +779,18 @@ fn main():
             handle_hover(id, uris, texts, syms, params)
         elif method == "textDocument/definition":
             handle_definition(id, uris, texts, syms, params)
+        elif method == "textDocument/documentSymbol":
+            handle_document_symbol(id, uris, syms, params)
+        elif method == "textDocument/completion":
+            handle_completion(id, uris, texts, syms, params)
+        elif method == "textDocument/references":
+            handle_references(id, uris, texts, params)
+        elif method == "textDocument/documentHighlight":
+            handle_highlight(id, uris, texts, params)
+        elif method == "textDocument/rename":
+            handle_rename(id, uris, texts, params)
+        elif method == "textDocument/inlayHint":
+            handle_inlay(id, uris, texts, syms, params)
         elif method == "shutdown":
             send_result(id, "null")
         elif method == "exit":

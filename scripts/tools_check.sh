@@ -55,9 +55,15 @@ msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
         + tp(2, "textDocument/hover", 1, 4)        # local `y` -> inferred type
         + tp(3, "textDocument/hover", 5, 14)       # `f` call -> resolved signature
         + tp(4, "textDocument/definition", 5, 14)  # -> fn f line
+        + frame({"jsonrpc":"2.0","id":5,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///ok.hi"}}})
+        + frame({"jsonrpc":"2.0","id":6,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":1,"character":4}}})
+        + frame({"jsonrpc":"2.0","id":7,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":5,"character":14},"context":{"includeDeclaration":True}}})
+        + frame({"jsonrpc":"2.0","id":8,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///ok.hi"},"position":{"line":5,"character":14},"newName":"g"}})
+        + frame({"jsonrpc":"2.0","id":9,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///ok.hi"},"range":{}}})
         + frame({"jsonrpc":"2.0","method":"exit"}))
 p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, HIERC="./hierc"))
 out = p.stdout.decode(); i = 0; init = False; diags = {}; hloc = None; hfn = None; defn = None
+res = {}
 while True:
     k = out.find("Content-Length: ", i)
     if k < 0: break
@@ -67,6 +73,7 @@ while True:
     if o.get("id") == 2: hloc = o.get("result")
     if o.get("id") == 3: hfn = o.get("result")
     if o.get("id") == 4: defn = o.get("result")
+    if isinstance(o.get("id"), int) and o["id"] >= 5: res[o["id"]] = o.get("result")
     if o.get("method") == "textDocument/publishDiagnostics":
         diags[o["params"]["uri"]] = o["params"]["diagnostics"]
 clean = diags.get("file:///ok.hi") == []
@@ -75,8 +82,16 @@ loc_ok = bool(hloc) and "y: int" in json.dumps(hloc)
 fn_ok = bool(hfn) and "f(x: int)" in json.dumps(hfn)
 def_ok = bool(defn) and defn.get("range", {}).get("start", {}).get("line") == 0
 warn_ok = any(d.get("severity") == 2 for d in diags.get("file:///loop.hi", []))
+dsym = res.get(5) or []
+sym_ok = any(s.get("name") == "f" for s in dsym) and any(s.get("name") == "main" for s in dsym)
+clabels = [it["label"] for it in (res.get(6) or {}).get("items", [])]
+comp_ok = "f" in clabels and "print" in clabels and "y" in clabels
+refs_ok = isinstance(res.get(7), list) and len(res[7]) == 2          # decl + the call
+ren_ok = len(((res.get(8) or {}).get("changes", {})).get("file:///ok.hi", [])) == 2
+inlay_ok = isinstance(res.get(9), list) and any(":" in h.get("label", "") for h in res[9])
 print("    init=%s  diag(valid->[]=%s invalid->diag=%s loop-warn=%s)  hover(local=%s fn=%s)  def=%s" % (init, clean, flagged, warn_ok, loc_ok, fn_ok, def_ok))
-sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok) else 1)
+print("    docsym=%s  completion=%s  references=%s  rename=%s  inlay=%s" % (sym_ok, comp_ok, refs_ok, ren_ok, inlay_ok))
+sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok and sym_ok and comp_ok and refs_ok and ren_ok and inlay_ok) else 1)
 PY
 
 echo ">>> loop-warning: hierc + hierc0 both warn on a non-advancing for-loop"
