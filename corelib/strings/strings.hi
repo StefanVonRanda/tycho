@@ -129,3 +129,69 @@ fn replace(s: string, old: string, new: string) -> string:
             r = r + substr(s, i, i + 1)
             i = i + 1
     return r
+
+fn count(s: string, sub: string) -> int:     # non-overlapping occurrences of sub (0 if sub == "")
+    if len(sub) == 0:
+        return 0
+    n := 0
+    i := 0
+    for i + len(sub) <= len(s):
+        if substr(s, i, i + len(sub)) == sub:
+            n = n + 1
+            i = i + len(sub)
+        else:
+            i = i + 1
+    return n
+
+fn strip_prefix(s: string, prefix: string) -> string:   # drop prefix if present, else s unchanged
+    if starts_with(s, prefix):
+        return substr(s, len(prefix), len(s))
+    return s
+
+fn strip_suffix(s: string, suffix: string) -> string:
+    if ends_with(s, suffix):
+        return substr(s, 0, len(s) - len(suffix))
+    return s
+
+fn pad_left(s: string, width: int, pad: string) -> string:    # left-pad to width with `pad` (one byte)
+    if len(pad) == 0:
+        return s
+    r := ""
+    n := width - len(s)
+    for n > 0:
+        r = r + pad
+        n = n - 1
+    return r + s
+
+fn pad_right(s: string, width: int, pad: string) -> string:
+    if len(pad) == 0:
+        return s
+    r := s
+    n := width - len(s)
+    for n > 0:
+        r = r + pad
+        n = n - 1
+    return r
+
+fn reverse(s: string) -> string:             # reverse the bytes
+    r := ""
+    i := len(s) - 1
+    for i >= 0:
+        r = r + chr(s[i])
+        i = i - 1
+    return r
+
+fn capitalize(s: string) -> string:          # first byte to uppercase, rest unchanged
+    if len(s) == 0:
+        return s
+    c := s[0]
+    if c >= 97 and c <= 122:
+        return chr(c - 32) + substr(s, 1, len(s))
+    return s
+
+fn split_once(s: string, sep: string) -> (string, string):
+    # split at the FIRST sep: (before, after). If sep is absent, (s, "").
+    i := find(s, sep)
+    if i < 0:
+        return s, ""
+    return substr(s, 0, i), substr(s, i + len(sep), len(s))

@@ -38,15 +38,25 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
 
 - **`math`** — integer utilities: `abs`, `imin`, `imax`, `clamp(x, lo, hi)`, `sign`,
   `gcd`, `ipow(base, exp)` (exp ≥ 0). (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
+- **`fmath`** — float utilities over the float builtins: `pi`, `e`, `min`, `max`,
+  `clamp`, `sign`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
+  `approx_eq(a, b, eps)`. (No trig — the language has no libm sin/cos builtin.)
+- **`char`** — byte/char classification & conversion over int byte values (what
+  `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
+  `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
+  digit), `hex_val` (0..15 or −1). The lexer/parser workhorse.
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
   `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`, `lines` (splits on
   `\n`, drops one trailing `\r` per line, trailing newline adds no empty line), `replace`
-  (non-overlapping, left to right; empty `old` returns the input unchanged). (`split`/
-  `find`/`substr`/`len`/`chr` are builtins.)
+  (non-overlapping, left to right; empty `old` returns the input unchanged), `count(s, sub)`,
+  `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
+  `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
+  (`split`/`find`/`substr`/`len`/`chr` are builtins.)
 - **`arrays`** — `[int]` utilities: `contains`, `index_of` (−1 if absent), `count`, `sum`,
-  `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending). `reverse`/`sort` return a new
-  array — value semantics, the input is never mutated. (`push`/`pop`/`len`/`range` are
-  builtins.)
+  `product`, `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending), `take(xs, n)`,
+  `drop(xs, n)`, `concat(a, b)`, `fill(n, v)`, `dedup` (consecutive — sort first for a full
+  dedup). All return a new array — value semantics, the input is never mutated. (`push`/
+  `pop`/`len`/`range` are builtins.)
 - **`arrays_str`** — the same over `[string]` (no overloading in hier, so per-type variants
   are sibling packages): `contains`, `index_of`, `count`, `join(xs, sep)`, `smin`, `smax`
   (lexicographic), `reverse`, `is_sorted`, `sort`.

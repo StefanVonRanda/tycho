@@ -17,3 +17,14 @@ fn main():
     print(f"rev0={rev[0]} rev4={rev[4]}\n")                                          # rev0=1 rev4=5
     e := []int                                                                       # documented empty sentinels: 0
     print(f"esum={arrays.sum(e)} emax={arrays.imax(e)} emin={arrays.imin(e)}\n")     # esum=0 emax=0 emin=0
+    # ---- extensions: product / take / drop / concat / fill / dedup ----
+    ys := [1, 2, 3, 4]
+    print(f"product={arrays.product(ys)} fillsum={arrays.sum(arrays.fill(3, 7))}\n")  # product=24 fillsum=21
+    tk := arrays.take(ys, 2)
+    dr := arrays.drop(ys, 2)
+    print(f"take={tk[0]},{tk[1]} drop={dr[0]},{dr[1]}\n")                             # take=1,2 drop=3,4
+    cc := arrays.concat([1, 2], [3, 4])
+    print(f"concat_len={len(cc)} concat_sum={arrays.sum(cc)}\n")                      # concat_len=4 concat_sum=10
+    dd := arrays.dedup([1, 1, 2, 2, 2, 3, 1])                                         # consecutive only
+    print(f"dedup_len={len(dd)} dedup_sum={arrays.sum(dd)}\n")                        # dedup_len=4 dedup_sum=7
+    print(f"take0={len(arrays.take(ys, 0))} drop_all={len(arrays.drop(ys, 9))}\n")    # take0=0 drop_all=0

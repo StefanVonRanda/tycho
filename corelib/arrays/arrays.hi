@@ -80,3 +80,52 @@ fn sort(xs: [int]) -> [int]:                  # ascending; returns a new sorted 
         out[j + 1] = key
         i = i + 1
     return out
+
+fn product(xs: [int]) -> int:                 # product of all elements; 1 if empty
+    p := 1
+    for v in xs:
+        p = p * v
+    return p
+
+fn take(xs: [int], n: int) -> [int]:          # first n elements (all if n > len); n <= 0 -> []
+    out := []int
+    i := 0
+    for i < n and i < len(xs):
+        push(out, xs[i])
+        i = i + 1
+    return out
+
+fn drop(xs: [int], n: int) -> [int]:          # all but the first n elements
+    out := []int
+    i := n
+    if i < 0:
+        i = 0
+    for i < len(xs):
+        push(out, xs[i])
+        i = i + 1
+    return out
+
+fn concat(a: [int], b: [int]) -> [int]:       # a followed by b (new array)
+    out := []int
+    for v in a:
+        push(out, v)
+    for v in b:
+        push(out, v)
+    return out
+
+fn fill(n: int, v: int) -> [int]:             # n copies of v; n <= 0 -> []
+    out := []int
+    i := 0
+    for i < n:
+        push(out, v)
+        i = i + 1
+    return out
+
+fn dedup(xs: [int]) -> [int]:                 # drop CONSECUTIVE duplicates (sort first for a full dedup)
+    out := []int
+    i := 0
+    for i < len(xs):
+        if i == 0 or xs[i] != xs[i - 1]:
+            push(out, xs[i])
+        i = i + 1
+    return out

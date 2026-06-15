@@ -19,3 +19,8 @@ r1=a+b+c
 r2=ba
 r3=x
 i1=2 i2=-1 i3=0
+count=3,1
+strip=[x][file]
+pad=[007][7..]
+rc=cba,Hello
+split=[k][v=w][nosep][]

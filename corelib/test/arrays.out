@@ -3,3 +3,8 @@ idx3=1 idx9=-1 cnt3=2 has8=1
 s0=1 s4=8 sok=1 origok=0
 rev0=1 rev4=5
 esum=0 emax=0 emin=0
+product=24 fillsum=21
+take=1,2 drop=3,4
+concat_len=4 concat_sum=10
+dedup_len=4 dedup_sum=7
+take0=0 drop_all=0

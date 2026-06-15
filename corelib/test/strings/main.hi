@@ -49,6 +49,16 @@ fn main():
     i2 := find("hello", "zz")
     i3 := find("hello", "")
     print(f"i1={i1} i2={i2} i3={i3}\n")                        # i1=2 i2=-1 i3=0
+    # ---- extensions: count / strip / pad / reverse / capitalize / split_once ----
+    c1 := strings.count("a.b.c.d", ".")
+    c2 := strings.count("aaa", "aa")
+    print(f"count={c1},{c2}\n")                                # count=3,1
+    print("strip=[" + strings.strip_prefix("core:x", "core:") + "][" + strings.strip_suffix("file.hi", ".hi") + "]\n")   # strip=[x][file]
+    print("pad=[" + strings.pad_left("7", 3, "0") + "][" + strings.pad_right("7", 3, ".") + "]\n")    # pad=[007][7..]
+    print("rc=" + strings.reverse("abc") + "," + strings.capitalize("hello") + "\n")    # rc=cba,Hello
+    bf, af := strings.split_once("k=v=w", "=")
+    nb, na := strings.split_once("nosep", "=")
+    print("split=[" + bf + "][" + af + "][" + nb + "][" + na + "]\n")   # split=[k][v=w][nosep][]
 
 fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
     r := ""
