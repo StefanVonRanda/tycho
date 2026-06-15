@@ -418,6 +418,26 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 #define STRUCT_ID(t)    ((int)((t) - T_STRUCT_BASE))
 #define STRUCT_TYPE(id) (T_STRUCT_BASE + (id))
 
+/* Dynamic compiler tables. A scaling registry is a heap buffer that doubles on
+ * demand, so program size (functions, vars, types, ...) is bounded by memory,
+ * not a fixed cap. Reads stay `g_X[i]`; only an APPEND needs TBL_ENSURE first.
+ * Tables start NULL/cap 0; first growth allocates 16 (xrealloc, above, exits on
+ * OOM). NOTE: a held `&g_X[i]` must NOT span a growth of the same table X (it
+ * would dangle) -- the one place that stored such a pointer (g_sigs, via
+ * g_spawn / ParFor.sig) stores an index instead. Type-id-encoded tables
+ * (structs/enums/array/...) additionally cap at the id-range gap to the next
+ * T_*_BASE (see those sites) -- the encoding ceiling, far above any real cap. */
+#define TBL_ENSURE(tbl, n, cap) do { \
+    if ((n) >= (cap)) { (cap) = (cap) ? (cap) * 2 : 16; \
+        (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
+} while (0)
+/* Reserve capacity for at least `need` total elements up front (for a run of
+ * appends with no per-item ENSURE, e.g. the builtin signatures). */
+#define TBL_RESERVE(tbl, need, cap) do { \
+    if ((cap) < (need)) { int _c = (cap) ? (cap) : 16; while (_c < (need)) _c *= 2; \
+        (cap) = _c; (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
+} while (0)
+
 typedef struct { char *name; Type type; } Field;
 typedef struct { char *name; Field fields[64]; int nfields; int line; } StructDef;
 static StructDef g_structs[128];
@@ -779,11 +799,11 @@ static Type func_ret(Type t)          { return g_functypes[FUNC_ID(t)].ret; }
 static Type func_param(Type t, int i) { return g_functypes[FUNC_ID(t)].params[i]; }
 /* top-level functions taken as a value: each gets a `<name>__clo` thunk so a plain
  * reference becomes the fat value {0, <name>__clo}. */
-static const char *g_fnval[256];
-static int g_nfnval = 0;
+static const char **g_fnval;
+static int g_nfnval = 0, g_fnval_cap = 0;
 static void note_fnval(const char *name) {
     for (int i = 0; i < g_nfnval; i++) if (!strcmp(g_fnval[i], name)) return;
-    if (g_nfnval >= 256) { fprintf(stderr, "hierc: too many functions used as values (max 256)\n"); exit(1); }
+    TBL_ENSURE(g_fnval, g_nfnval, g_fnval_cap);
     g_fnval[g_nfnval++] = name;
 }
 
@@ -1034,7 +1054,8 @@ typedef struct { Proc **v; int n, cap; } ProcVec;
  * function: its params are [captures...][lambda params...] (so its body codegen is
  * ordinary). `ncap` captures lead; the rest are the lambda's own params. */
 typedef struct { Proc *proc; int ncap; Type ftype; } LamInfo;
-static LamInfo g_laminfo[256];
+static LamInfo *g_laminfo;
+static int g_laminfo_cap = 0;
 static int g_nlaminfo = 0;
 static ProcVec g_lambda_procs;   /* lifted lambda procs, emitted after the user procs */
 
@@ -1254,7 +1275,7 @@ static Expr *parse_primary(Parser *ps) {
         eat(ps, TK_LPAREN, "'(' after fn in a lambda");
         Proc *pr = (Proc *)xmalloc(sizeof(Proc));
         memset(pr, 0, sizeof *pr);
-        if (g_nlaminfo >= 256) die_at(t->line, "too many lambdas (max 256)");
+        TBL_ENSURE(g_laminfo, g_nlaminfo, g_laminfo_cap);
         int id = g_nlaminfo++;   /* reserve this id BEFORE the body (a nested lambda takes id+1) */
         pr->name = sfmt("__lam%d", id);
         pr->line = t->line;
@@ -2255,7 +2276,8 @@ static void parse_typedecl(Parser *ps) {
  * the package name + imports; imports are not yet resolved (Stage B). */
 static const char *g_parsed_package = NULL;   /* package of the file just parsed (NULL = none) */
 typedef struct { const char *alias; const char *path; int line; } Import;
-static Import g_imports[128];
+static Import *g_imports;
+static int    g_imports_cap = 0;
 static int    g_nimports = 0;
 
 static void parse_package_decl(Parser *ps) {
@@ -2271,7 +2293,7 @@ static void parse_import_decl(Parser *ps) {
     const char *alias = NULL;
     if (at(ps, TK_IDENT)) { alias = cur(ps)->text; ps->p++; }   /* optional alias */
     Tok *path = eat(ps, TK_STR, "an import path string");
-    if (g_nimports >= 128) die_at(kw->line, "too many imports (max 128)");
+    TBL_ENSURE(g_imports, g_nimports, g_imports_cap);
     g_imports[g_nimports].alias = alias;
     g_imports[g_nimports].path  = path->text;
     g_imports[g_nimports].line  = kw->line;
@@ -2359,17 +2381,17 @@ typedef struct {
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
 } Sig;
 
-static Sig  g_sigs[512];   /* 256 was outgrown by hierc0.hi's concurrency port (CC) */
-static int  g_nsigs = 0;
+static Sig  *g_sigs;       /* dynamic (was fixed 512; outgrown once at 256) */
+static int  g_nsigs = 0, g_sigs_cap = 0;
 
 /* FFI: link libraries named by `extern "Lib" fn` — appended as -lLib to the cc
  * line. Deduped; -lm is always passed separately (covers bare `extern fn sqrt`). */
-static const char *g_links[64];
-static int  g_nlinks = 0;
+static const char **g_links;
+static int  g_nlinks = 0, g_links_cap = 0;
 static void add_link(const char *lib) {
     if (!lib || !*lib) return;
     for (int i = 0; i < g_nlinks; i++) if (!strcmp(g_links[i], lib)) return;
-    if (g_nlinks < 64) g_links[g_nlinks++] = lib;
+    TBL_ENSURE(g_links, g_nlinks, g_links_cap); g_links[g_nlinks++] = lib;
 }
 
 static Sig *sig_find(const char *name) {
@@ -2381,6 +2403,7 @@ static Sig *sig_find(const char *name) {
 static void register_builtins(void) {
     /* designated initializers: robust to field order (inout[] sits between
      * params and nparams). All builtins are by-value (no inout). */
+    TBL_RESERVE(g_sigs, 64, g_sigs_cap);   /* must exceed the builtin count below (run of appends w/o per-line ENSURE) */
     g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="println",.ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="eprint", .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
@@ -2410,8 +2433,8 @@ static void register_builtins(void) {
 /* can_mutate: may the variable's aggregate be mutated in place (push /
  * index-set)? Locals yes; parameters are immutable borrows (no). */
 typedef struct { char *name; Type type; int can_mutate; } Var;
-static Var g_vars[1024];
-static int g_nvars = 0;
+static Var *g_vars;
+static int g_nvars = 0, g_vars_cap = 0;
 /* >=0: the next resolve_block dup-checks declarations from this g_vars index
  * (a function's top block uses its param base, so a local `:=` colliding with a
  * parameter is caught); a nested block uses its own start. Reset after one use. */
@@ -2420,7 +2443,7 @@ static int g_dup_base = -1;
 static int  vars_mark(void) { return g_nvars; }
 static void vars_restore(int m) { g_nvars = m; }
 static void vars_push(const char *name, Type t, int can_mutate) {
-    if (g_nvars >= 1024) { fprintf(stderr, "hierc: too many variables\n"); exit(1); }
+    TBL_ENSURE(g_vars, g_nvars, g_vars_cap);
     g_vars[g_nvars].name = (char *)name;
     g_vars[g_nvars].type = t;
     g_vars[g_nvars].can_mutate = can_mutate;
@@ -2527,8 +2550,8 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
 
 /* spawn sites, registered at resolve time so gen_program can emit one args
  * struct + thread trampoline per site (the lambda-lift pattern). */
-static Sig *g_spawn[256];
-static int g_nspawn = 0;
+static int *g_spawn;   /* indices into g_sigs (not Sig* -- g_sigs may realloc) */
+static int g_nspawn = 0, g_spawn_cap = 0;
 
 /* B-3 pending declarations (docs/inference.md): `xs := []` / `x := None`
  * with no context declares at T_PENDING; the FIRST grounding use in its
@@ -2589,8 +2612,8 @@ static Type resolve_expr(Expr *e) {
             for (int i = 0; i < s->nparams; i++)
                 if (s->inout[i])
                     die_at(e->line, "cannot spawn a function with inout parameters (no shared state across threads)");
-            if (g_nspawn >= 256) die_at(e->line, "too many spawn sites (max 256)");
-            g_spawn[g_nspawn] = s;
+            TBL_ENSURE(g_spawn, g_nspawn, g_spawn_cap);
+            g_spawn[g_nspawn] = (int)(s - g_sigs);   /* store index; g_sigs may realloc later */
             e->ival = g_nspawn++;
             return e->type = task_of(s->ret);
         }
@@ -3480,7 +3503,7 @@ static void resolve_block(Stmt **body, int n, Type ret);
  * mutable bytes. Int reductions are exact for any K; float reductions may
  * reassociate (chunked sums), like every parallel-reduce. */
 typedef struct {
-    Sig  *sig;            /* the lifted chunk proc's signature (also the spawn-site Sig) */
+    int   sig;            /* index into g_sigs of the lifted chunk proc's Sig (also the spawn-site Sig) */
     Proc *proc;           /* the lifted proc (emitted with the lambda procs) */
     Expr *caps[14];       /* resolved E_IDENT reads of the captured outer vars */
     int   ncap;
@@ -3651,7 +3674,6 @@ static void resolve_parfor(Stmt *s) {
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
     if (g_nparfor >= 64) die_at(s->line, "too many parallel for loops (max 64)");
-    if (g_nsigs >= 512)  die_at(s->line, "too many functions");
     /* scan: captures, reduction accumulators, fail-closed rejections */
     g_pf_nloc = 0; g_pf_ncap = 0; g_pf_nacc = 0;
     pf_add_local(s->name);
@@ -3731,14 +3753,16 @@ static void resolve_parfor(Stmt *s) {
     pf->proc = pr;
     /* register the Sig and the spawn site -- the CC-1 trampoline emission
      * (HSpawnA_<sid> + hier_spawn_<sid>) then serves parallel for verbatim */
+    int sg_id = g_nsigs;
+    TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap);
     Sig *sg = &g_sigs[g_nsigs++];
     memset(sg, 0, sizeof(Sig));
     sg->name = pr->name; sg->ret = pr->ret; sg->nparams = pr->nparams;
     for (int i = 0; i < pr->nparams; i++) sg->params[i] = pr->params[i].type;
-    pf->sig = sg;
-    if (g_nspawn >= 256) die_at(s->line, "too many spawn sites (max 256)");
+    pf->sig = sg_id;
+    TBL_ENSURE(g_spawn, g_nspawn, g_spawn_cap);
     pf->spawn_id = g_nspawn;
-    g_spawn[g_nspawn++] = sg;
+    g_spawn[g_nspawn++] = sg_id;
     s->par_id = id;
     /* resolve the lifted body (params shadow the enclosing originals) */
     int mark = vars_mark();
@@ -4205,7 +4229,6 @@ static void resolve_program(ProcVec *prog) {
                 die_at(pr->line, "a channel parameter cannot be inout (the handle is already shared)");
         if (sig_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
-        if (g_nsigs >= 512) die_at(pr->line, "too many functions (max 512 including builtins)");
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
         s.is_extern = pr->is_extern;
@@ -4227,6 +4250,7 @@ static void resolve_program(ProcVec *prog) {
                        "(a callee could write a closure back into the caller and it would dangle)",
                        pr->params[j].name);
         }
+        TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap);
         g_sigs[g_nsigs++] = s;
     }
     Sig *m = sig_find("main");
@@ -4354,12 +4378,12 @@ static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
  * rather than the current (possibly inner, soon-to-collapse) one. This is
  * what keeps the implicit model sound: a value never outlives its arena. */
 typedef struct { const char *name; const char *arena; } CVar;
-static CVar g_cv[1024];
-static int  g_ncv = 0;
+static CVar *g_cv;
+static int  g_ncv = 0, g_cv_cap = 0;
 static int  cv_mark(void) { return g_ncv; }
 static void cv_restore(int m) { g_ncv = m; }
 static void cv_push(const char *name, const char *arena) {
-    if (g_ncv >= 1024) { fprintf(stderr, "hierc: too many variables\n"); exit(1); }
+    TBL_ENSURE(g_cv, g_ncv, g_cv_cap);
     g_cv[g_ncv].name = name; g_cv[g_ncv].arena = arena; g_ncv++;
 }
 static const char *cv_arena(const char *name) {
@@ -4663,13 +4687,15 @@ static int block_mutates(Stmt **body, int n, const char *nm) {
  * into nested blocks); a top-level heap decl with a matching name is then
  * built in _parent. The copy is skipped at return ONLY when cv_in_parent()
  * confirms the value truly lives there, so the skip can never dangle. */
-static const char *g_esc[256];
+static const char **g_esc;
+static int g_esc_cap = 0;
 static int g_nesc = 0;
 static void collect_escapes(Stmt **body, int n) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
-        if (s->kind == S_RETURN && s->expr && s->expr->kind == E_IDENT)
-            if (g_nesc < 256) g_esc[g_nesc++] = s->expr->sval;
+        if (s->kind == S_RETURN && s->expr && s->expr->kind == E_IDENT) {
+            TBL_ENSURE(g_esc, g_nesc, g_esc_cap); g_esc[g_nesc++] = s->expr->sval;
+        }
         if (s->body) collect_escapes(s->body, s->nbody);   /* if/while/for body */
         if (s->els)  collect_escapes(s->els, s->nels);     /* else body */
     }
@@ -4690,7 +4716,8 @@ static int name_escapes(const char *nm) {
  * variable carries sidecar len/cap C locals (emitted AT its declaration, in
  * v's own C scope — never hoisted, so a loop-body accumulator's sidecars
  * reset in lockstep with its buffer each iteration). */
-static const char *g_accum[256];
+static const char **g_accum;
+static int g_accum_cap = 0;
 static int g_naccum = 0;
 /* `acc = acc + e1 + e2 + ... + ek` is a self-append accumulator for ANY k>=1.
  * A left-associative `+` chain on strings parses as (((acc+e1)+e2)+...+ek), so
@@ -4747,7 +4774,7 @@ static int is_self_mapdel(Stmt *s) {
 static void collect_accums(Stmt **body, int n) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
-        if ((is_self_append(s) || is_self_mapset(s) || is_self_mapdel(s)) && g_naccum < 256) g_accum[g_naccum++] = s->name;
+        if (is_self_append(s) || is_self_mapset(s) || is_self_mapdel(s)) { TBL_ENSURE(g_accum, g_naccum, g_accum_cap); g_accum[g_naccum++] = s->name; }
         if (s->body) collect_accums(s->body, s->nbody);
         if (s->els)  collect_accums(s->els, s->nels);
         /* match/select arm bodies are nested blocks too (s->arms[a].body, not
@@ -5315,7 +5342,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
         case E_SPAWN: {   /* copy args into the task's root arena, then start the thread */
             int id = (int)e->ival;
-            Sig *s = g_spawn[id];
+            Sig *s = &g_sigs[g_spawn[id]];
             Expr *c = e->lhs;
             char *out = sfmt("({ HTask *_tk = hier_task_new(); "
                              "HSpawnA_%d *_sa = (HSpawnA_%d *)arena_alloc(&_tk->root, sizeof(HSpawnA_%d)); "
@@ -5554,11 +5581,12 @@ static void ascope_push(const char *a) {
  * cover loop escapes via the loop-entry mark. Emission is LIFO, so a channel
  * (declared before the tasks that use it) is freed AFTER those tasks join.
  * Reset per proc. */
-static const char *g_taskvars[256];   /* full finalizer calls, e.g. "hier_task_finish(h_t)" */
+static const char **g_taskvars;   /* full finalizer calls, e.g. "hier_task_finish(h_t)" */
+static int g_taskvars_cap = 0;
 static int g_ntaskvars = 0;
 static int g_loop_taskmark[64];   /* g_ntaskvars at each enclosing loop's body entry */
 static void taskvar_push(const char *call) {
-    if (g_ntaskvars >= 256) { fprintf(stderr, "hierc: too many live task/channel variables\n"); exit(1); }
+    TBL_ENSURE(g_taskvars, g_ntaskvars, g_taskvars_cap);
     g_taskvars[g_ntaskvars++] = call;
 }
 static char *task_finishes_from(int mark) {   /* "" when none are dying */
@@ -5651,7 +5679,7 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     indent(o, ind + 2); fprintf(o, "_sa->a0 = _plo + (_phi - _plo) * _pc / _pk;\n");
     indent(o, ind + 2); fprintf(o, "_sa->a1 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n");
     for (int i = 0; i < pf->ncap; i++) {
-        Type ct = pf->sig->params[2 + i];
+        Type ct = g_sigs[pf->sig].params[2 + i];
         char *cv = gen_expr(pf->caps[i], scope);
         if (type_is_heap(ct)) cv = copy_into(ct, "(&_tk->root)", cv);
         indent(o, ind + 2); fprintf(o, "_sa->a%d = %s;\n", 2 + i, cv);
@@ -5661,7 +5689,7 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     indent(o, ind + 1); fprintf(o, "}\n");
     indent(o, ind + 1); fprintf(o, "for (long _pc = 0; _pc < _pk; _pc++) {\n");
     indent(o, ind + 2); fprintf(o, "hier_task_join(_pts[_pc]);\n");
-    indent(o, ind + 2); fprintf(o, "%s_pp = *(%s*)_pts[_pc]->ret;\n", c_type(pf->sig->ret), c_type(pf->sig->ret));
+    indent(o, ind + 2); fprintf(o, "%s_pp = *(%s*)_pts[_pc]->ret;\n", c_type(g_sigs[pf->sig].ret), c_type(g_sigs[pf->sig].ret));
     indent(o, ind + 2); fprintf(o, "hier_task_free(_pts[_pc]);\n");
     for (int i = 0; i < pf->nacc; i++) {
         char *tgt = is_inout_param(pf->accs[i]) ? sfmt("(*h_%s)", pf->accs[i]) : sfmt("h_%s", pf->accs[i]);
@@ -7248,7 +7276,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * root-allocated slot, then flushes this thread's block pool (TLS dies
      * with the thread; un-flushed free blocks would leak). */
     for (int i = 0; i < g_nspawn; i++) {
-        Sig *s = g_spawn[i];
+        Sig *s = &g_sigs[g_spawn[i]];
         fprintf(o, "typedef struct { HTask *t;");
         for (int j = 0; j < s->nparams; j++) fprintf(o, " %sa%d;", c_type(s->params[j]), j);
         fprintf(o, " } HSpawnA_%d;\n", i);
@@ -7363,7 +7391,7 @@ static int pkg_file_cmp(const void *a, const void *b) {
 /* Import-graph traversal state. Packages are keyed by their canonical (realpath)
  * directory so the same package reached two ways is compiled once, and a back
  * edge to a package still being traversed is a cycle error. */
-static char *g_pkg_seen[256];   static int g_npkg_seen   = 0;   /* fully merged */
+static char **g_pkg_seen;   static int g_npkg_seen   = 0, g_pkg_seen_cap = 0;   /* fully merged */
 static char *g_pkg_active[64];  static int g_npkg_active = 0;   /* on the current DFS path */
 
 static char *canon_dir(const char *dir) {
@@ -7445,7 +7473,7 @@ static int pkg_walk_enter(const char *dir, const char *desc, char **keyout) {
 }
 static void pkg_walk_done(char *key) {
     g_npkg_active--;                       /* pop the DFS path */
-    if (g_npkg_seen >= 256) { fprintf(stderr, "hierc: too many packages (max 256)\n"); exit(1); }
+    TBL_ENSURE(g_pkg_seen, g_npkg_seen, g_pkg_seen_cap);
     g_pkg_seen[g_npkg_seen++] = key;       /* mark merged */
 }
 
