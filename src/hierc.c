@@ -1701,6 +1701,22 @@ static int expr_has_orreturn(Expr *e) {
     return 0;
 }
 
+/* True if `e` reads the local variable `name` (an E_IDENT whose name matches).
+ * Detects a self-referential shadowing decl `y := y + 2`: the typechecker
+ * resolves the RHS `y` against the ENCLOSING binding (it computes the decl's
+ * type before the new name is in scope), so codegen must read the enclosing
+ * binding too -- but a naive `T h_y = (h_y + 2)` reads the new C local in its
+ * own initializer (use-before-init UB). Matches only E_IDENT, never E_FIELD
+ * names (`obj.y` stores "y" on the E_FIELD, not as a child ident). */
+static int expr_refs_local(Expr *e, const char *name) {
+    if (!e) return 0;
+    if (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) return 1;
+    if (expr_refs_local(e->lhs, name) || expr_refs_local(e->rhs, name)) return 1;
+    for (int i = 0; i < e->nargs; i++)
+        if (expr_refs_local(e->args[i], name)) return 1;
+    return 0;
+}
+
 /* A compound assignment `a[i] OP= e` evaluates the place TWICE (read, then
  * store), so a side-effecting index `i` would run twice. Bind each index in the
  * place that CONTAINS A CALL to a fresh temp (queued in g_pending, emitted just
@@ -5693,8 +5709,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 g_cur_scope = "&_t";
                 char *tv = gen_expr(s->expr, "&_t");
                 indent(o, ind);
-                fprintf(o, "%sh_%s; { Arena _t = arena_new(0); h_%s = %s; arena_free(&_t); }\n",
-                        c_type(s->decl_type), s->name, s->name, tv);
+                /* self-referential shadow (`y := dbl(y)`): the new local must not
+                 * be in scope while the transient RHS reads it. Land the result in
+                 * a temp first, then bind -- so the RHS reads the enclosing binding
+                 * (see the normal branch below for the full rationale). */
+                if (expr_refs_local(s->expr, s->name))
+                    fprintf(o, "%s_sh_%s; { Arena _t = arena_new(0); _sh_%s = %s; arena_free(&_t); } %sh_%s = _sh_%s;\n",
+                            c_type(s->decl_type), s->name, s->name, tv,
+                            c_type(s->decl_type), s->name, s->name);
+                else
+                    fprintf(o, "%sh_%s; { Arena _t = arena_new(0); h_%s = %s; arena_free(&_t); }\n",
+                            c_type(s->decl_type), s->name, s->name, tv);
                 cv_push(s->name, scope);
                 break;
             }
@@ -5707,7 +5732,20 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (is_place(s->expr) && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
-            fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
+            /* Go/Odin lexical scope + value semantics: a self-referential shadow
+             * `y := y + 2` reads the ENCLOSING y (the typechecker already bound the
+             * RHS to it -- the decl's type is computed before the name is in scope),
+             * then binds a fresh independent value. Evaluate the RHS into a temp
+             * BEFORE the new C local is in scope, so the initializer reads the outer
+             * binding -- not the uninitialized inner one (that was a use-before-init
+             * UB: garbage on macOS, an accidental 0 on Linux). The temp name can't
+             * collide: a second decl of `name` in one scope is rejected. */
+            if (expr_refs_local(s->expr, s->name))
+                fprintf(o, "%s_sh_%s = %s; %sh_%s = _sh_%s;\n",
+                        c_type(s->decl_type), s->name, v,
+                        c_type(s->decl_type), s->name, s->name);
+            else
+                fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
             /* in-place append sidecars, declared HERE (same C scope as h_v, so
              * a loop-body accumulator re-inits them each iteration in lockstep
              * with its buffer — never hoist these). cap 0 = "not growable in

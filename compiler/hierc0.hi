@@ -5113,6 +5113,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
                 code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
+                if expr_refs(e, name):            # self-referential shadow with a call: temp reads the enclosing binding, then bind (see normal path below)
+                    code = "    " + cty(dc, ctx, ty) + "_sh_" + name + ";\n" + scalar_transient(dc, ctx, e, names, types, "_sh_" + name + " = ") + "    " + cty(dc, ctx, ty) + un(name) + " = _sh_" + name + ";\n"
                 push(names, name)
                 push(types, ty)
                 if is_task(ty):                   # CC-2: implicit join at this var's scope exit
@@ -5122,7 +5124,10 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     push(names, "!hier_chan_free(" + un(name) + ")")
                     push(types, "!")
                 return code
-            code := "    " + cty(dc, ctx, ty) + un(name) + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
+            rhs := gen_rhs(e, names, types, dc, ctx)
+            code := "    " + cty(dc, ctx, ty) + un(name) + " = " + rhs + ";\n"
+            if expr_refs(e, name):                # self-referential shadow `y := y + 2`: read the ENCLOSING y (Go/Odin lexical scope + value semantics) via a temp declared BEFORE the new C local, else the initializer reads the uninitialized inner one (UB)
+                code = "    " + cty(dc, ctx, ty) + "_sh_" + name + " = " + rhs + ";\n    " + cty(dc, ctx, ty) + un(name) + " = _sh_" + name + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             if is_task(ty):                       # CC-2 (see the transient path above)

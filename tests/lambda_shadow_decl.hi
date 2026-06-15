@@ -1,6 +1,14 @@
-# A shadowing decl (y := y + 2) in an inner block of a lambda-bearing fn:
-# lift_stmt's SDecl must compute the decl's type BEFORE pushing the name
-# (sacc_stmt order) — pushing first crashed the compiler with
+# A shadowing decl (y := y + 2) in an inner block of a lambda-bearing fn.
+#
+# Semantics (Go/Odin lexical scope + value semantics): the new `y`'s scope
+# begins AFTER its initializer, so the RHS `y` reads the ENCLOSING y (= 1),
+# binding a fresh independent value (= 3). The outer y is unchanged, so the
+# final f(y) sees 1 -> 2. Expected: "inner 3inner2 30outer 2".
+# Codegen reads the outer binding via a temp declared before the new C local
+# (a naive `T h_y = (h_y + 2)` would read the inner one uninitialized -- UB).
+#
+# Also guards: lift_stmt's SDecl must compute the decl's type BEFORE pushing
+# the name (sacc_stmt order) — pushing first crashed the compiler with
 # "index 2 out of bounds" (names/types out of lockstep).
 fn main():
     f := fn(x: int) -> int: x + 1
