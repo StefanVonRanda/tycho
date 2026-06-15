@@ -98,6 +98,7 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
 | [docs/perf.md](docs/perf.md) | self-hosted-compiler performance history; cross-language numbers live in `bench/` |
+| [docs/macos.md](docs/macos.md) | macOS/Apple Silicon run: full suite + self-host fixpoint green, cross-language benchmarks, the two portability fixes it took |
 | [docs/ideas.md](docs/ideas.md) | dated survey of neighbouring languages (Odin, Jai, Hylo, Koka, Vale) for fit |
 | [bench/README.md](bench/README.md) | the benchmark suite's map, incl. what is deliberately *not* measured and why |
 
