@@ -100,6 +100,14 @@ def run_seed(seed, h0, tmp):
     return "ok", None
 
 def main():
+    # LeakSanitizer is absent from Apple's ASan -- detect_leaks=1 aborts every
+    # binary at exit there, which this lane would misread as a fault. Skip
+    # cleanly on macOS; the Linux CI leg covers the leak class. (Same platform
+    # gap the test harnesses gate via ASAN_OPTIONS; see tests/run.sh.)
+    if sys.platform == "darwin":
+        print("fuzz-leak: SKIPPED on macOS -- Apple's ASan ships no LeakSanitizer "
+              "(the Linux CI leg covers this lane)")
+        return 0
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     os.makedirs(FINDINGS, exist_ok=True)
