@@ -1737,10 +1737,24 @@ static int expr_has_orreturn(Expr *e) {
  * type before the new name is in scope), so codegen must read the enclosing
  * binding too -- but a naive `T h_y = (h_y + 2)` reads the new C local in its
  * own initializer (use-before-init UB). Matches only E_IDENT, never E_FIELD
- * names (`obj.y` stores "y" on the E_FIELD, not as a child ident). */
+ * names (`obj.y` stores "y" on the E_FIELD, not as a child ident). Every other
+ * node stores its operands in lhs/rhs/args (E_SLICE: base/lo/hi; call-on-expr:
+ * callee in lhs; tuple/array/map elems in args), so the generic walk covers
+ * them. The one exception is E_LAMBDA: its body is lifted to g_laminfo[ival].
+ * proc and its captures live there (params[0..ncap]), NOT as child exprs -- so
+ * a self-referential shadow whose RHS captures `name` (`f := fn(x:int)->int:
+ * x + f(x)`) reads the enclosing binding through the env build and must route
+ * through the temp too. Mirrors compiler/hierc0.hi's expr_refs (it checks the
+ * lambda's capture-name list); keeps both compilers' codegen byte-identical. */
 static int expr_refs_local(Expr *e, const char *name) {
     if (!e) return 0;
     if (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) return 1;
+    if (e->kind == E_LAMBDA) {     /* captures are on the lifted proc, not in lhs/rhs/args */
+        LamInfo *li = &g_laminfo[e->ival];
+        for (int i = 0; i < li->ncap; i++)
+            if (!strcmp(li->proc->params[i].name, name)) return 1;
+        return 0;
+    }
     if (expr_refs_local(e->lhs, name) || expr_refs_local(e->rhs, name)) return 1;
     for (int i = 0; i < e->nargs; i++)
         if (expr_refs_local(e->args[i], name)) return 1;
