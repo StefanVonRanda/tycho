@@ -5122,10 +5122,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     push(names, "!hier_chan_free(" + un(name) + ")")
                     push(types, "!")
                 return code
-            init := " = "
-            if expr_refs(e, name):                # value semantics: a self-referential shadow `y := y + 2` reads the NEW binding (its type's zero value), so zero-init before the assignment -- else the C local reads itself uninitialized (UB)
-                init = " = {0}; " + un(name) + " = "
-            code := "    " + cty(dc, ctx, ty) + un(name) + init + gen_rhs(e, names, types, dc, ctx) + ";\n"
+            code := "    " + cty(dc, ctx, ty) + un(name) + " = " + gen_rhs(e, names, types, dc, ctx) + ";\n"
             push(names, name)                     # in scope for later stmts
             push(types, ty)
             if is_task(ty):                       # CC-2 (see the transient path above)
