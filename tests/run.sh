@@ -37,7 +37,12 @@ CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-export ASAN_OPTIONS=detect_leaks=1
+# Leak detection requires LeakSanitizer, which Apple's arm64/x86_64 ASan does
+# not ship — there, detect_leaks=1 aborts every sanitizer binary at exit
+# regardless of correctness. Gate it by OS: full leak checking on Linux (where
+# a leak is a real arena-free bug), ASan+UBSan only on macOS.
+case "$(uname -s)" in Darwin) HIER_LSAN=0 ;; *) HIER_LSAN=1 ;; esac
+export ASAN_OPTIONS=detect_leaks=$HIER_LSAN
 
 [ "$RECORD" = 1 ] && echo "*** RECORD MODE: rewriting tests/*.out goldens — review the diff before committing ***"
 

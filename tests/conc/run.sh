@@ -14,7 +14,10 @@ CC="${CC:-cc}"
 HIERC=./hierc
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-export ASAN_OPTIONS=detect_leaks=1
+# LeakSanitizer is absent from Apple's ASan; detect_leaks=1 aborts every
+# sanitizer binary at exit there. Gate by OS (see tests/run.sh).
+case "$(uname -s)" in Darwin) HIER_LSAN=0 ;; *) HIER_LSAN=1 ;; esac
+export ASAN_OPTIONS=detect_leaks=$HIER_LSAN
 pass=0; fail=0
 note() { echo "FAIL $1 ($2)"; }
 
