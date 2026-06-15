@@ -34,9 +34,9 @@ hierc: src/hierc.c $(EMBED)
 hier: hierc tools/hier.hi tools/hier_shim.c
 	./hierc tools/hier.hi --shim tools/hier_shim.c -o hier
 
-# hierfmt -- the source formatter. STAGE 1: a lossless, comment-preserving lexer
-# (round-trips every .hi file byte-for-byte); STAGE 2 will pretty-print. See
-# tools/hierfmt.hi. `./hierfmt <file.hi>` (currently re-emits unchanged).
+# hierfmt -- the source formatter. Lossless, comment-preserving lexer + canonical
+# pretty-printer: re-indents, re-spaces by token adjacency, groups top-level defs.
+# Whitespace-only (emit-C identical, verified by tools-check). See tools/hierfmt.hi.
 hierfmt: hierc tools/hierfmt.hi
 	./hierc tools/hierfmt.hi -o hierfmt
 

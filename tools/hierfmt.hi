@@ -5,13 +5,17 @@
 # whitespace. This is a separate, *lossless* tokenizer: every byte of the source
 # lands in exactly one token's `text` -- code tokens (ident/number/string/op...)
 # PLUS trivia tokens (whitespace, newline, comment). Concatenating all token text
-# reproduces the input byte-for-byte; that round-trip is this stage's correctness
-# bar. STAGE 2 (next) reasons over this stream to canonicalize spacing/indentation
-# while leaving comments intact.
+# reproduces the input byte-for-byte; that round-trip is STAGE 1's correctness bar.
+# STAGE 2 (done) reasons over this stream to canonicalize formatting, comments
+# intact: 4-space indentation re-derived from block structure, inter-token spacing
+# re-spaced by token adjacency (`x:int` -> `x: int`, `a+b` -> `a + b`, `f(a)`/`a[i]`
+# tight, prefix `&x` vs binary `a & b`), blank runs collapsed to one, and one blank
+# line between top-level defs. Whitespace-only within a line, so it can't change the
+# program; the gate (scripts/tools_check.sh) proves it: `hierc --emit-c` is byte-
+# identical before/after across the whole corpus, and fmt(fmt(x)) == fmt(x).
 #
 #   hierc tools/hierfmt.hi -o hierfmt
-#   ./hierfmt <file.hi>            # for now: re-emits the source unchanged
-#   ./hierfmt f | diff f -         # must be empty (lossless round-trip)
+#   ./hierfmt <file.hi>            # prints the canonically-formatted source
 
 enum TKind:
     KWS         # a run of spaces/tabs
@@ -200,8 +204,49 @@ fn comment_line(line: [Tok]) -> string:
         i = i + 1
     return out
 
-# format one non-blank line: canonical 4-space indent + content with collapsed
-# inter-token spacing (inline-comment leading space is preserved, for alignment).
+# keywords (never call/index targets): used so `if (`/`return (` keep a space
+# while `f(`/`a[` tighten. Builtins (print/len/range/...) are NOT keywords -- they
+# are ordinary call targets. `wait`/`spawn` are excluded: spawn is a value prefix
+# and wait(t) is call-form, both fine as plain idents.
+fn is_kw(s: string) -> bool:
+    return s == "fn" or s == "struct" or s == "enum" or s == "type" or s == "import" or s == "package" or s == "extern" or s == "inout" or s == "if" or s == "elif" or s == "else" or s == "for" or s == "while" or s == "match" or s == "return" or s == "break" or s == "continue" or s == "and" or s == "or" or s == "not" or s == "in" or s == "or_return" or s == "as" or s == "select" or s == "default" or s == "closed"
+
+# an "operand": something a binary operator can follow. Distinguishes binary `&`
+# (a & b) from a prefix inout `&` (f(&x)) by what precedes the `&`.
+fn is_operand(t: Tok) -> bool:
+    if t.kind == KIdent:
+        return not is_kw(t.text)
+    if t.kind == KInt or t.kind == KFloat or t.kind == KStr or t.kind == KFStr or t.kind == KChar:
+        return true
+    return t.text == ")" or t.text == "]"
+
+# Should a single space go between significant tokens reals[i-1] and reals[i]?
+# Default yes; the exceptions all sit next to punctuation, so dropping the space
+# can never MERGE two lexemes (the one real hazard). Everything here is
+# whitespace-only, so the program is unchanged (gate: emit-C identical).
+fn sep_needs_space(reals: [Tok], i: int) -> bool:
+    p := reals[i - 1]
+    c := reals[i]
+    pt := p.text
+    ct := c.text
+    if pt == "(" or pt == "[":                    # no padding after an opener
+        return false
+    if ct == ")" or ct == "]" or ct == "," or ct == ":":   # nor before a closer / separator / colon
+        return false
+    if pt == "." or ct == ".":                    # field access a.b
+        return false
+    if ct == "(" and ((p.kind == KIdent and not is_kw(pt)) or pt == ")" or pt == "]"):
+        return false                              # call: f(  )(  ](
+    if ct == "[" and ((p.kind == KIdent and not is_kw(pt)) or pt == ")" or pt == "]" or p.kind == KStr or p.kind == KFStr):
+        return false                              # index: a[  )[  ][  "..."[
+    if pt == "]" and i >= 2 and reals[i - 2].text == "[":
+        return false                              # empty `[]` then a type: []int, []K
+    if pt == "&" and (i < 2 or not is_operand(reals[i - 2])):
+        return false                              # prefix inout `&x` (not binary `a & b`)
+    return true
+
+# format one non-blank line: canonical 4-space indent + content re-spaced by
+# token adjacency (inline-comment leading space is preserved, for alignment).
 fn fmt_line(line: [Tok], levels: inout [int]) -> string:
     w := 0
     start := 0
@@ -221,30 +266,53 @@ fn fmt_line(line: [Tok], levels: inout [int]) -> string:
     endp := len(line)
     for endp > start and line[endp - 1].kind == KWS:
         endp = endp - 1
-    prevReal := false
-    pendingWs := ""
+    # gather the significant tokens, remembering the raw whitespace before each
+    # (only used to keep an inline comment's column alignment).
+    reals := []Tok
+    leadws := []string
+    pend := ""
     j := start
     for j < endp:
         t := line[j]
         if t.kind == KWS:
-            pendingWs = pendingWs + t.text
+            pend = pend + t.text
         else:
-            if prevReal:
-                if t.kind == KComment:
-                    out = out + pendingWs        # keep inline-comment alignment verbatim
-                else:
-                    if pendingWs != "":
-                        out = out + " "          # collapse a whitespace run to one space
-            out = out + t.text
-            prevReal = true
-            pendingWs = ""
+            push(reals, t)
+            push(leadws, pend)
+            pend = ""
         j = j + 1
+    i := 0
+    for i < len(reals):
+        t := reals[i]
+        if i > 0:
+            if t.kind == KComment:
+                out = out + leadws[i]            # keep inline-comment alignment verbatim
+            elif sep_needs_space(reals, i):
+                out = out + " "
+        out = out + t.text
+        i = i + 1
     return out
+
+# a depth-0 definition line (fn/struct/enum) -- gets one blank line before it.
+# extern is excluded so a run of `extern fn` declarations stays tight.
+fn is_topdef(line: [Tok]) -> bool:
+    if len(line) == 0:
+        return false
+    i := 0
+    if line[0].kind == KWS:
+        if len(line[0].text) != 0:               # any leading indent => not top level
+            return false
+        i = 1
+    if i >= len(line):
+        return false
+    t := line[i]
+    return t.kind == KIdent and (t.text == "fn" or t.text == "struct" or t.text == "enum")
 
 fn fmt(toks: [Tok]) -> string:
     levels := [0]
     out := ""
     blanks := 0
+    prevkind := "none"                           # none | blank | comment | code
     i := 0
     n := len(toks)
     for i < n:
@@ -258,12 +326,17 @@ fn fmt(toks: [Tok]) -> string:
             blanks = blanks + 1
             if blanks <= 1:                      # collapse runs of blank lines to one
                 out = out + "\n"
+                prevkind = "blank"
         elif is_comment_only(line):
             blanks = 0
             out = out + comment_line(line) + "\n"    # preserve full-line comments as written
+            prevkind = "comment"
         else:
             blanks = 0
+            if is_topdef(line) and prevkind == "code":   # group top-level defs with one blank
+                out = out + "\n"
             out = out + fmt_line(line, &levels) + "\n"
+            prevkind = "code"
     return out
 
 fn main():
