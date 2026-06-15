@@ -2406,6 +2406,19 @@ static void add_link(const char *lib) {
     TBL_ENSURE(g_links, g_nlinks, g_links_cap); g_links[g_nlinks++] = lib;
 }
 
+/* FFI: companion C shims auto-discovered next to a package -- `<dir>/<pkg>_shim.c`
+ * -- compiled+linked alongside the generated C, so `import "core:regex"` is
+ * turnkey (no manual --shim). A package that needs an external library still
+ * declares `extern "Lib" fn` (which auto-adds -lLib via add_link). */
+static int file_exists(const char *p) { FILE *f = fopen(p, "r"); if (f) { fclose(f); return 1; } return 0; }
+static const char **g_shims;
+static int  g_nshims = 0, g_shims_cap = 0;
+static void add_shim(const char *path) {
+    if (!path || !*path) return;
+    for (int i = 0; i < g_nshims; i++) if (!strcmp(g_shims[i], path)) return;
+    TBL_ENSURE(g_shims, g_nshims, g_shims_cap); g_shims[g_nshims++] = path;
+}
+
 static Sig *sig_find(const char *name) {
     for (int i = 0; i < g_nsigs; i++)
         if (!strcmp(g_sigs[i].name, name)) return &g_sigs[i];
@@ -7506,6 +7519,11 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     char *key;
     if (!pkg_walk_enter(dir, sfmt("package `%s` (%s)", pkgname, dir), &key)) return;
 
+    /* FFI: a co-located `<pkg>_shim.c` is auto-compiled+linked (turnkey C-backed
+     * modules, e.g. core:regex over <regex.h>). One per package; deduped. */
+    char *shimc = sfmt("%s/%s_shim.c", dir, pkgname);
+    if (file_exists(shimc)) add_shim(shimc);
+
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in package");
 
@@ -7759,6 +7777,7 @@ int main(int argc, char **argv) {
      * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
     /* -O3 is the portable default; --native opts into -march=native (host-CPU only). */
     const char *march = native ? " -march=native" : "";
+    for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
     char *cmd = sfmt("%s -O3%s -pthread -o %s %s%s -lm%s%s", cc, march, base, c_path, shims, links, extra);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }

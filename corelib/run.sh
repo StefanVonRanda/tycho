@@ -17,13 +17,16 @@ for entry in corelib/test/*/main.hi; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="corelib/test/$name.out"
+    # FFI: hierc auto-discovers a module's <mod>_shim.c; the hierc0 paths emit C
+    # that WE link, so pass the shim here too (convention: test <name> imports core:<name>).
+    shim="corelib/$name/${name}_shim.c"; [ -f "$shim" ] || shim=""
     if ! "$HIERC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (hierc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1
-    if ! { "$HIERC" "$entry" --bundle 2>/dev/null | "$T/h0" > "$T/h0c.c" 2>/dev/null && $CC -O2 -o "$T/h0b" "$T/h0c.c" -lm 2>/dev/null; }; then echo "FAIL $name (hierc0 compile)"; fail=1; continue; fi
+    if ! { "$HIERC" "$entry" --bundle 2>/dev/null | "$T/h0" > "$T/h0c.c" 2>/dev/null && $CC -O2 -o "$T/h0b" "$T/h0c.c" $shim -lm 2>/dev/null; }; then echo "FAIL $name (hierc0 compile)"; fail=1; continue; fi
     "$T/h0b" > "$T/ho" 2>&1
     if ! cmp -s "$T/co" "$T/ho"; then echo "FAIL $name (hierc vs hierc0 differ)"; diff "$T/co" "$T/ho" | head | sed 's/^/      /'; fail=1; continue; fi
     # standalone hierc0: resolves `core:` itself via getenv(HIER_CORELIB) -- no `hierc --bundle`
-    if ! { "$T/h0" "$entry" > "$T/sdc.c" 2>/dev/null && $CC -O2 -o "$T/sdb" "$T/sdc.c" -lm 2>/dev/null; }; then echo "FAIL $name (standalone hierc0 compile)"; fail=1; continue; fi
+    if ! { "$T/h0" "$entry" > "$T/sdc.c" 2>/dev/null && $CC -O2 -o "$T/sdb" "$T/sdc.c" $shim -lm 2>/dev/null; }; then echo "FAIL $name (standalone hierc0 compile)"; fail=1; continue; fi
     "$T/sdb" > "$T/sdo" 2>&1
     if ! cmp -s "$T/co" "$T/sdo"; then echo "FAIL $name (standalone hierc0 differs)"; diff "$T/co" "$T/sdo" | head | sed 's/^/      /'; fail=1; continue; fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; continue; fi
