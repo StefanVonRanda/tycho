@@ -291,6 +291,11 @@ class Gen:
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
         # constructs hierc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
+        # self-referential shadow decls (`x := f(x)` in a nested scope) -- the RHS
+        # reads the ENCLOSING binding, so codegen must evaluate it into a temp
+        # before the new local exists. hierc once segfaulted on the lambda-capture
+        # variant (captures live on the lifted proc, not in lhs/rhs/args).
+        kinds += ["shadow", "shadow"]
         # concurrency (CC-1..5) + bidirectional inference (B-0..3) coverage.
         # All deterministic by construction: int reductions and channel SUMS are
         # thread-count/interleaving independent, so the differential oracle holds.
@@ -431,6 +436,36 @@ class Gen:
                 x = self.fresh("c")
                 self.emit(ind, "for " + x + " in " + self.r.choice(str_vars) + ":")
                 self.emit(ind+1, "acc = acc + " + x)            # x is a byte (int 0..255)
+            return
+        if k == "shadow":              # self-referential shadow decl in a NESTED scope.
+            # `x := f(x)` rebinds x reading the ENCLOSING x (Go/Odin lexical scope +
+            # value semantics) and binds a fresh value -- codegen evaluates the RHS
+            # into a temp BEFORE the new local is in scope, else it reads itself
+            # uninitialised (use-before-init UB). Same-scope redeclare is rejected,
+            # so always wrap in an (always-true) if. All deterministic, so the
+            # differential oracle holds; a miscompile crashes one side or skews acc.
+            r = self.r.random()
+            if r < 0.4:                                     # scalar int (plain + has-call paths)
+                v = self.fresh("sh")
+                self.emit(ind, v + " := " + self.gen_expr("int", env, 1))
+                self.emit(ind, "if 1 > 0:")
+                if self.r.random() < 0.5:                   # plain SDecl path
+                    self.emit(ind+1, v + " := " + v + " + " + str(self.r.randint(1, 9)))
+                else:                                       # has-call -> scalar-transient path
+                    self.emit(ind+1, v + " := len(str(" + v + " + " + str(self.r.randint(0, 9)) + "))")
+                self.emit(ind+1, "acc = acc + " + v)
+            elif r < 0.7:                                   # heap: self-append string shadow
+                v = self.fresh("ss")
+                self.emit(ind, v + " := str(" + self.gen_expr("int", env, 1) + ")")
+                self.emit(ind, "if 1 > 0:")
+                self.emit(ind+1, v + " := " + v + " + " + self.r.choice(['"a"', '"bb"', '"."']))
+                self.emit(ind+1, "acc = acc + len(" + v + ")")
+            else:                                           # lambda-CAPTURE self-ref (the fixed segfault)
+                f = self.fresh("shf")
+                self.emit(ind, f + " := fn(p: int) -> int: p + " + str(self.r.randint(0, 5)))
+                self.emit(ind, "if 1 > 0:")
+                self.emit(ind+1, f + " := fn(p: int) -> int: " + f + "(p) + " + str(self.r.randint(1, 9)))
+                self.emit(ind+1, "acc = acc + " + f + "(" + str(self.r.randint(0, 5)) + ")")
             return
         if k == "closure":             # a lambda value (closure): capture BY VALUE, call, fold into the checksum.
             # The mutate-then-call variants are value-semantics probes: a closure
