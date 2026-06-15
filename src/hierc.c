@@ -439,7 +439,7 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 } while (0)
 
 typedef struct { char *name; Type type; } Field;
-typedef struct { char *name; Field fields[64]; int nfields; int line; } StructDef;
+typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line; } StructDef;
 static StructDef *g_structs;
 static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
@@ -597,7 +597,7 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * Variant names are globally unique, so a constructor or match arm names the
  * variant directly with no qualification. */
 typedef struct { char *name; Type payload[8]; int npayload; } Variant;
-typedef struct { char *name; Variant variants[64]; int nvariants; int line; } EnumDef;
+typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line; } EnumDef;
 static EnumDef *g_enums;
 static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
@@ -2197,7 +2197,7 @@ static void parse_struct(Parser *ps) {
 
     StructDef *sd = &g_structs[g_nstructs];
     sd->name = pkg_mangle(nameT->text);
-    sd->nfields = 0;
+    sd->fields = NULL; sd->nfields = 0; sd->fields_cap = 0;
     sd->line = nameT->line;
     g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
                      * may reference this struct — e.g. a recursive `[Node]`
@@ -2211,7 +2211,7 @@ static void parse_struct(Parser *ps) {
                 die_at(fn->line, "duplicate field '%s'", fn->text);
         eat(ps, TK_COLON, "':' after field name");
         Type ft = parse_type(ps);   /* int, string, a struct, [Struct]/[[T]], Option(T), ... */
-        if (sd->nfields >= 64) die_at(fn->line, "too many fields (max 64)");
+        TBL_ENSURE(sd->fields, sd->nfields, sd->fields_cap);
         sd->fields[sd->nfields].name = fn->text;
         sd->fields[sd->nfields].type = ft;
         sd->nfields++;
@@ -2233,13 +2233,13 @@ static void parse_enum(Parser *ps) {
     eat(ps, TK_INDENT, "an indented variant list");
     EnumDef *ed = &g_enums[g_nenums];
     ed->name = pkg_mangle(nameT->text);
-    ed->nvariants = 0;
+    ed->variants = NULL; ed->nvariants = 0; ed->variants_cap = 0;
     ed->line = nameT->line;
     g_nenums++;   /* register early so a variant payload can be this enum (recursion) */
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
         Tok *vn = eat(ps, TK_IDENT, "a variant name");
-        if (ed->nvariants >= 64) die_at(vn->line, "too many variants (max 64)");
+        TBL_ENSURE(ed->variants, ed->nvariants, ed->variants_cap);
         char *vmn = pkg_mangle(vn->text);   /* variant names are package-scoped (mangled with the enum's package) */
         int dup;
         if (variant_find(vmn, &dup) >= 0)
@@ -4059,7 +4059,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 if (!ok || !err) die_at(s->line, "match on a Result must cover both Ok and Err");
             } else if (IS_ENUM(st)) {
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
-                int covered[64] = {0};
+                int *covered = (int *)calloc((size_t)ed->nvariants, sizeof(int));
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     int vi = -1;
@@ -4080,6 +4080,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     if (!covered[v])
                         die_at(s->line, "non-exhaustive match: missing variant %s of %s",
                                ed->variants[v].name, ed->name);
+                free(covered);
             } else {
                 die_at(s->line, "match expects an Option, Result, or enum value, got %s", type_name(st));
             }
