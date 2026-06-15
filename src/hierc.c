@@ -1701,6 +1701,22 @@ static int expr_has_orreturn(Expr *e) {
     return 0;
 }
 
+/* True if `e` reads the local variable `name` (an E_IDENT whose name matches).
+ * Used to detect a self-referential shadowing decl `y := y + 2`: the RHS `y`
+ * type-checks against the enclosing binding, but the emitted C local of the
+ * same name is the one in scope on the RHS of its own initializer, so reading
+ * it would be use-before-init (UB). Matches only E_IDENT nodes, never E_FIELD
+ * names (`obj.y` stores "y" on the E_FIELD, not as a child ident) -- so a
+ * field access of the same name is correctly not treated as a self-reference. */
+static int expr_refs_local(Expr *e, const char *name) {
+    if (!e) return 0;
+    if (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) return 1;
+    if (expr_refs_local(e->lhs, name) || expr_refs_local(e->rhs, name)) return 1;
+    for (int i = 0; i < e->nargs; i++)
+        if (expr_refs_local(e->args[i], name)) return 1;
+    return 0;
+}
+
 /* A compound assignment `a[i] OP= e` evaluates the place TWICE (read, then
  * store), so a side-effecting index `i` would run twice. Bind each index in the
  * place that CONTAINS A CALL to a fresh temp (queued in g_pending, emitted just
@@ -5707,7 +5723,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (is_place(s->expr) && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
-            fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
+            /* value semantics: a shadowing decl whose initializer reads the name
+             * being bound (`y := y + 2`) reads the NEW binding, which starts at
+             * its type's zero value -- so zero-init before the self-referential
+             * assignment. Without this the C local reads itself uninitialized
+             * (UB: garbage on macOS, an accidental 0 on Linux). */
+            if (expr_refs_local(s->expr, s->name))
+                fprintf(o, "%sh_%s = {0}; h_%s = %s;\n", c_type(s->decl_type), s->name, s->name, v);
+            else
+                fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
             /* in-place append sidecars, declared HERE (same C scope as h_v, so
              * a loop-body accumulator re-inits them each iteration in lockstep
              * with its buffer — never hoist these). cap 0 = "not growable in
