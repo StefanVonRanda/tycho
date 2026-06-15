@@ -80,6 +80,22 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
   `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
   to avoid shadowing the builtin and recursing).
+- **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
+  core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
+  `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
+  (first match substring), `release` (free the C-owned handle). The compiled pattern
+  is C-malloc'd, **not** arena-managed, so call `release` when done.
+
+## C-shim (FFI-backed) modules
+
+A core module can wrap a C library via FFI. Drop a `<module>/<module>_shim.c` next to
+the `.hi`; the compiler auto-compiles and links it on `import "core:<module>"` (no
+`--shim` needed). The `.hi` declares the shim's functions with `extern fn` (and
+`extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
+POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
+dereferenced or arena-managed — `null` / `is_null`). The corelib harness links a
+module's shim on the hierc0 paths too, so all three (hierc, hierc0 `--bundle`,
+standalone hierc0) stay in agreement.
 
 ## Testing
 
