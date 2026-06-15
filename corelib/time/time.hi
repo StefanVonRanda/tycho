@@ -1,0 +1,44 @@
+# corelib: time. Import with `import "core:time"`, use `time.start()`, etc.
+#
+# Wraps the clock() (monotonic nanoseconds) and now() (UNIX seconds) builtins
+# with a stopwatch and unit conversions. hier has no globals, but a monotonic
+# reading is just an int the caller holds -- so the stopwatch is value-semantic,
+# no inout needed (unlike core:rand's mutable state):
+#
+#     sw := time.start()
+#     # ... work ...
+#     ms := time.elapsed_ms(sw)
+#
+# A function can't be named `now` here -- it would shadow the builtin and recurse
+# -- so wall-clock seconds is `unix_secs()`.
+package time
+
+# --- monotonic stopwatch: elapsed time, immune to wall-clock adjustments ---
+
+fn start() -> int:                       # a stopwatch handle = a monotonic reading (ns)
+    return clock()
+
+fn elapsed_ns(sw: int) -> int:           # nanoseconds since `sw`
+    return clock() - sw
+
+fn elapsed_us(sw: int) -> int:           # microseconds since `sw`
+    return (clock() - sw) / 1000
+
+fn elapsed_ms(sw: int) -> int:           # milliseconds since `sw`
+    return (clock() - sw) / 1000000
+
+# --- duration unit conversions (on nanosecond counts) ---
+
+fn ns_to_us(ns: int) -> int:
+    return ns / 1000
+
+fn ns_to_ms(ns: int) -> int:
+    return ns / 1000000
+
+fn ns_to_s(ns: int) -> int:
+    return ns / 1000000000
+
+# --- wall clock: timestamps (seconds since the UNIX epoch) ---
+
+fn unix_secs() -> int:
+    return now()

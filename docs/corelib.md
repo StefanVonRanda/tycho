@@ -65,6 +65,11 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
   (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
   signed 64-bit int, so the generator is UB-free by construction.
+- **`time`** — wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins.
+  Stopwatch (value-semantic, no inout — a reading is just an int): `sw := time.start()`,
+  then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
+  `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
+  to avoid shadowing the builtin and recursing).
 
 ## Testing
 
