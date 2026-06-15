@@ -440,8 +440,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 
 typedef struct { char *name; Type type; } Field;
 typedef struct { char *name; Field fields[64]; int nfields; int line; } StructDef;
-static StructDef g_structs[128];
-static int g_nstructs = 0;
+static StructDef *g_structs;
+static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
     for (int i = 0; i < g_nstructs; i++)
         if (!strcmp(g_structs[i].name, name)) return i;
@@ -457,14 +457,15 @@ static int struct_find(const char *name) {
  * plain alias -- affine (exactly-one-wait) enforcement is CC-2. */
 #define T_TASK_BASE 53248   /* above the function-type range (49152 + 256) */
 typedef struct { Type inner; } TaskType;
-static TaskType g_tasktypes[64];
-static int g_ntasktypes = 0;
-#define IS_TASK(t) ((t) >= T_TASK_BASE && (t) < T_TASK_BASE + 64)
+static TaskType *g_tasktypes;
+static int g_ntasktypes = 0, g_tasktypes_cap = 0;
+#define IS_TASK(t) ((t) >= T_TASK_BASE && (t) < T_CHAN_BASE)
 #define TASK_ID(t) ((int)((t) - T_TASK_BASE))
 static Type task_of(Type inner) {                /* find-or-create Task(inner) */
     for (int i = 0; i < g_ntasktypes; i++)
         if (g_tasktypes[i].inner == inner) return T_TASK_BASE + i;
-    if (g_ntasktypes >= 64) { fprintf(stderr, "hierc: too many task types\n"); exit(1); }
+    if (g_ntasktypes >= 1024) { fprintf(stderr, "hierc: too many task types\n"); exit(1); }   /* T_CHAN_BASE - T_TASK_BASE (defined below) */
+    TBL_ENSURE(g_tasktypes, g_ntasktypes, g_tasktypes_cap);
     g_tasktypes[g_ntasktypes].inner = inner;
     return T_TASK_BASE + g_ntasktypes++;
 }
@@ -487,9 +488,9 @@ static void task_container_err(void) {
  * it after CC-2's implicit joins. */
 #define T_CHAN_BASE 54272   /* above the task range (53248 + 64) */
 typedef struct { Type inner; } ChanType;
-static ChanType g_chantypes[64];
-static int g_nchantypes = 0;
-#define IS_CHAN(t) ((t) >= T_CHAN_BASE && (t) < T_CHAN_BASE + 64)
+static ChanType *g_chantypes;
+static int g_nchantypes = 0, g_chantypes_cap = 0;
+#define IS_CHAN(t) ((t) >= T_CHAN_BASE && (t) < T_CHAN_BASE + 4096)
 #define CHAN_ID(t) ((int)((t) - T_CHAN_BASE))
 static void chan_container_err(void) {
     fprintf(stderr, "hierc: a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead\n");
@@ -500,7 +501,8 @@ static Type chan_of(Type inner) {                /* find-or-create Channel(inner
     if (IS_CHAN(inner)) chan_container_err();
     for (int i = 0; i < g_nchantypes; i++)
         if (g_chantypes[i].inner == inner) return T_CHAN_BASE + i;
-    if (g_nchantypes >= 64) { fprintf(stderr, "hierc: too many channel types\n"); exit(1); }
+    if (g_nchantypes >= 4096) { fprintf(stderr, "hierc: too many channel types\n"); exit(1); }
+    TBL_ENSURE(g_chantypes, g_nchantypes, g_chantypes_cap);
     g_chantypes[g_nchantypes].inner = inner;
     return T_CHAN_BASE + g_nchantypes++;
 }
@@ -521,8 +523,8 @@ static Type chan_inner(Type t) { return g_chantypes[CHAN_ID(t)].inner; }
 #define T_NT_BASE   24576  /* distinct newtypes (type X = int/float), above tuples */
 #define T_MAPC_BASE 32768  /* composite maps [K: V] with an arbitrary value type, above newtypes */
 typedef struct { Type elem; } ArrType;
-static ArrType g_arrtypes[256];
-static int g_narrtypes = 0;
+static ArrType *g_arrtypes;
+static int g_narrtypes = 0, g_arrtypes_cap = 0;
 #define IS_ARRC(t)  ((t) >= T_ARRC_BASE && (t) < T_OPT_BASE)   /* options sit above */
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
 static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
@@ -530,7 +532,8 @@ static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
     if (IS_CHAN(elem)) chan_container_err();
     for (int i = 0; i < g_narrtypes; i++)
         if (g_arrtypes[i].elem == elem) return T_ARRC_BASE + i;
-    if (g_narrtypes >= 256) { fprintf(stderr, "hierc: too many array types\n"); exit(1); }
+    if (g_narrtypes >= T_OPT_BASE - T_ARRC_BASE) { fprintf(stderr, "hierc: too many array types\n"); exit(1); }
+    TBL_ENSURE(g_arrtypes, g_narrtypes, g_arrtypes_cap);
     g_arrtypes[g_narrtypes].elem = elem;
     return T_ARRC_BASE + g_narrtypes++;
 }
@@ -548,8 +551,8 @@ static Type arr_elem(Type arr) {
  * arrays; one monomorphic HierOpt<id> { char has; T val; } is generated per
  * inner type used. Ids sit above the array range (T_OPT_BASE, defined above). */
 typedef struct { Type inner; } OptType;
-static OptType g_opttypes[256];
-static int g_nopttypes = 0;
+static OptType *g_opttypes;
+static int g_nopttypes = 0, g_opttypes_cap = 0;
 #define IS_OPT(t)  ((t) >= T_OPT_BASE && (t) < T_RES_BASE)   /* Results sit above */
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
@@ -557,7 +560,8 @@ static Type opt_of(Type inner) {                 /* find-or-create Option(inner)
     if (IS_CHAN(inner)) chan_container_err();
     for (int i = 0; i < g_nopttypes; i++)
         if (g_opttypes[i].inner == inner) return T_OPT_BASE + i;
-    if (g_nopttypes >= 256) { fprintf(stderr, "hierc: too many option types\n"); exit(1); }
+    if (g_nopttypes >= T_RES_BASE - T_OPT_BASE) { fprintf(stderr, "hierc: too many option types\n"); exit(1); }
+    TBL_ENSURE(g_opttypes, g_nopttypes, g_opttypes_cap);
     g_opttypes[g_nopttypes].inner = inner;
     return T_OPT_BASE + g_nopttypes++;
 }
@@ -569,8 +573,8 @@ static Type opt_inner(Type t) { return g_opttypes[OPT_ID(t)].inner; }
  * monomorphic HierRes<id> { char ok; T okv; E errv; } is generated per (T,E)
  * pair used. Ids sit in [T_RES_BASE, T_ENUM_BASE). */
 typedef struct { Type ok; Type err; } ResType;
-static ResType g_restypes[256];
-static int g_nrestypes = 0;
+static ResType *g_restypes;
+static int g_nrestypes = 0, g_restypes_cap = 0;
 #define IS_RES(t)  ((t) >= T_RES_BASE && (t) < T_ENUM_BASE)
 #define RES_ID(t)  ((int)((t) - T_RES_BASE))
 static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, err) */
@@ -578,7 +582,8 @@ static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, er
     if (IS_CHAN(ok) || IS_CHAN(err)) chan_container_err();
     for (int i = 0; i < g_nrestypes; i++)
         if (g_restypes[i].ok == ok && g_restypes[i].err == err) return T_RES_BASE + i;
-    if (g_nrestypes >= 256) { fprintf(stderr, "hierc: too many result types\n"); exit(1); }
+    if (g_nrestypes >= T_ENUM_BASE - T_RES_BASE) { fprintf(stderr, "hierc: too many result types\n"); exit(1); }
+    TBL_ENSURE(g_restypes, g_nrestypes, g_restypes_cap);
     g_restypes[g_nrestypes].ok = ok; g_restypes[g_nrestypes].err = err;
     return T_RES_BASE + g_nrestypes++;
 }
@@ -593,8 +598,8 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * variant directly with no qualification. */
 typedef struct { char *name; Type payload[8]; int npayload; } Variant;
 typedef struct { char *name; Variant variants[64]; int nvariants; int line; } EnumDef;
-static EnumDef g_enums[64];
-static int g_nenums = 0;
+static EnumDef *g_enums;
+static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
 #define ENUM_ID(t)    ((int)((t) - T_ENUM_BASE))
 #define ENUM_TYPE(id) (T_ENUM_BASE + (id))
@@ -628,8 +633,8 @@ static int variant_find(const char *vname, int *vi) {
  * HierTup<id> { T0 _0; ...; Tn-1 _n-1; } is generated per distinct element-type
  * list. Ids sit at [T_TUP_BASE, ...). Deep-copied by value field-wise. */
 typedef struct { Type elems[8]; int n; } TupType;
-static TupType g_tuptypes[256];
-static int g_ntuptypes = 0;
+static TupType *g_tuptypes;
+static int g_ntuptypes = 0, g_tuptypes_cap = 0;
 #define IS_TUP(t)  ((t) >= T_TUP_BASE && (t) < T_NT_BASE)
 #define TUP_ID(t)  ((int)((t) - T_TUP_BASE))
 static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
@@ -643,7 +648,8 @@ static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
             for (int j = 0; j < n; j++) if (g_tuptypes[i].elems[j] != elems[j]) { same = 0; break; }
             if (same) return T_TUP_BASE + i;
         }
-    if (g_ntuptypes >= 256) { fprintf(stderr, "hierc: too many tuple types\n"); exit(1); }
+    if (g_ntuptypes >= T_NT_BASE - T_TUP_BASE) { fprintf(stderr, "hierc: too many tuple types\n"); exit(1); }
+    TBL_ENSURE(g_tuptypes, g_ntuptypes, g_tuptypes_cap);
     g_tuptypes[g_ntuptypes].n = n;
     for (int j = 0; j < n; j++) g_tuptypes[g_ntuptypes].elems[j] = elems[j];
     return T_TUP_BASE + g_ntuptypes++;
@@ -658,8 +664,8 @@ static Type tup_elem(Type t, int i) { return g_tuptypes[TUP_ID(t)].elems[i]; }
  * values of the SAME newtype, so units can't be mixed. Construct with Meters(x),
  * unwrap with to_int/to_float. Named like structs; registered at parse time. */
 typedef struct { char *name; Type under; } NewtypeDef;
-static NewtypeDef g_newtypes[128];
-static int g_nnewtypes = 0;
+static NewtypeDef *g_newtypes;
+static int g_nnewtypes = 0, g_newtypes_cap = 0;
 #define T_SOA_BASE  28672  /* struct-of-arrays types `soa [Struct]`, above newtypes */
 #define IS_NEWTYPE(t)  ((t) >= T_NT_BASE && (t) < T_SOA_BASE)
 #define NT_ID(t)       ((int)((t) - T_NT_BASE))
@@ -678,14 +684,15 @@ static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
  * records. Cache-friendly when a loop touches one field across all elements.
  * Interned per element struct type (a value is by-value, like the AoS arrays). */
 typedef struct { Type st; } SoaType;            /* st = the element struct type */
-static SoaType g_soatypes[256];
-static int g_nsoatypes = 0;
+static SoaType *g_soatypes;
+static int g_nsoatypes = 0, g_soatypes_cap = 0;
 #define IS_SOA(t)   ((t) >= T_SOA_BASE && (t) < T_MAPC_BASE)   /* composite maps sit above */
 #define SOA_ID(t)   ((int)((t) - T_SOA_BASE))
 static Type soa_of(Type st) {                   /* find-or-create soa [st] */
     for (int i = 0; i < g_nsoatypes; i++)
         if (g_soatypes[i].st == st) return T_SOA_BASE + i;
-    if (g_nsoatypes >= 256) { fprintf(stderr, "hierc: too many soa types\n"); exit(1); }
+    if (g_nsoatypes >= T_MAPC_BASE - T_SOA_BASE) { fprintf(stderr, "hierc: too many soa types\n"); exit(1); }
+    TBL_ENSURE(g_soatypes, g_nsoatypes, g_soatypes_cap);
     g_soatypes[g_nsoatypes].st = st;
     return T_SOA_BASE + g_nsoatypes++;
 }
@@ -752,14 +759,15 @@ static const char *type_pkg_prefix(Type t) {
  * distinct (key, value) pair used. The four hand-written int/float-valued maps
  * (T_MAP_S?/I?) keep their dedicated runtime; everything else is a MAPC. */
 typedef struct { Type key; Type val; } MapType;
-static MapType g_maptypes[256];
-static int g_nmaptypes = 0;
-#define IS_MAPC(t)  ((t) >= T_MAPC_BASE && (t) < T_MAPC_BASE + 256)
+static MapType *g_maptypes;
+static int g_nmaptypes = 0, g_maptypes_cap = 0;
+#define IS_MAPC(t)  ((t) >= T_MAPC_BASE && (t) < T_FUNC_BASE)
 #define MAPC_ID(t)  ((int)((t) - T_MAPC_BASE))
 static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
     for (int i = 0; i < g_nmaptypes; i++)
         if (g_maptypes[i].key == k && g_maptypes[i].val == v) return T_MAPC_BASE + i;
-    if (g_nmaptypes >= 256) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }
+    if (g_nmaptypes >= 16384) { fprintf(stderr, "hierc: too many map types\n"); exit(1); }   /* T_FUNC_BASE - T_MAPC_BASE (defined below) */
+    TBL_ENSURE(g_maptypes, g_nmaptypes, g_maptypes_cap);
     if (IS_TASK(v)) task_container_err();
     if (IS_CHAN(v)) chan_container_err();
     g_maptypes[g_nmaptypes].key = k; g_maptypes[g_nmaptypes].val = v;
@@ -773,9 +781,9 @@ static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
  * uniform C ABI (the hidden return arena is always the first parameter). */
 #define T_FUNC_BASE 49152
 typedef struct { Type params[8]; int n; Type ret; } FuncTy;
-static FuncTy g_functypes[256];
-static int g_nfunctypes = 0;
-#define IS_FUNC(t)  ((t) >= T_FUNC_BASE && (t) < T_FUNC_BASE + 256)
+static FuncTy *g_functypes;
+static int g_nfunctypes = 0, g_functypes_cap = 0;
+#define IS_FUNC(t)  ((t) >= T_FUNC_BASE && (t) < T_TASK_BASE)
 #define FUNC_ID(t)  ((int)((t) - T_FUNC_BASE))
 static Type funcc_of(Type *params, int n, Type ret) {   /* find-or-create fn(params) -> ret */
     /* fn VALUES are storable (containers, fields) -- a task/channel handle in
@@ -789,7 +797,8 @@ static Type funcc_of(Type *params, int n, Type ret) {   /* find-or-create fn(par
         for (int j = 0; j < n; j++) if (g_functypes[i].params[j] != params[j]) { same = 0; break; }
         if (same) return T_FUNC_BASE + i;
     }
-    if (g_nfunctypes >= 256) { fprintf(stderr, "hierc: too many function types\n"); exit(1); }
+    if (g_nfunctypes >= T_TASK_BASE - T_FUNC_BASE) { fprintf(stderr, "hierc: too many function types\n"); exit(1); }
+    TBL_ENSURE(g_functypes, g_nfunctypes, g_functypes_cap);
     g_functypes[g_nfunctypes].n = n; g_functypes[g_nfunctypes].ret = ret;
     for (int j = 0; j < n; j++) g_functypes[g_nfunctypes].params[j] = params[j];
     return T_FUNC_BASE + g_nfunctypes++;
@@ -2180,7 +2189,8 @@ static void parse_struct(Parser *ps) {
      * typedef and fails at cc with no hier-level diagnostic. */
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
-    if (g_nstructs >= 128) die_at(nameT->line, "too many structs");
+    if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(nameT->line, "too many structs");
+    TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
     eat(ps, TK_COLON, "':' before the block");
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_INDENT, "an indented field list");
@@ -2216,7 +2226,8 @@ static void parse_enum(Parser *ps) {
     Tok *nameT = eat(ps, TK_IDENT, "an enum name");
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
-    if (g_nenums >= 64) die_at(nameT->line, "too many enums");
+    if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(nameT->line, "too many enums");
+    TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
     eat(ps, TK_COLON, "':' before the variants");
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_INDENT, "an indented variant list");
@@ -2257,7 +2268,8 @@ static void parse_typedecl(Parser *ps) {
     Tok *nameT = eat(ps, TK_IDENT, "a type name");
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
-    if (g_nnewtypes >= 128) die_at(nameT->line, "too many newtypes");
+    if (g_nnewtypes >= T_SOA_BASE - T_NT_BASE) die_at(nameT->line, "too many newtypes");
+    TBL_ENSURE(g_newtypes, g_nnewtypes, g_newtypes_cap);
     eat(ps, TK_EQ, "'=' in a type declaration");
     Type under = parse_type(ps);
     if (under != T_INT && under != T_FLOAT && under != T_STRING && under != T_BOOL
@@ -6626,10 +6638,10 @@ static void gen_proc(FILE *o, Proc *pr) {
  * (0 unvisited, 1 on-stack, 2 done) emits each in dependency order; a back-edge
  * is an infinite type (a struct that contains itself by value), which is a real
  * error — use an array or `Option([T])` for indirection. */
-static int g_struct_color[128];
-static int g_opt_color[256];
-static int g_res_color[256];
-static int g_tup_color[256];
+static int *g_struct_color; static int g_struct_color_cap;
+static int *g_opt_color;    static int g_opt_color_cap;
+static int *g_res_color;    static int g_res_color_cap;
+static int *g_tup_color;    static int g_tup_color_cap;
 static int g_emit_line;
 
 static void emit_aggregate(FILE *o, Type t) {
@@ -6703,6 +6715,10 @@ static void emit_aggregate(FILE *o, Type t) {
  * the resolver runs — type_is_heap recurses through fields and would otherwise
  * loop forever on such a type. */
 static void check_finite_types(void) {
+    TBL_RESERVE(g_struct_color, g_nstructs,  g_struct_color_cap);
+    TBL_RESERVE(g_opt_color,    g_nopttypes, g_opt_color_cap);
+    TBL_RESERVE(g_res_color,    g_nrestypes, g_res_color_cap);
+    TBL_RESERVE(g_tup_color,    g_ntuptypes, g_tup_color_cap);
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
     for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
@@ -6790,6 +6806,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (3) struct bodies + Option typedefs in containment order (infinite types
      * are rejected here). Enum descriptors above are complete, so a struct/Option
      * may embed an enum by value (it's only 2 words). */
+    TBL_RESERVE(g_struct_color, g_nstructs,  g_struct_color_cap);
+    TBL_RESERVE(g_opt_color,    g_nopttypes, g_opt_color_cap);
+    TBL_RESERVE(g_res_color,    g_nrestypes, g_res_color_cap);
+    TBL_RESERVE(g_tup_color,    g_ntuptypes, g_tup_color_cap);
     for (int i = 0; i < g_nstructs; i++)  g_struct_color[i] = 0;
     for (int i = 0; i < g_nopttypes; i++) g_opt_color[i] = 0;
     for (int i = 0; i < g_nrestypes; i++) g_res_color[i] = 0;
