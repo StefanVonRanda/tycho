@@ -1033,6 +1033,8 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `list_dir(path)` | `string -> [string]` | Directory entries excluding `.`/`..` (filesystem order — sort if needed); empty if it can't be opened. |
 | `args()` | `-> [string]` | The process's command-line arguments; `args()[0]` is the program name. |
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (0..255). |
+| `clock()` | `-> int` | Monotonic nanoseconds since an arbitrary epoch — for measuring elapsed time (differences are meaningful; the absolute value is not). |
+| `now()` | `-> int` | Wall-clock seconds since the UNIX epoch — for timestamps. |
 | `die(msg)` | `string -> void` | Print `msg` to stderr and exit with status 1. |
 | `sqrt/pow/floor/fabs` | `float… -> float` | libm float math: `sqrt(x)`, `pow(x, y)`, `floor(x)`, `fabs(x)`. |
 

@@ -2421,6 +2421,8 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="eprint", .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="input",  .ret=T_STRING,       .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="read_all",.ret=T_STRING,      .params={ 0 },                       .nparams=0, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="clock",  .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* monotonic nanoseconds */
+    g_sigs[g_nsigs++] = (Sig){ .name="now",    .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* wall-clock UNIX seconds */
     g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="die",    .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
@@ -5130,6 +5132,8 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "read_all")) {
         return sfmt("hier_read_all(%s)", arena);
     }
+    if (!strcmp(e->sval, "clock")) return "hier_clock()";   /* monotonic ns; no arena (scalar) */
+    if (!strcmp(e->sval, "now"))   return "hier_now()";     /* wall-clock seconds */
     if (!strcmp(e->sval, "read_file")) {
         return sfmt("hier_read_file(%s, %s)", arena, gen_expr(e->args[0], arena));
     }

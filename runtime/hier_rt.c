@@ -44,6 +44,7 @@
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
 #include <sched.h>     /* sched_yield in the spin-escalation ladder */
+#include <time.h>      /* clock_gettime (clock()), time() (now()) */
 #include <time.h>      /* timed parking */
 
 #define HIER_BLOCK_DEFAULT (1u << 16)
@@ -749,6 +750,17 @@ char *hier_read_all(Arena *a) {
     memcpy(r, buf, len);
     return r;
 }
+
+/* clock(): monotonic nanoseconds since an arbitrary epoch -- for measuring
+ * elapsed time (diffs are meaningful; the absolute value is not). now():
+ * wall-clock seconds since the UNIX epoch -- for timestamps. Both return Hier
+ * `int` (C long, 64-bit), so ns fit for ~292 years. */
+long hier_clock(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000000000L + (long)ts.tv_nsec;
+}
+long hier_now(void) { return (long)time(NULL); }
 
 /* write_file(path, data): write data's exact bytes (length from the string
  * header, so embedded NULs survive) to path, truncating it. 1 on success, 0 if

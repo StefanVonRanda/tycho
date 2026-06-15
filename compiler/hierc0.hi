@@ -1564,7 +1564,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -2476,6 +2476,10 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "bool"
     if name == "read_all":
         return "str"
+    if name == "clock":                           # monotonic nanoseconds
+        return "int"
+    if name == "now":                             # wall-clock UNIX seconds
+        return "int"
     if name == "read_file":
         return "str"
     if name == "write_file":                      # (path, contents) -> bool
@@ -3764,6 +3768,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_eprint(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "read_all":
                 return "hi_read_all(" + ctx.owner + ")"
+            if name == "clock":                   # monotonic ns; no arena (scalar)
+                return "hi_clock()"
+            if name == "now":                     # wall-clock seconds
+                return "hi_now()"
             if name == "read_file":
                 return "hi_read_file(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "write_file":              # (path, contents) -> bool; no arena (no alloc)
@@ -6222,6 +6230,8 @@ fn preamble() -> string:
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static void hi_eprint(const char* m) { fputs(m, stderr); }\n"
     out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
+    out = out + "static long hi_clock(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (long)ts.tv_sec * 1000000000L + (long)ts.tv_nsec; }\n"
+    out = out + "static long hi_now(void) { return (long)time(NULL); }\n"
     out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
     out = out + "static long hi_write_file(const char* path, const char* data) { FILE* f = fopen(path, \"wb\"); if (!f) return 0; long n = ((const long*)data)[-1]; size_t w = fwrite(data, 1, (size_t)n, f); fclose(f); return (w == (size_t)n) ? 1 : 0; }\n"
     out = out + "static int hi_argc = 0;\nstatic char** hi_argv = 0;\n"

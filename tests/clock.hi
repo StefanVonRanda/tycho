@@ -1,0 +1,13 @@
+# clock() -> int : monotonic nanoseconds (for measuring elapsed time).
+# now()   -> int : wall-clock seconds since the UNIX epoch (for timestamps).
+# Time values are non-deterministic, so the test asserts RELATIONSHIPS that
+# always hold (golden-stable), not raw values.
+fn main():
+    t0 := clock()
+    s := 0
+    for i in range(100000):
+        s = s + i
+    dt := clock() - t0
+    println("sum=" + str(s))
+    println("monotonic (dt>=0): " + str(dt >= 0))
+    println("now positive: " + str(now() > 0))
