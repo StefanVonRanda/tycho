@@ -1141,6 +1141,22 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             expect(toks, &pos, TEq)
             return SAssign(name, EBin(op, EVar(name, _el), parse_expr(toks, &pos), _el), _sl)
         elif toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+            # qualified/method call in STATEMENT position: `name.fn(args)` -> a single
+            # ECall("name.fn", ...), exactly as parse_atom builds it in expression
+            # position (the mangler resolves package call / UFCS / conc method). Without
+            # this, a bare `pkg.fn(args)` statement parsed as ECallV(EField(EVar(pkg)..))
+            # and the resolver saw `pkg` as an unknown variable (hierc accepted it).
+            if toks[pos].kind == TDot and toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TLParen:
+                qn := name + "." + toks[pos + 1].text
+                pos = pos + 3
+                qargs := []Expr
+                if toks[pos].kind != TRParen:
+                    push(qargs, parse_expr(toks, &pos))
+                    for toks[pos].kind == TComma:
+                        pos = pos + 1
+                        push(qargs, parse_expr(toks, &pos))
+                expect(toks, &pos, TRParen)
+                return SExpr(ECall(qn, qargs, _el), _sl)
             # collect the place steps first (a.b[i].c ...) so that, for a compound
             # assignment, a call-bearing index can be hoisted to a temp -- the place
             # is evaluated twice (read + store), and a side-effecting index must run
@@ -1654,8 +1670,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         if ar > 0:
             mp = mangle_type_list(m, substr(inner, 0, ar))
         return "fn(" + mp + "->" + mangle_type(m, substr(inner, ar + 2, len(inner))) + ")"
-    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char":
-        return ty                  # builtin scalar types are never package-qualified
+    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char" or ty == "ptr":
+        return ty                  # builtin scalar types are never package-qualified (ptr = FFI opaque handle)
     if find(ty, ".") >= 0:
         return mangle_dotted(m, ty)
     return m.prefix + ty
