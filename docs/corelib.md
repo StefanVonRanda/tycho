@@ -93,6 +93,16 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
   (first match substring), `release` (free the C-owned handle). The compiled pattern
   is C-malloc'd, **not** arena-managed, so call `release` when done.
+- **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.hi`
+  demo promoted to a reusable module). The document is a value-semantic tree, the
+  `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
+  key/value arrays). `parse(s) -> Json` (truncated input fails closed to `JNull`,
+  no abort), `stringify(j) -> string` (compact, escapes `" \ \n \t`). Typed queries:
+  `kind` (the variant tag as a string), `get(j, key)` (object field, else `JNull`),
+  `at(j, i)` (array element, else `JNull`), `keys` (object keys in order), `len_of`
+  (array/object count or string length), `as_num`/`as_str`/`as_bool` (payload with a
+  zero-value default). Variants are constructible cross-package (`json.JNum(1)`) for
+  building trees by hand. Scope: integers (no floats), the four common escapes.
 
 ## C-shim (FFI-backed) modules
 

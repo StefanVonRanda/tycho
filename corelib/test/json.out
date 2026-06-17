@@ -1,0 +1,17 @@
+round-trip: {"name":"hier","version":7,"tags":["systems","arena"],"nested":{"ok":true,"n":-3},"empty":[],"nothing":null}
+kind        = obj
+version     = 7
+name        = hier
+nested.n    = -3
+nested.ok   = 1
+tags.len    = 2
+tags[1]     = arena
+tags[9]     = null
+empty.len   = 0
+missing     = null
+nothing     = null
+keys.len    = 6
+key0        = name
+esc rt      = "a\"b\nc\td"
+built       = [1,"x",true,null]
+truncated   = null
