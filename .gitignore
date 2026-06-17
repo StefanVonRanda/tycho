@@ -40,6 +40,8 @@
 # the corelib usage examples (one program per core module + their goldens) are
 # tracked; the runner builds into a temp dir, so no binaries land here.
 !/examples/corelib
+# the fetch CLI dogfood (main.hi + fixture + runner + golden); builds into a temp dir.
+!/examples/fetch
 
 # Editor/OS noise
 *.o
@@ -65,6 +67,8 @@
 !/examples/minesweeper/*.out
 # the corelib usage examples' goldens (examples/corelib/<name>.out) are tracked too
 !/examples/corelib/*.out
+# the fetch dogfood's golden (examples/fetch/expected.out) is tracked too
+!/examples/fetch/*.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out

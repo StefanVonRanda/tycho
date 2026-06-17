@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples fetch ffi ci hooks clean
 
 all: hierc
 
@@ -135,6 +135,14 @@ corelib: hierc
 # like the tests, with the same deps-skip. See examples/corelib/run.sh.
 corelib-examples: hierc
 	@sh examples/corelib/run.sh
+
+# fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
+# built by both compilers + ASan and run against a local file:// fixture (so the
+# whole pipeline is deterministic + offline). Skips without libcurl. Standalone
+# (not in `make ci`, like examples/sqlite); the http module is covered in ci via
+# corelib-examples. See examples/fetch/run.sh.
+fetch: hierc
+	@sh examples/fetch/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
