@@ -182,6 +182,26 @@ both tree workloads and within 1–2 MB of C on array/string-pipeline, trailing
 C/Rust only on array-pipeline time (per-element bounds-checking, not the memory
 model). The compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
+**Realistic workload (`bench/site/`, [RESULTS.md](bench/site/RESULTS.md), `make
+bench-site`).** The same static-site generator — render *N* Markdown pages to
+HTML — written in hier / C / Go, an FNV checksum of every rendered byte gating
+that all three do identical work. It scales the `examples/site` dogfood down to
+its allocation-heavy core, so it measures the memory model on a real composing
+workload rather than a micro-benchmark:
+
+| pages  |  hier  |   C    |  Go (GC) |
+| -----: | -----: | -----: | -------: |
+|  1,000 | 1.5 MB | 1.5 MB |   6.9 MB |
+|  5,000 | 1.5 MB | 1.3 MB |   7.8 MB |
+| 20,000 | 1.5 MB | 1.6 MB |   8.5 MB |
+
+hier's peak RSS is **flat ~1.5 MB across a 20× scale** — each page is rendered in
+a loop-body arena reclaimed every iteration, so the working set is one page
+regardless of *N*, matching C with no manual `free` and no GC, where Go grows to
+~5× (runtime floor + GC headroom). The honest trade-off: on this workload hier is
+~2× C on wall-clock (its string-rebuild vs C's `realloc` buffer; Go between) — the
+arena's win here is memory, not raw speed.
+
 ## Language
 
 Deliberately small — one way to do each thing.
