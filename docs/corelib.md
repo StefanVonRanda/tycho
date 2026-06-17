@@ -130,6 +130,10 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `chr()`, and a hier string can't hold an interior `0x00` (`chr(0)` appends nothing), so
   decoding plaintext that contains a NUL byte silently drops it — `decode` is exact for
   text and any non-NUL binary, lossy only for data containing `0x00`.
+- **`hex`** — hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, two digits per
+  byte, plus `is_valid` (strict: even length, all hex digits). `decode` is lenient (skips
+  any non-hex byte, so `de:ad:be:ef` and spaced/newlined hex work, either case) and reuses
+  `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64` (`decode("00")` is `""`).
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),

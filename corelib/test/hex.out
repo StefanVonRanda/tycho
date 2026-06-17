@@ -1,0 +1,14 @@
+enc ''   = []
+enc A    = 41
+enc hi   = 6869
+enc hier = 68696572
+dec      = hier
+dec U/L  = Hi
+dec sep  = hier
+dec spc  = hi
+text_rt_ok = 1
+valid dead=1 DEAD=1 odd=0 xyz=0 empty=1
+bin lower = ffab1001
+bin UPPER = FFAB1001
+bin_ok lower=1 upper=1 len=4
+decode_00_len = 0
