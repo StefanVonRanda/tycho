@@ -43,6 +43,64 @@ what is your name: Ada
 hello Ada
 ```
 
+## Getting started
+
+**Prerequisites:** a C compiler (`cc` — GCC or Clang) and `make`. That is all —
+the compiler is a single dependency-free C file. *(Optional: `pkg-config` + a
+library for the FFI-backed corelib modules such as `core:http` over libcurl, and
+a Go toolchain for the cross-language benchmarks; both are skipped cleanly when
+absent.)*
+
+```
+$ git clone https://github.com/StefanVonRanda/hier
+$ cd hier
+$ make                          # builds ./hierc (the compiler)
+```
+
+**Run a program.** `./hierc f.hi` transpiles `f.hi` to a `f.c` and compiles it to
+a native binary `f`; `-o name` names the output, `--emit-c` stops at the C.
+
+```
+$ ./hierc examples/hello.hi && ./examples/hello
+what is your name: Ada
+hello Ada
+```
+
+**Write your own** — save as `hi.hi`, then `./hierc hi.hi && ./hi`:
+
+```
+fn main():
+    for i in range(1, 4):
+        print("line " + str(i) + "\n")
+```
+
+**Use the standard library.** `corelib/` is hier's stdlib, imported as
+`core:<name>` and resolved through the `HIER_CORELIB` environment variable. A file
+with an `import` is a *package*, so give it its own directory:
+
+```
+mysite/main.hi:
+    package main
+    import "core:strings"
+    fn main():
+        print(strings.to_upper("hello") + "\n")     # HELLO
+```
+```
+$ HIER_CORELIB="$PWD/corelib" ./hierc mysite/main.hi && ./mysite/main
+HELLO
+```
+
+Every corelib module has a runnable usage example under
+[`examples/corelib/<name>/`](examples/corelib), and two larger programs *compose*
+several modules end-to-end: [`examples/fetch`](examples/fetch) (an HTTP client —
+GET, JSON-parse, hash, cache) and [`examples/site`](examples/site) (a static-site
+generator). Build and verify the whole tree — compiler, self-host fixpoint, tests,
+corelib, fuzzer — with `make ci`.
+
+**Where to go next:** the [Language](#language) section below is the full
+reference; [docs/corelib.md](docs/corelib.md) catalogs the standard library; and
+[docs/thesis.md](docs/thesis.md) explains the arena memory model underneath it all.
+
 ## Building
 
 | Command | What it does |
@@ -58,6 +116,8 @@ hello Ada
 | `make bootstrap` | Build the self-hosted compiler `compiler/hierc0.hi` with `./hierc` and validate it on its fixtures. |
 | `make fixpoint` | Stage-4 self-host check: assert the Hier-built compiler reproduces itself byte-identically (B≡C) and matches the C compiler's output. |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both compilers, assert byte-identical output and no sanitizer fault. |
+| `make corelib` | Build + validate the standard library (`corelib/`) three ways (C compiler vs the self-hosted `hierc0`, against goldens), with usage examples and the `site` dogfood. |
+| `make ci` | The full local gate (no cloud CI): build, test, fixpoint, corelib + examples, concurrency, FFI, the three fuzz lanes, tooling, and the perf guard. |
 | `make clean` | Remove build artifacts. |
 
 `make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
@@ -1167,6 +1227,10 @@ examples/          hello, demo, accumulate, accumulate_big, arrays,
                    descent JSON parser + serializer; raytrace.hi a float-math PPM
                    renderer; grep.hi a CLI text tool over args()/read_file;
                    invindex.hi an inverted-index text search engine)
+examples/corelib/  a runnable usage example for every corelib module (make corelib-examples)
+examples/fetch/    composing dogfood — an HTTP client (http + json + sha256 + io + path)
+examples/site/     composing dogfood — a static-site generator (8 corelib modules)
+corelib/           the standard library, imported as `import "core:<name>"` (make corelib)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
 tests/*.hi         dedicated regression programs, one per feature/bug (+ tests/pkg/ package fixtures, + optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
@@ -1177,6 +1241,7 @@ bench/conc/        concurrency head-to-head vs C/Go/Rust (make bench-conc)
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
 bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
 bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md
+bench/site/        realistic-workload head-to-head: static-site render, Hier vs C vs Go (make bench-site)
 fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; make fuzz)
 tools/prof/        dependency-free sampling CPU profiler for hier-compiled binaries
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
