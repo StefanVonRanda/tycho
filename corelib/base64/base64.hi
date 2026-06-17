@@ -1,0 +1,128 @@
+# corelib: Base64 (RFC 4648) encode / decode. Import with `import "core:base64"`,
+# use `base64.encode(s)` / `base64.decode(s)`.
+#
+# Pure arithmetic (no FFI, no bit-operators -- the 6-bit packing is done with
+# `/` and `%`, which is exact on the unsigned 0..255 bytes that `s[i]` yields).
+#
+# BYTE-SAFETY CAVEAT (a hier string-model constraint, not a Base64 one):
+#   * `encode` is fully byte-safe. `s[i]` returns 0..255 and `len(s)` is exact,
+#     so any byte string -- including one read from a file with high bytes --
+#     encodes correctly.
+#   * `decode` builds its result by appending bytes with `chr()`. A hier string
+#     CANNOT hold a 0x00 byte when built that way (`chr(0)` appends nothing), so
+#     if the decoded plaintext contains a NUL byte, that byte is silently
+#     dropped. decode is therefore EXACT for text and for any non-NUL binary,
+#     and LOSSY only for data that contains a 0x00 byte. There is no way to
+#     represent an interior NUL in a constructed hier string.
+#
+# `decode` is lenient: it skips any byte that is not in the alphabet (so '=',
+# spaces, and newlines in wrapped Base64 are ignored) and accepts BOTH the
+# standard (`+` `/`) and URL-safe (`-` `_`) alphabets.
+package base64
+
+# A 6-bit value (0..63) -> its alphabet byte. `url` picks `-`/`_` over `+`/`/`.
+fn enc_char(n: int, url: bool) -> int:
+    if n < 26:
+        return 65 + n                  # 'A'..'Z'
+    if n < 52:
+        return 97 + (n - 26)           # 'a'..'z'
+    if n < 62:
+        return 48 + (n - 52)           # '0'..'9'
+    if n == 62:
+        if url:
+            return 45                  # '-'
+        return 43                      # '+'
+    if url:
+        return 95                      # '_'
+    return 47                          # '/'
+
+# An alphabet byte -> its 6-bit value, or -1 if it is not a Base64 character
+# (covers '=', whitespace, and anything else). Accepts both alphabets.
+fn dec_val(c: int) -> int:
+    if c >= 65 and c <= 90:
+        return c - 65                  # 'A'..'Z' -> 0..25
+    if c >= 97 and c <= 122:
+        return c - 97 + 26             # 'a'..'z' -> 26..51
+    if c >= 48 and c <= 57:
+        return c - 48 + 52             # '0'..'9' -> 52..61
+    if c == 43 or c == 45:             # '+' or '-'
+        return 62
+    if c == 47 or c == 95:             # '/' or '_'
+        return 63
+    return 0 - 1
+
+# ---- encode ----------------------------------------------------------------
+
+fn encode_impl(s: string, url: bool, pad: bool) -> string:
+    out := ""
+    n := len(s)
+    i := 0
+    for i + 3 <= n:                    # full 3-byte -> 4-char groups
+        b0 := s[i]
+        b1 := s[i + 1]
+        b2 := s[i + 2]
+        out = out + chr(enc_char(b0 / 4, url))
+        out = out + chr(enc_char((b0 % 4) * 16 + b1 / 16, url))
+        out = out + chr(enc_char((b1 % 16) * 4 + b2 / 64, url))
+        out = out + chr(enc_char(b2 % 64, url))
+        i = i + 3
+    rem := n - i
+    if rem == 1:
+        b0 := s[i]
+        out = out + chr(enc_char(b0 / 4, url))
+        out = out + chr(enc_char((b0 % 4) * 16, url))
+        if pad:
+            out = out + "=="
+    elif rem == 2:
+        b0 := s[i]
+        b1 := s[i + 1]
+        out = out + chr(enc_char(b0 / 4, url))
+        out = out + chr(enc_char((b0 % 4) * 16 + b1 / 16, url))
+        out = out + chr(enc_char((b1 % 16) * 4, url))
+        if pad:
+            out = out + "="
+    return out
+
+# Standard Base64 with `=` padding.
+fn encode(s: string) -> string:
+    return encode_impl(s, false, true)
+
+# URL-safe Base64 (`-`/`_`), no padding -- the common form for tokens/URLs.
+fn encode_url(s: string) -> string:
+    return encode_impl(s, true, false)
+
+# ---- decode ----------------------------------------------------------------
+
+# Decode either alphabet, skipping non-alphabet bytes (padding, whitespace).
+# See the BYTE-SAFETY CAVEAT above re: 0x00 in the decoded plaintext.
+fn decode(s: string) -> string:
+    vals := []int                      # gather the 6-bit values
+    for i in range(len(s)):
+        v := dec_val(s[i])
+        if v >= 0:
+            push(vals, v)
+    out := ""
+    m := len(vals)
+    j := 0
+    for j + 4 <= m:                    # full 4-value -> 3-byte groups
+        v0 := vals[j]
+        v1 := vals[j + 1]
+        v2 := vals[j + 2]
+        v3 := vals[j + 3]
+        out = out + chr(v0 * 4 + v1 / 16)
+        out = out + chr((v1 % 16) * 16 + v2 / 4)
+        out = out + chr((v2 % 4) * 64 + v3)
+        j = j + 4
+    rem := m - j
+    if rem == 2:                       # 2 values -> 1 byte
+        v0 := vals[j]
+        v1 := vals[j + 1]
+        out = out + chr(v0 * 4 + v1 / 16)
+    elif rem == 3:                     # 3 values -> 2 bytes
+        v0 := vals[j]
+        v1 := vals[j + 1]
+        v2 := vals[j + 2]
+        out = out + chr(v0 * 4 + v1 / 16)
+        out = out + chr((v1 % 16) * 16 + v2 / 4)
+    # rem == 1 is malformed (a lone 6-bit value can't make a byte) -> dropped
+    return out

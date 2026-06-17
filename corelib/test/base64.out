@@ -1,0 +1,17 @@
+enc ''     = []
+enc f      = Zg==
+enc fo     = Zm8=
+enc foo    = Zm9v
+enc foob   = Zm9vYg==
+enc fooba  = Zm9vYmE=
+enc foobar = Zm9vYmFy
+dec Zg==   = f
+dec Zm8=   = fo
+dec foobar = foobar
+dec wrap   = foobar
+text_rt_ok = 1
+bin enc    = //79/A==
+bin encurl = __79_A
+bin_std_ok = 1 len=4
+bin_url_ok = 1 len=4
+url_differs = 1

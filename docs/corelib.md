@@ -121,6 +121,15 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   delimiter/quote/CR/LF (doubling internal quotes) -- `parse`/`stringify` round-trip.
   `parse_delim`/`stringify_delim` take an arbitrary single-byte delimiter (TSV is
   `parse_delim(s, 9)`); `get(rows, r, c)` is a bounds-safe cell read (`""` if OOB).
+- **`base64`** — Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe
+  `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
+  (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is
+  lenient: it skips any non-alphabet byte (padding `=`, whitespace, newlines in wrapped
+  Base64) and accepts both alphabets. **Byte-safety caveat** (a hier string-model limit,
+  not a Base64 one): `encode` is fully byte-safe, but `decode` builds its result with
+  `chr()`, and a hier string can't hold an interior `0x00` (`chr(0)` appends nothing), so
+  decoding plaintext that contains a NUL byte silently drops it — `decode` is exact for
+  text and any non-NUL binary, lossy only for data containing `0x00`.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
