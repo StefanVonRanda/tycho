@@ -112,6 +112,15 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   (array/object count or string length), `as_num`/`as_str`/`as_bool` (payload with a
   zero-value default). Variants are constructible cross-package (`json.JNum(1)`) for
   building trees by hand. Scope: integers (no floats), the four common escapes.
+- **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
+  `[[string]]`. `parse(s) -> [[string]]` is a small state machine handling quoted
+  fields, the `""` escape, embedded delimiters/newlines inside quotes, and LF / CRLF /
+  lone-CR line endings; it fails closed (an unterminated quote parses leniently, never
+  aborts). A trailing newline adds no empty row; a mid-file blank line is `[""]`.
+  `stringify(rows) -> string` emits LF endings and quotes only fields containing the
+  delimiter/quote/CR/LF (doubling internal quotes) -- `parse`/`stringify` round-trip.
+  `parse_delim`/`stringify_delim` take an arbitrary single-byte delimiter (TSV is
+  `parse_delim(s, 9)`); `get(rows, r, c)` is a bounds-safe cell read (`""` if OOB).
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
