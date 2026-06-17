@@ -1,0 +1,128 @@
+# corelib: POSIX path utilities. Import with `import "core:path"`, use
+# `path.base("/a/b.txt")`. The separator is '/' (byte 47). These are pure
+# string ops over the builtins (len / s[i] / slices / split); no FFI, no new
+# builtins. Value semantics: every function returns a FRESH string (or tuple)
+# and never mutates its argument. Contracts are lexical only -- nothing
+# touches the filesystem.
+package path
+
+# Index of the last '/' in s, or -1 if there is none.
+fn last_slash(s: string) -> int:
+    i := len(s) - 1
+    for i >= 0:
+        if s[i] == 47:                        # '/'
+            return i
+        i = i - 1
+    return 0 - 1
+
+# True if the path is absolute (begins with '/').
+fn is_abs(p: string) -> bool:
+    return len(p) > 0 and p[0] == 47
+
+# Final path element, trailing slashes ignored.
+#   ""        -> "."      "/"        -> "/"     "file.txt" -> "file.txt"
+#   "/a/b/c"  -> "c"      "/a/b/c/"  -> "c"     "a/b/"     -> "b"
+fn base(p: string) -> string:
+    if len(p) == 0:
+        return "."
+    e := len(p)                               # strip trailing slashes
+    for e > 0 and p[e - 1] == 47:
+        e = e - 1
+    if e == 0:
+        return "/"                            # the path was all slashes
+    s := e                                    # walk back to the slash before e
+    for s > 0 and p[s - 1] != 47:
+        s = s - 1
+    return p[s:e]
+
+# Everything but the final element, trailing slashes ignored.
+#   ""        -> "."      "foo"      -> "."     "/foo"     -> "/"
+#   "/a/b/c"  -> "/a/b"   "/a/b/c/"  -> "/a/b"  "a/b"      -> "a"
+fn dir(p: string) -> string:
+    e := len(p)                               # strip trailing slashes (mirror base)
+    for e > 0 and p[e - 1] == 47:
+        e = e - 1
+    if e == 0:
+        if len(p) > 0:
+            return "/"                        # the path was all slashes
+        return "."                            # the path was empty
+    i := e                                    # i = one past the last slash in [0, e)
+    for i > 0 and p[i - 1] != 47:
+        i = i - 1
+    if i == 0:
+        return "."                            # no directory component
+    d := i - 1                                # drop the slash, then its run
+    for d > 0 and p[d - 1] == 47:
+        d = d - 1
+    if d == 0:
+        return "/"
+    return p[0:d]
+
+# Extension of the final element, INCLUDING the dot, or "" if none. A leading
+# dot is not an extension (dotfiles).  "a.txt"->".txt"  ".bashrc"->""
+#   "archive.tar.gz" -> ".gz"   "noext" -> ""   "/a/b.c/d" -> ""
+fn ext(p: string) -> string:
+    b := base(p)
+    i := len(b) - 1
+    for i > 0:                                # i > 0: a leading dot is not an ext
+        if b[i] == 46:                        # '.'
+            return b[i:len(b)]
+        i = i - 1
+    return ""
+
+# The final element without its extension.  "a.txt"->"a"  ".bashrc"->".bashrc"
+fn stem(p: string) -> string:
+    b := base(p)
+    e := ext(p)
+    return b[0:len(b) - len(e)]
+
+# Join two segments with exactly one '/'. Empty operands drop out.
+#   ("a","b")->"a/b"  ("a/","b")->"a/b"  ("a","/b")->"a/b"  ("/","x")->"/x"
+fn join(a: string, b: string) -> string:
+    if len(a) == 0:
+        return b
+    if len(b) == 0:
+        return a
+    ae := len(a)                              # strip trailing slashes of a
+    for ae > 0 and a[ae - 1] == 47:
+        ae = ae - 1
+    bs := 0                                   # strip leading slashes of b
+    for bs < len(b) and b[bs] == 47:
+        bs = bs + 1
+    return a[0:ae] + "/" + b[bs:len(b)]
+
+# Split into (dir, base) -- the pieces path.join would recombine.
+fn split_path(p: string) -> (string, string):
+    return (dir(p), base(p))
+
+# Lexically normalize: collapse repeated slashes, drop "." segments, resolve
+# ".." against the preceding real segment (but never above the root, and never
+# past a leading ".." in a relative path). Pure string math -- no filesystem.
+#   "a/./b/../c" -> "a/c"   "/a//b/" -> "/a/b"   "/.." -> "/"
+#   "" -> "."   "." -> "."   "../a" -> "../a"
+fn clean(p: string) -> string:
+    if len(p) == 0:
+        return "."
+    rooted := p[0] == 47
+    parts := split(p, "/")
+    out := []string                           # stack of kept segments
+    for i in range(len(parts)):
+        seg := parts[i]
+        if seg == "..":
+            if len(out) > 0 and out[len(out) - 1] != "..":
+                pop(out)                       # pop the real segment ".." cancels
+            elif not rooted:
+                push(out, "..")                # relative: keep a leading ".."
+            # rooted with nothing to pop: ".." at the root is a no-op
+        elif len(seg) > 0 and seg != ".":
+            push(out, seg)                     # skip "" (// ) and "."
+    r := ""
+    for j in range(len(out)):
+        if j > 0:
+            r = r + "/"
+        r = r + out[j]
+    if rooted:
+        r = "/" + r
+    if len(r) == 0:
+        return "."
+    return r

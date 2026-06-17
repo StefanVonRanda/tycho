@@ -52,6 +52,14 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
   `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
   (`split`/`find`/`substr`/`len`/`chr` are builtins.)
+- **`path`** — POSIX path utilities, all pure string math (separator `/`, no
+  filesystem access, every function returns a fresh value): `base` (final element,
+  trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir` (all but the final element),
+  `ext` (extension incl. the dot, `""` if none; a leading dot is a dotfile, not an
+  ext), `stem` (base minus ext), `join(a, b)` (exactly one separator, empty operands
+  drop out), `is_abs`, `split_path(p) -> (dir, base)` (the inverse of `join`), and
+  `clean` (lexical normalize: collapse `//`, drop `.`, resolve `..` but never above
+  the root or past a leading `..`). `last_slash(s)` is the shared scan helper.
 - **`arrays`** — `[int]` utilities: `contains`, `index_of` (−1 if absent), `count`, `sum`,
   `product`, `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending), `take(xs, n)`,
   `drop(xs, n)`, `concat(a, b)`, `fill(n, v)`, `dedup` (consecutive — sort first for a full
