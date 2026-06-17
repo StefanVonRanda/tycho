@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz corelib corelib-examples fetch site ffi ci hooks clean
 
 all: hierc
 
@@ -103,6 +103,13 @@ bench-conc: hierc
 # vs C/Go over an identical synthetic corpus. See bench/indexer/RESULTS.md.
 bench-indexer: hierc
 	@sh bench/indexer/run.sh
+
+# Static-site generation: render N Markdown pages to HTML, hier vs C vs Go,
+# peak RSS + wall. hier's per-scope arena keeps memory FLAT across a 20x scale
+# (matches C, no manual free) where Go's GC holds garbage; an FNV checksum of
+# every rendered byte gates fairness. See bench/site/RESULTS.md.
+bench-site: hierc
+	@sh bench/site/run.sh
 
 # Sliding-window eviction: the arena's weak point, mapped honestly (heap-record
 # window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.

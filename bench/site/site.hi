@@ -1,0 +1,94 @@
+# site benchmark (hier): render N Markdown pages to HTML, transiently.
+#
+# Each page is read + rendered inside the loop body, whose per-scope arena is
+# reclaimed every iteration -- so peak RSS stays FLAT (one page's working set)
+# no matter how many pages, with zero manual free and zero GC. The renderer is
+# inlined (no corelib imports) so hier / Go / C do byte-identical work and agree
+# on the FNV-1a-32 checksum of every rendered byte. The point is the language's
+# memory model on a realistic string-building workload, not corelib (the
+# examples/site dogfood already proves the corelib composition).
+#
+#   site <pages-dir> <N>   ->   pages=N bytes=B fnv=H
+# (single-file, no `package` -- only builtins, so no corelib imports needed.)
+
+fn atoi(s: string) -> int:
+    v := 0
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 48 and c <= 57:
+            v = v * 10 + (c - 48)
+    return v
+
+fn sw(s: string, p: string) -> bool:       # starts_with, inlined
+    if len(s) < len(p):
+        return false
+    for i in range(len(p)):
+        if s[i] != p[i]:
+            return false
+    return true
+
+fn esc(s: string) -> string:               # & < > -> entities
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if c == 38:
+            out = out + "&amp;"
+        elif c == 60:
+            out = out + "&lt;"
+        elif c == 62:
+            out = out + "&gt;"
+        else:
+            out = out + chr(c)
+    return out
+
+fn render(body: string) -> string:         # block-level Markdown subset -> HTML
+    out := ""
+    in_list := false
+    lines := split(body, "\n")
+    for i in range(len(lines)):
+        t := lines[i]
+        if len(t) == 0:
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+        elif sw(t, "## "):
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<h2>" + esc(t[3:len(t)]) + "</h2>\n"
+        elif sw(t, "# "):
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<h1>" + esc(t[2:len(t)]) + "</h1>\n"
+        elif sw(t, "- "):
+            if in_list == false:
+                out = out + "<ul>\n"
+                in_list = true
+            out = out + "<li>" + esc(t[2:len(t)]) + "</li>\n"
+        else:
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<p>" + esc(t) + "</p>\n"
+    if in_list:
+        out = out + "</ul>\n"
+    return out
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        print("usage: site <pages-dir> <N>\n")
+    else:
+        dir := a[1]
+        n := atoi(a[2])
+        fnv := 2166136261
+        total := 0
+        for i in range(n):
+            html := render(read_file(dir + "/" + str(i) + ".md"))
+            j := 0
+            for j in range(len(html)):
+                fnv = (fnv ^ html[j]) % 4294967296
+                fnv = (fnv * 16777619) % 4294967296
+            total = total + len(html)
+        print("pages=" + str(n) + " bytes=" + str(total) + " fnv=" + str(fnv) + "\n")
