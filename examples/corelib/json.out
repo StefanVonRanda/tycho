@@ -1,0 +1,6 @@
+name      = hier
+stars     = 9
+tags len  = 2
+tags[0]   = fast
+nested.ok kind = bool
+built     = [1,"two",true]

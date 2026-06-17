@@ -1,0 +1,20 @@
+# Example: core:io -- write, append, and read a file back as lines.
+# Writes to a throwaway /tmp path so the example is self-contained.
+package main
+import "core:io"
+
+fn main():
+    path := "/tmp/hier_io_example.txt"
+
+    io.write(path, "first line\n")             # truncate + write
+    io.append(path, "second line\n")           # append
+    io.append(path, "third line\n")
+
+    lines := io.read_lines(path)
+    print("line count = " + str(len(lines)) + "\n")   # 3
+    print("line 2     = " + lines[1] + "\n")          # second line
+
+    # write_lines is the inverse of read_lines (newline-terminated)
+    io.write_lines(path, ["alpha", "beta"])
+    back := io.read_lines(path)
+    print("rewritten  = " + str(len(back)) + " lines, first = " + back[0] + "\n")   # 2 lines, alpha

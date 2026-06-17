@@ -37,6 +37,9 @@
 !/examples/snake
 # the Minesweeper example is a shim dir too (termios input shim + own .gitignore).
 !/examples/minesweeper
+# the corelib usage examples (one program per core module + their goldens) are
+# tracked; the runner builds into a temp dir, so no binaries land here.
+!/examples/corelib
 
 # Editor/OS noise
 *.o
@@ -60,6 +63,8 @@
 !/examples/snake/*.out
 # the Minesweeper example's golden is tracked too
 !/examples/minesweeper/*.out
+# the corelib usage examples' goldens (examples/corelib/<name>.out) are tracked too
+!/examples/corelib/*.out
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out

@@ -1,0 +1,15 @@
+# Example: core:uuid -- generate random v4 UUIDs (state from core:rand) and the
+# nil UUID. The rand seed is fixed here so the example's output is reproducible;
+# in real use, seed from time(): `st := rand.seed(now())`.
+package main
+import "core:uuid"
+import "core:rand"
+
+fn main():
+    st := rand.seed(12345)
+    print("v4 #1   = " + uuid.v4(&st) + "\n")
+    print("v4 #2   = " + uuid.v4(&st) + "\n")
+    print("nil     = " + uuid.nil() + "\n")
+
+    u := uuid.v4(&st)
+    print("version = " + str(uuid.version(u)) + "\n")   # 4

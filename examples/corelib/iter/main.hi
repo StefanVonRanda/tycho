@@ -1,0 +1,23 @@
+# Example: core:iter -- higher-order helpers over [int] (map/filter/reduce/...).
+# Predicates return an int (nonzero = keep); map/reduce take a fn or closure.
+# Lambdas are expression-bodied; a multi-line body must be a named fn.
+package main
+import "core:iter"
+
+fn dbl(x: int) -> int:
+    return x * 2
+
+fn even(x: int) -> int:                  # nonzero -> keep
+    if x % 2 == 0:
+        return 1
+    return 0
+
+fn main():
+    nums := [1, 2, 3, 4, 5]
+    print("map dbl, [4]  = " + str(iter.map(nums, dbl)[4]) + "\n")        # 10
+    print("count even    = " + str(iter.count(nums, even)) + "\n")        # 2
+    print("filter even n = " + str(len(iter.filter(nums, even))) + "\n")  # 2
+    sum := iter.reduce(nums, 0, fn(a: int, b: int) -> int: a + b)         # inline closure
+    print("reduce sum    = " + str(sum) + "\n")                           # 15
+    prod := iter.reduce(nums, 1, fn(a: int, b: int) -> int: a * b)
+    print("reduce prod   = " + str(prod) + "\n")                          # 120

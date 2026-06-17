@@ -1,0 +1,23 @@
+# Example: core:http -- an HTTP client over libcurl (skipped where libcurl is
+# absent). A real request looks like:
+#
+#     r := http.get("https://example.com")
+#     if http.ok(r):
+#         print("status " + str(http.status(r)) + "\n")
+#         print(http.body(r))
+#         http.release(r)
+#     # or the one-shot convenience form:
+#     body := http.get_body("https://example.com")
+#
+# To keep the example deterministic and offline, it requests a closed loopback
+# port, which fails at transport and returns a null handle.
+package main
+import "core:http"
+
+fn main():
+    r := http.get("http://127.0.0.1:1/")        # nothing listening -> connection refused
+    if http.ok(r):
+        print("status " + str(http.status(r)) + "\n")
+        http.release(r)
+    else:
+        print("request failed (expected: the example runs offline)\n")

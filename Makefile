@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples ffi ci hooks clean
 
 all: hierc
 
@@ -129,6 +129,12 @@ bootstrap: hierc
 # through the C compiler and the self-hosted hierc0. See corelib/run.sh.
 corelib: hierc
 	@sh corelib/run.sh
+
+# corelib examples: a small, readable program per core module (usage as
+# documentation, not assertions like corelib/test/), validated 3-way + golden
+# like the tests, with the same deps-skip. See examples/corelib/run.sh.
+corelib-examples: hierc
+	@sh examples/corelib/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.

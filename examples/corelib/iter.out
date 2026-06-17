@@ -1,0 +1,5 @@
+map dbl, [4]  = 10
+count even    = 2
+filter even n = 2
+reduce sum    = 15
+reduce prod   = 120
