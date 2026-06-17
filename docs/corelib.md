@@ -169,6 +169,12 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   UB-free. **MD5 is broken for security** (use it for checksums / content-addressing / interop,
   never passwords or signatures). Verified bit-exact against the RFC 1321 suite
   (`md5("abc") = 900150983cd24fb0d6963f7d28e17f72`) and a multi-block message.
+- **`sha256`** — the SHA-256 hash (FIPS 180-4): `hex(s)` (64-char lowercase digest) and
+  `digest(s)` (32 raw bytes). Pure 32-bit arithmetic, UB-free like `md5`/`hash`; big-endian
+  (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
+  content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
+  for that). Verified bit-exact against NIST vectors
+  (`sha256("abc") = ba7816bf…f20015ad`) and a multi-block message.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),

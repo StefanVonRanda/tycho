@@ -1,0 +1,25 @@
+# corelib test: exercises core:sha256; the C compiler and hierc0 must agree, and
+# the output is locked to corelib/test/sha256.out (corelib/run.sh).
+# Checked against published FIPS 180-4 / NIST vectors.
+package main
+import "core:sha256"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    print("'' = " + sha256.hex("") + "\n")     # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    print("abc= " + sha256.hex("abc") + "\n")   # ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+
+    # a multi-block message (>64 bytes exercises the block loop + schedule)
+    fox := "The quick brown fox jumps over the lazy dog"
+    print("fox= " + sha256.hex(fox) + "\n")     # d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592
+    big := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    print("AZ = " + sha256.hex(big) + "\n")     # db4bfcbd4da0cd85a60c3c37d3fbd8805c77f15fc6b1fdfe614ee0a7c8fdb4c0
+
+    # digest() returns 32 bytes; hex length is 64
+    d := sha256.digest("abc")
+    h := sha256.hex("abc")
+    print(f"digest_len={len(d)} hex_len={len(h)} ok={b2i(len(d) == 32 and len(h) == 64)}\n")
