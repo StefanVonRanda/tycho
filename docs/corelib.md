@@ -102,6 +102,15 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
   (first match substring), `release` (free the C-owned handle). The compiled pattern
   is C-malloc'd, **not** arena-managed, so call `release` when done.
+- **`http`** — an HTTP(S) client over **libcurl** (C-shim, FFI), and the first module to
+  declare an [external dependency](#external-dependencies-c-shim-deps) (`corelib/http/deps`
+  → `libcurl`). `get(url) -> ptr` / `post(url, body, content_type) -> ptr` return an opaque
+  response handle, or null on a transport failure (`ok`/`is_null`). `status(r)` (e.g. 200),
+  `body(r)` (arena-copied), `release(r)` (the handle is C-owned). Convenience: `get_body(url)`
+  / `get_status(url)` do the request and free the handle. The body is arena-copied via the
+  FFI string-return, so a binary body with interior `0x00` truncates — this is for text
+  APIs. Verified live (`get("https://example.com")` → 200) and by a deterministic offline
+  error-path golden; skipped where libcurl is absent.
 - **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.hi`
   demo promoted to a reusable module). The document is a value-semantic tree, the
   `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
@@ -178,6 +187,27 @@ POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
 dereferenced or arena-managed — `null` / `is_null`). The corelib harness links a
 module's shim on the hierc0 paths too, so all three (hierc, hierc0 `--bundle`,
 standalone hierc0) stay in agreement.
+
+### External dependencies (C-shim `deps`)
+
+A shim that needs a system library beyond libc — one with headers to find and a link
+flag that **varies by platform** — declares it in a `corelib/<module>/deps` manifest:
+pkg-config package names, one per line (`#` comments and blank lines ignored). For
+example `corelib/http/deps` is just `libcurl`.
+
+- **Build:** when `hierc` auto-discovers a module's shim it reads the sibling `deps` and
+  runs `pkg-config --cflags --libs <name>` for each, splicing the result onto the cc line
+  (`add_pkg_deps` in `src/hierc.c`). pkg-config resolves the right include path and libs
+  per platform, so `#include <curl/curl.h>` + `-lcurl` just work without hardcoding paths.
+- **Skip, don't fail:** `corelib/run.sh` probes the same `deps` with `pkg-config --exists`;
+  if any dependency is missing it **skips** that module's test (printing `skip <name>
+  (missing dependency: …)`) instead of failing, so `make ci` stays green on machines
+  without the library. When present, it passes the same `--cflags --libs` on the hierc0
+  link paths.
+
+This keeps `make ci` libc-only and portable while still allowing library-backed modules.
+A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file can still use
+`extern "Lib" fn` for a bare `-lLib`.
 
 ## Testing
 

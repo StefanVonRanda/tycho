@@ -1,0 +1,4 @@
+# External dependencies for core:http, one pkg-config package per line.
+# pkg-config resolves the per-platform cflags + libs; the corelib harness skips
+# this module's test when a dependency is absent (so `make ci` stays green).
+libcurl

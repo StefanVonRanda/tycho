@@ -2433,6 +2433,33 @@ static void add_shim(const char *path) {
     TBL_ENSURE(g_shims, g_nshims, g_shims_cap); g_shims[g_nshims++] = path;
 }
 
+/* FFI: a package's external dependencies. A co-located `<dir>/deps` lists
+ * pkg-config package names (one per line; blank lines and `#` comments are
+ * skipped). Each resolves -- per platform, via pkg-config -- to the cflags +
+ * libs the shim needs (e.g. core:http over libcurl), spliced onto the cc line
+ * so a shim that #includes a system header builds turnkey. A dependency that
+ * pkg-config can't resolve here surfaces as a cc error (the corelib test
+ * harness probes the same `deps` and SKIPS instead). */
+static char *pkg_config_flags(const char *name);   /* defined with the cc-line code below */
+static char *g_pkgdeps = NULL;                      /* accumulated --cflags --libs */
+static void add_pkg_deps(const char *dir) {
+    char *path = sfmt("%s/deps", dir);
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[512];
+    while (fgets(line, sizeof line, f)) {
+        char *s = line;
+        while (*s == ' ' || *s == '\t') s++;
+        char *e = s + strlen(s);
+        while (e > s && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
+        if (!*s || *s == '#') continue;
+        char *fl = pkg_config_flags(s);
+        if (fl && *fl) g_pkgdeps = g_pkgdeps ? sfmt("%s %s", g_pkgdeps, fl) : sfmt("%s", fl);
+        else fprintf(stderr, "hierc: pkg-config could not resolve dependency '%s' (from %s)\n", s, path);
+    }
+    fclose(f);
+}
+
 static Sig *sig_find(const char *name) {
     for (int i = 0; i < g_nsigs; i++)
         if (!strcmp(g_sigs[i].name, name)) return &g_sigs[i];
@@ -7536,7 +7563,7 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     /* FFI: a co-located `<pkg>_shim.c` is auto-compiled+linked (turnkey C-backed
      * modules, e.g. core:regex over <regex.h>). One per package; deduped. */
     char *shimc = sfmt("%s/%s_shim.c", dir, pkgname);
-    if (file_exists(shimc)) add_shim(shimc);
+    if (file_exists(shimc)) { add_shim(shimc); add_pkg_deps(dir); }
 
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in package");
@@ -7792,7 +7819,8 @@ int main(int argc, char **argv) {
     /* -O3 is the portable default; --native opts into -march=native (host-CPU only). */
     const char *march = native ? " -march=native" : "";
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
-    char *cmd = sfmt("%s -O3%s -pthread -o %s %s%s -lm%s%s", cc, march, base, c_path, shims, links, extra);
+    const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
+    char *cmd = sfmt("%s -O3%s -pthread -o %s %s%s -lm%s%s %s", cc, march, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "hierc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);
