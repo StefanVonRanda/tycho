@@ -222,3 +222,11 @@ ways — by the C compiler, via `hierc --bundle | hierc0`, and via **standalone*
 (which resolves `core:` itself) — and all three must produce the golden
 `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.
+
+## Examples
+
+Every module also has a small, readable **usage example** at
+`examples/corelib/<name>/main.hi` — usage as documentation (idiomatic calls, human-friendly
+output), as opposed to the assertion-style tests above. `make corelib-examples`
+(→ `examples/corelib/run.sh`) validates them the same three ways against
+`examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.
