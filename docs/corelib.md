@@ -88,6 +88,15 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
   `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
   to avoid shadowing the builtin and recursing).
+- **`datetime`** — civil (proleptic Gregorian) calendar math over UNIX timestamps, all
+  pure integer arithmetic (Howard Hinnant's `days_from_civil`/`civil_from_days`, which
+  port verbatim because hier's int `/` truncates like C's). A `DateTime` struct
+  (`year`/`month`/`day`/`hour`/`minute`/`second`/`weekday`, all UTC). `from_unix(secs)`
+  and its exact inverse `to_unix(dt)`; `days_from_civil`/`civil_from_days`/
+  `weekday_from_days` (the day-count core); `weekday(y,m,d)` (0=Sun..6=Sat), `is_leap`,
+  `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); and formatting
+  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`. No
+  timezone database — everything is UTC.
 - **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
   core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`

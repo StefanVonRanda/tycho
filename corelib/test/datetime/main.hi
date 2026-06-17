@@ -1,0 +1,61 @@
+# corelib test: exercises core:datetime; the C compiler and hierc0 must agree,
+# and the output is locked to corelib/test/datetime.out (corelib/run.sh).
+# Fixed timestamps keep the output deterministic; now_utc() (non-deterministic)
+# is checked only for in-range fields.
+package main
+import "core:datetime"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn show(secs: int) -> string:                  # ISO + weekday name for a timestamp
+    dt := datetime.from_unix(secs)
+    return datetime.format_iso(dt) + " " + datetime.weekday_name(dt.weekday)
+
+fn main():
+    # known UTC timestamps -> civil fields
+    a := show(0)
+    b := show(946684800)
+    c := show(1234567890)
+    d := show(0 - 1)
+    print("epoch    = " + a + "\n")            # 1970-01-01T00:00:00 Thu
+    print("y2k      = " + b + "\n")            # 2000-01-01T00:00:00 Sat
+    print("ts1234   = " + c + "\n")            # 2009-02-13T23:31:30 Fri
+    print("preepoch = " + d + "\n")            # 1969-12-31T23:59:59 Wed
+
+    # to_unix is the exact inverse of from_unix
+    rt := datetime.to_unix(datetime.from_unix(1234567890))
+    rtok := b2i(rt == 1234567890)
+    print(f"roundtrip={rt} ok={rtok}\n")
+
+    # leap years
+    l2000 := b2i(datetime.is_leap(2000))
+    l1900 := b2i(datetime.is_leap(1900))
+    l2024 := b2i(datetime.is_leap(2024))
+    l2023 := b2i(datetime.is_leap(2023))
+    print(f"leap 2000={l2000} 1900={l1900} 2024={l2024} 2023={l2023}\n")
+
+    # days in month
+    f24 := datetime.days_in_month(2024, 2)
+    f23 := datetime.days_in_month(2023, 2)
+    apr := datetime.days_in_month(2024, 4)
+    jan := datetime.days_in_month(2024, 1)
+    print(f"dim feb2024={f24} feb2023={f23} apr={apr} jan={jan}\n")
+
+    # weekday of a fixed civil date
+    wd := datetime.weekday(2026, 6, 17)
+    nm := datetime.weekday_name(wd)
+    mn := datetime.month_name(6)
+    print(f"wd 2026-{mn}-17 = {wd} {nm}\n")
+
+    # the day-count core, directly
+    dfc0 := datetime.days_from_civil(1970, 1, 1)
+    dfcy2k := datetime.days_from_civil(2000, 1, 1)
+    print(f"dfc epoch={dfc0} y2k={dfcy2k}\n")
+
+    # now_utc(): value is non-deterministic, but the fields must be in range
+    nu := datetime.now_utc()
+    nvalid := b2i(nu.month >= 1 and nu.month <= 12 and nu.day >= 1 and nu.day <= 31 and nu.year >= 1970 and nu.hour >= 0 and nu.hour <= 23 and nu.second >= 0 and nu.second <= 59)
+    print("now_valid = " + str(nvalid) + "\n")
