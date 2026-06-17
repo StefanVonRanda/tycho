@@ -1,0 +1,83 @@
+# corelib: UUIDs. Import with `import "core:uuid"`, generate with
+# `st := rand.seed(...)` then `uuid.v4(&st)`.
+#
+# Scope: random version-4 UUIDs (RFC 4122) plus the nil UUID and parse/format/
+# validate helpers. v1 (time + MAC) and the name-based v3/v5 are out of scope --
+# v3/v5 need MD5/SHA-1, which corelib has no hash module for yet, and v1 needs a
+# hardware address. The version and variant bits are set with plain arithmetic
+# (no bit-operators). Bytes are formatted with an inline byte->hex (NOT via
+# chr(b) + core:hex, because chr(0) is empty, so a zero byte would vanish).
+package uuid
+import "core:rand"
+import "core:char"
+
+fn lo_hex(n: int) -> int:                      # nibble (0..15) -> lowercase hex byte
+    if n < 10:
+        return 48 + n
+    return 97 + (n - 10)
+
+fn hex2(b: int) -> string:                     # a byte -> two lowercase hex digits
+    return chr(lo_hex(b / 16)) + chr(lo_hex(b % 16))
+
+# Format 16 bytes as the canonical 8-4-4-4-12 string. Shorter input is zero
+# padded; each value is masked to a byte.
+fn format(bytes: [int]) -> string:
+    out := ""
+    for i in range(16):
+        b := 0
+        if i < len(bytes):
+            b = bytes[i]
+        out = out + hex2(b % 256)
+        if i == 3 or i == 5 or i == 7 or i == 9:
+            out = out + "-"
+    return out
+
+# A random version-4 UUID, threading the core:rand state via inout.
+fn v4(st: inout int) -> string:
+    bytes := []int
+    for i in range(16):
+        push(bytes, rand.below(&st, 256))
+    bytes[6] = 64 + (bytes[6] % 16)            # version 4 in the high nibble (0x4_)
+    bytes[8] = 128 + (bytes[8] % 64)           # variant 10xx in the high bits (0x8_..0xB_)
+    return format(bytes)
+
+# The nil UUID (all zeroes).
+fn nil() -> string:
+    return "00000000-0000-0000-0000-000000000000"
+
+# Parse a UUID into 16 bytes. Lenient on separators (skips hyphens / any non-hex
+# byte); returns [] unless exactly 32 hex digits are present.
+fn parse(s: string) -> [int]:
+    nibs := []int
+    for i in range(len(s)):
+        v := char.hex_val(s[i])
+        if v >= 0:
+            push(nibs, v)
+    out := []int
+    if len(nibs) != 32:
+        return out
+    j := 0
+    for j < 32:
+        push(out, nibs[j] * 16 + nibs[j + 1])
+        j = j + 2
+    return out
+
+# Strict canonical-form check: 36 chars, hyphens at 8/13/18/23, the rest hex.
+fn is_valid(s: string) -> bool:
+    if len(s) != 36:
+        return false
+    for i in range(36):
+        c := s[i]
+        if i == 8 or i == 13 or i == 18 or i == 23:
+            if c != 45:                        # '-'
+                return false
+        else:
+            if char.hex_val(c) < 0:
+                return false
+    return true
+
+# The version nibble (e.g. 4 for v4), or -1 if `s` is not a canonical UUID.
+fn version(s: string) -> int:
+    if not is_valid(s):
+        return 0 - 1
+    return char.hex_val(s[14])

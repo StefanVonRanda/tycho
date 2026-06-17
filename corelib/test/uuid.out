@@ -1,0 +1,8 @@
+u1 = 28ac03c0-c4b6-48ae-9337-da3364e0a9d9
+u2 = d094e352-6903-446a-a8bf-e4cf7d2df2da
+valid=1 version=4 variant_ok=1 differ=1
+nil = 00000000-0000-0000-0000-000000000000
+nil_valid=1 nil_version=0
+parse_len=16 rt_ok=1
+reformat = 550e8400-e29b-41d4-a716-446655440000
+bad_len=0 bad_valid=0 bad_ver=-1

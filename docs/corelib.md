@@ -140,6 +140,13 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `x-www-form-urlencoded` convention (space ↔ `+`); `decode` decodes `%XX` (leaving `+`).
   `decode` is lenient (a `%` not followed by two hex digits is emitted literally) and reuses
   `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64`/`hex`.
+- **`uuid`** — random version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. `v4(&st)`
+  draws 16 bytes from `core:rand` (state threaded by `inout`) and sets the version/variant
+  bits with plain arithmetic; `nil()`, `parse(s) -> [int]` (16 bytes, lenient on separators,
+  `[]` unless exactly 32 hex digits), `format(bytes) -> string` (canonical 8-4-4-4-12),
+  `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the name-based
+  v3/v5 are out of scope (they need a MAC / MD5 / SHA-1, none of which corelib has). Bytes are
+  formatted with an inline byte→hex, not `chr(b)`, so zero bytes survive.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
