@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/hier_rt_embed.h
 RUNTIME := runtime/hier_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples fetch ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bootstrap fixpoint fuzz corelib corelib-examples fetch site ffi ci hooks clean
 
 all: hierc
 
@@ -143,6 +143,13 @@ corelib-examples: hierc
 # corelib-examples. See examples/fetch/run.sh.
 fetch: hierc
 	@sh examples/fetch/run.sh
+
+# site: a static-site generator dogfood composing eight corelib modules
+# (io+path+json+csv+strings+sort+datetime+sha256) -- no FFI, no external deps, so
+# it is deterministic and IS part of `make ci`. Built by all three compilers +
+# ASan against a fixture site, asserting the build report. See examples/site/run.sh.
+site: hierc
+	@sh examples/site/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.

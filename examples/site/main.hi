@@ -1,0 +1,161 @@
+# site -- a tiny static-site generator, and a corelib composing dogfood.
+#
+# Reads a site directory (site.json config, authors.csv, content/*.md with
+# `key: value` frontmatter + a Markdown subset body) and writes an HTML page per
+# source file plus an index, sorted by date. Composes EIGHT corelib modules with
+# zero manual memory management:
+#   core:io       read sources, list the content dir, write the HTML output
+#   core:path     extensions, slugs (stem), and path joins
+#   core:json     the site.json config
+#   core:csv      the authors.csv handle -> name table
+#   core:strings  frontmatter + Markdown parsing (lines/split_once/starts_with/trim/replace)
+#   core:sort     argsort the pages by date for the index
+#   core:datetime format each page's UNIX date as an ISO timestamp
+#   core:sha256   a content hash of every rendered page
+#
+# Usage:  site <site_dir> <out_dir>
+# Every document lives in a per-scope arena, freed when the scope exits.
+package main
+import "core:io"
+import "core:path"
+import "core:json"
+import "core:csv"
+import "core:strings"
+import "core:sort"
+import "core:datetime"
+import "core:sha256"
+
+# ---- Markdown subset -> HTML -----------------------------------------------
+
+fn esc_html(s: string) -> string:            # &, <, > -> entities (& first)
+    r := strings.replace(s, "&", "&amp;")
+    r = strings.replace(r, "<", "&lt;")
+    r = strings.replace(r, ">", "&gt;")
+    return r
+
+# Block-level Markdown: `# `/`## ` headings, `- ` lists, blank-separated paragraphs.
+fn render_md(body: string) -> string:
+    out := ""
+    in_list := false
+    lines := strings.lines(body)
+    for i in range(len(lines)):
+        t := strings.trim(lines[i])
+        if len(t) == 0:
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+        elif strings.starts_with(t, "## "):
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<h2>" + esc_html(t[3:len(t)]) + "</h2>\n"
+        elif strings.starts_with(t, "# "):
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<h1>" + esc_html(t[2:len(t)]) + "</h1>\n"
+        elif strings.starts_with(t, "- "):
+            if in_list == false:
+                out = out + "<ul>\n"
+                in_list = true
+            out = out + "<li>" + esc_html(t[2:len(t)]) + "</li>\n"
+        else:
+            if in_list:
+                out = out + "</ul>\n"
+                in_list = false
+            out = out + "<p>" + esc_html(t) + "</p>\n"
+    if in_list:
+        out = out + "</ul>\n"
+    return out
+
+fn page_html(site_title: string, page_title: string, author: string, content: string) -> string:
+    h := "<!doctype html>\n<html>\n<head><title>" + esc_html(page_title) + " - " + esc_html(site_title) + "</title></head>\n<body>\n"
+    h = h + content
+    if len(author) > 0:
+        h = h + "<footer>by " + esc_html(author) + "</footer>\n"
+    return h + "</body>\n</html>\n"
+
+# ---- frontmatter ------------------------------------------------------------
+
+fn split_content(content: string) -> (string, string):   # (frontmatter, body) on a `---` line
+    fm := ""
+    body := ""
+    in_body := false
+    lines := strings.lines(content)
+    for i in range(len(lines)):
+        if in_body:
+            body = body + lines[i] + "\n"
+        elif strings.trim(lines[i]) == "---":
+            in_body = true
+        else:
+            fm = fm + lines[i] + "\n"
+    return (fm, body)
+
+fn parse_front(fm: string) -> [string: string]:          # `key: value` lines -> a map
+    m := []string: string
+    lines := strings.lines(fm)
+    for i in range(len(lines)):
+        if len(strings.trim(lines[i])) > 0:
+            k, v := strings.split_once(lines[i], ":")
+            m = map_set(m, strings.trim(k), strings.trim(v))
+    return m
+
+# ---- build ------------------------------------------------------------------
+
+fn build(site_dir: string, out_dir: string):
+    cfg := json.parse(io.read(path.join(site_dir, "site.json")))
+    title := json.as_str(json.get(cfg, "title"))
+    base := json.as_str(json.get(cfg, "base_url"))
+
+    authors := []string: string
+    rows := csv.parse(io.read(path.join(site_dir, "authors.csv")))
+    for i in range(len(rows)):
+        if i > 0:                                        # skip the header row
+            authors = map_set(authors, csv.get(rows, i, 0), csv.get(rows, i, 1))
+
+    content_dir := path.join(site_dir, "content")
+    files := io.list(content_dir)
+    slugs := []string
+    titles := []string
+    dates := []int
+    authnames := []string
+    shas := []string
+    for i in range(len(files)):
+        fname := files[i]
+        if path.ext(fname) == ".md":
+            fmtext, body := split_content(io.read(path.join(content_dir, fname)))
+            fm := parse_front(fmtext)
+            ptitle := map_get(fm, "title", fname)
+            pdate := strings.parse_int(map_get(fm, "date", "0"))
+            pauthor := map_get(authors, map_get(fm, "author", ""), "unknown")
+            slug := path.stem(fname)
+            html := page_html(title, ptitle, pauthor, render_md(body))
+            io.write(path.join(out_dir, slug + ".html"), html)
+            push(slugs, slug)
+            push(titles, ptitle)
+            push(dates, pdate)
+            push(authnames, pauthor)
+            push(shas, sha256.hex(html))
+
+    order := sort.argsort(dates)                          # oldest first
+
+    print("site   : " + title + " (" + base + ")\n")
+    print("authors: " + str(len(keys(authors))) + "\n")
+    print("pages  : " + str(len(slugs)) + "\n")
+    print("--- pages by date ---\n")
+    links := ""
+    for i in range(len(order)):
+        j := order[i]
+        iso := datetime.format_iso(datetime.from_unix(dates[j]))
+        print(iso + "  " + slugs[j] + ".html  \"" + titles[j] + "\"  by " + authnames[j] + "  [" + shas[j][0:16] + "]\n")
+        links = links + "<li><a href=\"" + base + "/" + slugs[j] + ".html\">" + esc_html(titles[j]) + "</a></li>\n"
+    index := page_html(title, "Index", "", "<ul>\n" + links + "</ul>\n")
+    io.write(path.join(out_dir, "index.html"), index)
+    print("index  : index.html  [" + sha256.hex(index)[0:16] + "]  (" + str(len(slugs)) + " links)\n")
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        print("usage: site <site_dir> <out_dir>\n")
+    else:
+        build(a[1], a[2])

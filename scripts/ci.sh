@@ -32,9 +32,10 @@ make -s test
 step "[3/11] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 
-step "[4/11] make corelib  (corelib packages + examples: C compiler vs hierc0 + goldens)"
+step "[4/11] make corelib  (corelib packages + examples + the site dogfood: C compiler vs hierc0 + goldens)"
 make -s corelib
 make -s corelib-examples
+make -s site
 
 step "[5/11] make conc  (spawn/parallel-for/channels: ASan+TSan + hierc0 parity)"
 make -s conc
