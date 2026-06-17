@@ -147,6 +147,13 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the name-based
   v3/v5 are out of scope (they need a MAC / MD5 / SHA-1, none of which corelib has). Bytes are
   formatted with an inline byte→hex, not `chr(b)`, so zero bytes survive.
+- **`hash`** — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for
+  security): `fnv1a_32`, `djb2`, `sdbm`, and `crc32` (IEEE/zlib, bit-by-bit), plus `to_hex`
+  (8-digit lowercase). All return a non-negative int in `[0, 2^32)` and are kept UB-free the
+  same way `core:rand` is — values never leave `[0, 2^32)` and shifts/masks use `* / %` so no
+  signed 64-bit overflow (only `^` among the bit-operators). Hashing only reads bytes, so
+  there is no `0x00` caveat on the input. (Verified against published vectors:
+  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`.)
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),

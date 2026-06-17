@@ -1,0 +1,37 @@
+# corelib test: exercises core:hash; the C compiler and hierc0 must agree, and
+# the output is locked to corelib/test/hash.out (corelib/run.sh).
+# Checked against published vectors (CRC-32, FNV-1a) and hand-computed djb2/sdbm.
+package main
+import "core:hash"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # ---- CRC-32 (zlib): "123456789" -> 0xCBF43926 is the canonical check ----
+    print("crc ''     = " + hash.to_hex(hash.crc32("")) + "\n")          # 00000000
+    print("crc a      = " + hash.to_hex(hash.crc32("a")) + "\n")         # e8b7be43
+    print("crc abc    = " + hash.to_hex(hash.crc32("abc")) + "\n")       # 352441c2
+    print("crc check  = " + hash.to_hex(hash.crc32("123456789")) + "\n") # cbf43926
+
+    # ---- FNV-1a 32 (reference vectors) ----
+    print("fnv ''     = " + hash.to_hex(hash.fnv1a_32("")) + "\n")       # 811c9dc5
+    print("fnv a      = " + hash.to_hex(hash.fnv1a_32("a")) + "\n")      # e40c292c
+    print("fnv foobar = " + hash.to_hex(hash.fnv1a_32("foobar")) + "\n") # bf9cf968
+
+    # ---- djb2 / sdbm (hand-computed for short inputs) ----
+    print("djb2 a     = " + str(hash.djb2("a")) + "\n")                  # 177670
+    print("djb2 ab    = " + str(hash.djb2("ab")) + "\n")                 # 5863208
+    print("sdbm ''    = " + str(hash.sdbm("")) + "\n")                   # 0
+    print("sdbm a     = " + str(hash.sdbm("a")) + "\n")                  # 97
+    print("sdbm ab    = " + str(hash.sdbm("ab")) + "\n")                 # 6363201
+
+    # ---- to_hex sanity + values stay non-negative and 32-bit ----
+    print("tohex 0    = " + hash.to_hex(0) + "\n")                       # 00000000
+    c := hash.crc32("hier")
+    f := hash.fnv1a_32("hier")
+    cc := b2i(c >= 0 and c < 4294967296)
+    ff := b2i(f >= 0 and f < 4294967296)
+    print(f"in_range crc={cc} fnv={ff}\n")                              # in_range crc=1 fnv=1
