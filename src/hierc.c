@@ -3858,7 +3858,10 @@ static void resolve_parfor(Stmt *s) {
  * there is no aliasing, so a body that does none of those to a condition variable
  * truly cannot move it. `for true:` (a constant condition, no variables) and
  * call-bearing conditions (e.g. `for len(q) > 0:`) are deliberately skipped. */
-#define WL_MAX 32
+/* Large enough to hold every mutated name in a big loop body (e.g. the sha256 /
+ * md5 block loops have dozens) -- if the table still overflows, wl_check treats
+ * that as "can't prove no progress" and stays silent, so it never false-fires. */
+#define WL_MAX 256
 
 static void wl_cond_vars(Expr *e, const char *v[], int *n, int *has_call) {
     if (!e) return;
@@ -3922,6 +3925,7 @@ static void wl_check(Stmt *s) {           /* s is an S_WHILE */
     const char *mut[WL_MAX]; int nm = 0, exit = 0;
     wl_scan_body(s->body, s->nbody, mut, &nm, &exit);
     if (exit) return;                     /* a break/return/die can end the loop */
+    if (nm >= WL_MAX) return;             /* mut table overflowed -- a mutation may have been dropped, so don't risk a false warning */
     for (int i = 0; i < ncv; i++)
         for (int j = 0; j < nm; j++)
             if (!strcmp(cv[i], mut[j])) return;   /* a condition variable is changed -> progresses */
