@@ -1,0 +1,131 @@
+# corelib: the MD5 message-digest (RFC 1321). Import with `import "core:md5"`,
+# use `md5.hex(s)` for the 32-char hex digest or `md5.digest(s)` for 16 bytes.
+#
+# MD5 is BROKEN for security (collisions are trivial); this is for checksums,
+# content addressing, ETags, and interop with systems that still speak MD5 --
+# NOT for passwords, signatures, or anything adversarial.
+#
+# Pure 32-bit arithmetic: every add is masked with `% 4294967296`, the 32-bit
+# bitwise-NOT is `4294967295 - x`, and the left-rotate uses `* / +` (the two
+# halves occupy disjoint bits, so OR == add) -- all UB-free like core:rand/hash.
+package md5
+
+fn pow2(n: int) -> int:                    # 2^n for 0..31
+    r := 1
+    i := 0
+    for i < n:
+        r = r * 2
+        i = i + 1
+    return r
+
+fn rotl(x: int, c: int) -> int:            # 32-bit left rotate
+    left := (x * pow2(c)) % 4294967296
+    right := x / pow2(32 - c)
+    return (left + right) % 4294967296
+
+fn lo_hex(n: int) -> int:
+    if n < 10:
+        return 48 + n
+    return 97 + (n - 10)
+
+fn hex2(b: int) -> string:
+    return chr(lo_hex(b / 16)) + chr(lo_hex(b % 16))
+
+# Per-step left-rotate amounts (4 rounds of 16).
+fn s_table() -> [int]:
+    return [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21]
+
+# K[i] = floor(2^32 * abs(sin(i+1))).
+fn k_table() -> [int]:
+    return [3614090360, 3905402710, 606105819, 3250441966, 4118548399, 1200080426, 2821735955, 4249261313, 1770035416, 2336552879, 4294925233, 2304563134, 1804603682, 4254626195, 2792965006, 1236535329, 4129170786, 3225465664, 643717713, 3921069994, 3593408605, 38016083, 3634488961, 3889429448, 568446438, 3275163606, 4107603335, 1163531501, 2850285829, 4243563512, 1735328473, 2368359562, 4294588738, 2272392833, 1839030562, 4259657740, 2763975236, 1272893353, 4139469664, 3200236656, 681279174, 3936430074, 3572445317, 76029189, 3654602809, 3873151461, 530742520, 3299628645, 4096336452, 1126891415, 2878612391, 4237533241, 1700485571, 2399980690, 4293915773, 2240044497, 1873313359, 4264355552, 2734768916, 1309151649, 4149444226, 3174756917, 718787259, 3951481745]
+
+# The 16 raw digest bytes.
+fn digest(msg: string) -> [int]:
+    K := k_table()
+    S := s_table()
+
+    # --- pad: message, 0x80, zeros to 56 mod 64, then 64-bit LE bit length ---
+    n := len(msg)
+    bytes := []int
+    for i in range(n):
+        push(bytes, msg[i])
+    push(bytes, 128)
+    zeros := (56 - (len(bytes) % 64) + 64) % 64
+    for i in range(zeros):
+        push(bytes, 0)
+    bitlen := n * 8
+    bl := bitlen
+    for i in range(8):
+        push(bytes, bl % 256)
+        bl = bl / 256
+
+    # --- init ---
+    a0 := 1732584193                       # 0x67452301
+    b0 := 4023233417                       # 0xefcdab89
+    c0 := 2562383102                       # 0x98badcfe
+    d0 := 271733878                        # 0x10325476
+
+    # --- process each 64-byte block ---
+    total := len(bytes)
+    blk := 0
+    for blk < total:
+        M := []int
+        w := 0
+        for w < 16:
+            base := blk + w * 4
+            word := bytes[base] + bytes[base + 1] * 256 + bytes[base + 2] * 65536 + bytes[base + 3] * 16777216
+            push(M, word)
+            w = w + 1
+        A := a0
+        B := b0
+        C := c0
+        D := d0
+        i := 0
+        for i < 64:
+            f := 0
+            g := 0
+            if i < 16:
+                f = (B & C) | ((4294967295 - B) & D)
+                g = i
+            elif i < 32:
+                f = (D & B) | ((4294967295 - D) & C)
+                g = (5 * i + 1) % 16
+            elif i < 48:
+                f = B ^ C ^ D
+                g = (3 * i + 5) % 16
+            else:
+                f = C ^ (B | (4294967295 - D))
+                g = (7 * i) % 16
+            f = (f + A + K[i] + M[g]) % 4294967296
+            A = D
+            D = C
+            C = B
+            B = (B + rotl(f, S[i])) % 4294967296
+            i = i + 1
+        a0 = (a0 + A) % 4294967296
+        b0 = (b0 + B) % 4294967296
+        c0 = (c0 + C) % 4294967296
+        d0 = (d0 + D) % 4294967296
+        blk = blk + 64
+
+    # --- output a0 b0 c0 d0, each little-endian ---
+    out := []int
+    vals := [a0, b0, c0, d0]
+    vi := 0
+    for vi < 4:
+        v := vals[vi]
+        bj := 0
+        for bj < 4:
+            push(out, v % 256)
+            v = v / 256
+            bj = bj + 1
+        vi = vi + 1
+    return out
+
+# The 32-character lowercase hex digest.
+fn hex(msg: string) -> string:
+    b := digest(msg)
+    out := ""
+    for i in range(16):
+        out = out + hex2(b[i])
+    return out

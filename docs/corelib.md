@@ -154,6 +154,12 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   signed 64-bit overflow (only `^` among the bit-operators). Hashing only reads bytes, so
   there is no `0x00` caveat on the input. (Verified against published vectors:
   `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`.)
+- **`md5`** — the MD5 message-digest (RFC 1321): `hex(s)` (32-char lowercase digest) and
+  `digest(s)` (16 raw bytes). Pure 32-bit arithmetic — adds masked with `% 4294967296`, the
+  32-bit NOT is `4294967295 - x`, and the left-rotate uses `* / +` (disjoint halves), all
+  UB-free. **MD5 is broken for security** (use it for checksums / content-addressing / interop,
+  never passwords or signatures). Verified bit-exact against the RFC 1321 suite
+  (`md5("abc") = 900150983cd24fb0d6963f7d28e17f72`) and a multi-block message.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),

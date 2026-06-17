@@ -1,0 +1,28 @@
+# corelib test: exercises core:md5; the C compiler and hierc0 must agree, and
+# the output is locked to corelib/test/md5.out (corelib/run.sh).
+# Checked against the RFC 1321 test-suite vectors.
+package main
+import "core:md5"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # ---- RFC 1321 test suite ----
+    print("'' = " + md5.hex("") + "\n")                          # d41d8cd98f00b204e9800998ecf8427e
+    print("a  = " + md5.hex("a") + "\n")                         # 0cc175b9c0f1b6a831c399e269772661
+    print("abc= " + md5.hex("abc") + "\n")                       # 900150983cd24fb0d6963f7d28e17f72
+    print("md = " + md5.hex("message digest") + "\n")            # f96b697d7cb7938d525a2f31aaf161d0
+    print("az = " + md5.hex("abcdefghijklmnopqrstuvwxyz") + "\n")# c3fcd3d76192e4007dfb496cca67e13b
+    big := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    print("AZ = " + md5.hex(big) + "\n")                         # d174ab98d277d9f5a5611c2c9f419d9f
+
+    # ---- a multi-block message (>64 bytes exercises block iteration) ----
+    long := "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs."
+    print("long = " + md5.hex(long) + "\n")
+
+    # ---- digest() returns 16 bytes; hex matches ----
+    d := md5.digest("abc")
+    print(f"digest_len={len(d)} digest_ok={b2i(len(d) == 16)}\n")  # 16 1
