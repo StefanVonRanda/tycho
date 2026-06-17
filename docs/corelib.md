@@ -103,6 +103,13 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   (array/object count or string length), `as_num`/`as_str`/`as_bool` (payload with a
   zero-value default). Variants are constructible cross-package (`json.JNum(1)`) for
   building trees by hand. Scope: integers (no floats), the four common escapes.
+- **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
+  and **the first corelib module to compose others** (imports `core:strings` for line
+  splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
+  `write(p, s)` (truncate, returns false if unopenable), `append(p, s)` (read-rewrite,
+  not atomic), `read_lines(p)` / `write_lines(p, lines)` (newline-terminated round-trip),
+  `list(p)` (entry basenames), `exists(p)` (no exists builtin, so it lists the parent and
+  checks membership). Error model mirrors the builtins — nothing aborts.
 
 ## C-shim (FFI-backed) modules
 

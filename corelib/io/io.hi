@@ -1,0 +1,55 @@
+# corelib: filesystem I/O helpers. Import with `import "core:io"`, e.g.
+# `io.read(path)` / `io.write(path, s)`. Thin, composable wrappers over the
+# read_file / write_file / list_dir builtins, plus the line- and
+# directory-oriented helpers those builtins don't provide directly.
+#
+# This is the first corelib module to COMPOSE other core modules: it imports
+# core:strings (line splitting) and core:path (dir/base for `exists`).
+#
+# Error model matches the builtins: a read of a missing/unreadable file is ""
+# (indistinguishable from an empty file); a write returns false if the path
+# can't be opened. Nothing here aborts.
+package io
+import "core:strings"
+import "core:path"
+
+# Whole file as a string ("" if missing/unreadable -- same as an empty file).
+fn read(p: string) -> string:
+    return read_file(p)
+
+# Truncate `p` and write `s`. Returns false if the path can't be opened.
+fn write(p: string, s: string) -> bool:
+    return write_file(p, s)
+
+# Append `s` to `p` (creating it if absent). Reads the whole file and rewrites
+# it -- NOT atomic, and the file is held in memory; fine for small files.
+fn append(p: string, s: string) -> bool:
+    return write_file(p, read_file(p) + s)
+
+# File split into lines (core:strings.lines: CRLF-aware, a trailing newline
+# adds no empty line). A missing file yields one empty line, like lines("").
+fn read_lines(p: string) -> [string]:
+    return strings.lines(read_file(p))
+
+# Write each line followed by '\n' (so the file ends with a newline). The
+# inverse of read_lines for newline-terminated files.
+fn write_lines(p: string, lines: [string]) -> bool:
+    out := ""
+    for i in range(len(lines)):
+        out = out + lines[i] + "\n"
+    return write_file(p, out)
+
+# Directory entry names (basenames, not full paths); [] if not a directory.
+fn list(p: string) -> [string]:
+    return list_dir(p)
+
+# True if `p` names an existing entry. There is no file-exists builtin, so this
+# lists the parent directory and checks membership -- O(entries in the parent),
+# and it can't see through a `.`/`..`-only leaf. Good enough for the common case.
+fn exists(p: string) -> bool:
+    leaf := path.base(p)
+    entries := list_dir(path.dir(p))
+    for e in entries:
+        if e == leaf:
+            return true
+    return false
