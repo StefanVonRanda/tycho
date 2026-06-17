@@ -1,0 +1,16 @@
+enc space   = hello%20world
+enc form    = hello+world
+enc reserved= a%2Bb%3Dc%26d
+enc unres   = safe-_.~
+enc punct   = %2F%3F%23
+dec space   = hello world
+dec form    = hello world
+dec plus    = a+b
+dec formmix = a b+c
+dec badhex  = %ZZ
+dec short   = %2
+rt_ok=1
+form_rt_ok=1
+bin enc     = %E9%FF%01
+bin_ok=1 len=3
+decode_00_len=0
