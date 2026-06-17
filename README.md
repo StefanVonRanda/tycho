@@ -4,6 +4,15 @@ A tiny AOT-compiled, statically typed systems language. The compiler is
 written in C, transpiles Hier to C, and the C is compiled to a native
 binary.
 
+> **Status: experimental.** Hier is a proof-of-concept exploring one idea —
+> implicit arenas + value semantics, no GC and no manual `free` — not a
+> production language. It self-hosts, is fuzzed and benchmarked, and builds with
+> just `cc` + `make`; but there are **no stability guarantees** and the language
+> may still change. **Experiments and feedback are very welcome** — see
+> [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and open
+> an issue. (Honest scope and limits are in
+> [Known limitations](#known-limitations-proof-of-concept).)
+
 Hier's defining idea: **memory is managed by implicit hierarchical
 arenas**, one per scope, with scratch arenas for loops. The programmer
 never sees an arena — you declare and use values as if the language were
@@ -1255,3 +1264,11 @@ docs/ideas.md      design-space map and roadmap (what's done / deferred)
 The runtime is turned into a C string literal at build time (`make`
 generates `build/hier_rt_embed.h` from `runtime/hier_rt.c`) and prepended
 to every generated `.c`, so output files are self-contained.
+
+## License
+
+Hier is licensed under the **[Apache License 2.0](LICENSE)** (see
+[`NOTICE`](NOTICE) for the copyright). It is experimental, proof-of-concept
+software provided "as is", without warranty — security notes are in
+[SECURITY.md](SECURITY.md), and how to build, test, contribute, or report a bug
+is in [CONTRIBUTING.md](CONTRIBUTING.md).
