@@ -339,6 +339,8 @@ class Gen:
             kinds += ["escclosure"]                    # ESCAPING closure: bind one returned from a factory, call it later
         if int_vars:
             kinds += ["fncarr"]                        # fn values in a container + call-on-expression (call array elements)
+        if int_vars:
+            kinds += ["fstring"]                       # f-string interpolation -> the str()-concat desugaring
         if map_vars:
             kinds += ["map_accum", "map_place", "map_place"]   # #2: m[k] as a place
         res_vars = [n for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -760,6 +762,19 @@ class Gen:
         if k == "infer_lambda":                     # B-2: lambda param/ret elision at a typed call site
             self.emit(ind, "acc = acc + fz_apply(fn(x): x * " + str(self.r.randint(1, 9))
                       + " + 1, " + str(self.r.randint(0, 9)) + ")")
+            return
+        if k == "fstring":                          # f-string interpolation -> the str()-concat desugaring
+            # `f"...{e}..."` lowers to str()-of-each-hole concatenated with the literal
+            # segments. Fold the result LENGTH into the checksum: a miscompiled desugar
+            # (wrong str(), a dropped/reordered segment or hole) shifts the length, which
+            # the hierc-vs-hierc0 differential catches; ASan catches a bad concat. Holes
+            # are int vars / an int expr / a string var ONLY -- a string LITERAL inside a
+            # hole would terminate the f-string at the lexer.
+            iv = self.r.choice(int_vars)
+            body = "p={" + iv + "} q={(" + iv + " + " + str(self.r.randint(0, 9)) + ")}"
+            if str_vars and self.r.random() < 0.7:
+                body += " r={" + self.r.choice(str_vars) + "}"
+            self.emit(ind, 'acc = acc + len(f"' + body + '")')
             return
         if k == "float_adapt":                      # B-1: int LITERALS adapt in float arithmetic (exact .5 halves)
             f = self.fresh("fl")
