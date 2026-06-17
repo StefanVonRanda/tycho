@@ -2080,6 +2080,12 @@ static Stmt *parse_stmt(Parser *ps) {
         }
         die_at(t->line, "cannot compound-assign to this expression");
     }
+    /* The only bare expression statement is a call -- it can have side effects.
+     * A bare identifier / index / field / `or_return` has no effect and is almost
+     * always an incomplete statement (e.g. a truncated `p.x = ...`). Reject it,
+     * matching hierc0, whose statement grammar only accepts `name(args)` here. */
+    if (e->kind != E_CALL)
+        die_at(t->line, "a statement must be a declaration, assignment, or call -- a bare expression has no effect");
     Stmt *s = new_stmt(S_EXPR, t->line);
     s->expr = e;
     eat(ps, TK_NEWLINE, "newline");
