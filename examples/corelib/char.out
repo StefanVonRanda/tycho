@@ -1,0 +1,6 @@
+is_alpha('H') = 1
+is_digit('7') = 1
+is_alnum('!') = 0
+to_upper('i') = I
+digit_val('7')= 7
+hex_val('f')  = 15

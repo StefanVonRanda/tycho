@@ -1,0 +1,4 @@
+encode       = aGVsbG8gaGllcg==
+decode       = hello hier
+encode_url   = aGVsbG8gaGllcg
+decode wraps = hello

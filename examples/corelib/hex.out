@@ -1,0 +1,5 @@
+encode       = 68696572
+encode_upper = 6869
+decode       = hier
+decode spaced= hier
+is_valid     = 1

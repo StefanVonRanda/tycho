@@ -1,0 +1,6 @@
+base         = hier
+dir          = /usr/local/bin
+ext          = .gz
+stem         = notes
+join         = /etc/conf.d
+clean        = a/c

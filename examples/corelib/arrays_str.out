@@ -1,0 +1,5 @@
+join        = banana, apple, cherry
+sorted      = apple, banana, cherry
+smin / smax = apple / cherry
+index_of    = 2
+reversed    = cherry, apple, banana

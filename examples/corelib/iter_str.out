@@ -1,0 +1,3 @@
+map shout[1]  = HIER
+filter len>=4 = 2
+reduce concat = hihiergorust

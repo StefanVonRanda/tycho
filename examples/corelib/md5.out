@@ -1,0 +1,5 @@
+md5("")      =
+  d41d8cd98f00b204e9800998ecf8427e
+md5("hier")  =
+  24072372acf322fe3f6b1ed476750b44
+digest bytes  = 16

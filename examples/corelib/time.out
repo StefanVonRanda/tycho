@@ -1,0 +1,4 @@
+ns_to_us(1500000)    = 1500
+ns_to_ms(1500000)    = 1
+ns_to_s(2000000000)  = 2
+clock advances       = 1

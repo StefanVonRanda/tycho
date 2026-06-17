@@ -1,0 +1,20 @@
+# Example: core:arrays -- utilities over [int]. Value semantics: sort/reverse
+# return a NEW array; the input is untouched. (push/pop/len/range are builtins.)
+package main
+import "core:arrays"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    xs := [5, 3, 8, 1, 3]
+    print("sum         = " + str(arrays.sum(xs)) + "\n")               # 20
+    print("imax        = " + str(arrays.imax(xs)) + "\n")              # 8
+    print("contains 8  = " + str(b2i(arrays.contains(xs, 8))) + "\n")  # 1
+    print("index_of 8  = " + str(arrays.index_of(xs, 8)) + "\n")       # 2
+    print("count 3     = " + str(arrays.count(xs, 3)) + "\n")          # 2
+    sorted := arrays.sort(xs)
+    print("sorted ends = " + str(sorted[0]) + ".." + str(sorted[4]) + "\n")   # 1..8
+    print("input kept  = " + str(xs[0]) + "\n")                        # 5 (unchanged)

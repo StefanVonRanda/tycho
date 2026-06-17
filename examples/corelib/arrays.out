@@ -1,0 +1,7 @@
+sum         = 20
+imax        = 8
+contains 8  = 1
+index_of 8  = 2
+count 3     = 2
+sorted ends = 1..8
+input kept  = 5

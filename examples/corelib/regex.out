@@ -1,0 +1,4 @@
+compiled ok  = 1
+is_match     = 1
+first match  = 42
+match offset = 3

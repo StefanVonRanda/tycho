@@ -1,0 +1,16 @@
+# Example: core:csv -- parse RFC 4180 CSV into rows of fields, access cells
+# safely, and round-trip through stringify.
+package main
+import "core:csv"
+
+fn main():
+    rows := csv.parse("name,age\nalice,30\nbob,25")
+    print("row count    = " + str(len(rows)) + "\n")            # 3
+    print("header col 1 = " + csv.get(rows, 0, 1) + "\n")       # age
+    print("row 1 name   = " + csv.get(rows, 1, 0) + "\n")       # alice
+    print("row 2 age    = " + csv.get(rows, 2, 1) + "\n")       # 25
+    print("oob cell     = [" + csv.get(rows, 9, 9) + "]\n")     # [] (bounds-safe)
+
+    # round-trip: parse(stringify(rows)) == rows
+    rt := csv.parse(csv.stringify(rows))
+    print("round-trip   = " + str(len(rt)) + " rows\n")         # 3 rows
