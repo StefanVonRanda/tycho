@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# Scratch dirs from interactive fixpoint/bootstrap/repro sessions (mktemp-style
+# names). These must never be committed -- a ~3.8MB tmpXXXX/ of build scratch
+# (h0, hc.c, run_h0*) slipped into the v0.1.0 tarball this way.
+/tmp*/
+
 # The compiled Hier compiler (built by `make`)
 /hierc
 
