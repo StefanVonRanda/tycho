@@ -1,0 +1,28 @@
+# Locks cond_unwrap (the if/while redundant-outer-paren strip that kills clang's
+# -Wparentheses-equality). The danger case is a parenthesis INSIDE a string
+# literal in an equality condition: a naive outer-paren strip would miscount the
+# parens and emit malformed C. cond_unwrap skips literals, so every condition
+# below must still compile and evaluate correctly.
+fn main():
+    c := 110
+    a := ")("            # unbalanced parens, reversed
+    b := "()"            # balanced parens
+    e := "a(b)c"         # parens mid-string
+    q := "x\"y"          # an escaped quote, then more text
+    if c == 110:                     # whole-condition int equality (was double-paren)
+        print("1\n")
+    if a == ")(":                    # equality whose RHS literal holds parens
+        print("2\n")
+    if b == "()":
+        print("3\n")
+    if e == "a(b)c":
+        print("4\n")
+    if q == "x\"y":                  # literal with an escaped quote
+        print("5\n")
+    if c == 110 and a == ")(":       # compound: && keeps operand-grouping parens
+        print("6\n")
+    if a == ")(" or c == 0:
+        print("7\n")
+    for c == 110:                    # while-condition equality
+        c = 0
+    print("done\n")

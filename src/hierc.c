@@ -5020,6 +5020,37 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
+/* Drop ONE redundant outer paren layer when a gen_expr result is emitted as an
+ * if/while condition: `if ((a == b))` -> `if (a == b)`. gen_expr wraps every
+ * binop in parens, and the `if (%s)` / `while (%s)` site adds its own required
+ * pair, so an equality condition comes out double-parenthesised -- which clang
+ * flags as -Wparentheses-equality (gcc is silent; both accept either form).
+ * Strips ONLY when `s` is a single fully-parenthesised group: first char '(' and
+ * its matching ')' is the very last char. C string/char literals are skipped, so
+ * a paren inside a literal (e.g. `s == ")"`) can't fool the matcher. Fail-closed:
+ * on any uncertainty `s` is returned unchanged, so a missed strip is a harmless
+ * extra paren, never malformed C. */
+static char *cond_unwrap(char *s) {
+    if (!s || s[0] != '(') return s;
+    int depth = 0;
+    for (char *p = s; *p; p++) {
+        if (*p == '"' || *p == '\'') {            /* skip a string/char literal */
+            char q = *p++;
+            while (*p && *p != q) { if (*p == '\\' && p[1]) p++; p++; }
+            if (*p != q) return s;                /* unterminated -> bail, unchanged */
+            continue;
+        }
+        if (*p == '(') depth++;
+        else if (*p == ')' && --depth == 0) {     /* this ')' matches s[0]'s '(' */
+            if (p[1] != '\0') return s;           /* ...but it closes before the end */
+            char *out = sfmt("%s", s + 1);        /* drop the leading '(' ... */
+            out[strlen(out) - 1] = '\0';          /* ... and the trailing ')' */
+            return out;
+        }
+    }
+    return s;                                     /* unbalanced -> unchanged */
+}
+
 /* FFI: the bare C call to an extern fn — `name(args)` with NO arena-copy on a
  * string return. The extern branch wraps this in hier_str_copy for safety; the
  * read-once consumers below (len/print) use it directly, since the C-owned
@@ -6316,7 +6347,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * this only lengthens their lifetime (no early-free). Escaping values
              * already promote to _parent/target arena independent of any _bN.
              * Eliminates ~70% of arena_child/free churn (the if/match blocks). */
-            char *c = gen_expr(s->expr, scope);
+            char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind); fprintf(o, "if (%s) {\n", c);
             gen_block(o, s->body, s->nbody, ind + 1, scope, ret);
             indent(o, ind); fprintf(o, "}");
@@ -6450,7 +6481,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
-            char *c = gen_expr(s->expr, scope);
+            char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             char *ss = sfmt("&_scr%d", id);

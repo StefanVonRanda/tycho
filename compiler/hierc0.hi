@@ -5118,6 +5118,42 @@ fn conc_loop_finals(names: [string], ctx: Ctx) -> string:   # finals since the i
         return ""
     return conc_finals(names, ctx.bbases[ctx.loopdepth - 1])
 
+# Drop one redundant outer paren layer when a gen_expr result is emitted as an
+# if/while condition: `if ((a == b))` -> `if (a == b)`. Mirrors hierc's
+# cond_unwrap. Strips only a single fully-parenthesised group (first byte '('
+# whose matching ')' is the last byte), skipping C string/char literals so a
+# paren inside a literal (e.g. `s == ")"`) can't fool the matcher. Fail-closed:
+# any uncertainty returns s unchanged, so a missed strip is a harmless extra
+# paren, never malformed C.
+fn cond_unwrap(s: string) -> string:
+    n := len(s)
+    if n == 0 or s[0] != 40:                      # 40 = '('
+        return s
+    depth := 0
+    i := 0
+    for i < n:
+        ch := s[i]
+        if ch == 34 or ch == 39:                  # 34 = '"', 39 = '\'' : skip a literal
+            i = i + 1
+            for i < n and s[i] != ch:
+                if s[i] == 92 and i + 1 < n:       # 92 = '\\' : skip the escaped byte
+                    i = i + 1
+                i = i + 1
+            if i >= n:                            # unterminated -> bail, unchanged
+                return s
+            i = i + 1                             # past the closing quote
+            continue
+        if ch == 40:                              # '('
+            depth = depth + 1
+        elif ch == 41:                            # ')'
+            depth = depth - 1
+            if depth == 0:                        # this ')' matches s[0]'s '('
+                if i != n - 1:                    # ...but it closes before the end
+                    return s
+                return s[1:n - 1]                 # drop leading '(' and trailing ')'
+        i = i + 1
+    return s                                       # unbalanced -> unchanged
+
 fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
     _el := 0
     ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
@@ -5389,7 +5425,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             bc := enter_block(dc, ctx, len(names))
             op := "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n"
             fr := "        arena_free(&_b" + d1 + ");\n"
-            out := "    if (" + gen_expr(cond, names, types, dc, ctx) + ") {\n" + op + gen_block(then_body, names, types, dc, bc) + fr + "    }"
+            out := "    if (" + cond_unwrap(gen_expr(cond, names, types, dc, ctx)) + ") {\n" + op + gen_block(then_body, names, types, dc, bc) + fr + "    }"
             if len(else_body) > 0:
                 out = out + " else {\n" + op + gen_block(else_body, names, types, dc, bc) + fr + "    }"
             return out + "\n"
@@ -5407,7 +5443,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 flush = flush + "        " + un(fnm[k]) + ".data = _fd" + fsf[k] + "; " + un(fnm[k]) + ".len = _fl" + fsf[k] + "; " + un(fnm[k]) + ".cap = _fc" + fsf[k] + ";\n"
                 bc = add_fuse(bc, fnm[k], fsf[k], fty[k])
                 k = k + 1
-            inner := "    while (" + gen_expr(cond, names, types, dc, ctx) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
+            inner := "    while (" + cond_unwrap(gen_expr(cond, names, types, dc, ctx)) + ") {\n        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, names, types, dc, bc) + "        arena_free(&_b" + d1 + ");\n    }\n"
             if len(fnm) == 0:
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
