@@ -238,18 +238,26 @@ compiler after the campaign:
 | string-pipeline  |    2 MB/1 ms  |   1/1 ms |   2/2 ms |    4/5 ms |       2/17 ms |
 
 (Numbers are the 2026-06-07 standard-opt re-measure from RESULTS.md — that file
-is authoritative; regenerate with `sh bench/fair_full.sh`.) On the
-allocation-heavy tree workloads the self-hosted compiler is now **best in
-class** — on binary-trees it has the lowest memory of all six (13 MB, under Koka's
-15) and is the fastest (107 ms), beating C, Rust, Go, and Koka on both axes and
-the mature `hierc` on time at equal memory — no GC, no refcounts, just lexical
-arenas and value semantics. With the additive `char` type, the formerly-trailing
+is authoritative; regenerate with `sh bench/fair_full.sh`. Absolute times are
+machine-specific, so the cross-language *ratios and directions* are the claim,
+not the millisecond counts: the reference toolchains are in RESULTS.md (gcc 15.2
+/ rustc 1.93 / go 1.26 / koka 3.2.3), and the directions reproduce independently
+on an **AMD Ryzen 7 7735HS, x86-64 Linux** box and an **Apple Silicon arm64,
+macOS** box — the latter ~3–4× slower in wall time.) On the allocation-heavy
+tree workloads the
+self-hosted compiler is at or near **best in class** — on binary-trees it has the
+lowest memory of all six (13 MB, under Koka's 15) and is the fastest (107 ms),
+beating C, Rust, Go, and Koka on both axes and the mature `hierc` on time at equal
+memory — no GC, no refcounts, just lexical arenas and value semantics. On
+tree-rewrite it is the fastest of the six and lightest on x86-64, though Rust
+edges its memory by ~2 MB on arm64 (the allocator and target shift that margin;
+hier leads on time on both). With the additive `char` type, the formerly-trailing
 string-pipeline now **matches C's 1 ms**: `s = s + ('0' + d)` is an in-place
 one-byte append, the same byte-write C/Rust/Go do, instead of allocating a
-one-char string per digit. On memory the self-hosted compiler is best-in-class on
-both tree workloads and within 1–2 MB of C on array/string-pipeline, trailing
-C/Rust only on array-pipeline time (per-element bounds-checking, not the memory
-model). The compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
+one-char string per digit. On memory it is lowest of all six on binary-trees and
+within ~1–2 MB of the leader on the other workloads, trailing C/Rust only on
+array-pipeline time (per-element bounds-checking, not the memory model). The
+compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
 **Realistic workload (`bench/site/`, [RESULTS.md](bench/site/RESULTS.md), `make
 bench-site`).** The same static-site generator — render *N* Markdown pages to
