@@ -931,7 +931,7 @@ void hier_arr_int_set(HierArrInt *xs, long i, long v) {
  * caches data/cap/len in C locals (registers) and writes elements directly --
  * the array descriptor never goes through memory in the hot path. This is the
  * slow path, called only when the cached cursor is full; it reallocs in `a` and
- * updates the caller's cached *data/*cap (geometric, recycling the old buffer --
+ * updates the caller's cached *data and *cap (geometric, recycling the old buffer --
  * same policy as hier_arr_int_push). */
 void hier_arr_int_grow(Arena *a, long **data, long *cap, long len) {
     long nc = *cap ? *cap * 2 : 4;
