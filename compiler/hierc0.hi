@@ -5467,6 +5467,11 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     j = j + 1
                 out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
                 i = i + 1
+            # Exhaustiveness is enforced by hierc, which gates user programs, so
+            # this else is unreachable -- but emit a trap so the generated C
+            # provably returns on every path (no -Wreturn-type) and any future
+            # non-exhaustive match aborts cleanly instead of falling through.
+            out = out + " else { fprintf(stderr, \"hier: non-exhaustive match\\n\"); exit(1); }"
             return out + "\n    }\n"
         SParFor(v, a, b, body, pid, _sl):
             # CC-3: K = hier_ncpu() chunk tasks of the lifted __par chunk proc,

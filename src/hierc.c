@@ -6417,6 +6417,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     cv_restore(m);
                     indent(o, ind + 1); fprintf(o, "}\n");
                 }
+                /* Exhaustiveness is enforced at resolve time (every variant has
+                 * an arm, no wildcard), so this else is unreachable. Emit it as a
+                 * trap anyway: the generated C then provably returns on every
+                 * path (silencing -Wreturn-type, which the C compiler emits
+                 * because it cannot see the tag dispatch is exhaustive), and any
+                 * future non-exhaustive match aborts cleanly instead of silently
+                 * falling through. */
+                indent(o, ind + 1);
+                fprintf(o, "else { fprintf(stderr, \"hier: non-exhaustive match\\n\"); exit(1); }\n");
             }
             indent(o, ind); fprintf(o, "}\n");
             break;
