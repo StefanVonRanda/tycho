@@ -118,6 +118,11 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int, lines
         i = i + 1
         for i < n and src[i] != 34:
             if src[i] == 92:                     # backslash escapes the next char
+                if i + 1 >= n:
+                    lex_err(src, tok0, "lex: unterminated string")
+                e := src[i + 1]                  # only \n \t \\ \" are valid (matches hierc)
+                if e != 110 and e != 116 and e != 92 and e != 34:
+                    lex_err(src, tok0, "lex: unsupported string escape (use \\n \\t \\\\ \\\")")
                 i = i + 1
             i = i + 1
         if i >= n:
@@ -131,6 +136,11 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int, lines
         for i < n and (src[i] != 34 or depth > 0):
             ch := src[i]
             if ch == 92:                         # backslash escapes the next char
+                if i + 1 >= n:
+                    lex_err(src, tok0, "lex: unterminated f-string")
+                fe := src[i + 1]                 # only \n \t \\ \" (matches hierc)
+                if fe != 110 and fe != 116 and fe != 92 and fe != 34:
+                    lex_err(src, tok0, "lex: unsupported string escape (use \\n \\t \\\\ \\\")")
                 i = i + 2
             elif depth == 0 and ch == 123 and i + 1 < n and src[i + 1] == 123:   # {{ literal brace
                 i = i + 2
