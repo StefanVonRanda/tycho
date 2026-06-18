@@ -2713,7 +2713,7 @@ static Type resolve_expr(Expr *e) {
                     if (IS_TASK(vt)) die_at(e->line, "a closure cannot capture a task handle -- wait it first");
                     if (IS_CHAN(vt)) die_at(e->line, "a closure cannot capture a channel handle -- take it as a parameter instead");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
-                    caps[ncap].name = ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
+                    caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
                     ncap++;
                 }   /* else a function/enum/global: resolves inside the lifted proc, not a capture */
             }
@@ -2992,7 +2992,7 @@ static Type resolve_expr(Expr *e) {
                       }
                   }
                   if (ms) {   /* UFCS: prepend the receiver, drop the qualifier -> foo(x, args) */
-                      Expr *recv = new_expr(E_IDENT, e->line); recv->sval = e->qual; recv->pkg = e->pkg;
+                      Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
                       Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
                       na[0] = recv;
                       for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
@@ -3000,7 +3000,7 @@ static Type resolve_expr(Expr *e) {
                       e->qual = NULL;
                       e->sval = (char *)ms->name;   /* the resolved (possibly package-mangled) method name */
                   } else {            /* fn-typed-field call: a call-on-expression of x.foo */
-                      Expr *base = new_expr(E_IDENT, e->line); base->sval = e->qual; base->pkg = e->pkg;
+                      Expr *base = new_expr(E_IDENT, e->line); base->sval = (char *)e->qual; base->pkg = e->pkg;
                       Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
                       e->lhs = fld; e->qual = NULL; e->sval = NULL;
                   }
@@ -3740,6 +3740,12 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
         case S_EXPR:
             pf_scan_expr(s->expr);
             return;
+        case S_SELECT:
+            /* A channel `select` inside a parallel-for chunk is unsupported: its
+             * arms are not scanned for a crossing return/break or an illegal
+             * capture mutation, and a chunk doing channel ops is untested. Fail
+             * closed with a clear error rather than silently miscompile. */
+            die_at(s->line, "select is not supported inside a parallel for");
     }
 }
 
@@ -3908,7 +3914,8 @@ static void wl_scan_body(Stmt **body, int n, const char *mut[], int *nm, int *ex
         switch (s->kind) {
             case S_ASSIGN: case S_DECL: case S_FORRANGE: wl_add(mut, nm, s->name); break;
             case S_MDECL: case S_MASSIGN:
-                for (int j = 0; j < s->nnames; j++) wl_add(mut, nm, s->names[j]); break;
+                for (int j = 0; j < s->nnames; j++) wl_add(mut, nm, s->names[j]);
+                break;
             case S_INDEXSET: case S_FIELDSET: wl_add(mut, nm, wl_root(s->target)); break;
             case S_RETURN: case S_BREAK: *exit = 1; break;
             default: break;

@@ -1,0 +1,16 @@
+# A channel `select` inside a `parallel for` chunk is unsupported: the parfor
+# body scanners do not descend into select arms to gate-scan them for a crossing
+# reduction/capture, so accepting one silently miscompiles the lifted chunk
+# proc. Both compilers must reject it -- hierc via pf_scan_stmt's S_SELECT case,
+# hierc0 via the SSelect arm of pf_body_evars. This locks the parity that a
+# -Wswitch warning surfaced: hierc used to silently accept+miscompile this, and
+# hierc0 accepted it (emitting a bad chunk proc) until the symmetric reject.
+fn main():
+    a := channel(int, 8)
+    send(a, 1)
+    total := 0
+    parallel for i in range(0, 4):
+        select:
+            recv(a, x):
+                total = total + x
+    print(str(total) + "\n")

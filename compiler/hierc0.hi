@@ -7093,11 +7093,12 @@ fn pf_body_evars(stmts: [Stmt], out: inout [string]):
                 collect_evars(b, &out)
                 pf_body_evars(body, &out)
             SSelect(uid, svars, schans, sbinds, sbodies, _sl):
-                sk := 0
-                for sk < len(svars):
-                    collect_evars(schans[sk], &out)
-                    pf_body_evars(sbodies[sk], &out)
-                    sk = sk + 1
+                # A channel select inside a parallel-for chunk is unsupported
+                # (matches the C compiler hierc): its arms are not gate-scanned
+                # for a crossing reduction/capture, so fail closed here rather
+                # than emit a silently-miscompiled chunk proc. (hierc0 resolve
+                # errors are message-only -- no reliable source line here.)
+                die("select is not supported inside a parallel for")
         i = i + 1
 
 # Reduction accumulators of a parallel-for body: assignments `n = n OP rest`
