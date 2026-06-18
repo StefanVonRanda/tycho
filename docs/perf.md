@@ -48,6 +48,26 @@ are indicative, not a rigorous benchmark suite.
 > memory, tying C at 1 MB / 1 ms. The C compiler stays the reference until hierc0
 > outperforms it.
 
+> **Self-compile time vs. bootstrap wall — what the small number measures.**
+> The figures above are hierc0's *transpile* step alone (reading `hierc0.hi` and
+> emitting C). That step is genuinely fast, but it is **not** the time to "build
+> the compiler." A full `make bootstrap` / `make fixpoint` takes ~a minute of
+> wall clock, and that time is owned almost entirely by the *host* C compiler,
+> not by hier. A representative breakdown on one machine (`cc -O2`; `hierc0.hi` =
+> 8.5k lines → ~18.8k lines of emitted C):
+>
+> | step | wall |
+> |------|------|
+> | hierc0 transpiles `hierc0.hi` → C | ~0.15 s |
+> | `cc -O2` compiles that emitted C (once per self-host stage; ×3 in fixpoint) | ~10.7 s each |
+> | `make bootstrap` end-to-end | ~58 s |
+>
+> So "hier compiles itself in milliseconds" is true of the **hier→C pass**; the
+> `cc` back-end owns the bootstrap wall (~100:1) — it is not "instant" end to
+> end. (The older "~20 ms" figure dates from a ~3.5k-line `hierc0.hi` on a
+> different machine; the source is 8.5k lines now, so re-measure for a current,
+> machine-specific number.)
+
 Three compilers are in play:
 
 - **`hierc`** — the hand-written C compiler (`src/hierc.c`): full language,

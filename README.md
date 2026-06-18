@@ -623,7 +623,9 @@ fn add_two(a: string, b: string) -> Result(int, string):
 anywhere the unwrapped value is wanted — `foo(parse(s) or_return)`,
 `return Ok(parse(s) or_return + 1)`, and inside nested blocks. The propagated
 `Err`'s payload is promoted into the caller's arena, so it outlives the
-short-circuit. There is no `or_return` for `Option` yet (it is `Result`-only).
+short-circuit. `or_return` also works on `Option`: in a function that returns
+`Option(T)`, `v := opt or_return` binds `v` on `Some(v)` and returns `None` on
+`None` (see `tests/or_return_option.hi`).
 
 ### Tuples and multiple return values
 
@@ -1220,6 +1222,16 @@ None of this appears in Hier source.
   e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
   `examples/context.hi`). `inout string` reassigns through the borrow (the
   value itself stays immutable).
+- **Strings are byte-oriented.** A `string` is a length-counted UTF-8 byte
+  buffer; literals and I/O pass bytes through unchanged, but `len`, indexing,
+  and slicing count *bytes*, not code points or graphemes, and there are no
+  Unicode case/normalization operations (ASCII only). Interior `NUL` (`0x00`)
+  bytes are a known edge a few `corelib` codecs note. Fine for ASCII and
+  byte-exact work; not a Unicode text library.
+- **`Option`/`Result` are not comparable with `==`** — `match` on them instead
+  (the compiler says so). `==` *is* structural deep equality everywhere else:
+  scalars, strings, arrays, tuples, structs, fieldless **and** payload-carrying
+  enums, and map values.
 
 ## Repository layout
 
