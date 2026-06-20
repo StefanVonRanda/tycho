@@ -1,0 +1,18 @@
+# Byte-safe strings: an interior NUL byte (chr(0)) survives concat, value-copy,
+# substr, indexing, the loop accumulator, and print -- A1 regression for the old
+# strlen-based truncation in copy/concat. Every string here carries its true
+# length in its header, so len() and the bytes are exact even past a NUL.
+fn main():
+    z := chr(0)
+    print("zlen=" + str(len(z)) + "\n")                                  # 1
+    b := "x" + z + "y"
+    print("blen=" + str(len(b)) + "\n")                                  # 3
+    print("bytes=" + str(b[0]) + "," + str(b[1]) + "," + str(b[2]) + "\n")   # 120,0,121
+    c := b                                                               # value-semantic copy keeps the NUL
+    print("clen=" + str(len(c)) + " c1=" + str(c[1]) + "\n")             # 3 0
+    d := substr(b, 0, 3)
+    print("dlen=" + str(len(d)) + " d1=" + str(d[1]) + "\n")            # 3 0
+    acc := ""
+    for i in range(3):
+        acc = acc + ("k" + chr(0))                                       # accumulator with embedded NULs
+    print("acclen=" + str(len(acc)) + " a1=" + str(acc[1]) + "\n")       # 6 0

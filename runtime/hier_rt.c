@@ -573,10 +573,10 @@ static char *hier_str_alloc(Arena *a, long n) {
 }
 
 char *hier_str_concat(Arena *a, const char *x, const char *y) {
-    size_t lx = strlen(x), ly = strlen(y);
-    char *r = hier_str_alloc(a, (long)(lx + ly));
-    memcpy(r, x, lx);
-    memcpy(r + lx, y, ly);
+    long lx = ((const long *)x)[-1], ly = ((const long *)y)[-1];   /* header lengths: byte-safe (interior NUL preserved) */
+    char *r = hier_str_alloc(a, lx + ly);
+    memcpy(r, x, (size_t)lx);
+    memcpy(r + lx, y, (size_t)ly);
     return r;
 }
 
@@ -589,7 +589,7 @@ char *hier_str_concat(Arena *a, const char *x, const char *y) {
  * lives in arena `a` (the variable's owning arena, not the caller's scratch).
  * memmove, not memcpy: e may alias *s (acc = acc + acc). */
 void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
-    long el = (long)strlen(e);
+    long el = ((const long *)e)[-1];   /* header length: byte-safe */
     long need = *len + el + 1;
     if (need > *cap) {
         long nc = *cap ? *cap * 2 : 16;
@@ -609,9 +609,9 @@ void hier_str_append(Arena *a, char **s, long *len, long *cap, const char *e) {
 /* string + char: one-byte append, no strlen/snprintf. `c` is a byte carried in
  * a long (Hier's char type). New buffer lives in arena `a` (cf. hier_str_concat). */
 char *hier_str_concat_char(Arena *a, const char *x, long c) {
-    size_t lx = strlen(x);
-    char *r = hier_str_alloc(a, (long)lx + 1);
-    memcpy(r, x, lx);
+    long lx = ((const long *)x)[-1];   /* header length: byte-safe */
+    char *r = hier_str_alloc(a, lx + 1);
+    memcpy(r, x, (size_t)lx);
     r[lx] = (char)c;
     return r;
 }
@@ -640,6 +640,17 @@ void hier_str_append_char(Arena *a, char **s, long *len, long *cap, long c) {
  * a pointer into a scope about to be freed, so the bytes must be copied
  * into the destination arena to survive (cf. hier_arr_int_copy). */
 char *hier_str_copy(Arena *a, const char *s) {
+    long n = ((const long *)s)[-1];   /* header length: a value-semantic copy of a Hier string preserves every byte */
+    char *r = hier_str_alloc(a, n);
+    memcpy(r, s, (size_t)n);
+    return r;
+}
+
+/* Ingest a bare C string (NO length header — getenv, argv, a C-library return)
+ * into a length-headered Hier string. strlen-bounded, because a C string ends at
+ * its first NUL by definition. Use this at every boundary where foreign bytes
+ * enter Hier's string world; hier_str_copy above is for Hier strings only. */
+char *hier_str_from_c(Arena *a, const char *s) {
     size_t n = strlen(s);
     char *r = hier_str_alloc(a, (long)n);
     memcpy(r, s, n);
@@ -660,7 +671,8 @@ char *hier_str_intern(const char *s) {
     return data;
 }
 
-void hier_print(const char *s) { fputs(s, stdout); }
+void hier_print(const char *s) { fputs(s, stdout); }   /* bare C string: codegen newline, FFI read-once borrow */
+void hier_print_s(const char *s) { fwrite(s, 1, (size_t)((const long *)s)[-1], stdout); }   /* a Hier string: all bytes, incl. interior NUL */
 void hier_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr write (warnings) */
 
 /* --- string builtins ------------------------------------------------------
@@ -693,7 +705,7 @@ long hier_str_get_n(const char *s, long i, long n) {
 
 /* substring [start, end); out-of-range bounds are clamped, not an error */
 char *hier_str_substr(Arena *a, const char *s, long start, long end) {
-    long n = (long)strlen(s);
+    long n = ((const long *)s)[-1];   /* header length: byte-safe */
     if (start < 0) start = 0;
     if (end > n) end = n;
     if (end < start) end = start;
@@ -777,13 +789,13 @@ long hier_write_file(const char *path, const char *data) {
 /* getenv(name): the environment variable's value as a string, or "" if unset. */
 char *hier_getenv(Arena *a, const char *name) {
     const char *v = getenv(name);
-    return hier_str_copy(a, v ? v : "");
+    return hier_str_from_c(a, v ? v : "");   /* env value is a bare C string */
 }
 
 /* read_file(path): the whole file as a string, or "" if it can't be opened. */
 char *hier_read_file(Arena *a, const char *path) {
     FILE *f = fopen(path, "rb");
-    if (!f) return hier_str_copy(a, "");
+    if (!f) return hier_str_from_c(a, "");
     size_t cap = 4096, len = 0;
     char *buf = (char *)arena_alloc(a, cap);
     size_t n;
@@ -812,9 +824,8 @@ static char **hier_argv = NULL;
  * `s[i] -> int` byte read. n==0 yields the empty string (strings are
  * NUL-terminated), which is fine: codegen never emits a NUL byte. */
 char *hier_chr(Arena *a, long n) {
-    long m = n == 0 ? 0 : 1;                  /* n==0 -> empty string (no NUL byte in data) */
-    char *r = hier_str_alloc(a, m);
-    if (m) r[0] = (char)(n & 0xff);
+    char *r = hier_str_alloc(a, 1);          /* always one byte, incl. n==0 (a real NUL): strings are byte-safe */
+    r[0] = (char)(n & 0xff);
     return r;
 }
 
@@ -1155,14 +1166,13 @@ HierArrStr hier_str_split(Arena *a, const char *s, const char *sep) {
     for (;;) {
         const char *hit = strstr(start, sep);
         if (!hit) {                              /* last field: rest of string */
-            hier_arr_str_push(a, &r, start);
+            hier_arr_str_push(a, &r, hier_str_from_c(a, start));   /* bare C tail -> headered */
             break;
         }
-        /* field is [start, hit); copy it as a counted slice */
+        /* field is [start, hit); build a length-headered Hier string */
         size_t flen = (size_t)(hit - start);
-        char *field = (char *)arena_alloc(a, flen + 1);
+        char *field = hier_str_alloc(a, (long)flen);   /* headered: push's copy reads the header */
         memcpy(field, start, flen);
-        field[flen] = '\0';
         hier_arr_str_push(a, &r, field);
         start = hit + seplen;
     }
@@ -1180,7 +1190,7 @@ HierArrStr hier_list_dir(Arena *a, const char *path) {
         if (de->d_name[0] == '.' &&
             (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
             continue;   /* skip "." and ".." */
-        hier_arr_str_push(a, &r, de->d_name);
+        hier_arr_str_push(a, &r, hier_str_from_c(a, de->d_name));   /* d_name is a bare C string */
     }
     closedir(d);
     return r;
@@ -1190,7 +1200,7 @@ HierArrStr hier_list_dir(Arena *a, const char *path) {
 HierArrStr hier_args(Arena *a) {
     HierArrStr r = hier_arr_str_with_cap(a, hier_argc > 0 ? hier_argc : 1);
     for (int i = 0; i < hier_argc; i++)
-        hier_arr_str_push(a, &r, hier_argv[i]);
+        hier_arr_str_push(a, &r, hier_str_from_c(a, hier_argv[i]));   /* argv[i] is a bare C string */
     return r;
 }
 

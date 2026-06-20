@@ -3866,7 +3866,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     ai = ai + 1
                 xc := name + "(" + xa + ")"
                 if sig_ret(dc, ctx, name) == "str":   # C-owned return -> copy into the arena (NULL -> "")
-                    return "scopy(" + ctx.owner + ", ({ const char* _x = " + xc + "; _x ? _x : \"\"; }))"
+                    return "s_from_c(" + ctx.owner + ", ({ const char* _x = " + xc + "; _x ? _x : \"\"; }))"
                 return xc
             if has_str(names, name) and is_func(var_type(names, types, name)):   # indirect call through a fn value: g.call(g.env, arena, args)
                 cl := un(name) + ".call(" + un(name) + ".env, " + ctx.owner
@@ -5179,7 +5179,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(names, name)
                 push(types, ty)
                 aar := owner_arena_of(EVar(name, _el), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked)
-                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
+                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = ((const long*)" + un(name) + ")[-1];\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement (see scalar_transient)
                 code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
@@ -5230,7 +5230,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                         k = k + 1
                     return aout
                 # plain reassign of an accumulator: heap-ify + resync the sidecars
-                return "    " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + un(name) + " = strlen(" + un(name) + ");\n    _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
+                return "    " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    _len_" + un(name) + " = ((const long*)" + un(name) + ")[-1];\n    _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
             deflt := "    " + lhs + " = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, owner_arena_of(EVar(name, _el), names, types, dc, ctx))) + ";\n"   # build in the var's home arena (block-local -> block; outer -> &_scope)
             # liveness-driven recycle (ANY array RHS: call / slice / copybind / literal).
             # a's old buffer is dead and -- value semantics -- uniquely owned, GATED on
@@ -5322,7 +5322,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 die_at(dc, ctx.line, "codegen: print expects a string")
             # transient arena: the print arg's string temporaries are consumed by
             # fputs and never escape, so build them in _t and free it right after.
-            return "    { Arena _t = arena_new(0); fputs(" + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + ", stdout); arena_free(&_t); }\n"
+            return "    { Arena _t = arena_new(0); hi_puts(" + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "); arena_free(&_t); }\n"
         SReturn(e, _sl):
             # deep-copy a returned heap PLACE (a field/element/variable): the
             # return value outlives the callee, so it must not alias the source's
@@ -5366,7 +5366,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 push(names, name)
                 push(types, ty)
                 aar := owner_arena_of(EVar(name, _el), names, types, dc, ctx)   # grow in the var's home arena (freed with it, not leaked) — mirrors the SDecl saccum path; scopy(0,...) here was a malloc leak
-                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = strlen(" + un(name) + ");\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
+                code := "    char* " + un(name) + " = scopy(" + aar + ", " + gen_expr(e, names, types, dc, ctx) + ");\n    long _len_" + un(name) + " = ((const long*)" + un(name) + ")[-1];\n    long _cap_" + un(name) + " = _len_" + un(name) + " + 1;\n"
                 return code
             if is_scalar_ty(dc, ctx, ty) and expr_has_call(e):   # transient placement
                 code := "    " + cty(dc, ctx, ty) + un(name) + ";\n" + scalar_transient(dc, ctx, e, names, types, un(name) + " = ")
@@ -5919,7 +5919,7 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     for i < len(sd.fields):
         f := sd.fields[i]
         if f.ty == "str":
-            out = out + "    r." + uf(f.name) + " = sc(ar, s." + uf(f.name) + ", \"\");\n"
+            out = out + "    r." + uf(f.name) + " = scopy(ar, s." + uf(f.name) + ");\n"
         elif is_array(f.ty):
             out = out + "    r." + uf(f.name) + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_map(f.ty):
@@ -6037,7 +6037,7 @@ fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
     for i < len(parts):
         p := parts[i]
         if p == "str":
-            out = out + "    r.f" + str(i) + " = sc(ar, s.f" + str(i) + ", \"\");\n"
+            out = out + "    r.f" + str(i) + " = scopy(ar, s.f" + str(i) + ");\n"
         elif is_array(p):
             out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_map(p):
@@ -6281,25 +6281,27 @@ fn preamble() -> string:
     out = out + "static char* hs(Arena* ar, long n) { char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
     out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
     out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"hier: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
-    out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = (long)strlen(a), lb = (long)strlen(b); char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
-    out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = (long)strlen(a); char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
+    out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
+    out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = ((const long*)a)[-1]; char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
     out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int m = snprintf(t, sizeof t, \"%ld\", n); char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
     out = out + "static char* b2s(Arena* ar, long b) { const char* s = b ? \"true\" : \"false\"; long m = (long)strlen(s); char* r = hs(ar, m); memcpy(r, s, (size_t)m); return r; }\n"
-    out = out + "static char* scopy(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
-    out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = (long)strlen(e); if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
+    out = out + "static char* scopy(Arena* ar, const char* s) { long n = ((const long*)s)[-1]; char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
+    out = out + "static char* s_from_c(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
+    out = out + "static void hi_puts(const char* s) { fwrite(s, 1, (size_t)((const long*)s)[-1], stdout); }\n"
+    out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = hs(ar, n); memcpy(r, s + a, (size_t)n); return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
     out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
-    out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return scopy(ar, v ? v : \"\"); }\n"
+    out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return s_from_c(ar, v ? v : \"\"); }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static void hi_eprint(const char* m) { fputs(m, stderr); }\n"
     out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static long hi_clock(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (long)ts.tv_sec * 1000000000L + (long)ts.tv_nsec; }\n"
     out = out + "static long hi_now(void) { return (long)time(NULL); }\n"
-    out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return scopy(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
+    out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return s_from_c(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
     out = out + "static long hi_write_file(const char* path, const char* data) { FILE* f = fopen(path, \"wb\"); if (!f) return 0; long n = ((const long*)data)[-1]; size_t w = fwrite(data, 1, (size_t)n, f); fclose(f); return (w == (size_t)n) ? 1 : 0; }\n"
     out = out + "static int hi_argc = 0;\nstatic char** hi_argv = 0;\n"
     out = out + "typedef struct { int tag; void* val; } HOption;\n"
@@ -6459,12 +6461,12 @@ fn gen_strlib() -> string:
     out = out + "    struct dirent* de;\n"
     out = out + "    while ((de = readdir(d)) != 0) {\n"
     out = out + "        if (de->d_name[0] == '.' && (de->d_name[1] == 0 || (de->d_name[1] == '.' && de->d_name[2] == 0))) continue;\n"
-    out = out + "        Arr_str_push(ar, &r, scopy(ar, de->d_name));\n"   # headered copy; also survives readdir's buffer reuse
+    out = out + "        Arr_str_push(ar, &r, s_from_c(ar, de->d_name));\n"   # bare C d_name -> headered (also survives readdir's buffer reuse)
     out = out + "    }\n"
     out = out + "    closedir(d);\n    return r;\n}\n"
     out = out + "static Arr_str hi_args(Arena* ar) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
-    out = out + "    for (int i = 0; i < hi_argc; i++) Arr_str_push(ar, &r, scopy(ar, hi_argv[i]));\n"
+    out = out + "    for (int i = 0; i < hi_argc; i++) Arr_str_push(ar, &r, s_from_c(ar, hi_argv[i]));\n"
     out = out + "    return r;\n}\n"
     return out
 
@@ -6544,9 +6546,9 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
     out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
     out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
-    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(ar, k, \"\"); m->len++; } m->vals[t] = " + vcopy + "; }\n"
+    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; } m->vals[t] = " + vcopy + "; }\n"
     # in-place value projection: find-or-insert, return &slot value (#2). dormant until step 2 routes m[k] here.
-    out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, const char* k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = sc(ar, k, \"\"); m->len++; m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
+    out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, const char* k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
     out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"

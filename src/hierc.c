@@ -5219,14 +5219,14 @@ static char *gen_call(Expr *e, const char *arena) {
         if (is_extern_str_call(e->args[0]))   /* FFI: write a C-owned string without copying it (read-once borrow) */
             return sfmt("hier_print(({ const char *_x = %s; _x ? _x : \"\"; }))", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
-        return sfmt("hier_print(%s)", a);
+        return sfmt("hier_print_s(%s)", a);   /* a Hier string: print all bytes via its length header */
     }
     if (!strcmp(e->sval, "eprint")) return sfmt("hier_eprint(%s)", gen_expr(e->args[0], arena));   /* stderr, no newline, no exit */
     if (!strcmp(e->sval, "println")) {   /* print + a trailing newline */
         if (is_extern_str_call(e->args[0]))
             return sfmt("(hier_print(({ const char *_x = %s; _x ? _x : \"\"; })), hier_print(\"\\n\"))", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
-        return sfmt("(hier_print(%s), hier_print(\"\\n\"))", a);
+        return sfmt("(hier_print_s(%s), hier_print(\"\\n\"))", a);
     }
     if (!strcmp(e->sval, "input")) {
         return sfmt("hier_input(%s)", arena);
@@ -5326,7 +5326,7 @@ static char *gen_call(Expr *e, const char *arena) {
          * destination arena (NULL -> "") so hier never holds a foreign pointer. */
         char *xc = gen_extern_raw(e);
         if (base_of(cs->ret) == T_STRING)
-            return sfmt("hier_str_copy(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
+            return sfmt("hier_str_from_c(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
         return xc;
     }
     char *out = sfmt("h_%s(%s", e->sval, arena);
@@ -5900,7 +5900,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * (possibly a string literal in .rodata) is never written. */
             if (s->decl_type == T_STRING && is_accum(s->name)) {
                 indent(o, ind);
-                fprintf(o, "long _len_h_%s = (long)strlen(h_%s); long _cap_h_%s = 0;\n",
+                fprintf(o, "long _len_h_%s = ((const long *)h_%s)[-1]; long _cap_h_%s = 0;\n",
                         s->name, s->name, s->name);
             }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
@@ -6125,7 +6125,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
              * grow in place — forces the next append to allocate). */
             if (is_accum(s->name) && s->expr->type == T_STRING && !is_inout_param(s->name))
-                fprintf(o, "%*s_len_h_%s = (long)strlen(h_%s); _cap_h_%s = 0;\n",
+                fprintf(o, "%*s_len_h_%s = ((const long *)h_%s)[-1]; _cap_h_%s = 0;\n",
                         ind * 4, "", s->name, s->name, s->name);
             break;
         }
