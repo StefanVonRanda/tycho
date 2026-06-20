@@ -1304,6 +1304,49 @@ The runtime is turned into a C string literal at build time (`make`
 generates `build/hier_rt_embed.h` from `runtime/hier_rt.c`) and prepended
 to every generated `.c`, so output files are self-contained.
 
+## FAQ
+
+**"It just transpiles to C — that's not a real compiler."** Emitting C is a
+deliberate backend choice, not a shortcut: it makes Hier portable to any target
+with a C compiler and inherits decades of mature optimization and tooling for
+free. C is the *assembler* here. The compiler still does all the real work —
+lexing, parsing, bidirectional type inference, the implicit-arena escape
+analysis, monomorphization, and the static reuse analysis (move-on-last-use,
+in-place append, FBIP-style buffer recycling) — none of which C does for you. The
+output is self-contained (the runtime is prepended to every file), so there is no
+hidden dependency. It is the same strategy several production languages use, and
+the benchmarks below are against C, Rust, Go, and Koka *binaries*, not against
+other transpilers.
+
+**"Deep-copying every value must be slow."** "Everything is a value, copied on
+assignment" is the *semantic model*, not what the generated code does at runtime.
+The compiler proves, statically, when a copy is unnecessary and elides it:
+returns are built directly in the caller's arena (no copy out), `acc = acc + e`
+grows one buffer in place, `b := a` becomes a move when `a` is dead, `match` arms
+borrow the scrutinee's payload, and loop-carried rebuilds hand off their buffer.
+A copy happens only when a value genuinely escapes to two live owners — which is
+exactly when a GC or refcount would also do work. The result is measured, not
+asserted: best-in-class memory *and* time on the allocation-heavy tree workloads
+(beating C, Rust, Go, and Koka), exact C-pthreads parity on the parallel
+reduction, and the fastest channel pipeline of the four — see
+[bench/](bench/) and [docs/thesis.md](docs/thesis.md).
+
+**"No GC and no borrow checker — how is it memory-safe?"** There is no reference
+type in the language, so a dangling pointer is *inexpressible* — the bug other
+region systems ship escape analysis to prevent simply cannot be written. Memory
+is freed per scope by the arena hierarchy; values that outlive their scope are
+copied up. `Option` removes null, `Result` removes exceptions, array and slice
+access is bounds-checked, and copy-in/copy-out concurrency removes data races by
+construction. Every test runs under AddressSanitizer + UndefinedBehaviorSanitizer
+(plus LeakSanitizer and, for concurrency, ThreadSanitizer), and a differential
+fuzzer cross-checks both compilers.
+
+**"Is it production-ready?"** No. Hier is **experimental, proof-of-concept**
+software exploring one idea (implicit hierarchical arenas under value semantics).
+It has a single implementation, the language surface is still moving, and there
+is no stability guarantee. Use it to learn, experiment, and give feedback — not
+to ship a service.
+
 ## License
 
 Hier is licensed under the **[Apache License 2.0](LICENSE)** (see
