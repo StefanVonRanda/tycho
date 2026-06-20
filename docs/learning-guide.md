@@ -1,8 +1,8 @@
-# Learning Hier: A Guide for Web Developers
+# Learning Hier — for programmers coming from Python, JavaScript, or Ruby
 
 A hands-on, project-driven introduction to Hier — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have built ten progressively larger programs and understand how Hier's value-semantic model gives you memory safety without garbage collection, lifetimes, or manual `malloc`/`free`.
 
-**Audience:** You've written JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You've maybe heard "stack vs heap" but haven't managed memory yourself.
+**Audience:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You've maybe heard "stack vs heap" but haven't managed memory yourself. This guide meets you there and walks you into a systems language.
 
 ---
 
@@ -211,7 +211,7 @@ fn main():
     print(str(x) + "\n")   # 11
 ```
 
-**Web developer mental model:**
+**Mental model (coming from Python or JavaScript):**
 
 - `fn foo(x: int)` — like passing a primitive in JS. The function gets its own copy.
 - `fn foo(xs: [int])` — like a read-only view. You can read elements but not mutate the array.

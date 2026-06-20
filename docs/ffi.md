@@ -1,205 +1,144 @@
-# FFI — calling C from hier (design)
+# FFI — calling C from Hier
 
-> Status: **Stages 1–3 SHIPPED** (scalars + string + opaque `ptr` in both compilers; Stage-3
-> linking ergonomics in hierc — see §8). Inspired by the `tycho` language's FFI, adapted to
-> hier's internals. Every hier claim below cites `file:line`; tycho claims cite the tycho repo
-> as read on 2026-06-06. Regression: `make ffi` (`tests/ffi/`), wired into `make ci`.
-> Real-world dogfood: **`examples/sqlite/`** binds in-memory SQLite (ptr handles, SQL string
-> args, arena-copied column text, `--shim` for the out-param API, `--pkg`) — through both
-> compilers, ASan-clean against a library whose returned text pointer is genuinely transient.
+Hier's thesis is value semantics over an implicit arena: Hier code never does
+manual memory management. The FFI is the one deliberate **escape hatch** — a
+narrow, opt-in boundary for calling existing C libraries (libm, libc, SQLite,
+SDL, …). The design keeps that boundary narrow so the thesis stays intact on the
+Hier side: no foreign pointer ever leaks into Hier's value-semantic world.
 
-## 1. Goal & thesis fit
+The FFI is honestly an *unsafe* boundary — you can still pass a bad handle to C
+and crash inside C. The design's job is to make the **Hier side** sound and to
+make the unsafe surface explicit, which is what the `extern` keyword marks. The
+README's [FFI section](../README.md#ffi-calling-c) is the short version; this is
+the full rule set. A real binding lives in
+[`examples/sqlite/`](../examples/sqlite/) (in-memory SQLite through both
+compilers, ASan-clean).
 
-hier's thesis is value-semantics over an implicit arena: hier code never does manual
-memory management. FFI is the one deliberate **escape hatch** — a narrow, opt-in boundary
-to call existing C libraries (libm, libc, sqlite, SDL, …). The design keeps the boundary
-narrow so the thesis stays intact *on the hier side*:
+## Surface syntax
 
-- Primitives cross by value (a `long`/`double`/`int` is a `long`/`double`/`int`).
-- A C function that returns a string gets **copied into the caller's arena** at the call
-  site (`scopy`), so hier never holds a pointer into C-owned memory.
-- An opaque foreign pointer (`ptr`, Stage 2) is an integer handle hier can only pass back
-  to C — it is never dereferenced by hier code, so there is nothing to manage.
-
-So foreign memory never leaks into hier's value-semantic world. FFI is honestly an unsafe
-boundary (you can still pass a bad handle to C and crash inside C); the design's job is to
-make the *hier* side sound and the unsafe surface explicit (`extern`).
-
-## 2. Prior art: tycho's FFI (what we borrow, what we drop)
-
-tycho is the closest cousin (arena memory model, compiles to C, value semantics). Its FFI:
-
-- **`extern fn` declaration**, bodyless, direct C symbol, optional `extern "Lib"` library
-  name — `tycho/src/parser.zig:318` (`parseExternFn`), examples `tycho/std/mathf.ty:21`,
-  `tycho/vendor/sdl.ty:113`.
-- **Fat-pointer `str` forces a `cstring` type.** tycho `str` is `{const char* ptr; i32 len}`
-  (`tycho/SPEC.md:823`), so calling C needs a distinct `cstring` (= `const char*`) and an
-  explicit `c_str(str) -> cstring` at every call site (`tycho/src/codegen_c_builtins.zig:251`).
-- **Lifetime rule (T3.1):** a thread-local "current arena" + shims that copy C-returned
-  strings into it via `tycho_str_dup` to avoid use-after-free (`tycho/ROADMAP.md:246`,
-  `tycho/vendor/README.md:79`).
-- **Linking:** `-link <lib>` CLI flag, vendor-dir scan + `pkg-config` fallback + bare `-l`
-  (`tycho/src/main.zig:217,1153`); `libm`/`libpthread` auto-linked. Per-library `*_shim.c`
-  companion files auto-compiled.
-- **No variadics; `cstring` can't be stored in struct fields; no auto bindgen** (hand-written
-  `.ty` stubs + `_shim.c`).
-
-**What we drop for hier:** the entire `cstring` + `c_str()` apparatus. See §4 — hier's `str`
-is already a `char *`, so the conversion tycho is forced into is a no-op for us. **What we
-keep:** `extern fn` surface, the arena-copy-on-return lifetime rule (hier already has the
-idiom), the `extern "Lib"` → link-flag wiring, and the no-variadics limit.
-
-## 3. Surface syntax
+An `extern fn` is a bodyless declaration whose name *is* the C symbol name,
+optionally prefixed with the library to link:
 
 ```
-extern fn sqrt(x: float) -> float            # links libm (auto, already -lm)
-extern fn getpid() -> int                    # no args, libc
-extern "z" fn crc32(crc: int, buf: str, n: int) -> int   # links -lz
-extern "SDL2" fn SDL_Init(flags: int) -> int             # links -lSDL2
+extern fn getpid() -> int                                # libc (already linked)
+extern fn sqrt(x: float) -> float                        # libm (already linked)
+extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
+extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2
+extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Hier string out
 ```
 
-- Bodyless `fn` decl (no `:` block). Reuses the existing `fn name(params) -> ret` parser
-  shape; the difference is the leading `extern [ "Lib" ]` and the absence of a body.
-- The hier symbol name **is** the C symbol name — no mangling, even inside a package (a C
-  symbol is global). hierc resolves this for free: its call resolver only rewrites a name to
-  the package-prefixed form *if that resolves*, else falls through to the bare extern sig.
-  hierc0 mangles eagerly, so its mangler threads an `externs` list (collected at parse) and
-  leaves those call names unmangled — like builtins. So an `extern` can be declared and called
-  from within any package.
-- `extern "Lib"` records `Lib` for linking (§6). Bare `extern fn` assumes the symbol is in
-  something already linked (libc, or libm via the existing `-lm`).
+The symbol name is never mangled, even inside a package — a C symbol is global —
+so an `extern` can be declared and called from any package. A bare `extern fn`
+(no `"Lib"`) assumes the symbol is already linked; libc and libm always are.
 
-## 4. Type mapping (hier → C)
+## Type mapping
 
-hier's emitted C types are fixed at `src/hierc.c:662-674`:
+Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 
-| hier type | emitted C (`src/hierc.c`) | FFI direction | notes |
-|-----------|---------------------------|---------------|-------|
-| `int`     | `long` (:662)             | in/out        | zero-cost |
-| `char`    | `long` (:663)             | in/out        | zero-cost |
-| `float`   | `double` (:664)           | in/out        | zero-cost |
-| `bool`    | `int` (:665)              | in/out        | zero-cost |
-| `str`     | `char *` (:666)           | **in: zero-cost**, **out: arena-copied** | §5 |
-| (none)    | `void` (:674)             | out only      | bodyless return-less extern |
-| `ptr`     | `void *`                  | in/out        | opaque handle, never dereferenced in hier; `null` literal + `is_null(p)` |
+| Hier type | C type      | direction | notes |
+|-----------|-------------|-----------|-------|
+| `int`     | `long`      | in/out    | zero-cost |
+| `char`    | `long`      | in/out    | zero-cost |
+| `float`   | `double`    | in/out    | zero-cost |
+| `bool`    | `int`       | in/out    | zero-cost |
+| `string`  | `char *`    | in: zero-cost; out: arena-copied | see below |
+| `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
+| (none)    | `void`      | out only  | return-less extern |
 
-**The string win.** hier `str` is a null-terminated `char *` (`:666`; built by
-`hier_str_*` in `runtime/hier_rt.c:178-322`, always NUL-terminated). A C function taking
-`const char*` therefore takes a hier `str` directly — **no conversion, no `cstring` type,
-no `c_str()` call.** This is the single biggest simplification over tycho, whose fat-pointer
-`str` makes that conversion mandatory.
+**The string win.** A Hier `string` is a NUL-terminated `char *`, so a C
+function taking `const char *` takes a Hier `string` directly — no wrapper type,
+no conversion at the call site. (Languages whose string is a fat pointer
+`{ptr, len}` are forced into an explicit `c_str()` conversion; Hier is not.)
 
-Composite hier types (`[int]`, maps, structs, `Option`/`Result`, tuples) are **not** allowed
-across the FFI boundary in any stage — their C representations (`HierArrInt`, `E_* *`, …) are
-hier-internal, not a stable C ABI. Fail closed: the type-checker rejects an `extern fn` whose
-param/return is anything outside the table above.
+**Composites are rejected.** Arrays, maps, structs, `Option`/`Result`, and
+tuples have Hier-internal C representations, not a stable C ABI. The type
+checker rejects any `extern fn` whose parameter or return type is outside the
+table above — it fails closed rather than emit something that would corrupt
+memory across the boundary.
 
-## 5. Lifetime & safety rule
+## Lifetime & safety
 
-Exactly tycho's T3.1, using hier's existing idiom — no new runtime needed:
+The whole point is that foreign memory never enters Hier's owned world:
 
-- **`str` argument (hier → C):** pass the `char *` through unchanged. Zero-cost.
-- **`str` return (C → hier):** the call lowers to `scopy(<arena>, <call>)` so the C-owned
-  bytes are copied into the caller's arena. This is *literally* what `hier_getenv` already
-  does — `runtime/hier_rt.c:377` is `getenv()` + `scopy`, and hierc0 emits the same shape at
-  `compiler/hierc0.hi:4392` (`hi_getenv` = `getenv` + `scopy(ar, v?v:"")`). An `extern fn …
-  -> str` is the *general* case of the builtin we already ship.
-  - NULL guard: a C function may return `NULL`. The lowering must be
-    `scopy(<arena>, ({ char* __t = <call>; __t ? __t : ""; }))` so a NULL return becomes `""`
-    rather than a crash in `scopy`/`strlen`. (tycho hit this exact bug — `tycho/ROADMAP.md:295`.)
-  - **Read-once borrow (peephole, hierc).** When the `str` return is the *direct* argument to a
-    read-once consumer — `len(extern_str())` or `print(extern_str())` — the copy is skipped and
-    the C pointer is used in place (NULL-guarded): the borrow is read immediately and cannot
-    escape the consuming call, so it can't dangle. Anything that could hold it (binding to a
-    variable, concat, storing, returning, comparing two extern strings) keeps the copy. This is
-    an output-identical optimization, not a semantic change: hierc0 still copies, and the fuzzer
-    proves byte-identical output across both (it generates `len(fz_echo(…))`). Only one borrowed
-    result, read once — comparing two extern-string calls is *not* eligible (a shared static
-    return buffer would let the second call clobber the first).
-- **`ptr`:** opaque `void *`. hier has no operators on it except pass-to-C, `==`/`!=` (against
-  another `ptr` or the `null` literal), and `is_null(p)`. No deref, no arithmetic. So hier never
-  touches foreign memory — it only shuttles the handle back to C.
-- **No variadics** (same as tycho). `printf`-style functions need a fixed-arity wrapper.
-- **No struct-by-value, no callbacks into hier** in v1 (callbacks would need hier's fat
-  function-pointer rep to cross out, which is not C-ABI; defer).
+- **`string` argument (Hier → C):** the `char *` is passed through unchanged.
+  Zero-cost.
+- **`string` return (C → hier):** the C-owned bytes are **copied into the
+  caller's arena** at the call site, so Hier never holds a pointer into memory C
+  controls. A `NULL` return becomes `""` rather than a crash. This is the same
+  copy the `getenv` builtin already does — an `extern fn … -> string` is just
+  the general case.
+  - *Read-once borrow (an optimization, not a semantic change).* When the
+    returned string is the direct argument of a read-once consumer —
+    `len(f())` or `print(f())` — the copy is skipped and the C pointer is read
+    in place (NULL-guarded), because the borrow cannot escape the consuming
+    call. Anything that could retain it (binding to a variable, concatenating,
+    storing, returning, or comparing two extern strings) keeps the copy. Output
+    is byte-identical either way, and the fuzzer proves it.
+- **`ptr`:** an opaque `void *`. Hier supports only passing it back to C,
+  comparing it (`==`/`!=` against another `ptr` or the `null` literal), and
+  `is_null(p)`. No dereference, no arithmetic — Hier shuttles the handle and
+  never touches what it points at. A `ptr` rides the scalar paths, so it can
+  also be a local, a struct field, or an array element (copied by value).
+- **No variadics.** A `printf`-style function needs a fixed-arity C wrapper.
+- **No struct-by-value and no callbacks into Hier** — a Hier function value is a
+  fat pointer that is not C-ABI, so it cannot cross out.
 
-## 6. Linking
+## Linking
 
-The C reference compiler shells out exactly once, at **`src/hierc.c:5800`**:
+The C reference compiler (`hierc`) links the program for you:
 
-```c
-char *cmd = sfmt("%s -O2 -o %s %s -lm", cc, base, c_path);   /* -lm already here */
-int rc = system(cmd);                                        /* :5801 */
-```
+- Each distinct `"Lib"` from an `extern "Lib"` declaration becomes a `-l<Lib>`.
+  `-lm` and libc are always passed, so libm/libc externs need no library name.
+- CLI passthrough on the `hierc` line: `-L<dir>` / `-I<dir>` (library and
+  include paths), `--link <lib>` (a bare `-l` for a library not named in
+  source), `--pkg <name>` (`pkg-config --cflags --libs`), and `--shim <file.c>`
+  (a companion C file compiled and linked alongside the generated `.c` — the
+  `*_shim.c` pattern, as an explicit flag rather than auto-discovery). All
+  accumulate onto one `cc` invocation, with libraries trailing the objects that
+  need them. `--cc <compiler>` overrides the compiler.
+- The self-hosted compiler (`hierc0`) emits C to stdout and does not link, so
+  these flags are `hierc`-only; link `hierc0`'s output with your own `cc`,
+  passing the same `-l`/`-L`/shim flags.
 
-- Collect every distinct `"Lib"` from `extern "Lib"` decls → append ` -l<Lib>` to that
-  format string. `-lm` stays (covers bare `extern fn sqrt`).
-- **Stage 3 CLI passthrough (hierc, `main()`):** `-L<dir>`/`-I<dir>` (both attached and
-  separated forms), `--link <lib>` (a bare `-l` for libs not named in source), `--pkg <name>`
-  (`pkg-config --cflags --libs`, via `pkg_config_flags`/`popen`), and `--shim <file.c>` (a
-  companion C source compiled+linked alongside the generated `.c` — the `*_shim.c` pattern, but
-  an explicit flag rather than tycho's auto-discovery, matching hier's no-magic style). All
-  accumulate onto the single cc line; libs trail the objects that need them. The `--cc
-  <compiler>` override already exists and composes.
-- **hierc0 has no linking step** — it emits C to stdout, so these flags are hierc-only; the user
-  links hierc0's output with their own cc (passing the same `-l`/`-L`/shim).
-- **Still out of scope:** tycho's vendor-dir scan / collection roots. `pkg-config` and shim
-  companions now ship; vendoring can come if a real binding needs it.
+## Verification
 
-## 7. Implementation across BOTH compilers (the self-hosting tax)
+Every piece lands in both compilers, and the staged work is held to the
+project's standard bar: `make ffi` (the `tests/ffi/` fixtures — a scalar
+round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
+round-trip, a `--shim` build) runs through both compilers, ASan-clean and
+output-identical, and `make fixpoint` proves the self-build stays
+byte-identical. The SQLite binding in `examples/sqlite/` is the real-world
+dogfood: opaque `db`/`stmt` handles, SQL string arguments, arena-copied column
+text, `--shim` for the out-parameter API, `--pkg` for linking — against a
+library whose returned text pointer is genuinely transient.
 
-Every piece lands twice and the fixpoint must stay byte-identical (so externs are only
-emitted when actually used/declared, and the package mangler skips them):
+---
 
-| Piece | hierc (C reference) | hierc0 (self-hosted) |
-|-------|---------------------|----------------------|
-| parse `extern [ "Lib" ] fn …` | parser, near the `fn` decl path | parser in `compiler/hierc0.hi` |
-| record signature for type-check | `g_sigs[]`, `src/hierc.c:1970` (model on `getenv`/`read_file` rows :1970/:1974) | `is_builtin_call`/`sig_ret`, `compiler/hierc0.hi:1240,2045` (model on `getenv` :2084) |
-| emit `extern <cret> <name>(<cparams>);` prototype | new pass after the embedded runtime, before user code | mirror in hierc0's emit |
-| lower call (`name(args)`; arena-copy if `-> str`) | builtin/call dispatch, `src/hierc.c:3687-3691` (the `hier_getenv` pattern) | `compiler/hierc0.hi:2716-2725` (the `hi_getenv` pattern) |
-| C type map | `src/hierc.c:662-674` (reuse as-is) | mirror |
-| link flags | `src/hierc.c:5800` | hierc0 driver's cc shell-out |
+## Appendix: design history
 
-Gates (per the project's CI, all local — see `docs/` / `make ci`):
-- `make test` + `make fixpoint` (byte-identical self-build) — proves both compilers agree.
-- New golden fixtures under `tests/` (an `extern fn sqrt` round-trip, a `str`-returning
-  extern, a NULL-return extern).
-- Fuzzer (`fuzz/gen.py`) — add an `extern` kind once stable.
-- `make corelib` if any corelib package starts using an extern (e.g. wrapping libm).
+For contributors and the curious; users need only the rules above.
 
-## 8. Staged rollout
+**Design rationale.** Two choices keep the boundary cheap. First, a Hier
+`string` is already a NUL-terminated `char *`, so there is no wrapper type and no
+`c_str()` conversion at the call site — a fat-pointer string representation would
+have forced one. Second, a returned `string` is always copied into the caller's
+arena, and a `NULL` return is coerced to `""`, so a C function that hands back a
+transient or null pointer can neither dangle nor crash on the Hier side.
 
-- **Stage 1 — scalars + `str`. ✅ DONE (both compilers).** Types: `int`/`char`/`float`/`bool`/
-  `str`/void. No new type node. Unlocks libm, most of libc, and any C lib with a scalar/string
-  ABI. The full mechanism (parse → sig → prototype → call → arena-copy → link) ships in hierc
-  (commit "FFI Stage 1 in hierc") and hierc0 (this commit), fixpoint byte-identical, `make ffi`
-  green (both compilers agree, ASan-clean, scalar+string both directions, NULL-return guarded).
-- **Stage 2 — opaque `ptr`. ✅ DONE (both compilers).** New primitive `ptr` = `void *`, plus the
-  `null` literal and `is_null(p) -> bool`. Unlocks handle-based libraries (SDL window, sqlite db,
-  curl handle). `ptr` is a non-heap opaque scalar: it rides the existing scalar paths (`c_type`/
-  `cty` → `void*`, `copy_into` → by-value, `gen_eq` → `==`, `type_is_heap` → 0), so it also works
-  as a local, a regular-fn param/return, a struct field, and an array element (copied by value —
-  hier never owns or dereferences it). Only deref/arithmetic are absent (no syntax for them).
-  `make ffi` exercises an `ffi_open`/`ffi_read` handle round-trip + `null`/`is_null` through both
-  compilers, fixpoint byte-identical.
-- **Stage 3 — ergonomics. ✅ DONE (hierc).** `-L`/`-I`/`--link`/`--pkg`/`--shim` on the cc line
-  (see §6). `--pkg` shells out to `pkg-config`; `--shim` compiles+links a companion C file (the
-  `*_shim.c` pattern, tycho `vendor/README.md:99`, as an explicit flag). hierc-only — hierc0
-  emits C and doesn't link. `make ffi` now links its fixture via `-L` and covers a `--shim`
-  build; `--pkg zlib` verified manually (crc32 resolved).
+**Staged rollout (all shipped).** The FFI landed in three independently-useful
+stages, each in both compilers with the fixpoint staying byte-identical:
 
-Each stage ships independently and is independently useful. Stop after Stage 1 and hier can
-already call libm/libc.
+1. **Scalars + `string`** — `int`/`char`/`float`/`bool`/`string`/void. Unlocks
+   libm, most of libc, and any C library with a scalar/string ABI.
+2. **Opaque `ptr`** — `void *` plus the `null` literal and `is_null`. Unlocks
+   handle-based libraries (SQLite, SDL, curl).
+3. **Linking ergonomics (`hierc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim`.
 
-## 9. Open decisions
-
-1. **Keyword:** `extern fn` (tycho's, proposed) vs `foreign fn` vs `c fn`. `extern` reads as
-   "defined elsewhere" and matches C intuition.
-2. **`ptr` now or later:** Stage 1 deliberately omits it. If the first real target is SDL/
-   sqlite rather than libm, fold Stage 2 in earlier.
-3. **Bare `extern fn` with no `"Lib"`:** assume already-linked (libc/libm) — or require an
-   explicit `--link`? Proposed: assume, since libc/libm cover the common case and `-lm` is
-   already passed.
-4. **`str` return ownership:** always arena-copy (proposed, safe) vs an opt-out
-   borrow for hot paths (unsafe, deferred — tycho started borrowed and moved to copied for
-   exactly this reason, `tycho/ROADMAP.md:295`).
+**Self-hosting cost.** Each piece exists twice — parse, signature recording,
+prototype emission, call lowering, the C type map, and link flags — once in
+`hierc` and once in `hierc0`. Externs are emitted only when actually declared,
+and the package mangler skips them, so the fixpoint differential stays
+byte-identical. Resolved design questions: the keyword is `extern` (reads as
+"defined elsewhere", matches C); a bare `extern fn` assumes libc/libm rather
+than requiring an explicit `--link`; and a returned `string` is always
+arena-copied (the read-once borrow is the only, provably-safe, exception).

@@ -10,7 +10,7 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `hier-lsp`) for
   and drives highlighting; it does **not** model block nesting (hier is
   indentation-significant; full structure would need a C external scanner). The
   generated parser (`src/parser.c`) is committed, so no tree-sitter CLI is needed
-  to build it. **Verified: parses 321/321 valid `.hi` files with zero errors.**
+  to build it. **Verified: parses 321/321 valid `.hi` files with zero parse errors.**
 - `languages/hier/` — Zed language config + `highlights.scm` queries.
 - `extension.toml`, `Cargo.toml`, `src/lib.rs` — the Zed extension; the Rust code
   just launches `hier-lsp` (passing `HIERC`) for diagnostics.
@@ -39,14 +39,14 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `hier-lsp`) for
 
 Open a `.hi` file: tokens are colored and compile errors show inline.
 
-## Caveats (honest)
+## Caveats
 
-- **Not GUI-verified here** — `zed` isn't installed in the dev environment. The
-  grammar + highlight queries are verified with the tree-sitter CLI; the Zed
-  extension wiring (`extension.toml`, `src/lib.rs`) is written to the docs but
-  tested only by you in Zed.
+- Highlighting is token-level (a flat grammar): the grammar and highlight queries
+  are validated with the tree-sitter CLI. Structural features (folding,
+  structural navigation) would need a C external scanner for INDENT/DEDENT, since
+  hier is indentation-significant.
 - `zed_extension_api`'s trait shape changes across Zed versions. If the WASM build
   fails, bump the version in `Cargo.toml` to match your Zed and adjust
   `src/lib.rs` accordingly.
-- Highlighting is token-level (flat grammar). Upgrading to a structural grammar
-  (folding, structural nav) means adding a C external scanner for INDENT/DEDENT.
+- If your code imports `core:` packages, set `HIER_CORELIB` so the diagnostics
+  compiler can resolve them (see [corelib](../../docs/corelib.md)).

@@ -1,14 +1,12 @@
-# Packages & modules — design + implementation plan
+# Packages & modules
 
-Hier's next major language feature: **Odin-style packages**. A package is a
-**directory** of `.hi` files sharing one flat namespace; you `import "path"` and
-reference `pkg.symbol`. Decided constraints:
-
-- **No privacy, ever.** Every top-level symbol in a package is visible to importers.
-- **No generics** (separate decision; unrelated, but the type surface stays fixed).
-- **Whole-program transpile.** The driver follows the import graph, merges all
-  reachable packages into one AST, and emits one `.c` — no linker, no separate
-  compilation.
+Hier has **Odin-style packages**: a package is a *directory* of `.hi` files that
+share one flat namespace. You `import` a package and reference its symbols with a
+qualified `pkg.symbol` name. There is no privacy — every top-level symbol in a
+package is visible to importers — and no separate compilation: the driver follows
+the import graph, merges everything reachable into one program, and emits a
+single `.c`. The README's [Packages section](../README.md#packages) is the short
+version; this is the full design.
 
 ## Surface syntax
 
@@ -18,18 +16,18 @@ package_decl := "package" IDENT NEWLINE          # first non-comment line
 import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
 ```
 
-- **Package = directory.** Every `.hi` in a directory declares the same
+- **A package is a directory.** Every `.hi` file in it declares the same
   `package <name>`, and `<name>` must equal the directory name.
 - **`import "math/geom"`** binds the package under its last path component
-  (`geom`); **`import g "math/geom"`** aliases it to `g`.
-- **`pkg.symbol`** — qualified use for types, functions, struct/enum constructors,
-  and enum variants (`geom.Point`, `geom.add`, `geom.Red`).
-- Import paths resolve **relative to the importing package's directory**
-  (Odin-style `collection:` roots, e.g. `std:`, come later with a stdlib).
-- **Cycles are an error.** **An imported package name is reserved in the file** —
-  a local/param with that name is a compile error (keeps `a.b` unambiguous).
+  (`geom`); **`import g "math/geom"`** aliases it to `g`. Paths resolve relative
+  to the importing package's directory.
+- **`pkg.symbol`** is the qualified form for types, functions, struct/enum
+  constructors, and enum variants — `geom.Point`, `geom.add`, `geom.Red`.
+- An imported package name is **reserved** in the file: a local or parameter
+  with that name is a compile error, so `a.b` is never ambiguous. Import cycles
+  are an error.
 
-### Two-package example
+## Example
 
 ```
 proj/
@@ -40,6 +38,7 @@ proj/
 ```
 
 `geom/point.hi`
+
 ```
 package geom
 struct Point:
@@ -50,6 +49,7 @@ fn add(a: Point, b: Point) -> Point:
 ```
 
 `main.hi`
+
 ```
 package main
 import "geom"
@@ -59,115 +59,76 @@ fn main():
 ```
 
 `./hierc proj/main.hi` reads the `main` package, follows `import "geom"` to
-`proj/geom/`, parses both geom files, and emits one `.c` with package-prefixed
+`proj/geom/`, parses both `geom` files, and emits one `.c` with package-prefixed
 symbols (`geom__Point`, `geom__add`).
 
-## Invariants (the safety rails)
+## How it builds
 
-1. **Existing single-file programs stay byte-identical.** A file with **no
-   `package` decl** is a standalone single-file program (today's behavior —
-   compile just that file). A file **with** `package` triggers directory-package
-   mode. Main-package symbols are **never mangled** (they keep today's naming);
-   only imported packages get a `pkg__` prefix. So every current test, golden, and
-   the whole self-host fixpoint are untouched until something imports.
-2. **Build in `hierc` first**, fixpoint green at every step, then port to
-   `hierc0`, then dogfood by splitting `hierc0.hi`.
+- **Whole-program transpile.** The driver reads the entry package, follows every
+  `import`, merges all reachable definitions into one AST, and emits one `.c`.
+  There is no linker step and no per-package object file.
+- **A file with no `package` declaration is a standalone single-file program** —
+  exactly today's behavior. The `package` keyword is what switches on
+  directory-package mode, so every existing single-file program is unaffected.
+- **Main-package symbols are never mangled** — they keep their plain names.
+  Only imported packages get a `pkg__` prefix, applied uniformly to every
+  definition and reference, including the implicit monomorphized families
+  (`Arr_geom__Point` for `[geom.Point]`, the `_copy`/`_eq` helpers, and so on).
+  Cross-package structs, enums, arrays, tuples, and `Result` element types all
+  work, keyed on the mangled type name end to end.
 
-## Stages
+## The `core:` collection
 
-### Stage A — package decl + multi-file single-package merge (no imports acted on)
-- AST: a `package` field on each top-level def (`Proc`/`StructDef`/`EnumDef`/newtype).
-- Lexer: `package`/`import` keywords.
-- Parser: parse the optional `package <name>` and `import [alias] "path"` headers
-  (record imports; don't resolve them yet).
-- Driver: if the entry file declares `package`, compile a package = read **all**
-  `.hi` in the entry's directory, assert they agree on the package name and it
-  matches the directory, and merge their defs into one program. No `package` decl
-  → single-file mode (unchanged). No mangling yet (single package, names unique).
-- **Gate:** all current tests + `make fixpoint` byte-identical; a two-file
-  single-package program compiles and runs.
+The standard library is a **collection** — a named root for imports that resolve
+outside the local directory tree. `import "core:strings"` pulls in the bundled
+corelib package `strings`, located via the `HIER_CORELIB` environment variable
+rather than relative to the importer. The corelib and its three-way gating are
+documented in [corelib.md](corelib.md). (Odin's wider `collection:` mechanism —
+arbitrary named roots beyond `core:` — is not exposed yet.)
 
-### Stage B — imports + qualified references + mangling
-- Parser: allow `pkg.func(args)` (qualified call), `pkg.Type` (qualified type),
-  `pkg.Red` (qualified value); value-position `a.b` still parses as field access.
-- Driver: resolve `import` paths relative to the importing package's dir; read the
-  imported packages; build the import graph; **reject cycles**.
-- Resolver (the one new thing): after all packages are parsed and symbol/import
-  tables built, disambiguate `a.b` — if `a` is an imported package → qualified
-  reference (look `b` up there, error if absent), else field access. Reserved
-  package names (local can't shadow an import) → error.
-- Codegen: a single `mangle(pkg, name) → "pkg__name"` used by **every** definition
-  and reference of an imported-package symbol — including the implicit families
-  (`Arr_`, `mk_`, `_copy`, `_eq`). Main-package symbols unmangled.
-- **Gate:** the `geom` example outputs `(4,6)`; single-file tests byte-identical.
+## Verification
 
-### Stage C — cross-package aggregates
-- Qualified types in fields/params/returns/array-elements (`p: geom.Point`,
-  `xs: [geom.Point]`); cross-package struct construction and enum variants; the
-  monomorphized families keyed on the mangled name (`Arr_geom__Point`,
-  `Option(geom.Point)`).
-- **Gate:** an array of a cross-package struct + a cross-package enum matched in
-  `main`, clean under ASan/UBSan/LeakSanitizer.
+Packages work in both compilers. A package fixture lives in
+`tests/pkg/<name>/` (entry `main.hi`, golden `tests/pkg/<name>.out`); `make test`
+compiles the entry with `hierc` under the usual native-vs-ASan + golden
+discipline, and `make fixpoint` additionally builds each fixture with the
+self-hosted compiler and asserts byte-identical output against the C compiler.
 
-### Stage D — port to `hierc0` ✅ DONE (stream model)
-`hierc0` reads source on **stdin** and hier **has no globals** (docs/bootstrap.md),
-so the C compiler's directory-walking driver and global mangling-prefix can't be
-replicated directly. Instead:
-- **`hierc --bundle <entry>`** emits the package program's source as one
-  post-order stream (imports first; each file keeps its `package`/`import`
-  headers; the *entry* package's header is rewritten to `package main` so it
-  keeps the empty prefix regardless of its source name). Pipe it into `hierc0`.
-- **`hierc0`** mangles in a **post-parse pass** that is *dormant* unless a
-  `package` decl was seen — so a single-file compile (incl. `hierc0.hi` itself)
-  is byte-identical and **fixpoint stays green by construction**. `parse_program`
-  switches the prefix on each `package` header (`main`→"", else `name__`); a small
-  additive mangler rewrites stored names + references (codegen derives every C
-  name from the stored name, so it's untouched); three additive parser tweaks let
-  qualified refs arrive as dotted `pkg.name` strings that become `pkg__name`.
-- **Differential:** `make fixpoint` builds every `tests/pkg` fixture with the
-  Hier-built compiler from `hierc --bundle` and asserts it matches the C compiler.
-- **Full feature parity** (no deferrals): import aliases (`import g "geom"`),
-  bare payload-less qualified variant *values* (`geom.Red`, implemented in both
-  compilers), and cross-package tuple/Result element types all work and have
-  `tests/pkg` fixtures (`alias`, `variant`, `tuple`). hierc0 carries a small
-  resolution table (`Mctx`: alias map + package set + variant set) built in a
-  two-pass `parse_program`; `mangle_type_list` mangles tuple/Result elements
-  (top-level-comma split). (Fixing the tuple case surfaced a pre-existing,
-  package-independent hierc0 codegen bug — tuple struct bodies were emitted
-  before user struct bodies — now corrected.)
+---
 
-### Stage E — dogfood: split `hierc0.hi` into packages ✅ DONE
-`compiler/pkg-split.sh` splits the self-hosted compiler into a two-package
-program — `rt` (the pure C-runtime/string emitters: `preamble`, `gen_strlib`,
-`gen_mhash`, `gen_map_type`, `gen_map_fns` — leaf functions, primitive
-signatures, no compiler types, no calls back into `main`) and `main` (the rest,
-`import "rt"`). The split is **generated from `hierc0.hi` by function name**
-(drift-proof — always the current compiler, just repackaged), so there is no
-3.9k-line duplicate to maintain.
-- **The proof** (`make fixpoint`): the C compiler builds the split; the split
-  compiler compiling its own `hierc --bundle` stream is a **fixed point (E≡F)**;
-  and the multi-package compiler emits **byte-identical C to the single-file
-  compiler** on every fixture (repackaging changes no output).
-- This is the narrowest clean cut (a one-way `main → rt` boundary, 5 qualified
-  call sites). A finer `lexer`/`parser`/`typecheck`/`codegen` decomposition is
-  mechanical — it would move the shared `Tok`/AST vocabulary into a common
-  package and qualify it at hundreds of use sites — but needs no new capability.
+## Appendix: implementation history
 
-## Test-harness change ✅ DONE
-`tests/pkg/<name>/` = one package program (entry `main.hi`, golden
-`tests/pkg/<name>.out`). `make test` compiles the entry with hierc (merging the
-directory) under the same native-vs-ASan + golden discipline; `make fixpoint`
-additionally builds each fixture with the Hier-built hierc0 from `hierc --bundle`
-and asserts it matches the C compiler. Fixtures: `multifile` (Stage A),
-`geom_demo` (B/C1), `shapes` (C2).
+For contributors. The feature was built in `hierc` first — fixpoint green at
+every step — then ported to `hierc0`, then dogfooded by splitting the compiler
+itself.
 
-## Top implementation risks
-- **The `a.b` disambiguation** must run after all imports are known: parse-all →
-  build symbol/import tables → resolve expressions.
-- **Mangling consistency** — one `mangle()` for every def *and* reference,
-  including the implicit families. A missed site is a loud C link error, never
-  silent.
-- **Main-package non-mangling** is the invariant that keeps the fixpoint/goldens
-  stable — guard it explicitly.
-- **Cross-package type families** — verify the monomorphization key is the mangled
-  type name end to end.
+**Staged build.** (A) package declaration + multi-file single-package merge, no
+imports acted on; (B) imports, qualified references, and the one new resolver
+step — disambiguate `a.b` after all packages are parsed and symbol tables built;
+(C) cross-package aggregates (qualified types in fields/params/returns/elements,
+monomorphized families keyed on the mangled name).
+
+**Self-hosting via a bundle stream.** `hierc0` reads source on stdin and the
+language has no globals, so the C compiler's directory-walking driver and global
+mangling prefix can't be replicated directly. Instead, `hierc --bundle <entry>`
+emits the whole package program as one post-order source stream (imports first;
+the entry package's header rewritten to `package main` so it keeps the empty
+prefix), and `hierc0` mangles in a post-parse pass that is **dormant unless a
+`package` declaration was seen** — so a single-file compile (including
+`hierc0.hi` itself) is byte-identical and the fixpoint stays green by
+construction.
+
+**Dogfood.** `compiler/pkg-split.sh` splits the self-hosted compiler into a
+two-package program — `rt` (the leaf C-runtime/string emitters) and `main`
+(`import "rt"`) — generated from `hierc0.hi` by function name, so there is no
+duplicate source to maintain. `make fixpoint` proves the split compiler is itself
+a fixed point and that the multi-package build emits byte-identical C to the
+single-file build. A finer lexer/parser/typecheck/codegen decomposition is
+mechanical (move the shared `Tok`/AST vocabulary into a common package, qualify
+it at the use sites) and needs no new capability.
+
+**Risk that shaped the design.** Mangling has to be applied at *every*
+definition and reference, implicit families included — a missed site is a loud C
+link error, never silent corruption — and main-package non-mangling is the
+invariant that keeps the goldens and fixpoint stable, so it is guarded
+explicitly.

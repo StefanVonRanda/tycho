@@ -8,6 +8,14 @@ are indicative, not a rigorous benchmark suite.
 > `bench/dbquery/` (real SQLite via FFI), `bench/conc/` (concurrency vs
 > C/Go/Rust). This file tracks the self-hosted compiler only.
 
+**Headline.** The self-hosted `hierc0` now compiles its own ~3,500-line source in
+**~20 ms** (~3.1× faster than the campaign start) and, after the memory-model
+migration, emits the same implicit-arena C the reference compiler does — beating
+`hierc` on both memory and time on 3 of 4 cross-language workloads, and
+best-in-class on binary-trees. The status blocks below trace how it got there;
+sections (1)–(2) are a historical naive-codegen baseline, kept to quantify what
+the arena model bought rather than to describe the current compiler.
+
 > **STATUS (2026-06-02): sections (1)–(2) below are now a HISTORICAL baseline.**
 > They were measured when hierc0's codegen was still naive (`malloc`, no frees,
 > value-copy concat) — i.e. **B = naive**. Since then the memory-model migration

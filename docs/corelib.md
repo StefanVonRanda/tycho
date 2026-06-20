@@ -11,20 +11,11 @@ fn main():
 
 ## Resolution
 
-`import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` (the corelib directory) and binds
-the name `<pkg>`. Set `HIER_CORELIB` to point at the corelib dir — the Makefile and CI
-export `HIER_CORELIB=corelib` (repo-relative). Non-`core:` imports stay relative to the
-importing package, unchanged. Implemented in the C compiler's package walker
-(`resolve_pkg_dir`/`pkg_basename` in `src/hierc.c`, used by both `compile_package` and
-`--bundle`).
-
-The self-hosted **hierc0** sees corelib two ways, both checked by `corelib/run.sh`:
-(1) fed `hierc --bundle` (which resolves `core:` and emits one merged source stream) — the
-path the fixpoint exercises; and (2) **standalone** `hierc0 <path>`, which now resolves
-`import "core:X"` itself: its dir-walker reads `HIER_CORELIB` via the `getenv` builtin and
-routes `core:X` to `$HIER_CORELIB/X` (`resolve_import_dir`, mirroring hierc's
-`resolve_pkg_dir`). So hierc0 is a fully standalone corelib-aware compiler — no `--bundle`
-middleman needed.
+`import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` and binds the name `<pkg>`. Set
+`HIER_CORELIB` to your corelib directory — the Makefile and CI export
+`HIER_CORELIB=corelib` (repo-relative). Non-`core:` imports stay relative to the importing
+package, unchanged. Both compilers resolve `core:` natively, so the self-hosted `hierc0` is
+a fully standalone corelib-aware compiler with no bundling step required.
 
 ## Shape (constrained by the language)
 

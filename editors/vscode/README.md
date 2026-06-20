@@ -48,6 +48,9 @@ shows compile errors inline.
 | `hier.compilerPath` | `hierc` | compiler the server runs for diagnostics (passed as `HIERC`) |
 | `hier.enableServer` | `true` | set `false` for highlighting only |
 
+If your code imports `core:` packages, set `HIER_CORELIB` in your environment so
+the diagnostics compiler can resolve them (see [corelib](../../docs/corelib.md)).
+
 ## Status
 
 Diagnostics are line-level (the compiler reports `file:line: error: msg`). Hover

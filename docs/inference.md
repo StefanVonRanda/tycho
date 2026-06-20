@@ -98,8 +98,9 @@ call nodes. Under unification the receiver's type may be an unsolved
 variable when the call is encountered, so dispatch must be deferred,
 which turns resolve into constraint-generation + solve + a second rewrite
 pass — a structural rewrite of ~1.5k lines of resolve logic, twice. (This
-ordering problem is exactly why Go chose forward-only inference and why
-Swift's bidirectional constraint solver is its compile-time bogeyman.)
+ordering problem is exactly why Go chose forward-only inference, and why
+Swift's bidirectional constraint solver is a notorious source of slow
+compile times.)
 
 **(c) The dual-compiler tax.** Unification needs type variables and a
 substitution (union-find). hierc's `Type` is an interned int — type vars

@@ -132,8 +132,8 @@ fn main():
    *one value* (the array) with *one* lifetime — which is an excellent fit
    for arenas, and a well-trodden data-oriented pattern. The cost is
    ergonomic: you write `nodes[i].next_idx` instead of `node.next`, and
-   you need a sentinel or optional for "no node." Borrow Tycho's `Pool`
-   trick for safety: make handles **generational** (index + a generation
+   you need a sentinel or optional for "no node." A generational-handle
+   scheme keeps it safe: make handles **generational** (index + a generation
    counter; a stale handle fails its generation check instead of silently
    reading a recycled slot). One extra word per handle buys use-after-free
    *detection* for the index-as-pointer pattern, with no pointer type.
@@ -180,8 +180,8 @@ container or write a concrete struct per type. This is the Go-pre-1.18
 line: ship the handful of parametric types people actually need, forbid
 defining more. **Cost:** no user-defined generic data structures; compose
 from built-ins or duplicate. **Benefit:** the checker and codegen never
-grow a generics engine — the cross-module monomorphization registry that
-was a major source of complexity in Tycho's compiler simply does not exist.
+grow a generics engine — the cross-module monomorphization registry that is
+a major source of complexity in a generics-bearing compiler simply does not exist.
 
 Still required, and none of these is generics:
 
@@ -194,15 +194,15 @@ Still required, and none of these is generics:
   zero-cost type over `int`/`float` (same C rep, type-incompatible with the base
   and other newtypes); arithmetic/ordering/`str` only between the same newtype.
 
-## 8. Allocation strategy: signature-directed escape (Tycho's lesson, improved)
+## 8. Allocation strategy: signature-directed escape
 
-Tycho passes each function an implicit arena parameter and has the callee
-allocate into the *caller's* arena, so a returned value is already in the
-right place — **zero-copy returns**. The price: a function's throwaway
-temporaries also live in the caller's arena until the caller returns, so
-Tycho recovers tight reclamation with *visible* tools — named sub-arena
-blocks (`buffer: ...`) and `Pool(T)`. That works, but it puts memory back
-in the programmer's face, the opposite of Hier's goal.
+One established way to run arenas is to pass each function an implicit arena
+parameter and have the callee allocate into the *caller's* arena, so a
+returned value is already in the right place — **zero-copy returns**. The
+price: a function's throwaway temporaries also live in the caller's arena
+until the caller returns, so reclamation has to be recovered with *visible*
+tools — named sub-arena blocks and pools. That works, but it puts memory
+back in the programmer's face, the opposite of Hier's goal.
 
 Hier can do better **because it has no pointers**. With value semantics and
 no reference type, a value escapes a function only by being **returned** or
@@ -211,21 +211,21 @@ callee cannot stash an argument anywhere that outlives the call (there is
 nothing to stash it in). Therefore **escape is decided locally, from
 signatures — no whole-program may-alias analysis**. Concretely:
 
-- allocations that flow into the return value → emit in the caller's arena
-  (Tycho's trick): zero-copy return;
+- allocations that flow into the return value → emit in the caller's arena:
+  zero-copy return;
 - every other allocation in the call → emit in an auto-created sub-arena
   freed at scope exit: tight reclamation, invisibly;
 - loop bodies → non-escaping allocations go in the per-iteration scratch
   (reset each iteration); an escaping `push` targets the destination's arena.
 
-This is the synthesis: Tycho's zero-copy returns *and* per-scope
-reclamation, with **no visible memory constructs at all**. It is sound by
-construction because, under value semantics, a wrong escape decision can
-only change *when* memory is freed, never *whether* a pointer dangles. In a
-pointer-having language (Tycho) the same analysis is a correctness
-obligation with alias tracking — which is exactly why Tycho reached for
-explicit tools instead. The no-pointer rule turns Tycho's hardest problem
-into a local optimization.
+This is the synthesis: zero-copy returns *and* per-scope reclamation, with
+**no visible memory constructs at all**. It is sound by construction
+because, under value semantics, a wrong escape decision can only change
+*when* memory is freed, never *whether* a pointer dangles. In a
+pointer-having language the same analysis is a correctness obligation with
+alias tracking — which is exactly why such languages reach for explicit
+tools instead. The no-pointer rule turns that hardest problem into a local
+optimization.
 
 ## 9. Verdict
 
@@ -235,7 +235,7 @@ is a *small, fixed* type surface (built-in containers, `inout`, `Option`,
 optionally `distinct`) — not a generics engine, and not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
-signature-directed escape strategy (§8) reclaim memory without copies. The
-predecessor (Tycho) proved the arena core works in production; Hier's wager
-is that removing pointers and generics turns Tycho's *visible* memory tools
-and *whole-program* analyses into *invisible*, *local* ones.
+signature-directed escape strategy (§8) reclaim memory without copies. Arena
+allocation itself is well-proven; Hier's wager is that removing pointers and
+generics turns the *visible* memory tools and *whole-program* analyses such
+systems usually need into *invisible*, *local* ones.

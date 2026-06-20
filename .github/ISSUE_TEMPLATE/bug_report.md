@@ -29,8 +29,8 @@ $ ...
 - Actual: … (paste the exact output / error / sanitizer report)
 
 **Does it reproduce in both compilers?** (helps a lot, if you can check)
-- [ ] `./hierc bug.hi` (the C compiler)
-- [ ] via the self-hosted compiler — `./hierc bug.hi --bundle | <hierc0>` or `make fixpoint`
+- [ ] `./hierc bug.hi` (the C reference compiler)
+- [ ] the self-hosted compiler — easiest via `make fixpoint`, which builds with both
 - [ ] not sure
 
 **Environment**

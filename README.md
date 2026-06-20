@@ -159,6 +159,7 @@ bound sits firmly between a working and a broken optimization; likewise the
 | doc | what it covers |
 | --- | --- |
 | [docs/thesis.md](docs/thesis.md) | why value semantics makes implicit arenas work — and where it doesn't, with measured numbers |
+| [docs/arrays-structs.md](docs/arrays-structs.md) | the aggregates design pressure-test: arrays and structs under value semantics + implicit arenas, and why dropping pointers makes it sound |
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
@@ -166,10 +167,18 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
+| [docs/map-values.md](docs/map-values.md) | maps with arbitrary value types (`[string: Point]`, `[int: [int]]`) without generics, and the heap-value lifetimes |
+| [docs/map-mutation.md](docs/map-mutation.md) | `m[k]` as a place: in-place map-value mutation (`push(m[k], v)`, `m[k] += 1`) and why it stays sound |
 | [docs/perf.md](docs/perf.md) | self-hosted-compiler performance history; cross-language numbers live in `bench/` |
 | [docs/macos.md](docs/macos.md) | macOS/Apple Silicon run: full suite + self-host fixpoint green, cross-language benchmarks, the two portability fixes it took |
 | [docs/ideas.md](docs/ideas.md) | dated survey of neighbouring languages (Odin, Jai, Hylo, Koka, Vale) for fit |
 | [bench/README.md](bench/README.md) | the benchmark suite's map, incl. what is deliberately *not* measured and why |
+
+**New to the language?** The [learning guide](docs/learning-guide.md) is a
+hands-on, project-driven introduction for programmers coming from Python,
+JavaScript, or Ruby; [docs/learning-platform.html](docs/learning-platform.html)
+is the same material as a self-contained interactive tutorial (open it in a
+browser).
 
 ## Self-hosting
 
@@ -533,6 +542,15 @@ canonical counter idiom is therefore a self-rebind:
 ```
 counts = map_set(counts, w, map_get(counts, w, 0) + 1)
 ```
+
+Indexing makes that same operation direct. **`m[k]` is a place** you can write
+through — `m[k] = v`, `m[k] += 1`, `push(m[k], v)`, `m[k].field = x` — inserting
+the value type's zero for a missing key, so `cnt[w] += 1` counts in one line
+and `push(idx[term], doc)` grows a `[string: [int]]` value in place. As an
+rvalue, a scalar `m[k]` is a **pure read** that returns the zero on a missing key
+and never inserts (a composite value still reads out with `map_get`). The full
+rules are in [docs/map-mutation.md](docs/map-mutation.md), and the arbitrary
+value-type design in [docs/map-values.md](docs/map-values.md).
 
 Maps are values, like everything else: assigning one (`b := counts`) is a
 deep copy, so mutating the copy never touches the original, and `==`/`!=`
@@ -1106,6 +1124,7 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | Builtin | Type | Notes |
 | --- | --- | --- |
 | `print(s)` | `string -> void` | No implicit newline; use `"\n"`. |
+| `println(s)` | `string -> void` | `print(s)` plus a trailing newline; string-only like `print`, so `println(str(x))` for non-strings. |
 | `input()` | `-> string` | Reads one line from stdin (newline stripped). |
 | `str(x)` | `int -> string` / `float -> string` / `bool -> string` | Value to string (a float prints with up to 15 significant digits, always with a `.`; a `bool` prints `true`/`false`). |
 | `to_float(n)` | `int -> float` | Widen an int to a float. |

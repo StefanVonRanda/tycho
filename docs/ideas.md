@@ -5,7 +5,9 @@ Vale for features and ideas that fit Hier's identity: AOT, statically typed,
 **value semantics with no reference type**, **implicit hierarchical arenas**, no
 GC / no borrow checker. The filter for "does this fit Hier?" is: it must not
 reintroduce pointers or visible memory management, and it should compose with
-deep-copy-on-cross-arena-move.
+deep-copy-on-cross-arena-move. This doubles as a status record: most of the ideas
+that passed the filter have since shipped — the tiers below mark what is done and
+what stays deferred.
 
 ## The design-space map (where Hier actually is)
 
