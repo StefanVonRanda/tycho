@@ -570,8 +570,9 @@ O(n) total, the same trick as in-place string append (see
 All the map operations (`m[k] = v` / `map_get` / `k in m` / `delete m[k]` /
 `keys` / `len`, `==` deep value equality, the in-place accumulator, `mut`) work
 the same regardless of key or value type; `map_get`'s default and the stored
-value take the map's value type, and the key takes its key type. *Not yet:* key
-types other than `string`/`int`.
+value take the map's value type, and the key takes its key type. A key may also
+be a newtype over `string`/`int` or a fieldless enum; *not yet:* struct or tuple
+keys.
 
 ### Option and `match`
 
@@ -630,8 +631,8 @@ parameters, so the other comes from context — a return type, a declaration
 annotation (`x : Result(int, string) = Err("nope")`), an assignment target, or
 a call argument; a bare `x := Ok(1)` is a compile error. Both `T` and `E` may be
 any type, including heap ones (`Result([int], string)`); the value is
-monomorphized and deep-copied by value like everything else. *Not yet:*
-comparing two results with `==` (match instead).
+monomorphized and deep-copied by value like everything else. Two `Result` values
+compare with `==` (structural deep equality, recursing through `T` and `E`).
 
 `or_return` propagates errors without the `match` boilerplate. Writing
 `v := expr or_return` unwraps an `Ok` (binding `v` to the value) or, if `expr`
@@ -1225,42 +1226,17 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- **No Hindley–Milner type inference** — **by decision**, not omission: HM's
-  whole-program unification and let-generalization fit poorly with explicit
-  signatures and the type-driven memory model, so the shipped alternative is
-  bidirectional *local* inference ([docs/inference.md](docs/inference.md)).
-  (Generics are a separate axis and *did* ship — Odin-style `$T`, monomorphized
-  to concrete code before the escape analysis, so they cost the memory model
-  nothing; see [docs/generics.md](docs/generics.md).)
-- Multi-file **Odin-style packages** are supported (see
-  [Packages](#packages)); the self-hosted compiler itself is split into two
-  packages (see Self-hosting). Arrays nest (`[int]`, `[float]`,
-  `[string]`, `[Struct]`, `[[T]]`) and may be struct fields (incl. recursive
-  `[Node]`), as may `Option(T)` (a by-value-infinite type is rejected). Maps are
-  string- or int-keyed — directly or through a newtype (`[UserId: int]`: the
-  key stays distinct, a raw base value is rejected) — or keyed by a
-  **fieldless enum** (`[Color: int]`, stored as its tag; payload enums are
-  rejected) — with values of any type
-  (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
-  type. They support
-  `m[k] = v`/`map_get`/`k in m`/`delete m[k]`/`keys`/`len`/`==`, in-place
-  accumulators, and `mut`.
-  `mut` covers int, bool, pure-value structs, and the heap aggregates
-  `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
-  element/field mutation through the borrow (shared mutable state across calls,
-  e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
-  `examples/context.hi`). `mut string` reassigns through the borrow (the
-  value itself stays immutable).
 - **Strings are byte-oriented.** A `string` is a length-counted UTF-8 byte
   buffer; literals and I/O pass bytes through unchanged, but `len`, indexing,
   and slicing count *bytes*, not code points or graphemes, and there are no
   Unicode case/normalization operations (ASCII only). Interior `NUL` (`0x00`)
   bytes are a known edge a few `corelib` codecs note. Fine for ASCII and
   byte-exact work; not a Unicode text library.
-- **`Option`/`Result` are not comparable with `==`** — `match` on them instead
-  (the compiler says so). `==` *is* structural deep equality everywhere else:
-  scalars, strings, arrays, tuples, structs, fieldless **and** payload-carrying
-  enums, and map values.
+- **A user `enum` is monomorphic** — only the built-in `Option(T)` / `Result(T, E)`
+  are generic over their payload; `enum Tree($T)` is not supported. Generic
+  *functions* and *structs* do take `$T`, with a fixed compiler-known constraint
+  set (`numeric` / `comparable` / `has_str`) rather than user-defined traits — see
+  [docs/generics.md](docs/generics.md).
 
 ## Repository layout
 
