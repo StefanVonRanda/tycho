@@ -518,11 +518,11 @@ empty := []string: int            # empty map (or bare `[]` where context suppli
                                   # the type -- see Type inference)
 
 map_get(counts, "ada", 0)         # value for "ada", or 0 if absent -> int
-map_has(counts, "ada")            # membership -> bool
+"ada" in counts                   # membership -> bool
 len(counts)                       # entry count -> int
 
-counts = map_set(counts, "grace", 5)   # add/overwrite -> a new map
-counts = map_del(counts, "alan")       # remove a key -> a new map
+counts["grace"] = 5               # add/overwrite a key
+delete counts["alan"]             # remove a key (a no-op if absent)
 
 ks := keys(counts)                     # iterate: keys(m) -> [string]
 for i in range(len(ks)):
@@ -532,24 +532,24 @@ for i in range(len(ks)):
 
 `keys(m)` returns the live keys as a `[string]` (or `[int]` for an int-keyed
 map) in unspecified order; iterate it with `for k in keys(m):` (or index it) to
-walk the map — there is no dedicated `for k in m` form. `map_del(m, k)`
+walk the map — `k in m` tests membership, it does not iterate. `delete m[k]`
 removes a key (a no-op if absent). See [`examples/wordcount.hi`](examples/wordcount.hi).
 
-`map_set(m, k, v)` is a **pure** operation: it returns a new map and leaves
-`m` untouched, the same way `+` on a string returns a new string. The
-canonical counter idiom is therefore a self-rebind:
+**`m[k]` is a place** you can write through — `m[k] = v`, `m[k] += 1`,
+`push(m[k], v)`, `m[k].field = x` — inserting the value type's zero for a missing
+key, so `cnt[w] += 1` counts in one line and `push(idx[term], doc)` grows a
+`[string: [int]]` value in place. The canonical counter idiom is therefore one
+line:
 
 ```
-counts = map_set(counts, w, map_get(counts, w, 0) + 1)
+counts[w] = map_get(counts, w, 0) + 1
 ```
 
-Indexing makes that same operation direct. **`m[k]` is a place** you can write
-through — `m[k] = v`, `m[k] += 1`, `push(m[k], v)`, `m[k].field = x` — inserting
-the value type's zero for a missing key, so `cnt[w] += 1` counts in one line
-and `push(idx[term], doc)` grows a `[string: [int]]` value in place. As an
-rvalue, a scalar `m[k]` is a **pure read** that returns the zero on a missing key
-and never inserts (a composite value still reads out with `map_get`). The full
-rules are in [docs/map-mutation.md](docs/map-mutation.md), and the arbitrary
+As an rvalue, `m[k]` reads the value out **by copy** — a scalar returns the
+value type's zero on a missing key (and never inserts); a composite reads a deep
+copy. For a non-zero default on a missing key, `map_get(m, k, default)` is the
+one surviving map *function* (everything else is operator/keyword syntax). The
+full rules are in [docs/map-mutation.md](docs/map-mutation.md), and the arbitrary
 value-type design in [docs/map-values.md](docs/map-values.md).
 
 Maps are values, like everything else: assigning one (`b := counts`) is a
@@ -561,17 +561,17 @@ or take it `mut`), and returned maps are promoted into the caller's arena. An
 `mut [string: int]` lets a callee share and mutate the caller's map in place
 (a counter threaded through calls), exactly like a `mut` array.
 
-The self-rebinds `m = map_set(m, k, v)` and `m = map_del(m, k)` look O(n) per
-step (build a fresh map each time), but because value semantics proves `m` is
-uniquely owned at that point, the compiler mutates it in place — the loop is
+The accumulator `counts[w] = map_get(counts, w, 0) + 1` looks O(n) per step
+(insert into a fresh map each time), but because value semantics proves `counts`
+is uniquely owned at that point, the compiler mutates it in place — the loop is
 O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
-All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, `==`
-deep value equality, the in-place accumulator rebind, `mut`) work the same
-regardless of key or value type; `map_get`'s default and `map_set`'s value take
-the map's value type, and the key takes its key type. *Not yet:* key types other
-than `string`/`int`.
+All the map operations (`m[k] = v` / `map_get` / `k in m` / `delete m[k]` /
+`keys` / `len`, `==` deep value equality, the in-place accumulator, `mut`) work
+the same regardless of key or value type; `map_get`'s default and the stored
+value take the map's value type, and the key takes its key type. *Not yet:* key
+types other than `string`/`int`.
 
 ### Option and `match`
 
@@ -1133,10 +1133,10 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
 | `split(s, sep)` | `(string, string) -> [string]` | Split on a non-empty separator; `n` separators yield `n+1` fields (an empty `s` yields one empty field). Empty separator aborts. |
-| `map_set(m, k, v)` | `([string: int], string, int) -> [string: int]` | Returns a new map with `k`→`v` added/overwritten; pure (`m` unchanged). The `m = map_set(m, …)` self-rebind grows in place. |
-| `map_get(m, k, d)` | `([string: int], string, int) -> int` | Value for key `k`, or default `d` if absent. |
-| `map_has(m, k)` | `([string: int], string) -> bool` | Whether key `k` is present. |
-| `map_del(m, k)` | `([string: int], string) -> [string: int]` | Returns a new map without key `k` (no-op if absent); pure. The `m = map_del(m, …)` self-rebind deletes in place. |
+| `m[k] = v` | place store | Insert/overwrite key `k` (a place: also `m[k] += 1`, `push(m[k], v)`, `m[k].f = x`). Inserts the value type's zero for a missing key; grows in place when `m` is uniquely owned. |
+| `map_get(m, k, d)` | `([string: int], string, int) -> int` | Value for key `k`, or default `d` if absent. The one surviving map *function* — everything else is operator/keyword syntax. |
+| `k in m` | membership `-> bool` | Whether key `k` is present. |
+| `delete m[k]` | statement | Remove key `k` (a no-op if absent). |
 | `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type (unspecified order); iterate it to walk the map. |
 | `reserve(arr, n)` | `([T], int) -> void` | Capacity hint: preallocate room for `n` elements (`[int]`/`[float]`/`[string]`; a map place `m[k]` works too — count-then-fill builds size each list once). A hint, not a length: contents and `len` are unchanged, pushing past `n` still grows. A capacity that can't be allocated aborts at runtime. |
 | `getenv(name)` | `string -> string` | The environment variable's value, or `""` if unset. |
@@ -1241,8 +1241,8 @@ None of this appears in Hier source.
   rejected) — with values of any type
   (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
   type. They support
-  `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`/`==`, in-place
-  accumulator rebinds, and `mut`.
+  `m[k] = v`/`map_get`/`k in m`/`delete m[k]`/`keys`/`len`/`==`, in-place
+  accumulators, and `mut`.
   `mut` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,

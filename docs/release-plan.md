@@ -232,7 +232,7 @@ unqualified) is unaffected; so is every public (non-underscore) symbol.
 compilers); `make fixpoint` all green (B≡C; the rt/main split is `_`-free);
 `make fuzz` `FAIL=0`; `make tools-check` ok.
 
-### B5 — remove `map_*`, keep `m[k]` — IN PROGRESS
+### B5 — remove `map_*`, keep `m[k]` — DONE
 
 Breaking API change. The replacement surface lands first (additive), then the
 `map_*` builtins are removed and call sites migrated.
@@ -255,16 +255,28 @@ Breaking API change. The replacement surface lands first (additive), then the
   `tools/lsp` — so reserving `get` as a builtin is too intrusive. `map_get` is
   therefore the one surviving `map_*` function.
 
-**Remaining:**
+**Migration + removal — DONE** (migrate `208d9eb`; removal + docs this commit):
 
-- **Migrate** the call sites: `m = map_set(m,k,V)` → `m[k] = V`,
-  `map_has(m,k)` → `k in m`, `m = map_del(m,k)` → `delete m[k]`. (`map_get`
-  stays.) `map_set` ≈120 uses, `map_has` ≈34, `map_del` ≈24, across
-  corelib/examples/tests/bench/docs. The `map_set` value arg can be arbitrarily
-  nested, so this is a balanced-paren transform, not a regex.
-- **Remove** the `map_set` / `map_has` / `map_del` builtins from both compilers
-  (fail-closed: reject a user-typed call), keeping `map_get` and the internal
-  lowerings the sugar depends on. Update the map docs.
+- **Migrated** ~178 call sites (`m = map_set(m,k,V)` → `m[k] = V`,
+  `map_has(m,k)` → `k in m`, `m = map_del(m,k)` → `delete m[k]`; `map_get`
+  kept) across corelib/examples/tests/bench, the self-hosted compiler (its own
+  internal map calls), and the fuzzer, via a balanced-paren transform plus
+  idiom-aware rewrites for three edge cases: a borrowed-param mutation needs a
+  copy first; `m[k]=` does not ground a pending map type the way `map_set` did
+  (use a typed empty-map decl); a non-rebind `less := map_del(...)` becomes
+  copy-then-delete.
+- **Removed** the `map_set` / `map_has` / `map_del` builtins: a user-typed call
+  is rejected at parse with a pointer to the new syntax (both compilers). The
+  internal lowerings stay — `delete` desugars through `map_del`, the `m[k]` read
+  through `map_get` — so the sugar keeps working. Reject tests
+  `tests/reject/map_{set,has,del}_removed.hi`; the discarded-pure-result warning
+  and the map docs (README, learning-guide, map-mutation, map-values, inference)
+  were updated off the removed names.
+
+**Verified.** `make test` 172/0 (incl. the 3 reject tests); `make fixpoint` all
+green (B≡C — the self-host compiles itself after migrating its own map calls and
+with the new user-call rejection in place); `make corelib` green; `make fuzz`
+skip=0 FAIL=0; `make tools-check` ok.
 
 ### A2 — Odin-style generics — TODO (design doc first)
 
@@ -277,5 +289,6 @@ Then staged implementation in both compilers behind the fixpoint. The
 
 ## Sequence
 
-Per the chosen order: A1 → A3 → B6 → B4 → B3 (all done) → **B5** (next) → A2. Each
-is its own commit, fully green before the next.
+Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 (all done) → **A2** (next, the
+last item: Odin-style generics, design-doc-first). Each is its own commit, fully
+green before the next.

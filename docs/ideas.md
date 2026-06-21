@@ -166,8 +166,8 @@ cluster of languages, and the differences are the interesting part:
    moved vs ~187 MB copied). ✅ *Fourth step done: loop-carried self-rebuild
    move.* A self-rebuild `t = Pair(t, Leaf(..))` reads the old `t` once and
    immediately overwrites it, so its buffer is dead at the rebind even inside
-   a loop — the constructor analog of the `acc = acc + e` / `m = map_set(m,
-   ...)` loop accumulators. The single occurrence of the target is handed off
+   a loop — the constructor analog of the `acc = acc + e` / `m[k] = v`
+   loop accumulators. The single occurrence of the target is handed off
    instead of copied, turning the O(n²) comb *build* into O(n) (`bench/
    comb_build` measures ~2 MB vs ~368 MB at n=4000). The gate requires the
    name to occur exactly once in the RHS and to be a same-arena local, so a

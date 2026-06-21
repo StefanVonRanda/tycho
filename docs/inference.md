@@ -5,7 +5,7 @@ Status: DECIDED AND SHIPPED — **all four stages, both compilers.** B-0
 B-1 (int literals adapt to float contexts, literals only), B-2 (lambda
 param/return elision from expected fn types), and B-3 (block-local
 grounding: a bare `xs := []` / `x := None` declares pending and its FIRST
-grounding use in the block — assignment, push/map_set, or any expected-type
+grounding use in the block — assignment, push, or any expected-type
 position — types it retroactively; a use needing the type first, or a block
 ending with it still pending, errors locally at that line). Still no type
 variables: B-3 is a flow-sensitive forward scan, not unification — hierc
@@ -16,7 +16,7 @@ tests/reject/infer_*.hi.
 
 **The grounding contract (both compilers, fixture-locked):** a pending decl
 grounds at its first occurrence in any of — an assignment to it (`o =
-Some(5)`), `push`/`map_set` on it, a typed argument position (named fn,
+Some(5)`), `push` on it, a typed argument position (named fn,
 fn-typed variable or call-on-expression, struct/enum construction, `send`,
 `spawn`), `return`, a field/element store, or an array-literal element
 position (typed by the literal's first element). Anything else that needs

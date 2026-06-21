@@ -533,11 +533,11 @@ fn main():
 
     # read
     v := map_get(counts, "ada", 0)         # 1 (0 is the default if absent)
-    has := map_has(counts, "grace")        # false
+    has := "grace" in counts               # false
 
-    # update — returns a NEW map (pure, like string +)
-    counts = map_set(counts, "grace", 5)   # add/overwrite
-    counts = map_del(counts, "alan")       # remove
+    # update
+    counts["grace"] = 5                    # add/overwrite a key
+    delete counts["alan"]                  # remove a key (no-op if absent)
 
     # iterate
     ks := keys(counts)                     # [string] of keys (unordered)
@@ -558,19 +558,19 @@ counts := []string: int
 words := split("the cat sat on the mat", " ")
 for i in range(len(words)):
     w := words[i]
-    counts = map_set(counts, w, map_get(counts, w, 0) + 1)
+    counts[w] = map_get(counts, w, 0) + 1
 ```
 
-Despite looking like it builds a fresh map each step, the compiler **mutates in place** when it sees the `counts = map_set(counts, ...)` self-rebind pattern — O(n) total, not O(n²).
+Despite looking like it rebuilds the map each step, the compiler **mutates in place** because value semantics proves `counts` is uniquely owned — O(n) total, not O(n²).
 
-### Bracket syntax: `m[k]`
+### `m[k]` is a place
 
-You can also use bracket syntax instead of the `map_set`/`map_get` calls:
+`m[k]` names a value's storage slot, so you write through it directly:
 
 ```
 fn main():
     counts := []string: int
-    counts["ada"] = 1          # write  (same as map_set(counts, "ada", 1))
+    counts["ada"] = 1          # write a key
     counts["ada"] += 1         # compound update -> 2
     counts["new"] += 5         # missing key starts at 0, then += 5 -> 5
 
@@ -604,7 +604,7 @@ for i in range(len(words)):
 
 ```
 fn tally(m: mut [string: int], word: string):
-    m = map_set(m, word, map_get(m, word, 0) + 1)
+    m[word] = map_get(m, word, 0) + 1
 
 fn main():
     counts := []string: int
@@ -1101,7 +1101,7 @@ fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int)
         push(p.docs, doc)
         push(p.freqs, 1)
         push(postings, p)
-        tidx = map_set(tidx, term, len(postings) - 1)
+        tidx[term] = len(postings) - 1
     else:
         n := len(postings[pi].docs)
         if n > 0 and postings[pi].docs[n - 1] == doc:
@@ -1179,7 +1179,7 @@ fn main():
 - `mut` arrays and maps shared across recursive calls
 - In-place mutation through projections (`postings[pi].freqs[n - 1] += 1`)
 - String processing (`split`, character arithmetic, `chr`)
-- The map accumulator idiom (`tidx = map_set(tidx, ...)`)
+- The map accumulator idiom (`tidx[term] = ...`)
 
 ---
 
@@ -1598,10 +1598,10 @@ xs[a:b]             # slice (view or copy depending on context)
 ```
 ["a": 1, "b": 2]                # literal
 []string: int                    # empty
-map_set(m, k, v)  map_get(m, k, default)
-map_has(m, k)     map_del(m, k)
-keys(m)            len(m)
-m = map_set(m, k, v)            # in-place accumulator idiom
+m[k] = v          map_get(m, k, default)
+k in m            delete m[k]
+keys(m)           len(m)
+m[k] = map_get(m, k, 0) + 1     # in-place accumulator idiom
 ```
 
 ### Structs

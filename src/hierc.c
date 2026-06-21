@@ -1466,6 +1466,12 @@ static Expr *parse_primary(Parser *ps) {
         }
         if (at(ps, TK_LPAREN)) {           /* call */
             ps->p++;
+            /* B5: the map_* mutators were removed in favour of operator/keyword
+             * syntax. Reject a user-typed call here (the `delete` desugar builds
+             * its map_del node directly, bypassing this path; map_get is kept). */
+            if (!strcmp(t->text, "map_set")) die_at(t->line, "map_set was removed; use `m[k] = v`");
+            if (!strcmp(t->text, "map_has")) die_at(t->line, "map_has was removed; use `k in m`");
+            if (!strcmp(t->text, "map_del")) die_at(t->line, "map_del was removed; use `delete m[k]`");
             Expr *e = new_expr(E_CALL, t->line);
             e->sval = t->text;
             e->pkg  = g_cur_pkg_prefix;   /* the package this call appears in; resolver tries <pkg>name first */
@@ -4308,7 +4314,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
         case S_EXPR:
             if (s->expr && s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
                 warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
-                                       "nothing (map_set/map_del return a new map -- use `m = map_set(...)` or `m[k] = v`)",
+                                       "nothing (to change a map, use `m[k] = v` or `delete m[k]`)",
                         s->expr->sval);
             if (IS_TASK(resolve_expr(s->expr)))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");

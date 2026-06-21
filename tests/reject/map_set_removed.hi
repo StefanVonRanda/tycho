@@ -1,0 +1,6 @@
+# B5: map_set was removed in favour of m[k] sugar; a user call (bare statement,
+# the form that previously slipped past hierc0's parse_atom check) must be rejected.
+fn main():
+    m := []string: int
+    m["a"] = 1
+    map_set(m, "a", 9)

@@ -110,9 +110,9 @@ echo "    hierc: bad=$cbw good=$cgw   hierc0: bad=$zbw good=$zgw"
 
 echo ">>> pure-result: both compilers warn on a discarded pure-builtin result"
 # Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
-# A bare `map_set(m,k,v)` discards the new map it returns -> must warn; `m[k]=v` must not.
-printf 'fn main():\n    m := []string: int\n    map_set(m, "a", 1)\n' > "$TMP/pure.hi"
-printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str(map_has(m, "a")))\n' > "$TMP/nopure.hi"
+# A bare `map_get(m,k,d)` discards the value it returns -> must warn; `m[k]=v` must not.
+printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    map_get(m, "a", 0)\n' > "$TMP/pure.hi"
+printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in m))\n' > "$TMP/nopure.hi"
 "$HIERC"      "$TMP/pure.hi"   --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p1"; cpw=$(grep -c 'warning:' "$TMP/p1")
 "$HIERC"      "$TMP/nopure.hi" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p2"; cpn=$(grep -c 'warning:' "$TMP/p2")
 "$TMP/hierc0" "$TMP/pure.hi"   --emit-c 1>/dev/null 2>"$TMP/p3"; zpw=$(grep -c 'warning:' "$TMP/p3")

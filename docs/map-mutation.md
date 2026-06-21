@@ -8,18 +8,11 @@ README's [Maps](../README.md#maps-string-v-int-v) section.
 
 ## Motivation
 
-With value semantics, the only way to change a stored value through the pure map
-API is to read it out, change the copy, and write it back:
-
-```
-post := map_get(idx, term, []int)
-push(post, doc)
-idx = map_set(idx, term, post)        # copies the whole posting list, every time
-```
-
-For a `[string: [int]]` inverted index that is O(n) per append — quadratic over
-a build. The fix is to let `m[k]` name the value's storage slot directly, so the
-mutation happens *in place*:
+With value semantics, changing a stored composite value would otherwise mean
+reading it out, mutating the copy, and reinserting it — and the reinsert copies
+the whole value every time. For a `[string: [int]]` inverted index that is O(n)
+per append, quadratic over a build. Instead, `m[k]` names the value's storage
+slot directly, so the mutation happens *in place*:
 
 ```
 push(idx[term], doc)                  # grow the value array in its own slot

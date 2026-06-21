@@ -33,7 +33,7 @@ heap value in the language. For a value type that owns heap bytes — a `string`
 a struct with a `string` field, an array, another map — that means two copy
 sites, and getting either wrong is a dangling pointer:
 
-- **In** (`map_set`, a map literal, an `m[k] = v` store): the value is
+- **In** (an `m[k] = v` store or a map literal): the value is
   deep-copied into the *map's* arena, so it lives as long as the map and is
   independent of the source variable. Mutating the original afterwards never
   touches the stored copy.
@@ -47,7 +47,7 @@ Because both directions copy, value semantics holds end to end:
 
 ```
 v := map_get(m, "a", default)
-m = map_set(m, "a", other)     # rehashes, moves slots
+m["a"] = other                 # rehashes, moves slots
 use(v)                         # still the old value — v is its own copy
 ```
 
@@ -66,9 +66,9 @@ For both key kinds — `[string: V]` and `[int: V]` — the value `V` may be:
 - a nested map (`[string: [string: int]]`).
 
 All operations work uniformly regardless of `V`:
-`map_set` / `map_get` / `map_has` / `map_del` / `keys` / `len`, deep value
-`==`, the in-place accumulator rebind, and `mut`. `map_get`'s default and
-`map_set`'s value take `V`; the key takes `K`. The only remaining restriction
+`m[k] = v` / `map_get` / `k in m` / `delete m[k]` / `keys` / `len`, deep value
+`==`, the in-place accumulator, and `mut`. `map_get`'s default and the stored
+value take `V`; the key takes `K`. The only remaining restriction
 is on the **key**: `string`, `int`, a newtype over one of those, or a fieldless
 enum — no other key type yet (see the README's
 [newtypes](../README.md#distinct-newtypes-type) and
