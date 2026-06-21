@@ -8442,6 +8442,11 @@ fn gen_inst_mangle(ty: string) -> string:
     n := len(ty)
     if n > 1 and ty[0] == 91 and ty[n - 1] == 93:    # "[E]" array -> arr_<E> (C-identifier-safe)
         return "arr_" + gen_inst_mangle(substr(ty, 1, n - 1))
+    if n > 1 and ty[0] == 123 and ty[n - 1] == 125:  # "{K:V}" map -> map_<K>_<V>
+        inner := substr(ty, 1, n - 1)
+        col := find_top_colon(inner)
+        if col >= 0:
+            return "map_" + gen_inst_mangle(substr(inner, 0, col)) + "_" + gen_inst_mangle(substr(inner, col + 1, len(inner)))
     p := -1
     i := 0
     for i < n:
@@ -8466,8 +8471,24 @@ fn inst_name(base: string, ptypes: [string]) -> string:
         i = i + 1
     return nm
 
+# Index of the first top-level ':' (depth 0 w.r.t. {}/[]/()), or -1. Splits a
+# map type's "{K:V}" inner into key and value.
+fn find_top_colon(s: string) -> int:
+    depth := 0
+    i := 0
+    for i < len(s):
+        c := s[i]
+        if c == 123 or c == 91 or c == 40:           # { [ (
+            depth = depth + 1
+        elif c == 125 or c == 93 or c == 41:         # } ] )
+            depth = depth - 1
+        elif c == 58 and depth == 0:                 # : at top level
+            return i
+        i = i + 1
+    return -1
+
 # Stage 3: structurally match a parameter-type PATTERN against a concrete argument
-# type string, binding each "$X". Handles "$T", "[$T]", "Option($T)",
+# type string, binding each "$X". Handles "$T", "[$T]", "{$K:$V}", "Option($T)",
 # "Result($T,$E)" (recursing). 0 on a constructor mismatch or bind conflict.
 fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes: mut [string]) -> bool:
     pn := len(pat)
@@ -8484,6 +8505,13 @@ fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes
         return true
     if pn > 1 and cn > 1 and pat[0] == 91 and concrete[0] == 91 and pat[pn - 1] == 93 and concrete[cn - 1] == 93:
         return match_typaram_str(substr(pat, 1, pn - 1), substr(concrete, 1, cn - 1), &bnames, &btypes)   # "[E]" array
+    if pn > 1 and cn > 1 and pat[0] == 123 and concrete[0] == 123 and pat[pn - 1] == 125 and concrete[cn - 1] == 125:   # "{K:V}" map
+        pin := substr(pat, 1, pn - 1)
+        cin := substr(concrete, 1, cn - 1)
+        pcol := find_top_colon(pin)
+        ccol := find_top_colon(cin)
+        if pcol >= 0 and ccol >= 0:
+            return match_typaram_str(substr(pin, 0, pcol), substr(cin, 0, ccol), &bnames, &btypes) and match_typaram_str(substr(pin, pcol + 1, len(pin)), substr(cin, ccol + 1, len(cin)), &bnames, &btypes)
     pp := -1
     cp := -1
     i := 0

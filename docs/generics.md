@@ -2,9 +2,10 @@
 
 > **Status: Stages 1, 2a, 2b, and most of Stage 3 shipped** — generic *functions*,
 > generic-struct *construction* and *type-position* annotations, struct
-> *dependency-ordering* (`Box(Point)`), and *structured type-param patterns*
-> (`fn first(xs: [$T]) -> Option(T)`), both compilers. The remaining Stage 3
-> (`where` constraints / explicit call-site type args) stays design. This is
+> *dependency-ordering* (`Box(Point)`), *structured type-param patterns*
+> (`fn first(xs: [$T]) -> Option(T)`), and *map patterns*
+> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), both compilers. The remaining
+> Stage 3 (`where` constraints / explicit call-site type args) stays design. This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -280,8 +281,18 @@ commit, fully green before the next — same discipline as every other change.
   kept out of every emission loop by a `has_typaram` guard. In hierc0, templates
   are *dropped* before codegen so those types never reach it — only a structural
   string match (`match_typaram_str`) and a recursive bare-`T`→`$T` rewrite are
-  needed. Test: `tests/generic_structured.hi`. (Edge: a `[$K: $V]` *map* pattern
-  and a `where`-style constraint are still future work.)
+  needed. Test: `tests/generic_structured.hi`.
+- **Stage 3 (map patterns) — SHIPPED.**
+  `fn lookup(m: [$K: $V], k: $K, d: $V) -> $V` — both the key and value type are
+  inferred from inside the map argument, substituted, and monomorphized per
+  concrete map. In hierc the same `match_type`/`subst_type`/`has_typaram`
+  machinery gains a map case (over `is_map`/`map_key`/`map_val`/`map_of`), the
+  map-type parser builds a composite `mapc_of` when the key or value is a `$`
+  (validity deferred to instantiation), and a `has_typaram` guard keeps the
+  transient template map out of the map-ops emission loop. In hierc0 it is a
+  `{K:V}` (curly) case in `match_typaram_str` and `gen_inst_mangle`, split on the
+  first top-level colon (`find_top_colon`); the string substitution already
+  rewrites `$K`/`$V` in place. Test: `tests/generic_map.hi`.
 - **Stage 3 — constraints, explicit type args (remaining).**
   `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
   explicit call-site type argument for the non-inferable case

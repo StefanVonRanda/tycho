@@ -334,9 +334,18 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   string match (`match_typaram_str`) + recursive bare-`T`→`$T` rewrite; templates
   are dropped before codegen so no emission pollution. Test
   `tests/generic_structured.hi`; all gates green.
-- **Stage 3 (remaining) — TODO:** `[$K: $V]` map patterns, `where` constraints
-  (a fixed compiler-known predicate set), and an explicit call-site type arg for
-  the non-inferable case.
+- **Stage 3 (map patterns) — DONE** (both compilers). `fn lookup(m: [$K: $V],
+  k: $K, d: $V) -> $V`: both the key and value type are inferred from inside the
+  map argument, substituted, and monomorphized per concrete map. hierc: the same
+  `match_type`/`subst_type`/`has_typaram` machinery extended with a map case (over
+  `is_map`/`map_key`/`map_val`/`map_of`), the map-type parser building a composite
+  `mapc_of` for a `$`-key/value (validity checked at instantiation), and a
+  `has_typaram` guard on the map-ops emission loop. hierc0: a `{K:V}` (curly) case
+  in `match_typaram_str` and `gen_inst_mangle` via a top-level-colon split
+  (`find_top_colon`); the string `subst` already substitutes `$K`/`$V` in place.
+  Test `tests/generic_map.hi`; all gates green.
+- **Stage 3 (remaining) — TODO:** `where` constraints (a fixed compiler-known
+  predicate set) and an explicit call-site type arg for the non-inferable case.
 
 The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
 README) have been rewritten and the design doc flipped from *design* to
@@ -347,6 +356,6 @@ README) have been rewritten and the design doc flipped from *design* to
 Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 → **A2** — all done. A2 shipped
 its design (`docs/generics.md`), then staged implementation through generic
 functions, generic structs (construction + type-position), struct
-dependency-ordering, and structured patterns; the only A2 tail left is
-`[$K: $V]` map patterns, `where` constraints, and explicit call-site type args.
+dependency-ordering, structured patterns, and `[$K: $V]` map patterns; the only
+A2 tail left is `where` constraints and explicit call-site type args.
 Each item was its own commit, fully green before the next.

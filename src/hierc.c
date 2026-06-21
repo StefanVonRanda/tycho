@@ -1136,6 +1136,7 @@ static Type subst_type(Type t, Type *binds) {
     if (is_array(t)) return arr_of(subst_type(arr_elem(t), binds));   /* arr_of canonicalizes [int]->T_ARRAY_INT */
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
+    if (is_map(t))  return map_of(subst_type(map_key(t), binds), subst_type(map_val(t), binds));   /* map_of canonicalizes [string:int]->T_MAP_SI */
     return t;
 }
 
@@ -1146,6 +1147,7 @@ static int has_typaram(Type t) {
     if (is_array(t)) return has_typaram(arr_elem(t));
     if (IS_OPT(t))  return has_typaram(opt_inner(t));
     if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
+    if (is_map(t))  return has_typaram(map_key(t)) || has_typaram(map_val(t));
     return 0;
 }
 
@@ -1161,6 +1163,8 @@ static int match_type(Type pat, Type concrete, Type *binds) {
     if (IS_OPT(pat) && IS_OPT(concrete))   return match_type(opt_inner(pat), opt_inner(concrete), binds);
     if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
+    if (is_map(pat) && is_map(concrete))   return match_type(map_key(pat), map_key(concrete), binds)
+                                               && match_type(map_val(pat), map_val(concrete), binds);
     return pat == concrete;
 }
 
@@ -1250,6 +1254,8 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             Type val = parse_type(ps);
             eat(ps, TK_RBRACKET, "']'");
+            if (has_typaram(elem) || has_typaram(val))   /* generics: a `[$K: $V]` pattern -- key/value validity is checked at instantiation */
+                return mapc_of(elem, val);
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
                 die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum; int-keyed maps support only int/float values");
@@ -4523,6 +4529,8 @@ static char *type_mangle_ident(Type t) {
     if (IS_ENUM(t))    return g_enums[ENUM_ID(t)].name;
     if (is_array(t))   return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
     if (IS_OPT(t))     return sfmt("opt_%s", type_mangle_ident(opt_inner(t)));
+    if (IS_RES(t))     return sfmt("res_%s_%s", type_mangle_ident(g_restypes[RES_ID(t)].ok), type_mangle_ident(g_restypes[RES_ID(t)].err));
+    if (is_map(t))     return sfmt("map_%s_%s", type_mangle_ident(map_key(t)), type_mangle_ident(map_val(t)));
     return sfmt("t%d", (int)t);
 }
 
@@ -7425,6 +7433,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * copy_into, exactly like a composite-array element. Emitted after struct/array
      * bodies so a struct/array value type's copy fn is already available. */
     for (int i = 0; i < g_nmaptypes; i++) {
+        if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
         const char *ct = c_type(g_maptypes[i].val);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
         if (mapkey_intrep(g_maptypes[i].key)) {   /* int(-rep) keys incl. enum tags: occupancy-array scheme (mirror HierMapII; 0 is a real key) */
