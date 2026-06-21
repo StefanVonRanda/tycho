@@ -46,6 +46,6 @@ fn main():
     du := hex.decode(eu)
     print(f"bin_ok lower={b2i(hex.encode(dl) == el)} upper={b2i(hex.encode(du) == el)} len={len(dl)}\n")  # 1 1 4
 
-    # ---- the byte-safety caveat is observable: a decoded NUL is dropped ----
+    # ---- byte-safe strings (A1): a decoded NUL is preserved, not dropped ----
     z := hex.decode("00")
-    print(f"decode_00_len = {len(z)}\n")                   # 0 (chr(0) appends nothing)
+    print(f"decode_00_len = {len(z)}\n")                   # 1 (the NUL byte is kept)

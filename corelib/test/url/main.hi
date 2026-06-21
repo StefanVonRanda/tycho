@@ -41,6 +41,6 @@ fn main():
     db := url.decode(be)
     print(f"bin_ok={b2i(url.encode(db) == be)} len={len(db)}\n")    # 1 3
 
-    # ---- byte-safety caveat: a decoded NUL is dropped ----
+    # ---- byte-safe strings (A1): a decoded NUL is preserved ----
     z := url.decode("%00")
-    print(f"decode_00_len={len(z)}\n")                              # 0
+    print(f"decode_00_len={len(z)}\n")                              # 1

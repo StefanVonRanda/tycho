@@ -13,4 +13,4 @@ rt_ok=1
 form_rt_ok=1
 bin enc     = %E9%FF%01
 bin_ok=1 len=3
-decode_00_len=0
+decode_00_len=1
