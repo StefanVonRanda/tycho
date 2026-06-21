@@ -6078,16 +6078,20 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
         return "Soa_" + soa_struct(ty) + "_eq(" + a + ", " + b + ")"
     if is_option(ty):                            # tags equal, and (if Some) payloads equal
         ct := cty(dc, ctx, option_inner(ty))
-        pa := "*(" + ct + "*)(" + a + ".val)"
-        pb := "*(" + ct + "*)(" + b + ".val)"
+        # parenthesize the dereffed payload: when the payload is itself an
+        # Option/Result, the recursion appends `.tag`/`.val` to this expr, and
+        # `.` binds tighter than `*` -- without the parens `*(T*)(x.val).tag`
+        # mis-parses as `*((T*)(x.val).tag)`.
+        pa := "(*(" + ct + "*)(" + a + ".val))"
+        pb := "(*(" + ct + "*)(" + b + ".val))"
         return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 0 || " + eq_field(dc, ctx, option_inner(ty), pa, pb) + "))"
     if is_result(ty):
         ct := cty(dc, ctx, result_ok(ty))
         ce := cty(dc, ctx, result_err(ty))
-        oa := "*(" + ct + "*)(" + a + ".ok)"
-        ob := "*(" + ct + "*)(" + b + ".ok)"
-        ea := "*(" + ce + "*)(" + a + ".err)"
-        eb := "*(" + ce + "*)(" + b + ".err)"
+        oa := "(*(" + ct + "*)(" + a + ".ok))"
+        ob := "(*(" + ct + "*)(" + b + ".ok))"
+        ea := "(*(" + ce + "*)(" + a + ".err))"
+        eb := "(*(" + ce + "*)(" + b + ".err))"
         okeq := eq_field(dc, ctx, result_ok(ty), oa, ob)
         ereq := eq_field(dc, ctx, result_err(ty), ea, eb)
         return "(" + a + ".tag == " + b + ".tag && (" + a + ".tag == 1 ? " + okeq + " : " + ereq + "))"

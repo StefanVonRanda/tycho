@@ -3457,8 +3457,6 @@ static Type resolve_expr(Expr *e) {
                     if (lt != rt)
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
-                    if (IS_OPT(lt)) die_at(e->line, "cannot compare Option values; match on them instead");
-                    if (IS_RES(lt)) die_at(e->line, "cannot compare Result values; match on them instead");
                 } else {
                     /* ordering: two ints, two floats, two strings, or two values
                      * of the SAME numeric/string newtype */

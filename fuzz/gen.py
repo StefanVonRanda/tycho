@@ -288,7 +288,7 @@ class Gen:
         if str_vars: kinds += ["char_append", "char_append"]
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
-        kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use"]
+        kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use", "opt_res_eq"]
         # constructs hierc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
         # self-referential shadow decls (`x := f(x)` in a nested scope) -- the RHS
@@ -661,6 +661,31 @@ class Gen:
             self.emit(ind+2, "acc = acc + len(" + e + ")")
             return
 
+        if k == "opt_res_eq":          # A3: structural ==/!= on Option/Result, deep value equality folded into acc
+            a = self.fresh("oe"); b = self.fresh("oe"); c = self.fresh("oe")
+            self.emit(ind, a + " := Some(" + str(self.r.randint(0, 4)) + ")")    # Option(int): scalar payload
+            self.emit(ind, b + " := Some(" + str(self.r.randint(0, 4)) + ")")
+            self.emit(ind, c + " : Option(int) = None")
+            env[a] = "Option(int)"; env[b] = "Option(int)"; env[c] = "Option(int)"
+            self.emit(ind, "if " + a + " == " + b + ":")        # Some(x)==Some(y)
+            self.emit(ind+1, "acc = acc + 1")
+            self.emit(ind, "if " + a + " != " + c + ":")        # Some vs None: tag differs
+            self.emit(ind+1, "acc = acc + 2")
+            os1 = self.fresh("oe"); os2 = self.fresh("oe")
+            self.emit(ind, os1 + ' := Some("' + self.r.choice(["a", "bb", "cc"]) + '")')   # Option(string): heap payload
+            self.emit(ind, os2 + ' := Some("' + self.r.choice(["a", "bb", "cc"]) + '")')
+            env[os1] = "Option(string)"; env[os2] = "Option(string)"
+            self.emit(ind, "if " + os1 + " == " + os2 + ":")
+            self.emit(ind+1, "acc = acc + 4")
+            r1 = self.fresh("re"); r2 = self.fresh("re")
+            self.emit(ind, r1 + " := mkRes(" + str(self.r.randint(-1, 5)) + ")")  # Result([int], string): deep eq through both arms
+            self.emit(ind, r2 + " := mkRes(" + str(self.r.randint(-1, 5)) + ")")
+            env[r1] = "Result([int], string)"; env[r2] = "Result([int], string)"
+            self.emit(ind, "if " + r1 + " == " + r2 + ":")
+            self.emit(ind+1, "acc = acc + 8")
+            self.emit(ind, "if " + r1 + " != " + r2 + ":")
+            self.emit(ind+1, "acc = acc + 16")
+            return
         if k == "result_use":                       # bind a heap Result from a helper, then checksum both arms
             r = self.fresh("r")
             self.emit(ind, r + " := mkRes(" + str(self.r.randint(-1, 5)) + ")")

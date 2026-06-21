@@ -102,11 +102,42 @@ final adversarial check.
 and `eprint` still use NUL-terminated (`strlen`/`strstr`) semantics — rare with
 embedded NULs; flagged as follow-ups rather than expanding this change.
 
-### A3 — Option / Result papercuts — TODO
+### A3 — Option / Result papercuts — DONE
 
 Add structural `==`/`!=` on `Option`/`Result` (same machinery as struct/enum
 equality) and `or_return` for `Option` (mirror the `Result` lowering). Both
 compilers, goldens, fuzzer arm.
+
+**What was already in place.** `or_return` on an `Option` was already shipped in
+both compilers (`hierc` resolver at `src/hierc.c:2782`, hierc0 codegen, regression
+`tests/or_return_option.hi`) — no work needed. The structural-eq codegen for
+`Option`/`Result` already existed in `hierc`'s `gen_eq` (`src/hierc.c:4999`) and in
+hierc0's `eq_field`, but `hierc` *rejected* the operator at the type-check
+(`"cannot compare Option/Result values; match on them instead"`) while hierc0
+silently *accepted* it — a latent parity violation no test had exercised.
+
+**What this change did.**
+
+- **`hierc`:** removed the two `die_at` gates on `==`/`!=` for `Option`/`Result`
+  (`src/hierc.c:3460-3461`), making the operator match the comment directly above
+  it ("equality is structural for every type … only void is incomparable"). The
+  already-present recursive `gen_eq` does the rest.
+- **hierc0:** fixed a pre-existing codegen bug the new test surfaced. hierc0 boxes
+  `Option`/`Result` payloads behind `void*`, and `eq_field` dereffed them as
+  `*(T*)(x.val)` without wrapping; when the payload is *itself* an
+  `Option`/`Result` (e.g. `Option(Option(int))`), the recursion appended
+  `.tag`/`.val`, and C's `.` binds tighter than `*`, so `*(T*)(x.val).tag`
+  mis-parsed as `*((T*)(x.val).tag)` → uncompilable C. Parenthesized the dereffed
+  payloads in `eq_field` (`compiler/hierc0.hi`). `hierc` was immune (inline
+  payloads, already `(%s).val`-wrapped).
+- New regression `tests/option_eq.hi` (+golden): `==`/`!=` across `Option(int)`,
+  `Option(string)`, `Option([int])`, `Option(P)` struct, nested
+  `Option(Option(int))`, `Result(int,string)`, and heap `Result([int],string)`.
+- Fuzzer arm `opt_res_eq` in `fuzz/gen.py`: emits `==`/`!=` on `Option(int)`,
+  `Option(string)`, and `Result([int],string)` values folded into the checksum.
+
+**Verified.** `make test` 162/0; `make fixpoint` all green (B≡C + differential now
+reproduce `option_eq.hi`); `make fuzz N=500` `FAIL=0`.
 
 ### B6 — `inout` → `mut` — TODO
 
@@ -153,5 +184,5 @@ Then staged implementation in both compilers behind the fixpoint. The
 
 ## Sequence
 
-Per the chosen order: **A1** (current) → A3 → B6 → B4 → B3 → B5 → A2. Each is its
-own commit, fully green before the next.
+Per the chosen order: A1 → A3 (both done) → **B6** (next) → B4 → B3 → B5 → A2. Each
+is its own commit, fully green before the next.
