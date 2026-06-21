@@ -434,6 +434,7 @@ struct Func:
     body: [Stmt]
     is_extern: int            # FFI: 1 -> `extern fn`, calls a C symbol directly (no arena, name unmangled, no body)
     lib: string               # FFI: link library from `extern "Lib" fn`; "" for bare extern
+    constraints: string       # generics: `where` predicates as "pred:T,pred:U"; "" for none (inert unless generic)
 
 struct Sig:                   # collected up front, for typing calls
     name: string
@@ -1501,9 +1502,44 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
             ptypes[bi] = subst_bare_typaram(ptypes[bi], bases)
             bi = bi + 1
         ret = subst_bare_typaram(ret, bases)
+    # generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known predicate set
+    constraints := ""
+    if toks[pos].kind == TIdent and toks[pos].text == "where":
+        if len(bases) == 0:
+            die("parse: line " + str(toks[pos].line) + ": `where` constraints require a generic function (a `$T` parameter)")
+        pos = pos + 1
+        cont := true
+        for cont:
+            if toks[pos].kind != TIdent:
+                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str)")
+            pred := toks[pos].text
+            if pred != "numeric" and pred != "comparable" and pred != "has_str":
+                die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + pred + "' (known: numeric, comparable, has_str)")
+            pos = pos + 1
+            expect(toks, &pos, TLParen)
+            if toks[pos].kind != TIdent:
+                die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name")
+            tpn := toks[pos].text
+            known := false
+            ki := 0
+            for ki < len(bases):
+                if bases[ki] == tpn:
+                    known = true
+                ki = ki + 1
+            if not known:
+                die("parse: line " + str(toks[pos].line) + ": `where` refers to '" + tpn + "', not a type parameter of this function")
+            pos = pos + 1
+            expect(toks, &pos, TRParen)
+            if constraints != "":
+                constraints = constraints + ","
+            constraints = constraints + pred + ":" + tpn
+            if toks[pos].kind == TComma:
+                pos = pos + 1
+            else:
+                cont = false
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
-    return Func(name, params, ptypes, ret, body, 0, "")
+    return Func(name, params, ptypes, ret, body, 0, "", constraints)
 
 # FFI Stage 1: only scalars + string cross the C boundary (composites have
 # hier-internal C reps, not a stable ABI). Reject everything else (fail closed).
@@ -1546,7 +1582,7 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
         ret = parse_type(toks, &pos)
         if not ffi_scalar(ret):
             die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string or omitted")
-    return Func(name, params, ptypes, ret, []Stmt, 1, lib)
+    return Func(name, params, ptypes, ret, []Stmt, 1, lib, "")
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
 # return). The leading `fn` and the opening `(` have already been consumed-checked
@@ -2066,7 +2102,7 @@ fn mangle_func(m: Mctx, f: Func) -> Func:
     nm := m.prefix + f.name
     if f.is_extern == 1:                      # FFI: a C symbol is global — never package-mangle it
         nm = f.name
-    return Func(nm, f.params, mangle_types(m, f.ptypes), mangle_type(m, f.ret), mangle_block(mb, f.body), f.is_extern, f.lib)
+    return Func(nm, f.params, mangle_types(m, f.ptypes), mangle_type(m, f.ret), mangle_block(mb, f.body), f.is_extern, f.lib, f.constraints)
 
 fn mangle_struct(m: Mctx, sd: StructDef) -> StructDef:
     fs := []Field
@@ -7698,7 +7734,7 @@ fn lift_expr(e: Expr, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
                 push(lbody, SExpr(nb, _sl))
             else:
                 push(lbody, SReturn(nb, _sl))
-            push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, ""))
+            push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, "", ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes, _el)
         ESpawn(id, nm, sargs, _el):
@@ -8260,7 +8296,7 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             cn2 := cps
             ct2 := cpt
             cbody = lift_block(cbody, &lifted, &ctr, &lams, &spawns, &pars, &cn2, &ct2, dc, ctx, rty)
-            push(lifted, Func("__par" + str(pid), cps, cpt, rty, cbody, 0, ""))
+            push(lifted, Func("__par" + str(pid), cps, cpt, rty, cbody, 0, "", ""))
             sid := len(spawns)
             push(spawns, SpawnInfo("__par" + str(pid), cpt, rty))
             push(pars, ParInfo(sid, capn, capt, accn, accop, rty))
@@ -8540,7 +8576,34 @@ fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes
         return ok
     return pat == concrete
 
-fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) -> string:
+# generics: resolve a type to its ultimate newtype base (a newtype over int
+# satisfies numeric, matching hierc's base_of + the newtype-arithmetic rule).
+fn nt_base_of(ty: string, dc: Decls) -> string:
+    b := ty
+    changed := true
+    for changed:
+        changed = false
+        i := 0
+        for i < len(dc.ntnames):
+            if dc.ntnames[i] == b:
+                b = dc.ntunder[i]
+                changed = true
+            i = i + 1
+    return b
+
+# the fixed compiler-known `where` predicate set; each is exactly the resolver's
+# capability over the base type ("str" is hierc0's spelling of string).
+fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
+    b := nt_base_of(ty, dc)
+    if pred == "numeric":
+        return b == "int" or b == "float"
+    if pred == "comparable":
+        return b == "int" or b == "char" or b == "float" or b == "str"
+    if pred == "has_str":
+        return b == "int" or b == "bool" or b == "float" or b == "str"
+    return true
+
+fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
@@ -8550,6 +8613,25 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) ->
         if not match_typaram_str(gt.ptypes[i], argtypes[i], &bnames, &btypes):
             die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
         i = i + 1
+    # generics: enforce `where` constraints up front (clear signature error, not a deep body error)
+    if gt.constraints != "":
+        cons := split(gt.constraints, ",")
+        ci := 0
+        for ci < len(cons):
+            pr := split(cons[ci], ":")
+            cpred := pr[0]
+            ctp := pr[1]
+            cty := ""
+            found := false
+            bj := 0
+            for bj < len(bnames):
+                if bnames[bj] == ctp:
+                    cty = btypes[bj]
+                    found = true
+                bj = bj + 1
+            if found and not constraint_ok_str(cpred, cty, dc):
+                die("generics: '" + gt.name + "' instantiated with " + ctp + " = " + cty + ", which does not satisfy `" + cpred + "(" + ctp + ")`")
+            ci = ci + 1
     cparams := []string                          # substitute "$X" -> concrete in the signature
     i = 0
     for i < len(gt.ptypes):
@@ -8564,7 +8646,7 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) ->
         if insts[e].name == nm:
             return nm                            # already instantiated
         e = e + 1
-    push(insts, Func(nm, gt.params, cparams, cret, gt.body, 0, ""))
+    push(insts, Func(nm, gt.params, cparams, cret, gt.body, 0, "", ""))
     return nm
 
 # Generics (structs): a struct with type parameters is a template; each
@@ -8793,7 +8875,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                 for k < len(margs):
                     push(at, type_of(margs[k], names, types, dc, ctx))
                     k = k + 1
-                newnm := mono_instantiate(gens[gi], at, &insts, el)
+                newnm := mono_instantiate(gens[gi], at, &insts, el, dc)
                 return ECall(newnm, margs, el)
             gsi := find_generic_struct(dc.structs, nm)   # generic struct construction: infer from field values
             if gsi >= 0 and len(margs) == len(dc.structs[gsi].fields):
@@ -8948,7 +9030,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
             push(rpt, resolve_gstruct_type(f.ptypes[j], dc.structs, &sinsts))
             j = j + 1
         rret := resolve_gstruct_type(f.ret, dc.structs, &sinsts)
-        push(out, Func(f.name, f.params, rpt, rret, nbody, f.is_extern, f.lib))
+        push(out, Func(f.name, f.params, rpt, rret, nbody, f.is_extern, f.lib, f.constraints))
         i = i + 1
     i = 0
     for i < len(insts):                           # instances last, in first-encounter order (matches hierc)
@@ -8994,7 +9076,7 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: mut [LamInfo], spawns:
             names := []string                         # calls type_of); a lambda-free func is left UNCHANGED, so a
             types := []string                         # lambda-free program (incl. hierc0.hi) is byte-identical.
             seed_env(f, &names, &types)
-            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, f.ret), f.is_extern, f.lib))
+            push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, lift_block(f.body, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, f.ret), f.is_extern, f.lib, f.constraints))
         else:
             push(nfuncs, f)
         i = i + 1

@@ -344,8 +344,16 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   in `match_typaram_str` and `gen_inst_mangle` via a top-level-colon split
   (`find_top_colon`); the string `subst` already substitutes `$K`/`$V` in place.
   Test `tests/generic_map.hi`; all gates green.
-- **Stage 3 (remaining) — TODO:** `where` constraints (a fixed compiler-known
-  predicate set) and an explicit call-site type arg for the non-inferable case.
+- **Stage 3 (`where` constraints) — DONE** (both compilers). A `where pred(T), …`
+  clause over the fixed predicate set `numeric` / `comparable` / `has_str`, parsed
+  after the return type and checked at instantiation against each inferred concrete
+  type (newtype base resolved, so a numeric newtype satisfies `numeric`). hierc:
+  constraints on `Proc`, `constraint_ok` called from `instantiate_generic`. hierc0:
+  a `"pred:T,…"` string on `Func` (one inert field — fixpoint stays byte-identical),
+  checked in `mono_instantiate` with the newtype base via the threaded `dc`. Tests
+  `tests/generic_where.hi` + four `tests/reject/where_*.hi`; all gates green.
+- **Stage 3 (remaining) — TODO:** an explicit call-site type arg for the
+  non-inferable case (`fn empty() -> [$T]`).
 
 The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
 README) have been rewritten and the design doc flipped from *design* to
@@ -357,5 +365,5 @@ Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 → **A2** — all d
 its design (`docs/generics.md`), then staged implementation through generic
 functions, generic structs (construction + type-position), struct
 dependency-ordering, structured patterns, and `[$K: $V]` map patterns; the only
-A2 tail left is `where` constraints and explicit call-site type args.
+A2 tail left is explicit call-site type args.
 Each item was its own commit, fully green before the next.

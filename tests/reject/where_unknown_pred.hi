@@ -1,0 +1,5 @@
+fn g(x: $T) -> $T where fancy(T):
+    return x
+
+fn main():
+    println(str(g(1)))

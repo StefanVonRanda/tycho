@@ -1,0 +1,25 @@
+fn maxv(xs: [$T]) -> $T where comparable(T):
+    m := xs[0]
+    for i in range(1, len(xs)):
+        if xs[i] > m:
+            m = xs[i]
+    return m
+
+fn sum(xs: [$T]) -> $T where numeric(T):
+    total := xs[0]
+    for i in range(1, len(xs)):
+        total = total + xs[i]
+    return total
+
+fn show(x: $T) -> string where has_str(T):
+    return "[" + str(x) + "]"
+
+fn main():
+    ints := [3, 1, 4, 1, 5, 9, 2]
+    println(str(maxv(ints)))          # 9
+    println(str(sum(ints)))           # 25
+    words := ["pear", "apple", "fig"]
+    println(maxv(words))              # pear
+    println(show(42))                 # [42]
+    println(show(true))               # [true]
+    println(str(sum([1.5, 2.5])))     # 4.0

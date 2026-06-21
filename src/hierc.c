@@ -1086,6 +1086,9 @@ typedef struct {
     int     is_extern;     /* FFI: `extern fn` — bodyless, calls a C symbol directly (no arena, name unmangled) */
     const char *lib;       /* FFI: `extern "Lib" fn` — link with -lLib; NULL for bare extern */
     int     generic;       /* generics: a `$T` template — not sig-registered/emitted directly; instantiated per call */
+    char   *con_pred[8];   /* generics: `where` constraint predicate names (numeric/comparable/has_str) */
+    Type    con_tp[8];     /* the type parameter each predicate constrains (a T_TYPARAM) */
+    int     ncon;
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -2298,6 +2301,29 @@ static Proc *parse_fn(Parser *ps) {
     if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
     else pr->ret = T_VOID;
     pr->generic = (g_ncur_typarams > 0);   /* a `$T` in the signature makes this a template */
+
+    /* generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known
+     * predicate set, checked at instantiation against the inferred concrete type. */
+    if (cur(ps)->kind == TK_IDENT && !strcmp(cur(ps)->text, "where")) {
+        if (!pr->generic) die_at(cur(ps)->line, "`where` constraints require a generic function (one with a `$T` parameter)");
+        ps->p++;
+        for (;;) {
+            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate: numeric, comparable, or has_str");
+            if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str"))
+                die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str)", pt->text);
+            eat(ps, TK_LPAREN, "'(' after a `where` predicate");
+            Tok *tn = eat(ps, TK_IDENT, "a type-parameter name");
+            int known = 0;
+            for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], tn->text)) known = 1;
+            if (!known) die_at(tn->line, "`where` refers to '%s', which is not a type parameter of this function", tn->text);
+            eat(ps, TK_RPAREN, "')'");
+            if (pr->ncon >= 8) die_at(pt->line, "at most 8 `where` constraints per function");
+            pr->con_pred[pr->ncon] = pt->text;
+            pr->con_tp[pr->ncon]   = typaram_of(tn->text);
+            pr->ncon++;
+            if (!accept(ps, TK_COMMA)) break;
+        }
+    }
 
     eat(ps, TK_COLON, "':' before the block");
     eat(ps, TK_NEWLINE, "newline");
@@ -4538,6 +4564,17 @@ static char *type_mangle_ident(Type t) {
  * concrete type, mangle a per-instantiation name, register the instance Sig (so
  * this and later calls resolve), record it for codegen, and rewrite e->sval.
  * Idempotent per (template, concrete arg types). */
+/* generics: the fixed, compiler-known `where` predicate set. Each is exactly the
+ * capability the resolver already enforces (base_of sees through newtypes), so a
+ * satisfied constraint guarantees the body's op type-checks for that T. */
+static int constraint_ok(const char *pred, Type t) {
+    Type b = base_of(t);
+    if (!strcmp(pred, "numeric"))    return b == T_INT || b == T_FLOAT;                                   /* + - * / */
+    if (!strcmp(pred, "comparable")) return b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING;   /* < > <= >= */
+    if (!strcmp(pred, "has_str"))    return b == T_INT || b == T_BOOL || b == T_FLOAT || b == T_STRING;   /* str(x) */
+    return 1;   /* unknown predicates are rejected at parse */
+}
+
 static void instantiate_generic(Proc *gt, Expr *e) {
     if (e->nargs != gt->nparams)
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
@@ -4550,6 +4587,14 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         if (!match_type(gt->params[j].type, at_, binds))
             die_at(e->line, "argument %d of '%s' is %s, which does not fit the parameter pattern",
                    j + 1, gt->name, type_name(at_));
+    }
+    /* generics: enforce `where` constraints up front -- a clear signature error
+     * instead of a deep "cannot add string and int" inside the substituted body. */
+    for (int c = 0; c < gt->ncon; c++) {
+        Type ct = binds[(int)(gt->con_tp[c] - T_TYPARAM_BASE)];
+        if (ct != T_VOID && !constraint_ok(gt->con_pred[c], ct))
+            die_at(e->line, "'%s' instantiated with %s = %s, which does not satisfy `%s(%s)`",
+                   gt->name, typaram_name(gt->con_tp[c]), type_name(ct), gt->con_pred[c], typaram_name(gt->con_tp[c]));
     }
     /* build the instance's concrete signature (substituting every `$T`) + name */
     char *nm = gt->name;

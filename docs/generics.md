@@ -3,9 +3,10 @@
 > **Status: Stages 1, 2a, 2b, and most of Stage 3 shipped** — generic *functions*,
 > generic-struct *construction* and *type-position* annotations, struct
 > *dependency-ordering* (`Box(Point)`), *structured type-param patterns*
-> (`fn first(xs: [$T]) -> Option(T)`), and *map patterns*
-> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), both compilers. The remaining
-> Stage 3 (`where` constraints / explicit call-site type args) stays design. This is
+> (`fn first(xs: [$T]) -> Option(T)`), *map patterns*
+> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), and *`where` constraints*
+> (`fn sum(xs: [$T]) -> T where numeric(T)`), both compilers. The remaining
+> Stage 3 (explicit call-site type args) stays design. This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -155,15 +156,26 @@ helper points at the instantiation, not always the line a user expected — whic
 [§8](#8-stages) addresses by adding optional explicit constraints later:
 
 ```
-# Stage 3 (proposed): a `where` clause turns an instantiation-time body error
+# Stage 3 (shipped): a `where` clause turns an instantiation-time body error
 # into a checked-up-front signature error with a clear message.
 fn sum(xs: [$T]) -> T where numeric(T):
     …
 ```
 
-`where` predicates would be a *fixed, compiler-known* set (`numeric`,
-`comparable`, `has_str`…), not user-defined type classes — consistent with
-Hier's small-surface stance. Stage 1 ships without them.
+The `where` predicates are a *fixed, compiler-known* set (not user-defined type
+classes — consistent with Hier's small-surface stance), each defined as exactly
+the capability the resolver already enforces, over the newtype-resolved base:
+
+- `numeric(T)` — `int` or `float` (supports `+ - * /`).
+- `comparable(T)` — `int`, `char`, `float`, or `string` (supports `< > <= >=`).
+- `has_str(T)` — `int`, `bool`, `float`, or `string` (passable to `str()`).
+
+They are checked at instantiation against each inferred concrete type; a
+violation is a clear signature error (`'sum' instantiated with T = string, which
+does not satisfy numeric(T)`) instead of a deep "cannot add string and int" in
+the substituted body. A `where` on a non-generic function, an unknown predicate,
+or a name that is not a type parameter is rejected at parse. Shipped in both
+compilers (`tests/generic_where.hi`, `tests/reject/where_*.hi`).
 
 ## 6. When `$T` can't be inferred
 
@@ -293,11 +305,17 @@ commit, fully green before the next — same discipline as every other change.
   `{K:V}` (curly) case in `match_typaram_str` and `gen_inst_mangle`, split on the
   first top-level colon (`find_top_colon`); the string substitution already
   rewrites `$K`/`$V` in place. Test: `tests/generic_map.hi`.
-- **Stage 3 — constraints, explicit type args (remaining).**
-  `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
-  explicit call-site type argument for the non-inferable case
-  ([§6](#6-when-t-cant-be-inferred) option 2), and any nesting Stage 1/2 left
-  out.
+- **Stage 3 (`where` constraints) — SHIPPED.**
+  A `where pred(T), …` clause over the fixed predicate set `numeric` /
+  `comparable` / `has_str` ([§5](#5-constraints-checked-at-instantiation)),
+  parsed after the return type and checked at instantiation against each inferred
+  concrete type (newtype base resolved). In hierc the constraints sit on `Proc`
+  and `instantiate_generic` checks them via `constraint_ok`; in hierc0 they ride a
+  `"pred:T,…"` string on `Func`, checked in `mono_instantiate` (newtype base via
+  `dc.ntnames`). Tests `tests/generic_where.hi` + `tests/reject/where_*.hi`.
+- **Stage 3 — explicit type args (remaining).**
+  An explicit call-site type argument for the non-inferable case
+  ([§6](#6-when-t-cant-be-inferred) option 2), and any nesting Stage 1/2 left out.
 
 ## 9. Two-compiler determinism
 
