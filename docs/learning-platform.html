@@ -1454,8 +1454,8 @@ Each instantiation is ordinary concrete, value-semantic code, produced <strong>b
 You opt into generics with <code>$T</code>; Hier never silently generalizes an ordinary function (the Hindley&ndash;Milner route it deliberately avoids). Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
 </div></div>
 
-<h3>Still on the way</h3>
-<p>Map patterns (<code>[$K: $V]</code>), <code>where</code> constraints, and explicit call-site type arguments are the remaining edges. The full design and current status live in <code>docs/generics.md</code>.</p>
+<h3>There's more</h3>
+<p>Generics also matches <em>inside</em> a map (<code>[$K: $V]</code>), constrains a type parameter (<code>where numeric(T)</code>), and supplies a type the compiler can't infer (<code>empty$(int)</code>) &mdash; all in the next chapter. The full design lives in <code>docs/generics.md</code>.</p>
 
 <div class="exercise" id="ex-gen">
 <div class="exercise-header">&#9997;&#65039; Exercise: A Generic Function</div>
@@ -1482,6 +1482,80 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 <div class="quiz-explanation" data-correct="1">Correct! Generics are monomorphized: <code>id(5)</code> and <code>id("x")</code> generate two concrete functions, each inferred from its argument. No boxing, no runtime dispatch &mdash; and the value-semantic memory model never sees anything generic.</div>
 <div class="quiz-explanation" data-wrong="1">Hier monomorphizes &mdash; one concrete copy per type used, inferred from the call. Boxing would destroy the value-semantic memory model, so it is exactly what the design avoids.</div>
 <button class="quiz-submit" onclick="submitQuiz(17)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 19: GENERICS, CONTINUED             -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-gen2">
+<div class="section-num">Chapter 19</div>
+<h1>Generics, continued</h1>
+
+<p>The previous chapter covered the core. Three more pieces complete the picture: matching <em>inside</em> a map, constraining a type parameter, and supplying a type the compiler cannot infer. All three are monomorphized like everything else &mdash; nothing generic survives to runtime.</p>
+
+<h2>Map patterns: <code>[$K: $V]</code></h2>
+<p>A type parameter can sit inside a map type. Both the key and the value are inferred from the map argument, and one concrete instance is stamped per <code>(key, value)</code> pair:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">lookup</span>(m: [<span class="ty">$K</span>: <span class="ty">$V</span>], k: <span class="ty">$K</span>, d: <span class="ty">$V</span>) -> <span class="ty">$V</span>:
+    <span class="kw">return</span> <span class="fn">map_get</span>(m, k, d)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    counts := [<span class="str">"a"</span>: <span class="num">1</span>, <span class="str">"b"</span>: <span class="num">2</span>]
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">lookup</span>(counts, <span class="str">"a"</span>, <span class="num">0</span>)))    <span class="cm"># 1     (K=string, V=int)</span>
+    byid := [<span class="num">1</span>: <span class="str">"one"</span>, <span class="num">2</span>: <span class="str">"two"</span>]
+    <span class="fn">println</span>(<span class="fn">lookup</span>(byid, <span class="num">9</span>, <span class="str">"?"</span>))           <span class="cm"># ?     (K=int, V=string)</span></code></pre></div>
+
+<h2><code>where</code> constraints</h2>
+<p>A generic body that uses an operation on <code>T</code> (arithmetic, ordering, <code>str()</code>) can declare what it needs with a <code>where</code> clause. The predicates are a <strong>fixed, compiler-known</strong> set &mdash; not user-defined type classes:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">sum</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="fn">numeric</span>(<span class="ty">T</span>):
+    total := xs[<span class="num">0</span>]
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="fn">len</span>(xs)):
+        total = total + xs[i]
+    <span class="kw">return</span> total
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">sum</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>])))      <span class="cm"># 10</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">sum</span>([<span class="num">1.5</span>, <span class="num">2.5</span>])))        <span class="cm"># 4.0</span></code></pre></div>
+<ul>
+<li><code>numeric(T)</code> &mdash; <code>int</code> or <code>float</code> (supports <code>+ - * /</code>).</li>
+<li><code>comparable(T)</code> &mdash; <code>int</code>, <code>char</code>, <code>float</code>, or <code>string</code> (supports <code>&lt; &gt; &lt;= &gt;=</code>).</li>
+<li><code>has_str(T)</code> &mdash; <code>int</code>, <code>bool</code>, <code>float</code>, or <code>string</code> (passable to <code>str()</code>).</li>
+</ul>
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">A clear error, up front</div>
+The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"])</code> fails with <code>'sum' instantiated with T = string, which does not satisfy numeric(T)</code> &mdash; a signature-level message, not a deep "cannot add string and int" buried inside the substituted body.
+</div></div>
+
+<h2>Explicit type args: the non-inferable case</h2>
+<p>Inference is argument-directed, so every <code>$T</code> normally has to appear in some argument. When it does not &mdash; a type parameter that lives only in the return, like <code>empty() -> [$T]</code> &mdash; supply it at the call with <code>name$(T)</code>:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">empty</span>() -> [<span class="ty">$T</span>]:
+    <span class="kw">return</span> []<span class="ty">T</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    xs := <span class="fn">empty</span>$(<span class="ty">int</span>)        <span class="cm"># supply T explicitly -> [int]</span>
+    <span class="fn">push</span>(xs, <span class="num">5</span>)
+    ss := <span class="fn">empty</span>$(<span class="ty">string</span>)     <span class="cm"># a distinct instance -> [string]</span>
+    <span class="fn">push</span>(ss, <span class="str">"hi"</span>)</code></pre></div>
+<div class="callout info">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">Two instances, not one</div>
+<code>empty$(int)</code> and <code>empty$(string)</code> stamp out two distinct concrete functions. Because the type parameter is not pinned by any argument, the compiler folds the supplied type into the instance's name so the two never collide.
+</div></div>
+
+<div class="quiz" id="quiz-18">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="2">
+<p>1. When do you need an explicit type argument like <code>empty$(int)</code>?</p>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Always &mdash; every generic call must spell out its type arguments</div>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Only for generic structs, never for functions</div>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Only when no argument pins the type parameter, e.g. a <code>$T</code> that appears only in the return type</div>
+</div>
+<div class="quiz-explanation" data-correct="2">Correct! Inference is argument-directed, so a <code>$T</code> the arguments determine needs nothing extra. <code>empty() -> [$T]</code> has no such argument, so the call supplies it: <code>empty$(int)</code>.</div>
+<div class="quiz-explanation" data-wrong="2">Generic calls infer their type arguments from the values you pass. You only reach for <code>name$(T)</code> when there is nothing to infer from &mdash; a type parameter that appears only in the return type.</div>
+<button class="quiz-submit" onclick="submitQuiz(18)">Check Answers</button>
 </div>
 </div>
 
@@ -1585,6 +1659,7 @@ const SECTIONS = [
   {id:'sec-15', title:'Concurrency',                nav:'16. Concurrency'},
   {id:'sec-16', title:'Packages & FFI',             nav:'17. Packages & FFI'},
   {id:'sec-gen', title:'Generics',                  nav:'18. Generics'},
+  {id:'sec-gen2', title:'Generics, continued',      nav:'19. Generics II'},
   {id:'sec-17', title:'Cheat Sheet',                nav:'Cheat Sheet'},
 ];
 const QUIZ_COUNT = SECTIONS.length; // one quiz per section

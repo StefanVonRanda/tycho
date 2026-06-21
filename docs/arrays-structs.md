@@ -192,10 +192,11 @@ earlier "no generics (firm)" stance — reversed once it was clear that the
 `Option(string)`. Opening it to user `$T` definitions adds a substitution pass,
 not a new subsystem, and stays memory-model-neutral (§9). The full design, the
 reversal argument, and the staged rollout are in [generics.md](generics.md).
-Shipped today: generic functions, generic structs (construction + `Box(int)`
-type-position annotations), and structured patterns (`[$T]` → `Option(T)`);
-`[$K: $V]` map patterns, `where` constraints, and explicit call-site type args
-are the remaining edges, tracked there.
+Shipped, both compilers — the full set: generic functions, generic structs
+(construction + `Box(int)` type-position annotations), structured patterns
+(`[$T]` → `Option(T)`), `[$K: $V]` map patterns, `where` constraints
+(`numeric` / `comparable` / `has_str`), and explicit call-site type args
+(`empty$(int)` for the non-inferable case).
 
 Still required, and none of these is generics:
 
