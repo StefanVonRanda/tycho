@@ -2,7 +2,7 @@
 # Type-directed random Hier program generator for soundness fuzzing.
 # Emits a well-typed, deterministic, terminating program that stresses the
 # arena/value-semantics paths: copy-binds (`b := a`), heap built in loops/blocks,
-# pushes, struct/array nesting, returns, inout, match. It accumulates an int
+# pushes, struct/array nesting, returns, mut, match. It accumulates an int
 # checksum across all the state it builds and prints it once at the end, so two
 # correct compilers must produce byte-identical output (the differential oracle).
 # It ALSO emits value-semantics self-checks (the `vscheck` kind): copy a heap
@@ -32,7 +32,7 @@ class Gen:
         self.structs = {}   # name -> [(field, type)]
         self.enums = {}     # name -> leaf payload type ("int"/"string")
         self.newtypes = {}  # name -> base type ("int") ; `type Name = int`
-        self.funcs = []     # list of (name, [(pname,ptype,inout)], ret)
+        self.funcs = []     # list of (name, [(pname,ptype,mut)], ret)
         self.want_result = False   # set when a Result helper is needed
         # loop counters / foreach vars: must NEVER be written by a generated
         # statement. A compound assign like `i -= i` on a range counter resets
@@ -310,7 +310,7 @@ class Gen:
         if self.fenum:
             kinds += ["enumkey_use"]                # fieldless-enum-keyed map ([FzColor: int])
         if str_vars:
-            kinds += ["inout_str"]                  # inout string: reassignment through the borrow
+            kinds += ["inout_str"]                  # mut string: reassignment through the borrow
         # value-semantics self-check candidates: a mutable-heap var with a
         # checksum-changing mutation (push to an array, or to a struct's array field).
         vs_arr = [(n, ty) for n, ty in env.items() if ty in ("[int]", "[string]", "[float]")]
@@ -720,7 +720,7 @@ class Gen:
             env[n] = en
             self.emit(ind, "acc = acc + sum" + en + "(" + n + ")")
             return
-        if k == "inout_fill":                       # mutate a caller array through an inout param (_ina_)
+        if k == "inout_fill":                       # mutate a caller array through a mut param (_ina_)
             a = self.fresh("a")
             self.emit(ind, a + " := []int")
             env[a] = "[int]"
@@ -896,8 +896,8 @@ class Gen:
                      "            return (sum" + name + "(l) + sum" + name + "(r))", ""]
 
     def emit_helpers(self):
-        self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
-        self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
+        self.out += ["fn fillA(xs: mut [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
+        self.out += ["fn fz_sgrow(s: mut string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
         # transform [int]->[int] used by the `arr_rebuild` kind: `a = xform(a)`
         # reassigns a loop-carried array from a CALL, exercising the liveness-

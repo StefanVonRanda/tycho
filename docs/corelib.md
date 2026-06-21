@@ -70,12 +70,12 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   anything (keep data in parallel arrays, argsort one, walk all through the permutation).
   All stable. Plus `by_key(xs, key)`: sort `[int]` by a derived key fn/closure.
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in hier, so the
-  state is an explicit int threaded via `inout`: `st := rand.seed(42)`,
+  state is an explicit int threaded via `mut`: `st := rand.seed(42)`,
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
   (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
   signed 64-bit int, so the generator is UB-free by construction.
 - **`time`** — wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins.
-  Stopwatch (value-semantic, no inout — a reading is just an int): `sw := time.start()`,
+  Stopwatch (value-semantic, no mut — a reading is just an int): `sw := time.start()`,
   then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
   `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
   to avoid shadowing the builtin and recursing).
@@ -141,7 +141,7 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `decode` is lenient (a `%` not followed by two hex digits is emitted literally) and reuses
   `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64`/`hex`.
 - **`uuid`** — random version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. `v4(&st)`
-  draws 16 bytes from `core:rand` (state threaded by `inout`) and sets the version/variant
+  draws 16 bytes from `core:rand` (state threaded by `mut`) and sets the version/variant
   bits with plain arithmetic; `nil()`, `parse(s) -> [int]` (16 bytes, lenient on separators,
   `[]` unless exactly 32 hex digits), `format(bytes) -> string` (canonical 8-4-4-4-12),
   `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the name-based

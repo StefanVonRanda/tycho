@@ -32,8 +32,8 @@ fn format(bytes: [int]) -> string:
             out = out + "-"
     return out
 
-# A random version-4 UUID, threading the core:rand state via inout.
-fn v4(st: inout int) -> string:
+# A random version-4 UUID, threading the core:rand state via mut.
+fn v4(st: mut int) -> string:
     bytes := []int
     for i in range(16):
         push(bytes, rand.below(&st, 256))

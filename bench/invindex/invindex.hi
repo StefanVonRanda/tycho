@@ -10,7 +10,7 @@ struct Posting:
     docs: [int]
     freqs: [int]
 
-fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
+fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int):
     pi := map_get(tidx, term, 0 - 1)
     if pi < 0:
         p := Posting(term, []int, []int)

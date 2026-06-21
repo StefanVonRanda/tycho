@@ -11,11 +11,11 @@ enum Json:
     JArr([Json])
     JObj([string], [Json])
 
-fn skip_ws(s: string, n: int, pos: inout int):
+fn skip_ws(s: string, n: int, pos: mut int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
-fn parse_string(s: string, n: int, pos: inout int) -> string:
+fn parse_string(s: string, n: int, pos: mut int) -> string:
     pos = pos + 1
     r := ""
     for pos < n and s[pos] != 34:
@@ -38,7 +38,7 @@ fn parse_string(s: string, n: int, pos: inout int) -> string:
     pos = pos + 1
     return r
 
-fn parse_number(s: string, n: int, pos: inout int) -> int:
+fn parse_number(s: string, n: int, pos: mut int) -> int:
     neg := false
     if s[pos] == 45:
         neg = true
@@ -51,7 +51,7 @@ fn parse_number(s: string, n: int, pos: inout int) -> int:
         return 0 - v
     return v
 
-fn parse_array(s: string, n: int, pos: inout int) -> Json:
+fn parse_array(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1
     xs := []Json
     skip_ws(s, n, &pos)
@@ -64,7 +64,7 @@ fn parse_array(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1
     return JArr(xs)
 
-fn parse_object(s: string, n: int, pos: inout int) -> Json:
+fn parse_object(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1
     ks := []string
     vs := []Json
@@ -82,7 +82,7 @@ fn parse_object(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1
     return JObj(ks, vs)
 
-fn parse_value(s: string, n: int, pos: inout int) -> Json:
+fn parse_value(s: string, n: int, pos: mut int) -> Json:
     skip_ws(s, n, &pos)
     c := s[pos]
     if c == 123:

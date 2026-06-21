@@ -532,8 +532,8 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <span class="kw">fn</span> <span class="fn">say</span>(s: <span class="ty">string</span>):
     <span class="fn">print</span>(s + <span class="str">"\n"</span>)
 
-<span class="cm"># inout: mutate the caller's variable</span>
-<span class="kw">fn</span> <span class="fn">incr</span>(n: <span class="kw">inout</span> <span class="ty">int</span>):
+<span class="cm"># mut: mutate the caller's variable</span>
+<span class="kw">fn</span> <span class="fn">incr</span>(n: <span class="kw">mut</span> <span class="ty">int</span>):
     n = n + <span class="num">1</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -546,7 +546,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <ul>
 <li><code>fn foo(x: int)</code> &mdash; like passing a primitive in JS. The function gets its own copy.</li>
 <li><code>fn foo(xs: [int])</code> &mdash; like a read-only view. You can read but not mutate.</li>
-<li><code>fn foo(xs: inout [int])</code> &mdash; like passing by reference. The function can mutate the caller's array. Mark the call with <code>&</code>.</li>
+<li><code>fn foo(xs: mut [int])</code> &mdash; like passing by reference. The function can mutate the caller's array. Mark the call with <code>&</code>.</li>
 </ul>
 
 <h2>String Interpolation</h2>
@@ -577,10 +577,10 @@ fn main():
 <div class="exercise-feedback" id="ex-fn-feedback"></div>
 </div>
 
-<div class="exercise" id="ex-inout">
+<div class="exercise" id="ex-mut">
 <div class="exercise-header">&#9997;&#65039; Exercise: Fix the Swap</div>
-<div class="exercise-desc">This function should swap two integers using <code>inout</code>. Fill in the missing pieces &mdash; the <code>inout</code> keyword, the temporary variable, and the call-site <code>&amp;</code> markers.</div>
-<textarea class="exercise-editor" id="ex-inout-editor" spellcheck="false">fn swap(a: ___ int, b: ___ int):
+<div class="exercise-desc">This function should swap two integers using <code>mut</code>. Fill in the missing pieces &mdash; the <code>mut</code> keyword, the temporary variable, and the call-site <code>&amp;</code> markers.</div>
+<textarea class="exercise-editor" id="ex-mut-editor" spellcheck="false">fn swap(a: ___ int, b: ___ int):
     tmp := ___
     a = ___
     b = ___
@@ -592,12 +592,12 @@ fn main():
     print(str(x) + " " + str(y) + "\n")</textarea>
 <div class="exercise-output">Expected output: <strong>2 1</strong></div>
 <div class="exercise-btns">
-  <button class="exercise-btn check" onclick="checkExercise('inout')">&#10003; Check</button>
-  <button class="exercise-btn show" onclick="showHint('inout')">&#128161; Hint</button>
-  <button class="exercise-btn show" onclick="showSolution('inout')">&#128065; Solution</button>
-  <button class="exercise-btn reset" onclick="resetExercise('inout')">&#8635; Reset</button>
+  <button class="exercise-btn check" onclick="checkExercise('mut')">&#10003; Check</button>
+  <button class="exercise-btn show" onclick="showHint('mut')">&#128161; Hint</button>
+  <button class="exercise-btn show" onclick="showSolution('mut')">&#128065; Solution</button>
+  <button class="exercise-btn reset" onclick="resetExercise('mut')">&#8635; Reset</button>
 </div>
-<div class="exercise-feedback" id="ex-inout-feedback"></div>
+<div class="exercise-feedback" id="ex-mut-feedback"></div>
 </div>
 
 <div class="quiz" id="quiz-3">
@@ -605,12 +605,12 @@ fn main():
 <div class="quiz-question" data-answer="1">
 <p>1. How do you mark that a variable should be mutated by a function?</p>
 <div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Pass it without any special syntax</div>
-<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>&amp;variable</code> at the call site and <code>inout</code> in the parameter</div>
+<div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>&amp;variable</code> at the call site and <code>mut</code> in the parameter</div>
 <div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Declare the variable with <code>var</code> instead of <code>:=</code></div>
 <div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>mut</code> like in Rust</div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! <code>inout</code> in the parameter + <code>&amp;</code> at the call site. This is copy-in/copy-out, preserving value semantics.</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <code>inout</code> in the function signature and <code>&amp;variable</code> at the call site. No <code>mut</code>, no implicit mutation.</div>
+<div class="quiz-explanation" data-correct="1">Correct! <code>mut</code> in the parameter + <code>&amp;</code> at the call site. This is copy-in/copy-out, preserving value semantics.</div>
+<div class="quiz-explanation" data-wrong="1">Hier uses <code>mut</code> in the function signature and <code>&amp;variable</code> at the call site. No <code>mut</code>, no implicit mutation.</div>
 <button class="quiz-submit" onclick="submitQuiz(3)">Check Answers</button>
 </div>
 </div>
@@ -818,7 +818,7 @@ ys[<span class="num">0</span>] = <span class="num">0</span>                    <
 <div class="callout-icon">&#9888;&#65039;</div>
 <div>
 <div class="callout-title">Array parameters are read-only borrows</div>
-A <code>[int]</code> parameter is a borrow &mdash; no copy, but you can't mutate it. Copy first (<code>b := a</code>) to get a mutable local, or take it <code>inout</code>.
+A <code>[int]</code> parameter is a borrow &mdash; no copy, but you can't mutate it. Copy first (<code>b := a</code>) to get a mutable local, or take it <code>mut</code>.
 </div></div>
 
 <h2>Slices</h2>
@@ -1258,8 +1258,8 @@ b := a              <span class="cm"># independent copy</span>
 <span class="fn">push</span>(b, <span class="num">4</span>)
 <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(a)))  <span class="cm"># 3 &mdash; a is unchanged</span></code></pre></div>
 
-<h2>Rule 2: Parameters are copies (unless inout)</h2>
-<p>A <code>[int]</code> parameter is a read-only borrow. To mutate, copy first or use <code>inout</code>.</p>
+<h2>Rule 2: Parameters are copies (unless mut)</h2>
+<p>A <code>[int]</code> parameter is a read-only borrow. To mutate, copy first or use <code>mut</code>.</p>
 
 <h2>Rule 3: No two variables ever share storage</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := <span class="ty">Person</span>(<span class="str">"Ada"</span>, [<span class="str">"x"</span>])
@@ -1501,7 +1501,7 @@ x += <span class="num">1</span>                 <span class="cm"># compound: += 
 <h2>Functions</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">name</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>: <span class="kw">return</span> a + b
 <span class="kw">fn</span> <span class="fn">void_fn</span>(): <span class="fn">print</span>(<span class="str">"ok\n"</span>)
-<span class="kw">fn</span> <span class="fn">mutate</span>(x: <span class="kw">inout</span> <span class="ty">int</span>): x += <span class="num">1</span></code></pre></div>
+<span class="kw">fn</span> <span class="fn">mutate</span>(x: <span class="kw">mut</span> <span class="ty">int</span>): x += <span class="num">1</span></code></pre></div>
 
 <h2>Control Flow</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">if</span> cond: ... <span class="kw">elif</span> cond: ... <span class="kw">else</span>: ...
@@ -1539,7 +1539,7 @@ ch := <span class="fn">channel</span>(<span class="ty">T</span>, cap)  ch.<span 
 <ol>
 <li><strong>Every scope</strong> gets its own arena &mdash; functions, blocks, loop iterations.</li>
 <li><strong>Assignment copies</strong> &mdash; <code>b = a</code> gives <code>b</code> an independent deep copy.</li>
-<li><strong>Parameters are borrows</strong> (read-only) &mdash; copy first or use <code>inout</code> to mutate.</li>
+<li><strong>Parameters are borrows</strong> (read-only) &mdash; copy first or use <code>mut</code> to mutate.</li>
 <li><strong>Return values are promoted</strong> into the caller's arena &mdash; no dangling pointers.</li>
 <li><strong>Loop scratch arenas reset</strong> each iteration &mdash; bounded memory in loops.</li>
 <li><strong>The programmer never sees any of this</strong> &mdash; no <code>malloc</code>, <code>free</code>, or arena API.</li>
@@ -1807,17 +1807,17 @@ const EXERCISES = {
     solution: 'fn double(n: int) -> int:\n    return n * 2\n\nfn main():\n    println(str(double(21)))',
     hint: 'Fill the body with <code>return n * 2</code>. (main already calls <code>println(str(double(21)))</code>.)'
   },
-  inout: {
+  mut: {
     starter: 'fn swap(a: ___ int, b: ___ int):\n    tmp := ___\n    a = ___\n    b = ___\n\nfn main():\n    x := 1\n    y := 2\n    swap(___, ___)\n    print(str(x) + " " + str(y) + "\\n")',
     validate(code) {
-      return /fn\s+swap\s*\(\s*a\s*:\s*inout\s+int\s*,\s*b\s*:\s*inout\s+int\s*\)/.test(code) &&
+      return /fn\s+swap\s*\(\s*a\s*:\s*mut\s+int\s*,\s*b\s*:\s*mut\s+int\s*\)/.test(code) &&
              code.includes('tmp := a') &&
              code.includes('a = b') &&
              code.includes('b = tmp') &&
              code.includes('swap(&x, &y)');
     },
-    solution: 'fn swap(a: inout int, b: inout int):\n    tmp := a\n    a = b\n    b = tmp\n\nfn main():\n    x := 1\n    y := 2\n    swap(&x, &y)\n    print(str(x) + " " + str(y) + "\\n")',
-    hint: 'Use <code>inout int</code> for both params. Save <code>a</code> in <code>tmp</code> before overwriting. Use <code>&x</code> and <code>&y</code> at the call site.'
+    solution: 'fn swap(a: mut int, b: mut int):\n    tmp := a\n    a = b\n    b = tmp\n\nfn main():\n    x := 1\n    y := 2\n    swap(&x, &y)\n    print(str(x) + " " + str(y) + "\\n")',
+    hint: 'Use <code>mut int</code> for both params. Save <code>a</code> in <code>tmp</code> before overwriting. Use <code>&x</code> and <code>&y</code> at the call site.'
   },
   fizzbuzz: {
     starter: 'fn fizzbuzz(n: int):\n    for i in range(1, n + 1):\n        if ________ and ________:\n            println("FizzBuzz")\n        elif ________:\n            println("Fizz")\n        elif ________:\n            println("Buzz")\n        else:\n            println(str(i))\n\nfn main():\n    fizzbuzz(15)',
@@ -1967,8 +1967,8 @@ function getExerciseHints(id, code) {
       if (!code.includes('return n * 2')) hints.push('Return <code>n * 2</code>');
       if (!code.includes('double(21)')) hints.push('Call <code>double(21)</code> from main');
       break;
-    case 'inout':
-      if (!code.includes('inout int')) hints.push('Add <code>inout</code> before <code>int</code> in both parameters');
+    case 'mut':
+      if (!code.includes('mut int')) hints.push('Add <code>mut</code> before <code>int</code> in both parameters');
       if (!code.includes('&x') && !code.includes('&y')) hints.push('Use <code>&x</code> and <code>&y</code> at the call site');
       if (!code.includes('tmp := a')) hints.push('Save <code>a</code> in <code>tmp</code> before overwriting it');
       break;

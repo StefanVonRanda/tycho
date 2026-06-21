@@ -67,7 +67,7 @@ For both key kinds — `[string: V]` and `[int: V]` — the value `V` may be:
 
 All operations work uniformly regardless of `V`:
 `map_set` / `map_get` / `map_has` / `map_del` / `keys` / `len`, deep value
-`==`, the in-place accumulator rebind, and `inout`. `map_get`'s default and
+`==`, the in-place accumulator rebind, and `mut`. `map_get`'s default and
 `map_set`'s value take `V`; the key takes `K`. The only remaining restriction
 is on the **key**: `string`, `int`, a newtype over one of those, or a fieldless
 enum — no other key type yet (see the README's

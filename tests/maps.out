@@ -4,7 +4,7 @@ snap_a=3 counts_a=100
 less_has_a=F counts_has_a=T
 less_len=2
 after_del_b_len=2 has_b=F
-inout x=2 len=2
+mut x=2 len=2
 after_drop x_has=F len=1
 emptied len=0
 refilled len=30 k7=14 k49=-1

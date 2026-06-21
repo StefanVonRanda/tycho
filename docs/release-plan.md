@@ -139,11 +139,36 @@ silently *accepted* it — a latent parity violation no test had exercised.
 **Verified.** `make test` 162/0; `make fixpoint` all green (B≡C + differential now
 reproduce `option_eq.hi`); `make fuzz N=500` `FAIL=0`.
 
-### B6 — `inout` → `mut` — TODO
+### B6 — `inout` → `mut` — DONE
 
 Rename the keyword to `mut`, keeping the `&` call-site marker
 (`fn incr(n: mut int)` / `incr(&x)`). Mechanical but wide (~46 files + both
 lexers + all docs). One rename pass behind the fixpoint.
+
+**What this change did.** A single repo-wide standalone-word rename (`\binout\b`
+→ `mut`; `\b` treats `_` as a word char, so compound identifiers `is_inout`,
+`inout_fill`, `_ina_` are untouched). It is a hard rename — `inout` is no longer
+accepted (it now reads as an unknown type: *"unknown type 'inout'; did you mean
+'int'?"*).
+
+- **Collision fixed first:** hierc0's worklist scanner used a local variable
+  literally named `mut` (`wl_scan_expr`/`wl_scan_body`); renamed it to `muts`
+  before `mut` became a keyword (a hard keyword in `hierc` would otherwise reject
+  the parameter name).
+- **Both lexers:** `hierc` keyword table (`src/hierc.c:164`, `strcmp(s,"mut")`; the
+  internal `TK_INOUT`/`is_inout`/`.is_inout` names are kept — invisible to users)
+  and hierc0's soft-keyword check (`compiler/hierc0.hi`, `text == "mut"`).
+- **All `.hi`** (tests/examples/corelib/bench/tools + hierc0's own signatures),
+  **fuzz generators**, and **all docs** (article-corrected: "an inout" → "a mut").
+  `tests/maps.out` golden re-recorded (a printed label changed `inout`→`mut`).
+- **Editors:** vscode TextMate grammar updated (consumed directly). The zed
+  tree-sitter `grammar.js` is updated, but its committed generated `src/`
+  (`parser.c`/`grammar.json`/`node-types.json`) was **not** regenerated — no
+  tree-sitter CLI in this env; flagged in `editors/zed/README.md` to run
+  `tree-sitter generate`.
+
+**Verified.** `make test` 162/0; `make fixpoint` all green (B≡C holds across the
+rename); `make fuzz` `FAIL=0`; `make tools-check` (hierfmt/lsp handle `mut`).
 
 ### B4 — tab indentation — TODO
 
@@ -184,5 +209,5 @@ Then staged implementation in both compilers behind the fixpoint. The
 
 ## Sequence
 
-Per the chosen order: A1 → A3 (both done) → **B6** (next) → B4 → B3 → B5 → A2. Each
+Per the chosen order: A1 → A3 → B6 (all done) → **B4** (next) → B3 → B5 → A2. Each
 is its own commit, fully green before the next.

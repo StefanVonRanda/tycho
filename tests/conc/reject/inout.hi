@@ -1,4 +1,4 @@
-fn bump(x: inout int) -> int:
+fn bump(x: mut int) -> int:
     x = x + 1
     return x
 fn main():

@@ -35,11 +35,11 @@ pauses, no lifetimes, competitive peak memory.
 - **affine tasks** (`spawn`/`wait`) returning a **composite value** — each
   worker hands back a whole `[string: int]` map, deep-copied across the thread
   boundary by value semantics (which is *why* a spawned fn may not take
-  `inout`: there is no shared mutable state to thread);
+  `mut`: there is no shared mutable state to thread);
 - **the in-place map accumulator** (`m = map_set(m, k, …)`) and **in-place
   string append** (`cur = cur + chr(c)`) inside the worker's channel-drain
   loop;
-- **`inout` map merge** — `merge(&m, part)` grows the accumulator in place;
+- **`mut` map merge** — `merge(&m, part)` grows the accumulator in place;
 - the filesystem builtins (`list_dir`, `read_file`, and `write_file` in
   `gencorpus.hi`).
 
@@ -70,11 +70,11 @@ pure-copy-every-step.*
    shares the caller's table; in-place would violate value semantics) and
    deep-copied the whole accumulator on every key — O(distinct²), a flat
    ~1.5 GB because the vocabulary caps `distinct` regardless of corpus size.
-   Fix: make `into` **`inout`**, the idiomatic accumulator-as-a-place, which
+   Fix: make `into` **`mut`**, the idiomatic accumulator-as-a-place, which
    restores the in-place put.
 
 The takeaway for the memory model: the value-semantic/arena story depends on
 the in-place accumulator optimizations firing for the natural idioms. When
 they fire, this indexer is 6.9 MB; when one silently doesn't, it is GBs. The
 compiler must make the fast path the one you reach for without thinking — a
-`match`-arm accumulator and an `inout` merge are both exactly that.
+`match`-arm accumulator and a `mut` merge are both exactly that.

@@ -16,7 +16,7 @@ package csv
 # ---- parsing ---------------------------------------------------------------
 
 # One record (up to and including its line terminator). Always advances `pos`.
-fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
+fn parse_row(s: string, n: int, pos: mut int, d: int) -> [string]:
     fields := []string
     field := ""
     done := false

@@ -10,7 +10,7 @@ unsoundness — that the hand-written `tests/` might miss.
 program. It is type-directed (only constructs that type-check) and biased toward
 the arena-stressing shapes: value-copy binds (`b := a`), heap built in loops/
 blocks, `push`, struct/array/enum/tuple/option/map nesting, recursive enums +
-`match`, `inout` container fill, and returned heap values. The program
+`match`, `mut` container fill, and returned heap values. The program
 accumulates an `int` checksum over everything it builds and prints it once.
 
 `run.py <N> [start]` runs `N` seeds. For each, it compiles the program with:
@@ -41,7 +41,7 @@ Deterministic: a finding's `seed_<n>.hi` reproduces with `python3 fuzz/gen.py <n
 `[string]`, `[float]`) / structs / recursive enums + `match` / `Option(int)`
 (+ `[Option(int)]`) / `Result([int], string)` / `(int, string)` tuples /
 `{string:int}` + `{string:float}` maps / `type Nt = int` newtypes / array &
-string slices (`v[:]`, `v[0:]`, …) / `inout [int]` / returned arrays / SOA core
+string slices (`v[:]`, `v[0:]`, …) / `mut [int]` / returned arrays / SOA core
 ops (`soa []Struct`: push, `len`, `a[i].f` read/write, whole-element gather) /
 `or_return` (Ok-unwrap / Err-propagate via a helper) / FFI `extern fn` over
 scalars+`string`+opaque `ptr` (a fixed vocabulary backed by `ffi_shim.c`, linked

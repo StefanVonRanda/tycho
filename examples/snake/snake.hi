@@ -42,7 +42,7 @@ fn hits_body(nb: [int]) -> bool:       # does the head (nb[0]) collide with the 
             return true
     return false
 
-fn spawn_food(g: inout Game):          # place food on a free cell; advance the rng
+fn spawn_food(g: mut Game):          # place food on a free cell; advance the rng
     r := g.rng
     f := 0 - 1
     for tries in range(0, 10000):
@@ -63,12 +63,12 @@ fn new_game(w: int, h: int, seed: int) -> Game:
     spawn_food(&g)
     return g
 
-fn turn(g: inout Game, nd: int):       # change heading, but never a 180-degree reversal
+fn turn(g: mut Game, nd: int):       # change heading, but never a 180-degree reversal
     d := g.dir
     if not ((d == 0 and nd == 2) or (d == 2 and nd == 0) or (d == 1 and nd == 3) or (d == 3 and nd == 1)):
         g.dir = nd
 
-fn step(g: inout Game):
+fn step(g: mut Game):
     if g.alive == 0:
         return
     hx := g.body[0] % g.w

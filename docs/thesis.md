@@ -171,11 +171,11 @@ graphs, cycles, caches." Probing this empirically dissolved most of it:
 
 - The real, narrow wall is **shared mutable state threaded through function
   calls** — canonically a memoization table that recursive calls must all
-  write to. The thesis-preserving answer is `inout`: an exclusive,
+  write to. The thesis-preserving answer is `mut`: an exclusive,
   copy-in/copy-out mutable borrow (Swift/Hylo's model — *not* a stored
-  reference). `inout` does not break value semantics: it is equivalent to
+  reference). `mut` does not break value semantics: it is equivalent to
   `x = f(x)`, made safe by an exclusivity rule (the same variable cannot be
-  passed to two `inout` parameters of one call). Heap `inout` — now `[int]`,
+  passed to two `mut` parameters of one call). Heap `mut` — now `[int]`,
   `[string]`, and heap-bearing structs, including `push`/growth and
   element/field mutation through the borrow — lets the callee share and mutate
   the caller's aggregate in place, so a memo table (or a recursive output
@@ -184,7 +184,7 @@ graphs, cycles, caches." Probing this empirically dissolved most of it:
   mutation lands where the value lives and survives the call.
 
   *Measured*: memoized `fib(40)` = 102334155 in **0.001s**; the naive
-  exponential `fib(40)` computes the same answer in **0.60s**. The `inout` memo
+  exponential `fib(40)` computes the same answer in **0.60s**. The `mut` memo
   makes it O(n) — proof the array is truly shared, not copied per call.
 
 **The residue is the boundary, not a defect.** What remains genuinely
@@ -192,7 +192,7 @@ impossible is *pointer-identity aliasing of two named variables in one scope* �
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference. This is forbidden **by
-construction**, and `inout` deliberately does not provide it (it is
+construction**, and `mut` deliberately does not provide it (it is
 call-scoped, not storable). That forbiddance is *what value semantics is*.
 Removing it would not extend Hier; it would make it a different language.
 
@@ -225,7 +225,7 @@ make                                  # build ./hierc
 git show 9d3367f:src/hierc.c > /tmp/b.c   # last commit before return-slot
 # ...build it against a regenerated embed header, then A/B the same .hi
 examples/accumulate_big.hi            # in-place append, large N
-examples/memo.hi                      # inout memoized fib(40)
+examples/memo.hi                      # mut memoized fib(40)
 ```
 
 Peak RSS was read from `/proc/<pid>/status` `VmHWM`; the optimized append

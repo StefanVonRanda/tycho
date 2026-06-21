@@ -11,6 +11,10 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `hier-lsp`) for
   indentation-significant; full structure would need a C external scanner). The
   generated parser (`src/parser.c`) is committed, so no tree-sitter CLI is needed
   to build it. **Verified: parses 321/321 valid `.hi` files with zero parse errors.**
+  > **Regen pending:** the `inout` keyword was renamed to `mut` in `grammar.js`,
+  > but the committed `src/` (`parser.c`/`grammar.json`/`node-types.json`) was *not*
+  > regenerated (no tree-sitter CLI in the build env). Run `tree-sitter generate`
+  > in this directory to refresh them before publishing the grammar.
 - `languages/hier/` — Zed language config + `highlights.scm` queries.
 - `extension.toml`, `Cargo.toml`, `src/lib.rs` — the Zed extension; the Rust code
   just launches `hier-lsp` (passing `HIERC`) for diagnostics.

@@ -56,7 +56,7 @@ standalone win.
    mid-bootstrap except for what the bootstrap itself requires.
 5. **Explicit state, no globals.** Hier has no globals; the C compiler's global
    tables (cvar stack, type tables, counters, parser position) become an
-   explicit `Ctx` struct threaded by `inout`/return. This is the single biggest
+   explicit `Ctx` struct threaded by `mut`/return. This is the single biggest
    structural difference and a known cost — design `Ctx` early.
 
 ## Validation strategy
@@ -183,7 +183,7 @@ inputs.
 
 **Objective:** `hier_hierc` handles *every* feature the C compiler does —
 including the hard codegen: the arena placement, the FBIP reuse optimizations,
-projections, slices, newtypes, `inout`.
+projections, slices, newtypes, `mut`.
 
 **Scope:** close to 100% parity, including the memory-model codegen (arena
 threading, return-slot, move-on-last-use, match-arm borrow, construction moves,
@@ -288,9 +288,9 @@ fixpoint.
         by-value env arrays (inner decls don't leak). Unary minus added
         (`-E` → `(0 - E)`). Fixtures `strvars.hi`/`strfn.hi` pass `make
         bootstrap`; `examples/accumulate.hi` now matches the C compiler
-        end-to-end. State-threading ergonomics finding: `inout [T]` works, but
+        end-to-end. State-threading ergonomics finding: `mut [T]` works, but
         a borrowed (by-value) array param must be **copied** before it can be
-        passed as `inout` — the compiler enforces this ("copy it first"), so
+        passed as `mut` — the compiler enforces this ("copy it first"), so
         `gen_block` copies its env arrays locally. `input()` deferred
         (stdin-dependent, untestable in the differential harness).
       - **2C**: bare call-statements (`countdown(5)` — a call invoked for its
@@ -344,17 +344,17 @@ fixpoint.
         indented comment as a block's first line emits a stray `NEWLINE` before
         the `INDENT`; block openers now skip blank/comment lines via
         `open_block` (this was a real hierc0 lexer/parser bug, fixed here).
-      - **2G**: `inout` parameters (+ the `<= >= !=` comparison operators
-        `examples/memo.hi` needs). An `inout T` param is a C pointer; its env
+      - **2G**: `mut` parameters (+ the `<= >= !=` comparison operators
+        `examples/memo.hi` needs). An `mut T` param is a C pointer; its env
         type is marked with a leading `&` (so the base type still drives all
-        type logic). `gen_expr(EVar)` derefs (`(*n)`) when the var is inout, so
+        type logic). `gen_expr(EVar)` derefs (`(*n)`) when the var is mut, so
         field access, indexing, `push`, and assignment all compose with no
         extra cases (`(*s).sum`, `(*memo).data[n]`, `iarr_push(&(*memo), v)`).
         Call-site `&place` parses to `EAddr` → `&(gen_expr(place))`; since
-        `&(*p) == p`, passing an inout param onward (`fib(n-1, &memo)`) Just
-        Works. `cty` emits the pointer; `parse_param` reads the `inout`
-        modifier. Fixtures `inout.hi` (inout int + pure-value struct) and
-        `memo.hi` (shared `inout [int]`, recursive) pass; both examples match
+        `&(*p) == p`, passing a mut param onward (`fib(n-1, &memo)`) Just
+        Works. `cty` emits the pointer; `parse_param` reads the `mut`
+        modifier. Fixtures `mut.hi` (mut int + pure-value struct) and
+        `memo.hi` (shared `mut [int]`, recursive) pass; both examples match
         the C compiler end-to-end.
       - **2H**: generic array element types. The single hardcoded `IntArr`
         runtime is replaced by **monomorphized** `Arr_<T>` families — one
@@ -366,7 +366,7 @@ fixpoint.
         bodies that embed them. `cty`/`push`/index/literal/`gen_rhs` all key off
         the element type. Element types must be word-sized (int/bool/str/enum-
         pointer); `[struct-by-value]` is still pending. Also added bare
-        `return` (void). Fixture `strarrays.hi` (= `collect.hi`: `inout
+        `return` (void). Fixture `strarrays.hi` (= `collect.hi`: `mut
         [string]`, string push/index, recursive accumulation) passes;
         `collect.hi` matches the C compiler end-to-end. (GCC-14 note: array
         `_from` takes a non-const element pointer — `char**`→`const char**` is
@@ -420,7 +420,7 @@ fixpoint.
         piped stdin (`echo Ada | … → "what is your name: hello Ada"`).
       - **Stage 2 done.** 23 bootstrap fixtures green; every `examples/*.hi`
         is golden-identical through hierc0. hierc0 is now ~700 lines of Hier
-        covering: functions/recursion/`inout`, int/bool/string scalars,
+        covering: functions/recursion/`mut`, int/bool/string scalars,
         structs (+deep copy), `[T]` arrays (monomorphized), `{str:int}` maps
         (FNV table, byte-identical key order), enums + `match`, the full
         operator set, and string/array/map builtins.
@@ -585,7 +585,7 @@ fixpoint.
          by-value heap-struct param aliases the callee's `_scope` copy →
          use-after-free. Fix: a `ret_must_copy()` helper deep-copies any
          place-read return (IDENT-not-in-`_parent`, FIELD, INDEX, TUPIDX), used
-         by all six scalar-heap return branches. (b) a non-inout **string param
+         by all six scalar-heap return branches. (b) a non-mut **string param
          that was returned by name** was unsoundly marked as living in `_parent`
          (skipping the copy) — but the caller often passes the arg in a transient
          arena it frees right after the call, so the returned pointer dangles

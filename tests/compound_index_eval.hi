@@ -2,7 +2,7 @@
 # then store), so a side-effecting index must be evaluated EXACTLY ONCE. The
 # compiler hoists a call-bearing index to a temp before the assignment. (A pure
 # index -- a variable or literal -- is left as-is; its re-evaluation is harmless.)
-fn nextidx(c: inout int) -> int:
+fn nextidx(c: mut int) -> int:
     r := c
     c = c + 1
     return r

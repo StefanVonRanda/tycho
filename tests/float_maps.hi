@@ -10,7 +10,7 @@ fn total(m: [string: float]) -> float:
         s = s + map_get(m, ks[i], 0.0)
     return s
 
-fn bump(m: inout [string: float], k: string, by: float):
+fn bump(m: mut [string: float], k: string, by: float):
     m = map_set(m, k, map_get(m, k, 0.0) + by)
 
 fn main():

@@ -53,10 +53,10 @@ a million iterations run in constant memory.
 
 The reason all of this needs no whole-program may-alias analysis is value
 semantics. With no aliasing, no closures over references, and no free pointers
-(only explicit `inout`), every way a value can outlive its scope is
+(only explicit `mut`), every way a value can outlive its scope is
 *syntactically visible*, and its destination is *lexically known at the write
 site*: `outer = e` targets `outer`'s home block, `push(outer, v)` targets
-`outer`'s home, `return e` targets `_parent`, an argument or `inout` targets the
+`outer`'s home, `return e` targets `_parent`, an argument or `mut` targets the
 caller. So the compiler decides where each allocation lives by reading
 signatures and scopes — a local routing decision, not a dataflow trace.
 
@@ -177,8 +177,8 @@ function return (loop-local array build 245 MB → 10 MB). Routing is lexical (a
 container *elements* into their container's arena: map keys (`f1ff194`); array
 string elements (`c84eb4c`, ~274×); nested-array elements (~77×); struct/tuple
 array elements (~140×); option/result array elements (scalar payload, ~45×); and
-`inout` container home-arena threading (`75d85e4`, ~582×) plus its extension to
-`inout` heap-struct fields. **MM-7f** closed the last residual — heap-payload
+`mut` container home-arena threading (`75d85e4`, ~582×) plus its extension to
+`mut` heap-struct fields. **MM-7f** closed the last residual — heap-payload
 option/result elements like `[Option(str)]` — by making options first-class
 deep-copied value types (245 → 11 MB at 4M iters, flat, verified by a 1200-seed
 heap-payload fuzz campaign).

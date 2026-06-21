@@ -25,11 +25,11 @@ enum Json:
     JArr([Json])
     JObj([string], [Json])
 
-fn skip_ws(s: string, n: int, pos: inout int):
+fn skip_ws(s: string, n: int, pos: mut int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
-fn parse_string(s: string, n: int, pos: inout int) -> string:
+fn parse_string(s: string, n: int, pos: mut int) -> string:
     pos = pos + 1
     r := ""
     for pos < n and s[pos] != 34:
@@ -56,7 +56,7 @@ fn parse_string(s: string, n: int, pos: inout int) -> string:
     pos = pos + 1
     return r
 
-fn parse_number(s: string, n: int, pos: inout int) -> int:
+fn parse_number(s: string, n: int, pos: mut int) -> int:
     neg := false
     if s[pos] == 45:
         neg = true
@@ -69,7 +69,7 @@ fn parse_number(s: string, n: int, pos: inout int) -> int:
         return 0 - v
     return v
 
-fn parse_array(s: string, n: int, pos: inout int) -> Json:
+fn parse_array(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1
     xs := []Json
     skip_ws(s, n, &pos)
@@ -82,7 +82,7 @@ fn parse_array(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1
     return JArr(xs)
 
-fn parse_object(s: string, n: int, pos: inout int) -> Json:
+fn parse_object(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1
     ks := []string
     vs := []Json
@@ -100,7 +100,7 @@ fn parse_object(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1
     return JObj(ks, vs)
 
-fn parse_value(s: string, n: int, pos: inout int) -> Json:
+fn parse_value(s: string, n: int, pos: mut int) -> Json:
     skip_ws(s, n, &pos)
     if pos >= n:
         return JNull
@@ -394,7 +394,7 @@ fn find_def(text: string, name: string) -> int:
     return 0 - 1
 
 # document store: parallel arrays uri -> (buffer text, --symbols index)
-fn doc_set(uris: inout [string], texts: inout [string], syms: inout [string], uri: string, text: string, sym: string):
+fn doc_set(uris: mut [string], texts: mut [string], syms: mut [string], uri: string, text: string, sym: string):
     for i in range(len(uris)):
         if uris[i] == uri:
             texts[i] = text
@@ -591,7 +591,7 @@ fn name_end_col(s: string, name: string) -> int:
     return 0 - 1
 
 # append space-separated `words` as completion items of `kind`
-fn add_items_from(words: string, kind: int, out: inout string, nd: inout int):
+fn add_items_from(words: string, kind: int, out: mut string, nd: mut int):
     ws := split(words, " ")
     for wi in range(len(ws)):
         w := ws[wi]
@@ -665,7 +665,7 @@ fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], 
             out = out + comp_item(f[2], 20, "variant of " + f[1])   # EnumMember
             nd = nd + 1
     add_items_from("print println eprint input read_all read_file write_file list_dir args getenv len push pop range str substr find split chr sqrt pow floor fabs clock now is_null Some Ok Err None", 3, &out, &nd)
-    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in or_return spawn wait true false soa select", 14, &out, &nd)
+    add_items_from("fn struct enum type import package extern mut if elif else for match return break continue and or not in or_return spawn wait true false soa select", 14, &out, &nd)
     send_result(id, "{\"isIncomplete\":false,\"items\":[" + out + "]}")
 
 # references: every whole-word use in the buffer (string/comment-aware).

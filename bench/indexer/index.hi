@@ -11,7 +11,7 @@
 #     lowercase [a-z] terms, and tally a LOCAL [string: int] map;
 #   - on close each worker RETURNS its whole map; wait(t) deep-copies it back
 #     into main's arena (value semantics across the thread boundary -- no
-#     shared mutable state, which is why a spawned fn may not take `inout`);
+#     shared mutable state, which is why a spawned fn may not take `mut`);
 #   - main merges the K partial maps into one and prints an order-independent
 #     checksum (tokens / distinct terms / sum of len(term)*count).
 #
@@ -67,9 +67,9 @@ fn feed(ch: Channel(string), paths: [string]) -> int:
 # Fold `add` into `into`. `into` is INOUT, not by-value: a by-value map param
 # can't take the in-place put (it shares the caller's table), so `into = map_set(
 # into, ...)` would deep-copy the whole accumulator every key -- O(distinct^2),
-# the same trap as a map accumulator outside a match arm. inout keeps the
+# the same trap as a map accumulator outside a match arm. mut keeps the
 # accumulator a place, so map_set grows the caller's map in place, O(distinct).
-fn merge(into: inout [string: int], add: [string: int]):
+fn merge(into: mut [string: int], add: [string: int]):
     ks := keys(add)
     for i in range(len(ks)):
         k := ks[i]

@@ -1,6 +1,6 @@
 # Regression test for [string: int] maps: literals, the map_set/map_get
 # accumulator, value semantics (independent copies), pure vs in-place delete,
-# keys() iteration, inout mutation reaching the caller, and tombstone rehashing
+# keys() iteration, mut mutation reaching the caller, and tombstone rehashing
 # under a delete-heavy workload. Deterministic (no stdin), so the differential
 # harness asserts native and sanitizer builds agree byte-for-byte.
 
@@ -16,10 +16,10 @@ fn sumvals(m: [string: int]) -> int:
         total = total + map_get(m, ks[i], 0)
     return total
 
-fn bump(m: inout [string: int], k: string):
+fn bump(m: mut [string: int], k: string):
     m = map_set(m, k, map_get(m, k, 0) + 1)
 
-fn drop(m: inout [string: int], k: string):
+fn drop(m: mut [string: int], k: string):
     m = map_del(m, k)
 
 fn main():
@@ -45,7 +45,7 @@ fn main():
     bump(&m, "x")
     bump(&m, "x")
     bump(&m, "y")
-    print("inout x=" + str(map_get(m, "x", 0)) + " len=" + str(len(m)) + "\n")
+    print("mut x=" + str(map_get(m, "x", 0)) + " len=" + str(len(m)) + "\n")
     drop(&m, "x")
     print("after_drop x_has=" + yn(map_has(m, "x")) + " len=" + str(len(m)) + "\n")
 

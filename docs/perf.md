@@ -316,7 +316,7 @@ nothing (the flush sits after the loop, which `break` falls through to);
 first; nested loops pushing the same array reuse the outer cursor.
 
 **Sound by construction** — fuse ONLY when `count_reads == pushcount` (used solely
-as a push target), the array is a plain non-inout scalar local not defined/
+as a push target), the array is a plain non-mut scalar local not defined/
 shadowed in the body, and (for a `while`) the condition doesn't read it. Any miss
 falls back to today's codegen, so a non-fused loop is never wrong. In hierc the
 registry is C globals (`g_fuse`); hierc0 has no globals, so it threads through
@@ -348,7 +348,7 @@ emission stays byte-identical; the right deep-copy for str/struct/tuple/ARRC/…
 one `hier_arr_<arr_fn>_grow` (runtime `int`/`float`/`str`; generated `C<id>`); hierc0
 generates `Arr_<mangle(et)>_grow` for every element type and deep-copies via
 `gen_rhs(.., with_owner ow)` when `elem_deepcopy(et)`. Cursor type is
-`c_type(arr_elem(t))` (uniform). Eligibility is now simply `is_array` (soa + inout
+`c_type(arr_elem(t))` (uniform). Eligibility is now simply `is_array` (soa + mut
 excluded). Win is largest for scalars; for heap elements the per-element deep-copy
 (`scopy`/`hier_copy_S_*`/…) dominates, so the descriptor-elision is a smaller
 fraction — a completeness/consistency close more than a hot-path multiplier, though

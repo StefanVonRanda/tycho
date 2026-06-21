@@ -161,7 +161,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "struct")) return TK_STRUCT;
     if (!strcmp(s, "enum"))   return TK_ENUM;
     if (!strcmp(s, "type"))   return TK_TYPE;
-    if (!strcmp(s, "inout"))  return TK_INOUT;
+    if (!strcmp(s, "mut"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
     if (!strcmp(s, "false"))  return TK_FALSE;
     if (!strcmp(s, "null"))   return TK_NULL;
@@ -1575,7 +1575,7 @@ static Expr *parse_unary(Parser *ps) {
         e->op = TK_MINUS; e->lhs = parse_unary(ps);
         return e;
     }
-    if (at(ps, TK_AMP)) {                  /* &lvalue — an inout argument */
+    if (at(ps, TK_AMP)) {                  /* &lvalue — a mut argument */
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_ADDR, t->line);
         e->lhs = parse_unary(ps);
@@ -2126,7 +2126,7 @@ static Proc *parse_fn(Parser *ps) {
     while (!at(ps, TK_RPAREN)) {
         Tok *pn = eat(ps, TK_IDENT, "a parameter name");
         eat(ps, TK_COLON, "':' after parameter name");
-        int is_inout = accept(ps, TK_INOUT);   /* `name: inout type` */
+        int is_inout = accept(ps, TK_INOUT);   /* `name: mut type` */
         Type pt = parse_type(ps);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
@@ -2174,7 +2174,7 @@ static Proc *parse_extern_fn(Parser *ps) {
     while (!at(ps, TK_RPAREN)) {
         Tok *pn = eat(ps, TK_IDENT, "a parameter name");
         eat(ps, TK_COLON, "':' after parameter name");
-        if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': inout parameters are not allowed across the C boundary", pr->name);
+        if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': mut parameters are not allowed across the C boundary", pr->name);
         Type pt = parse_type(ps);
         if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr (no composites across the C boundary)", pr->name, pn->text);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
@@ -2407,7 +2407,7 @@ typedef struct {
     const char *name;
     Type        ret;
     Type        params[16];
-    int         inout[16];   /* per-param: is it an inout (by-pointer) param? */
+    int         mut[16];   /* per-param: is it a mut (by-pointer) param? */
     int         nparams;
     int         builtin;
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
@@ -2473,8 +2473,8 @@ static Sig *sig_find(const char *name) {
 }
 
 static void register_builtins(void) {
-    /* designated initializers: robust to field order (inout[] sits between
-     * params and nparams). All builtins are by-value (no inout). */
+    /* designated initializers: robust to field order (mut[] sits between
+     * params and nparams). All builtins are by-value (no mut). */
     TBL_RESERVE(g_sigs, 64, g_sigs_cap);   /* must exceed the builtin count below (run of appends w/o per-line ENSURE) */
     g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="println",.ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
@@ -2684,8 +2684,8 @@ static Type resolve_expr(Expr *e) {
             if (s->ret == T_VOID)
                 die_at(e->line, "a spawned function must return a value (wait(t) yields it)");
             for (int i = 0; i < s->nparams; i++)
-                if (s->inout[i])
-                    die_at(e->line, "cannot spawn a function with inout parameters (no shared state across threads)");
+                if (s->mut[i])
+                    die_at(e->line, "cannot spawn a function with mut parameters (no shared state across threads)");
             TBL_ENSURE(g_spawn, g_nspawn, g_spawn_cap);
             g_spawn[g_nspawn] = (int)(s - g_sigs);   /* store index; g_sigs may realloc later */
             e->ival = g_nspawn++;
@@ -2823,7 +2823,7 @@ static Type resolve_expr(Expr *e) {
             if (fs && !fs->builtin) {
                 if (fs->nparams > 8) die_at(e->line, "a function value supports at most 8 parameters");
                 for (int i = 0; i < fs->nparams; i++)
-                    if (fs->inout[i]) die_at(e->line, "'%s' has an inout parameter, so it can't be a function value", e->sval);
+                    if (fs->mut[i]) die_at(e->line, "'%s' has a mut parameter, so it can't be a function value", e->sval);
                 e->op = TK_FN;   /* mark: this E_IDENT is a function reference (codegen emits the fat value) */
                 note_fnval(e->sval);   /* emit a <name>__clo thunk for it */
                 return e->type = funcc_of(fs->params, fs->nparams, fs->ret);
@@ -2939,7 +2939,7 @@ static Type resolve_expr(Expr *e) {
                     return e->type = sd->fields[i].type;
             die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
         }
-        case E_ADDR:   /* &place; only valid as an inout argument (checked at
+        case E_ADDR:   /* &place; only valid as a mut argument (checked at
                         * the call site). Its type is the underlying place's. */
             return e->type = resolve_expr(e->lhs);
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
@@ -2978,16 +2978,16 @@ static Type resolve_expr(Expr *e) {
                   Sig *ms = NULL;
                   if (!fnfield) {
                       Sig *c1 = sig_find(e->sval);
-                      if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == _qvt && !c1->inout[0]) ms = c1;
+                      if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == _qvt && !c1->mut[0]) ms = c1;
                       if (!ms && e->pkg && e->pkg[0]) {
                           Sig *c2 = sig_find(sfmt("%s%s", e->pkg, e->sval));
-                          if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == _qvt && !c2->inout[0]) ms = c2;
+                          if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == _qvt && !c2->mut[0]) ms = c2;
                       }
                       if (!ms) {   /* method defined in the receiver type's package: geom__Circle -> geom__area */
                           const char *pp = type_pkg_prefix(_qvt);
                           if (pp) {
                               Sig *c3 = sig_find(sfmt("%s%s", pp, e->sval));
-                              if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == _qvt && !c3->inout[0]) ms = c3;
+                              if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == _qvt && !c3->mut[0]) ms = c3;
                           }
                       }
                   }
@@ -3020,16 +3020,16 @@ static Type resolve_expr(Expr *e) {
                 Sig *ms = NULL;
                 if (!fnfield) {
                     Sig *c1 = sig_find(fld->sval);
-                    if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == bt && !c1->inout[0]) ms = c1;
+                    if (c1 && !c1->builtin && c1->nparams >= 1 && c1->params[0] == bt && !c1->mut[0]) ms = c1;
                     if (!ms && e->pkg && e->pkg[0]) {
                         Sig *c2 = sig_find(sfmt("%s%s", e->pkg, fld->sval));
-                        if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == bt && !c2->inout[0]) ms = c2;
+                        if (c2 && !c2->builtin && c2->nparams >= 1 && c2->params[0] == bt && !c2->mut[0]) ms = c2;
                     }
                     if (!ms) {   /* method defined in the receiver type's package */
                         const char *pp = type_pkg_prefix(bt);
                         if (pp) {
                             Sig *c3 = sig_find(sfmt("%s%s", pp, fld->sval));
-                            if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == bt && !c3->inout[0]) ms = c3;
+                            if (c3 && !c3->builtin && c3->nparams >= 1 && c3->params[0] == bt && !c3->mut[0]) ms = c3;
                         }
                     }
                 }
@@ -3302,7 +3302,7 @@ static Type resolve_expr(Expr *e) {
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot push through this expression — the array must be a "
                                     "variable, field, or composite-array element");
-                /* push through a heap inout array is allowed: the regrow
+                /* push through a heap mut array is allowed: the regrow
                  * targets the value's owning arena (carried as _ina_<name>),
                  * so the new buffer outlives the call and the caller sees the
                  * updated descriptor. */
@@ -3369,44 +3369,44 @@ static Type resolve_expr(Expr *e) {
                        e->sval, s->nparams, e->nargs);
             for (int i = 0; i < e->nargs; i++) {
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
-                /* inout parameter: the argument must be `&place` naming a
+                /* mut parameter: the argument must be `&place` naming a
                  * mutable variable (an lvalue we can write back through). A
                  * by-value param rejects `&`. */
-                if (s->inout[i]) {
+                if (s->mut[i]) {
                     if (e->args[i]->kind != E_ADDR)
-                        die_at(e->line, "argument %d of '%s' is inout; pass it as '&variable'",
+                        die_at(e->line, "argument %d of '%s' is mut; pass it as '&variable'",
                                i + 1, e->sval);
                     Expr *tgt = e->args[i]->lhs;
                     Expr *root = tgt;
                     while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
                     if (root->kind != E_IDENT)
-                        die_at(e->line, "inout argument %d of '%s' must name a variable", i + 1, e->sval);
+                        die_at(e->line, "mut argument %d of '%s' must name a variable", i + 1, e->sval);
                     if (!vars_can_mutate(root->sval))
-                        die_at(e->line, "cannot pass borrowed parameter '%s' as inout (it is read-only; copy it first)", root->sval);
+                        die_at(e->line, "cannot pass borrowed parameter '%s' as mut (it is read-only; copy it first)", root->sval);
                 } else if (e->args[i]->kind == E_ADDR) {
-                    die_at(e->line, "argument %d of '%s' is not inout; remove the '&'", i + 1, e->sval);
+                    die_at(e->line, "argument %d of '%s' is not mut; remove the '&'", i + 1, e->sval);
                 }
                 if (at_ != s->params[i])
                     die_at(e->line, "argument %d of '%s' is %s, expected %s",
                            i + 1, e->sval, type_name(at_), type_name(s->params[i]));
             }
             /* exclusivity (Law of Exclusivity): the same variable may not be
-             * passed to two inout params of one call — that would be two
+             * passed to two mut params of one call — that would be two
              * overlapping writes, breaking the x = f(x) value-semantics model.
              * No globals/closures exist in Hier, so this is the only alias. */
             for (int i = 0; i < e->nargs; i++) {
-                if (!s->inout[i]) continue;
+                if (!s->mut[i]) continue;
                 Expr *ri = e->args[i]->lhs;
                 while (ri->kind == E_FIELD || ri->kind == E_INDEX) ri = ri->lhs;
                 for (int j = i + 1; j < e->nargs; j++) {
-                    if (!s->inout[j]) continue;
+                    if (!s->mut[j]) continue;
                     Expr *rj = e->args[j]->lhs;
                     while (rj->kind == E_FIELD || rj->kind == E_INDEX) rj = rj->lhs;
                     if (ri->kind == E_IDENT && rj->kind == E_IDENT && !strcmp(ri->sval, rj->sval))
-                        die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
+                        die_at(e->line, "variable '%s' passed to two mut parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
                 }
             }
-            /* A slice argument views its source's buffer; an inout of that same
+            /* A slice argument views its source's buffer; a mut of that same
              * variable in the same call could reallocate the buffer (e.g. push),
              * leaving the slice dangling. Forbid the overlap. */
             for (int i = 0; i < e->nargs; i++) {
@@ -3415,12 +3415,12 @@ static Type resolve_expr(Expr *e) {
                 while (si->kind == E_FIELD || si->kind == E_INDEX || si->kind == E_SLICE) si = si->lhs;
                 if (si->kind != E_IDENT) continue;
                 for (int j = 0; j < e->nargs; j++) {
-                    if (!s->inout[j]) continue;
+                    if (!s->mut[j]) continue;
                     Expr *rj = e->args[j]->lhs;
                     while (rj->kind == E_FIELD || rj->kind == E_INDEX) rj = rj->lhs;
                     if (rj->kind == E_IDENT && !strcmp(rj->sval, si->sval))
-                        die_at(e->line, "cannot pass a slice of '%s' and an inout of '%s' in one call "
-                               "(the inout may reallocate the buffer the slice views)", si->sval, si->sval);
+                        die_at(e->line, "cannot pass a slice of '%s' and a mut of '%s' in one call "
+                               "(the mut may reallocate the buffer the slice views)", si->sval, si->sval);
                 }
             }
             return e->type = s->ret;
@@ -3623,7 +3623,7 @@ static void pf_scan_expr(Expr *e) {
         while (root && (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX))
             root = root->lhs;
         if (root && root->kind == E_IDENT && !pf_local(root->sval))
-            die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
+            die_at(e->line, "parallel for cannot pass a captured variable as mut (no shared mutation across chunks)");
     }
     if (e->kind == E_IDENT) {
         Type vt;
@@ -3766,7 +3766,7 @@ static void resolve_parfor(Stmt *s) {
             die_at(s->line, "reduction accumulator '%s' may only be updated, not read, inside parallel for", g_pf_accs[i]);
     }
     /* resolve capture reads in the ENCLOSING scope (sets their types; the
-     * spawn site gen_exprs them there, with inout deref handled as usual) */
+     * spawn site gen_exprs them there, with mut deref handled as usual) */
     for (int i = 0; i < g_pf_ncap; i++) resolve_expr(g_pf_caps[i]);
     int id = g_nparfor++;
     ParFor *pf = &g_parfor[id];
@@ -3864,7 +3864,7 @@ static void resolve_parfor(Stmt *s) {
  * Flag a `for <cond>:` (while-form) that can't make progress: a real comparison
  * whose variables are never changed in the body, with no break/return/die to end
  * it. SOUND because value semantics means a variable changes only by assignment
- * to it, a place-mutation of it (v[i]=, v.f=), or being passed by `&` (inout) --
+ * to it, a place-mutation of it (v[i]=, v.f=), or being passed by `&` (mut) --
  * there is no aliasing, so a body that does none of those to a condition variable
  * truly cannot move it. `for true:` (a constant condition, no variables) and
  * call-bearing conditions (e.g. `for len(q) > 0:`) are deliberately skipped. */
@@ -3891,7 +3891,7 @@ static void wl_add(const char *v[], int *n, const char *name) {
     if (name && *n < WL_MAX) v[(*n)++] = name;
 }
 
-/* mutations/exits hiding in an expression: &v (inout), push/pop(v,...), die(...) */
+/* mutations/exits hiding in an expression: &v (mut), push/pop(v,...), die(...) */
 static void wl_scan_expr(Expr *e, const char *mut[], int *nm, int *exit) {
     if (!e) return;
     if (e->kind == E_ADDR) wl_add(mut, nm, wl_root(e->lhs));
@@ -4310,7 +4310,7 @@ static void resolve_program(ProcVec *prog) {
             die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
         for (int j = 0; j < pr->nparams; j++)
             if (pr->params[j].is_inout && IS_CHAN(pr->params[j].type))
-                die_at(pr->line, "a channel parameter cannot be inout (the handle is already shared)");
+                die_at(pr->line, "a channel parameter cannot be mut (the handle is already shared)");
         if (sig_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
         Sig s; memset(&s, 0, sizeof s);
@@ -4320,9 +4320,9 @@ static void resolve_program(ProcVec *prog) {
         if (pr->nparams > 16) die_at(pr->line, "too many parameters (max 16)");
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
-            s.inout[j]  = pr->params[j].is_inout;
-            /* inout: non-heap types (int/bool/pure struct) and the mutable
-             * aggregates [int]/[string]/heap-bearing structs. A heap inout
+            s.mut[j]  = pr->params[j].is_inout;
+            /* mut: non-heap types (int/bool/pure struct) and the mutable
+             * aggregates [int]/[string]/heap-bearing structs. A heap mut
              * carries its value's owning arena (_ina_<name>), so any
              * allocating mutation (element copy, field copy, regrow/push)
              * lands in the caller's arena where the value lives. `string`
@@ -4330,7 +4330,7 @@ static void resolve_program(ProcVec *prog) {
              * REASSIGNMENT through the borrow (s = s + ".") reaches the
              * caller, and the new bytes build in _ina_<name>. */
             if (pr->params[j].is_inout && IS_FUNC(pr->params[j].type))
-                die_at(pr->line, "inout parameter '%s': a function value can't be inout "
+                die_at(pr->line, "mut parameter '%s': a function value can't be mut "
                        "(a callee could write a closure back into the caller and it would dangle)",
                        pr->params[j].name);
         }
@@ -4351,7 +4351,7 @@ static void resolve_program(ProcVec *prog) {
             Type pt = pr->params[j].type;
             /* arrays, maps, and soa are read-only borrows (they shallow-share
              * the caller's buffers, so in-place mutation would reach through),
-             * EXCEPT an inout one, which is a by-pointer share the callee may
+             * EXCEPT a mut one, which is a by-pointer share the callee may
              * mutate in place. To mutate a borrowed container, copy it first
              * (`local := param`). */
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt))
@@ -4376,7 +4376,7 @@ static void resolve_program(ProcVec *prog) {
  * `len` is an un-redefinable builtin returning the true length, Hier has NO
  * in-place array-shrink op, and we verify below that the loop body never
  * reassigns/shadows A or i and never passes A whole to a call (push / a
- * possibly-inout callee could change it). So the per-element bounds check is
+ * possibly-mut callee could change it). So the per-element bounds check is
  * redundant and we emit the raw `A.data[i]`. A read `A[i]` and `print(A[i])`,
  * `acc = acc + A[i]` stay elidable (they pass `A[i]`, not `A`); `A = ...`,
  * `push(A, x)`, `f(A)` all disable it. Escape hatch: HIERC_NO_BOUNDS_ELISION=1.
@@ -4391,7 +4391,7 @@ static int elision_on(void) {
 }
 
 /* Does `e` pass the whole array `arr` (a bare identifier) as a direct argument
- * to any call? Such a call may be inout and shrink/rebind it -> not elidable. */
+ * to any call? Such a call may be mut and shrink/rebind it -> not elidable. */
 static int expr_passes_arr(Expr *e, const char *arr) {
     if (!e) return 0;
     if (e->kind == E_CALL)
@@ -4483,7 +4483,7 @@ static int cv_in_parent(const char *name) {
     return a && !strcmp(a, "_parent");
 }
 
-/* names of the current proc's inout params: in the generated body they are
+/* names of the current proc's mut params: in the generated body they are
  * C pointers (T *h_x), so every read/lvalue use derefs as (*h_x). Reset per
  * proc; a proc has at most 8 params. */
 static const char *g_inout[16];
@@ -4511,11 +4511,11 @@ static int is_param(const char *name) {
     return 0;
 }
 
-/* HEAP inout params additionally carry their value's owning arena as a hidden
+/* HEAP mut params additionally carry their value's owning arena as a hidden
  * C parameter `_ina_<name>`. Any allocating mutation of the param (a [string]
  * element copy, a heap struct field copy, an array regrow/push) must allocate
  * into THAT arena — the caller's, where the value lives — not the callee's
- * _scope. Non-heap inout (int/bool/pure struct) never allocates, so it has no
+ * _scope. Non-heap mut (int/bool/pure struct) never allocates, so it has no
  * arena param. Populated per proc alongside g_inout. */
 static const char *g_heap_inout[16];
 static int g_nheap_inout = 0;
@@ -4525,7 +4525,7 @@ static int is_heap_inout_param(const char *name) {
     return 0;
 }
 /* owning-arena C expression for a variable's *root*: the carried _ina_ param
- * for a heap inout, otherwise the variable's tracked arena (cv_arena). */
+ * for a heap mut, otherwise the variable's tracked arena (cv_arena). */
 static char *owner_arena_of(const char *root) {
     if (is_heap_inout_param(root)) return sfmt("_ina_%s", root);
     const char *a = cv_arena(root);
@@ -4636,7 +4636,7 @@ static void fuse_gather(Stmt **body, int n, const char **names, Type *tys, int *
         Expr *e = s->expr;
         if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
             && e->args[0]->kind == E_IDENT && e->args[0]->sval
-            && is_array(e->args[0]->type)) {   /* any array element family (int/float/str/composite); soa + inout excluded by is_array */
+            && is_array(e->args[0]->type)) {   /* any array element family (int/float/str/composite); soa + mut excluded by is_array */
             const char *nm = e->args[0]->sval; int seen = 0;
             for (int k = 0; k < *cnt; k++) if (!strcmp(names[k], nm)) { seen = 1; break; }
             if (!seen && *cnt < 16) { names[*cnt] = nm; tys[*cnt] = e->args[0]->type; (*cnt)++; }
@@ -4709,7 +4709,7 @@ static int can_move_from(Expr *rhs, const char *owner) {
  * no copy, exactly as an array parameter borrows its caller's buffer. The
  * one exception is a binding that is MUTATED in the arm (a [int]/[string]
  * payload that is push'd, element/field-assigned, reassigned, or passed
- * `&`-inout): that write would reach through into the scrutinee and break
+ * `&`-mut): that write would reach through into the scrutinee and break
  * value semantics, so such a binding keeps its owning copy. Same FBIP reuse
  * as move-on-last-use, applied to destructuring: a match->reconstruct tree
  * rewrite drops from O(n^2) copying to O(n). */
@@ -4720,7 +4720,7 @@ static const char *place_root(Expr *e) {
 }
 static int expr_mutates(Expr *e, const char *nm) {
     if (!e) return 0;
-    if (e->kind == E_ADDR) {                  /* &nm... — an inout argument */
+    if (e->kind == E_ADDR) {                  /* &nm... — a mut argument */
         const char *r = place_root(e);
         if (r && !strcmp(r, nm)) return 1;
     }
@@ -4969,7 +4969,7 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
 /* `t = C(..., t, ...)` — a self-rebuild of a heap aggregate. The old t is read
  * once in the RHS and immediately replaced, so handing off its buffer (rather
  * than deep-copying it) is sound even in a loop. Gate: the target is a tracked
- * same-arena local (not a borrowed/inout param), the RHS is a heap value, and
+ * same-arena local (not a borrowed/mut param), the RHS is a heap value, and
  * the name occurs EXACTLY once in the RHS — so the moved read is the only use,
  * and nothing else can observe the handed-off buffer. */
 static int self_rebuild_move(Stmt *s) {
@@ -5181,7 +5181,7 @@ static char *gen_call(Expr *e, const char *arena) {
         Expr *root = e->args[0];
         while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
         /* regrow targets the array's owning arena — the carried _ina_ arena
-         * if the root is a heap inout param (so the new buffer outlives the
+         * if the root is a heap mut param (so the new buffer outlives the
          * call and the caller sees the updated descriptor). */
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_lvalue(e->args[0], arena);   /* lvalue so a projected `arr[i].xs` is the buffer slot */
@@ -5311,10 +5311,10 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "pow"))   /* libm, 2 float args */
         return sfmt("pow(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     /* user proc: first arg is the destination arena for its return. A heap
-     * inout parameter takes TWO C args: the value's owning arena, then the
+     * mut parameter takes TWO C args: the value's owning arena, then the
      * &pointer — so an allocating mutation in the callee lands where the
      * value lives. The owner is computed from the argument's root variable
-     * (which, if it's itself a heap inout param here, yields its carried
+     * (which, if it's itself a heap mut param here, yields its carried
      * _ina_ arena — threading the real owner across recursion). */
     Sig *cs = sig_find(e->sval);
     if (cs && cs->is_extern) {
@@ -5333,7 +5333,7 @@ static char *gen_call(Expr *e, const char *arena) {
          * owned in _parent — never an alias of an arg), so build them in the
          * current scope, not the result arena which may be an outer scope. */
         char *a = gen_expr(e->args[i], g_cur_scope);
-        if (cs && i < cs->nparams && cs->inout[i] && type_is_heap(cs->params[i])
+        if (cs && i < cs->nparams && cs->mut[i] && type_is_heap(cs->params[i])
             && e->args[i]->kind == E_ADDR) {
             Expr *root = e->args[i]->lhs;
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
@@ -5452,8 +5452,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("(FnC%d){0, %s__clo, 0}", FUNC_ID(e->type), e->sval);
             return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
                                            : sfmt("h_%s", e->sval);
-        case E_ADDR: /* &place as an inout arg: address of the underlying
-                      * lvalue. gen_lvalue derefs an inout root and projects an
+        case E_ADDR: /* &place as a mut arg: address of the underlying
+                      * lvalue. gen_lvalue derefs a mut root and projects an
                       * array element to its buffer slot, so `&arr[i].x` is a
                       * real address, not the address of a `_get` temporary. */
             return sfmt("&(%s)", gen_lvalue(e->lhs, arena));
@@ -5735,7 +5735,7 @@ static char *return_frees(void) {
  * by-value `_get` copy, a composite-array element yields a pointer into the
  * backing buffer via the bounds-checked hier_arr_C<id>_ptr, dereferenced to a
  * real lvalue. So `arr[i].f = v`, `m[i][j] = v`, `push(arr[i].xs, v)`, and
- * `&arr[i].x` (inout) all mutate the element in place — Hylo-style projection,
+ * `&arr[i].x` (mut) all mutate the element in place — Hylo-style projection,
  * with no pointer ever surfaced in Hier. Only ARRC bases are projected
  * (is_lvalue guarantees it); other kinds fall back to gen_expr. */
 static char *gen_lvalue(Expr *e, const char *arena) {
@@ -5943,7 +5943,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
         case S_ASSIGN: {
             /* allocate the value where the variable lives, not where we
              * currently are, so it survives any inner scope collapsing. For a
-             * heap inout param the value lives in the caller's arena (_ina_),
+             * heap mut param the value lives in the caller's arena (_ina_),
              * so a whole-map/array reassignment must build there, not in this
              * callee's _scope (which would dangle once the call returns). */
             const char *owner = cv_arena(s->name);
@@ -5954,7 +5954,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * is no per-iteration reset to reclaim it, so it would sit in _scope until
              * return. Build it in a per-statement _t arena. Gated to "&_scope" (in a
              * loop/block the scratch reset already reclaims) and excludes or_return
-             * (early return would skip arena_free) and inout (LHS is *h_, leave it). */
+             * (early return would skip arena_free) and mut (LHS is *h_, leave it). */
             if (!strcmp(scope, "&_scope") && !type_is_heap(s->expr->type)
                 && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)
                 && !is_inout_param(s->name)) {
@@ -5970,7 +5970,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * the function still sees an ordinary NUL-terminated char*. e is
              * fully evaluated before the buffer is touched (handles acc=acc+acc
              * and acc=acc+f(acc)). */
-            /* (an inout param is excluded: its _len_/_cap_ trackers are never
+            /* (a mut param is excluded: its _len_/_cap_ trackers are never
              * declared and the target is (*h_x) — the generic path below
              * concats into _ina_ instead, which is correct, just not in-place) */
             if (is_accum(s->name) && is_self_append(s) && !is_inout_param(s->name)) {
@@ -6027,7 +6027,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * no sidecars needed — len/cap live inside HierMapSI. */
             if (is_accum(s->name) && is_self_mapset(s)) {
                 /* the map's owning arena and a pointer to its descriptor: for an
-                 * inout map param the descriptor is the caller's (pointer h_m,
+                 * mut map param the descriptor is the caller's (pointer h_m,
                  * arena _ina_m) so the put lands where the value lives; for a
                  * local it is &h_m in the local's own arena. */
                 const char *mo = owner_arena_of(s->name);
@@ -6040,8 +6040,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 break;
             }
             /* in-place map delete: `m = map_del(m, k)` tombstones in place. No
-             * allocation, so no arena arg; the pointer is the inout pointer for
-             * an inout map, else the address of the local descriptor. */
+             * allocation, so no arena arg; the pointer is the mut pointer for
+             * a mut map, else the address of the local descriptor. */
             if (is_accum(s->name) && is_self_mapdel(s)) {
                 const char *mo = owner_arena_of(s->name);
                 const char *mp = is_heap_inout_param(s->name) ? sfmt("h_%s", s->name)
@@ -6113,7 +6113,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind); fprintf(o, "h_%s = _rec%d;\n", s->name, tid);
             } else {
                 indent(o, ind);
-                /* an inout param is a pointer in the body; assign through it */
+                /* a mut param is a pointer in the body; assign through it */
                 if (is_inout_param(s->name))
                     fprintf(o, "(*h_%s) = %s;\n", s->name, v);
                 else
@@ -6165,7 +6165,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (arrx->type == T_ARRAY_STRING || IS_ARRC(arrx->type)) {
                 /* string/struct/array element: the set deep-copies it into the
                  * array's owning arena — the carried _ina_ arena if the root is
-                 * a heap inout param. */
+                 * a heap mut param. */
                 const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
                 fprintf(o, "hier_arr_%s_set(%s, &(%s), %s, %s);\n", arr_fn(arrx->type), owner, arr, ix, v);
             } else if (index_in_range(s->target->lhs, s->target->rhs)) {
@@ -6183,7 +6183,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             Expr *root = s->target;
             while (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX) root = root->lhs;
             /* heap field's new bytes go in the struct's owning arena — the
-             * carried _ina_ arena if the root is a heap inout param. */
+             * carried _ina_ arena if the root is a heap mut param. */
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
             char *lv = gen_lvalue(s->target, scope);   /* projects `arr[i].f` to the element's buffer slot */
             char *v  = gen_expr(s->expr, owner);
@@ -6200,7 +6200,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * in a fresh per-statement `_t` arena (block-scoped, like scalar_transient)
              * and free it immediately, instead of letting them accumulate in the
              * enclosing scope until function return. Sound because stores into
-             * longer-lived containers / inout route through owner_arena_of, not
+             * longer-lived containers / mut route through owner_arena_of, not
              * g_cur_scope — only pure transients land in _t.
              * Gated to "&_scope" like the scalar decl/assign reclaim above: inside a
              * loop/block the scratch reset already reclaims, so the _t wrap would be a
@@ -6608,9 +6608,9 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
 static void gen_signature(FILE *o, Proc *pr) {
     fprintf(o, "%sh_%s(Arena *_parent", c_type(pr->ret), pr->name);
     for (int i = 0; i < pr->nparams; i++) {
-        /* inout params are received by pointer so writes reach the caller's
+        /* mut params are received by pointer so writes reach the caller's
          * storage (copy-in copy-out, realized as call-by-reference). A HEAP
-         * inout additionally carries its value's owning arena (_ina_<name>),
+         * mut additionally carries its value's owning arena (_ina_<name>),
          * passed just before the pointer, so allocating mutations land where
          * the value lives rather than in this callee's _scope. */
         Type pt = pr->params[i].type;
@@ -6656,10 +6656,10 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* the string accumulator opt declares its sidecar len/cap locals at the
      * variable's S_DECL; a by-value parameter has no S_DECL, so a self-append on
      * a string param (`s = s + e`) must NOT take the in-place path — its
-     * sidecars would be undeclared C. Drop NON-inout params from the accumulator
+     * sidecars would be undeclared C. Drop NON-mut params from the accumulator
      * set; they fall back to ordinary concat/pure-set-and-rebind, which is
-     * correct. An inout param is KEPT: it carries no string sidecars (inout
-     * string is forbidden, so the only inout accumulator is a map), and its
+     * correct. A mut param is KEPT: it carries no string sidecars (mut
+     * string is forbidden, so the only mut accumulator is a map), and its
      * in-place map put/del is exactly the wanted mutation — landing in the
      * caller's arena (_ina_) so it survives the call, where the pure fallback
      * would allocate in this callee's _scope and dangle after return. */
@@ -6670,7 +6670,7 @@ static void gen_proc(FILE *o, Proc *pr) {
                 g_accum[a] = g_accum[--g_naccum]; a--;
             }
     }
-    /* register this proc's inout params so the body derefs them as (*h_x) */
+    /* register this proc's mut params so the body derefs them as (*h_x) */
     g_ninout = 0;
     g_nheap_inout = 0;
     for (int i = 0; i < pr->nparams; i++)
@@ -6712,7 +6712,7 @@ static void gen_proc(FILE *o, Proc *pr) {
      * string params are immutable, so neither needs this.) */
     for (int i = 0; i < pr->nparams; i++) {
         Type pt = pr->params[i].type;
-        /* an inout struct is a pointer to the caller's value — must NOT be
+        /* a mut struct is a pointer to the caller's value — must NOT be
          * deep-copied (the whole point is to mutate the caller's). Only
          * by-value heap struct params are copied for independence.
          *

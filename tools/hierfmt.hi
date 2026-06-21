@@ -209,10 +209,10 @@ fn comment_line(line: [Tok]) -> string:
 # are ordinary call targets. `wait`/`spawn` are excluded: spawn is a value prefix
 # and wait(t) is call-form, both fine as plain idents.
 fn is_kw(s: string) -> bool:
-    return s == "fn" or s == "struct" or s == "enum" or s == "type" or s == "import" or s == "package" or s == "extern" or s == "inout" or s == "if" or s == "elif" or s == "else" or s == "for" or s == "while" or s == "match" or s == "return" or s == "break" or s == "continue" or s == "and" or s == "or" or s == "not" or s == "in" or s == "or_return" or s == "as" or s == "select" or s == "default" or s == "closed"
+    return s == "fn" or s == "struct" or s == "enum" or s == "type" or s == "import" or s == "package" or s == "extern" or s == "mut" or s == "if" or s == "elif" or s == "else" or s == "for" or s == "while" or s == "match" or s == "return" or s == "break" or s == "continue" or s == "and" or s == "or" or s == "not" or s == "in" or s == "or_return" or s == "as" or s == "select" or s == "default" or s == "closed"
 
 # an "operand": something a binary operator can follow. Distinguishes binary `&`
-# (a & b) from a prefix inout `&` (f(&x)) by what precedes the `&`.
+# (a & b) from a prefix mut `&` (f(&x)) by what precedes the `&`.
 fn is_operand(t: Tok) -> bool:
     if t.kind == KIdent:
         return not is_kw(t.text)
@@ -242,12 +242,12 @@ fn sep_needs_space(reals: [Tok], i: int) -> bool:
     if pt == "]" and i >= 2 and reals[i - 2].text == "[":
         return false                              # empty `[]` then a type: []int, []K
     if pt == "&" and (i < 2 or not is_operand(reals[i - 2])):
-        return false                              # prefix inout `&x` (not binary `a & b`)
+        return false                              # prefix mut `&x` (not binary `a & b`)
     return true
 
 # format one non-blank line: canonical 4-space indent + content re-spaced by
 # token adjacency (inline-comment leading space is preserved, for alignment).
-fn fmt_line(line: [Tok], levels: inout [int]) -> string:
+fn fmt_line(line: [Tok], levels: mut [int]) -> string:
     w := 0
     start := 0
     if len(line) > 0:

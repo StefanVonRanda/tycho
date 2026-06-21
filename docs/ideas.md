@@ -15,7 +15,7 @@ Hier's two pillars — value semantics + implicit arenas — put it next to a sm
 cluster of languages, and the differences are the interesting part:
 
 - **Hylo** (formerly Val) — *the closest living relative*. Also "all types are
-  value types," also no pointers/references in user code, also `inout` as an
+  value types," also no pointers/references in user code, also `mut` as an
   exclusive copy-in/copy-out borrow (Hier already cites this). Hylo's
   distinctive tool is **subscripts that *project* (yield) rather than return** —
   the callee temporarily grants the caller read or read/write access to an
@@ -85,7 +85,7 @@ cluster of languages, and the differences are the interesting part:
 
 3. **Projections / yielding element access (Hylo-style).** ✅ *Implemented.*
    A composite-array element is now a mutable place: `arr[i].f = v`,
-   `push(arr[i].xs, v)`, `m[i][j] = v`, and `&arr[i].x` (inout) all yield the
+   `push(arr[i].xs, v)`, `m[i][j] = v`, and `&arr[i].x` (mut) all yield the
    element's slot in the backing buffer (a bounds-checked `hier_arr_C<id>_ptr`),
    with no pointer exposed in Hier and value semantics preserved. The lvalue is
    only granted for composite (ARRC) elements rooted in a mutable variable/field
@@ -122,7 +122,7 @@ cluster of languages, and the differences are the interesting part:
    zero-copy borrow an array param already is), and `is_place(E_SLICE)` makes
    any bind/return/push deep-copy it into an owning array — so it can never be
    stored while aliasing. No borrow checker; the one added rule rejects a slice
-   of `xs` alongside an `inout` of `xs` in one call. Works on every array type
+   of `xs` alongside a `mut` of `xs` in one call. Works on every array type
    and composes. **Strings slice too:** `s[a:b]` (and `s[a:]`/`s[:b]`/`s[:]`) is
    a fresh substring — sugar over `substr` — and self-hosts (`tests/string_slice.hi`).
 7. **`distinct` newtypes** — ✅ *Implemented.* `type Meters = float` is a named
@@ -151,7 +151,7 @@ cluster of languages, and the differences are the interesting part:
    into the arm; now the binding BORROWS the scrutinee's payload (shares the
    pointer, like an array param borrows its caller's buffer), since the
    scrutinee outlives the match and enum values are immutable. A binding that
-   is mutated in the arm (`push`/element-set/`&`-inout on a `[int]` payload)
+   is mutated in the arm (`push`/element-set/`&`-mut on a `[int]` payload)
    keeps its owning copy, so the write can't reach through. This is the
    Perceus tree-rewrite case: it drops a `match`→reconstruct pass (the
    `examples/optimize.hi` optimizer, `tests/match_reuse.hi`) from O(n²) to

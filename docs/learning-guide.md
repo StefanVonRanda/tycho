@@ -196,8 +196,8 @@ fn double(n: int) -> int:
     n = n * 2          # mutates the local copy
     return n           # caller's original is unchanged
 
-# inout: mutate the caller's variable (pass with &)
-fn incr(n: inout int):
+# mut: mutate the caller's variable (pass with &)
+fn incr(n: mut int):
     n = n + 1
 
 fn main():
@@ -215,7 +215,7 @@ fn main():
 
 - `fn foo(x: int)` — like passing a primitive in JS. The function gets its own copy.
 - `fn foo(xs: [int])` — like a read-only view. You can read elements but not mutate the array.
-- `fn foo(xs: inout [int])` — like passing by reference. The function can mutate the caller's array. Mark the call with `&`.
+- `fn foo(xs: mut [int])` — like passing by reference. The function can mutate the caller's array. Mark the call with `&`.
 
 **String interpolation** (like template literals in JS):
 
@@ -406,7 +406,7 @@ fn sum(a: [int]) -> int:
         total = total + a[i]
     return total
 
-fn add_one(a: inout [int]):
+fn add_one(a: mut [int]):
     for i in range(len(a)):
         a[i] = a[i] + 1            # mutate the caller's array
 
@@ -498,14 +498,14 @@ fn main():
     push(b.tags, "logic")         # never touches a.tags
 ```
 
-### Mutable context objects with `inout`
+### Mutable context objects with `mut`
 
 ```
 struct Ctx:
     label: string
     log: [int]
 
-fn step(ctx: inout Ctx, name: string, code: int):
+fn step(ctx: mut Ctx, name: string, code: int):
     ctx.label = name
     push(ctx.log, code)
 
@@ -600,10 +600,10 @@ for i in range(len(words)):
     counts[words[i]] += 1          # or: counts[w] = counts[w] + 1
 ```
 
-### Maps with `inout`
+### Maps with `mut`
 
 ```
-fn tally(m: inout [string: int], word: string):
+fn tally(m: mut [string: int], word: string):
     m = map_set(m, word, map_get(m, word, 0) + 1)
 
 fn main():
@@ -791,7 +791,7 @@ push(b, 4)
 print(str(len(a)))  # 3 — a is unchanged
 ```
 
-### Rule 2: Parameters are copies (unless `inout`)
+### Rule 2: Parameters are copies (unless `mut`)
 
 ```
 fn add_one(xs: [int]) -> [int]:
@@ -1041,7 +1041,7 @@ fn main():
 | `core:iter_str` | Higher-order over `[string]` |
 | `core:iter_float` | Higher-order over `[float]` |
 | `core:sort` | `argsort`, `argsort_desc`, `argsort_str`, `by_key` |
-| `core:rand` | `seed`, `next`, `below`, `shuffle` (xorshift32, state threaded via inout) |
+| `core:rand` | `seed`, `next`, `below`, `shuffle` (xorshift32, state threaded via mut) |
 
 ---
 
@@ -1058,7 +1058,7 @@ fn main():
     print(str(cos(0.0)) + "\n")             # 1.0
 ```
 
-The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Hier's arena), and the opaque `ptr` type for foreign handles. Composites and `inout` are rejected for safety.
+The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Hier's arena), and the opaque `ptr` type for foreign handles. Composites and `mut` are rejected for safety.
 
 ---
 
@@ -1072,7 +1072,7 @@ This is a real text search engine — index documents, query them with boolean A
 # Concepts exercised:
 #   - structs with array fields (Posting)
 #   - [string: int] maps for the term index
-#   - inout for shared mutable state across calls
+#   - mut for shared mutable state across calls
 #   - in-place map/array mutation through projections
 #   - string processing (split, normalize)
 
@@ -1093,7 +1093,7 @@ fn normalize(w: string) -> string:
     return r
 
 # Add one occurrence of `term` in document `doc`
-fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
+fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int):
     pi := map_get(tidx, term, -1)
     if pi < 0:
         # first time we see this term — create a new posting
@@ -1113,7 +1113,7 @@ fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: 
             push(postings[pi].freqs, 1)
 
 # Index all words in one document
-fn index_doc(postings: inout [Posting], tidx: inout [string: int], text: string, doc: int):
+fn index_doc(postings: mut [Posting], tidx: mut [string: int], text: string, doc: int):
     words := split(text, " ")
     for i in range(len(words)):
         t := normalize(words[i])
@@ -1176,7 +1176,7 @@ fn main():
 ```
 
 **What this exercises:**
-- `inout` arrays and maps shared across recursive calls
+- `mut` arrays and maps shared across recursive calls
 - In-place mutation through projections (`postings[pi].freqs[n - 1] += 1`)
 - String processing (`split`, character arithmetic, `chr`)
 - The map accumulator idiom (`tidx = map_set(tidx, ...)`)
@@ -1195,7 +1195,7 @@ The key insight: the parsed document is a recursive `Json` enum — an AST. The 
 # Concepts exercised:
 #   - recursive enums (ASTs)
 #   - exhaustive pattern matching
-#   - inout for threaded parser state
+#   - mut for threaded parser state
 #   - string building with char type
 #   - value semantics: the tree is an independent value
 
@@ -1208,11 +1208,11 @@ enum Json:
     JObj([string], [Json])         # parallel keys / values arrays
 
 # skip whitespace
-fn skip_ws(s: string, n: int, pos: inout int):
+fn skip_ws(s: string, n: int, pos: mut int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
-fn parse_string(s: string, n: int, pos: inout int) -> string:
+fn parse_string(s: string, n: int, pos: mut int) -> string:
     pos = pos + 1                   # skip opening "
     r := ""
     for pos < n and s[pos] != 34:   # until closing "
@@ -1235,7 +1235,7 @@ fn parse_string(s: string, n: int, pos: inout int) -> string:
     pos = pos + 1                   # skip closing "
     return r
 
-fn parse_number(s: string, n: int, pos: inout int) -> int:
+fn parse_number(s: string, n: int, pos: mut int) -> int:
     neg := false
     if s[pos] == 45:                # '-'
         neg = true
@@ -1248,7 +1248,7 @@ fn parse_number(s: string, n: int, pos: inout int) -> int:
         return 0 - v
     return v
 
-fn parse_value(s: string, n: int, pos: inout int) -> Json:
+fn parse_value(s: string, n: int, pos: mut int) -> Json:
     skip_ws(s, n, &pos)
     c := s[pos]
     if c == 123:                    # { -> object
@@ -1388,7 +1388,7 @@ fn main():
 
 **What this exercises:**
 - Recursive enums as ASTs
-- Threaded mutable state via `inout int` (the parser position)
+- Threaded mutable state via `mut int` (the parser position)
 - The `char` type for byte-level string building
 - Exhaustive `match` on every variant
 - Deep value queries into nested structures
@@ -1555,7 +1555,7 @@ fn name(a: int, b: int) -> int:
 fn void_fn():
     print("no return\n")
 
-fn mutate(x: inout int):
+fn mutate(x: mut int):
     x = x + 1
 ```
 
@@ -1661,7 +1661,7 @@ math.gcd(12, 8)   s.argsort(xs)
 
 1. **Every scope** gets its own arena — functions, blocks, loop iterations.
 2. **Assignment copies** — `b = a` gives `b` an independent deep copy.
-3. **Parameters are borrows** (read-only) — copy first or use `inout` to mutate.
+3. **Parameters are borrows** (read-only) — copy first or use `mut` to mutate.
 4. **Return values are promoted** into the caller's arena — no dangling pointers.
 5. **Loop scratch arenas reset** each iteration — bounded memory in loops.
 6. **The programmer never sees any of this** — no `malloc`, `free`, or arena API.

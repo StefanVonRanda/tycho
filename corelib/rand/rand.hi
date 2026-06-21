@@ -2,7 +2,7 @@ package rand
 
 # Deterministic pseudo-random numbers (xorshift32). NOT cryptographic.
 # hier has no globals, so the generator state is an explicit int the caller
-# owns and threads through `inout`:
+# owns and threads through `mut`:
 #   st := rand.seed(42)
 #   r := rand.below(&st, 100)
 # The state is kept in [1, 2^32); every left shift is masked to 32 bits
@@ -17,7 +17,7 @@ fn seed(n: int) -> int:                  # any int -> a valid nonzero state
         s = 2463534242                   # xorshift32's classic default seed
     return s
 
-fn next(state: inout int) -> int:        # uniform in [1, 2^32); advances state
+fn next(state: mut int) -> int:        # uniform in [1, 2^32); advances state
     x := state
     x = (x ^ ((x * 8192) % 4294967296)) % 4294967296     # x ^= x << 13 (masked)
     x = x ^ (x / 131072)                                 # x ^= x >> 17
@@ -27,13 +27,13 @@ fn next(state: inout int) -> int:        # uniform in [1, 2^32); advances state
     state = x
     return x
 
-fn below(state: inout int, n: int) -> int:   # uniform-ish in [0, n); n <= 0 -> 0
+fn below(state: mut int, n: int) -> int:   # uniform-ish in [0, n); n <= 0 -> 0
     if n <= 0:
         return 0
     v := next(&state)
     return v % n
 
-fn shuffle(state: inout int, xs: [int]) -> [int]:   # Fisher-Yates; returns a new array
+fn shuffle(state: mut int, xs: [int]) -> [int]:   # Fisher-Yates; returns a new array
     out := xs
     i := len(out) - 1
     for i > 0:

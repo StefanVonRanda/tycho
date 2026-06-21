@@ -168,7 +168,7 @@ reassigns/shadows `A` or `i` and never passes `A` whole to a call — so the
 per-element check is emitted as a raw `A.data[i]`. **132 → 47 ms (~2.8×)**, same
 output, now ~2× C (was ~6×) and faster than Go. Provably-safe range narrowing,
 NOT a blanket "trust the index": when `A` is reassigned or passed to a possibly-
-inout callee the check stays and an out-of-range index still aborts (verified by
+mut callee the check stays and an out-of-range index still aborts (verified by
 the 600-seed differential+ASan fuzz, which generates exactly this loop shape, and
 by OOB-abort regression cases). Disable with `HIERC_NO_BOUNDS_ELISION=1`. The
 idiomatic `range(len(xs))` source form is what enables it (a bare `range(n)` bound

@@ -148,7 +148,7 @@ described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 correctness. Each `bench/*.hi` program exercises one optimization and asserts a
 single metric against a deliberately generous bound — peak RSS for the
 memory-shape claims (in-place string append, loop scratch reset, the map
-accumulator, and move-on-last-use) and wall time for the `inout` memo. The
+accumulator, and move-on-last-use) and wall time for the `mut` memo. The
 bounds catch order-of-magnitude regressions, not jitter: the in-place append
 holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
 bound sits firmly between a working and a broken optimization; likewise the
@@ -202,7 +202,7 @@ Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
 type family at a time, each step gated by the fixpoint + sanitizers. That
 campaign (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
-elements, enum node trees, inout containers, per-variable block scoping,
+elements, enum node trees, mut containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
 elements, all now arena-managed and freed per scope) is documented in
 [docs/memory-model.md](docs/memory-model.md). With MM-7f closing the last residual
@@ -307,11 +307,11 @@ A `fn` with no `-> type` returns nothing. Blocks are indentation-based
 like Python. `#` starts a comment.
 
 By default a parameter is a copy (or, for arrays, a read-only borrow). An
-`inout` parameter is mutated in place — the callee writes back into the
+`mut` parameter is mutated in place — the callee writes back into the
 caller's variable, marked with `&` at the call site:
 
 ```
-fn incr(n: inout int):
+fn incr(n: mut int):
     n = n + 1
 
 fn main():
@@ -321,11 +321,11 @@ fn main():
 
 This is copy-in copy-out (equivalent to `x = incr(x)`), so it preserves
 value semantics: the `&` argument must name a mutable variable, and the same
-variable can't be passed to two `inout` parameters of one call (that would
-be overlapping mutable access). `inout` covers `int`, `bool`, pure-value
+variable can't be passed to two `mut` parameters of one call (that would
+be overlapping mutable access). `mut` covers `int`, `bool`, pure-value
 structs, and the heap aggregates `[int]`/`[string]` and heap-bearing structs —
 including `push`/growth and element/field mutation through the borrow.
-`inout string` works too: the string value itself stays immutable, but
+`mut string` works too: the string value itself stays immutable, but
 reassignment through the borrow (`s = s + "."`) reaches the caller, with the
 new bytes built in the caller's arena (`tests/inout_string.hi`).
 
@@ -449,7 +449,7 @@ ever exposed in Hier):
 ps[0].x = 10                       # field of an element
 push(ps[0].tags, "extra")          # grow an element's array field in place
 grid[1][2] = 60                    # nested-array element
-bump(&ps[1].x)                     # an element field as an `inout` argument
+bump(&ps[1].x)                     # an element field as a `mut` argument
 ```
 
 Value semantics still holds: after `qs := ps`, mutating `ps[0].x` leaves `qs`
@@ -467,14 +467,14 @@ fn make_squares(n: int) -> [int]:   # returned arrays are promoted into
 
 fn sum(a: [int]) -> int:            # a parameter is a read-only borrow:
     total := 0                      # you may read it but not push/index-set
-    for i in range(len(a)):         # it (that needs a copy, or an inout param)
+    for i in range(len(a)):         # it (that needs a copy, or a mut param)
         total = total + a[i]
     return total
 ```
 
 An array parameter is passed as a borrow (no copy); mutating it in place is
 a compile error — copy it first (`b := a`) to get a mutable local, or take
-it `inout`.
+it `mut`.
 
 ### Slices (`xs[a:b]`)
 
@@ -498,8 +498,8 @@ an owning array — so value semantics still holds: mutating `xs` afterwards nev
 touches `mid`. This keeps the view *non-storable* (it can never outlive or alias
 the buffer it came from) without any borrow checker. Slices work on every array
 type (`[int]`, `[string]`, `[Point]`, `[[int]]`) and compose (`xs[1:5][1:3]`).
-The one rule: you cannot pass a slice of `xs` and an `inout` of `xs` to the same
-call (the `inout` could reallocate the buffer the slice views). Strings use
+The one rule: you cannot pass a slice of `xs` and a `mut` of `xs` to the same
+call (the `mut` could reallocate the buffer the slice views). Strings use
 `substr(s, a, b)` (a copy), not slice syntax.
 
 ### Maps (`[string: V]`, `[int: V]`)
@@ -557,9 +557,9 @@ deep copy, so mutating the copy never touches the original, and `==`/`!=`
 compare entry-wise (`a == b` is true exactly when `b` is an independent copy
 of `a`). They cross function boundaries the same way arrays do — a `[string: int]`
 parameter is a read-only borrow (mutating it is a compile error; copy it first
-or take it `inout`), and returned maps are promoted into the caller's arena. An
-`inout [string: int]` lets a callee share and mutate the caller's map in place
-(a counter threaded through calls), exactly like an `inout` array.
+or take it `mut`), and returned maps are promoted into the caller's arena. An
+`mut [string: int]` lets a callee share and mutate the caller's map in place
+(a counter threaded through calls), exactly like a `mut` array.
 
 The self-rebinds `m = map_set(m, k, v)` and `m = map_del(m, k)` look O(n) per
 step (build a fresh map each time), but because value semantics proves `m` is
@@ -568,7 +568,7 @@ O(n) total, the same trick as in-place string append (see
 [Memory model](#memory-model)).
 
 All the operations (`map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`, `==`
-deep value equality, the in-place accumulator rebind, `inout`) work the same
+deep value equality, the in-place accumulator rebind, `mut`) work the same
 regardless of key or value type; `map_get`'s default and `map_set`'s value take
 the map's value type, and the key takes its key type. *Not yet:* key types other
 than `string`/`int`.
@@ -888,7 +888,7 @@ A function value can be a **reference** to a named function (it captures nothing
 so it is just a code pointer — zero-cost and immortal) or a **closure** (see
 below). This is what lets you write generic-feeling helpers over concrete
 function arguments (`map`/`filter`/`reduce`-style) without generics. Builtins
-(`len`, `push`, …) and functions with `inout` parameters can't be taken as
+(`len`, `push`, …) and functions with `mut` parameters can't be taken as
 values, and a function value can't be stored in a struct field or array.
 
 ### Closures (lambdas)
@@ -1093,7 +1093,7 @@ extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, hier string 
 The boundary covers scalars, `string`, and the opaque foreign-handle type `ptr`
 (a `void*` hier never dereferences; `null` literal, `is_null(p)`). A C-returned
 string is **copied into the caller's arena** at the call site, so hier never
-holds a pointer into C-owned memory. Composites and `inout` across the boundary
+holds a pointer into C-owned memory. Composites and `mut` across the boundary
 are rejected (fail closed). Linking ergonomics on the `hierc` line: `--link`,
 `--pkg` (pkg-config), `--shim` (companion `.c`). A real binding lives at
 `examples/sqlite/` (in-memory SQLite); design and full rules in
@@ -1242,12 +1242,12 @@ None of this appears in Hier source.
   (`[string: string]`, `[string: Struct]`, `[int: [int]]`, …) — no other key
   type. They support
   `map_set`/`map_get`/`map_has`/`map_del`/`keys`/`len`/`==`, in-place
-  accumulator rebinds, and `inout`.
-  `inout` covers int, bool, pure-value structs, and the heap aggregates
+  accumulator rebinds, and `mut`.
+  `mut` covers int, bool, pure-value structs, and the heap aggregates
   `[int]`/`[string]` and heap-bearing structs — including `push`/growth and
   element/field mutation through the borrow (shared mutable state across calls,
   e.g. a memo table — see `examples/memo.hi`, `examples/collect.hi`,
-  `examples/context.hi`). `inout string` reassigns through the borrow (the
+  `examples/context.hi`). `mut string` reassigns through the borrow (the
   value itself stays immutable).
 - **Strings are byte-oriented.** A `string` is a length-counted UTF-8 byte
   buffer; literals and I/O pass bytes through unchanged, but `len`, indexing,
@@ -1270,7 +1270,7 @@ compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   inout, memo, collect, context, optimize, json, raytrace,
+                   mut, memo, collect, context, optimize, json, raytrace,
                    grep, invindex (.hi) — 20 programs (json.hi is a full recursive-
                    descent JSON parser + serializer; raytrace.hi a float-math PPM
                    renderer; grep.hi a CLI text tool over args()/read_file;

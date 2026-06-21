@@ -1,7 +1,7 @@
 # Hier aggregates: arrays & structs under value semantics
 
 Status: **implemented** (this began as a design pressure-test; arrays,
-structs, heap-bearing/nested struct fields, structural equality, and `inout`
+structs, heap-bearing/nested struct fields, structural equality, and `mut`
 all ship as described — see the [README](../README.md) and
 [thesis.md](thesis.md)). It answered one question: *do implicit hierarchical
 arenas still hold once the language has arrays and structs, given strict value
@@ -19,7 +19,7 @@ arena** — the arena of the variable (slot) that owns the root. There is
 **no pointer/reference type**: you cannot name, store, or return a
 reference to a value's interior. Every operation that would create a
 second name for the same storage instead **copies** (deep, by default).
-Mutation happens in place through `inout` parameters, which are an
+Mutation happens in place through `mut` parameters, which are an
 exclusive borrow for the duration of a call and cannot be stored.
 
 ## 2. Types & syntax
@@ -31,7 +31,7 @@ ys := []string           # empty; element type required when empty
 xs[0]                     # index read
 xs[0] = 9                 # index write (in place)
 len(xs)                   # length
-push(xs, 4)               # append in place  (xs is inout)
+push(xs, 4)               # append in place  (xs is mut)
 pop(xs)                    # remove last, returns it
 
 # structs — nominal, fields are values
@@ -60,7 +60,7 @@ companion feature, not part of this spec, but the model assumes it exists.
    `acc.items`'s backing buffer lives wherever `acc` lives.
 2. **No aliasing.** `b := a`, passing by value, and `field = v` all
    *copy*. After `b := a`, `a` and `b` share nothing.
-3. **Mutation via `inout` only.** `fn f(inout xs: [int])` borrows the
+3. **Mutation via `mut` only.** `fn f(mut xs: [int])` borrows the
    caller's value exclusively for the call and writes through it. The
    value never changes arena. The borrow is *not a value* — it can't be
    assigned, stored in a field, or returned.
@@ -141,7 +141,7 @@ fn main():
 3. **Idiomatic building must be in place.** The immutable form
    `total = total + str(i)` in a loop leaves dead intermediate buffers in
    the arena (bounded by scope, but wasteful). The blessed form is
-   in-place growth — `push(builder, str(i))` / `inout` — which is
+   in-place growth — `push(builder, str(i))` / `mut` — which is
    geometric and tight. "One right way" should make in-place building the
    one way; immutable rebuild stays *correct* but is the slow path.
 
@@ -151,11 +151,11 @@ fn main():
 | --- | --- | --- |
 | `b := a` (array/struct) | none | deep copy; independent |
 | pass by value, read-only | transient borrow aliases source | safe: borrow can't be stored/returned (inv. 4); caller suspended |
-| `inout` mutate | exclusive borrow | safe: in place, same arena, borrow non-storable |
+| `mut` mutate | exclusive borrow | safe: in place, same arena, borrow non-storable |
 | build in loop, return | value escapes scope | deep copy up, or build-in-parent (opt.) |
 | push scratch value into outer array | element outlives iteration | safe: push *copies* into outer arena |
 | `a[i] = someString` | old element becomes garbage | sound; wasted-in-arena, bounded by `a`'s life |
-| array slice `xs[a:b]` | view aliases parent buffer | safe: a view only as a read-only arg (zero-copy borrow, like any array param); storing/returning/pushing it deep-copies, so it is non-storable. A slice + an `inout` of the same var in one call is rejected. |
+| array slice `xs[a:b]` | view aliases parent buffer | safe: a view only as a read-only arg (zero-copy borrow, like any array param); storing/returning/pushing it deep-copies, so it is non-storable. A slice + a `mut` of the same var in one call is rejected. |
 | substring | view would alias parent buffer | **substr is a copy** (owns its bytes); no aliasing string views (a string slice can't be NUL-terminated) |
 | recursive/graph types | would need pointers | not allowed; use array + indices |
 | return a reference to a local | classic dangling | **inexpressible** — no reference type exists |
@@ -185,7 +185,7 @@ a major source of complexity in a generics-bearing compiler simply does not exis
 
 Still required, and none of these is generics:
 
-- **`inout` parameters** (exclusive mutable borrow) — efficient mutation
+- **`mut` parameters** (exclusive mutable borrow) — efficient mutation
   without copies or aliasing.
 - **`Option(T)` + exhaustive `match`** — the no-`null` story.
 - **Slices** (`xs[a:b]`) — ✅ done: a non-storable view (zero-copy when passed
@@ -206,7 +206,7 @@ back in the programmer's face, the opposite of Hier's goal.
 
 Hier can do better **because it has no pointers**. With value semantics and
 no reference type, a value escapes a function only by being **returned** or
-written through an **`inout`** parameter — both visible in the signature. A
+written through an **`mut`** parameter — both visible in the signature. A
 callee cannot stash an argument anywhere that outlives the call (there is
 nothing to stash it in). Therefore **escape is decided locally, from
 signatures — no whole-program may-alias analysis**. Concretely:
@@ -231,7 +231,7 @@ optimization.
 
 Future A holds, and dropping generics does not weaken it. Correctness rests
 entirely on **"no reference type + copy on cross-arena move."** What grows
-is a *small, fixed* type surface (built-in containers, `inout`, `Option`,
+is a *small, fixed* type surface (built-in containers, `mut`, `Option`,
 optionally `distinct`) — not a generics engine, and not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
