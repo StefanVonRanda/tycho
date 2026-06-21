@@ -327,6 +327,16 @@ commit, fully green before the next — same discipline as every other change.
   hierc0 could not substitute `[]$T` in *any* generic body). Tests
   `tests/generic_explicit.hi` + `tests/reject/explicit_*.hi`.
 - **Stage 3 — COMPLETE.** Generics (A2) is fully shipped in both compilers.
+- **Post-A2: UFCS × generics — SHIPPED.** A generic free function is callable as a
+  method: `xs.first()` == `first(xs)`, `n.dbl().dbl()`. UFCS dispatch, when no
+  concrete method matches, tries the generic templates — a candidate is one whose
+  first-parameter *pattern* accepts the receiver (`match_type` / `match_typaram_str`)
+  — then prepends the receiver and instantiates like any generic call. Pure
+  composition of two existing features; no new concept, no memory-model impact.
+  hierc: a `ufcs_generic` fallback in both UFCS resolution paths. hierc0: the mono
+  pass rewrites a UFCS-generic call (dotted-`ECall` and chained-`ECallV` forms) to a
+  plain instance call, with `type_of` substituting the generic method's return from
+  the receiver so chaining resolves. Test `tests/generic_ufcs.hi`.
 
 ## 9. Two-compiler determinism
 

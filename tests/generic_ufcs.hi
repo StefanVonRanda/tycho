@@ -1,0 +1,24 @@
+# UFCS x generics: a generic free fn is callable as a method (x.foo() == foo(x)),
+# dispatched by matching the receiver against the template's first-param pattern,
+# then instantiated like any generic call. Scalar/string/array receivers + chaining.
+
+fn dbl(x: $T) -> $T:
+    return x + x
+
+fn first(xs: [$T]) -> Option(T):
+    if len(xs) > 0:
+        return Some(xs[0])
+    return None
+
+fn main():
+    n := 5
+    println(str(n.dbl()))              # 10   (scalar receiver)
+    println(str(n.dbl().dbl()))        # 20   (chained)
+    s := "ab"
+    println(s.dbl())                   # abab (string receiver)
+    xs := [10, 20, 30]
+    match xs.first():                  # array receiver -> Option
+        Some(v):
+            println(str(v))            # 10
+        None:
+            println("empty")

@@ -2728,6 +2728,18 @@ static Proc *generic_find(const char *name) {
         if (!strcmp(g_generics[i]->name, name)) return g_generics[i];
     return NULL;
 }
+/* UFCS x generics: if `name` is a generic free fn whose first parameter PATTERN
+ * accepts a by-value receiver of type `recv`, return its template name; else NULL.
+ * Lets `x.first()` dispatch to `first(xs: [$T])`, instantiated like any call. */
+static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
+    Proc *gt = generic_find(name);
+    if (!gt && pkg && pkg[0]) gt = generic_find(sfmt("%s%s", pkg, name));
+    if (!gt) { const char *pp = type_pkg_prefix(recv); if (pp) gt = generic_find(sfmt("%s%s", pp, name)); }
+    if (!gt || gt->nparams < 1 || gt->params[0].is_inout) return NULL;
+    Type b[256];
+    for (int i = 0; i < g_ntyparams; i++) b[i] = T_VOID;
+    return match_type(gt->params[0].type, recv, b) ? gt->name : NULL;
+}
 typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; } GInst;
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
 /* generics: the active instance's typaram->concrete map while its (SHARED) body
@@ -3259,14 +3271,15 @@ static Type resolve_expr(Expr *e) {
                           }
                       }
                   }
-                  if (ms) {   /* UFCS: prepend the receiver, drop the qualifier -> foo(x, args) */
+                  const char *gennm = (!ms && !fnfield) ? ufcs_generic(e->sval, e->pkg, _qvt) : NULL;
+                  if (ms || gennm) {   /* UFCS: prepend the receiver, drop the qualifier -> foo(x, args) */
                       Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
                       Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
                       na[0] = recv;
                       for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
                       e->args = na; e->nargs += 1;
                       e->qual = NULL;
-                      e->sval = (char *)ms->name;   /* the resolved (possibly package-mangled) method name */
+                      e->sval = ms ? (char *)ms->name : (char *)gennm;   /* method name; a generic template name is instantiated by the dispatch below */
                   } else {            /* fn-typed-field call: a call-on-expression of x.foo */
                       Expr *base = new_expr(E_IDENT, e->line); base->sval = (char *)e->qual; base->pkg = e->pkg;
                       Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
@@ -3301,12 +3314,13 @@ static Type resolve_expr(Expr *e) {
                         }
                     }
                 }
-                if (ms) {   /* prepend base as the receiver; resolve as a normal named call */
+                const char *gennm2 = (!ms && !fnfield) ? ufcs_generic(fld->sval, e->pkg, bt) : NULL;
+                if (ms || gennm2) {   /* prepend base as the receiver; resolve as a normal named call */
                     Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
                     na[0] = fld->lhs;
                     for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
                     e->args = na; e->nargs += 1;
-                    e->sval = (char *)ms->name;   /* the resolved (possibly package-mangled) method name */
+                    e->sval = ms ? (char *)ms->name : (char *)gennm2;   /* generic template name dispatches below */
                     e->lhs = NULL;
                 }
             }

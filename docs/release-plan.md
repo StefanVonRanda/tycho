@@ -362,6 +362,13 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   (hierc0 couldn't substitute `[]$T` in any generic body). Tests
   `tests/generic_explicit.hi` + three `tests/reject/explicit_*.hi`; all gates green.
 - **Generics (A2) — COMPLETE.** All Stage 1/2/3 items shipped in both compilers.
+- **Post-A2: UFCS × generics — DONE** (both compilers). A generic free fn dispatches
+  as a method (`xs.first()`, `n.dbl().dbl()`): UFCS resolution, finding no concrete
+  method, matches the receiver against a generic template's first-param pattern and
+  instantiates with the receiver prepended. hierc: `ufcs_generic` in both dispatch
+  paths. hierc0: the mono pass rewrites the dotted-`ECall` and chained-`ECallV` forms
+  to a plain instance call (`type_of` substitutes the method's return from the
+  receiver, so chaining resolves). Test `tests/generic_ufcs.hi`; all gates green.
 
 The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
 README) have been rewritten and the design doc flipped from *design* to

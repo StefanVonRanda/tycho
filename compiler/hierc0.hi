@@ -2899,8 +2899,13 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
     if struct_fn_field(dc, bt, fname):            # a real fn-typed field wins (call-through-field)
         return ""
     si := map_get(dc.sigmap, fname, -1)
-    if si >= 0 and len(dc.sigs[si].ptypes) >= 1 and dc.sigs[si].ptypes[0] == bt:
-        return fname
+    if si >= 0 and len(dc.sigs[si].ptypes) >= 1:
+        if dc.sigs[si].ptypes[0] == bt:
+            return fname
+        gbn := []string
+        gbt := []string
+        if match_typaram_str(dc.sigs[si].ptypes[0], bt, &gbn, &gbt):   # UFCS x generics: a generic method whose first param pattern accepts the receiver
+            return fname
     us := find(bt, "__")                          # method in the receiver type's package: geom__Circle -> geom__area
     if us >= 0:
         qn := substr(bt, 0, us + 2) + fname
@@ -2997,6 +3002,13 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return "void"                 # send / close
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method: its return type
+                msi := map_get(dc.sigmap, mn, -1)
+                if msi >= 0 and len(dc.sigs[msi].ptypes) >= 1 and ty_is_generic(dc.sigs[msi].ret):
+                    rbt := type_of(efield_base(callee), names, types, dc, ctx)   # generic method: substitute its return from the receiver type
+                    sbn := []string
+                    sbt := []string
+                    if match_typaram_str(dc.sigs[msi].ptypes[0], rbt, &sbn, &sbt):
+                        return resolve_nt(dc, ctx, subst_field_type(dc.sigs[msi].ret, sbn, sbt))
                 return resolve_nt(dc, ctx, sig_ret(dc, ctx, mn))
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
         ESpawn(id, nm, sargs, _el):
@@ -9037,6 +9049,15 @@ fn topo_structs(structs: [StructDef]) -> [StructDef]:
         i = i + 1
     return out
 
+# UFCS x generics: does generic `gt`'s first parameter PATTERN accept a receiver
+# of type `rty`? Feasibility check; binds are recomputed at instantiation.
+fn ufcs_gen_matches(gt: Func, rty: string) -> bool:
+    if len(gt.ptypes) < 1:
+        return false
+    bn := []string
+    bt := []string
+    return match_typaram_str(gt.ptypes[0], rty, &bn, &bt)
+
 fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
@@ -9073,6 +9094,25 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
             if mk >= 0:
                 rn = substr(nm, 0, mk)
                 explicit = split(substr(nm, mk + 2, len(nm) - 1), ";")
+            di := find(nm, ".")                       # UFCS x generics, dotted form `recv.method` (parse_atom builds these as one ECall name)
+            if mk < 0 and di >= 0:
+                rcv := substr(nm, 0, di)
+                meth := substr(nm, di + 1, len(nm))
+                ug := find_generic(gens, meth)
+                if ug >= 0 and has_str(names, rcv) and ufcs_gen_matches(gens[ug], var_type(names, types, rcv)):
+                    allargs := []Expr
+                    push(allargs, EVar(rcv, el))
+                    ai := 0
+                    for ai < len(margs):
+                        push(allargs, margs[ai])
+                        ai = ai + 1
+                    at := []string
+                    k := 0
+                    for k < len(allargs):
+                        push(at, type_of(allargs[k], names, types, dc, ctx))
+                        k = k + 1
+                    newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
+                    return ECall(newnm, allargs, el)
             gi := find_generic(gens, rn)
             if gi >= 0:
                 at := []string
@@ -9115,6 +9155,24 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
         ELambda(id, ps, pts, r, bx, cn, ct, el):
             return e                              # lambda bodies with generic calls are 1c
         ECallV(c, a, el):
+            fn0 := efield_fname(c)                 # UFCS x generics: x.foo(args), foo a generic free fn -> foo(x, args)
+            if fn0 != "":
+                ug := find_generic(gens, fn0)
+                if ug >= 0:
+                    origrecv := efield_base(c)
+                    rty := type_of(origrecv, names, types, dc, ctx)   # concrete (via the substitute path), even for a nested generic call
+                    if ufcs_gen_matches(gens[ug], rty):
+                        allargs := []Expr
+                        at := []string
+                        push(allargs, mono_expr(origrecv, names, types, gens, &insts, &sinsts, dc, ctx))   # instantiate a nested generic receiver
+                        push(at, rty)
+                        ai := 0
+                        for ai < len(a):
+                            push(allargs, mono_expr(a[ai], names, types, gens, &insts, &sinsts, dc, ctx))
+                            push(at, type_of(a[ai], names, types, dc, ctx))
+                            ai = ai + 1
+                        newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
+                        return ECall(newnm, allargs, el)
             return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ESpawn(id, nm, a, el):
             return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
