@@ -181,9 +181,9 @@ empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
 
 ## 7. The reversal: the registry already exists
 
-[docs/arrays-structs.md §7](arrays-structs.md) and
-[docs/ideas.md](ideas.md) record generics as *"decided against (firm)"*, on two
-grounds. Both are addressed:
+The pre-generics docs recorded this as *"decided against (firm)"*, on two
+grounds (both since reversed — see [arrays-structs.md §7](arrays-structs.md)).
+Both are addressed:
 
 1. *"The cross-module monomorphization registry … simply does not exist."* — It
    does ([§4](#4-monomorphization-reuses-the-machinery-that-already-exists)).
@@ -319,11 +319,10 @@ Out of scope, to keep the surface small and the model intact:
 - **No implicit numeric/`distinct` coercion through `$T`** — a `$T` bound to
   `Meters` stays `Meters`, matching newtype rules.
 
-## 11. Docs to update when it lands
+## 11. Docs updated when it landed
 
-The "decided against" passages get rewritten to "monomorphized generics,
+The "decided against" passages were rewritten to "monomorphized generics,
 reusing the container machinery" — `docs/arrays-structs.md §7/§9`,
-`docs/ideas.md`, `CONTRIBUTING.md` (the "please don't propose generics" line),
-and the README's container/generics mentions. The learning materials gain a
-short generics section. This doc moves from *design* to *shipped* with a
-stage-by-stage status header.
+`CONTRIBUTING.md` (the "please don't propose generics" line), and the README's
+container/generics mentions — and this doc's status header moved from *design*
+to *shipped*. Still pending: a short generics section in the learning materials.

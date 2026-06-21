@@ -58,8 +58,9 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
    O(n) idiom into O(n²) — `make bench` / `bench/` guard against that. When in
    doubt, read [docs/memory-model.md](docs/memory-model.md).
 
-Also out of scope **by decision** (please don't propose them): generics, a
-ternary/conditional expression, and a package manager.
+Also out of scope **by decision** (please don't propose them): a
+ternary/conditional expression and a package manager. (Generics *were* out of
+scope; they've since shipped — Odin-style `$T`, see [docs/generics.md](docs/generics.md).)
 
 ## Code style
 

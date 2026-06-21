@@ -163,7 +163,7 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
-| [docs/generics.md](docs/generics.md) | **design** — Odin-style `$T` generics, monomorphized over the existing container machinery; the argument for reversing "no generics" |
+| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — generic functions + structs + structured patterns (shipped); the reversal argument and staged rollout |
 | [docs/bootstrap.md](docs/bootstrap.md) | the staged path to self-hosting (Stage 0–4) and what came after |
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
@@ -172,7 +172,6 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/map-mutation.md](docs/map-mutation.md) | `m[k]` as a place: in-place map-value mutation (`push(m[k], v)`, `m[k] += 1`) and why it stays sound |
 | [docs/perf.md](docs/perf.md) | self-hosted-compiler performance history; cross-language numbers live in `bench/` |
 | [docs/macos.md](docs/macos.md) | macOS/Apple Silicon run: full suite + self-host fixpoint green, cross-language benchmarks, the two portability fixes it took |
-| [docs/ideas.md](docs/ideas.md) | dated survey of neighbouring languages (Odin, Jai, Hylo, Koka, Vale) for fit |
 | [bench/README.md](bench/README.md) | the benchmark suite's map, incl. what is deliberately *not* measured and why |
 
 **New to the language?** The [learning guide](docs/learning-guide.md) is a
@@ -1226,11 +1225,13 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- No generics, and no Hindley–Milner inference — both **by decision**, not
-  omission: let-generalization is generics by the back door, and its
-  implementation escapes (monomorphization passes or uniform boxing) fight
-  the arena thesis. The shipped alternative is bidirectional local
-  inference; the analysis is [docs/inference.md](docs/inference.md).
+- **No Hindley–Milner type inference** — **by decision**, not omission: HM's
+  whole-program unification and let-generalization fit poorly with explicit
+  signatures and the type-driven memory model, so the shipped alternative is
+  bidirectional *local* inference ([docs/inference.md](docs/inference.md)).
+  (Generics are a separate axis and *did* ship — Odin-style `$T`, monomorphized
+  to concrete code before the escape analysis, so they cost the memory model
+  nothing; see [docs/generics.md](docs/generics.md).)
 - Multi-file **Odin-style packages** are supported (see
   [Packages](#packages)); the self-hosted compiler itself is split into two
   packages (see Self-hosting). Arrays nest (`[int]`, `[float]`,
@@ -1298,7 +1299,6 @@ docs/arrays-structs.md   the original aggregates design pressure-test
 docs/bootstrap.md  the staged path (0–4) to self-hosting
 docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-7f)
 docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
-docs/ideas.md      design-space map and roadmap (what's done / deferred)
 ```
 
 The runtime is turned into a C string literal at build time (`make`

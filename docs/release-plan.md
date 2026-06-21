@@ -43,9 +43,9 @@ Captured from the review discussion:
 - **Map API (B5):** remove the `map_*` free functions in favor of `m[k]` syntax
   (needs a replacement surface first — see below).
 - **Generics (A2):** add **Odin-style** generics only; this reverses the earlier
-  "generics: decided against (firm)" stance in `docs/ideas.md`,
-  `CONTRIBUTING.md`, `docs/arrays-structs.md`, and the README, which must be
-  updated when it lands.
+  "generics: decided against (firm)" stance in `CONTRIBUTING.md`,
+  `docs/arrays-structs.md`, and the README (now rewritten; the dated-survey
+  `docs/ideas.md` that also carried it was removed).
 - **Scope:** heavy edits where needed; light proofread on the already-strong docs.
 
 ## Phase 0 — documentation review — DONE (commit `db1201b`)
@@ -69,7 +69,7 @@ Bottom-of-README FAQ pre-empting the predictable reactions: "it just transpiles
 to C", "deep-copying everything must be slow", "no GC/borrow checker — how is it
 safe?", and "is it production-ready?". (Lands with the A1 commit.)
 
-### A1 — byte-safe strings — IN PROGRESS (verifying)
+### A1 — byte-safe strings — DONE (commit `d61823a`)
 
 **Problem.** A Hier string carries an 8-byte length header (so `len` is O(1) and
 `read_file`/`write_file` are binary-safe), but `copy`/`concat`/`append`/`substr`
@@ -95,8 +95,8 @@ distinct boundary copy for *bare C strings* (no header):
   non-headered strings and were rebuilt to emit headered ones.
 
 **Verified.** `make test` green (161/0, incl. a new `tests/string_nul.hi`);
-ASan/UBSan/LSan clean; `make fixpoint` B≡C holds. `make fuzz` pending as the
-final adversarial check.
+ASan/UBSan/LSan clean; `make fixpoint` B≡C holds; `make fuzz` `FAIL=0` (the final
+adversarial check passed). Shipped in commit `d61823a`.
 
 **Out of scope (documented limits).** `find`/`split` (search), map-key hashing,
 and `eprint` still use NUL-terminated (`strlen`/`strstr`) semantics — rare with
@@ -338,12 +338,15 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   (a fixed compiler-known predicate set), and an explicit call-site type arg for
   the non-inferable case.
 
-When implementation lands, the "decided against" passages
-(`docs/arrays-structs.md §7/§9`, `docs/ideas.md`, `CONTRIBUTING.md`, README) are
-rewritten and the design doc flips from *design* to *shipped*.
+The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
+README) have been rewritten and the design doc flipped from *design* to
+*shipped*; the dated-survey `docs/ideas.md` was removed.
 
 ## Sequence
 
-Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 (all done) → **A2** (the last
-item: design doc done — `docs/generics.md`; staged implementation remains). Each
-is its own commit, fully green before the next.
+Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 → **A2** — all done. A2 shipped
+its design (`docs/generics.md`), then staged implementation through generic
+functions, generic structs (construction + type-position), struct
+dependency-ordering, and structured patterns; the only A2 tail left is
+`[$K: $V]` map patterns, `where` constraints, and explicit call-site type args.
+Each item was its own commit, fully green before the next.

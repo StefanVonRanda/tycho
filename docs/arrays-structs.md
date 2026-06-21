@@ -164,24 +164,38 @@ The last row is the crux: the dangling-pointer bug that forces every other
 region system to ship escape analysis *for correctness* is simply not
 expressible in Hier, so it can't occur.
 
-## 7. No generics — built-in containers instead
+## 7. Generics — monomorphized over the built-in container machinery
 
-Hier has **no user-facing generics**: no generic functions, no generic
-structs. That decision is firm. The few parametric types you genuinely
-need are **built-in container intrinsics** the compiler monomorphizes
-itself — the user cannot add new ones:
+Hier has **monomorphized generics**, Odin-style: a `$T` type parameter on a
+function or struct, inferred at the use site and stamped out to concrete code at
+compile time. They reuse the *same* per-concrete-type interning + emission the
+compiler already runs for its built-in parametric types:
 
 - `[T]` — growable array, any element type T (incl. structs, strings).
-- `Option(T)` — optional, since there is no `null`.
-- `Map(K, V)` — hash map (if/when added), comparable keys only.
+- `Option(T)` / `Result(T, E)` — optional / fallible, since there is no `null`
+  and no exceptions.
+- `[K: V]` — hash map, comparable keys only.
 
-You cannot write `struct Box(T)`. For "a box of T" you use a built-in
-container or write a concrete struct per type. This is the Go-pre-1.18
-line: ship the handful of parametric types people actually need, forbid
-defining more. **Cost:** no user-defined generic data structures; compose
-from built-ins or duplicate. **Benefit:** the checker and codegen never
-grow a generics engine — the cross-module monomorphization registry that is
-a major source of complexity in a generics-bearing compiler simply does not exist.
+```
+fn first(xs: [$T]) -> Option(T):        # generic function
+    if len(xs) > 0: return Some(xs[0])
+    return None
+
+struct Box($T):                          # generic struct
+    v: T
+```
+
+You **can** now write `struct Box($T)` and `fn id(x: $T) -> T`. This reverses an
+earlier "no generics (firm)" stance — reversed once it was clear that the
+"cross-module monomorphization registry" such an engine is supposed to need
+**already exists**: it is exactly what stamps out `Option(int)` versus
+`Option(string)`. Opening it to user `$T` definitions adds a substitution pass,
+not a new subsystem, and stays memory-model-neutral (§9). The full design, the
+reversal argument, and the staged rollout are in [generics.md](generics.md).
+Shipped today: generic functions, generic structs (construction + `Box(int)`
+type-position annotations), and structured patterns (`[$T]` → `Option(T)`);
+`[$K: $V]` map patterns, `where` constraints, and explicit call-site type args
+are the remaining edges, tracked there.
 
 Still required, and none of these is generics:
 
@@ -229,13 +243,18 @@ optimization.
 
 ## 9. Verdict
 
-Future A holds, and dropping generics does not weaken it. Correctness rests
-entirely on **"no reference type + copy on cross-arena move."** What grows
-is a *small, fixed* type surface (built-in containers, `mut`, `Option`,
-optionally `distinct`) — not a generics engine, and not the memory model.
+Future A holds, and **adding generics does not weaken it**: each `$T`
+instantiation is monomorphized to concrete, value-semantic code *before* the
+signature-directed escape analysis (§8) runs, so it is ordinary concrete code
+with the same locally-decidable lifetimes — nothing generic survives to analyze.
+Correctness still rests entirely on **"no reference type + copy on cross-arena
+move."** What grows is a substitution pass feeding the *same* per-type
+emission the built-in containers already use — not a new generics engine, and
+not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
 signature-directed escape strategy (§8) reclaim memory without copies. Arena
-allocation itself is well-proven; Hier's wager is that removing pointers and
-generics turns the *visible* memory tools and *whole-program* analyses such
-systems usually need into *invisible*, *local* ones.
+allocation itself is well-proven; Hier's wager is that removing pointers turns
+the *visible* memory tools and *whole-program* analyses such systems usually need
+into *invisible*, *local* ones — and generics, being monomorphized to concrete
+code first, ride along without re-introducing either.

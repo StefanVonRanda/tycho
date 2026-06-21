@@ -19,8 +19,11 @@ a fully standalone corelib-aware compiler with no bundling step required.
 
 ## Shape (constrained by the language)
 
-No generics, no methods — so corelib is **concrete free functions over concrete types**;
-array utilities are per-element-type (currently `[int]`). Higher-order helpers
+corelib is **concrete free functions over concrete types**; array utilities are
+per-element-type (currently `[int]`). It predates generics and UFCS methods (both
+have since shipped) and stays concrete for now — its functions are already
+callable method-style via UFCS, and `$T` generics could later collapse the
+per-type families. Higher-order helpers
 (map/filter/reduce taking a function) **are** expressible since closures shipped — they
 live in `core:iter` and take a first-class `fn`/closure argument. This shape is a
 deliberate consequence of the language's minimalism, not a corelib limitation.

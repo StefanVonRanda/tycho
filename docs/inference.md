@@ -66,26 +66,29 @@ unification machinery is not required for any of it.
 
 ## 3. Why full HM is infeasible here
 
-**(a) No generics — by decision.** HM's center of gravity is
+**(a) Generics are explicit, not inferred.** HM's center of gravity is
 let-generalization: `id` gets type `forall a. a -> a` and every use
-instantiates it. hier rejected generics deliberately
-(the corelib is concrete free functions per element type; the array
-families are monomorphized `Arr_T` per element type). HM minus
-generalization is not HM — it is local unification (§4). HM *with*
-generalization reverses a settled language decision through the back door:
-the first `fn first(xs): return xs[0]` the inferencer generalizes IS a
-generic function, and then either
+instantiates it — so *every* generalizable function silently becomes generic.
+hier's generics are the opposite — **opt-in and explicit** (`$T`, Odin-style),
+inferred by one-directional structural matching and monomorphized
+([generics.md](generics.md)). HM minus generalization is not HM; it is local
+unification (§4), which bidirectional inference already covers without a
+union-find. HM *with* generalization would make the first
+`fn first(xs): return xs[0]` implicitly generic and demand type variables to
+track it pervasively, whereas hier monomorphizes only the `$T` sites the
+programmer marked. Two consequences follow:
 
-- **monomorphization**: a whole-program specialization pass duplicating
-  functions per instantiation — a new compiler phase, done twice (both
-  compilers), interacting with packages, lifted lambdas, spawn-site
-  trampolines, and the byte-identical fixpoint; or
-- **uniform representation**: boxing every value behind pointers so one
-  body serves all types — which destroys the memory model. `type_is_heap`,
-  `copy_into`/`cp_field` dispatch, per-type channel wrappers, move-on-last-
-  use, recycling, SOA — every load-bearing optimization keys on *ground
-  monotypes at every site*. Boxing is the thing the whole thesis exists to
-  avoid paying.
+- **monomorphization is fine — bounded.** It is the per-instantiation
+  specialization pass generics already use (in both compilers, composing with
+  packages, lifted lambdas, spawn-site trampolines, and the byte-identical
+  fixpoint), but driven by explicit `$T`, not by generalizing every function —
+  so it stays an opt-in phase, not a whole-program obligation.
+- **uniform boxing is not.** The other way HM could erase types — boxing every
+  value behind pointers so one body serves all — destroys the memory model.
+  `type_is_heap`, `copy_into`/`cp_field` dispatch, per-type channel wrappers,
+  move-on-last-use, recycling, SOA — every load-bearing optimization keys on
+  *ground monotypes at every site*. Boxing is the thing the whole thesis exists
+  to avoid paying, which is exactly why hier's generics monomorphize.
 
 **(b) Type-directed features break under deferred types.** Resolution in
 both compilers is not a pure annotation pass — it REWRITES the AST using

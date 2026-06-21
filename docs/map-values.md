@@ -3,7 +3,8 @@
 A Hier map `[K: V]` may hold *any* value type: `[string: string]`,
 `[string: Point]`, `[int: [int]]`, even a nested map `[string: [string: int]]`.
 This note explains how that works under value semantics and implicit arenas,
-and why it needs no generics. The user-facing surface is in the README's
+and why it needs no user `$T` generics — the value type is monomorphized like any
+other container element. The user-facing surface is in the README's
 [Maps](../README.md#maps-string-v-int-v) section; in-place mutation of a value
 (`push(m[k], v)`, `m[k] += 1`) has its own note,
 [map-mutation.md](map-mutation.md).
@@ -15,8 +16,9 @@ Maps began as four hand-written types — `[string: int]`, `[string: float]`,
 gap: to map a word to its posting list you stored an index into a side array
 instead of the `[int]` you wanted.
 
-Hier has no generics (a deliberate choice — see
-[inference.md](inference.md)), so the value type cannot be abstracted at
+Hier monomorphizes its containers rather than boxing (and user `$T` generics,
+added later, are themselves erased to concrete code — see
+[generics.md](generics.md)), so the value type cannot be abstracted at
 runtime. The answer is the same one arrays already use for `[Struct]` and
 `[[T]]`: **monomorphization**. The compiler generates one concrete map runtime
 per `(key, value)` pair the program actually uses, named after that pair. A
