@@ -278,7 +278,7 @@ green (B≡C — the self-host compiles itself after migrating its own map calls
 with the new user-call rejection in place); `make corelib` green; `make fuzz`
 skip=0 FAIL=0; `make tools-check` ok.
 
-### A2 — Odin-style generics — TODO (design doc first)
+### A2 — Odin-style generics — DESIGN DONE; implementation staged
 
 The largest item and a reversal of a "firm" decision, so it starts with a
 written design (`docs/generics.md`): `$T`-style parameters, scope
@@ -287,8 +287,36 @@ implicit-arena model (the container monomorphization machinery already exists).
 Then staged implementation in both compilers behind the fixpoint. The
 "decided against" passages in the existing docs get updated when it lands.
 
+**Design — DONE** (`docs/generics.md`). `$T` type parameters (Odin-style),
+introduced at first occurrence and inferred from argument types by a
+one-directional structural match (no Hindley-Milner). Generic *functions* infer
+their parameters from arguments; generic *structs* take explicit type args, the
+same surface as the built-in `Option(int)` / `Result(int, string)`.
+Monomorphized over the *existing* container machinery — the interning +
+per-type emission + mangling the compiler already runs for `Option`/`Result`/
+`[T]`/maps — so it reverses the "the monomorphization registry … does not exist"
+ground for "no generics", and is memory-model-neutral (each instantiation is
+concrete value-semantic code *before* the signature-directed escape analysis, so
+nothing generic survives to analyze). The doc records the reversal argument, the
+two-compiler determinism rules, the non-goals, and a 3-stage plan.
+
+**Implementation — TODO** (staged, both compilers, behind the fixpoint):
+- **Stage 1** — generic functions: `fn f(x: $T) -> T`, argument-inferred, every
+  `$`-parameter required in an argument; a new instantiation registry feeding the
+  existing per-type emission; constraints checked at instantiation; UFCS
+  generic "methods" fall out free.
+- **Stage 2** — generic structs: `struct Box($T)` / `Pair($A, $B)`, explicit
+  type args at the use site.
+- **Stage 3** — multiple/nested params, `where` constraints (a fixed
+  compiler-known predicate set), and an explicit call-site type arg for the
+  non-inferable case.
+
+When implementation lands, the "decided against" passages
+(`docs/arrays-structs.md §7/§9`, `docs/ideas.md`, `CONTRIBUTING.md`, README) are
+rewritten and the design doc flips from *design* to *shipped*.
+
 ## Sequence
 
-Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 (all done) → **A2** (next, the
-last item: Odin-style generics, design-doc-first). Each is its own commit, fully
-green before the next.
+Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 (all done) → **A2** (the last
+item: design doc done — `docs/generics.md`; staged implementation remains). Each
+is its own commit, fully green before the next.

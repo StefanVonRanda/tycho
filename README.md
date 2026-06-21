@@ -163,6 +163,7 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
+| [docs/generics.md](docs/generics.md) | **design** — Odin-style `$T` generics, monomorphized over the existing container machinery; the argument for reversing "no generics" |
 | [docs/bootstrap.md](docs/bootstrap.md) | the staged path to self-hosting (Stage 0–4) and what came after |
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
