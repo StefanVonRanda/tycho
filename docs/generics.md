@@ -1,8 +1,8 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: Stage 1 + Stage 2a shipped** (generic *functions* and generic-struct
-> *construction*, both compilers). Stage 2b (type-position annotations like
-> `Box(int)`) and Stage 3 (`where` / explicit type args) remain design. This is
+> **Status: Stages 1, 2a, 2b shipped** (generic *functions*, generic-struct
+> *construction*, and generic-struct *type-position* annotations like `Box(int)`,
+> both compilers). Stage 3 (`where` / explicit type args) remains design. This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -250,12 +250,19 @@ commit, fully green before the next — same discipline as every other change.
   interns the concrete `StructDef` (field types string-substituted) and rewrites
   the construction call; the instance name matches hierc. Generic functions
   compose with generic structs (a `$T` binds to `Box__int`).
-- **Stage 2b — generic structs (type-position) — TODO.** `Box(int)` as an
-  explicit-type-args annotation in a parameter/return/field/var position — the
-  same surface as the built-in `Option(int)` / `Result(int, string)`. Rejected in
-  both compilers until it lands together. (Construction needs no annotation, so
-  2a is independently useful; a generic struct crosses a *non-generic* function
-  boundary only once 2b lands.)
+- **Stage 2b — generic structs (type-position) — SHIPPED** (both compilers).
+  `Box(int)` as an explicit-type-args annotation in a parameter, return, field, or
+  typed-declaration position — the same surface as the built-in `Option(int)` /
+  `Result(int, string)`. In hierc, `parse_type` interns the instance directly at
+  the use site. In hierc0 (string types), `parse_type` yields the spelling
+  `"Box(int)"` and `monomorphize_program` runs a `resolve_gstruct_type` pass over
+  every signature, struct field, and typed-decl annotation, interning the concrete
+  `StructDef` and rewriting the string to `"Box__int"`. A generic struct now
+  crosses non-generic function boundaries. **Known limit:** a generic struct
+  parameterized by another *concrete struct* (`Box(Point)`) is not yet ordered
+  correctly by hierc0's source-order struct emitter (scalar type args — the common
+  case — are sound, emitted instances-first); the test uses scalar args. A proper
+  struct topological sort in hierc0 is the remaining edge.
 - **Stage 3 — multiple/nested parameters, constraints, explicit type args.**
   `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
   explicit call-site type argument for the non-inferable case

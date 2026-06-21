@@ -1289,7 +1289,22 @@ static Type parse_type(Parser *ps) {
             nm = pkg_mangle(t->text);    /* package-local: try the current package's prefixed name */
         }
         int sid = struct_find(nm);
-        if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }   /* generic structs: `Box(int)` type-position is Stage 2b (both compilers) */
+        if (sid >= 0) {
+            ps->p++;
+            if (g_structs[sid].generic) {        /* `Box(int)` in type position: explicit type args -> a concrete instance */
+                eat(ps, TK_LPAREN, "'(' with the type arguments for a generic struct");
+                Type binds[256];
+                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                int np = g_structs[sid].ntyparams;
+                for (int i = 0; i < np; i++) {
+                    binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] = parse_type(ps);
+                    if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
+                }
+                eat(ps, TK_RPAREN, "')' after the type arguments");
+                return STRUCT_TYPE(struct_instantiate(sid, binds));
+            }
+            return STRUCT_TYPE(sid);
+        }
         int eid = enum_find(nm);
         if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
         int nid = newtype_find(nm);

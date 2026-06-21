@@ -316,9 +316,13 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   with substituted field types, reusing all downstream struct machinery. hierc
   keeps the template out of codegen; hierc0 interns it in `monomorphize_program`.
   Test `tests/generic_structs.hi`; gates green (test 174/0, fixpoint, etc.).
-- **Stage 2b — generic structs (type-position) — TODO:** `Box(int)` as an
-  explicit-type-args annotation in param/return/field/var positions. Rejected in
-  both compilers until it lands together.
+- **Stage 2b — generic structs (type-position) — DONE** (both compilers).
+  `Box(int)` as an explicit-type-args annotation in param/return/field/typed-decl
+  positions. hierc interns at the use site; hierc0's `resolve_gstruct_type` pass
+  rewrites the `"Box(int)"` type strings to `"Box__int"` across signatures/fields/
+  annotations and interns the concrete StructDef. Known edge: a generic struct
+  parameterized by a concrete struct (`Box(Point)`) needs a hierc0 struct topo
+  sort (scalar args are sound). Gates green (test, fixpoint, etc.).
 - **Stage 3** — multiple/nested params, `where` constraints (a fixed
   compiler-known predicate set), and an explicit call-site type arg for the
   non-inferable case.

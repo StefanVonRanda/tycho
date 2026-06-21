@@ -1,6 +1,6 @@
-# Generic structs (Stage 2): `struct Box($T)` is a template; each construction
-# infers the type arguments from the field values and monomorphizes one concrete
-# struct (Box(5) -> Box__int). Field access and nesting work on the instance.
+# Generic structs: `struct Box($T)` is a template. Stage 2a — construction infers
+# the type args from field values (`Box(5)` -> Box__int). Stage 2b — type-position
+# `Box(int)` annotations in parameters, returns, fields, and typed declarations.
 
 struct Box($T):
     v: T
@@ -9,11 +9,24 @@ struct Pair($A, $B):
     fst: A
     snd: B
 
+struct Holder:
+    b: Box(int)                       # type-position field
+
+fn unbox(b: Box(int)) -> int:         # type-position parameter + return
+    return b.v
+
+fn rebox(n: int) -> Box(int):
+    return Box(n)
+
 fn main():
-    b := Box(5)
+    b := Box(5)                           # construction (2a)
     print(str(b.v) + "\n")                # 5
-    print(Box("hi").v + "\n")             # string instance -> hi
+    print(Box("hi").v + "\n")             # hi
     p := Pair(7, "x")
-    print(str(p.fst) + p.snd + "\n")      # two type params -> 7x
-    q := Pair(true, 9)
-    print(str(q.snd) + "\n")              # 9
+    print(str(p.fst) + p.snd + "\n")      # 7x
+    print(str(unbox(Box(9))) + "\n")      # type-position param -> 9
+    print(str(unbox(rebox(3))) + "\n")    # type-position return -> 3
+    h := Holder(Box(7))                   # type-position field
+    print(str(h.b.v) + "\n")              # 7
+    t: Box(int) = Box(42)                 # type-position typed decl
+    print(str(t.v) + "\n")                # 42

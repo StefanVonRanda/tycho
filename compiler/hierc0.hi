@@ -1377,6 +1377,22 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
         expect(toks, &pos, TRParen)
         return "Result(" + t + "," + e + ")"
     else:
+        if toks[pos].kind == TLParen:            # generics: `Box(int)` generic-struct instance in type position
+            pos = pos + 1
+            targs := []string
+            push(targs, parse_type(toks, &pos))
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(targs, parse_type(toks, &pos))
+            expect(toks, &pos, TRParen)
+            out := name + "("
+            j := 0
+            for j < len(targs):
+                if j > 0:
+                    out = out + ","
+                out = out + targs[j]
+                j = j + 1
+            return out + ")"
         return name                              # a struct or enum type name
 
 fn parse_param(toks: [Token], pos: mut int) -> Param:
@@ -8523,6 +8539,66 @@ fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: 
     push(sinsts, StructDef(nm, fs, []string))
     return nm
 
+# Split a type-argument string at top-level commas (respecting nested ()/[]).
+fn split_type_args(s: string) -> [string]:
+    out := []string
+    depth := 0
+    start := 0
+    i := 0
+    for i < len(s):
+        c := s[i]
+        if c == 40 or c == 91:                   # ( or [
+            depth = depth + 1
+        elif c == 41 or c == 93:                 # ) or ]
+            depth = depth - 1
+        elif c == 44 and depth == 0:             # , at top level
+            push(out, substr(s, start, i))
+            start = i + 1
+        i = i + 1
+    push(out, substr(s, start, len(s)))
+    return out
+
+# Stage 2b: resolve generic-struct instances in a type string ("Box(int)" ->
+# "Box__int", interning the concrete StructDef). Recurses into parametric args
+# ("Option(Box(int))" -> "Option(Box__int)"). Scalars/bare names, arrays, maps,
+# tuples and fn-types pass through (their inner generic structs are Stage 3).
+fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef]) -> string:
+    n := len(ty)
+    if n == 0:
+        return ty
+    paren := -1
+    i := 0
+    for i < n:
+        if ty[i] == 40 and paren < 0:            # first '('
+            paren = i
+        i = i + 1
+    if paren > 0 and ty[n - 1] == 41:            # "Name(args)" (tuples start with '(' -> paren==0, excluded)
+        name := substr(ty, 0, paren)
+        args := split_type_args(substr(ty, paren + 1, n - 1))
+        rargs := []string
+        changed := false
+        j := 0
+        for j < len(args):
+            r := resolve_gstruct_type(args[j], structs, &sinsts)
+            push(rargs, r)
+            if r != args[j]:
+                changed = true
+            j = j + 1
+        gi := find_generic_struct(structs, name)
+        if gi >= 0:
+            return instantiate_struct(structs[gi], structs[gi].typeparams, rargs, &sinsts)
+        if not changed:
+            return ty
+        out := name + "("
+        j = 0
+        for j < len(rargs):
+            if j > 0:
+                out = out + ","
+            out = out + rargs[j]
+            j = j + 1
+        return out + ")"
+    return ty
+
 fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
@@ -8611,9 +8687,10 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             return SDecl(nm, mr, ln)
         STypedDecl(nm, ty, rhs, ln):
             mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx)
+            rty := resolve_gstruct_type(ty, dc.structs, &sinsts)   # Stage 2b: `x: Box(int)` annotation
             push(names, nm)
-            push(types, ty)
-            return STypedDecl(nm, ty, mr, ln)
+            push(types, rty)
+            return STypedDecl(nm, rty, mr, ln)
         SAssign(nm, rhs, ln):
             return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SFieldAssign(lv, rhs, ln):
@@ -8708,21 +8785,40 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         types := []string
         seed_env(f, &names, &types)
         nbody := mono_block(f.body, names, types, gens, &insts, &sinsts, dc, ctx)
-        push(out, Func(f.name, f.params, f.ptypes, f.ret, nbody, f.is_extern, f.lib))
+        rpt := []string                           # Stage 2b: resolve `Box(int)` type-position in the signature
+        j := 0
+        for j < len(f.ptypes):
+            push(rpt, resolve_gstruct_type(f.ptypes[j], dc.structs, &sinsts))
+            j = j + 1
+        rret := resolve_gstruct_type(f.ret, dc.structs, &sinsts)
+        push(out, Func(f.name, f.params, rpt, rret, nbody, f.is_extern, f.lib))
         i = i + 1
     i = 0
     for i < len(insts):                           # instances last, in first-encounter order (matches hierc)
         push(out, insts[i])
         i = i + 1
-    newstructs := []StructDef                     # drop generic templates; keep concrete structs + add instances
+    rconcrete := []StructDef                      # drop generic templates; resolve concrete field types
     i = 0
     for i < len(prog.structs):
         if len(prog.structs[i].typeparams) == 0:
-            push(newstructs, prog.structs[i])
+            rf := []Field                         # Stage 2b: resolve `Box(int)` type-position in fields
+            j := 0
+            for j < len(prog.structs[i].fields):
+                push(rf, Field(prog.structs[i].fields[j].name, resolve_gstruct_type(prog.structs[i].fields[j].ty, dc.structs, &sinsts)))
+                j = j + 1
+            push(rconcrete, StructDef(prog.structs[i].name, rf, []string))
         i = i + 1
+    # hierc0 emits struct bodies in list order (no topo sort), so a concrete struct
+    # embedding an instance needs the instance first. Scalar-arg instances (the
+    # common case) have no struct deps, so emitting all instances first is sound.
+    newstructs := []StructDef
     i = 0
     for i < len(sinsts):
         push(newstructs, sinsts[i])
+        i = i + 1
+    i = 0
+    for i < len(rconcrete):
+        push(newstructs, rconcrete[i])
         i = i + 1
     return Program(newstructs, prog.enums, out, prog.ntnames, prog.ntunder)
 
