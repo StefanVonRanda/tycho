@@ -1133,10 +1133,20 @@ static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 gener
  * instance's concrete field types. binds is indexed by typaram id; T_VOID = unbound. */
 static Type subst_type(Type t, Type *binds) {
     if (IS_TYPARAM(t)) { Type b = binds[(int)(t - T_TYPARAM_BASE)]; return b == T_VOID ? t : b; }
-    if (IS_ARRC(t)) return arrc_of(subst_type(g_arrtypes[ARRC_ID(t)].elem, binds));
+    if (is_array(t)) return arr_of(subst_type(arr_elem(t), binds));   /* arr_of canonicalizes [int]->T_ARRAY_INT */
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
     return t;
+}
+
+/* Does a type (recursively) still mention a generic type parameter? Such a type
+ * is transient (only in a template) and must never reach codegen. */
+static int has_typaram(Type t) {
+    if (IS_TYPARAM(t)) return 1;
+    if (is_array(t)) return has_typaram(arr_elem(t));
+    if (IS_OPT(t))  return has_typaram(opt_inner(t));
+    if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
+    return 0;
 }
 
 /* Match a (possibly type-parameterized) field type against a concrete argument
@@ -1147,7 +1157,7 @@ static int match_type(Type pat, Type concrete, Type *binds) {
         if (binds[id] != T_VOID && binds[id] != concrete) return 0;
         binds[id] = concrete; return 1;
     }
-    if (IS_ARRC(pat) && IS_ARRC(concrete)) return match_type(g_arrtypes[ARRC_ID(pat)].elem, g_arrtypes[ARRC_ID(concrete)].elem, binds);
+    if (is_array(pat) && is_array(concrete)) return match_type(arr_elem(pat), arr_elem(concrete), binds);
     if (IS_OPT(pat) && IS_OPT(concrete))   return match_type(opt_inner(pat), opt_inner(concrete), binds);
     if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
@@ -4527,27 +4537,22 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
     for (int j = 0; j < gt->nparams; j++) {
         Type at_ = resolve_expr(e->args[j]);          /* the concrete argument type */
-        Type pt  = gt->params[j].type;
-        if (IS_TYPARAM(pt)) {
-            int id = (int)(pt - T_TYPARAM_BASE);
-            if (binds[id] != T_VOID && binds[id] != at_)
-                die_at(e->line, "type parameter $%s is %s here but %s earlier in the call",
-                       typaram_name(pt), type_name(at_), type_name(binds[id]));
-            binds[id] = at_;
-        }
+        /* structurally match the parameter pattern against the arg, binding each
+         * `$T` -- handles `$T`, `[$T]`, `Option($T)`, `Result($T,$E)` (Stage 3). */
+        if (!match_type(gt->params[j].type, at_, binds))
+            die_at(e->line, "argument %d of '%s' is %s, which does not fit the parameter pattern",
+                   j + 1, gt->name, type_name(at_));
     }
-    /* build the instance's concrete signature + mangled name */
+    /* build the instance's concrete signature (substituting every `$T`) + name */
     char *nm = gt->name;
     Type cparams[16], cret;
     for (int j = 0; j < gt->nparams; j++) {
-        Type pt = gt->params[j].type;
-        cparams[j] = IS_TYPARAM(pt) ? binds[(int)(pt - T_TYPARAM_BASE)] : pt;
+        cparams[j] = subst_type(gt->params[j].type, binds);
         nm = sfmt("%s__%s", nm, type_mangle_ident(cparams[j]));
     }
-    if (IS_TYPARAM(gt->ret) && binds[(int)(gt->ret - T_TYPARAM_BASE)] == T_VOID)
-        die_at(e->line, "the return type $%s of '%s' is not fixed by any argument",
-               typaram_name(gt->ret), gt->name);
-    cret = IS_TYPARAM(gt->ret) ? binds[(int)(gt->ret - T_TYPARAM_BASE)] : gt->ret;
+    cret = subst_type(gt->ret, binds);
+    if (has_typaram(cret))
+        die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument", gt->name);
     e->sval = nm;                                     /* rewrite the call to the instance */
     if (sig_find(nm)) return;                         /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
@@ -7043,6 +7048,7 @@ static int *g_tup_color;    static int g_tup_color_cap;
 static int g_emit_line;
 
 static void emit_aggregate(FILE *o, Type t) {
+    if (has_typaram(t)) return;   /* generics: a type mentioning `$T` (from a template) is transient -- never emitted */
     if (IS_STRUCT(t)) {
         int id = STRUCT_ID(t);
         if (g_structs[id].generic) return;   /* generics: a `$T` template emits no C; its instances do */
@@ -7287,13 +7293,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
     }
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
-        if (type_is_heap(g_opttypes[i].inner))
+        if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
             fprintf(o, "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v);\n", i, i, i);
     for (int i = 0; i < g_nrestypes; i++)           /* (4) Result-copy prototypes */
-        if (type_is_heap(T_RES_BASE + i))
+        if (type_is_heap(T_RES_BASE + i) && !has_typaram(T_RES_BASE + i))
             fprintf(o, "static HierRes%d hier_res%d_copy(Arena *a, HierRes%d v);\n", i, i, i);
     for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple-copy prototypes */
-        if (type_is_heap(T_TUP_BASE + i))
+        if (type_is_heap(T_TUP_BASE + i) && !has_typaram(T_TUP_BASE + i))
             fprintf(o, "static HierTup%d hier_tup%d_copy(Arena *a, HierTup%d v);\n", i, i, i);
     for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
         const char *en = g_enums[i].name;
@@ -7309,6 +7315,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static S_%s Soa%d_pop(Soa%d *);\n", sn, i, i);
     }
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
+        if (has_typaram(T_ARRC_BASE + i)) continue;   /* generics: `[$T]` from a template -- transient */
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static HierArrC%d hier_arr_C%d_with_cap(Arena*, long);\n", i, i);
         fprintf(o, "static void hier_arr_C%d_push(Arena*, HierArrC%d*, %s);\n", i, i, ct);
@@ -7358,6 +7365,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (7) composite-array op bodies (typedef already emitted in step 2). Each
      * deep-copies its elements through the same seam as the [string] array. */
     for (int i = 0; i < g_narrtypes; i++) {
+        if (has_typaram(T_ARRC_BASE + i)) continue;   /* generics: `[$T]` from a template -- transient */
         Type et = g_arrtypes[i].elem;
         const char *ct = c_type(et);              /* element C type (trailing space) */
         fprintf(o,
@@ -7623,7 +7631,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * prototyped, so an Option(Struct) field copies correctly. */
     for (int i = 0; i < g_nopttypes; i++) {
         Type it = g_opttypes[i].inner;
-        if (type_is_heap(it))
+        if (type_is_heap(it) && !has_typaram(T_OPT_BASE + i))
             fprintf(o,
                 "static HierOpt%d hier_opt%d_copy(Arena *a, HierOpt%d v) {\n"
                 "    if (v.has) v.val = %s;\n"
@@ -7632,7 +7640,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (8b) Result copy bodies: re-home only the active variant's value (the
      * inactive field is zero from the designated-initializer construction). */
     for (int i = 0; i < g_nrestypes; i++) {
-        if (!type_is_heap(T_RES_BASE + i)) continue;
+        if (!type_is_heap(T_RES_BASE + i) || has_typaram(T_RES_BASE + i)) continue;
         Type okt = g_restypes[i].ok, errt = g_restypes[i].err;
         fprintf(o,
             "static HierRes%d hier_res%d_copy(Arena *a, HierRes%d v) {\n"
@@ -7643,7 +7651,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     }
     /* (8c) tuple copy bodies: re-home each heap element field. */
     for (int i = 0; i < g_ntuptypes; i++) {
-        if (!type_is_heap(T_TUP_BASE + i)) continue;
+        if (!type_is_heap(T_TUP_BASE + i) || has_typaram(T_TUP_BASE + i)) continue;
         TupType *tt = &g_tuptypes[i];
         fprintf(o, "static HierTup%d hier_tup%d_copy(Arena *a, HierTup%d v) {\n", i, i, i);
         for (int j = 0; j < tt->n; j++)

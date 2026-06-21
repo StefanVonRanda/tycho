@@ -1,0 +1,30 @@
+# Stage 3: structured type-param patterns. `$T` is inferred from INSIDE a
+# container argument (`[$T]` matched against `[int]`), and the return type
+# `Option(T)` / `T` is substituted and monomorphized.
+
+fn first(xs: [$T]) -> Option(T):
+    if len(xs) > 0:
+        return Some(xs[0])
+    return None
+
+fn idx(xs: [$T], i: int) -> T:
+    return xs[i]
+
+fn main():
+    match first([3, 1, 2]):
+        Some(x):
+            print(str(x) + "\n")          # 3
+        None:
+            print("empty\n")
+    match first(["a", "b"]):
+        Some(s):
+            print(s + "\n")               # a
+        None:
+            print("empty\n")
+    match first([]int):
+        Some(n):
+            print(str(n) + "\n")
+        None:
+            print("empty\n")              # None path
+    print(str(idx([5, 6, 7], 1)) + "\n")  # [$T] param, scalar T return -> 6
+    print(idx(["x", "y"], 0) + "\n")      # x

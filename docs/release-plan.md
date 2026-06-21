@@ -326,11 +326,17 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   value) now orders correctly: hierc via `emit_aggregate`; hierc0 gained a stable
   `topo_structs` sort in `monomorphize_program` (runs only for generic programs,
   so B==C stays byte-identical). Test `tests/generic_struct_deps.hi`.
-- **Stage 3 (remaining) — TODO:** structured type-param patterns
-  (`fn first(xs: [$T]) -> Option(T)` — blocked on taming typaram-bearing composite
-  emission in both compilers, see the generics memory), `where` constraints (a
-  fixed compiler-known predicate set), and an explicit call-site type arg for the
-  non-inferable case.
+- **Stage 3 (structured type-param patterns) — DONE** (both compilers).
+  `fn first(xs: [$T]) -> Option(T)`: `$T` inferred from inside a container arg,
+  the return/param types substituted + monomorphized. hierc: `match_type`/
+  `subst_type` (via `is_array`/`arr_of`) + a `has_typaram` guard taming the
+  transient typaram composite types in the emission loops. hierc0: a structural
+  string match (`match_typaram_str`) + recursive bare-`T`→`$T` rewrite; templates
+  are dropped before codegen so no emission pollution. Test
+  `tests/generic_structured.hi`; all gates green.
+- **Stage 3 (remaining) — TODO:** `[$K: $V]` map patterns, `where` constraints
+  (a fixed compiler-known predicate set), and an explicit call-site type arg for
+  the non-inferable case.
 
 When implementation lands, the "decided against" passages
 (`docs/arrays-structs.md §7/§9`, `docs/ideas.md`, `CONTRIBUTING.md`, README) are

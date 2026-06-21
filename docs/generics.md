@@ -1,8 +1,10 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: Stages 1, 2a, 2b shipped** (generic *functions*, generic-struct
-> *construction*, and generic-struct *type-position* annotations like `Box(int)`,
-> both compilers). Stage 3 (`where` / explicit type args) remains design. This is
+> **Status: Stages 1, 2a, 2b, and most of Stage 3 shipped** — generic *functions*,
+> generic-struct *construction* and *type-position* annotations, struct
+> *dependency-ordering* (`Box(Point)`), and *structured type-param patterns*
+> (`fn first(xs: [$T]) -> Option(T)`), both compilers. The remaining Stage 3
+> (`where` constraints / explicit call-site type args) stays design. This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -268,7 +270,19 @@ commit, fully green before the next — same discipline as every other change.
   ties breaking by input order. It runs only for generic programs, so hierc0.hi's
   own emission is untouched and B==C stays byte-identical. Test:
   `tests/generic_struct_deps.hi`.
-- **Stage 3 — multiple/nested parameters, constraints, explicit type args.**
+- **Stage 3 (structured type-param patterns) — SHIPPED.**
+  `fn first(xs: [$T]) -> Option(T)` — `$T` is inferred from *inside* a container
+  argument (`[$T]` matched structurally against `[int]`) and the return/param
+  types (`Option(T)`, `[T]`, `Result($T,$E)`) are substituted and monomorphized.
+  In hierc, `instantiate_generic` uses `match_type` + `subst_type` (taught to use
+  `is_array`/`arr_of` so the builtin `[int]` matches `[$T]`); the transient
+  typaram-bearing composite types a template interns (`Option($T)`, `[$T]`) are
+  kept out of every emission loop by a `has_typaram` guard. In hierc0, templates
+  are *dropped* before codegen so those types never reach it — only a structural
+  string match (`match_typaram_str`) and a recursive bare-`T`→`$T` rewrite are
+  needed. Test: `tests/generic_structured.hi`. (Edge: a `[$K: $V]` *map* pattern
+  and a `where`-style constraint are still future work.)
+- **Stage 3 — constraints, explicit type args (remaining).**
   `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
   explicit call-site type argument for the non-inferable case
   ([§6](#6-when-t-cant-be-inferred) option 2), and any nesting Stage 1/2 left

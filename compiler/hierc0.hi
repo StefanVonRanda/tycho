@@ -1420,15 +1420,35 @@ fn collect_dollar_names(s: string, bs: mut [string]):
         else:
             i = i + 1
 
-# A bare type string that exactly names an in-scope type parameter is a
-# reference to it -> "$"+name. (1a: bare scalar refs, e.g. the return type.)
+# Rewrite every bare reference to an in-scope type parameter to "$"+name,
+# ANYWHERE in the type string -- including nested ("Option(T)" -> "Option($T)",
+# "[T]" -> "[$T]"). Already-"$X" markers are copied verbatim. (Stage 3.)
 fn subst_bare_typaram(ty: string, bases: [string]) -> string:
+    out := ""
     i := 0
-    for i < len(bases):
-        if ty == bases[i]:
-            return "$" + ty
-        i = i + 1
-    return ty
+    n := len(ty)
+    for i < n:
+        c := ty[i]
+        if c == 36:                              # '$' -> copy "$name" verbatim (already marked)
+            out = out + "$"
+            i = i + 1
+            for i < n and is_alnum(ty[i]):
+                out = out + substr(ty, i, i + 1)
+                i = i + 1
+        elif is_alpha(c):
+            j := i
+            for j < n and is_alnum(ty[j]):
+                j = j + 1
+            word := substr(ty, i, j)
+            if has_str(bases, word):
+                out = out + "$" + word
+            else:
+                out = out + word
+            i = j
+        else:
+            out = out + substr(ty, i, i + 1)
+            i = i + 1
+    return out
 
 # A function is a generic template if any parameter or return type mentions `$`.
 fn ty_is_generic(t: string) -> bool:
@@ -8419,6 +8439,23 @@ fn find_generic(gens: [Func], name: string) -> int:
 fn gen_inst_mangle(ty: string) -> string:
     if ty == "str":
         return "string"
+    n := len(ty)
+    if n > 1 and ty[0] == 91 and ty[n - 1] == 93:    # "[E]" array -> arr_<E> (C-identifier-safe)
+        return "arr_" + gen_inst_mangle(substr(ty, 1, n - 1))
+    p := -1
+    i := 0
+    for i < n:
+        if ty[i] == 40 and p < 0:                    # first '('
+            p = i
+        i = i + 1
+    if p > 0 and ty[n - 1] == 41:                    # "Option(T)" / "Result(T,E)" -> Name_<arg>...
+        out := substr(ty, 0, p)
+        args := split_type_args(substr(ty, p + 1, n - 1))
+        j := 0
+        for j < len(args):
+            out = out + "_" + gen_inst_mangle(args[j])
+            j = j + 1
+        return out
     return ty                                   # int/float/bool/char and bare struct/enum names map to themselves
 
 fn inst_name(base: string, ptypes: [string]) -> string:
@@ -8429,45 +8466,70 @@ fn inst_name(base: string, ptypes: [string]) -> string:
         i = i + 1
     return nm
 
+# Stage 3: structurally match a parameter-type PATTERN against a concrete argument
+# type string, binding each "$X". Handles "$T", "[$T]", "Option($T)",
+# "Result($T,$E)" (recursing). 0 on a constructor mismatch or bind conflict.
+fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes: mut [string]) -> bool:
+    pn := len(pat)
+    cn := len(concrete)
+    if pn > 0 and pat[0] == 36:                  # "$X" -> bind X = concrete
+        bn := substr(pat, 1, pn)
+        j := 0
+        for j < len(bnames):
+            if bnames[j] == bn:
+                return btypes[j] == concrete     # already bound -> must agree
+            j = j + 1
+        push(bnames, bn)
+        push(btypes, concrete)
+        return true
+    if pn > 1 and cn > 1 and pat[0] == 91 and concrete[0] == 91 and pat[pn - 1] == 93 and concrete[cn - 1] == 93:
+        return match_typaram_str(substr(pat, 1, pn - 1), substr(concrete, 1, cn - 1), &bnames, &btypes)   # "[E]" array
+    pp := -1
+    cp := -1
+    i := 0
+    for i < pn:
+        if pat[i] == 40 and pp < 0:
+            pp = i
+        i = i + 1
+    i = 0
+    for i < cn:
+        if concrete[i] == 40 and cp < 0:
+            cp = i
+        i = i + 1
+    if pp > 0 and cp > 0 and pat[pn - 1] == 41 and concrete[cn - 1] == 41:   # "Name(args)"
+        if substr(pat, 0, pp) != substr(concrete, 0, cp):
+            return false                         # different type constructors
+        pargs := split_type_args(substr(pat, pp + 1, pn - 1))
+        cargs := split_type_args(substr(concrete, cp + 1, cn - 1))
+        if len(pargs) != len(cargs):
+            return false
+        ok := true
+        i = 0
+        for i < len(pargs):
+            if not match_typaram_str(pargs[i], cargs[i], &bnames, &btypes):
+                ok = false
+            i = i + 1
+        return ok
+    return pat == concrete
+
 fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
     btypes := []string
-    cparams := []string
     i := 0
-    for i < len(gt.ptypes):
-        pt := gt.ptypes[i]
-        if len(pt) > 0 and pt[0] == 36:          # "$X" parameter: bind X = argtypes[i]
-            bn := substr(pt, 1, len(pt))
-            seen := -1
-            j := 0
-            for j < len(bnames):
-                if bnames[j] == bn:
-                    seen = j
-                j = j + 1
-            if seen >= 0:
-                if btypes[seen] != argtypes[i]:
-                    die("generics: type parameter $" + bn + " is " + argtypes[i] + " here but " + btypes[seen] + " earlier in the call")
-            else:
-                push(bnames, bn)
-                push(btypes, argtypes[i])
-            push(cparams, argtypes[i])
-        else:
-            push(cparams, pt)
+    for i < len(gt.ptypes):                      # infer: structurally match each pattern against the arg type
+        if not match_typaram_str(gt.ptypes[i], argtypes[i], &bnames, &btypes):
+            die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
         i = i + 1
-    cret := gt.ret
-    if len(cret) > 0 and cret[0] == 36:
-        rn := substr(cret, 1, len(cret))
-        found := false
-        k := 0
-        for k < len(bnames):
-            if bnames[k] == rn:
-                cret = btypes[k]
-                found = true
-            k = k + 1
-        if not found:
-            die("generics: the return type $" + rn + " of '" + gt.name + "' is not fixed by any argument")
+    cparams := []string                          # substitute "$X" -> concrete in the signature
+    i = 0
+    for i < len(gt.ptypes):
+        push(cparams, subst_field_type(gt.ptypes[i], bnames, btypes))
+        i = i + 1
+    cret := subst_field_type(gt.ret, bnames, btypes)
+    if ty_is_generic(cret):
+        die("generics: the return type of '" + gt.name + "' has a type parameter not fixed by any argument")
     nm := inst_name(gt.name, cparams)
     e := 0
     for e < len(insts):
