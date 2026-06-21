@@ -1226,12 +1226,6 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- **Strings are byte-oriented.** A `string` is a length-counted UTF-8 byte
-  buffer; literals and I/O pass bytes through unchanged, but `len`, indexing,
-  and slicing count *bytes*, not code points or graphemes, and there are no
-  Unicode case/normalization operations (ASCII only). Interior `NUL` (`0x00`)
-  bytes are a known edge a few `corelib` codecs note. Fine for ASCII and
-  byte-exact work; not a Unicode text library.
 - **A user `enum` is monomorphic** — only the built-in `Option(T)` / `Result(T, E)`
   are generic over their payload; `enum Tree($T)` is not supported. Generic
   *functions* and *structs* do take `$T`, with a fixed compiler-known constraint
