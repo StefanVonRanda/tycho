@@ -221,15 +221,23 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 .exercise-output{font-size:.85rem;color:var(--text2);margin-bottom:8px;font-family:var(--font-mono);background:var(--bg);padding:6px 10px;border-radius:4px;border:1px solid var(--code-border)}
 .exercise-output strong{color:var(--green)}
 .exercise-editor-wrap{position:relative;margin-bottom:12px}
-.exercise-editor{
-  width:100%;min-height:80px;padding:12px 14px;
-  background:var(--bg);border:1px solid var(--code-border);border-radius:var(--radius);
-  color:var(--text);font-family:var(--font-mono);font-size:.875rem;line-height:1.55;
-  resize:vertical;tab-size:4;-moz-tab-size:4;outline:none;
-  transition:border-color .15s ease;
+.exercise-code{margin:0}
+.exercise-code-pre{
+  margin:0;padding:14px 16px;overflow-x:auto;
+  background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius);
+  color:var(--text);font-family:var(--font-mono);font-size:.86rem;line-height:1.9;
+  white-space:pre-wrap;word-break:break-word;tab-size:4;-moz-tab-size:4;
 }
-.exercise-editor:focus{border-color:var(--purple)}
-.exercise-editor::placeholder{color:var(--text3)}
+.blank-input{
+  font-family:var(--font-mono);font-size:.86rem;line-height:inherit;
+  background:var(--surface2);color:var(--accent);
+  border:none;border-bottom:2px solid var(--accent);border-radius:4px 4px 0 0;
+  padding:0 5px;margin:0 1px;outline:none;vertical-align:baseline;
+  transition:background .15s ease,border-color .15s ease;
+}
+.blank-input:focus{background:rgba(209,163,163,.16);border-bottom-color:var(--accent2)}
+.blank-input.correct{color:var(--green);border-bottom-color:var(--green);background:var(--green-bg)}
+.blank-input.wrong{border-bottom-color:var(--red);background:var(--red-bg)}
 .exercise-btns{display:flex;gap:8px;flex-wrap:wrap}
 .exercise-btn{
   padding:7px 16px;border-radius:var(--radius);border:1px solid var(--border);
@@ -382,9 +390,7 @@ make</code></pre></div>
 <div class="exercise-header">&#9997;&#65039; Exercise: Write Hello World</div>
 <div class="exercise-desc">Fill in the blank to print <code>Hello, world!</code> followed by a newline. <code>print()</code> needs an explicit <code>\n</code> &mdash; or use <code>println()</code>, which adds the newline for you.</div>
 <div class="exercise-output">Expected output: <strong>Hello, world!</strong></div>
-<textarea class="exercise-editor" id="ex-hello-editor" spellcheck="false">fn main():
-    # print Hello, world! with a newline (print needs \n -- or use println)
-    ________</textarea>
+<div class="exercise-code" id="ex-hello-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('hello')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('hello')">&#128161; Hint</button>
@@ -398,10 +404,7 @@ make</code></pre></div>
 <div class="exercise-header">&#9997;&#65039; Exercise: Greet the User</div>
 <div class="exercise-desc">Fill in the two blanks: read the name with <code>input()</code>, then print <code>Hello, &lt;name&gt;!</code> on its own line. Use <code>f"..."</code> string interpolation (<code>println</code> adds the newline).</div>
 <div class="exercise-output">Example session &mdash; input: <strong>Ada</strong>, output: <strong>Hello, Ada!</strong></div>
-<textarea class="exercise-editor" id="ex-greet-editor" spellcheck="false">fn main():
-    print("What is your name: ")
-    name := ________
-    println(________)</textarea>
+<div class="exercise-code" id="ex-greet-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('greet')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('greet')">&#128161; Hint</button>
@@ -484,12 +487,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <div class="exercise" id="ex-vars">
 <div class="exercise-header">&#9997;&#65039; Exercise: Complete the Variables Program</div>
 <div class="exercise-desc">Complete the program below. Declare <code>width</code> as <code>10</code> and <code>height</code> as <code>5</code> using <code>:=</code>, then print the area (<code>width * height</code>) as a string with a newline.</div>
-<textarea class="exercise-editor" id="ex-vars-editor" spellcheck="false">fn main():
-    # declare width and height
-    ________
-    ________
-    # print the area
-    println(______)</textarea>
+<div class="exercise-code" id="ex-vars-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('vars')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('vars')">&#128161; Hint</button>
@@ -565,11 +563,7 @@ age := <span class="num">36</span>
 <div class="exercise-header">&#9997;&#65039; Exercise: Write a Double Function</div>
 <div class="exercise-desc">Fill in the function body so <code>double(n: int) -> int</code> returns <code>n * 2</code>. <code>main</code> already calls <code>println(str(double(21)))</code>.</div>
 <div class="exercise-output">Expected output: <strong>42</strong></div>
-<textarea class="exercise-editor" id="ex-fn-editor" spellcheck="false">fn double(n: int) -> int:
-    return ________
-
-fn main():
-    println(str(double(21)))</textarea>
+<div class="exercise-code" id="ex-fn-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('fn')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('fn')">&#128161; Hint</button>
@@ -582,16 +576,7 @@ fn main():
 <div class="exercise" id="ex-mut">
 <div class="exercise-header">&#9997;&#65039; Exercise: Fix the Swap</div>
 <div class="exercise-desc">This function should swap two integers using <code>mut</code>. Fill in the missing pieces &mdash; the <code>mut</code> keyword, the temporary variable, and the call-site <code>&amp;</code> markers.</div>
-<textarea class="exercise-editor" id="ex-mut-editor" spellcheck="false">fn swap(a: ___ int, b: ___ int):
-    tmp := ___
-    a = ___
-    b = ___
-
-fn main():
-    x := 1
-    y := 2
-    swap(___, ___)
-    println(str(x) + " " + str(y))</textarea>
+<div class="exercise-code" id="ex-mut-code"></div>
 <div class="exercise-output">Expected output: <strong>2 1</strong></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('mut')">&#10003; Check</button>
@@ -674,19 +659,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
 <div class="exercise-header">&#9997;&#65039; Exercise: Write FizzBuzz</div>
 <div class="exercise-desc">Fill in the four blanks &mdash; the <code>i % 3 == 0</code> / <code>i % 5 == 0</code> conditions. The bodies already <code>println</code> the right word ("FizzBuzz" for both, then "Fizz", "Buzz", else the number). Check the combined case first.</div>
 <div class="exercise-output">Expected output (first 15 lines): <strong>1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz</strong></div>
-<textarea class="exercise-editor" id="ex-fizzbuzz-editor" spellcheck="false">fn fizzbuzz(n: int):
-    for i in range(1, n + 1):
-        if ________ and ________:
-            println("FizzBuzz")
-        elif ________:
-            println("Fizz")
-        elif ________:
-            println("Buzz")
-        else:
-            println(str(i))
-
-fn main():
-    fizzbuzz(15)</textarea>
+<div class="exercise-code" id="ex-fizzbuzz-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('fizzbuzz')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('fizzbuzz')">&#128161; Hint</button>
@@ -766,13 +739,7 @@ s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <sp
 <div class="exercise-header">&#9997;&#65039; Exercise: Build a Comma-Separated String</div>
 <div class="exercise-desc">Given an array <code>["Ada", "Grace", "Alan"]</code>, build and print the string <code>Ada, Grace, Alan</code> with a trailing newline. Use a <code>for</code> loop and <code>+</code>. Hint: add <code>", "</code> before every element except the first (check <code>i > 0</code>).</div>
 <div class="exercise-output">Expected output: <strong>Ada, Grace, Alan</strong></div>
-<textarea class="exercise-editor" id="ex-string-editor" spellcheck="false">fn main():
-    names := ["Ada", "Grace", "Alan"]
-    out := ""
-    for i in range(len(names)):
-        ________
-        ________
-    println(out)</textarea>
+<div class="exercise-code" id="ex-string-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('string')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('string')">&#128161; Hint</button>
@@ -841,15 +808,7 @@ mid := xs[<span class="num">1</span>:<span class="num">4</span>]                
 <div class="exercise-header">&#9997;&#65039; Exercise: Sum and Filter</div>
 <div class="exercise-desc">Complete the function <code>sum_positive(xs: [int]) -> int</code> that returns the sum of all positive numbers in the array. Use a <code>for</code> loop and an <code>if</code> check.</div>
 <div class="exercise-output">For <code>[-3, 1, -2, 4, 5]</code>: expected <strong>10</strong></div>
-<textarea class="exercise-editor" id="ex-array-editor" spellcheck="false">fn sum_positive(xs: [int]) -> int:
-    total := 0
-    for x in xs:
-        ________
-    return total
-
-fn main():
-    nums := [-3, 1, -2, 4, 5]
-    println(str(sum_positive(nums)))</textarea>
+<div class="exercise-code" id="ex-array-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('array')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('array')">&#128161; Hint</button>
@@ -911,17 +870,7 @@ A struct can own strings, arrays, and other structs. On assignment, <strong>ever
 <div class="exercise-header">&#9997;&#65039; Exercise: Define a Circle and Compute Area</div>
 <div class="exercise-desc">Fill in the area formula &mdash; return <code>3.14159 * c.r * c.r</code> (access the radius field with <code>c.r</code>). The <code>struct Circle</code>, the <code>area</code> signature, and the call in <code>main</code> are already scaffolded.</div>
 <div class="exercise-output">Expected output: <strong>78.5397...</strong></div>
-<textarea class="exercise-editor" id="ex-struct-editor" spellcheck="false">struct Circle:
-    cx: float
-    cy: float
-    r: float
-
-fn area(c: Circle) -> float:
-    return ________
-
-fn main():
-    c := Circle(0.0, 0.0, 5.0)
-    println(str(area(c)))</textarea>
+<div class="exercise-code" id="ex-struct-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('struct')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('struct')">&#128161; Hint</button>
@@ -999,17 +948,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <div class="exercise" id="ex-map">
 <div class="exercise-header">&#9997;&#65039; Exercise: Word Frequency Counter</div>
 <div class="exercise-desc">Fill in the two blanks to count how many times each word appears. Use the bracket syntax: <code>counts[w] += 1</code> to count (a missing key starts at 0), and <code>counts[k]</code> to read a count (a pure read &mdash; absent keys give 0). Then <code>println</code> each word and its count.</div>
-<textarea class="exercise-editor" id="ex-map-editor" spellcheck="false">fn main():
-    words := split("the cat and the dog and the cat", " ")
-    counts := []string: int
-    for i in range(len(words)):
-        w := words[i]
-        ________                          # count w (bracket syntax)
-
-    ks := keys(counts)
-    for i in range(len(ks)):
-        k := ks[i]
-        println(________)                 # print "k: count"</textarea>
+<div class="exercise-code" id="ex-map-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('map')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('map')">&#128161; Hint</button>
@@ -1077,18 +1016,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <div class="exercise-header">&#9997;&#65039; Exercise: Safe Array Lookup</div>
 <div class="exercise-desc">Complete the function <code>safe_get(xs: [int], i: int) -> Option(int)</code>. Return <code>Some(xs[i])</code> if <code>i</code> is in bounds (<code>0 &lt;= i &lt; len(xs)</code>), otherwise return <code>None</code>. In <code>main</code>, call it with index <code>2</code> on <code>[10, 20, 30, 40]</code> and print the result using <code>match</code>.</div>
 <div class="exercise-output">Expected output: <strong>found: 30</strong></div>
-<textarea class="exercise-editor" id="ex-option-editor" spellcheck="false">fn safe_get(xs: [int], i: int) -> Option(int):
-    if ________:
-        return ________
-    return ________
-
-fn main():
-    xs := [10, 20, 30, 40]
-    match safe_get(xs, 2):
-        Some(v):
-            println("found: " + str(v))
-        None:
-            println("out of bounds")</textarea>
+<div class="exercise-code" id="ex-option-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('option')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('option')">&#128161; Hint</button>
@@ -1161,24 +1089,7 @@ fn main():
 <div class="exercise-header">&#9997;&#65039; Exercise: Build and Evaluate an Expression Tree</div>
 <div class="exercise-desc">The <code>Expr</code> enum and <code>eval</code> function are provided. In <code>main</code>, construct the expression <code>(3 + 4) * 5</code> using <code>Add</code>, <code>Mul</code>, and <code>Num</code>. Then print the result of evaluating it.</div>
 <div class="exercise-output">Expected output: <strong>35</strong></div>
-<textarea class="exercise-editor" id="ex-enum-editor" spellcheck="false">enum Expr:
-    Num(int)
-    Add(Expr, Expr)
-    Mul(Expr, Expr)
-
-fn eval(e: Expr) -> int:
-    match e:
-        Num(v):
-            return v
-        Add(l, r):
-            return eval(l) + eval(r)
-        Mul(l, r):
-            return eval(l) * eval(r)
-
-fn main():
-    # Build (3 + 4) * 5
-    expr := ________
-    println(str(eval(expr)))</textarea>
+<div class="exercise-code" id="ex-enum-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('enum')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('enum')">&#128161; Hint</button>
@@ -1321,12 +1232,7 @@ Closures deep-copy captured variables when created. Mutating the original afterw
 <div class="exercise-header">&#9997;&#65039; Exercise: Write a make_multiplier Closure</div>
 <div class="exercise-desc">Fill in the returned closure &mdash; one that captures <code>factor</code> and multiplies its argument by it: <code>fn(x: int) -> int: x * factor</code>. <code>main</code> already builds a triple function and prints <code>triple(7)</code>.</div>
 <div class="exercise-output">Expected output: <strong>21</strong></div>
-<textarea class="exercise-editor" id="ex-closure-editor" spellcheck="false">fn make_multiplier(factor: int) -> fn(int) -> int:
-    return ________
-
-fn main():
-    triple := make_multiplier(3)
-    println(str(triple(7)))</textarea>
+<div class="exercise-code" id="ex-closure-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('closure')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('closure')">&#128161; Hint</button>
@@ -1555,12 +1461,7 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 <div class="exercise-header">&#9997;&#65039; Exercise: A Generic Function</div>
 <div class="exercise-desc">Complete <code>first_of</code> so it returns its <strong>first</strong> argument. Both parameters share one type parameter <code>$T</code> (so they must be the same type), and the function works for any type &mdash; the calls below use both <code>int</code> and <code>string</code>.</div>
 <div class="exercise-output">Expected output: <strong>10</strong> then <strong>hi</strong></div>
-<textarea class="exercise-editor" id="ex-gen-editor" spellcheck="false">fn first_of(a: $T, b: $T) -> T:
-    return ________
-
-fn main():
-    println(str(first_of(10, 20)))     # 10
-    println(first_of("hi", "bye"))     # hi</textarea>
+<div class="exercise-code" id="ex-gen-code"></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('gen')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('gen')">&#128161; Hint</button>
@@ -1865,60 +1766,61 @@ function copyCode(btn) {
 /* ── Interactive Exercises ── */
 const EXERCISES = {
   gen: {
-    starter: 'fn first_of(a: $T, b: $T) -> T:\n    return ________\n\nfn main():\n    println(str(first_of(10, 20)))     # 10\n    println(first_of("hi", "bye"))     # hi',
+    segments: ['fn first_of(a: $T, b: $T) -> T:\n    return ', '\n\nfn main():\n    println(str(first_of(10, 20)))     # 10\n    println(first_of("hi", "bye"))     # hi'],
+    blanks: ['a'],
     validate(code) {
       return code.includes('$T') &&
              /return\s+a\b/.test(code) &&
              code.includes('first_of');
     },
-    solution: 'fn first_of(a: $T, b: $T) -> T:\n    return a\n\nfn main():\n    println(str(first_of(10, 20)))     # 10\n    println(first_of("hi", "bye"))     # hi',
     hint: 'Both parameters share the type parameter <code>$T</code>, so they must be the same type. To return the first argument, simply <code>return a</code>.'
   },
   hello: {
-    starter: 'fn main():\n    # print Hello, world! with a newline (print needs \\n -- or use println)\n    ________',
+    segments: ['fn main():\n    # print Hello, world! with a newline (print needs \\n -- or use println)\n    ', ''],
+    blanks: ['println("Hello, world!")'],
     validate(code) {
       return code.includes('fn main():') &&
              code.includes('Hello, world!') &&
              ( code.includes('println(') ||
                (code.includes('print(') && code.includes('\\n')) );
     },
-    solution: 'fn main():\n    println("Hello, world!")',
     hint: 'Inside <code>fn main():</code>, write <code>println("Hello, world!")</code> &mdash; <code>println</code> adds the trailing newline for you (<code>print</code> would not).'
   },
   greet: {
-    starter: 'fn main():\n    print("What is your name: ")\n    name := ________\n    println(________)',
+    segments: ['fn main():\n    print("What is your name: ")\n    name := ', '\n    println(', ')'],
+    blanks: ['input()', 'f"Hello, {name}!"'],
     validate(code) {
       return code.includes('fn main():') &&
              code.includes('input()') &&
              code.includes('print') &&
              (code.includes('f"') || code.includes('+'));
     },
-    solution: 'fn main():\n    print("What is your name: ")\n    name := input()\n    println(f"Hello, {name}!")',
     hint: 'Read a line with <code>name := input()</code>, then <code>println(f"Hello, {name}!")</code> (println adds the newline).'
   },
   vars: {
-    starter: 'fn main():\n    # declare width and height\n    ________\n    ________\n    # print the area\n    println(______)',
+    segments: ['fn main():\n    # declare width and height\n    ', '\n    ', '\n    # print the area\n    println(', ')'],
+    blanks: ['width := 10', 'height := 5', 'str(width * height)'],
     validate(code) {
       const lines = code.split('\n').map(l=>l.trim());
       return lines.some(l => /^width\s*:=\s*10$/.test(l)) &&
              lines.some(l => /^height\s*:=\s*5$/.test(l)) &&
              lines.some(l => /print(ln)?\(str\(width\s*\*\s*height\)/.test(l));
     },
-    solution: 'fn main():\n    width := 10\n    height := 5\n    println(str(width * height))',
     hint: 'Use <code>width := 10</code>, <code>height := 5</code>, then <code>println(str(width * height))</code>.'
   },
   fn: {
-    starter: 'fn double(n: int) -> int:\n    return ________\n\nfn main():\n    println(str(double(21)))',
+    segments: ['fn double(n: int) -> int:\n    return ', '\n\nfn main():\n    println(str(double(21)))'],
+    blanks: ['n * 2'],
     validate(code) {
       return /fn\s+double\s*\(\s*n\s*:\s*int\s*\)\s*->\s*int/.test(code) &&
              code.includes('return n * 2') &&
              code.includes('double(21)') ;
     },
-    solution: 'fn double(n: int) -> int:\n    return n * 2\n\nfn main():\n    println(str(double(21)))',
     hint: 'Fill the body with <code>return n * 2</code>. (main already calls <code>println(str(double(21)))</code>.)'
   },
   mut: {
-    starter: 'fn swap(a: ___ int, b: ___ int):\n    tmp := ___\n    a = ___\n    b = ___\n\nfn main():\n    x := 1\n    y := 2\n    swap(___, ___)\n    println(str(x) + " " + str(y))',
+    segments: ['fn swap(a: ', ' int, b: ', ' int):\n    tmp := ', '\n    a = ', '\n    b = ', '\n\nfn main():\n    x := 1\n    y := 2\n    swap(', ', ', ')\n    println(str(x) + " " + str(y))'],
+    blanks: ['mut', 'mut', 'a', 'b', 'tmp', '&x', '&y'],
     validate(code) {
       return /fn\s+swap\s*\(\s*a\s*:\s*mut\s+int\s*,\s*b\s*:\s*mut\s+int\s*\)/.test(code) &&
              code.includes('tmp := a') &&
@@ -1926,11 +1828,11 @@ const EXERCISES = {
              code.includes('b = tmp') &&
              code.includes('swap(&x, &y)');
     },
-    solution: 'fn swap(a: mut int, b: mut int):\n    tmp := a\n    a = b\n    b = tmp\n\nfn main():\n    x := 1\n    y := 2\n    swap(&x, &y)\n    println(str(x) + " " + str(y))',
     hint: 'Use <code>mut int</code> for both params. Save <code>a</code> in <code>tmp</code> before overwriting. Use <code>&x</code> and <code>&y</code> at the call site.'
   },
   fizzbuzz: {
-    starter: 'fn fizzbuzz(n: int):\n    for i in range(1, n + 1):\n        if ________ and ________:\n            println("FizzBuzz")\n        elif ________:\n            println("Fizz")\n        elif ________:\n            println("Buzz")\n        else:\n            println(str(i))\n\nfn main():\n    fizzbuzz(15)',
+    segments: ['fn fizzbuzz(n: int):\n    for i in range(1, n + 1):\n        if ', ' and ', ':\n            println("FizzBuzz")\n        elif ', ':\n            println("Fizz")\n        elif ', ':\n            println("Buzz")\n        else:\n            println(str(i))\n\nfn main():\n    fizzbuzz(15)'],
+    blanks: ['i % 3 == 0', 'i % 5 == 0', 'i % 3 == 0', 'i % 5 == 0'],
     validate(code) {
       return code.includes('fn fizzbuzz(n: int)') &&
              code.includes('for i in range(1, n + 1)') &&
@@ -1940,30 +1842,30 @@ const EXERCISES = {
              code.includes('Fizz') &&
              code.includes('Buzz');
     },
-    solution: 'fn fizzbuzz(n: int):\n    for i in range(1, n + 1):\n        if i % 3 == 0 and i % 5 == 0:\n            println("FizzBuzz")\n        elif i % 3 == 0:\n            println("Fizz")\n        elif i % 5 == 0:\n            println("Buzz")\n        else:\n            println(str(i))\n\nfn main():\n    fizzbuzz(15)',
     hint: 'Fill the four blanks with <code>i % 3 == 0</code> / <code>i % 5 == 0</code>. Check the combined case first. (The bodies already use <code>println</code>, which adds the newline.)'
   },
   string: {
-    starter: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        ________\n        ________\n    println(out)',
+    segments: ['fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        if ', ':\n            out = out + ', '\n        out = out + ', '\n    println(out)'],
+    blanks: ['i > 0', '", "', 'names[i]'],
     validate(code) {
       return code.includes('i > 0') &&
              code.includes('", "') &&
              code.includes('out = out + names[i]');
     },
-    solution: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        if i > 0:\n            out = out + ", "\n        out = out + names[i]\n    println(out)',
     hint: 'Add <code>", "</code> before every element except the first: <code>if i > 0: out = out + ", "</code>. Then append: <code>out = out + names[i]</code>.'
   },
   array: {
-    starter: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        ________\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    println(str(sum_positive(nums)))',
+    segments: ['fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        if ', ':\n            total = total + ', '\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    println(str(sum_positive(nums)))'],
+    blanks: ['x > 0', 'x'],
     validate(code) {
       return code.includes('if x > 0') &&
              code.includes('total = total + x');
     },
-    solution: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        if x > 0:\n            total = total + x\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    println(str(sum_positive(nums)))',
     hint: 'Check each element: <code>if x > 0: total = total + x</code>.'
   },
   struct: {
-    starter: 'struct Circle:\n    cx: float\n    cy: float\n    r: float\n\nfn area(c: Circle) -> float:\n    return ________\n\nfn main():\n    c := Circle(0.0, 0.0, 5.0)\n    println(str(area(c)))',
+    segments: ['struct Circle:\n    cx: float\n    cy: float\n    r: float\n\nfn area(c: Circle) -> float:\n    return ', '\n\nfn main():\n    c := Circle(0.0, 0.0, 5.0)\n    println(str(area(c)))'],
+    blanks: ['3.14159 * c.r * c.r'],
     validate(code) {
       return /struct\s+Circle/.test(code) &&
              code.includes('cx: float') &&
@@ -1973,11 +1875,11 @@ const EXERCISES = {
              code.includes('3.14159 * c.r * c.r') &&
              code.includes('Circle(0.0, 0.0, 5.0)');
     },
-    solution: 'struct Circle:\n    cx: float\n    cy: float\n    r: float\n\nfn area(c: Circle) -> float:\n    return 3.14159 * c.r * c.r\n\nfn main():\n    c := Circle(0.0, 0.0, 5.0)\n    println(str(area(c)))',
     hint: 'Fill the area formula: <code>3.14159 * c.r * c.r</code> (access the radius field with <code>c.r</code>). The struct and the call are already scaffolded.'
   },
   map: {
-    starter: 'fn main():\n    words := split("the cat and the dog and the cat", " ")\n    counts := []string: int\n    for i in range(len(words)):\n        w := words[i]\n        ________                          # count w (bracket syntax)\n\n    ks := keys(counts)\n    for i in range(len(ks)):\n        k := ks[i]\n        println(________)                 # print "k: count"',
+    segments: ['fn main():\n    words := split("the cat and the dog and the cat", " ")\n    counts := []string: int\n    for i in range(len(words)):\n        w := words[i]\n        ', '                          # count w (bracket syntax)\n\n    ks := keys(counts)\n    for i in range(len(ks)):\n        k := ks[i]\n        println(', ')                 # print "k: count"'],
+    blanks: ['counts[w] += 1', 'k + ": " + str(counts[k])'],
     validate(code) {
       const counted = /counts\[w\]\s*\+=\s*1/.test(code) ||
                       /counts\[w\]\s*=\s*counts\[w\]\s*\+\s*1/.test(code);
@@ -1987,67 +1889,107 @@ const EXERCISES = {
                       code.includes('map_get(counts, ks[i]');
       return counted && printed;
     },
-    solution: 'fn main():\n    words := split("the cat and the dog and the cat", " ")\n    counts := []string: int\n    for i in range(len(words)):\n        w := words[i]\n        counts[w] += 1\n\n    ks := keys(counts)\n    for i in range(len(ks)):\n        k := ks[i]\n        println(k + ": " + str(counts[k]))',
     hint: 'Count with the bracket form <code>counts[w] += 1</code> (a missing key starts at 0). Read a count with <code>counts[k]</code> &mdash; a pure read that gives 0 for an absent key.'
   },
   option: {
-    starter: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if ________:\n        return ________\n    return ________\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            println("found: " + str(v))\n        None:\n            println("out of bounds")',
+    segments: ['fn safe_get(xs: [int], i: int) -> Option(int):\n    if ', ':\n        return ', '\n    return ', '\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            println("found: " + str(v))\n        None:\n            println("out of bounds")'],
+    blanks: ['i >= 0 and i < len(xs)', 'Some(xs[i])', 'None'],
     validate(code) {
       return code.includes('i >= 0') &&
              code.includes('i < len(xs)') &&
              code.includes('return Some(xs[i])') &&
              code.includes('return None');
     },
-    solution: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if i >= 0 and i < len(xs):\n        return Some(xs[i])\n    return None\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            println("found: " + str(v))\n        None:\n            println("out of bounds")',
     hint: 'Check bounds with <code>i >= 0 and i < len(xs)</code>. Return <code>Some(xs[i])</code> or <code>None</code>.'
   },
   enum: {
-    starter: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    # Build (3 + 4) * 5\n    expr := ________\n    println(str(eval(expr)))',
+    segments: ['enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    # Build (3 + 4) * 5\n    expr := ', '\n    println(str(eval(expr)))'],
+    blanks: ['Mul(Add(Num(3), Num(4)), Num(5))'],
     validate(code) {
       return code.includes('Mul(Add(Num(3), Num(4)), Num(5))') ;
     },
-    solution: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    expr := Mul(Add(Num(3), Num(4)), Num(5))\n    println(str(eval(expr)))',
     hint: 'Build from the inside out: <code>Add(Num(3), Num(4))</code> gives 3+4, then wrap in <code>Mul(..., Num(5))</code>.'
   },
   closure: {
-    starter: 'fn make_multiplier(factor: int) -> fn(int) -> int:\n    return ________\n\nfn main():\n    triple := make_multiplier(3)\n    println(str(triple(7)))',
+    segments: ['fn make_multiplier(factor: int) -> fn(int) -> int:\n    return ', '\n\nfn main():\n    triple := make_multiplier(3)\n    println(str(triple(7)))'],
+    blanks: ['fn(x: int) -> int: x * factor'],
     validate(code) {
       return /fn\s+make_multiplier\s*\(\s*factor\s*:\s*int\s*\)\s*->\s*fn\s*\(\s*int\s*\)\s*->\s*int/.test(code) &&
              code.includes('x * factor') &&
              code.includes('make_multiplier(3)');
     },
-    solution: 'fn make_multiplier(factor: int) -> fn(int) -> int:\n    return fn(x: int) -> int: x * factor\n\nfn main():\n    triple := make_multiplier(3)\n    println(str(triple(7)))',
     hint: 'Fill the blank with the closure: <code>fn(x: int) -> int: x * factor</code>. It captures <code>factor</code> by value.'
   }
 };
 
-function getEditor(id) { return document.getElementById('ex-' + id + '-editor'); }
 function getFeedback(id) { return document.getElementById('ex-' + id + '-feedback'); }
+function exerciseInputs(id) {
+  const host = document.getElementById('ex-' + id + '-code');
+  return host ? Array.prototype.slice.call(host.querySelectorAll('.blank-input')) : [];
+}
+
+// Render an exercise as static code with one <input> at each blank.
+function renderExercise(id) {
+  const ex = EXERCISES[id];
+  const host = document.getElementById('ex-' + id + '-code');
+  if (!host || !ex || !ex.segments) return;
+  host.innerHTML = '';
+  const pre = document.createElement('pre');
+  pre.className = 'exercise-code-pre';
+  ex.segments.forEach((seg, k) => {
+    pre.appendChild(document.createTextNode(seg));
+    if (k < ex.blanks.length) {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'blank-input';
+      inp.spellcheck = false;
+      inp.autocomplete = 'off';
+      inp.setAttribute('autocapitalize', 'off');
+      inp.setAttribute('aria-label', 'blank ' + (k + 1));
+      inp.style.width = Math.max(3, ex.blanks[k].length) + 'ch';
+      inp.addEventListener('input', () => inp.classList.remove('correct', 'wrong'));
+      pre.appendChild(inp);
+    }
+  });
+  host.appendChild(pre);
+}
+
+// Rebuild the full program from the static segments + the user's filled blanks.
+function reconstruct(id) {
+  const ex = EXERCISES[id];
+  const inputs = exerciseInputs(id);
+  let code = '';
+  ex.segments.forEach((seg, k) => {
+    code += seg;
+    if (k < ex.blanks.length) code += (inputs[k] ? inputs[k].value.trim() : '');
+  });
+  return code;
+}
 
 function checkExercise(id) {
   const ex = EXERCISES[id];
-  const editor = getEditor(id);
   const fb = getFeedback(id);
-  if (!editor || !fb) return;
-
-  const code = editor.value.trim();
-  if (!code) {
+  if (!ex || !fb) return;
+  const inputs = exerciseInputs(id);
+  if (inputs.every(i => !i.value.trim())) {
     fb.className = 'exercise-feedback show fail';
-    fb.textContent = 'The editor is empty. Write some code and try again.';
+    fb.textContent = 'Fill in the blanks and try again.';
     return;
   }
-
+  const code = reconstruct(id);
   if (ex.validate(code)) {
+    inputs.forEach(i => { i.classList.add('correct'); i.classList.remove('wrong'); });
     fb.className = 'exercise-feedback show pass';
-    fb.innerHTML = '&#10003; Correct! Your solution looks right. The key patterns are present.';
+    fb.innerHTML = '&#10003; Correct! Every blank checks out.';
   } else {
+    inputs.forEach(i => { if (!i.value.trim()) i.classList.add('wrong'); });
     fb.className = 'exercise-feedback show fail';
     let msg = '&#10007; Not quite yet. Check these common issues:';
     const checks = getExerciseHints(id, code);
     if (checks.length > 0) {
       msg += '<ul style="margin:6px 0 0 18px">' + checks.map(c => '<li>' + c + '</li>').join('') + '</ul>';
     } else {
-      msg += ' Compare your code carefully with the requirements.';
+      msg += ' Compare each blank carefully with the requirements.';
     }
     fb.innerHTML = msg;
   }
@@ -2134,20 +2076,22 @@ function showHint(id) {
 function showSolution(id) {
   const ex = EXERCISES[id];
   const fb = getFeedback(id);
-  if (!fb || !ex.solution) return;
-  fb.className = 'exercise-feedback show hint';
-  fb.innerHTML = '<strong>Solution:</strong><pre style="margin:8px 0 0;padding:10px;background:var(--bg);border-radius:4px;overflow-x:auto;font-size:.85rem;line-height:1.45">' +
-    escapeHtml(ex.solution) + '</pre>';
+  if (!ex) return;
+  exerciseInputs(id).forEach((inp, k) => {
+    inp.value = ex.blanks[k];
+    inp.classList.remove('wrong');
+    inp.classList.add('correct');
+  });
+  if (fb) {
+    fb.className = 'exercise-feedback show hint';
+    fb.innerHTML = '&#128065; Filled the blanks with one correct answer &mdash; compare it with what you had.';
+  }
 }
 
 function resetExercise(id) {
-  const ex = EXERCISES[id];
-  const editor = getEditor(id);
   const fb = getFeedback(id);
-  if (!editor || !fb) return;
-  editor.value = ex.starter || '';
-  fb.className = 'exercise-feedback';
-  fb.innerHTML = '';
+  exerciseInputs(id).forEach(inp => { inp.value = ''; inp.classList.remove('correct', 'wrong'); });
+  if (fb) { fb.className = 'exercise-feedback'; fb.innerHTML = ''; }
 }
 
 function escapeHtml(str) {
@@ -2156,6 +2100,7 @@ function escapeHtml(str) {
 
 /* ── Init ── */
 buildNav();
+Object.keys(EXERCISES).forEach(renderExercise);
 </script>
 </body>
 </html>
