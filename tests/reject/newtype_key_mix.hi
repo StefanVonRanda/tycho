@@ -7,5 +7,5 @@ type UserId = string
 
 fn main():
     m : [UserId: int] = []
-    m = map_set(m, "ana", 1)
+    m["ana"] = 1
     print(str(len(m)) + "\n")

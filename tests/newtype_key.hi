@@ -8,8 +8,8 @@ type Slot = int
 
 fn main():
     scores : [UserId: int] = []
-    scores = map_set(scores, UserId("ana"), 10)
-    scores = map_set(scores, UserId("bo"), 7)
+    scores[UserId("ana")] = 10
+    scores[UserId("bo")] = 7
     print(str(map_get(scores, UserId("ana"), 0)) + "\n")
     print(str(len(scores)) + "\n")
     ks := keys(scores)
@@ -20,12 +20,12 @@ fn main():
         i = i + 1
     print(str(total) + "\n")
     names : [Slot: string] = []
-    names = map_set(names, Slot(3), "three")
+    names[Slot(3)] = "three"
     s3 := Slot(3)
     print(map_get(names, s3, "?") + "\n")
-    if map_has(names, Slot(3)):
+    if Slot(3) in names:
         print("has 3\n")
-    names = map_del(names, Slot(3))
+    delete names[Slot(3)]
     print(str(len(names)) + "\n")
     counts : [UserId: int] = []
     counts[UserId("x")] = 5

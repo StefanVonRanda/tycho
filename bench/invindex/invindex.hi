@@ -17,7 +17,7 @@ fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int)
         push(p.docs, doc)
         push(p.freqs, 1)
         push(postings, p)
-        tidx = map_set(tidx, term, len(postings) - 1)
+        tidx[term] = len(postings) - 1
     else:
         n := len(postings[pi].docs)
         if n > 0 and postings[pi].docs[n - 1] == doc:

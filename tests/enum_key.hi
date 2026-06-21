@@ -12,12 +12,12 @@ enum Color:
 
 fn main():
     m : [Color: int] = []
-    m = map_set(m, Red, 3)
-    m = map_set(m, Blue, 5)
+    m[Red] = 3
+    m[Blue] = 5
     m[Green] = 4
     print(str(map_get(m, Red, 0) + map_get(m, Green, 0) + map_get(m, Blue, 0)) + "\n")
     print(str(len(m)) + "\n")
-    if map_has(m, Red):
+    if Red in m:
         print("has red\n")
     ks := keys(m)
     total := 0
@@ -26,7 +26,7 @@ fn main():
         total = total + map_get(m, ks[i], 0)
         i = i + 1
     print(str(total) + "\n")
-    m = map_del(m, Blue)
+    delete m[Blue]
     print(str(len(m)) + "\n")
     reds := 0
     ks2 := keys(m)

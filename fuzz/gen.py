@@ -234,7 +234,7 @@ class Gen:
             ks = self.fresh("k"); ii = self.fresh("i")
             self.emit(ind, ks + " := keys(" + name + ")")   # [string] or [int] keys
             self.emit(ind, "for " + ii + " in range(len(" + ks + ")):")
-            add(ind+1, "len(str(map_has(" + name + ", " + ks + "[" + ii + "])))")   # str(bool): present key -> "true"
+            add(ind+1, "len(str(" + ks + "[" + ii + "] in " + name + "))")   # str(bool): present key -> "true"
             if vt.startswith("["):                  # composite (array) value: bind the borrow + recurse
                 gv = self.fresh("gv")
                 self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + vt[1:-1] + ")")
@@ -378,11 +378,11 @@ class Gen:
             n0 = self.r.choice([n for n, b in self.newtypes.items() if b == "string"])
             m = self.fresh("nm")
             self.emit(ind, m + " : [" + n0 + ": int] = []")
-            self.emit(ind, m + " = map_set(" + m + ", " + n0 + "(\"a\"), " + self.gen_expr("int", env, 2) + ")")
+            self.emit(ind, m + "[" + n0 + "(\"a\")] = " + self.gen_expr("int", env, 2))
             self.emit(ind, m + "[" + n0 + "(\"b\")] = " + str(self.r.randint(0, 9)))
             self.emit(ind, "acc = acc + map_get(" + m + ", " + n0 + "(\"a\"), 0) + len(" + m + ")")
             if self.r.random() < 0.5:
-                self.emit(ind, "if map_has(" + m + ", " + n0 + "(\"b\")):")
+                self.emit(ind, "if " + n0 + "(\"b\") in " + m + ":")
                 self.emit(ind+1, "acc = acc + 1")
             ks = self.fresh("ks")
             self.emit(ind, ks + " := keys(" + m + ")")
@@ -394,11 +394,11 @@ class Gen:
             # wrapped singletons (which must round-trip through match and map_get)
             m = self.fresh("em")
             self.emit(ind, m + " : [FzColor: int] = []")
-            self.emit(ind, m + " = map_set(" + m + ", FzA, " + self.gen_expr("int", env, 2) + ")")
+            self.emit(ind, m + "[FzA] = " + self.gen_expr("int", env, 2))
             self.emit(ind, m + "[FzB] = " + str(self.r.randint(0, 9)))
             self.emit(ind, "acc = acc + map_get(" + m + ", FzA, 0) + map_get(" + m + ", FzB, 0) + len(" + m + ")")
             if self.r.random() < 0.5:
-                self.emit(ind, m + " = map_del(" + m + ", FzA)")
+                self.emit(ind, "delete " + m + "[FzA]")
                 self.emit(ind, "acc = acc + len(" + m + ")")
             ks = self.fresh("ek")
             self.emit(ind, ks + " := keys(" + m + ")")
@@ -530,11 +530,11 @@ class Gen:
             self.emit(ind, a + " := [mkadder(" + cap + "), fn(x: int) -> int: x + 1]")
             self.emit(ind, "acc = acc + " + a + "[0](" + str(self.r.randint(0, 9)) + ") + " + a + "[1](" + str(self.r.randint(0, 9)) + ")")
             return
-        if k == "map_accum":           # m = map_set(m, k, v): in-place map accumulator (is_self_mapset)
+        if k == "map_accum":           # m[k] = v: in-place map accumulator (is_self_mapset)
             n0, t0 = self.r.choice(map_vars)
             kt, vt = self._kv(t0)
             key = '"k' + str(self.r.randint(0, 4)) + '"' if kt == "string" else str(self.r.randint(0, 4))
-            self.emit(ind, n0 + " = map_set(" + n0 + ", " + key + ", " + self.gen_expr(vt, env, 1) + ")")
+            self.emit(ind, n0 + "[" + key + "] = " + self.gen_expr(vt, env, 1))
             return
         if k == "map_place":           # m[k] as a place (#2): assign or scalar compound, fresh + existing keys
             n0, t0 = self.r.choice(map_vars)
@@ -789,8 +789,8 @@ class Gen:
             env[e] = "[int]"                        # grounded: an ordinary [int] for the kinds that follow
             if self.r.random() < 0.5:
                 m = self.fresh("im")
-                self.emit(ind, m + " := []")
-                self.emit(ind, m + " = map_set(" + m + ", \"g\", " + str(self.r.randint(0, 30)) + ")")
+                self.emit(ind, m + " := []string: int")
+                self.emit(ind, m + "[\"g\"] = " + str(self.r.randint(0, 30)))
                 self.emit(ind, "acc = acc + map_get(" + m + ", \"g\", 0)")
             if self.r.random() < 0.5:
                 o = self.fresh("io")

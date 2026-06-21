@@ -97,7 +97,7 @@ fn parse_front(fm: string) -> [string: string]:          # `key: value` lines ->
     for i in range(len(lines)):
         if len(strings.trim(lines[i])) > 0:
             k, v := strings.split_once(lines[i], ":")
-            m = map_set(m, strings.trim(k), strings.trim(v))
+            m[strings.trim(k)] = strings.trim(v)
     return m
 
 # ---- build ------------------------------------------------------------------
@@ -111,7 +111,7 @@ fn build(site_dir: string, out_dir: string):
     rows := csv.parse(io.read(path.join(site_dir, "authors.csv")))
     for i in range(len(rows)):
         if i > 0:                                        # skip the header row
-            authors = map_set(authors, csv.get(rows, i, 0), csv.get(rows, i, 1))
+            authors[csv.get(rows, i, 0)] = csv.get(rows, i, 1)
 
     content_dir := path.join(site_dir, "content")
     files := io.list(content_dir)

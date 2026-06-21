@@ -4,5 +4,5 @@
 fn main():
     m := []string: int
     for i in range(40000):
-        m = map_set(m, "k" + str(i), i)
+        m["k" + str(i)] = i
     print(str(len(m)) + "\n")

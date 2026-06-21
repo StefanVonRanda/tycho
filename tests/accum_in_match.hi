@@ -16,7 +16,7 @@ fn build(n: int) -> [int: int]:
     for i in range(n):
         match classify(i):
             Some(bucket):
-                counts = map_set(counts, bucket, map_get(counts, bucket, 0) + 1)
+                counts[bucket] = map_get(counts, bucket, 0) + 1
                 word = word + "a"          # string-append accumulator in the same arm
             None:
                 return counts              # unreachable for i >= 0

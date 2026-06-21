@@ -10,7 +10,7 @@ fn main():
     counts := []string: int
     for i in range(len(words)):
         w := words[i]
-        counts = map_set(counts, w, map_get(counts, w, 0) + 1)
+        counts[w] = map_get(counts, w, 0) + 1
 
     ks := keys(counts)
     for i in range(len(ks)):

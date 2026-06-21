@@ -49,8 +49,8 @@ fn b3() -> int:
     xs := []
     push(xs, 3)
     push(xs, 4)
-    m := []
-    m = map_set(m, "a", 10)
+    m := []string: int
+    m["a"] = 10
     o := None
     o = Some(xs[0] + xs[1] + map_get(m, "a", 0))
     grid := []

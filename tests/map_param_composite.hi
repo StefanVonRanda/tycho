@@ -17,9 +17,10 @@ fn sum_list(m: [string: [int]], term: string) -> int:
 fn pt_x(m: [int: P], k: int) -> int:
     return map_get(m, k, P(0, 0)).x
 
-fn grow(m: [string: [int]]) -> int:        # mutate the borrowed param: must not touch the caller
-    m = map_set(m, "zzz", [9, 9, 9])
-    return len(map_get(m, "zzz", []int))
+fn grow(m: [string: [int]]) -> int:        # copy the borrowed param, then mutate the copy: must not touch the caller
+    d := m
+    d["zzz"] = [9, 9, 9]
+    return len(map_get(d, "zzz", []int))
 
 fn main():
     idx := []string: [int]
@@ -37,4 +38,4 @@ fn main():
     g := grow(idx)
     print(str(g) + "," + str(len(keys(idx))) + "\n")  # 3,2   (idx still has only a,b)
 
-    print(str(sum_list(idx, "a")) + "\n")  # 15 (caller's idx unchanged by grow's map_set)
+    print(str(sum_list(idx, "a")) + "\n")  # 15 (caller's idx unchanged by grow)

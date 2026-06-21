@@ -22,7 +22,7 @@ fn main():
         for w in split(clean, " "):    # split is a builtin
             t := strings.trim(w)
             if len(t) > 0:
-                counts = map_set(counts, t, map_get(counts, t, 0) + 1)
+                counts[t] = map_get(counts, t, 0) + 1
     words := arrays_str.sort(keys(counts))
     nums := []int
     for w in words:

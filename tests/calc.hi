@@ -151,7 +151,7 @@ fn eval(e: Expr, env: [string: float]) -> Result(float, string):
         ENum(v):
             return Ok(v)
         EVar(name):
-            if map_has(env, name):
+            if name in env:
                 return Ok(map_get(env, name, 0.0))
             return Err("undefined variable: " + name)
         ENeg(x):

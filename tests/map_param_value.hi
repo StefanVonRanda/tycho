@@ -1,10 +1,12 @@
-# A by-value map param is the caller's value: `m = map_set(m,...)` inside the
-# callee must NOT mutate the caller's table. Regression for the hierc0 map
-# accumulator, which used to grow a map param in place (shared-table bug).
+# A by-value map param is the caller's value. A borrowed param can't be
+# place-mutated directly; copy it first (`d := c`), and mutating the copy must
+# NOT touch the caller's table. Regression for the hierc0 map accumulator, which
+# used to grow a map param in place (shared-table bug).
 fn bump(c: [string: int]) -> int:
-    c = map_set(c, "k", 999)
-    c = map_set(c, "n", 7)
-    return map_get(c, "k", 0)
+    d := c                    # value-semantics copy
+    d["k"] = 999
+    d["n"] = 7
+    return map_get(d, "k", 0)
 
 fn main():
     base := ["k": 1]

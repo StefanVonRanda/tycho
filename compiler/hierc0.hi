@@ -2101,7 +2101,7 @@ fn build_vmap(enums: [EnumDef]) -> [string: int]:
     for i < len(enums):
         j := 0
         for j < len(enums[i].variants):
-            m = map_set(m, enums[i].variants[j].name, i)
+            m[enums[i].variants[j].name] = i
             j = j + 1
         i = i + 1
     return m
@@ -4918,11 +4918,11 @@ fn compute_movables(body: [Stmt]) -> [string]:
     lset := []string: int
     i := 0
     for i < len(loopreads):
-        lset = map_set(lset, loopreads[i], 1)
+        lset[loopreads[i]] = 1
         i = i + 1
     i = 0
     for i < len(reads):
-        freq = map_set(freq, reads[i], map_get(freq, reads[i], 0) + 1)
+        freq[reads[i]] = map_get(freq, reads[i], 0) + 1
         i = i + 1
     mv := []string
     i = 0
@@ -8404,7 +8404,7 @@ fn main():
     for i < len(prog0.funcs):
         push(sigs0, Sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes, prog0.funcs[i].is_extern))
         if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
-            sigmap0 = map_set(sigmap0, prog0.funcs[i].name, i)
+            sigmap0[prog0.funcs[i].name] = i
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
     dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums))
@@ -8420,7 +8420,7 @@ fn main():
     for i < len(funcs):
         push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
-            sigmap = map_set(sigmap, funcs[i].name, i)
+            sigmap[funcs[i].name] = i
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)

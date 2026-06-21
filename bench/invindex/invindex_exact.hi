@@ -60,7 +60,7 @@ fn main():
             term := "t" + str(seed % v)
             slot := map_get(tidx, term, 0 - 1)
             if slot < 0:
-                tidx = map_set(tidx, term, len(terms))
+                tidx[term] = len(terms)
                 push(terms, term)
                 push(counts, 1)
             else:
