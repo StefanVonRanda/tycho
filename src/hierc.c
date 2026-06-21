@@ -1101,6 +1101,7 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
     return g_cur_pkg_prefix[0] ? sfmt("%s%s", g_cur_pkg_prefix, n) : (char *)n;
 }
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
+static void check_pkg_private(const char *qualifier, const char *name, int line);   /* B3: reject cross-package access to a leading-underscore name */
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
@@ -1192,6 +1193,7 @@ static Type parse_type(Parser *ps) {
         const char *nm;
         if (peek(ps, 1)->kind == TK_DOT && peek(ps, 2)->kind == TK_IDENT) {
             /* qualified type `pkg.Type` -> the imported package's mangled name */
+            check_pkg_private(t->text, peek(ps, 2)->text, t->line);
             nm = sfmt("%s%s", pkg_prefix_for(t->text), peek(ps, 2)->text);
             ps->p += 2;                  /* skip qualifier + dot; the type-name ident is consumed on a hit below */
         } else {
@@ -1889,8 +1891,10 @@ static Stmt *parse_stmt(Parser *ps) {
             /* Option/Result arms (Some/None/Ok/Err) are never package symbols; an
              * enum variant is package-scoped, mangled with the qualifier's package
              * (or, unqualified, the package this match is parsed in). */
-            if (vqual)
+            if (vqual) {
+                check_pkg_private(vqual, vname, vn->line);
                 arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
+            }
             else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
                 arm->variant = (char *)vname;
             else
@@ -2382,6 +2386,15 @@ static int is_imported_pkg(const char *name) {
         if (!strcmp(pkg_basename(g_imports[i].path), name)) return 1;
     }
     return 0;
+}
+
+/* Package privacy (B3): a top-level name with a leading underscore is private
+ * to its own package. A qualified reference `qualifier.name` always names an
+ * imported (hence foreign) package, so reject it when `name` starts with '_'. */
+static void check_pkg_private(const char *qualifier, const char *name, int line) {
+    if (name && name[0] == '_' && is_imported_pkg(qualifier))
+        die_at(line, "'%s.%s' is package-private: a leading-underscore name "
+               "is not accessible from another package", qualifier, name);
 }
 
 static ProcVec parse_program(Tok *toks) {
@@ -2926,6 +2939,7 @@ static Type resolve_expr(Expr *e) {
             /* `pkg.Variant` (no parens, lhs an imported package) is a payload-less
              * enum variant value — reinterpret as a 0-arg constructor, not a field. */
             if (e->lhs->kind == E_IDENT && is_imported_pkg(e->lhs->sval)) {
+                check_pkg_private(e->lhs->sval, e->sval, e->line);
                 char *q = sfmt("%s%s", pkg_prefix_for(e->lhs->sval), e->sval);
                 int evi, eid = variant_find(q, &evi);
                 if (eid < 0)
@@ -3075,6 +3089,7 @@ static Type resolve_expr(Expr *e) {
              * in that package; an implicit name in an imported package (e->pkg) tries
              * its own package first, else falls through to builtins/unprefixed. */
             if (e->qual) {
+                check_pkg_private(e->qual, e->sval, e->line);
                 int _vi;
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
                 if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)

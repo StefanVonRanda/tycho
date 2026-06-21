@@ -1610,7 +1610,14 @@ fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real pa
 
 fn mangle_dotted(m: Mctx, s: string) -> string:        # "g.add" -> "<realpkg(g)>__add"
     idx := find(s, ".")
-    return resolve_pkg(m, substr(s, 0, idx)) + "__" + substr(s, idx + 1, len(s))
+    qual := substr(s, 0, idx)
+    bare := substr(s, idx + 1, len(s))
+    realpkg := resolve_pkg(m, qual)
+    # package privacy (B3): a leading-underscore name is private to its own
+    # package; reject a cross-package qualified access to it.
+    if is_pkg_ref(m, qual) and realpkg + "__" != m.prefix and len(bare) > 0 and bare[0] == 95:
+        die("resolve: '" + qual + "." + bare + "' is package-private: a leading-underscore name is not accessible from another package")
+    return realpkg + "__" + bare
 
 fn is_pkg_ref(m: Mctx, name: string) -> bool:          # is `name` a package name or import alias?
     i := 0
@@ -1741,6 +1748,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             # imported package and `pkg.Variant` names a real variant, it is a
             # qualified payload-less variant VALUE, not a struct field read.
             if bn != "" and is_pkg_ref(m, bn) and is_known_variant(m, resolve_pkg(m, bn) + "__" + f):
+                if resolve_pkg(m, bn) + "__" != m.prefix and len(f) > 0 and f[0] == 95:
+                    die("resolve: '" + bn + "." + f + "' is package-private: a leading-underscore name is not accessible from another package")
                 return EVar(resolve_pkg(m, bn) + "__" + f, _el)
             return EField(mangle_expr(m, b), f, _el)
         EIndex(b, ix, _el):

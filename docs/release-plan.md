@@ -199,10 +199,38 @@ ambiguous case).
 `make fuzz` `FAIL=0`; `make tools-check` ok (hierfmt re-derives indentation from the
 tab-indented source, idempotent + semantics-preserving).
 
-### B3 — package privacy — TODO
+### B3 — package privacy — DONE
 
 A top-level `_name` is package-private: the resolver rejects qualified
 cross-package access to it. Additive resolver rule, non-breaking. Both compilers.
+
+**What this change did.** A qualified reference (`pkg.x`) always names an
+imported — hence foreign — package, so the rule is simply: *a qualified access
+whose bare name starts with `_` is rejected*. Same-package use (always
+unqualified) is unaffected; so is every public (non-underscore) symbol.
+
+- **hierc** (`src/hierc.c`): a `check_pkg_private(qualifier, name, line)` helper
+  (gated on `is_imported_pkg`) called at all four qualified-access sites —
+  qualified type, qualified call, qualified payload-less variant value, and a
+  match arm's qualified variant.
+- **hierc0** (`compiler/hierc0.hi`): the check lives in `mangle_dotted` (which
+  every dotted call/type/match-arm flows through) and in the `mangle_expr`
+  variant-value site; cross-package is detected precisely as
+  `resolve_pkg(qual) ++ "__" != m.prefix`.
+- Verified non-breaking: no top-level `_`-prefixed symbol and no `pkg._name`
+  access exists anywhere in the tree (corelib, examples, tests, the compiler
+  itself), so the self-host's rt/main split never trips it.
+- Tests: `tests/pkg/privacy/` (+golden) — a package whose public `doubled`/
+  `triple` call a private `_scale` internally (same-package access works; the
+  public API is reachable across the boundary); `tests/reject/pkg/privacy_cross/`
+  — an importer that calls `secretlib._scale` and must be rejected by both
+  compilers. The reject needed a new harness loop (`tests/reject/pkg/<name>/`):
+  the entry's whole-directory package merge has to be isolated from the
+  single-file rejects, which share one directory.
+
+**Verified.** `make test` (incl. the new pkg golden + the package reject, both
+compilers); `make fixpoint` all green (B≡C; the rt/main split is `_`-free);
+`make fuzz` `FAIL=0`; `make tools-check` ok.
 
 ### B5 — remove `map_*`, keep `m[k]` — TODO
 
@@ -231,5 +259,5 @@ Then staged implementation in both compilers behind the fixpoint. The
 
 ## Sequence
 
-Per the chosen order: A1 → A3 → B6 → B4 (all done) → **B3** (next) → B5 → A2. Each
+Per the chosen order: A1 → A3 → B6 → B4 → B3 (all done) → **B5** (next) → A2. Each
 is its own commit, fully green before the next.

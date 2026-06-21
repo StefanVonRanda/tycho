@@ -156,6 +156,25 @@ for hi in tests/reject/*.hi; do
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
+# Package-level reject tests: tests/reject/pkg/<name>/ is a multi-file package
+# program the compiler must REFUSE (e.g. a cross-package access to a
+# package-private `_name`). Its own directory keeps the entry's package-merge
+# isolated from the single-file rejects above. Both compilers must reject it.
+for d in tests/reject/pkg/*/; do
+    [ -d "$d" ] || continue
+    name="rejectpkg_$(basename "$d")"
+    entry="${d}main.hi"
+    [ -f "$entry" ] || continue
+    if "$HIERC" "$entry" --emit-c -o "$TMP/rjp" >"$TMP/rjp.log" 2>&1; then
+        note "$name" "hierc ACCEPTED an invalid package program"; fail=$((fail + 1)); fails="$fails $name"
+    elif [ ! -s "$TMP/rjp.log" ]; then
+        note "$name" "hierc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+    elif "$TMP/h0" "$entry" --emit-c >/dev/null 2>"$TMP/rjp0.log"; then
+        note "$name" "hierc0 ACCEPTED an invalid package program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
 for hi in tests/abort/*.hi; do
     [ -e "$hi" ] || continue
     name="abort_$(basename "$hi" .hi)"
