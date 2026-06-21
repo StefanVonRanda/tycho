@@ -1043,6 +1043,7 @@ struct Expr {
     Expr   **args; int nargs;   /* E_CALL */
     const char *pkg;   /* E_CALL: prefix of the package this call appears in ("" = main); used to resolve a package-local name */
     const char *qual;  /* E_CALL: explicit qualifier of `pkg.name(...)` (the source ident, e.g. "geom"); NULL if unqualified */
+    Type   *typeargs; int ntypeargs;   /* E_CALL: explicit call-site type args `name$(int, ...)`; 0 = none (inferred) */
 };
 
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
@@ -1089,6 +1090,8 @@ typedef struct {
     char   *con_pred[8];   /* generics: `where` constraint predicate names (numeric/comparable/has_str) */
     Type    con_tp[8];     /* the type parameter each predicate constrains (a T_TYPARAM) */
     int     ncon;
+    Type    typarams[16];  /* generics: the template's $-params in declaration (first-appearance) order */
+    int     ntyparams;     /* for mapping explicit call-site type args `f$(int, ...)` by position */
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -1585,6 +1588,36 @@ static Expr *parse_primary(Parser *ps) {
             Expr *e = new_expr(isok ? E_OK : E_ERR, t->line);
             e->lhs = parse_expr(ps);
             eat(ps, TK_RPAREN, "')'");
+            return e;
+        }
+        if (at(ps, TK_DOLLAR)) {           /* generics: explicit type args -- name$(T1, ...) [ (value args) ] */
+            ps->p++;
+            eat(ps, TK_LPAREN, "'(' after '$' for explicit type arguments");
+            Expr *e = new_expr(E_CALL, t->line);
+            e->sval = t->text;
+            e->pkg  = g_cur_pkg_prefix;
+            Type tas[16]; int nta = 0;
+            if (!at(ps, TK_RPAREN)) {
+                tas[nta++] = parse_type(ps);
+                while (accept(ps, TK_COMMA)) {
+                    if (nta >= 16) die_at(t->line, "at most 16 explicit type arguments");
+                    tas[nta++] = parse_type(ps);
+                }
+            }
+            eat(ps, TK_RPAREN, "')' after explicit type arguments");
+            if (nta == 0) die_at(t->line, "'%s$()' needs at least one explicit type argument", t->text);
+            e->typeargs = (Type *)xmalloc((size_t)nta * sizeof(Type));
+            for (int i = 0; i < nta; i++) e->typeargs[i] = tas[i];
+            e->ntypeargs = nta;
+            if (accept(ps, TK_LPAREN)) {   /* the value-arg list is optional (absent => no value args) */
+                int cap = 0;
+                while (!at(ps, TK_RPAREN)) {
+                    if (e->nargs == cap) { cap = cap ? cap * 2 : 4; e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *)); }
+                    e->args[e->nargs++] = parse_expr(ps);
+                    if (!accept(ps, TK_COMMA)) break;
+                }
+                eat(ps, TK_RPAREN, "')'");
+            }
             return e;
         }
         if (at(ps, TK_LPAREN)) {           /* call */
@@ -2301,6 +2334,8 @@ static Proc *parse_fn(Parser *ps) {
     if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
     else pr->ret = T_VOID;
     pr->generic = (g_ncur_typarams > 0);   /* a `$T` in the signature makes this a template */
+    pr->ntyparams = g_ncur_typarams;       /* record the $-params in order, for explicit call-site type args */
+    for (int i = 0; i < g_ncur_typarams; i++) pr->typarams[i] = typaram_of(g_cur_typarams[i]);
 
     /* generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known
      * predicate set, checked at instantiation against the inferred concrete type. */
@@ -2693,8 +2728,12 @@ static Proc *generic_find(const char *name) {
         if (!strcmp(g_generics[i]->name, name)) return g_generics[i];
     return NULL;
 }
-typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; } GInst;
+typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; } GInst;
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
+/* generics: the active instance's typaram->concrete map while its (SHARED) body
+ * resolves. Lets an explicit `[]T` / `[]K: V` literal in the body substitute its
+ * element type per instance, written into e->type without mutating e->ival. */
+static Type *g_active_binds = NULL;
 static void instantiate_generic(Proc *gt, Expr *e);   /* defined after resolve_expr */
 static char *type_mangle_ident(Type t);               /* C-identifier-safe spelling of a type */
 
@@ -3082,7 +3121,9 @@ static Type resolve_expr(Expr *e) {
             if (e->nargs == 0) {               /* empty literal: type from []T, or from context (bare []) */
                 if ((Type)e->ival == T_VOID)
                     die_at(e->line, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)");
-                return e->type = (Type)e->ival;
+                /* generics: an explicit `[]T` in an instance body substitutes T per instance */
+                return e->type = (g_active_binds && has_typaram((Type)e->ival))
+                                 ? subst_type((Type)e->ival, g_active_binds) : (Type)e->ival;
             }
             Type elem = resolve_expr(e->args[0]);
             if (elem == T_VOID || elem == T_BOOL)
@@ -3605,7 +3646,8 @@ static Type resolve_expr(Expr *e) {
                 return e->type = T_VOID;
             }
             { Proc *gt = generic_find(e->sval);   /* generics: infer type args, intern instance, rewrite e->sval */
-              if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e); }
+              if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e);
+              else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", e->sval); }
             Sig *s = sig_find(e->sval);
             if (!s) {
                 const char *sg = suggest_fn(e->sval);
@@ -4564,6 +4606,18 @@ static char *type_mangle_ident(Type t) {
  * concrete type, mangle a per-instantiation name, register the instance Sig (so
  * this and later calls resolve), record it for codegen, and rewrite e->sval.
  * Idempotent per (template, concrete arg types). */
+/* generics: does type `t` (recursively) mention the specific type parameter `tp`?
+ * A `$T` that no parameter mentions is "return-only" -- its binding must be added
+ * to the instance name so two explicit instantiations don't collide. */
+static int type_mentions_tp(Type t, Type tp) {
+    if (t == tp) return 1;
+    if (is_array(t)) return type_mentions_tp(arr_elem(t), tp);
+    if (IS_OPT(t))  return type_mentions_tp(opt_inner(t), tp);
+    if (IS_RES(t))  return type_mentions_tp(g_restypes[RES_ID(t)].ok, tp) || type_mentions_tp(g_restypes[RES_ID(t)].err, tp);
+    if (is_map(t))  return type_mentions_tp(map_key(t), tp) || type_mentions_tp(map_val(t), tp);
+    return 0;
+}
+
 /* generics: the fixed, compiler-known `where` predicate set. Each is exactly the
  * capability the resolver already enforces (base_of sees through newtypes), so a
  * satisfied constraint guarantees the body's op type-checks for that T. */
@@ -4580,6 +4634,13 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
     Type binds[256];
     for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
+    if (e->ntypeargs > 0) {   /* explicit call-site type args bind the params in declaration order */
+        if (e->ntypeargs != gt->ntyparams)
+            die_at(e->line, "'%s' has %d type parameter(s), but %d explicit type argument(s) were given",
+                   gt->name, gt->ntyparams, e->ntypeargs);
+        for (int i = 0; i < gt->ntyparams; i++)
+            binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] = e->typeargs[i];
+    }
     for (int j = 0; j < gt->nparams; j++) {
         Type at_ = resolve_expr(e->args[j]);          /* the concrete argument type */
         /* structurally match the parameter pattern against the arg, binding each
@@ -4603,9 +4664,19 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         cparams[j] = subst_type(gt->params[j].type, binds);
         nm = sfmt("%s__%s", nm, type_mangle_ident(cparams[j]));
     }
+    /* a return-only `$T` (no parameter mentions it, e.g. `empty() -> [$T]`) is not
+     * captured by the param mangling above; add its binding so `empty$(int)` and
+     * `empty$(string)` become distinct instances. */
+    for (int i = 0; i < gt->ntyparams; i++) {
+        int pinned = 0;
+        for (int j = 0; j < gt->nparams; j++)
+            if (type_mentions_tp(gt->params[j].type, gt->typarams[i])) { pinned = 1; break; }
+        if (!pinned)
+            nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
+    }
     cret = subst_type(gt->ret, binds);
     if (has_typaram(cret))
-        die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument", gt->name);
+        die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)", gt->name, gt->name);
     e->sval = nm;                                     /* rewrite the call to the instance */
     if (sig_find(nm)) return;                         /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
@@ -4614,6 +4685,8 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap); g_sigs[g_nsigs++] = s;
     TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
     GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret;
+    gi.binds = (Type *)xmalloc((size_t)(g_ntyparams > 0 ? g_ntyparams : 1) * sizeof(Type));
+    for (int i = 0; i < g_ntyparams; i++) gi.binds[i] = binds[i];   /* for per-instance body subst (g_active_binds) */
     for (int j = 0; j < gt->nparams; j++) gi.params[j] = cparams[j];
     g_ginsts[g_nginsts++] = gi;
 }
@@ -7850,6 +7923,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * before the next instance re-resolves it with different bindings. */
     for (int i = 0; i < g_nginsts; i++) {
         Proc *p = ginst_to_proc(&g_ginsts[i]);
+        g_active_binds = g_ginsts[i].binds;   /* per-instance subst for an explicit `[]T` in the shared body */
         g_nvars = 0;
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
@@ -7859,6 +7933,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         g_fn_ret = p->ret; g_dup_base = 0;
         resolve_block(p->body, p->nbody, p->ret);
         gen_proc(o, p);
+        g_active_binds = NULL;
     }
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);

@@ -717,6 +717,36 @@ fn parse_atom(toks: [Token], pos: mut int) -> Expr:
                     push(qargs, parse_expr(toks, &pos))
             expect(toks, &pos, TRParen)
             return ECall(qn, qargs, _el)
+        if toks[pos].kind == TDollar:            # generics: explicit type args -- name$(T1, ...) [ (value args) ]
+            pos = pos + 1
+            expect(toks, &pos, TLParen)
+            tas := []string
+            if toks[pos].kind != TRParen:
+                push(tas, parse_type(toks, &pos))
+                for toks[pos].kind == TComma:
+                    pos = pos + 1
+                    push(tas, parse_type(toks, &pos))
+            expect(toks, &pos, TRParen)
+            if len(tas) == 0:
+                die("parse: line " + str(_el) + ": '" + name + "$()' needs at least one explicit type argument")
+            ta := ""
+            ti := 0
+            for ti < len(tas):
+                if ti > 0:
+                    ta = ta + ";"                # ';' never appears in a type string (tuples use ',')
+                ta = ta + tas[ti]
+                ti = ti + 1
+            enc := name + "$<" + ta + ">"
+            eargs := []Expr
+            if toks[pos].kind == TLParen:        # the value-arg list is optional (absent => no value args)
+                pos = pos + 1
+                if toks[pos].kind != TRParen:
+                    push(eargs, parse_expr(toks, &pos))
+                    for toks[pos].kind == TComma:
+                        pos = pos + 1
+                        push(eargs, parse_expr(toks, &pos))
+                expect(toks, &pos, TRParen)
+            return ECall(enc, eargs, _el)
         if toks[pos].kind == TLParen:
             if name == "map_set":          # B5: removed -> reject user calls (the delete desugar builds map_del directly)
                 die("parse: map_set was removed; use m[k] = v")
@@ -2988,6 +3018,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "bool"                     # comparisons / `in` / and / or -> bool
             return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args, _el):
+            tm0 := find(name, "$<")
+            if tm0 >= 0:
+                name = substr(name, 0, tm0)       # generics: strip the explicit-type-arg encoding for the template sig lookup (placeholder type; codegen recomputes)
             di := find(name, ".")
             if di >= 0 and has_str(names, substr(name, 0, di)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
                 return type_of(ECallV(EField(EVar(substr(name, 0, di), _el), substr(name, di + 1, len(name)), _el), args, _el), names, types, dc, ctx)
@@ -8576,6 +8609,131 @@ fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes
         return ok
     return pat == concrete
 
+# generics: substitute every typaram type in an instance body. The instance body
+# is a deep copy (value semantics), so this rewrites only the instance. Only the
+# explicit type carriers (EArrEmpty/EMapEmpty/STypedDecl/ELambda) need it; every
+# other node derives its type from the now-concrete params at codegen. A body type
+# string carries the BARE typaram (`[T]`, not `[$T]` -- the bare->$ rewrite ran only
+# on the signature), so re-apply it before the $-keyed concrete substitution.
+fn subst_body_type(ty: string, bn: [string], bt: [string]) -> string:
+    return subst_field_type(subst_bare_typaram(ty, bn), bn, bt)
+
+fn subst_types_list(ts: [string], bn: [string], bt: [string]) -> [string]:
+    out := []string
+    i := 0
+    for i < len(ts):
+        push(out, subst_body_type(ts[i], bn, bt))
+        i = i + 1
+    return out
+
+fn subst_exprs_t(es: [Expr], bn: [string], bt: [string]) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, subst_expr_t(es[i], bn, bt))
+        i = i + 1
+    return out
+
+fn subst_expr_t(e: Expr, bn: [string], bt: [string]) -> Expr:
+    match e:
+        EInt(s, el):
+            return e
+        EBool(s, el):
+            return e
+        EChar(s, el):
+            return e
+        EFloat(s, el):
+            return e
+        EStr(s, el):
+            return e
+        EVar(s, el):
+            return e
+        EBin(o, l, r, el):
+            return EBin(o, subst_expr_t(l, bn, bt), subst_expr_t(r, bn, bt), el)
+        ECall(nm, a, el):
+            return ECall(nm, subst_exprs_t(a, bn, bt), el)
+        EField(b, f, el):
+            return EField(subst_expr_t(b, bn, bt), f, el)
+        EIndex(b, ix, el):
+            return EIndex(subst_expr_t(b, bn, bt), subst_expr_t(ix, bn, bt), el)
+        EArrLit(es2, el):
+            return EArrLit(subst_exprs_t(es2, bn, bt), el)
+        EArrEmpty(t, el):
+            return EArrEmpty(subst_body_type(t, bn, bt), el)
+        EMapEmpty(k, v, el):
+            return EMapEmpty(subst_body_type(k, bn, bt), subst_body_type(v, bn, bt), el)
+        EMapLit(ks, vs, el):
+            return EMapLit(subst_exprs_t(ks, bn, bt), subst_exprs_t(vs, bn, bt), el)
+        ETuple(es2, el):
+            return ETuple(subst_exprs_t(es2, bn, bt), el)
+        ESlice(b, lo, hi, el):
+            return ESlice(subst_expr_t(b, bn, bt), subst_expr_t(lo, bn, bt), subst_expr_t(hi, bn, bt), el)
+        EAddr(x, el):
+            return EAddr(subst_expr_t(x, bn, bt), el)
+        ELambda(id, ps, pts, ret, body, cn, ct, el):
+            return ELambda(id, ps, subst_types_list(pts, bn, bt), subst_body_type(ret, bn, bt), subst_expr_t(body, bn, bt), cn, ct, el)
+        ECallV(c, a, el):
+            return ECallV(subst_expr_t(c, bn, bt), subst_exprs_t(a, bn, bt), el)
+        ESpawn(id, nm, a, el):
+            return ESpawn(id, nm, subst_exprs_t(a, bn, bt), el)
+
+fn subst_blocks_t(bs: [[Stmt]], bn: [string], bt: [string]) -> [[Stmt]]:
+    out := [][Stmt]
+    i := 0
+    for i < len(bs):
+        push(out, subst_block_t(bs[i], bn, bt))
+        i = i + 1
+    return out
+
+fn subst_block_t(ss: [Stmt], bn: [string], bt: [string]) -> [Stmt]:
+    out := []Stmt
+    i := 0
+    for i < len(ss):
+        push(out, subst_stmt_t(ss[i], bn, bt))
+        i = i + 1
+    return out
+
+fn subst_stmt_t(s: Stmt, bn: [string], bt: [string]) -> Stmt:
+    match s:
+        SDecl(n, e, ln):
+            return SDecl(n, subst_expr_t(e, bn, bt), ln)
+        SAssign(n, e, ln):
+            return SAssign(n, subst_expr_t(e, bn, bt), ln)
+        SFieldAssign(lv, rhs, ln):
+            return SFieldAssign(subst_expr_t(lv, bn, bt), subst_expr_t(rhs, bn, bt), ln)
+        SPrint(e, ln):
+            return SPrint(subst_expr_t(e, bn, bt), ln)
+        SReturn(e, ln):
+            return SReturn(subst_expr_t(e, bn, bt), ln)
+        SReturnVoid:
+            return s
+        SIf(c, th, el, ln):
+            return SIf(subst_expr_t(c, bn, bt), subst_block_t(th, bn, bt), subst_block_t(el, bn, bt), ln)
+        SWhile(c, b, ln):
+            return SWhile(subst_expr_t(c, bn, bt), subst_block_t(b, bn, bt), ln)
+        SForRange(v, a, b, st, body, ln):
+            return SForRange(v, subst_expr_t(a, bn, bt), subst_expr_t(b, bn, bt), subst_expr_t(st, bn, bt), subst_block_t(body, bn, bt), ln)
+        SExpr(e, ln):
+            return SExpr(subst_expr_t(e, bn, bt), ln)
+        STypedDecl(n, ty, e, ln):
+            return STypedDecl(n, subst_body_type(ty, bn, bt), subst_expr_t(e, bn, bt), ln)
+        SOrReturn(n, e, ln):
+            return SOrReturn(n, subst_expr_t(e, bn, bt), ln)
+        SDestructure(ns, e, ln):
+            return SDestructure(ns, subst_expr_t(e, bn, bt), ln)
+        SMultiAssign(ns, e, ln):
+            return SMultiAssign(ns, subst_expr_t(e, bn, bt), ln)
+        SMatch(subj, vars, binds, bodies, ln):
+            return SMatch(subst_expr_t(subj, bn, bt), vars, binds, subst_blocks_t(bodies, bn, bt), ln)
+        SBreak:
+            return s
+        SContinue:
+            return s
+        SSelect(uid, kinds, chans, binds, bodies, ln):
+            return SSelect(uid, kinds, subst_exprs_t(chans, bn, bt), binds, subst_blocks_t(bodies, bn, bt), ln)
+        SParFor(v, a, b, body, pid, fl):
+            return SParFor(v, subst_expr_t(a, bn, bt), subst_expr_t(b, bn, bt), subst_block_t(body, bn, bt), pid, fl)
+
 # generics: resolve a type to its ultimate newtype base (a newtype over int
 # satisfies numeric, matching hierc's base_of + the newtype-arithmetic rule).
 fn nt_base_of(ty: string, dc: Decls) -> string:
@@ -8603,16 +8761,44 @@ fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
         return b == "int" or b == "bool" or b == "float" or b == "str"
     return true
 
-fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls) -> string:
+fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls, explicit: [string]) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
     btypes := []string
     i := 0
-    for i < len(gt.ptypes):                      # infer: structurally match each pattern against the arg type
-        if not match_typaram_str(gt.ptypes[i], argtypes[i], &bnames, &btypes):
-            die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
-        i = i + 1
+    if len(explicit) > 0:                         # explicit call-site type args bind the params in declaration order
+        tps := []string
+        ci0 := 0
+        for ci0 < len(gt.ptypes):
+            collect_dollar_names(gt.ptypes[ci0], &tps)
+            ci0 = ci0 + 1
+        collect_dollar_names(gt.ret, &tps)
+        uniq := []string                          # distinct typaram names, first-appearance order
+        ui := 0
+        for ui < len(tps):
+            seen := false
+            uj := 0
+            for uj < len(uniq):
+                if uniq[uj] == tps[ui]:
+                    seen = true
+                uj = uj + 1
+            if not seen:
+                push(uniq, tps[ui])
+            ui = ui + 1
+        if len(explicit) != len(uniq):
+            die("generics: '" + gt.name + "' has " + str(len(uniq)) + " type parameter(s), but " + str(len(explicit)) + " explicit type argument(s) were given")
+        ei := 0
+        for ei < len(uniq):
+            push(bnames, uniq[ei])
+            push(btypes, explicit[ei])
+            ei = ei + 1
+    else:
+        i = 0
+        for i < len(gt.ptypes):                  # infer: structurally match each pattern against the arg type
+            if not match_typaram_str(gt.ptypes[i], argtypes[i], &bnames, &btypes):
+                die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
+            i = i + 1
     # generics: enforce `where` constraints up front (clear signature error, not a deep body error)
     if gt.constraints != "":
         cons := split(gt.constraints, ",")
@@ -8641,12 +8827,25 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc
     if ty_is_generic(cret):
         die("generics: the return type of '" + gt.name + "' has a type parameter not fixed by any argument")
     nm := inst_name(gt.name, cparams)
+    # generics: a return-only typaram (one no parameter mentions) isn't in cparams;
+    # add its binding so `empty$(int)` and `empty$(string)` are distinct instances.
+    di := 0
+    for di < len(bnames):
+        pinned := false
+        pj := 0
+        for pj < len(gt.ptypes):
+            if find(gt.ptypes[pj], "$" + bnames[di]) >= 0:
+                pinned = true
+            pj = pj + 1
+        if not pinned:
+            nm = nm + "__" + gen_inst_mangle(btypes[di])
+        di = di + 1
     e := 0
     for e < len(insts):
         if insts[e].name == nm:
             return nm                            # already instantiated
         e = e + 1
-    push(insts, Func(nm, gt.params, cparams, cret, gt.body, 0, "", ""))
+    push(insts, Func(nm, gt.params, cparams, cret, subst_block_t(gt.body, bnames, btypes), 0, "", ""))
     return nm
 
 # Generics (structs): a struct with type parameters is a template; each
@@ -8868,15 +9067,23 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
             return EBin(o, mono_expr(l, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(r, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ECall(nm, a, el):
             margs := mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx)
-            gi := find_generic(gens, nm)
+            rn := nm                                  # generics: decode `name$<T;...>` explicit type args
+            explicit := []string
+            mk := find(nm, "$<")
+            if mk >= 0:
+                rn = substr(nm, 0, mk)
+                explicit = split(substr(nm, mk + 2, len(nm) - 1), ";")
+            gi := find_generic(gens, rn)
             if gi >= 0:
                 at := []string
                 k := 0
                 for k < len(margs):
                     push(at, type_of(margs[k], names, types, dc, ctx))
                     k = k + 1
-                newnm := mono_instantiate(gens[gi], at, &insts, el, dc)
+                newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit)
                 return ECall(newnm, margs, el)
+            if mk >= 0:
+                die("generics: explicit type arguments given, but '" + rn + "' is not a generic function")
             gsi := find_generic_struct(dc.structs, nm)   # generic struct construction: infer from field values
             if gsi >= 0 and len(margs) == len(dc.structs[gsi].fields):
                 bnames := []string

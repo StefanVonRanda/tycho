@@ -1,12 +1,12 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: Stages 1, 2a, 2b, and most of Stage 3 shipped** — generic *functions*,
+> **Status: ALL stages shipped (both compilers)** — generic *functions*,
 > generic-struct *construction* and *type-position* annotations, struct
 > *dependency-ordering* (`Box(Point)`), *structured type-param patterns*
 > (`fn first(xs: [$T]) -> Option(T)`), *map patterns*
-> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), and *`where` constraints*
-> (`fn sum(xs: [$T]) -> T where numeric(T)`), both compilers. The remaining
-> Stage 3 (explicit call-site type args) stays design. This is
+> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), *`where` constraints*
+> (`fn sum(xs: [$T]) -> T where numeric(T)`), and *explicit call-site type args*
+> (`empty$(int)` for the non-inferable `empty() -> [$T]`). This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -185,12 +185,14 @@ empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
 1. **Forbid them in Stage 1.** Require every `$`-parameter to appear in some
    argument type. `fn empty()` is rare; users write `xs := []int` or pass a
    witness. This keeps inference purely argument-directed.
-2. **Explicit type arguments (later).** Odin passes an explicit `$T: typeid`;
-   Hier already spells explicit type args for built-in generic *types*
-   (`Option(int)`, and `Pair(int, string)` for generic structs). The same
-   surface can carry an explicit call-site type arg if needed
-   (`empty(int)()` or a turbofish-free `empty$(int)` — syntax TBD in Stage 3).
-   Deferred until a real need appears.
+2. **Explicit type arguments — SHIPPED.** Odin passes an explicit `$T: typeid`;
+   Hier already spelled explicit type args for built-in generic *types*
+   (`Option(int)`, `Pair(int, string)`), and now for function calls:
+   `name$(T1, ...)`, optionally followed by a value-arg list. `empty$(int)` /
+   `empty$(string)` bind the type parameters in declaration order; a return-only
+   `$T` is folded into the instance name so the two stay distinct, and the body's
+   own `[]T` / `[]K: V` literal substitutes per instance. Both compilers;
+   `tests/generic_explicit.hi`, `tests/reject/explicit_*.hi`.
 
 ## 7. The reversal: the registry already exists
 
@@ -313,9 +315,18 @@ commit, fully green before the next — same discipline as every other change.
   and `instantiate_generic` checks them via `constraint_ok`; in hierc0 they ride a
   `"pred:T,…"` string on `Func`, checked in `mono_instantiate` (newtype base via
   `dc.ntnames`). Tests `tests/generic_where.hi` + `tests/reject/where_*.hi`.
-- **Stage 3 — explicit type args (remaining).**
-  An explicit call-site type argument for the non-inferable case
-  ([§6](#6-when-t-cant-be-inferred) option 2), and any nesting Stage 1/2 left out.
+- **Stage 3 (explicit type args) — SHIPPED.**
+  `name$(T1, ...)` supplies the type params when no argument pins them
+  ([§6](#6-when-t-cant-be-inferred) option 2). In hierc the call carries `typeargs`
+  on the `Expr`, seeded into `binds` in `instantiate_generic` (declaration order),
+  with return-only params folded into the instance name and an active-binds context
+  substituting the body's `[]T` per instance. In hierc0 the args ride an encoded
+  `name$<T;...>` call name (avoids touching every `ECall` arm), decoded in
+  `mono_expr`; the body's typaram literals are substituted by a `subst_*_t` walk
+  over the value-semantics-copied instance body (this also fixed a pre-existing gap:
+  hierc0 could not substitute `[]$T` in *any* generic body). Tests
+  `tests/generic_explicit.hi` + `tests/reject/explicit_*.hi`.
+- **Stage 3 — COMPLETE.** Generics (A2) is fully shipped in both compilers.
 
 ## 9. Two-compiler determinism
 

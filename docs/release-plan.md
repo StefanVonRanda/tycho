@@ -352,8 +352,16 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   a `"pred:T,…"` string on `Func` (one inert field — fixpoint stays byte-identical),
   checked in `mono_instantiate` with the newtype base via the threaded `dc`. Tests
   `tests/generic_where.hi` + four `tests/reject/where_*.hi`; all gates green.
-- **Stage 3 (remaining) — TODO:** an explicit call-site type arg for the
-  non-inferable case (`fn empty() -> [$T]`).
+- **Stage 3 (explicit type args) — DONE** (both compilers). `name$(T1, ...)` supplies
+  the type params when no argument pins them (`empty$(int)` for `empty() -> [$T]`),
+  optional value-arg list, declaration-order binding, return-only `$T` folded into
+  the instance name. hierc: `typeargs` on the `Expr`, seeded in `instantiate_generic`,
+  with an active-binds context substituting the body's `[]T` per instance. hierc0:
+  args encoded in the call name (`name$<T;...>`), decoded in `mono_expr`; a `subst_*_t`
+  walk substitutes the body's typaram literals — which also fixed a pre-existing gap
+  (hierc0 couldn't substitute `[]$T` in any generic body). Tests
+  `tests/generic_explicit.hi` + three `tests/reject/explicit_*.hi`; all gates green.
+- **Generics (A2) — COMPLETE.** All Stage 1/2/3 items shipped in both compilers.
 
 The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
 README) have been rewritten and the design doc flipped from *design* to
@@ -365,5 +373,7 @@ Per the chosen order: A1 → A3 → B6 → B4 → B3 → B5 → **A2** — all d
 its design (`docs/generics.md`), then staged implementation through generic
 functions, generic structs (construction + type-position), struct
 dependency-ordering, structured patterns, and `[$K: $V]` map patterns; the only
-A2 tail left is explicit call-site type args.
+A2 is complete: functions, structs (construction + type-position), dependency
+ordering, structured patterns, map patterns, `where` constraints, and explicit
+call-site type args — all shipped in both compilers.
 Each item was its own commit, fully green before the next.
