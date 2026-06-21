@@ -310,8 +310,15 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   rewrite calls → drop templates), with the instance mangle matching hierc
   byte-for-byte. Test `tests/generics.hi`; all gates green (test 173/0, fixpoint
   B==C + differential, fuzz, corelib, tools-check, conc, ffi).
-- **Stage 2 — generic structs — TODO:** `struct Box($T)` / `Pair($A, $B)`, explicit
-  type args at the use site.
+- **Stage 2a — generic structs (construction) — DONE** (both compilers).
+  `struct Box($T)` / `Pair($A, $B)`; construction *infers* the type args from the
+  field values (`Box(5)`→`Box__int`) and monomorphizes one concrete `StructDef`
+  with substituted field types, reusing all downstream struct machinery. hierc
+  keeps the template out of codegen; hierc0 interns it in `monomorphize_program`.
+  Test `tests/generic_structs.hi`; gates green (test 174/0, fixpoint, etc.).
+- **Stage 2b — generic structs (type-position) — TODO:** `Box(int)` as an
+  explicit-type-args annotation in param/return/field/var positions. Rejected in
+  both compilers until it lands together.
 - **Stage 3** — multiple/nested params, `where` constraints (a fixed
   compiler-known predicate set), and an explicit call-site type arg for the
   non-inferable case.

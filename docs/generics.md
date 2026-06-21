@@ -1,7 +1,8 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: Stage 1 shipped** (generic *functions*, both compilers); Stages 2–3
-> (generic structs, `where`/explicit type args) remain design. This document is
+> **Status: Stage 1 + Stage 2a shipped** (generic *functions* and generic-struct
+> *construction*, both compilers). Stage 2b (type-position annotations like
+> `Box(int)`) and Stage 3 (`where` / explicit type args) remain design. This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
 > [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
@@ -31,14 +32,14 @@ fn main():
 ```
 
 ```
-# A generic struct: type parameters are explicit at the use site, exactly like
-# the built-in Option(int) / Result(int, string).
+# A generic struct: construction infers the type arguments from the field values
+# (like a generic function call), monomorphizing one concrete struct per tuple.
 struct Pair($A, $B):
     first: A
     second: B
 
 fn main():
-    p := Pair(int, string)(7, "hi")             # instantiates Pair(int, string)
+    p := Pair(7, "hi")                          # infers Pair($A=int, $B=string)
     print(str(p.first) + " " + p.second + "\n")
 ```
 
@@ -237,10 +238,24 @@ commit, fully green before the next — same discipline as every other change.
   name matches hierc byte-for-byte. Known edge (Stage 1c): a generic call nested
   inside a *declaration's* initializer in hierc0 isn't instantiation-typed — the
   test uses the direct forms; fails closed (a compile error, never a miscompile).
-- **Stage 2 — generic structs.** `struct Box($T)` / `struct Pair($A, $B)`,
-  instantiated with explicit type args (`Box(int)`) — the same surface as the
-  built-in `Option(int)` / `Result(int, string)`. Generic functions may then
-  return and take user generic structs.
+- **Stage 2a — generic structs (construction) — SHIPPED** (both compilers).
+  `struct Box($T)` / `struct Pair($A, $B)` are templates; each construction
+  *infers* the type arguments from the field values (`Box(5)` → `Box__int`,
+  `Pair(7, "x")` → `Pair__int__string`) and monomorphizes one concrete struct
+  with substituted field types. Field access and inferred locals work on the
+  instance. Test: `tests/generic_structs.hi`. In hierc, a generic template is a
+  `StructDef` with type-param fields, kept out of codegen; construction interns a
+  substituted `StructDef` and reuses all downstream machinery (construction, field
+  access, copy/eq, codegen) unchanged. In hierc0, the `monomorphize_program` pass
+  interns the concrete `StructDef` (field types string-substituted) and rewrites
+  the construction call; the instance name matches hierc. Generic functions
+  compose with generic structs (a `$T` binds to `Box__int`).
+- **Stage 2b — generic structs (type-position) — TODO.** `Box(int)` as an
+  explicit-type-args annotation in a parameter/return/field/var position — the
+  same surface as the built-in `Option(int)` / `Result(int, string)`. Rejected in
+  both compilers until it lands together. (Construction needs no annotation, so
+  2a is independently useful; a generic struct crosses a *non-generic* function
+  boundary only once 2b lands.)
 - **Stage 3 — multiple/nested parameters, constraints, explicit type args.**
   `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
   explicit call-site type argument for the non-inferable case

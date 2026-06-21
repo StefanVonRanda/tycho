@@ -469,6 +469,7 @@ struct Field:
 struct StructDef:
     name: string
     fields: [Field]
+    typeparams: [string]      # generics: `struct Box($T)` -> ["T"]; empty for a normal struct
 
 struct Variant:
     name: string
@@ -1553,6 +1554,19 @@ fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
         die("parse: line " + str(toks[pos].line) + ": expected a struct name")
     name := toks[pos].text
     pos = pos + 1
+    typeparams := []string                       # generics: `struct Box($T, $U)` type parameters
+    if toks[pos].kind == TLParen:
+        pos = pos + 1
+        for toks[pos].kind != TRParen:
+            tp := parse_type(toks, &pos)
+            if not ty_is_generic(tp):
+                die("parse: line " + str(toks[pos].line) + ": a struct type parameter must be written `$Name`")
+            push(typeparams, substr(tp, 1, len(tp)))
+            if toks[pos].kind == TComma:
+                pos = pos + 1
+            else:
+                break
+        expect(toks, &pos, TRParen)
     expect(toks, &pos, TColon)
     open_block(toks, &pos)
     fields := []Field
@@ -1570,7 +1584,12 @@ fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
             if toks[pos].kind == TNewline:
                 pos = pos + 1
     pos = pos + 1                                # consume TDedent
-    return StructDef(name, fields)
+    if len(typeparams) > 0:                       # generics: rewrite a bare `T` field type to "$T"
+        j := 0
+        for j < len(fields):
+            fields[j] = Field(fields[j].name, subst_bare_typaram(fields[j].ty, typeparams))
+            j = j + 1
+    return StructDef(name, fields, typeparams)
 
 fn parse_match(toks: [Token], pos: mut int) -> Stmt:
     _sl := tloc(toks[pos])
@@ -2019,7 +2038,7 @@ fn mangle_struct(m: Mctx, sd: StructDef) -> StructDef:
     for i < len(sd.fields):
         push(fs, Field(sd.fields[i].name, mangle_type(m, sd.fields[i].ty)))
         i = i + 1
-    return StructDef(m.prefix + sd.name, fs)
+    return StructDef(m.prefix + sd.name, fs, sd.typeparams)
 
 fn mangle_enum(m: Mctx, ed: EnumDef) -> EnumDef:
     vs := []Variant
@@ -8442,15 +8461,77 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) ->
     push(insts, Func(nm, gt.params, cparams, cret, gt.body, 0, ""))
     return nm
 
-fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> [Expr]:
+# Generics (structs): a struct with type parameters is a template; each
+# construction infers the type arguments from the field values and interns one
+# concrete StructDef (Box($T) + Box(5) -> struct Box__int with $T->int).
+fn find_generic_struct(structs: [StructDef], name: string) -> int:
+    i := 0
+    for i < len(structs):
+        if structs[i].name == name and len(structs[i].typeparams) > 0:
+            return i
+        i = i + 1
+    return -1
+
+# Replace each "$X" in a field-type string with its bound concrete type.
+fn subst_field_type(ty: string, bnames: [string], btypes: [string]) -> string:
+    out := ""
+    i := 0
+    for i < len(ty):
+        if ty[i] == 36:                          # '$'
+            j := i + 1
+            for j < len(ty) and is_alnum(ty[j]):
+                j = j + 1
+            nm := substr(ty, i + 1, j)
+            rep := "$" + nm
+            k := 0
+            for k < len(bnames):
+                if bnames[k] == nm:
+                    rep = btypes[k]
+                k = k + 1
+            out = out + rep
+            i = j
+        else:
+            out = out + substr(ty, i, i + 1)
+            i = i + 1
+    return out
+
+# Intern the concrete instance of generic struct `t` for the bindings
+# (typeparam name -> concrete type); append the new StructDef to `sinsts`,
+# return its mangled name. Mangle matches hierc (header typeparam order).
+fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: mut [StructDef]) -> string:
+    nm := t.name
+    i := 0
+    for i < len(t.typeparams):
+        ct := ""
+        k := 0
+        for k < len(bnames):
+            if bnames[k] == t.typeparams[i]:
+                ct = btypes[k]
+            k = k + 1
+        nm = nm + "__" + gen_inst_mangle(ct)
+        i = i + 1
+    e := 0
+    for e < len(sinsts):
+        if sinsts[e].name == nm:
+            return nm                            # already instantiated
+        e = e + 1
+    fs := []Field
+    i = 0
+    for i < len(t.fields):
+        push(fs, Field(t.fields[i].name, subst_field_type(t.fields[i].ty, bnames, btypes)))
+        i = i + 1
+    push(sinsts, StructDef(nm, fs, []string))
+    return nm
+
+fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
-        push(out, mono_expr(es[i], names, types, gens, &insts, dc, ctx))
+        push(out, mono_expr(es[i], names, types, gens, &insts, &sinsts, dc, ctx))
         i = i + 1
     return out
 
-fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> Expr:
+fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> Expr:
     match e:
         EInt(s, el):
             return e
@@ -8469,9 +8550,9 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
         EMapEmpty(k, v, el):
             return e
         EBin(o, l, r, el):
-            return EBin(o, mono_expr(l, names, types, gens, &insts, dc, ctx), mono_expr(r, names, types, gens, &insts, dc, ctx), el)
+            return EBin(o, mono_expr(l, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(r, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ECall(nm, a, el):
-            margs := mono_exprs(a, names, types, gens, &insts, dc, ctx)
+            margs := mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx)
             gi := find_generic(gens, nm)
             if gi >= 0:
                 at := []string
@@ -8481,32 +8562,45 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                     k = k + 1
                 newnm := mono_instantiate(gens[gi], at, &insts, el)
                 return ECall(newnm, margs, el)
+            gsi := find_generic_struct(dc.structs, nm)   # generic struct construction: infer from field values
+            if gsi >= 0 and len(margs) == len(dc.structs[gsi].fields):
+                bnames := []string
+                btypes := []string
+                k := 0
+                for k < len(margs):
+                    ft := dc.structs[gsi].fields[k].ty
+                    if len(ft) > 0 and ft[0] == 36:
+                        push(bnames, substr(ft, 1, len(ft)))
+                        push(btypes, type_of(margs[k], names, types, dc, ctx))
+                    k = k + 1
+                newnm := instantiate_struct(dc.structs[gsi], bnames, btypes, &sinsts)
+                return ECall(newnm, margs, el)
             return ECall(nm, margs, el)
         EField(b, f, el):
-            return EField(mono_expr(b, names, types, gens, &insts, dc, ctx), f, el)
+            return EField(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), f, el)
         EIndex(b, ix, el):
-            return EIndex(mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(ix, names, types, gens, &insts, dc, ctx), el)
+            return EIndex(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(ix, names, types, gens, &insts, &sinsts, dc, ctx), el)
         EArrLit(es, el):
-            return EArrLit(mono_exprs(es, names, types, gens, &insts, dc, ctx), el)
+            return EArrLit(mono_exprs(es, names, types, gens, &insts, &sinsts, dc, ctx), el)
         EMapLit(ks, vs, el):
-            return EMapLit(mono_exprs(ks, names, types, gens, &insts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, dc, ctx), el)
+            return EMapLit(mono_exprs(ks, names, types, gens, &insts, &sinsts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ETuple(es, el):
-            return ETuple(mono_exprs(es, names, types, gens, &insts, dc, ctx), el)
+            return ETuple(mono_exprs(es, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ESlice(b, lo, hi, el):
-            return ESlice(mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(lo, names, types, gens, &insts, dc, ctx), mono_expr(hi, names, types, gens, &insts, dc, ctx), el)
+            return ESlice(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(lo, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(hi, names, types, gens, &insts, &sinsts, dc, ctx), el)
         EAddr(x, el):
-            return EAddr(mono_expr(x, names, types, gens, &insts, dc, ctx), el)
+            return EAddr(mono_expr(x, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ELambda(id, ps, pts, r, bx, cn, ct, el):
             return e                              # lambda bodies with generic calls are 1c
         ECallV(c, a, el):
-            return ECallV(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_exprs(a, names, types, gens, &insts, dc, ctx), el)
+            return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ESpawn(id, nm, a, el):
-            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, dc, ctx), el)
+            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
 
-fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> Stmt:
+fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> Stmt:
     match s:
         SDecl(nm, rhs, ln):
-            mr := mono_expr(rhs, names, types, gens, &insts, dc, ctx)
+            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx)
             # type the ORIGINAL rhs: its generic calls resolve via the template
             # sigs (still in dc) to "$T" — a harmless env placeholder. The rewritten
             # `mr` names instances not yet in dc; the final codegen recomputes the
@@ -8516,48 +8610,48 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             push(types, ty)
             return SDecl(nm, mr, ln)
         STypedDecl(nm, ty, rhs, ln):
-            mr := mono_expr(rhs, names, types, gens, &insts, dc, ctx)
+            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx)
             push(names, nm)
             push(types, ty)
             return STypedDecl(nm, ty, mr, ln)
         SAssign(nm, rhs, ln):
-            return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, dc, ctx), ln)
+            return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SFieldAssign(lv, rhs, ln):
-            return SFieldAssign(mono_expr(lv, names, types, gens, &insts, dc, ctx), mono_expr(rhs, names, types, gens, &insts, dc, ctx), ln)
+            return SFieldAssign(mono_expr(lv, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SPrint(e, ln):
-            return SPrint(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+            return SPrint(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SReturn(e, ln):
-            return SReturn(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+            return SReturn(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SReturnVoid:
             return s
         SIf(c, th, el, ln):
-            return SIf(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_block(th, names, types, gens, &insts, dc, ctx), mono_block(el, names, types, gens, &insts, dc, ctx), ln)
+            return SIf(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(th, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(el, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SWhile(c, body, ln):
-            return SWhile(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_block(body, names, types, gens, &insts, dc, ctx), ln)
+            return SWhile(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SForRange(v, a, b, st, body, ln):
             nn := names
             tt := types
             push(nn, v)
             push(tt, "int")
-            return SForRange(v, mono_expr(a, names, types, gens, &insts, dc, ctx), mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(st, names, types, gens, &insts, dc, ctx), mono_block(body, nn, tt, gens, &insts, dc, ctx), ln)
+            return SForRange(v, mono_expr(a, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(st, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, dc, ctx), ln)
         SExpr(e, ln):
-            return SExpr(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+            return SExpr(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SOrReturn(nm, e, ln):
-            mr := mono_expr(e, names, types, gens, &insts, dc, ctx)
+            mr := mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx)
             push(names, nm)
             push(types, "int")                    # precise unwrap type is 1c; unused by 1a
             return SOrReturn(nm, mr, ln)
         SDestructure(nms, e, ln):
-            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SMultiAssign(nms, e, ln):
-            return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+            return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
         SMatch(subj, vars, binds, bodies, ln):
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, dc, ctx))
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, dc, ctx))
                 i = i + 1
-            return SMatch(mono_expr(subj, names, types, gens, &insts, dc, ctx), vars, binds, nb, ln)
+            return SMatch(mono_expr(subj, names, types, gens, &insts, &sinsts, dc, ctx), vars, binds, nb, ln)
         SBreak:
             return s
         SContinue:
@@ -8566,23 +8660,23 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, dc, ctx))
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, dc, ctx))
                 i = i + 1
-            return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, dc, ctx), bnds, nb, ln)
+            return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, &sinsts, dc, ctx), bnds, nb, ln)
         SParFor(v, a, b, body, pid, fl):
             nn := names
             tt := types
             push(nn, v)
             push(tt, "int")
-            return SParFor(v, mono_expr(a, names, types, gens, &insts, dc, ctx), mono_expr(b, names, types, gens, &insts, dc, ctx), mono_block(body, nn, tt, gens, &insts, dc, ctx), pid, fl)
+            return SParFor(v, mono_expr(a, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, dc, ctx), pid, fl)
 
-fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> [Stmt]:
+fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Stmt]:
     nm := names                                   # by-value copy -> a block's decls don't leak to the caller (scope)
     ty := types
     out := []Stmt
     i := 0
     for i < len(stmts):
-        push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, dc, ctx))
+        push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, &sinsts, dc, ctx))
         i = i + 1
     return out
 
@@ -8596,9 +8690,16 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         else:
             push(concrete, prog.funcs[i])
         i = i + 1
-    if len(gens) == 0:
+    has_gstruct := false
+    gs := 0
+    for gs < len(prog.structs):
+        if len(prog.structs[gs].typeparams) > 0:
+            has_gstruct = true
+        gs = gs + 1
+    if len(gens) == 0 and not has_gstruct:
         return prog                               # no templates: program unchanged (byte-identical)
     insts := []Func
+    sinsts := []StructDef
     out := []Func
     i = 0
     for i < len(concrete):
@@ -8606,14 +8707,24 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         names := []string
         types := []string
         seed_env(f, &names, &types)
-        nbody := mono_block(f.body, names, types, gens, &insts, dc, ctx)
+        nbody := mono_block(f.body, names, types, gens, &insts, &sinsts, dc, ctx)
         push(out, Func(f.name, f.params, f.ptypes, f.ret, nbody, f.is_extern, f.lib))
         i = i + 1
     i = 0
     for i < len(insts):                           # instances last, in first-encounter order (matches hierc)
         push(out, insts[i])
         i = i + 1
-    return Program(prog.structs, prog.enums, out, prog.ntnames, prog.ntunder)
+    newstructs := []StructDef                     # drop generic templates; keep concrete structs + add instances
+    i = 0
+    for i < len(prog.structs):
+        if len(prog.structs[i].typeparams) == 0:
+            push(newstructs, prog.structs[i])
+        i = i + 1
+    i = 0
+    for i < len(sinsts):
+        push(newstructs, sinsts[i])
+        i = i + 1
+    return Program(newstructs, prog.enums, out, prog.ntnames, prog.ntunder)
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)

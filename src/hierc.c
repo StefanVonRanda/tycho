@@ -447,7 +447,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 } while (0)
 
 typedef struct { char *name; Type type; } Field;
-typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line; } StructDef;
+typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line;
+                 int generic; Type typarams[8]; int ntyparams; } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted */
 static StructDef *g_structs;
 static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
@@ -1126,6 +1127,58 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
 static void check_pkg_private(const char *qualifier, const char *name, int line);   /* B3: reject cross-package access to a leading-underscore name */
 
+static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 generics helpers */
+
+/* Generics (structs): substitute type parameters in a type — stamps out a struct
+ * instance's concrete field types. binds is indexed by typaram id; T_VOID = unbound. */
+static Type subst_type(Type t, Type *binds) {
+    if (IS_TYPARAM(t)) { Type b = binds[(int)(t - T_TYPARAM_BASE)]; return b == T_VOID ? t : b; }
+    if (IS_ARRC(t)) return arrc_of(subst_type(g_arrtypes[ARRC_ID(t)].elem, binds));
+    if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
+    if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
+    return t;
+}
+
+/* Match a (possibly type-parameterized) field type against a concrete argument
+ * type, binding type parameters; 0 on a conflict/mismatch. */
+static int match_type(Type pat, Type concrete, Type *binds) {
+    if (IS_TYPARAM(pat)) {
+        int id = (int)(pat - T_TYPARAM_BASE);
+        if (binds[id] != T_VOID && binds[id] != concrete) return 0;
+        binds[id] = concrete; return 1;
+    }
+    if (IS_ARRC(pat) && IS_ARRC(concrete)) return match_type(g_arrtypes[ARRC_ID(pat)].elem, g_arrtypes[ARRC_ID(concrete)].elem, binds);
+    if (IS_OPT(pat) && IS_OPT(concrete))   return match_type(opt_inner(pat), opt_inner(concrete), binds);
+    if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
+                                               && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
+    return pat == concrete;
+}
+
+/* Find or stamp out the concrete struct instance of a generic template for the
+ * given bindings: Box($T) + {T:int} -> a real `struct Box__int` with substituted
+ * field types. The instance is an ordinary (non-generic) struct from here on. */
+static int struct_instantiate(int tmpl, Type *binds) {
+    char *nm = g_structs[tmpl].name;
+    for (int i = 0; i < g_structs[tmpl].ntyparams; i++)
+        nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]));
+    int ex = struct_find(nm);
+    if (ex >= 0) return ex;
+    if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(g_structs[tmpl].line, "too many structs");
+    TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
+    int id = g_nstructs++;
+    StructDef *s = &g_structs[id];
+    StructDef *t = &g_structs[tmpl];   /* re-fetch: the realloc above may have moved g_structs */
+    memset(s, 0, sizeof *s);
+    s->name = nm; s->line = t->line;
+    for (int f = 0; f < t->nfields; f++) {
+        TBL_ENSURE(s->fields, s->nfields, s->fields_cap);
+        s->fields[s->nfields].name = t->fields[f].name;
+        s->fields[s->nfields].type = subst_type(t->fields[f].type, binds);
+        s->nfields++;
+    }
+    return id;
+}
+
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_DOLLAR) {          /* generics: `$T` introduces a type parameter into scope */
@@ -1236,7 +1289,7 @@ static Type parse_type(Parser *ps) {
             nm = pkg_mangle(t->text);    /* package-local: try the current package's prefixed name */
         }
         int sid = struct_find(nm);
-        if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }
+        if (sid >= 0) { ps->p++; return STRUCT_TYPE(sid); }   /* generic structs: `Box(int)` type-position is Stage 2b (both compilers) */
         int eid = enum_find(nm);
         if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
         int nid = newtype_find(nm);
@@ -2280,6 +2333,18 @@ static Proc *parse_extern_fn(Parser *ps) {
 static void parse_struct(Parser *ps) {
     eat(ps, TK_STRUCT, "'struct'");
     Tok *nameT = eat(ps, TK_IDENT, "a struct name");
+    g_ncur_typarams = 0;                         /* generics: fresh `$T` scope for this struct */
+    Type _tp[8]; int _ntp = 0;                   /* `struct Box($T, $U)` type parameters */
+    if (accept(ps, TK_LPAREN)) {
+        while (!at(ps, TK_RPAREN)) {
+            Type tp = parse_type(ps);            /* `$T` registers the name + returns its typaram type; a bare field `T` then refers to it */
+            if (!IS_TYPARAM(tp)) die_at(nameT->line, "a struct type parameter must be written `$Name`");
+            if (_ntp >= 8) die_at(nameT->line, "too many struct type parameters (max 8)");
+            _tp[_ntp++] = tp;
+            if (!accept(ps, TK_COMMA)) break;
+        }
+        eat(ps, TK_RPAREN, "')' after the struct type parameters");
+    }
     /* check the MANGLED name (like the enum site): a cross-package collision
      * ("a__b" + "c" vs "a" + "b__c") otherwise slips through to a duplicate C
      * typedef and fails at cc with no hier-level diagnostic. */
@@ -2295,6 +2360,8 @@ static void parse_struct(Parser *ps) {
     sd->name = pkg_mangle(nameT->text);
     sd->fields = NULL; sd->nfields = 0; sd->fields_cap = 0;
     sd->line = nameT->line;
+    sd->generic = (_ntp > 0); sd->ntyparams = _ntp;   /* generics: a template; instances substitute $T */
+    for (int i = 0; i < _ntp; i++) sd->typarams[i] = _tp[i];
     g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
                      * may reference this struct — e.g. a recursive `[Node]`
                      * child list. (Parsing is single-pass and sequential, so a
@@ -2315,6 +2382,7 @@ static void parse_struct(Parser *ps) {
     }
     eat(ps, TK_DEDENT, "dedent");
     if (sd->nfields == 0) die_at(nameT->line, "a struct needs at least one field");
+    g_ncur_typarams = 0;                         /* generics: leave the struct's `$T` scope */
 }
 
 static void parse_enum(Parser *ps) {
@@ -3198,6 +3266,24 @@ static Type resolve_expr(Expr *e) {
             }
             /* a call whose name is a struct is positional construction */
             int sid = struct_find(e->sval);
+            if (sid >= 0 && g_structs[sid].generic) {   /* generic struct: infer the type args from the field values */
+                StructDef *t = &g_structs[sid];
+                if (e->nargs != t->nfields)
+                    die_at(e->line, "%s takes %d field value(s), got %d", t->name, t->nfields, e->nargs);
+                Type binds[256];
+                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                for (int i = 0; i < e->nargs; i++) {
+                    Type at_ = resolve_expr(e->args[i]);
+                    if (!match_type(t->fields[i].type, at_, binds))
+                        die_at(e->line, "field '%s' of %s does not fit a %s argument",
+                               t->fields[i].name, t->name, type_name(at_));
+                }
+                for (int i = 0; i < t->ntyparams; i++)
+                    if (binds[(int)(t->typarams[i] - T_TYPARAM_BASE)] == T_VOID)
+                        die_at(e->line, "type parameter $%s of %s is not fixed by any field value",
+                               typaram_name(t->typarams[i]), t->name);
+                sid = struct_instantiate(sid, binds);
+            }
             if (sid >= 0) {
                 StructDef *sd = &g_structs[sid];
                 if (e->nargs != sd->nfields)
@@ -6944,6 +7030,7 @@ static int g_emit_line;
 static void emit_aggregate(FILE *o, Type t) {
     if (IS_STRUCT(t)) {
         int id = STRUCT_ID(t);
+        if (g_structs[id].generic) return;   /* generics: a `$T` template emits no C; its instances do */
         if (g_struct_color[id] == 2) return;
         if (g_struct_color[id] == 1)
             die_at(g_emit_line, "infinite type: %s contains itself by value — "
@@ -7178,6 +7265,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     fputs("\n", o);
     /* (3d) function-value typedefs were emitted early (2a') so containers can embed them. */
     for (int i = 0; i < g_nstructs; i++) {          /* (4) copy/eq prototypes */
+        if (g_structs[i].generic) continue;   /* generics: no helpers for a template */
         const char *nm = g_structs[i].name;
         if (type_is_heap(STRUCT_TYPE(i)))
             fprintf(o, "static S_%s hier_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
@@ -7221,6 +7309,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (5) deep-copy body per heap-bearing struct: re-home every heap field into
      * arena `a`. Non-heap fields are copied by the initial `r = v`. */
     for (int i = 0; i < g_nstructs; i++) {
+        if (g_structs[i].generic) continue;   /* generics: a template has no concrete fields to copy */
         StructDef *sd = &g_structs[i];
         if (!type_is_heap(STRUCT_TYPE(i))) continue;
         fprintf(o, "static S_%s hier_copy_S_%s(Arena *a, S_%s v) {\n", sd->name, sd->name, sd->name);
@@ -7235,6 +7324,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     }
     /* (6) structural-equality body per struct, field-wise. */
     for (int i = 0; i < g_nstructs; i++) {
+        if (g_structs[i].generic) continue;   /* generics: a template has no concrete fields to compare */
         StructDef *sd = &g_structs[i];
         fprintf(o, "static int hier_eq_S_%s(S_%s a, S_%s b) {\n", sd->name, sd->name, sd->name);
         fprintf(o, "    return ");

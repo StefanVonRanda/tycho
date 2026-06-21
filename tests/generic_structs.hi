@@ -1,0 +1,19 @@
+# Generic structs (Stage 2): `struct Box($T)` is a template; each construction
+# infers the type arguments from the field values and monomorphizes one concrete
+# struct (Box(5) -> Box__int). Field access and nesting work on the instance.
+
+struct Box($T):
+    v: T
+
+struct Pair($A, $B):
+    fst: A
+    snd: B
+
+fn main():
+    b := Box(5)
+    print(str(b.v) + "\n")                # 5
+    print(Box("hi").v + "\n")             # string instance -> hi
+    p := Pair(7, "x")
+    print(str(p.fst) + p.snd + "\n")      # two type params -> 7x
+    q := Pair(true, 9)
+    print(str(q.snd) + "\n")              # 9
