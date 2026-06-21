@@ -5,19 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Learn Hier — Interactive Guide</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Rethink+Sans:ital,wght@0,400..800;1,400..800&display=swap');
 /* ── Reset & Base ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* Theme — prismml.com: deep warm near-black, cream text, dusty-rose accent, Rethink Sans + DM Mono */
 :root{
-  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;
-  --text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
-  --accent:#58a6ff;--accent2:#388bfd;--green:#3fb950;--green-bg:rgba(63,185,80,.1);
-  --red:#f85149;--red-bg:rgba(248,81,73,.1);--orange:#d29922;--orange-bg:rgba(210,153,34,.1);
-  --purple:#bc8cff;--purple-bg:rgba(188,140,255,.1);
-  --code-bg:#0d1117;--code-border:#252b33;
+  --bg:#12151a;--surface:#1b1f26;--surface2:#262c35;--border:#323a45;
+  --text:#e8e4df;--text2:#bdb6ae;--text3:#82807a;
+  --accent:#d1a3a3;--accent2:#b98686;--green:#8fb39a;--green-bg:rgba(143,179,154,.12);
+  --red:#d68a7c;--red-bg:rgba(214,138,124,.1);--orange:#cba56c;--orange-bg:rgba(203,165,108,.1);
+  --purple:#b89ad3;--purple-bg:rgba(184,154,211,.1);
+  --code-bg:#0f1217;--code-border:#262c35;
   --sidebar-w:280px;--topbar-h:0px;
-  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
-  --font-mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
-  --radius:6px;
+  --font-ui:'Rethink Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'DM Mono','SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --radius:8px;
 }
 html{font-size:16px;scroll-behavior:smooth}
 body{font-family:var(--font-ui);background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
@@ -44,7 +46,7 @@ a:hover{text-decoration:underline}
 .nav-section{padding:4px 16px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:8px}
 .nav-item{display:flex;align-items:center;gap:8px;padding:6px 16px 6px 24px;font-size:.85rem;color:var(--text2);cursor:pointer;border-left:3px solid transparent;transition:all .15s ease}
 .nav-item:hover{color:var(--text);background:var(--surface2)}
-.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.06)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(209,163,163,.06)}
 .nav-item .check{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;transition:all .15s ease}
 .nav-item.done .check{border-color:var(--green);background:var(--green);color:#fff}
 .nav-item.quiz-pending .check{border-color:var(--orange);background:var(--orange);color:#fff}
@@ -76,7 +78,7 @@ a:hover{text-decoration:underline}
 .section p{margin:12px 0;color:var(--text)}
 .section ul,.section ol{margin:12px 0 12px 24px}
 .section li{margin:4px 0}
-.section strong{color:#fff;font-weight:600}
+.section strong{color:#f4f1ec;font-weight:600}
 .section code:not(.code-block code){background:var(--surface2);padding:2px 6px;border-radius:3px;font-family:var(--font-mono);font-size:.88em;color:var(--accent)}
 
 /* ── Code Blocks ── */
@@ -99,13 +101,13 @@ a:hover{text-decoration:underline}
 .code-block code{font-family:var(--font-mono);color:var(--text)}
 
 /* Syntax highlighting */
-.kw{color:#ff7b72}  /* keywords: fn, return, if, for, struct, enum, match... */
-.ty{color:#79c0ff}  /* types: int, string, bool, float */
-.str{color:#a5d6ff}  /* strings */
-.num{color:#79c0ff}  /* numbers */
-.cm{color:#6e7681;font-style:italic}  /* comments */
-.fn{color:#d2a8ff}  /* function names */
-.op{color:#ff7b72}  /* operators */
+.kw{color:#cf8e8e}  /* keywords: fn, return, if, for, struct, enum, match... */
+.ty{color:#c9a9c9}  /* types: int, string, bool, float */
+.str{color:#a3b58a}  /* strings */
+.num{color:#cbb07e}  /* numbers */
+.cm{color:#6e6a64;font-style:italic}  /* comments */
+.fn{color:#d8cdbd}  /* function names */
+.op{color:#cf8e8e}  /* operators */
 .bi{color:#ffa657}  /* builtins */
 .pp{color:#ffa657}  /* preprocessor / special */
 
@@ -119,13 +121,13 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 /* ── Callouts ── */
 .callout{padding:14px 16px;border-radius:var(--radius);margin:16px 0;display:flex;gap:12px;font-size:.9rem;line-height:1.55}
 .callout-icon{font-size:1.1rem;flex-shrink:0;line-height:1.5}
-.callout.tip{background:var(--green-bg);border:1px solid rgba(63,185,80,.25)}
+.callout.tip{background:var(--green-bg);border:1px solid rgba(143,179,154,.25)}
 .callout.tip .callout-icon{color:var(--green)}
-.callout.warn{background:var(--orange-bg);border:1px solid rgba(210,153,34,.25)}
+.callout.warn{background:var(--orange-bg);border:1px solid rgba(203,165,108,.25)}
 .callout.warn .callout-icon{color:var(--orange)}
-.callout.info{background:var(--purple-bg);border:1px solid rgba(188,140,255,.25)}
+.callout.info{background:var(--purple-bg);border:1px solid rgba(184,154,211,.25)}
 .callout.info .callout-icon{color:var(--purple)}
-.callout.danger{background:var(--red-bg);border:1px solid rgba(248,81,73,.25)}
+.callout.danger{background:var(--red-bg);border:1px solid rgba(214,138,124,.25)}
 .callout.danger .callout-icon{color:var(--red)}
 .callout-title{font-weight:700;margin-bottom:2px}
 
@@ -141,8 +143,8 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
   border:1px solid var(--border);cursor:pointer;transition:all .15s ease;
   font-size:.9rem;
 }
-.quiz-option:hover{border-color:var(--accent);background:rgba(88,166,255,.05)}
-.quiz-option.selected{border-color:var(--accent);background:rgba(88,166,255,.1)}
+.quiz-option:hover{border-color:var(--accent);background:rgba(209,163,163,.05)}
+.quiz-option.selected{border-color:var(--accent);background:rgba(209,163,163,.1)}
 .quiz-option.correct{border-color:var(--green);background:var(--green-bg);color:var(--green)}
 .quiz-option.wrong{border-color:var(--red);background:var(--red-bg);color:var(--red)}
 .quiz-option .radio{
@@ -158,8 +160,8 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
   font-size:.88rem;line-height:1.5;display:none;
 }
 .quiz-explanation.show{display:block}
-.quiz-explanation.correct-exp{background:var(--green-bg);border:1px solid rgba(63,185,80,.2);color:#7ee787}
-.quiz-explanation.wrong-exp{background:var(--red-bg);border:1px solid rgba(248,81,73,.2);color:#ffa198}
+.quiz-explanation.correct-exp{background:var(--green-bg);border:1px solid rgba(143,179,154,.2);color:#a8cdb3}
+.quiz-explanation.wrong-exp{background:var(--red-bg);border:1px solid rgba(214,138,124,.2);color:#e6a99c}
 .quiz-submit{
   margin-top:16px;padding:8px 20px;border-radius:var(--radius);
   background:var(--accent2);color:#fff;border:none;cursor:pointer;
@@ -246,9 +248,9 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
   font-size:.88rem;line-height:1.5;display:none;
 }
 .exercise-feedback.show{display:block}
-.exercise-feedback.pass{background:var(--green-bg);border:1px solid rgba(63,185,80,.25);color:#7ee787}
-.exercise-feedback.fail{background:var(--red-bg);border:1px solid rgba(248,81,73,.25);color:#ffa198}
-.exercise-feedback.hint{background:rgba(188,140,255,.08);border:1px solid rgba(188,140,255,.2);color:#d2a8ff}
+.exercise-feedback.pass{background:var(--green-bg);border:1px solid rgba(143,179,154,.3);color:#a8cdb3}
+.exercise-feedback.fail{background:var(--red-bg);border:1px solid rgba(214,138,124,.3);color:#e6a99c}
+.exercise-feedback.hint{background:rgba(184,154,211,.1);border:1px solid rgba(184,154,211,.25);color:#cdb6e0}
 .exercise-feedback code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:.88em}
 </style>
 </head>
@@ -1486,6 +1488,102 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 18: GENERICS                        -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="section" id="sec-gen">
+<div class="section-num">Chapter 18</div>
+<h1>Generics</h1>
+
+<p>A <strong>generic</strong> is a function or struct written once and reused for many types. Hier's generics are Odin-style: mark a type parameter with <code>$T</code>, and the compiler <strong>infers</strong> it from how you call it, then stamps out a separate concrete copy for each type actually used. That is <strong>monomorphization</strong> &mdash; no boxing, no runtime dispatch, no cost.</p>
+
+<h2>Generic functions</h2>
+<p>Write <code>$T</code> on a parameter's type to introduce a type parameter; a later bare <code>T</code> refers to it. <code>id</code> here works for <em>any</em> type, inferred from its argument:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">id</span>(x: <span class="ty">$T</span>) -> <span class="ty">T</span>:
+    <span class="kw">return</span> x
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">id</span>(<span class="num">42</span>)))      <span class="cm"># 42    -> generates id__int</span>
+    <span class="fn">println</span>(<span class="fn">id</span>(<span class="str">"hello"</span>))      <span class="cm"># hello -> generates id__string</span></code></pre></div>
+
+<p>Calling <code>id(42)</code> and <code>id("hello")</code> generates two concrete functions; two calls with the same type share one. A <code>$T</code> can also sit <em>inside</em> a container &mdash; <code>first</code> takes an array of any element type and returns an <code>Option</code> of that type, with <code>T</code> inferred from inside <code>[int]</code> or <code>[string]</code>:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">first</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">Option</span>(<span class="ty">T</span>):
+    <span class="kw">if</span> <span class="fn">len</span>(xs) &gt; <span class="num">0</span>:
+        <span class="kw">return</span> <span class="fn">Some</span>(xs[<span class="num">0</span>])
+    <span class="kw">return</span> <span class="ty">None</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="kw">match</span> <span class="fn">first</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">2</span>]):
+        <span class="fn">Some</span>(x): <span class="fn">println</span>(<span class="fn">str</span>(x))   <span class="cm"># 3</span>
+        <span class="ty">None</span>:    <span class="fn">println</span>(<span class="str">"empty"</span>)</code></pre></div>
+
+<h2>Generic structs</h2>
+<p>A struct can take type parameters too. Construction <strong>infers</strong> them from the field values; in a type position (a parameter, return, or field) you name the instance with explicit arguments, just like the built-in <code>Option(int)</code>:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Box</span>(<span class="ty">$T</span>):
+    v: <span class="ty">T</span>
+
+<span class="kw">struct</span> <span class="ty">Pair</span>(<span class="ty">$A</span>, <span class="ty">$B</span>):
+    fst: <span class="ty">A</span>
+    snd: <span class="ty">B</span>
+
+<span class="kw">fn</span> <span class="fn">unbox</span>(b: <span class="ty">Box</span>(<span class="ty">int</span>)) -> <span class="ty">int</span>:     <span class="cm"># Box(int) in a type position</span>
+    <span class="kw">return</span> b.v
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    b := <span class="ty">Box</span>(<span class="num">5</span>)                <span class="cm"># inferred: a Box of int</span>
+    p := <span class="ty">Pair</span>(<span class="num">7</span>, <span class="str">"x"</span>)           <span class="cm"># a Pair of int and string</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">unbox</span>(b)) + <span class="str">" "</span> + <span class="fn">str</span>(p.fst) + p.snd)   <span class="cm"># 5 7x</span></code></pre></div>
+
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">Monomorphized = zero-cost</div>
+Each instantiation is ordinary concrete, value-semantic code, produced <strong>before</strong> the memory model's escape analysis runs &mdash; so nothing generic survives to runtime. No boxing, no vtables, no type tags. <code>Box(int)</code> compiles to exactly what you would have written by hand.
+</div></div>
+
+<div class="callout info">
+<div class="callout-icon">&#128161;</div>
+<div>
+<div class="callout-title">Explicit, not inferred-everywhere</div>
+You opt into generics with <code>$T</code>; Hier never silently generalizes an ordinary function (the Hindley&ndash;Milner route it deliberately avoids). Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
+</div></div>
+
+<h3>Still on the way</h3>
+<p>Map patterns (<code>[$K: $V]</code>), <code>where</code> constraints, and explicit call-site type arguments are the remaining edges. The full design and current status live in <code>docs/generics.md</code>.</p>
+
+<div class="exercise" id="ex-gen">
+<div class="exercise-header">&#9997;&#65039; Exercise: A Generic Function</div>
+<div class="exercise-desc">Complete <code>first_of</code> so it returns its <strong>first</strong> argument. Both parameters share one type parameter <code>$T</code> (so they must be the same type), and the function works for any type &mdash; the calls below use both <code>int</code> and <code>string</code>.</div>
+<div class="exercise-output">Expected output: <strong>10</strong> then <strong>hi</strong></div>
+<textarea class="exercise-editor" id="ex-gen-editor" spellcheck="false">fn first_of(a: $T, b: $T) -> T:
+    return ________
+
+fn main():
+    println(str(first_of(10, 20)))     # 10
+    println(first_of("hi", "bye"))     # hi</textarea>
+<div class="exercise-btns">
+  <button class="exercise-btn check" onclick="checkExercise('gen')">&#10003; Check</button>
+  <button class="exercise-btn show" onclick="showHint('gen')">&#128161; Hint</button>
+  <button class="exercise-btn show" onclick="showSolution('gen')">&#128065; Solution</button>
+  <button class="exercise-btn reset" onclick="resetExercise('gen')">&#8635; Reset</button>
+</div>
+<div class="exercise-feedback" id="ex-gen-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz-17">
+<div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. How does Hier implement a generic function like <code>fn id(x: $T) -> T</code>?</p>
+<div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It boxes every value behind a pointer so one function body serves all types</div>
+<div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It monomorphizes &mdash; stamps out a separate concrete copy for each type used, inferred from the call</div>
+<div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It dispatches on a runtime type tag, like a virtual method</div>
+</div>
+<div class="quiz-explanation" data-correct="1">Correct! Generics are monomorphized: <code>id(5)</code> and <code>id("x")</code> generate two concrete functions, each inferred from its argument. No boxing, no runtime dispatch &mdash; and the value-semantic memory model never sees anything generic.</div>
+<div class="quiz-explanation" data-wrong="1">Hier monomorphizes &mdash; one concrete copy per type used, inferred from the call. Boxing would destroy the value-semantic memory model, so it is exactly what the design avoids.</div>
+<button class="quiz-submit" onclick="submitQuiz(17)">Check Answers</button>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
 <!-- SECTION 17: CHEAT SHEET & NEXT STEPS       -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="section" id="sec-17">
@@ -1584,6 +1682,7 @@ const SECTIONS = [
   {id:'sec-14', title:'Methods (UFCS)',             nav:'15. Methods (UFCS)'},
   {id:'sec-15', title:'Concurrency',                nav:'16. Concurrency'},
   {id:'sec-16', title:'Packages & FFI',             nav:'17. Packages & FFI'},
+  {id:'sec-gen', title:'Generics',                  nav:'18. Generics'},
   {id:'sec-17', title:'Cheat Sheet',                nav:'Cheat Sheet'},
 ];
 const QUIZ_COUNT = SECTIONS.length; // one quiz per section
@@ -1764,6 +1863,16 @@ function copyCode(btn) {
 
 /* ── Interactive Exercises ── */
 const EXERCISES = {
+  gen: {
+    starter: 'fn first_of(a: $T, b: $T) -> T:\n    return ________\n\nfn main():\n    println(str(first_of(10, 20)))     # 10\n    println(first_of("hi", "bye"))     # hi',
+    validate(code) {
+      return code.includes('$T') &&
+             /return\s+a\b/.test(code) &&
+             code.includes('first_of');
+    },
+    solution: 'fn first_of(a: $T, b: $T) -> T:\n    return a\n\nfn main():\n    println(str(first_of(10, 20)))     # 10\n    println(first_of("hi", "bye"))     # hi',
+    hint: 'Both parameters share the type parameter <code>$T</code>, so they must be the same type. To return the first argument, simply <code>return a</code>.'
+  },
   hello: {
     starter: 'fn main():\n    # print Hello, world! with a newline (print needs \\n -- or use println)\n    ________',
     validate(code) {
@@ -1947,6 +2056,10 @@ function checkExercise(id) {
 function getExerciseHints(id, code) {
   const hints = [];
   switch(id) {
+    case 'gen':
+      if (!code.includes('$T')) hints.push('Mark the shared type with <code>$T</code> on both parameters');
+      if (!/return\s+a\b/.test(code)) hints.push('Return the first argument: <code>return a</code>');
+      break;
     case 'hello':
       if (!code.includes('fn main():')) hints.push('Missing <code>fn main():</code> entry point');
       if (!code.includes('print')) hints.push('Use <code>print()</code> to output text');
