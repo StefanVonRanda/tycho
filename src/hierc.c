@@ -1625,7 +1625,7 @@ static Expr *parse_add(Parser *ps) {
 static Expr *parse_cmp(Parser *ps) {            /* comparison level */
     Expr *l = parse_add(ps);
     while (at(ps, TK_EQEQ) || at(ps, TK_NEQ) || at(ps, TK_LT) ||
-           at(ps, TK_GT)   || at(ps, TK_LE)  || at(ps, TK_GE)) {
+           at(ps, TK_GT)   || at(ps, TK_LE)  || at(ps, TK_GE) || at(ps, TK_IN)) {
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
         e->op = t->kind; e->lhs = l; e->rhs = parse_add(ps);
@@ -3469,6 +3469,13 @@ static Type resolve_expr(Expr *e) {
             if (e->op == TK_AND || e->op == TK_OR) {
                 if (lt != T_BOOL || rt != T_BOOL)
                     die_at(e->line, "`%s` needs bool operands", e->op == TK_AND ? "and" : "or");
+                return e->type = T_BOOL;
+            }
+            if (e->op == TK_IN) {              /* `k in m` membership test -> bool */
+                if (!is_map(rt))
+                    die_at(e->line, "`in` tests membership in a map; the right operand must be a map");
+                if (lt != map_key(rt))
+                    die_at(e->line, "`in` key must be %s", type_name(map_key(rt)));
                 return e->type = T_BOOL;
             }
             if (is_cmp(e->op)) {
@@ -5644,6 +5651,9 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s })", out);
         }
         case E_BINOP: {
+            if (e->op == TK_IN)                /* `k in m` membership -> map has-key */
+                return sfmt("%s(%s, %s)", map_rt(e->rhs->type, "has"),
+                            gen_expr(e->rhs, arena), key_rt(e->rhs->type, gen_expr(e->lhs, arena)));
             if (e->op == TK_NOT)               /* unary: operand in lhs, rhs NULL */
                 return sfmt("(!%s)", gen_expr(e->lhs, arena));
             if (e->op == TK_MINUS && e->rhs == NULL)   /* unary negation */

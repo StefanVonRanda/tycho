@@ -844,7 +844,7 @@ fn parse_cmp(toks: [Token], pos: mut int) -> Expr:
     _el := tloc(toks[pos])
     l := parse_add(toks, &pos)
     k := toks[pos].kind
-    if k == TEqEq or k == TLt or k == TGt or k == TLe or k == TGe or k == TNe:
+    if k == TEqEq or k == TLt or k == TGt or k == TLe or k == TGe or k == TNe or (k == TIdent and toks[pos].text == "in"):
         op := toks[pos].text
         pos = pos + 1
         r := parse_add(toks, &pos)
@@ -2810,8 +2810,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 if lt == "float" or rt == "float":
                     return "float"
                 return "int"
-            if is_cmp(op) or op == "&&" or op == "||":
-                return "bool"                     # comparisons / and / or -> bool
+            if is_cmp(op) or op == "in" or op == "&&" or op == "||":
+                return "bool"                     # comparisons / `in` / and / or -> bool
             return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args, _el):
             di := find(name, ".")
@@ -3702,6 +3702,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r, _el):
             lt := type_of(l, names, types, dc, ctx)
+            if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
+                rt := type_of(r, names, types, dc, ctx)
+                return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
             if op == "+" and type_of(e, names, types, dc, ctx) == "str":
                 if type_of(r, names, types, dc, ctx) == "char":   # str + char: append one byte
                     return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"

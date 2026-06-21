@@ -1,0 +1,23 @@
+# `k in m` membership operator (B5.1): replaces map_has. Works on string- and
+# int-keyed maps and any value type; composes with `not` and `and`/`or`; the
+# result is a bool. `in` binds at comparison precedence (tighter than and/or).
+fn yn(b: bool) -> string:
+    if b:
+        return "T"
+    return "F"
+
+fn main():
+    m := []string: int
+    m["a"] = 1
+    m["b"] = 2
+    print("str " + yn("a" in m) + yn("z" in m) + yn(not "z" in m) + yn("a" in m and "b" in m) + "\n")   # T F T T
+
+    n := []int: int
+    n[5] = 50
+    n[7] = 70
+    print("int " + yn(5 in n) + yn(6 in n) + yn(5 in n or 6 in n) + "\n")                                 # T F T
+
+    # membership is independent of the value type (composite value here)
+    c := []string: [int]
+    c["xs"] = [1, 2, 3]
+    print("cmp " + yn("xs" in c) + yn("ys" in c) + "\n")                                                  # T F

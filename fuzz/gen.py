@@ -288,7 +288,7 @@ class Gen:
         if str_vars: kinds += ["char_append", "char_append"]
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
-        kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use", "opt_res_eq"]
+        kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use", "opt_res_eq", "map_in"]
         # constructs hierc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
         # self-referential shadow decls (`x := f(x)` in a nested scope) -- the RHS
@@ -355,6 +355,20 @@ class Gen:
             self.emit(ind, "reserve(" + self.r.choice(res_vars) + ", " + str(self.r.randint(0, 9)) + ")")
             return
 
+        if k == "map_in":              # B5.1: `k in m` membership on string- and int-keyed maps, folded into acc
+            sm = self.fresh("im")
+            self.emit(ind, sm + " : [string: int] = []")
+            self.emit(ind, sm + "[\"a\"] = " + str(self.r.randint(1, 9)))
+            self.emit(ind, "if \"a\" in " + sm + ":")        # present
+            self.emit(ind+1, "acc = acc + 1")
+            self.emit(ind, "if not \"q\" in " + sm + ":")    # absent, via `not`
+            self.emit(ind+1, "acc = acc + 2")
+            im = self.fresh("im")
+            self.emit(ind, im + " : [int: int] = []")
+            self.emit(ind, im + "[" + str(self.r.randint(0, 5)) + "] = 1")
+            self.emit(ind, "if " + str(self.r.randint(0, 5)) + " in " + im + ":")   # int key, sometimes present
+            self.emit(ind+1, "acc = acc + 4")
+            return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
             n0 = self.r.choice([n for n, b in self.newtypes.items() if b == "string"])
