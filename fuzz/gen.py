@@ -368,6 +368,10 @@ class Gen:
             self.emit(ind, im + "[" + str(self.r.randint(0, 5)) + "] = 1")
             self.emit(ind, "if " + str(self.r.randint(0, 5)) + " in " + im + ":")   # int key, sometimes present
             self.emit(ind+1, "acc = acc + 4")
+            self.emit(ind, "delete " + sm + "[\"a\"]")       # B5.2: delete then re-check (len + membership, not key order)
+            self.emit(ind, "if not \"a\" in " + sm + ":")
+            self.emit(ind+1, "acc = acc + 8")
+            self.emit(ind, "acc = acc + len(" + sm + ")")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.

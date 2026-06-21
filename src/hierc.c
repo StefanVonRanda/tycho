@@ -1803,6 +1803,26 @@ static void hoist_index_calls(Expr *place, int line) {
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
+    /* `delete m[k]` -> m = map_del(m, k) (B5.2). `delete` is contextual: it is a
+     * keyword only when an identifier (the map variable) follows, so a variable
+     * named `delete` elsewhere is unaffected. */
+    if (t->kind == TK_IDENT && !strcmp(t->text, "delete") && peek(ps, 1)->kind == TK_IDENT) {
+        ps->p++;                                  /* eat 'delete' */
+        Tok *mt = cur(ps); ps->p++;               /* the map variable */
+        eat(ps, TK_LBRACKET, "`[` after the map in `delete m[k]`");
+        Expr *key = parse_expr(ps);
+        eat(ps, TK_RBRACKET, "`]` to close `delete m[k]`");
+        Stmt *s = new_stmt(S_ASSIGN, t->line);
+        s->name = mt->text;
+        Expr *mref = new_expr(E_IDENT, t->line); mref->sval = mt->text; mref->pkg = g_cur_pkg_prefix;
+        Expr *call = new_expr(E_CALL, t->line);
+        call->sval = "map_del"; call->pkg = g_cur_pkg_prefix;
+        call->args = (Expr **)xmalloc(2 * sizeof(Expr *));
+        call->args[0] = mref; call->args[1] = key; call->nargs = 2;
+        s->expr = call;
+        return s;
+    }
+
     if (t->kind == TK_RETURN) {
         ps->p++;
         Stmt *s = new_stmt(S_RETURN, t->line);

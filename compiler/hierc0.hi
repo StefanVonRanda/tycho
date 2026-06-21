@@ -979,6 +979,14 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e, _sl)
+    elif t.kind == TIdent and t.text == "delete" and toks[pos + 1].kind == TIdent:   # `delete m[k]` -> m = map_del(m, k)
+        pos = pos + 1
+        name := toks[pos].text
+        pos = pos + 1
+        expect(toks, &pos, TLBracket)
+        key := parse_expr(toks, &pos)
+        expect(toks, &pos, TRBracket)
+        return SAssign(name, ECall("map_del", [EVar(name, _el), key], _el), _sl)
     elif t.kind == TIdent and t.text == "println":   # desugar: print(x + "\n")
         pos = pos + 1
         expect(toks, &pos, TLParen)
