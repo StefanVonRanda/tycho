@@ -297,12 +297,12 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 <p>Hier is a <strong>systems language</strong> &mdash; it compiles to native machine code, like C or Rust. But its syntax looks like Python:</p>
 
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">greet</span>(name: <span class="ty">string</span>) -> <span class="ty">string</span>:
-    <span class="kw">return</span> <span class="str">"hello "</span> + name + <span class="str">"\n"</span>
+    <span class="kw">return</span> <span class="str">"hello "</span> + name
 
 <span class="kw">fn</span> <span class="fn">main</span>():
     <span class="fn">print</span>(<span class="str">"what is your name: "</span>)
     name := <span class="fn">input</span>()
-    <span class="fn">print</span>(<span class="fn">greet</span>(name))</code></pre></div>
+    <span class="fn">println</span>(<span class="fn">greet</span>(name))</code></pre></div>
 
 <p>Three things make Hier different from the languages you know:</p>
 
@@ -357,7 +357,7 @@ make</code></pre></div>
 <p>Create <code>hello.hi</code>:</p>
 
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
-    <span class="fn">print</span>(<span class="str">"Hello, world!\n"</span>)</code></pre></div>
+    <span class="fn">println</span>(<span class="str">"Hello, world!"</span>)</code></pre></div>
 
 <div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>./hierc hello.hi     # compiles to ./hello
 ./hello              # Hello, world!</code></pre></div>
@@ -458,7 +458,7 @@ make</code></pre></div>
     m := <span class="fn">to_int</span>(f)        <span class="cm"># float -> int (truncates)</span>
 
     <span class="cm"># comparisons produce bool</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(x == <span class="num">43</span>) + <span class="str">"\n"</span>)    <span class="cm"># "true"</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(x == <span class="num">43</span>))    <span class="cm"># "true"</span></code></pre></div>
 
 <h2>Built-in Types</h2>
 <div class="table-wrap"><table>
@@ -489,7 +489,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
     ________
     ________
     # print the area
-    print(______)</textarea>
+    println(______)</textarea>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('vars')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('vars')">&#128161; Hint</button>
@@ -532,17 +532,17 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 
 <span class="cm"># returns nothing (no -> type)</span>
 <span class="kw">fn</span> <span class="fn">say</span>(s: <span class="ty">string</span>):
-    <span class="fn">print</span>(s + <span class="str">"\n"</span>)
+    <span class="fn">println</span>(s)
 
 <span class="cm"># mut: mutate the caller's variable</span>
 <span class="kw">fn</span> <span class="fn">incr</span>(n: <span class="kw">mut</span> <span class="ty">int</span>):
     n = n + <span class="num">1</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>)) + <span class="str">"\n"</span>)   <span class="cm"># 7</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>)))   <span class="cm"># 7</span>
     x := <span class="num">10</span>
     <span class="fn">incr</span>(&amp;x)                  <span class="cm"># x is now 11</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(x) + <span class="str">"\n"</span>)    <span class="cm"># 11</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(x))    <span class="cm"># 11</span></code></pre></div>
 
 <h2>Mental Model (coming from Python or JavaScript)</h2>
 <ul>
@@ -556,8 +556,8 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>name := <span class="str">"Ada"</span>
 age := <span class="num">36</span>
-<span class="fn">print</span>(<span class="str">f"{name} is {age}\n"</span>)           <span class="cm"># Ada is 36</span>
-<span class="fn">print</span>(<span class="str">f"2 + 3 = {2 + 3}\n"</span>)          <span class="cm"># 2 + 3 = 5</span></code></pre></div>
+<span class="fn">println</span>(<span class="str">f"{name} is {age}"</span>)           <span class="cm"># Ada is 36</span>
+<span class="fn">println</span>(<span class="str">f"2 + 3 = {2 + 3}"</span>)          <span class="cm"># 2 + 3 = 5</span></code></pre></div>
 
 <p>Use <code>f"..."</code> to interpolate. <code>{expr}</code> inserts the value. Plain <code>"..."</code> strings are never interpolated.</p>
 
@@ -591,7 +591,7 @@ fn main():
     x := 1
     y := 2
     swap(___, ___)
-    print(str(x) + " " + str(y) + "\n")</textarea>
+    println(str(x) + " " + str(y))</textarea>
 <div class="exercise-output">Expected output: <strong>2 1</strong></div>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('mut')">&#10003; Check</button>
@@ -647,16 +647,16 @@ x := <span class="num">10</span>
 
 <span class="cm"># 2. Counting form</span>
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):          <span class="cm"># 0..4</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(i))
+    <span class="fn">println</span>(<span class="fn">str</span>(i))
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">2</span>, <span class="num">7</span>):       <span class="cm"># 2..6</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(i))
+    <span class="fn">println</span>(<span class="fn">str</span>(i))
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>, <span class="num">0</span>, -<span class="num">2</span>):  <span class="cm"># 10,8,6,4,2</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(i))
+    <span class="fn">println</span>(<span class="fn">str</span>(i))
 
 <span class="cm"># 3. Foreach form</span>
 names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <span class="str">"Alan"</span>]
 <span class="kw">for</span> name <span class="kw">in</span> names:
-    <span class="fn">print</span>(name + <span class="str">"\n"</span>)</code></pre></div>
+    <span class="fn">println</span>(name)</code></pre></div>
 
 <h2>break, continue, and logical operators</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
@@ -668,7 +668,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
 <span class="cm"># Logical: and, or, not (short-circuit)</span>
 <span class="cm"># Precedence: comparisons > not > and > or</span>
 <span class="kw">if</span> x > <span class="num">0</span> <span class="kw">and</span> <span class="kw">not</span> done:
-    <span class="fn">print</span>(<span class="str">"active\n"</span>)</code></pre></div>
+    <span class="fn">println</span>(<span class="str">"active"</span>)</code></pre></div>
 
 <div class="exercise" id="ex-fizzbuzz">
 <div class="exercise-header">&#9997;&#65039; Exercise: Write FizzBuzz</div>
@@ -731,11 +731,11 @@ fn main():
 <p>Strings are <strong>immutable byte buffers</strong>. You build new ones with <code>+</code>.</p>
 
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(s)) + <span class="str">"\n"</span>)         <span class="cm"># 5</span>
-<span class="fn">print</span>(<span class="fn">str</span>(s[<span class="num">0</span>]) + <span class="str">"\n"</span>)           <span class="cm"># 104 (byte value of 'h')</span>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(s)))         <span class="cm"># 5</span>
+<span class="fn">println</span>(<span class="fn">str</span>(s[<span class="num">0</span>]))           <span class="cm"># 104 (byte value of 'h')</span>
 s2 := s + <span class="str">" world"</span>               <span class="cm"># "hello world"</span>
-<span class="fn">print</span>(<span class="fn">substr</span>(<span class="str">"hello world"</span>, <span class="num">0</span>, <span class="num">5</span>)) <span class="cm"># "hello"</span>
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">find</span>(s2, <span class="str">"world"</span>)))   <span class="cm"># 6</span>
+<span class="fn">println</span>(<span class="fn">substr</span>(<span class="str">"hello world"</span>, <span class="num">0</span>, <span class="num">5</span>)) <span class="cm"># "hello"</span>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">find</span>(s2, <span class="str">"world"</span>)))   <span class="cm"># 6</span>
 parts := <span class="fn">split</span>(<span class="str">"a,b,c"</span>, <span class="str">","</span>)      <span class="cm"># ["a", "b", "c"]</span></code></pre></div>
 
 <h2>The Secret Optimization: In-Place Append</h2>
@@ -753,7 +753,7 @@ When you write <code>total = total + x</code> in a loop, the compiler grows <cod
         total = total + <span class="fn">str</span>(i)        <span class="cm"># O(n), not O(n^2)!</span>
         <span class="kw">if</span> i &lt; <span class="num">5</span>:
             total = total + <span class="str">", "</span>
-    <span class="fn">print</span>(total + <span class="str">"\n"</span>)           <span class="cm"># "1, 2, 3, 4, 5"</span></code></pre></div>
+    <span class="fn">println</span>(total)           <span class="cm"># "1, 2, 3, 4, 5"</span></code></pre></div>
 
 <h2>The <code>char</code> Type</h2>
 <p><code>char</code> is a single byte. Use <code>'x'</code> syntax. Appending a char to a string is a zero-alloc byte push:</p>
@@ -772,7 +772,7 @@ s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <sp
     for i in range(len(names)):
         ________
         ________
-    print(out + "\n")</textarea>
+    println(out)</textarea>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('string')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('string')">&#128161; Hint</button>
@@ -809,7 +809,7 @@ s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <sp
 empty := []<span class="ty">int</span>               <span class="cm"># empty (type required)</span>
 <span class="fn">push</span>(xs, <span class="num">40</span>)                 <span class="cm"># [10, 20, 30, 40]</span>
 last := <span class="fn">pop</span>(xs)              <span class="cm"># 40</span>
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(xs)))           <span class="cm"># 3</span>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(xs)))           <span class="cm"># 3</span>
 xs[<span class="num">0</span>] = <span class="num">99</span>                   <span class="cm"># write (bounds-checked)</span>
 
 <span class="cm"># VALUE SEMANTICS: assignment is a deep copy</span>
@@ -827,7 +827,7 @@ A <code>[int]</code> parameter is a borrow &mdash; no copy, but you can't mutate
 <p><code>xs[a:b]</code> is a sub-range. Passed to a read-only parameter: <strong>zero-copy view</strong>. Stored in a variable: <strong>deep copy</strong>.</p>
 
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">sum</span>(xs[<span class="num">1</span>:<span class="num">4</span>])))     <span class="cm"># 90 &mdash; zero-copy view</span>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">sum</span>(xs[<span class="num">1</span>:<span class="num">4</span>])))     <span class="cm"># 90 &mdash; zero-copy view</span>
 mid := xs[<span class="num">1</span>:<span class="num">4</span>]                <span class="cm"># deep copy: [20, 30, 40]</span></code></pre></div>
 
 <h2>Returning Arrays</h2>
@@ -849,7 +849,7 @@ mid := xs[<span class="num">1</span>:<span class="num">4</span>]                
 
 fn main():
     nums := [-3, 1, -2, 4, 5]
-    print(str(sum_positive(nums)) + "\n")</textarea>
+    println(str(sum_positive(nums)))</textarea>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('array')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('array')">&#128161; Hint</button>
@@ -896,7 +896,7 @@ fn main():
 <span class="kw">fn</span> <span class="fn">main</span>():
     a := <span class="ty">Point</span>(<span class="num">1</span>, <span class="num">2</span>)              <span class="cm"># positional construction</span>
     r := <span class="ty">Rect</span>(a, <span class="ty">Point</span>(<span class="num">4</span>, <span class="num">6</span>))
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">area</span>(r)) + <span class="str">"\n"</span>)   <span class="cm"># 9</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">area</span>(r)))   <span class="cm"># 9</span>
     b := a                         <span class="cm"># deep copy</span>
     b.x = <span class="num">99</span>                      <span class="cm"># never touches a</span></code></pre></div>
 
@@ -1052,9 +1052,9 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <span class="kw">fn</span> <span class="fn">main</span>():
     <span class="kw">match</span> <span class="fn">index_of</span>([<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>], <span class="num">20</span>):
         <span class="ty">Some</span>(i):
-            <span class="fn">print</span>(<span class="str">"found at "</span> + <span class="fn">str</span>(i) + <span class="str">"\n"</span>)
+            <span class="fn">println</span>(<span class="str">"found at "</span> + <span class="fn">str</span>(i))
         <span class="ty">None</span>:
-            <span class="fn">print</span>(<span class="str">"not found\n"</span>)</code></pre></div>
+            <span class="fn">println</span>(<span class="str">"not found"</span>)</code></pre></div>
 
 <div class="callout warn">
 <div class="callout-icon">&#9888;&#65039;</div>
@@ -1086,9 +1086,9 @@ fn main():
     xs := [10, 20, 30, 40]
     match safe_get(xs, 2):
         Some(v):
-            print("found: " + str(v) + "\n")
+            println("found: " + str(v))
         None:
-            print("out of bounds\n")</textarea>
+            println("out of bounds")</textarea>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('option')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('option')">&#128161; Hint</button>
@@ -1151,7 +1151,7 @@ fn main():
 <span class="kw">fn</span> <span class="fn">main</span>():
     <span class="cm"># (2 + 3) * 4 = 20</span>
     expr := <span class="ty">Mul</span>(<span class="ty">Add</span>(<span class="ty">Num</span>(<span class="num">2</span>), <span class="ty">Num</span>(<span class="num">3</span>)), <span class="ty">Num</span>(<span class="num">4</span>))
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">eval</span>(expr)) + <span class="str">"\n"</span>)  <span class="cm"># 20</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">eval</span>(expr)))  <span class="cm"># 20</span></code></pre></div>
 
 <div class="callout tip">
 <div class="callout-icon">&#128161;</div>
@@ -1178,7 +1178,7 @@ fn eval(e: Expr) -> int:
 fn main():
     # Build (3 + 4) * 5
     expr := ________
-    print(str(eval(expr)) + "\n")</textarea>
+    println(str(eval(expr)))</textarea>
 <div class="exercise-btns">
   <button class="exercise-btn check" onclick="checkExercise('enum')">&#10003; Check</button>
   <button class="exercise-btn show" onclick="showHint('enum')">&#128161; Hint</button>
@@ -1217,7 +1217,7 @@ fn main():
 <span class="kw">fn</span> <span class="fn">main</span>():
     quot, rem := <span class="fn">divmod</span>(<span class="num">17</span>, <span class="num">5</span>)   <span class="cm"># 3, 2</span>
     t := <span class="fn">divmod</span>(<span class="num">17</span>, <span class="num">5</span>)             <span class="cm"># (3, 2)</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(t.<span class="num">0</span>) + <span class="str">" "</span> + <span class="fn">str</span>(t.<span class="num">1</span>)) <span class="cm"># 3 2</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(t.<span class="num">0</span>) + <span class="str">" "</span> + <span class="fn">str</span>(t.<span class="num">1</span>)) <span class="cm"># 3 2</span></code></pre></div>
 
 <h2>Type Inference</h2>
 <p>Locals infer from their initializer. Empty collections need a type hint. Function signatures are always explicit.</p>
@@ -1259,7 +1259,7 @@ m := []<span class="ty">string</span>: <span class="ty">int</span>     <span cla
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
 b := a              <span class="cm"># independent copy</span>
 <span class="fn">push</span>(b, <span class="num">4</span>)
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(a)))  <span class="cm"># 3 &mdash; a is unchanged</span></code></pre></div>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(a)))  <span class="cm"># 3 &mdash; a is unchanged</span></code></pre></div>
 
 <h2>Rule 2: Parameters are copies (unless mut)</h2>
 <p>A <code>[int]</code> parameter is a read-only borrow. To mutate, copy first or use <code>mut</code>.</p>
@@ -1300,12 +1300,12 @@ b.tags[<span class="num">0</span>] = <span class="str">"y"</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
     <span class="cm"># lambda with inferred types</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">apply</span>(<span class="kw">fn</span>(x): x * <span class="num">2</span>, <span class="num">5</span>)))  <span class="cm"># 10</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">apply</span>(<span class="kw">fn</span>(x): x * <span class="num">2</span>, <span class="num">5</span>)))  <span class="cm"># 10</span>
 
     <span class="cm"># closure captures by VALUE (deep copy)</span>
     n := <span class="num">10</span>
     addn := <span class="kw">fn</span>(x: <span class="ty">int</span>) -> <span class="ty">int</span>: x + n
-    <span class="fn">print</span>(<span class="fn">str</span>(addn(<span class="num">5</span>)))              <span class="cm"># 15</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(addn(<span class="num">5</span>)))              <span class="cm"># 15</span>
 
     <span class="cm"># closures can escape (be returned)</span>
     <span class="cm"># captured state is re-homed automatically</span></code></pre></div>
@@ -1374,7 +1374,7 @@ fn main():
     a := <span class="ty">Vec3</span>(<span class="num">1.0</span>, <span class="num">2.0</span>, <span class="num">3.0</span>)
     b := <span class="ty">Vec3</span>(<span class="num">4.0</span>, <span class="num">5.0</span>, <span class="num">6.0</span>)
     c := a.<span class="fn">vadd</span>(b)        <span class="cm"># sugar for vadd(a, b)</span>
-    <span class="fn">print</span>(<span class="fn">str</span>(c.<span class="fn">vlen</span>()))  <span class="cm"># sugar for vlen(c)</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(c.<span class="fn">vlen</span>()))  <span class="cm"># sugar for vlen(c)</span></code></pre></div>
 
 <p>Calls chain naturally: <code>a.vadd(b).vlen()</code> = <code>vlen(vadd(a, b))</code>.</p>
 
@@ -1452,7 +1452,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <span class="kw">import</span> s <span class="str">"core:sort"</span>          <span class="cm"># alias</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
-    <span class="fn">print</span>(<span class="fn">str</span>(math.<span class="fn">gcd</span>(<span class="num">12</span>, <span class="num">18</span>)))  <span class="cm"># 6</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(math.<span class="fn">gcd</span>(<span class="num">12</span>, <span class="num">18</span>)))  <span class="cm"># 6</span>
     idx := s.<span class="fn">argsort</span>([<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>])</code></pre></div>
 
 <h2>Corelib Packages</h2>
@@ -1471,8 +1471,8 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <span class="kw">extern</span> <span class="str">"m"</span> <span class="kw">fn</span> <span class="fn">cos</span>(x: <span class="ty">float</span>) -> <span class="ty">float</span>  <span class="cm"># links -lm</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">getpid</span>()) + <span class="str">"\n"</span>)
-    <span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">cos</span>(<span class="num">0.0</span>)))             <span class="cm"># 1.0</span></code></pre></div>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">getpid</span>()))
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">cos</span>(<span class="num">0.0</span>)))             <span class="cm"># 1.0</span></code></pre></div>
 
 <div class="quiz" id="quiz-16">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
@@ -1599,7 +1599,7 @@ x += <span class="num">1</span>                 <span class="cm"># compound: += 
 
 <h2>Functions</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">name</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>: <span class="kw">return</span> a + b
-<span class="kw">fn</span> <span class="fn">void_fn</span>(): <span class="fn">print</span>(<span class="str">"ok\n"</span>)
+<span class="kw">fn</span> <span class="fn">void_fn</span>(): <span class="fn">println</span>(<span class="str">"ok"</span>)
 <span class="kw">fn</span> <span class="fn">mutate</span>(x: <span class="kw">mut</span> <span class="ty">int</span>): x += <span class="num">1</span></code></pre></div>
 
 <h2>Control Flow</h2>
@@ -1883,7 +1883,7 @@ const EXERCISES = {
                (code.includes('print(') && code.includes('\\n')) );
     },
     solution: 'fn main():\n    println("Hello, world!")',
-    hint: 'Inside <code>fn main():</code>, write <code>print("Hello, world!\\n")</code> &mdash; or more simply <code>println("Hello, world!")</code>, which adds the newline for you.'
+    hint: 'Inside <code>fn main():</code>, write <code>println("Hello, world!")</code> &mdash; <code>println</code> adds the trailing newline for you (<code>print</code> would not).'
   },
   greet: {
     starter: 'fn main():\n    print("What is your name: ")\n    name := ________\n    println(________)',
@@ -1897,15 +1897,15 @@ const EXERCISES = {
     hint: 'Read a line with <code>name := input()</code>, then <code>println(f"Hello, {name}!")</code> (println adds the newline).'
   },
   vars: {
-    starter: 'fn main():\n    # declare width and height\n    ________\n    ________\n    # print the area\n    print(______)',
+    starter: 'fn main():\n    # declare width and height\n    ________\n    ________\n    # print the area\n    println(______)',
     validate(code) {
       const lines = code.split('\n').map(l=>l.trim());
       return lines.some(l => /^width\s*:=\s*10$/.test(l)) &&
              lines.some(l => /^height\s*:=\s*5$/.test(l)) &&
-             lines.some(l => /print\(str\(width\s*\*\s*height\)\s*\+\s*"\\n"\)/.test(l));
+             lines.some(l => /print(ln)?\(str\(width\s*\*\s*height\)/.test(l));
     },
-    solution: 'fn main():\n    width := 10\n    height := 5\n    print(str(width * height) + "\\n")',
-    hint: 'Use <code>width := 10</code>, <code>height := 5</code>, then <code>print(str(width * height) + "\\n")</code>.'
+    solution: 'fn main():\n    width := 10\n    height := 5\n    println(str(width * height))',
+    hint: 'Use <code>width := 10</code>, <code>height := 5</code>, then <code>println(str(width * height))</code>.'
   },
   fn: {
     starter: 'fn double(n: int) -> int:\n    return ________\n\nfn main():\n    println(str(double(21)))',
@@ -1918,7 +1918,7 @@ const EXERCISES = {
     hint: 'Fill the body with <code>return n * 2</code>. (main already calls <code>println(str(double(21)))</code>.)'
   },
   mut: {
-    starter: 'fn swap(a: ___ int, b: ___ int):\n    tmp := ___\n    a = ___\n    b = ___\n\nfn main():\n    x := 1\n    y := 2\n    swap(___, ___)\n    print(str(x) + " " + str(y) + "\\n")',
+    starter: 'fn swap(a: ___ int, b: ___ int):\n    tmp := ___\n    a = ___\n    b = ___\n\nfn main():\n    x := 1\n    y := 2\n    swap(___, ___)\n    println(str(x) + " " + str(y))',
     validate(code) {
       return /fn\s+swap\s*\(\s*a\s*:\s*mut\s+int\s*,\s*b\s*:\s*mut\s+int\s*\)/.test(code) &&
              code.includes('tmp := a') &&
@@ -1926,7 +1926,7 @@ const EXERCISES = {
              code.includes('b = tmp') &&
              code.includes('swap(&x, &y)');
     },
-    solution: 'fn swap(a: mut int, b: mut int):\n    tmp := a\n    a = b\n    b = tmp\n\nfn main():\n    x := 1\n    y := 2\n    swap(&x, &y)\n    print(str(x) + " " + str(y) + "\\n")',
+    solution: 'fn swap(a: mut int, b: mut int):\n    tmp := a\n    a = b\n    b = tmp\n\nfn main():\n    x := 1\n    y := 2\n    swap(&x, &y)\n    println(str(x) + " " + str(y))',
     hint: 'Use <code>mut int</code> for both params. Save <code>a</code> in <code>tmp</code> before overwriting. Use <code>&x</code> and <code>&y</code> at the call site.'
   },
   fizzbuzz: {
@@ -1944,22 +1944,22 @@ const EXERCISES = {
     hint: 'Fill the four blanks with <code>i % 3 == 0</code> / <code>i % 5 == 0</code>. Check the combined case first. (The bodies already use <code>println</code>, which adds the newline.)'
   },
   string: {
-    starter: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        ________\n        ________\n    print(out + "\\n")',
+    starter: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        ________\n        ________\n    println(out)',
     validate(code) {
       return code.includes('i > 0') &&
              code.includes('", "') &&
              code.includes('out = out + names[i]');
     },
-    solution: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        if i > 0:\n            out = out + ", "\n        out = out + names[i]\n    print(out + "\\n")',
+    solution: 'fn main():\n    names := ["Ada", "Grace", "Alan"]\n    out := ""\n    for i in range(len(names)):\n        if i > 0:\n            out = out + ", "\n        out = out + names[i]\n    println(out)',
     hint: 'Add <code>", "</code> before every element except the first: <code>if i > 0: out = out + ", "</code>. Then append: <code>out = out + names[i]</code>.'
   },
   array: {
-    starter: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        ________\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    print(str(sum_positive(nums)) + "\\n")',
+    starter: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        ________\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    println(str(sum_positive(nums)))',
     validate(code) {
       return code.includes('if x > 0') &&
              code.includes('total = total + x');
     },
-    solution: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        if x > 0:\n            total = total + x\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    print(str(sum_positive(nums)) + "\\n")',
+    solution: 'fn sum_positive(xs: [int]) -> int:\n    total := 0\n    for x in xs:\n        if x > 0:\n            total = total + x\n    return total\n\nfn main():\n    nums := [-3, 1, -2, 4, 5]\n    println(str(sum_positive(nums)))',
     hint: 'Check each element: <code>if x > 0: total = total + x</code>.'
   },
   struct: {
@@ -1991,22 +1991,22 @@ const EXERCISES = {
     hint: 'Count with the bracket form <code>counts[w] += 1</code> (a missing key starts at 0). Read a count with <code>counts[k]</code> &mdash; a pure read that gives 0 for an absent key.'
   },
   option: {
-    starter: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if ________:\n        return ________\n    return ________\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            print("found: " + str(v) + "\\n")\n        None:\n            print("out of bounds\\n")',
+    starter: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if ________:\n        return ________\n    return ________\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            println("found: " + str(v))\n        None:\n            println("out of bounds")',
     validate(code) {
       return code.includes('i >= 0') &&
              code.includes('i < len(xs)') &&
              code.includes('return Some(xs[i])') &&
              code.includes('return None');
     },
-    solution: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if i >= 0 and i < len(xs):\n        return Some(xs[i])\n    return None\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            print("found: " + str(v) + "\\n")\n        None:\n            print("out of bounds\\n")',
+    solution: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if i >= 0 and i < len(xs):\n        return Some(xs[i])\n    return None\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            println("found: " + str(v))\n        None:\n            println("out of bounds")',
     hint: 'Check bounds with <code>i >= 0 and i < len(xs)</code>. Return <code>Some(xs[i])</code> or <code>None</code>.'
   },
   enum: {
-    starter: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    # Build (3 + 4) * 5\n    expr := ________\n    print(str(eval(expr)) + "\\n")',
+    starter: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    # Build (3 + 4) * 5\n    expr := ________\n    println(str(eval(expr)))',
     validate(code) {
       return code.includes('Mul(Add(Num(3), Num(4)), Num(5))') ;
     },
-    solution: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    expr := Mul(Add(Num(3), Num(4)), Num(5))\n    print(str(eval(expr)) + "\\n")',
+    solution: 'enum Expr:\n    Num(int)\n    Add(Expr, Expr)\n    Mul(Expr, Expr)\n\nfn eval(e: Expr) -> int:\n    match e:\n        Num(v):\n            return v\n        Add(l, r):\n            return eval(l) + eval(r)\n        Mul(l, r):\n            return eval(l) * eval(r)\n\nfn main():\n    expr := Mul(Add(Num(3), Num(4)), Num(5))\n    println(str(eval(expr)))',
     hint: 'Build from the inside out: <code>Add(Num(3), Num(4))</code> gives 3+4, then wrap in <code>Mul(..., Num(5))</code>.'
   },
   closure: {
@@ -2062,7 +2062,7 @@ function getExerciseHints(id, code) {
       break;
     case 'hello':
       if (!code.includes('fn main():')) hints.push('Missing <code>fn main():</code> entry point');
-      if (!code.includes('print')) hints.push('Use <code>print()</code> to output text');
+      if (!code.includes('print')) hints.push('Use <code>println()</code> to output text');
       if (!code.includes('Hello, world!')) hints.push('The string must be exactly <code>"Hello, world!"</code>');
       if (!code.includes('\\n')) hints.push('Don\'t forget <code>\\n</code> for the newline');
       break;
