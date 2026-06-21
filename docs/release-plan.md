@@ -232,21 +232,39 @@ unqualified) is unaffected; so is every public (non-underscore) symbol.
 compilers); `make fixpoint` all green (B≡C; the rt/main split is `_`-free);
 `make fuzz` `FAIL=0`; `make tools-check` ok.
 
-### B5 — remove `map_*`, keep `m[k]` — TODO
+### B5 — remove `map_*`, keep `m[k]` — IN PROGRESS
 
-Breaking API change; the replacement surface must land first, because `m[k]`
-does not yet cover everything `map_*` does:
+Breaking API change. The replacement surface lands first (additive), then the
+`map_*` builtins are removed and call sites migrated.
 
-- **read** a composite value: `m[k]` currently returns only scalar values by
-  value (composites are place-only) — extend it to read composites by copy.
-- **membership**: a `k in m` form (replacing `map_has`).
-- **deletion**: a `delete m[k]` (or `del`) form (replacing `map_del` — there is
-  no deletion syntax today).
-- keep `keys(m)` and `len(m)`.
-- decide the fate of a non-zero default (today only `map_get(m, k, d)` gives one).
+**Replacement surface (additive):**
 
-Then remove the `map_*` builtins and migrate corelib/examples/tests/docs
-(`map_*` spans ~35 files).
+- **read a composite value** — *already worked*: `m[k]` reads scalars AND
+  composites by copy (closed by the earlier m[k]-parity work; the old
+  "composites are place-only" note was stale). Verified.
+- **membership** `k in m` (replaces `map_has`) — **DONE** (B5.1, commit
+  `4997089`): a first-class comparison-precedence operator, both compilers.
+- **deletion** `delete m[k]` (replaces `map_del`) — **DONE** (B5.2, commit
+  `4628a8a`): a contextual-keyword statement desugaring to `m = map_del(m, k)`,
+  reusing the existing in-place/rebuild lowering.
+- `keys(m)` / `len(m)` — kept.
+- **non-zero default** — **decided: keep `map_get(m, k, d)` as-is.** The plan
+  considered renaming it to `get(m, k, d)`, but `get` collides with five
+  existing user functions — `corelib/http` `get(url)`, `corelib/csv`
+  `get(rows,r,c)`, `corelib/json` `get(j,key)`, the json example, and
+  `tools/lsp` — so reserving `get` as a builtin is too intrusive. `map_get` is
+  therefore the one surviving `map_*` function.
+
+**Remaining:**
+
+- **Migrate** the call sites: `m = map_set(m,k,V)` → `m[k] = V`,
+  `map_has(m,k)` → `k in m`, `m = map_del(m,k)` → `delete m[k]`. (`map_get`
+  stays.) `map_set` ≈120 uses, `map_has` ≈34, `map_del` ≈24, across
+  corelib/examples/tests/bench/docs. The `map_set` value arg can be arbitrarily
+  nested, so this is a balanced-paren transform, not a regex.
+- **Remove** the `map_set` / `map_has` / `map_del` builtins from both compilers
+  (fail-closed: reject a user-typed call), keeping `map_get` and the internal
+  lowerings the sugar depends on. Update the map docs.
 
 ### A2 — Odin-style generics — TODO (design doc first)
 
