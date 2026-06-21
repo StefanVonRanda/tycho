@@ -1,11 +1,12 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: design.** This document proposes user-facing generics for Hier and
-> is the contract the implementation is built against. It reverses an earlier
+> **Status: Stage 1 shipped** (generic *functions*, both compilers); Stages 2–3
+> (generic structs, `where`/explicit type args) remain design. This document is
+> the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
-> [§7](#7-the-reversal-the-registry-already-exists). No generics ship until both
-> compilers implement a stage and `make test` / `make fixpoint` / `make fuzz`
-> are green for it.
+> [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
+> both compilers implement it and `make test` / `make fixpoint` / `make fuzz`
+> are green — Stage 1 is, via `tests/generics.hi`.
 
 ## 1. The shape in one screen
 
@@ -218,13 +219,24 @@ worth a monomorphization pass that the compiler *already runs* for its built-ins
 Each stage lands in **both** compilers behind `make fixpoint`, its own focused
 commit, fully green before the next — same discipline as every other change.
 
-- **Stage 1 — generic functions.** `fn f(x: $T) -> T`, parameters inferred from
-  argument types ([§3](#3-inference-argument-directed-not-hindley-milner)),
-  every `$`-parameter required to appear in an argument
-  ([§6](#6-when-t-cant-be-inferred) option 1). Monomorphize via a new
-  instantiation registry that feeds the existing per-type emission. UFCS gets
-  generic "methods" for free, since `x.f(a)` is already sugar for `f(x, a)`.
-  Constraints checked at instantiation ([§5](#5-constraints-checked-at-instantiation)).
+- **Stage 1 — generic functions — SHIPPED** (both compilers). `fn f(x: $T) -> T`,
+  parameters inferred from argument types
+  ([§3](#3-inference-argument-directed-not-hindley-milner)), every
+  `$`-parameter required to appear in an argument
+  ([§6](#6-when-t-cant-be-inferred) option 1). Monomorphized via an instantiation
+  registry that feeds the existing per-type emission. UFCS gets generic "methods"
+  for free, since `x.f(a)` is already sugar for `f(x, a)`. Constraints checked at
+  instantiation ([§5](#5-constraints-checked-at-instantiation)). Test:
+  `tests/generics.hi`. In hierc: a `T_TYPARAM` interned type, templates kept out
+  of the sig table, a call infers + interns one instance Sig + rewrites itself,
+  instances resolved+emitted from the shared body sequentially during codegen. In
+  hierc0 (string-typed, no globals): a `monomorphize_program` pre-pass walks every
+  function body with a type environment, infers each `$T`, interns one instance
+  Func sharing the template body (sound because hierc0 recomputes types per
+  function), rewrites the calls, and drops the templates; the mangled instance
+  name matches hierc byte-for-byte. Known edge (Stage 1c): a generic call nested
+  inside a *declaration's* initializer in hierc0 isn't instantiation-typed — the
+  test uses the direct forms; fails closed (a compile error, never a miscompile).
 - **Stage 2 — generic structs.** `struct Box($T)` / `struct Pair($A, $B)`,
   instantiated with explicit type args (`Box(int)`) — the same surface as the
   built-in `Option(int)` / `Result(int, string)`. Generic functions may then

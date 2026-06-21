@@ -300,12 +300,17 @@ concrete value-semantic code *before* the signature-directed escape analysis, so
 nothing generic survives to analyze). The doc records the reversal argument, the
 two-compiler determinism rules, the non-goals, and a 3-stage plan.
 
-**Implementation — TODO** (staged, both compilers, behind the fixpoint):
-- **Stage 1** — generic functions: `fn f(x: $T) -> T`, argument-inferred, every
-  `$`-parameter required in an argument; a new instantiation registry feeding the
-  existing per-type emission; constraints checked at instantiation; UFCS
-  generic "methods" fall out free.
-- **Stage 2** — generic structs: `struct Box($T)` / `Pair($A, $B)`, explicit
+**Implementation — staged, both compilers, behind the fixpoint:**
+- **Stage 1 — generic functions — DONE** (both compilers). `fn f(x: $T) -> T`,
+  argument-inferred, every `$`-parameter required in an argument; an instantiation
+  registry feeding the existing per-type emission; constraints checked at
+  instantiation; UFCS generic "methods" fall out free. hierc uses a `T_TYPARAM`
+  interned type + a call-site instantiate hook; hierc0 uses a `monomorphize_program`
+  pre-pass (env-threaded walk → infer → intern instance sharing the template body →
+  rewrite calls → drop templates), with the instance mangle matching hierc
+  byte-for-byte. Test `tests/generics.hi`; all gates green (test 173/0, fixpoint
+  B==C + differential, fuzz, corelib, tools-check, conc, ffi).
+- **Stage 2 — generic structs — TODO:** `struct Box($T)` / `Pair($A, $B)`, explicit
   type args at the use site.
 - **Stage 3** — multiple/nested params, `where` constraints (a fixed
   compiler-known predicate set), and an explicit call-site type arg for the

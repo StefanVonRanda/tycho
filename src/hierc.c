@@ -113,7 +113,7 @@ typedef enum {
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
-    TK_DOT,
+    TK_DOT, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
 } TokKind;
 
@@ -383,6 +383,7 @@ static TokVec lex(const char *src) {
             else if (c == '|') k = TK_PIPE;
             else if (c == '^') k = TK_CARET;
             else if (c == '~') k = TK_TILDE;
+            else if (c == '$') k = TK_DOLLAR;   /* generics: `$T` introduces a type parameter */
             else { g_err_col = tcol; die_at(line, "unexpected character '%c'", c); }
             tv_push(&out, (Tok){k, NULL, 0, line, 0, tcol});
             p += len;
@@ -529,6 +530,7 @@ static Type chan_inner(Type t) { return g_chantypes[CHAN_ID(t)].inner; }
 #define T_TUP_BASE  16384  /* tuples (T1, ..., Tn), above the (now bounded) enum range */
 #define T_NT_BASE   24576  /* distinct newtypes (type X = int/float), above tuples */
 #define T_MAPC_BASE 32768  /* composite maps [K: V] with an arbitrary value type, above newtypes */
+#define T_TYPARAM_BASE 65536  /* generics: `$T` type parameters — transient (only in generic templates), bound to a concrete type at instantiation, never reach codegen */
 typedef struct { Type elem; } ArrType;
 static ArrType *g_arrtypes;
 static int g_narrtypes = 0, g_arrtypes_cap = 0;
@@ -553,6 +555,26 @@ static Type arr_elem(Type arr) {
     if (IS_ARRC(arr))          return g_arrtypes[ARRC_ID(arr)].elem;
     return T_INT;   /* T_ARRAY_INT */
 }
+
+/* Generics: a `$T` type parameter is interned by name. These types appear only
+ * inside a generic function template; at each call the parameter is bound to a
+ * concrete type and the instance is resolved/emitted with the binding, so a
+ * T_TYPARAM never reaches codegen. `g_cur_typarams` is the in-scope set while
+ * parsing one function's signature + body (Stage 1: functions only). */
+typedef struct { char *name; } TyParam;
+static TyParam *g_typarams;
+static int g_ntyparams = 0, g_typarams_cap = 0;
+#define IS_TYPARAM(t) ((t) >= T_TYPARAM_BASE)
+static Type typaram_of(char *name) {
+    for (int i = 0; i < g_ntyparams; i++)
+        if (!strcmp(g_typarams[i].name, name)) return T_TYPARAM_BASE + i;
+    TBL_ENSURE(g_typarams, g_ntyparams, g_typarams_cap);
+    g_typarams[g_ntyparams].name = name;
+    return T_TYPARAM_BASE + g_ntyparams++;
+}
+static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)].name; }
+static char *g_cur_typarams[16];
+static int   g_ncur_typarams = 0;
 
 /* Option(T) — a tagged optional (Some(value) or None). Interned like composite
  * arrays; one monomorphic HierOpt<id> { char has; T val; } is generated per
@@ -1062,6 +1084,7 @@ typedef struct {
     int     line;
     int     is_extern;     /* FFI: `extern fn` — bodyless, calls a C symbol directly (no arena, name unmangled) */
     const char *lib;       /* FFI: `extern "Lib" fn` — link with -lLib; NULL for bare extern */
+    int     generic;       /* generics: a `$T` template — not sig-registered/emitted directly; instantiated per call */
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -1105,6 +1128,17 @@ static void check_pkg_private(const char *qualifier, const char *name, int line)
 
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
+    if (t->kind == TK_DOLLAR) {          /* generics: `$T` introduces a type parameter into scope */
+        ps->p++;
+        Tok *nm = eat(ps, TK_IDENT, "a type-parameter name after '$'");
+        int seen = 0;
+        for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], nm->text)) { seen = 1; break; }
+        if (!seen) {
+            if (g_ncur_typarams >= 16) die_at(nm->line, "too many type parameters (max 16)");
+            g_cur_typarams[g_ncur_typarams++] = nm->text;
+        }
+        return typaram_of(nm->text);
+    }
     if (t->kind == TK_IDENT && !strcmp(t->text, "soa")) {   /* soa [Struct] */
         ps->p++;
         eat(ps, TK_LBRACKET, "'[' after soa");
@@ -1190,6 +1224,8 @@ static Type parse_type(Parser *ps) {
         return res_of(ok, err);
     }
     if (t->kind == TK_IDENT) {           /* a struct, enum, or newtype name */
+        for (int i = 0; i < g_ncur_typarams; i++)   /* generics: a bare reference to an in-scope type parameter */
+            if (!strcmp(g_cur_typarams[i], t->text)) { ps->p++; return typaram_of(t->text); }
         const char *nm;
         if (peek(ps, 1)->kind == TK_DOT && peek(ps, 2)->kind == TK_IDENT) {
             /* qualified type `pkg.Type` -> the imported package's mangled name */
@@ -2150,6 +2186,7 @@ static Stmt **parse_block(Parser *ps, int *count) {
 }
 
 static Proc *parse_fn(Parser *ps) {
+    g_ncur_typarams = 0;                  /* fresh `$T` scope for this function */
     eat(ps, TK_FN, "'fn'");
     Tok *nameT = eat(ps, TK_IDENT, "a procedure name");
     eat(ps, TK_LPAREN, "'('");
@@ -2176,10 +2213,12 @@ static Proc *parse_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
     else pr->ret = T_VOID;
+    pr->generic = (g_ncur_typarams > 0);   /* a `$T` in the signature makes this a template */
 
     eat(ps, TK_COLON, "':' before the block");
     eat(ps, TK_NEWLINE, "newline");
-    pr->body = parse_block(ps, &pr->nbody);
+    pr->body = parse_block(ps, &pr->nbody);   /* type params stay in scope for the body */
+    g_ncur_typarams = 0;                  /* leave the function's `$T` scope */
     return pr;
 }
 
@@ -2517,6 +2556,22 @@ static Sig *sig_find(const char *name) {
         if (!strcmp(g_sigs[i].name, name)) return &g_sigs[i];
     return NULL;
 }
+
+/* Generics: generic function templates (a `$T` in the signature) are kept out of
+ * the Sig table; each call infers concrete type arguments, interns one monomorphic
+ * instance (a real Sig + a recorded GInst), and rewrites the call to the instance.
+ * The instance body is resolved + emitted from the SHARED template body during
+ * codegen, sequentially per instance (see gen_program). */
+static Proc **g_generics; static int g_ngenerics = 0, g_generics_cap = 0;
+static Proc *generic_find(const char *name) {
+    for (int i = 0; i < g_ngenerics; i++)
+        if (!strcmp(g_generics[i]->name, name)) return g_generics[i];
+    return NULL;
+}
+typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; } GInst;
+static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
+static void instantiate_generic(Proc *gt, Expr *e);   /* defined after resolve_expr */
+static char *type_mangle_ident(Type t);               /* C-identifier-safe spelling of a type */
 
 static void register_builtins(void) {
     /* designated initializers: robust to field order (mut[] sits between
@@ -3406,6 +3461,8 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "reserve's capacity must be int");
                 return e->type = T_VOID;
             }
+            { Proc *gt = generic_find(e->sval);   /* generics: infer type args, intern instance, rewrite e->sval */
+              if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e); }
             Sig *s = sig_find(e->sval);
             if (!s) {
                 const char *sg = suggest_fn(e->sval);
@@ -4342,6 +4399,66 @@ static void resolve_block(Stmt **body, int n, Type ret) {
     vars_restore(m);
 }
 
+/* A C-identifier-safe spelling of a type, for naming a monomorphic instance
+ * (`id__int`, `box__string`). Recurses through containers; a `t<id>` fallback
+ * keeps any other type unique. */
+static char *type_mangle_ident(Type t) {
+    if (t == T_INT)    return "int";
+    if (t == T_FLOAT)  return "float";
+    if (t == T_STRING) return "string";
+    if (t == T_BOOL)   return "bool";
+    if (t == T_CHAR)   return "char";
+    if (IS_STRUCT(t))  return g_structs[STRUCT_ID(t)].name;
+    if (IS_ENUM(t))    return g_enums[ENUM_ID(t)].name;
+    if (is_array(t))   return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
+    if (IS_OPT(t))     return sfmt("opt_%s", type_mangle_ident(opt_inner(t)));
+    return sfmt("t%d", (int)t);
+}
+
+/* Instantiate a generic call: infer each `$T` from the matching argument's
+ * concrete type, mangle a per-instantiation name, register the instance Sig (so
+ * this and later calls resolve), record it for codegen, and rewrite e->sval.
+ * Idempotent per (template, concrete arg types). */
+static void instantiate_generic(Proc *gt, Expr *e) {
+    if (e->nargs != gt->nparams)
+        die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
+    Type binds[256];
+    for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
+    for (int j = 0; j < gt->nparams; j++) {
+        Type at_ = resolve_expr(e->args[j]);          /* the concrete argument type */
+        Type pt  = gt->params[j].type;
+        if (IS_TYPARAM(pt)) {
+            int id = (int)(pt - T_TYPARAM_BASE);
+            if (binds[id] != T_VOID && binds[id] != at_)
+                die_at(e->line, "type parameter $%s is %s here but %s earlier in the call",
+                       typaram_name(pt), type_name(at_), type_name(binds[id]));
+            binds[id] = at_;
+        }
+    }
+    /* build the instance's concrete signature + mangled name */
+    char *nm = gt->name;
+    Type cparams[16], cret;
+    for (int j = 0; j < gt->nparams; j++) {
+        Type pt = gt->params[j].type;
+        cparams[j] = IS_TYPARAM(pt) ? binds[(int)(pt - T_TYPARAM_BASE)] : pt;
+        nm = sfmt("%s__%s", nm, type_mangle_ident(cparams[j]));
+    }
+    if (IS_TYPARAM(gt->ret) && binds[(int)(gt->ret - T_TYPARAM_BASE)] == T_VOID)
+        die_at(e->line, "the return type $%s of '%s' is not fixed by any argument",
+               typaram_name(gt->ret), gt->name);
+    cret = IS_TYPARAM(gt->ret) ? binds[(int)(gt->ret - T_TYPARAM_BASE)] : gt->ret;
+    e->sval = nm;                                     /* rewrite the call to the instance */
+    if (sig_find(nm)) return;                         /* already instantiated */
+    Sig s; memset(&s, 0, sizeof s);
+    s.name = nm; s.ret = cret; s.nparams = gt->nparams; s.builtin = 0;
+    for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.mut[j] = gt->params[j].is_inout; }
+    TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap); g_sigs[g_nsigs++] = s;
+    TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
+    GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret;
+    for (int j = 0; j < gt->nparams; j++) gi.params[j] = cparams[j];
+    g_ginsts[g_nginsts++] = gi;
+}
+
 static void resolve_program(ProcVec *prog) {
     register_builtins();
     /* CC-4: a channel handle must not outlive its creating scope. Channel(T)
@@ -4361,6 +4478,13 @@ static void resolve_program(ProcVec *prog) {
     /* register every user proc up front so calls can be forward refs */
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
+        if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
+            if (sig_find(pr->name) || generic_find(pr->name))
+                die_at(pr->line, "'%s' is already defined", pr->name);
+            TBL_ENSURE(g_generics, g_ngenerics, g_generics_cap);
+            g_generics[g_ngenerics++] = pr;
+            continue;
+        }
         if (IS_CHAN(pr->ret))
             die_at(pr->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
         for (int j = 0; j < pr->nparams; j++)
@@ -4397,6 +4521,7 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         if (pr->is_extern) continue;   /* FFI: no body to resolve */
+        if (pr->generic) continue;     /* generics: the template body is resolved+emitted per instance (gen_program) */
         g_nvars = 0;
         /* arrays ([int]/[string]) are passed as read-only borrows (their
          * buffer is shared, so in-place push/set would hit the caller); all
@@ -6902,6 +7027,22 @@ static void check_finite_types(void) {
     for (int i = 0; i < g_ntuptypes; i++) emit_aggregate(NULL, T_TUP_BASE + i);
 }
 
+/* Materialize a generic instance as an ordinary Proc: the template's body
+ * (shared), the template's parameter names, but the instance's concrete types.
+ * Used both to emit its prototype and to resolve+emit its body. */
+static Proc *ginst_to_proc(GInst *gi) {
+    Proc *p = (Proc *)xmalloc(sizeof(Proc));
+    *p = *gi->tmpl;
+    p->name = gi->name; p->ret = gi->ret; p->generic = 0; p->is_extern = 0;
+    p->params = (Param *)xmalloc((size_t)gi->nparams * sizeof(Param));
+    for (int j = 0; j < gi->nparams; j++) {
+        p->params[j] = gi->tmpl->params[j];   /* same name + mut flag */
+        p->params[j].type = gi->params[j];     /* bound concrete type */
+    }
+    p->nparams = gi->nparams;
+    return p;
+}
+
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(HIER_RUNTIME, o);
     fputs("\n/* ---- generated from Hier source ---- */\n\n", o);
@@ -7454,6 +7595,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, " return d; }\n");
     }
     for (int i = 0; i < prog->n; i++) {
+        if (prog->v[i]->generic) continue;   /* generics: a template emits no code; its instances do (below) */
         if (prog->v[i]->is_extern) gen_extern_proto(o, prog->v[i]);   /* FFI: real C ABI decl */
         else gen_proto(o, prog->v[i]);
     }
@@ -7461,6 +7603,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
     for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk prototypes (CC-3) */
         gen_proto(o, g_parprocs.v[i]);
+    for (int i = 0; i < g_nginsts; i++)      /* generics: one prototype per monomorphic instance */
+        gen_proto(o, ginst_to_proc(&g_ginsts[i]));
     fputs("\n", o);
     /* spawn sites: one args struct + thread trampoline each. The trampoline
      * runs the call with the task's root arena as _parent (so the return value
@@ -7529,11 +7673,26 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "); }\n");
     }
     if (g_nfnval || g_nlaminfo) fputs("\n", o);
-    for (int i = 0; i < prog->n; i++) if (!prog->v[i]->is_extern) gen_proc(o, prog->v[i]);   /* FFI externs have no body */
+    for (int i = 0; i < prog->n; i++) if (!prog->v[i]->is_extern && !prog->v[i]->generic) gen_proc(o, prog->v[i]);   /* FFI externs have no body; generic templates emit instances below */
     for (int i = 0; i < g_nlaminfo; i++)   /* lifted lambda bodies */
         if (g_laminfo[i].ftype != T_VOID) gen_proc(o, g_laminfo[i].proc);
     for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk bodies (CC-3) */
         gen_proc(o, g_parprocs.v[i]);
+    /* generics: resolve+emit each monomorphic instance from the SHARED template
+     * body, sequentially — the body's resolved types are consumed by gen_proc
+     * before the next instance re-resolves it with different bindings. */
+    for (int i = 0; i < g_nginsts; i++) {
+        Proc *p = ginst_to_proc(&g_ginsts[i]);
+        g_nvars = 0;
+        for (int j = 0; j < p->nparams; j++) {
+            Type pt = p->params[j].type;
+            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout;
+            vars_push(p->params[j].name, pt, mutable);
+        }
+        g_fn_ret = p->ret; g_dup_base = 0;
+        resolve_block(p->body, p->nbody, p->ret);
+        gen_proc(o, p);
+    }
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    hier_argc = argc; hier_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);

@@ -46,6 +46,7 @@ enum Tok:
     TPipe
     TCaret
     TTilde
+    TDollar
     TShl
     TShr
     TNewline
@@ -300,6 +301,9 @@ fn scan_token(src: string, n: int, i: int, toks: mut [Token], line: int, linesta
         return i + 1
     elif c == 126:
         push(toks, Token(TTilde, "~", line, col))
+        return i + 1
+    elif c == 36:                                # '$' — generics: `$T` type parameter
+        push(toks, Token(TDollar, "$", line, col))
         return i + 1
     else:
         lex_err(src, tok0, "lex: unexpected character")
@@ -1276,6 +1280,13 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         return SReturn(EInt("0", _el), _sl)
 
 fn parse_type(toks: [Token], pos: mut int) -> string:
+    if toks[pos].kind == TDollar:                # generics: `$T` introduces a type parameter
+        pos = pos + 1
+        if toks[pos].kind != TIdent:
+            die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name after '$'")
+        nm := toks[pos].text
+        pos = pos + 1
+        return "$" + nm
     if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
         pos = pos + 1
         parts := []string
@@ -1378,6 +1389,46 @@ fn parse_param(toks: [Token], pos: mut int) -> Param:
         return Param(name, "&" + parse_type(toks, &pos))   # mut marker
     return Param(name, parse_type(toks, &pos))
 
+# Generics: collect the names introduced by `$X` in a type string ("$T" -> "T",
+# "[$T]" -> "T"). Used to rewrite a later bare `T` reference back to "$T".
+fn collect_dollar_names(s: string, bs: mut [string]):
+    i := 0
+    for i < len(s):
+        if s[i] == 36:                           # '$'
+            j := i + 1
+            for j < len(s) and is_alnum(s[j]):
+                j = j + 1
+            push(bs, substr(s, i + 1, j))
+            i = j
+        else:
+            i = i + 1
+
+# A bare type string that exactly names an in-scope type parameter is a
+# reference to it -> "$"+name. (1a: bare scalar refs, e.g. the return type.)
+fn subst_bare_typaram(ty: string, bases: [string]) -> string:
+    i := 0
+    for i < len(bases):
+        if ty == bases[i]:
+            return "$" + ty
+        i = i + 1
+    return ty
+
+# A function is a generic template if any parameter or return type mentions `$`.
+fn ty_is_generic(t: string) -> bool:
+    i := 0
+    for i < len(t):
+        if t[i] == 36:
+            return true
+        i = i + 1
+    return false
+fn func_is_generic(f: Func) -> bool:
+    i := 0
+    for i < len(f.ptypes):
+        if ty_is_generic(f.ptypes[i]):
+            return true
+        i = i + 1
+    return ty_is_generic(f.ret)
+
 fn parse_func(toks: [Token], pos: mut int) -> Func:
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
@@ -1401,6 +1452,18 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
     if toks[pos].kind == TArrow:
         pos = pos + 1
         ret = parse_type(toks, &pos)
+    # generics: `$T` introduces a type parameter; rewrite a later bare `T` ref to "$T"
+    bases := []string
+    bi := 0
+    for bi < len(ptypes):
+        collect_dollar_names(ptypes[bi], &bases)
+        bi = bi + 1
+    if len(bases) > 0:
+        bi = 0
+        for bi < len(ptypes):
+            ptypes[bi] = subst_bare_typaram(ptypes[bi], bases)
+            bi = bi + 1
+        ret = subst_bare_typaram(ret, bases)
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
     return Func(name, params, ptypes, ret, body, 0, "")
@@ -8302,6 +8365,256 @@ fn stmt_has_lambda(s: Stmt) -> bool:
                 sk = sk + 1
             return false
 
+# ---------------------------------------------------- generics: monomorphize --
+# Stage 1: a `$T` function template is monomorphized into one concrete instance
+# per distinct argument-type tuple. A pre-codegen pass walks every concrete
+# function's body, infers each `$T` from the call's argument types, interns one
+# instance Func (sharing the template body — hierc0 recomputes types per func, so
+# sharing is sound), and rewrites the call to the instance's mangled name. Mirrors
+# the C compiler's instantiate_generic; the mangled name MUST match it byte-for-
+# byte for the fixpoint differential ("str" -> "string", like type_mangle_ident).
+fn find_generic(gens: [Func], name: string) -> int:
+    i := 0
+    for i < len(gens):
+        if gens[i].name == name:
+            return i
+        i = i + 1
+    return -1
+
+fn gen_inst_mangle(ty: string) -> string:
+    if ty == "str":
+        return "string"
+    return ty                                   # int/float/bool/char and bare struct/enum names map to themselves
+
+fn inst_name(base: string, ptypes: [string]) -> string:
+    nm := base
+    i := 0
+    for i < len(ptypes):
+        nm = nm + "__" + gen_inst_mangle(ptypes[i])
+        i = i + 1
+    return nm
+
+fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int) -> string:
+    if len(argtypes) != len(gt.ptypes):
+        die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
+    bnames := []string
+    btypes := []string
+    cparams := []string
+    i := 0
+    for i < len(gt.ptypes):
+        pt := gt.ptypes[i]
+        if len(pt) > 0 and pt[0] == 36:          # "$X" parameter: bind X = argtypes[i]
+            bn := substr(pt, 1, len(pt))
+            seen := -1
+            j := 0
+            for j < len(bnames):
+                if bnames[j] == bn:
+                    seen = j
+                j = j + 1
+            if seen >= 0:
+                if btypes[seen] != argtypes[i]:
+                    die("generics: type parameter $" + bn + " is " + argtypes[i] + " here but " + btypes[seen] + " earlier in the call")
+            else:
+                push(bnames, bn)
+                push(btypes, argtypes[i])
+            push(cparams, argtypes[i])
+        else:
+            push(cparams, pt)
+        i = i + 1
+    cret := gt.ret
+    if len(cret) > 0 and cret[0] == 36:
+        rn := substr(cret, 1, len(cret))
+        found := false
+        k := 0
+        for k < len(bnames):
+            if bnames[k] == rn:
+                cret = btypes[k]
+                found = true
+            k = k + 1
+        if not found:
+            die("generics: the return type $" + rn + " of '" + gt.name + "' is not fixed by any argument")
+    nm := inst_name(gt.name, cparams)
+    e := 0
+    for e < len(insts):
+        if insts[e].name == nm:
+            return nm                            # already instantiated
+        e = e + 1
+    push(insts, Func(nm, gt.params, cparams, cret, gt.body, 0, ""))
+    return nm
+
+fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, mono_expr(es[i], names, types, gens, &insts, dc, ctx))
+        i = i + 1
+    return out
+
+fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> Expr:
+    match e:
+        EInt(s, el):
+            return e
+        EBool(s, el):
+            return e
+        EChar(s, el):
+            return e
+        EFloat(s, el):
+            return e
+        EStr(s, el):
+            return e
+        EVar(s, el):
+            return e
+        EArrEmpty(t, el):
+            return e
+        EMapEmpty(k, v, el):
+            return e
+        EBin(o, l, r, el):
+            return EBin(o, mono_expr(l, names, types, gens, &insts, dc, ctx), mono_expr(r, names, types, gens, &insts, dc, ctx), el)
+        ECall(nm, a, el):
+            margs := mono_exprs(a, names, types, gens, &insts, dc, ctx)
+            gi := find_generic(gens, nm)
+            if gi >= 0:
+                at := []string
+                k := 0
+                for k < len(margs):
+                    push(at, type_of(margs[k], names, types, dc, ctx))
+                    k = k + 1
+                newnm := mono_instantiate(gens[gi], at, &insts, el)
+                return ECall(newnm, margs, el)
+            return ECall(nm, margs, el)
+        EField(b, f, el):
+            return EField(mono_expr(b, names, types, gens, &insts, dc, ctx), f, el)
+        EIndex(b, ix, el):
+            return EIndex(mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(ix, names, types, gens, &insts, dc, ctx), el)
+        EArrLit(es, el):
+            return EArrLit(mono_exprs(es, names, types, gens, &insts, dc, ctx), el)
+        EMapLit(ks, vs, el):
+            return EMapLit(mono_exprs(ks, names, types, gens, &insts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, dc, ctx), el)
+        ETuple(es, el):
+            return ETuple(mono_exprs(es, names, types, gens, &insts, dc, ctx), el)
+        ESlice(b, lo, hi, el):
+            return ESlice(mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(lo, names, types, gens, &insts, dc, ctx), mono_expr(hi, names, types, gens, &insts, dc, ctx), el)
+        EAddr(x, el):
+            return EAddr(mono_expr(x, names, types, gens, &insts, dc, ctx), el)
+        ELambda(id, ps, pts, r, bx, cn, ct, el):
+            return e                              # lambda bodies with generic calls are 1c
+        ECallV(c, a, el):
+            return ECallV(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_exprs(a, names, types, gens, &insts, dc, ctx), el)
+        ESpawn(id, nm, a, el):
+            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, dc, ctx), el)
+
+fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> Stmt:
+    match s:
+        SDecl(nm, rhs, ln):
+            mr := mono_expr(rhs, names, types, gens, &insts, dc, ctx)
+            # type the ORIGINAL rhs: its generic calls resolve via the template
+            # sigs (still in dc) to "$T" — a harmless env placeholder. The rewritten
+            # `mr` names instances not yet in dc; the final codegen recomputes the
+            # real type from the instance-bearing dc.
+            ty := type_of(rhs, names, types, dc, ctx)
+            push(names, nm)
+            push(types, ty)
+            return SDecl(nm, mr, ln)
+        STypedDecl(nm, ty, rhs, ln):
+            mr := mono_expr(rhs, names, types, gens, &insts, dc, ctx)
+            push(names, nm)
+            push(types, ty)
+            return STypedDecl(nm, ty, mr, ln)
+        SAssign(nm, rhs, ln):
+            return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, dc, ctx), ln)
+        SFieldAssign(lv, rhs, ln):
+            return SFieldAssign(mono_expr(lv, names, types, gens, &insts, dc, ctx), mono_expr(rhs, names, types, gens, &insts, dc, ctx), ln)
+        SPrint(e, ln):
+            return SPrint(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+        SReturn(e, ln):
+            return SReturn(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+        SReturnVoid:
+            return s
+        SIf(c, th, el, ln):
+            return SIf(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_block(th, names, types, gens, &insts, dc, ctx), mono_block(el, names, types, gens, &insts, dc, ctx), ln)
+        SWhile(c, body, ln):
+            return SWhile(mono_expr(c, names, types, gens, &insts, dc, ctx), mono_block(body, names, types, gens, &insts, dc, ctx), ln)
+        SForRange(v, a, b, st, body, ln):
+            nn := names
+            tt := types
+            push(nn, v)
+            push(tt, "int")
+            return SForRange(v, mono_expr(a, names, types, gens, &insts, dc, ctx), mono_expr(b, names, types, gens, &insts, dc, ctx), mono_expr(st, names, types, gens, &insts, dc, ctx), mono_block(body, nn, tt, gens, &insts, dc, ctx), ln)
+        SExpr(e, ln):
+            return SExpr(mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+        SOrReturn(nm, e, ln):
+            mr := mono_expr(e, names, types, gens, &insts, dc, ctx)
+            push(names, nm)
+            push(types, "int")                    # precise unwrap type is 1c; unused by 1a
+            return SOrReturn(nm, mr, ln)
+        SDestructure(nms, e, ln):
+            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+        SMultiAssign(nms, e, ln):
+            return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, dc, ctx), ln)
+        SMatch(subj, vars, binds, bodies, ln):
+            nb := [][Stmt]
+            i := 0
+            for i < len(bodies):
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, dc, ctx))
+                i = i + 1
+            return SMatch(mono_expr(subj, names, types, gens, &insts, dc, ctx), vars, binds, nb, ln)
+        SBreak:
+            return s
+        SContinue:
+            return s
+        SSelect(uid, kinds, chans, bnds, bodies, ln):
+            nb := [][Stmt]
+            i := 0
+            for i < len(bodies):
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, dc, ctx))
+                i = i + 1
+            return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, dc, ctx), bnds, nb, ln)
+        SParFor(v, a, b, body, pid, fl):
+            nn := names
+            tt := types
+            push(nn, v)
+            push(tt, "int")
+            return SParFor(v, mono_expr(a, names, types, gens, &insts, dc, ctx), mono_expr(b, names, types, gens, &insts, dc, ctx), mono_block(body, nn, tt, gens, &insts, dc, ctx), pid, fl)
+
+fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], dc: Decls, ctx: Ctx) -> [Stmt]:
+    nm := names                                   # by-value copy -> a block's decls don't leak to the caller (scope)
+    ty := types
+    out := []Stmt
+    i := 0
+    for i < len(stmts):
+        push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, dc, ctx))
+        i = i + 1
+    return out
+
+fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
+    gens := []Func
+    concrete := []Func
+    i := 0
+    for i < len(prog.funcs):
+        if func_is_generic(prog.funcs[i]):
+            push(gens, prog.funcs[i])
+        else:
+            push(concrete, prog.funcs[i])
+        i = i + 1
+    if len(gens) == 0:
+        return prog                               # no templates: program unchanged (byte-identical)
+    insts := []Func
+    out := []Func
+    i = 0
+    for i < len(concrete):
+        f := concrete[i]
+        names := []string
+        types := []string
+        seed_env(f, &names, &types)
+        nbody := mono_block(f.body, names, types, gens, &insts, dc, ctx)
+        push(out, Func(f.name, f.params, f.ptypes, f.ret, nbody, f.is_extern, f.lib))
+        i = i + 1
+    i = 0
+    for i < len(insts):                           # instances last, in first-encounter order (matches hierc)
+        push(out, insts[i])
+        i = i + 1
+    return Program(prog.structs, prog.enums, out, prog.ntnames, prog.ntunder)
+
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)
 # for env-struct + thunk emission. `dc` carries the ORIGINAL function sigs (built
@@ -8436,6 +8749,19 @@ fn main():
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
+    # generics: expand `$T` templates into concrete instances, then rebuild the
+    # sig tables from the monomorphized program (templates dropped, instances added)
+    prog = monomorphize_program(prog, dc, ctx)
+    funcs = prog.funcs
+    sigs = []Sig
+    sigmap = []string: int
+    i = 0
+    for i < len(funcs):
+        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
+        if map_get(sigmap, funcs[i].name, -1) < 0:
+            sigmap[funcs[i].name] = i
+        i = i + 1
+    dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
