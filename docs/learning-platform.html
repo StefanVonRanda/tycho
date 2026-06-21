@@ -955,12 +955,13 @@ fn main():
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := [<span class="str">"ada"</span>: <span class="num">1</span>, <span class="str">"alan"</span>: <span class="num">2</span>]     <span class="cm"># [string: int]</span>
 empty := []<span class="ty">string</span>: <span class="ty">int</span>              <span class="cm"># empty map</span>
 
-v := <span class="fn">map_get</span>(counts, <span class="str">"ada"</span>, <span class="num">0</span>)       <span class="cm"># 1 (0 = default)</span>
-<span class="fn">map_has</span>(counts, <span class="str">"grace"</span>)             <span class="cm"># false</span>
-counts = <span class="fn">map_set</span>(counts, <span class="str">"grace"</span>, <span class="num">5</span>)  <span class="cm"># add/overwrite</span>
-counts = <span class="fn">map_del</span>(counts, <span class="str">"alan"</span>)     <span class="cm"># remove</span>
-ks := <span class="fn">keys</span>(counts)                     <span class="cm"># [string] of keys</span>
-<span class="fn">print</span>(<span class="fn">str</span>(<span class="fn">len</span>(counts)))                 <span class="cm"># entry count</span></code></pre></div>
+v := counts[<span class="str">"ada"</span>]                   <span class="cm"># 1   (read; a missing key gives 0)</span>
+d := <span class="fn">map_get</span>(counts, <span class="str">"x"</span>, <span class="num">-1</span>)         <span class="cm"># -1  (custom default -- the one map function)</span>
+<span class="str">"grace"</span> <span class="kw">in</span> counts                    <span class="cm"># false  (membership)</span>
+counts[<span class="str">"grace"</span>] = <span class="num">5</span>               <span class="cm"># add / overwrite a key</span>
+<span class="kw">delete</span> counts[<span class="str">"alan"</span>]            <span class="cm"># remove a key (no-op if absent)</span>
+ks := <span class="fn">keys</span>(counts)                   <span class="cm"># [string] of keys</span>
+<span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(counts)))            <span class="cm"># entry count</span></code></pre></div>
 
 <h2>The Counter Idiom</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># canonical word-frequency pattern</span>
@@ -968,19 +969,19 @@ counts := []<span class="ty">string</span>: <span class="ty">int</span>
 words := <span class="fn">split</span>(<span class="str">"the cat sat on the mat"</span>, <span class="str">" "</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(words)):
     w := words[i]
-    counts = <span class="fn">map_set</span>(counts, w, <span class="fn">map_get</span>(counts, w, <span class="num">0</span>) + <span class="num">1</span>)</code></pre></div>
+    counts[w] += <span class="num">1</span>                <span class="cm"># missing key starts at 0, then +1</span></code></pre></div>
 
 <div class="callout tip">
 <div class="callout-icon">&#9889;</div>
 <div>
 <div class="callout-title">In-place optimization</div>
-Despite looking like it builds a fresh map each step, the compiler <strong>mutates in place</strong> when it sees the <code>m = map_set(m, ...)</code> self-rebind &mdash; O(n) total, not O(n&sup2;).
+Despite looking like it might rebuild the map each step, <code>counts[w] += 1</code> <strong>mutates in place</strong> &mdash; value semantics proves <code>counts</code> is uniquely owned at that point, so the loop is O(n) total, not O(n&sup2;).
 </div></div>
 
-<h2>Bracket syntax: <code>m[k]</code></h2>
-<p>You can also read and write entries with brackets instead of <code>map_set</code>/<code>map_get</code>:</p>
+<h2><code>m[k]</code> is a place</h2>
+<p>A map entry is a <strong>place</strong> you can write through and update in place, and reading one is a pure zero-default read:</p>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := []<span class="ty">string</span>: <span class="ty">int</span>
-counts[<span class="str">"ada"</span>] = <span class="num">1</span>            <span class="cm"># write  (same as map_set)</span>
+counts[<span class="str">"ada"</span>] = <span class="num">1</span>            <span class="cm"># write</span>
 counts[<span class="str">"ada"</span>] += <span class="num">1</span>           <span class="cm"># compound update -> 2</span>
 counts[<span class="str">"new"</span>] += <span class="num">5</span>           <span class="cm"># missing key starts at 0, then += 5 -> 5</span>
 
@@ -1020,14 +1021,14 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 
 <div class="quiz" id="quiz-8">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
-<div class="quiz-question" data-answer="1">
-<p>1. How do you add a key to a map?</p>
+<div class="quiz-question" data-answer="0">
+<p>1. How do you add or overwrite a key in a map?</p>
 <div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts["key"] = value</code></div>
-<div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts = map_set(counts, "key", value)</code></div>
+<div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>insert(counts, "key", value)</code></div>
 <div class="quiz-option" onclick="selectOption(this,8)"><div class="radio"></div><code>counts.set("key", value)</code></div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! <code>map_set</code> returns a new map. The <code>m = map_set(m, k, v)</code> self-rebind is optimized to in-place mutation.</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <code>map_set(m, k, v)</code> which returns a new map. The self-rebind <code>m = map_set(m, k, v)</code> is optimized to mutate in place.</div>
+<div class="quiz-explanation" data-correct="0">Correct! <code>m[k] = v</code> stores a key. Because value semantics proves the map is uniquely owned, the write mutates in place &mdash; and <code>m[k] += 1</code> or <code>push(m[k], v)</code> update a value in place too.</div>
+<div class="quiz-explanation" data-wrong="0">It is <code>counts["key"] = value</code>. An entry is a place: <code>m[k] = v</code> writes it, <code>m[k] += 1</code> updates it, <code>k in m</code> tests membership, and <code>delete m[k]</code> removes it &mdash; the only surviving map <em>function</em> is <code>map_get(m, k, default)</code>.</div>
 <button class="quiz-submit" onclick="submitQuiz(8)">Check Answers</button>
 </div>
 </div>
@@ -1620,7 +1621,7 @@ x += <span class="num">1</span>                 <span class="cm"># compound: += 
 [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]    []<span class="ty">int</span>     <span class="fn">push</span> <span class="fn">pop</span> <span class="fn">len</span>  xs[i]  xs[a:b]
 <span class="cm"># Maps</span>
 [<span class="str">"a"</span>: <span class="num">1</span>]    []<span class="ty">string</span>: <span class="ty">int</span>
-<span class="fn">map_set</span>(m,k,v)  <span class="fn">map_get</span>(m,k,d)  <span class="fn">map_has</span>(m,k)  <span class="fn">map_del</span>(m,k)  <span class="fn">keys</span>(m)</code></pre></div>
+m[k] = v   m[k]   k <span class="kw">in</span> m   <span class="kw">delete</span> m[k]   <span class="fn">map_get</span>(m,k,d)   <span class="fn">keys</span>(m)</code></pre></div>
 
 <h2>Structs &amp; Enums</h2>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>: x: <span class="ty">int</span>; y: <span class="ty">int</span>
@@ -1979,8 +1980,7 @@ const EXERCISES = {
     starter: 'fn main():\n    words := split("the cat and the dog and the cat", " ")\n    counts := []string: int\n    for i in range(len(words)):\n        w := words[i]\n        ________                          # count w (bracket syntax)\n\n    ks := keys(counts)\n    for i in range(len(ks)):\n        k := ks[i]\n        println(________)                 # print "k: count"',
     validate(code) {
       const counted = /counts\[w\]\s*\+=\s*1/.test(code) ||
-                      /counts\[w\]\s*=\s*counts\[w\]\s*\+\s*1/.test(code) ||
-                      code.includes('map_set(counts, w, map_get(counts, w, 0) + 1)');
+                      /counts\[w\]\s*=\s*counts\[w\]\s*\+\s*1/.test(code);
       const printed = /counts\[k\]/.test(code) ||
                       code.includes('counts[ks[i]]') ||
                       code.includes('map_get(counts, k') ||
@@ -1988,7 +1988,7 @@ const EXERCISES = {
       return counted && printed;
     },
     solution: 'fn main():\n    words := split("the cat and the dog and the cat", " ")\n    counts := []string: int\n    for i in range(len(words)):\n        w := words[i]\n        counts[w] += 1\n\n    ks := keys(counts)\n    for i in range(len(ks)):\n        k := ks[i]\n        println(k + ": " + str(counts[k]))',
-    hint: 'Count with the bracket form <code>counts[w] += 1</code> (a missing key starts at 0). Read a count with <code>counts[k]</code> &mdash; a pure read that gives 0 for an absent key. (The classic <code>map_set</code>/<code>map_get</code> still works too.)'
+    hint: 'Count with the bracket form <code>counts[w] += 1</code> (a missing key starts at 0). Read a count with <code>counts[k]</code> &mdash; a pure read that gives 0 for an absent key.'
   },
   option: {
     starter: 'fn safe_get(xs: [int], i: int) -> Option(int):\n    if ________:\n        return ________\n    return ________\n\nfn main():\n    xs := [10, 20, 30, 40]\n    match safe_get(xs, 2):\n        Some(v):\n            print("found: " + str(v) + "\\n")\n        None:\n            print("out of bounds\\n")',
@@ -2103,7 +2103,7 @@ function getExerciseHints(id, code) {
       if (!code.includes('c.r')) hints.push('Access the radius field with <code>c.r</code>');
       break;
     case 'map':
-      if (!/counts\[w\]/.test(code) && !code.includes('map_set')) hints.push('Count with <code>counts[w] += 1</code> (or <code>map_set(counts, w, ...)</code>)');
+      if (!/counts\[w\]/.test(code)) hints.push('Count with <code>counts[w] += 1</code> (a missing key starts at 0)');
       if (!/counts\[k\]/.test(code) && !code.includes('map_get')) hints.push('Read a count with <code>counts[k]</code> (or <code>map_get(counts, k, 0)</code>)');
       break;
     case 'option':
