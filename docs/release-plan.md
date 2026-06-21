@@ -320,11 +320,16 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   `Box(int)` as an explicit-type-args annotation in param/return/field/typed-decl
   positions. hierc interns at the use site; hierc0's `resolve_gstruct_type` pass
   rewrites the `"Box(int)"` type strings to `"Box__int"` across signatures/fields/
-  annotations and interns the concrete StructDef. Known edge: a generic struct
-  parameterized by a concrete struct (`Box(Point)`) needs a hierc0 struct topo
-  sort (scalar args are sound). Gates green (test, fixpoint, etc.).
-- **Stage 3** — multiple/nested params, `where` constraints (a fixed
-  compiler-known predicate set), and an explicit call-site type arg for the
+  annotations and interns the concrete StructDef. Gates green (test, fixpoint, etc.).
+- **Stage 3 (struct dep-ordering) — DONE** (both compilers). A generic struct
+  parameterized by a concrete struct (`Box(Point)`, instance embeds `Point` by
+  value) now orders correctly: hierc via `emit_aggregate`; hierc0 gained a stable
+  `topo_structs` sort in `monomorphize_program` (runs only for generic programs,
+  so B==C stays byte-identical). Test `tests/generic_struct_deps.hi`.
+- **Stage 3 (remaining) — TODO:** structured type-param patterns
+  (`fn first(xs: [$T]) -> Option(T)` — blocked on taming typaram-bearing composite
+  emission in both compilers, see the generics memory), `where` constraints (a
+  fixed compiler-known predicate set), and an explicit call-site type arg for the
   non-inferable case.
 
 When implementation lands, the "decided against" passages

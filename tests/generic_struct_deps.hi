@@ -1,0 +1,20 @@
+# Stage 3: a generic struct parameterized by a CONCRETE struct (Box(Point)).
+# The instance Box__Point embeds Point by value, so hierc0's struct emitter must
+# topologically order it after Point (the Stage 2b edge, now closed).
+
+struct Point:
+    x: int
+    y: int
+
+struct Box($T):
+    v: T
+
+struct Holder:
+    inner: Box(Point)
+
+fn main():
+    b := Box(Point(3, 4))
+    print(str(b.v.x) + "," + str(b.v.y) + "\n")    # 3,4
+    print(str(Box(5).v) + "\n")                     # 5 (scalar instance too)
+    h := Holder(Box(Point(7, 8)))
+    print(str(h.inner.v.y) + "\n")                  # 8

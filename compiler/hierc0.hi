@@ -8599,6 +8599,73 @@ fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef
         return out + ")"
     return ty
 
+# Collect the struct names a field type embeds BY VALUE (so they must be emitted
+# first). Names inside `[...]` (arrays/maps) are held by pointer -> not a by-value
+# dep; names inside `(...)` (Option/Result/tuple) are by value -> a dep.
+fn struct_byval_deps(ty: string, isstruct: [string], out: mut [string]):
+    i := 0
+    bdepth := 0
+    n := len(ty)
+    for i < n:
+        c := ty[i]
+        if c == 91:                              # [
+            bdepth = bdepth + 1
+            i = i + 1
+        elif c == 93:                            # ]
+            bdepth = bdepth - 1
+            i = i + 1
+        elif is_alpha(c):
+            j := i
+            for j < n and is_alnum(ty[j]):
+                j = j + 1
+            word := substr(ty, i, j)
+            if bdepth == 0 and has_str(isstruct, word):
+                push(out, word)
+            i = j
+        else:
+            i = i + 1
+
+# Stable topological sort: a struct embedding another by value is emitted after
+# it. Ties break by input order, so a program already in dependency order is
+# unchanged. Only called for generic programs (instances can land out of order),
+# never for hierc0.hi itself -> B==C byte-identical is preserved.
+fn topo_structs(structs: [StructDef]) -> [StructDef]:
+    isstruct := []string
+    i := 0
+    for i < len(structs):
+        push(isstruct, structs[i].name)
+        i = i + 1
+    out := []StructDef
+    done := []string
+    pass := 0
+    for pass <= len(structs):
+        i = 0
+        for i < len(structs):
+            nm := structs[i].name
+            if not has_str(done, nm):
+                deps := []string
+                f := 0
+                for f < len(structs[i].fields):
+                    struct_byval_deps(structs[i].fields[f].ty, isstruct, &deps)
+                    f = f + 1
+                ok := true
+                d := 0
+                for d < len(deps):
+                    if deps[d] != nm and not has_str(done, deps[d]):
+                        ok = false
+                    d = d + 1
+                if ok:
+                    push(out, structs[i])
+                    push(done, nm)
+            i = i + 1
+        pass = pass + 1
+    i = 0
+    for i < len(structs):                        # cycle fallback (invalid programs): append leftovers as-is
+        if not has_str(done, structs[i].name):
+            push(out, structs[i])
+        i = i + 1
+    return out
+
 fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
@@ -8808,19 +8875,19 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
                 j = j + 1
             push(rconcrete, StructDef(prog.structs[i].name, rf, []string))
         i = i + 1
-    # hierc0 emits struct bodies in list order (no topo sort), so a concrete struct
-    # embedding an instance needs the instance first. Scalar-arg instances (the
-    # common case) have no struct deps, so emitting all instances first is sound.
-    newstructs := []StructDef
-    i = 0
-    for i < len(sinsts):
-        push(newstructs, sinsts[i])
-        i = i + 1
+    # hierc0 emits struct bodies in list order (no topo sort). A struct instance can
+    # depend on a concrete struct (Box(Point)) or vice versa, so topologically sort
+    # them by by-value embedding (stable: ties keep input order).
+    allstructs := []StructDef
     i = 0
     for i < len(rconcrete):
-        push(newstructs, rconcrete[i])
+        push(allstructs, rconcrete[i])
         i = i + 1
-    return Program(newstructs, prog.enums, out, prog.ntnames, prog.ntunder)
+    i = 0
+    for i < len(sinsts):
+        push(allstructs, sinsts[i])
+        i = i + 1
+    return Program(topo_structs(allstructs), prog.enums, out, prog.ntnames, prog.ntunder)
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)

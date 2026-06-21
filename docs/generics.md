@@ -258,11 +258,16 @@ commit, fully green before the next — same discipline as every other change.
   `"Box(int)"` and `monomorphize_program` runs a `resolve_gstruct_type` pass over
   every signature, struct field, and typed-decl annotation, interning the concrete
   `StructDef` and rewriting the string to `"Box__int"`. A generic struct now
-  crosses non-generic function boundaries. **Known limit:** a generic struct
-  parameterized by another *concrete struct* (`Box(Point)`) is not yet ordered
-  correctly by hierc0's source-order struct emitter (scalar type args — the common
-  case — are sound, emitted instances-first); the test uses scalar args. A proper
-  struct topological sort in hierc0 is the remaining edge.
+  crosses non-generic function boundaries.
+- **Stage 3 (struct dep-ordering) — SHIPPED.** A generic struct parameterized by
+  another *concrete struct* (`Box(Point)`, where the instance embeds `Point` by
+  value) now works in both compilers. hierc already topo-ordered via
+  `emit_aggregate`; hierc0 gained a stable struct topological sort
+  (`topo_structs`) applied in `monomorphize_program` — it orders a struct after
+  the structs it embeds by value (names inside `[...]` are pointers, not deps),
+  ties breaking by input order. It runs only for generic programs, so hierc0.hi's
+  own emission is untouched and B==C stays byte-identical. Test:
+  `tests/generic_struct_deps.hi`.
 - **Stage 3 — multiple/nested parameters, constraints, explicit type args.**
   `where` predicates ([§5](#5-constraints-checked-at-instantiation)), an
   explicit call-site type argument for the non-inferable case
