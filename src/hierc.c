@@ -187,11 +187,18 @@ static TokVec lex(const char *src) {
     while (*p) {
         line++;
         const char *ls = p;                 /* line start */
-        /* count leading spaces */
-        int col = 0;
-        while (*p == ' ') { col++; p++; }
-        if (*p == '\t')
-            die_at(line, "tabs are not allowed for indentation; use spaces");
+        /* Leading whitespace: tabs OR spaces, but never a mix within one
+         * line (the single ambiguous case). Each leading char counts as one
+         * indent unit, so a consistently-indented file -- all tabs or all
+         * spaces -- nests correctly; the indent stack compares depths, not
+         * absolute display widths. */
+        int col = 0, ws_sp = 0, ws_tab = 0;
+        while (*p == ' ' || *p == '\t') {
+            if (*p == ' ') ws_sp = 1; else ws_tab = 1;
+            col++; p++;
+        }
+        if (ws_sp && ws_tab)
+            die_at(line, "mixed tabs and spaces in indentation; use one consistently");
 
         /* blank or comment-only line: skip without touching indentation */
         if (*p == '\n' || *p == '\0' || *p == '#') {
@@ -218,7 +225,7 @@ static TokVec lex(const char *src) {
         (void)ls;
         while (*p && *p != '\n' && *p != '#') {
             char c = *p;
-            if (c == ' ' || c == '\r') { p++; continue; }
+            if (c == ' ' || c == '\t' || c == '\r') { p++; continue; }
             int tcol = (int)(p - ls) + 1;   /* token start column (1-based), for the error caret */
 
             if (isdigit((unsigned char)c)) {

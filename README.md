@@ -303,8 +303,8 @@ fn main():               # entry point: must be `fn main():`, no return
 ```
 
 A `fn` with no `-> type` returns nothing. Blocks are indentation-based
-(spaces only; tabs are an error) and every block header ends with `:`,
-like Python. `#` starts a comment.
+(tabs or spaces — just don't mix the two within one line's indentation) and
+every block header ends with `:`, like Python. `#` starts a comment.
 
 By default a parameter is a copy (or, for arrays, a read-only borrow). An
 `mut` parameter is mutated in place — the callee writes back into the

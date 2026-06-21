@@ -102,7 +102,7 @@ Compile and run:
 **Key differences from JavaScript/Python:**
 - `fn` instead of `function` / `def`
 - `-> type` declares the return type
-- Indentation is significant (spaces only, tabs are an error)
+- Indentation is significant (tabs or spaces, but don't mix the two within one line)
 - Every block header ends with `:`
 - `#` starts a comment
 - `print()` takes a string and writes it — no implicit newline (add `\n` yourself)

@@ -170,12 +170,34 @@ accepted (it now reads as an unknown type: *"unknown type 'inout'; did you mean
 **Verified.** `make test` 162/0; `make fixpoint` all green (B≡C holds across the
 rename); `make fuzz` `FAIL=0`; `make tools-check` (hierfmt/lsp handle `mut`).
 
-### B4 — tab indentation — TODO
+### B4 — tab indentation — DONE
 
 `src/hierc.c` (and hierc0's lexer) currently reject tabs. Allow tabs *or* spaces
 for indentation, rejecting only a *mix* within one line's leading whitespace (the
 single ambiguous case). Both lexers; indentation drives block structure, so test
 carefully.
+
+**What this change did.** Each leading-whitespace char counts as one indent unit
+(tab = 1, space = 1), so a consistently-indented file — all tabs *or* all spaces —
+nests correctly; the indent stack compares depths, not display widths. A line
+whose leading whitespace contains *both* a tab and a space is rejected (the one
+ambiguous case).
+
+- **hierc** (`src/hierc.c`): the leading-whitespace loop now consumes `' '` and
+  `'\t'`, tracking whether each was seen and erroring on a mix; tabs were also
+  added to the inter-token whitespace skip (parity — hierc0 already skipped them).
+- **hierc0** (`compiler/hierc0.hi`): the bol indent loop consumes spaces *and*
+  tabs with the same mix check. (Before this, a leading tab was silently treated
+  as zero indentation — a latent divergence from hierc, which errored.)
+- Tests: `tests/tab_indent.hi` (+golden) — a tab-indented program with 3-level
+  nesting, multi-level dedent, and blank/comment lines whose tab indent must not
+  touch the stack; `tests/reject/tab_mix.hi` (space-then-tab) and
+  `tests/reject/tab_mix2.hi` (tab-then-space) — both compilers must reject.
+
+**Verified.** `make test` (incl. the new golden + the two rejects, both compilers);
+`make fixpoint` all green (B≡C + differential reproduces the tab-indented program);
+`make fuzz` `FAIL=0`; `make tools-check` ok (hierfmt re-derives indentation from the
+tab-indented source, idempotent + semantics-preserving).
 
 ### B3 — package privacy — TODO
 
@@ -209,5 +231,5 @@ Then staged implementation in both compilers behind the fixpoint. The
 
 ## Sequence
 
-Per the chosen order: A1 → A3 → B6 (all done) → **B4** (next) → B3 → B5 → A2. Each
+Per the chosen order: A1 → A3 → B6 → B4 (all done) → **B3** (next) → B5 → A2. Each
 is its own commit, fully green before the next.
