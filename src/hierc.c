@@ -448,7 +448,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 
 typedef struct { char *name; Type type; } Field;
 typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line;
-                 int generic; Type typarams[8]; int ntyparams; } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted */
+                 int generic; Type typarams[8]; int ntyparams;
+                 int from_tmpl; Type from_args[8]; int nfrom_args; } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
 static StructDef *g_structs;
 static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
@@ -628,7 +629,8 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * variant directly with no qualification. */
 typedef struct { char *name; Type payload[8]; int npayload; } Variant;
 typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line;
-                 int generic; Type typarams[8]; int ntyparams; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads */
+                 int generic; Type typarams[8]; int ntyparams;
+                 int from_tmpl; Type from_args[8]; int nfrom_args; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
 static EnumDef *g_enums;
 static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
@@ -1140,8 +1142,16 @@ static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 gener
 
 /* Generics (structs): substitute type parameters in a type — stamps out a struct
  * instance's concrete field types. binds is indexed by typaram id; T_VOID = unbound. */
+static int struct_instantiate(int tmpl, Type *binds);   /* mutually recursive with subst_type (recursive generic types) */
+static int enum_instantiate(int tmpl, Type *binds);
 static Type subst_type(Type t, Type *binds) {
     if (IS_TYPARAM(t)) { Type b = binds[(int)(t - T_TYPARAM_BASE)]; return b == T_VOID ? t : b; }
+    /* a bare *generic template* type is a deferred self/recursive reference (e.g. the
+     * `LL($T)` inside `struct LL($T)`): concretize it now with the current bindings.
+     * struct_instantiate dedups via struct_find BEFORE registering, so a type that
+     * references itself terminates (the in-progress instance is found and reused). */
+    if (IS_STRUCT(t) && g_structs[STRUCT_ID(t)].generic) return STRUCT_TYPE(struct_instantiate(STRUCT_ID(t), binds));
+    if (IS_ENUM(t)   && g_enums[ENUM_ID(t)].generic)     return ENUM_TYPE(enum_instantiate(ENUM_ID(t), binds));
     if (is_array(t)) return arr_of(subst_type(arr_elem(t), binds));   /* arr_of canonicalizes [int]->T_ARRAY_INT */
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
@@ -1153,6 +1163,8 @@ static Type subst_type(Type t, Type *binds) {
  * is transient (only in a template) and must never reach codegen. */
 static int has_typaram(Type t) {
     if (IS_TYPARAM(t)) return 1;
+    if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].generic;   /* a bare generic template type is transient (a deferred self-reference) */
+    if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].generic;
     if (is_array(t)) return has_typaram(arr_elem(t));
     if (IS_OPT(t))  return has_typaram(opt_inner(t));
     if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
@@ -1174,6 +1186,23 @@ static int match_type(Type pat, Type concrete, Type *binds) {
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
     if (is_map(pat) && is_map(concrete))   return match_type(map_key(pat), map_key(concrete), binds)
                                                && match_type(map_val(pat), map_val(concrete), binds);
+    /* a deferred generic self-reference (the bare template type) matched against a
+     * concrete instance of that template: recover the parameter bindings from the
+     * instance's provenance -- matching `Tree` against `Tree__int` binds T=int. */
+    if (IS_STRUCT(pat) && g_structs[STRUCT_ID(pat)].generic
+        && IS_STRUCT(concrete) && g_structs[STRUCT_ID(concrete)].from_tmpl == STRUCT_ID(pat)) {
+        StructDef *in = &g_structs[STRUCT_ID(concrete)];
+        for (int i = 0; i < in->nfrom_args; i++)
+            if (!match_type(g_structs[STRUCT_ID(pat)].typarams[i], in->from_args[i], binds)) return 0;
+        return 1;
+    }
+    if (IS_ENUM(pat) && g_enums[ENUM_ID(pat)].generic
+        && IS_ENUM(concrete) && g_enums[ENUM_ID(concrete)].from_tmpl == ENUM_ID(pat)) {
+        EnumDef *in = &g_enums[ENUM_ID(concrete)];
+        for (int i = 0; i < in->nfrom_args; i++)
+            if (!match_type(g_enums[ENUM_ID(pat)].typarams[i], in->from_args[i], binds)) return 0;
+        return 1;
+    }
     return pat == concrete;
 }
 
@@ -1189,14 +1218,24 @@ static int struct_instantiate(int tmpl, Type *binds) {
     if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(g_structs[tmpl].line, "too many structs");
     TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
     int id = g_nstructs++;
-    StructDef *s = &g_structs[id];
-    StructDef *t = &g_structs[tmpl];   /* re-fetch: the realloc above may have moved g_structs */
-    memset(s, 0, sizeof *s);
-    s->name = nm; s->line = t->line;
-    for (int f = 0; f < t->nfields; f++) {
+    { StructDef *s = &g_structs[id]; memset(s, 0, sizeof *s); s->name = nm; s->line = g_structs[tmpl].line;
+      s->from_tmpl = tmpl; s->nfrom_args = g_structs[tmpl].ntyparams;   /* provenance: lets match_type recover $T from a recursive-self argument */
+      for (int i = 0; i < g_structs[tmpl].ntyparams; i++)
+          s->from_args[i] = binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]; }
+    /* Register the (empty) instance BEFORE substituting fields, so a recursive field
+     * type (`tail: Option(LL($T))`) re-instantiates and finds THIS in-progress id.
+     * subst_type may re-enter struct_instantiate and realloc g_structs, so never hold
+     * a StructDef* across it: re-read the template field and re-fetch the instance each
+     * iteration, and append the substituted type only after subst_type returns. */
+    int nf = g_structs[tmpl].nfields;
+    for (int f = 0; f < nf; f++) {
+        char *fname = g_structs[tmpl].fields[f].name;
+        Type   sty  = subst_type(g_structs[tmpl].fields[f].type, binds);
+        StructDef *s = &g_structs[id];
         TBL_ENSURE(s->fields, s->nfields, s->fields_cap);
-        s->fields[s->nfields].name = t->fields[f].name;
-        s->fields[s->nfields].type = subst_type(t->fields[f].type, binds);
+        s = &g_structs[id];   /* TBL_ENSURE grows s->fields (not g_structs), but re-fetch for safety */
+        s->fields[s->nfields].name = fname;
+        s->fields[s->nfields].type = sty;
         s->nfields++;
     }
     return id;
@@ -1216,17 +1255,28 @@ static int enum_instantiate(int tmpl, Type *binds) {
     if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(g_enums[tmpl].line, "too many enums");
     TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
     int id = g_nenums++;
-    EnumDef *e = &g_enums[id];
-    EnumDef *t = &g_enums[tmpl];   /* re-fetch: the realloc above may have moved g_enums */
-    memset(e, 0, sizeof *e);
-    e->name = nm; e->line = t->line;
-    for (int v = 0; v < t->nvariants; v++) {
+    { EnumDef *e = &g_enums[id]; memset(e, 0, sizeof *e); e->name = nm; e->line = g_enums[tmpl].line;
+      e->from_tmpl = tmpl; e->nfrom_args = g_enums[tmpl].ntyparams;   /* provenance: lets match_type recover $T from a recursive-self argument */
+      for (int i = 0; i < g_enums[tmpl].ntyparams; i++)
+          e->from_args[i] = binds[(int)(g_enums[tmpl].typarams[i] - T_TYPARAM_BASE)]; }
+    /* Register the (empty) instance BEFORE substituting payloads, so a recursive
+     * payload (`Node(Tree($T))`) re-instantiates and finds THIS in-progress id.
+     * subst_type may re-enter enum_instantiate and realloc g_enums, so buffer the
+     * substituted payload locally and re-fetch the instance afterward; never hold an
+     * EnumDef or Variant pointer across subst_type. */
+    int nv = g_enums[tmpl].nvariants;
+    for (int v = 0; v < nv; v++) {
+        char *vname = g_enums[tmpl].variants[v].name;
+        int   np    = g_enums[tmpl].variants[v].npayload;
+        Type  pl[8];
+        for (int f = 0; f < np; f++)
+            pl[f] = subst_type(g_enums[tmpl].variants[v].payload[f], binds);   /* may realloc g_enums */
+        EnumDef *e = &g_enums[id];
         TBL_ENSURE(e->variants, e->nvariants, e->variants_cap);
-        Variant *src = &t->variants[v];
+        e = &g_enums[id];
         Variant *dst = &e->variants[e->nvariants];
-        dst->name = src->name; dst->npayload = src->npayload;
-        for (int f = 0; f < src->npayload; f++)
-            dst->payload[f] = subst_type(src->payload[f], binds);
+        dst->name = vname; dst->npayload = np;
+        for (int f = 0; f < np; f++) dst->payload[f] = pl[f];
         e->nvariants++;
     }
     return id;
@@ -1348,14 +1398,27 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             if (g_structs[sid].generic) {        /* `Box(int)` in type position: explicit type args -> a concrete instance */
                 eat(ps, TK_LPAREN, "'(' with the type arguments for a generic struct");
-                Type binds[256];
-                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
                 int np = g_structs[sid].ntyparams;
+                Type args[8];
                 for (int i = 0; i < np; i++) {
-                    binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] = parse_type(ps);
+                    args[i] = parse_type(ps);
                     if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
                 }
                 eat(ps, TK_RPAREN, "')' after the type arguments");
+                /* self/recursive reference: the generic applied to exactly its own type
+                 * parameters (`LL($T)` inside `struct LL($T)`). Defer -- keep the generic
+                 * template type; subst_type concretizes it when the instance is built. */
+                int self_ref = 1;
+                for (int i = 0; i < np; i++) if (args[i] != g_structs[sid].typarams[i]) { self_ref = 0; break; }
+                if (self_ref) return STRUCT_TYPE(sid);
+                for (int i = 0; i < np; i++)
+                    if (has_typaram(args[i]))
+                        die_at(t->line, "generic struct '%s': a type argument may not partially mention a type "
+                               "parameter; use the generic applied to its own parameters (a recursive reference) "
+                               "or to concrete types", g_structs[sid].name);
+                Type binds[256];
+                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                for (int i = 0; i < np; i++) binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return STRUCT_TYPE(struct_instantiate(sid, binds));
             }
             return STRUCT_TYPE(sid);
@@ -1365,23 +1428,27 @@ static Type parse_type(Parser *ps) {
             ps->p++;
             if (g_enums[eid].generic) {        /* `Tree(int)` in type position: explicit type args -> a concrete instance */
                 eat(ps, TK_LPAREN, "'(' with the type arguments for a generic enum");
-                Type binds[256];
-                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
                 int np = g_enums[eid].ntyparams;
+                Type args[8];
                 for (int i = 0; i < np; i++) {
-                    Type ta = parse_type(ps);
-                    /* fail-closed: a generic enum monomorphizes over *concrete* types only. A
-                     * type-parameter argument here means a variant payload names the enum itself
-                     * (recursive generic enum) or a generic fn passes its own $T through -- both
-                     * would mint a `$T`-tagged instance the substitutor can't later concretize. */
-                    if (IS_TYPARAM(ta))
-                        die_at(t->line, "generic enum '%s' cannot yet be instantiated with a type parameter ($%s); "
-                               "recursive generic enums (a payload naming the enum itself) are not supported yet",
-                               g_enums[eid].name, typaram_name(ta));
-                    binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = ta;
+                    args[i] = parse_type(ps);
                     if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
                 }
                 eat(ps, TK_RPAREN, "')' after the type arguments");
+                /* self/recursive reference: the generic applied to exactly its own type
+                 * parameters (`Tree($T)` inside `enum Tree($T)`). Defer -- keep the generic
+                 * template type; subst_type concretizes it when the instance is built. */
+                int self_ref = 1;
+                for (int i = 0; i < np; i++) if (args[i] != g_enums[eid].typarams[i]) { self_ref = 0; break; }
+                if (self_ref) return ENUM_TYPE(eid);
+                for (int i = 0; i < np; i++)
+                    if (has_typaram(args[i]))
+                        die_at(t->line, "generic enum '%s': a type argument may not partially mention a type "
+                               "parameter; use the generic applied to its own parameters (a recursive reference) "
+                               "or to concrete types", g_enums[eid].name);
+                Type binds[256];
+                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                for (int i = 0; i < np; i++) binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return ENUM_TYPE(enum_instantiate(eid, binds));
             }
             return ENUM_TYPE(eid);
@@ -2528,6 +2595,7 @@ static void parse_struct(Parser *ps) {
     sd->line = nameT->line;
     sd->generic = (_ntp > 0); sd->ntyparams = _ntp;   /* generics: a template; instances substitute $T */
     for (int i = 0; i < _ntp; i++) sd->typarams[i] = _tp[i];
+    sd->from_tmpl = -1; sd->nfrom_args = 0;            /* not an instance */
     g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
                      * may reference this struct — e.g. a recursive `[Node]`
                      * child list. (Parsing is single-pass and sequential, so a
@@ -2579,6 +2647,7 @@ static void parse_enum(Parser *ps) {
     ed->line = nameT->line;
     ed->generic = (_ntp > 0); ed->ntyparams = _ntp;   /* generics: a template; instances substitute $T in payloads */
     for (int i = 0; i < _ntp; i++) ed->typarams[i] = _tp[i];
+    ed->from_tmpl = -1; ed->nfrom_args = 0;            /* not an instance */
     g_nenums++;   /* register early so a variant payload can be this enum (recursion) */
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
