@@ -627,7 +627,8 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * Variant names are globally unique, so a constructor or match arm names the
  * variant directly with no qualification. */
 typedef struct { char *name; Type payload[8]; int npayload; } Variant;
-typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line; } EnumDef;
+typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line;
+                 int generic; Type typarams[8]; int ntyparams; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads */
 static EnumDef *g_enums;
 static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
@@ -1201,6 +1202,36 @@ static int struct_instantiate(int tmpl, Type *binds) {
     return id;
 }
 
+/* Find or stamp out the concrete enum instance of a generic template for the
+ * given bindings: Tree($T) + {T:int} -> a real `enum Tree__int` whose variant
+ * payloads have $T substituted. Variant names stay shared (lookups during a
+ * `match` are keyed on the matched enum, not the global variant table), so the
+ * instance is an ordinary (non-generic) enum from here on. */
+static int enum_instantiate(int tmpl, Type *binds) {
+    char *nm = g_enums[tmpl].name;
+    for (int i = 0; i < g_enums[tmpl].ntyparams; i++)
+        nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(g_enums[tmpl].typarams[i] - T_TYPARAM_BASE)]));
+    int ex = enum_find(nm);
+    if (ex >= 0) return ex;
+    if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(g_enums[tmpl].line, "too many enums");
+    TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
+    int id = g_nenums++;
+    EnumDef *e = &g_enums[id];
+    EnumDef *t = &g_enums[tmpl];   /* re-fetch: the realloc above may have moved g_enums */
+    memset(e, 0, sizeof *e);
+    e->name = nm; e->line = t->line;
+    for (int v = 0; v < t->nvariants; v++) {
+        TBL_ENSURE(e->variants, e->nvariants, e->variants_cap);
+        Variant *src = &t->variants[v];
+        Variant *dst = &e->variants[e->nvariants];
+        dst->name = src->name; dst->npayload = src->npayload;
+        for (int f = 0; f < src->npayload; f++)
+            dst->payload[f] = subst_type(src->payload[f], binds);
+        e->nvariants++;
+    }
+    return id;
+}
+
 static Type parse_type(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_DOLLAR) {          /* generics: `$T` introduces a type parameter into scope */
@@ -1330,7 +1361,31 @@ static Type parse_type(Parser *ps) {
             return STRUCT_TYPE(sid);
         }
         int eid = enum_find(nm);
-        if (eid >= 0) { ps->p++; return ENUM_TYPE(eid); }
+        if (eid >= 0) {
+            ps->p++;
+            if (g_enums[eid].generic) {        /* `Tree(int)` in type position: explicit type args -> a concrete instance */
+                eat(ps, TK_LPAREN, "'(' with the type arguments for a generic enum");
+                Type binds[256];
+                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                int np = g_enums[eid].ntyparams;
+                for (int i = 0; i < np; i++) {
+                    Type ta = parse_type(ps);
+                    /* fail-closed: a generic enum monomorphizes over *concrete* types only. A
+                     * type-parameter argument here means a variant payload names the enum itself
+                     * (recursive generic enum) or a generic fn passes its own $T through -- both
+                     * would mint a `$T`-tagged instance the substitutor can't later concretize. */
+                    if (IS_TYPARAM(ta))
+                        die_at(t->line, "generic enum '%s' cannot yet be instantiated with a type parameter ($%s); "
+                               "recursive generic enums (a payload naming the enum itself) are not supported yet",
+                               g_enums[eid].name, typaram_name(ta));
+                    binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = ta;
+                    if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
+                }
+                eat(ps, TK_RPAREN, "')' after the type arguments");
+                return ENUM_TYPE(enum_instantiate(eid, binds));
+            }
+            return ENUM_TYPE(eid);
+        }
         int nid = newtype_find(nm);
         if (nid >= 0) { ps->p++; return NT_TYPE(nid); }
         const char *sg = suggest_type(nm);
@@ -2499,6 +2554,18 @@ static void parse_struct(Parser *ps) {
 static void parse_enum(Parser *ps) {
     eat(ps, TK_ENUM, "'enum'");
     Tok *nameT = eat(ps, TK_IDENT, "an enum name");
+    g_ncur_typarams = 0;                         /* generics: fresh `$T` scope for this enum */
+    Type _tp[8]; int _ntp = 0;                   /* `enum Tree($T, $U)` type parameters */
+    if (accept(ps, TK_LPAREN)) {
+        while (!at(ps, TK_RPAREN)) {
+            Type tp = parse_type(ps);            /* `$T` registers the name + returns its typaram type; a bare payload `T` then refers to it */
+            if (!IS_TYPARAM(tp)) die_at(nameT->line, "an enum type parameter must be written `$Name`");
+            if (_ntp >= 8) die_at(nameT->line, "too many enum type parameters (max 8)");
+            _tp[_ntp++] = tp;
+            if (!accept(ps, TK_COMMA)) break;
+        }
+        eat(ps, TK_RPAREN, "')' after the enum type parameters");
+    }
     if (struct_find(pkg_mangle(nameT->text)) >= 0 || enum_find(pkg_mangle(nameT->text)) >= 0 || newtype_find(pkg_mangle(nameT->text)) >= 0)
         die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(nameT->line, "too many enums");
@@ -2510,6 +2577,8 @@ static void parse_enum(Parser *ps) {
     ed->name = pkg_mangle(nameT->text);
     ed->variants = NULL; ed->nvariants = 0; ed->variants_cap = 0;
     ed->line = nameT->line;
+    ed->generic = (_ntp > 0); ed->ntyparams = _ntp;   /* generics: a template; instances substitute $T in payloads */
+    for (int i = 0; i < _ntp; i++) ed->typarams[i] = _tp[i];
     g_nenums++;   /* register early so a variant payload can be this enum (recursion) */
     while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
         if (accept(ps, TK_NEWLINE)) continue;
@@ -2535,6 +2604,7 @@ static void parse_enum(Parser *ps) {
     }
     eat(ps, TK_DEDENT, "dedent");
     if (ed->nvariants == 0) die_at(nameT->line, "an enum needs at least one variant");
+    g_ncur_typarams = 0;                         /* generics: leave the enum's `$T` scope */
 }
 
 /* `type X = int` / `type X = float` — a distinct, zero-cost newtype. */
@@ -3107,6 +3177,9 @@ static Type resolve_expr(Expr *e) {
             if (eid >= 0) {
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s carries a payload — write %s(...)", e->sval, e->sval);
+                if (g_enums[eid].generic)   /* a nullary variant of a generic enum fixes no $T -- need the explicit form */
+                    die_at(e->line, "%s is a variant of generic enum %s; supply the type explicitly, e.g. %s$(int)",
+                           e->sval, g_enums[eid].name, e->sval);
                 e->kind = E_CALL; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;   /* 0-arg constructor */
                 return e->type = ENUM_TYPE(eid);
             }
@@ -3224,6 +3297,9 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "package '%s' has no variant '%s'", e->lhs->sval, e->sval);
                 if (g_enums[eid].variants[evi].npayload != 0)
                     die_at(e->line, "%s.%s carries a payload — write %s.%s(...)",
+                           e->lhs->sval, e->sval, e->lhs->sval, e->sval);
+                if (g_enums[eid].generic)   /* nullary variant of a generic enum: no $T to fix */
+                    die_at(e->line, "%s.%s is a variant of a generic enum; supply the type explicitly, e.g. %s.%s$(int)",
                            e->lhs->sval, e->sval, e->lhs->sval, e->sval);
                 e->kind = E_CALL; e->sval = q; e->op = TK_ENUM; e->ival = evi; e->nargs = 0;
                 return e->type = ENUM_TYPE(eid);
@@ -3433,6 +3509,30 @@ static Type resolve_expr(Expr *e) {
             /* a call whose name is an enum variant is a constructor */
             {
                 int evi, eid = variant_find(e->sval, &evi);
+                if (eid >= 0 && g_enums[eid].generic) {   /* generic enum: fix $T from explicit type args and/or the payload values, then instantiate */
+                    EnumDef *gt = &g_enums[eid];
+                    Variant *gv = &gt->variants[evi];
+                    Type binds[256];
+                    for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                    if (e->ntypeargs > 0) {        /* `Leaf$(int)`: explicit -- the only way to fix a nullary variant */
+                        if (e->ntypeargs != gt->ntyparams)
+                            die_at(e->line, "%s expects %d type argument(s), got %d", gt->name, gt->ntyparams, e->ntypeargs);
+                        for (int i = 0; i < gt->ntyparams; i++)
+                            binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] = e->typeargs[i];
+                    }
+                    if (e->nargs != gv->npayload)
+                        die_at(e->line, "%s takes %d payload value(s), got %d", gv->name, gv->npayload, e->nargs);
+                    for (int i = 0; i < e->nargs; i++) {   /* infer $T by matching each payload pattern against the arg type */
+                        Type at_ = resolve_expr(e->args[i]);
+                        if (!match_type(gv->payload[i], at_, binds))
+                            die_at(e->line, "%s payload %d does not fit a %s argument", gv->name, i + 1, type_name(at_));
+                    }
+                    for (int i = 0; i < gt->ntyparams; i++)
+                        if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] == T_VOID)
+                            die_at(e->line, "type parameter $%s of %s is not fixed by any payload value; supply it explicitly, e.g. %s$(int)",
+                                   typaram_name(gt->typarams[i]), gt->name, e->sval);
+                    eid = enum_instantiate(eid, binds);   /* eid now names the concrete instance; the tail below re-resolves against it */
+                }
                 if (eid >= 0) {
                     Variant *var = &g_enums[eid].variants[evi];
                     if (e->nargs != var->npayload)
@@ -7353,8 +7453,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * so it has to be a complete type at the point the array typedef uses it.
      * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
-    for (int i = 0; i < g_nenums; i++)              /* forward-declare cells; a value is E_<name>* */
+    for (int i = 0; i < g_nenums; i++) {            /* forward-declare cells; a value is E_<name>* */
+        if (g_enums[i].generic) continue;   /* generics: a `$T` template emits no C; its instances do */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
+    }
     for (int i = 0; i < g_narrtypes; i++)           /* forward-declare composite-array/map tags so a fn value */
         fprintf(o, "typedef struct HierArrC%d_ HierArrC%d;\n", i, i);   /* whose param/ret is one (fn([T])->R) can name it incomplete */
     for (int i = 0; i < g_nmaptypes; i++)
@@ -7414,7 +7516,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (3b) enum payload structs: one per variant-with-payload, holding its
      * fields by value (structs/options/arrays/enum-descriptors all emitted
      * above). The payload is heap-allocated, so recursive enums stay finite. */
-    for (int i = 0; i < g_nenums; i++)
+    for (int i = 0; i < g_nenums; i++) {
+        if (g_enums[i].generic) continue;   /* generics: payload structs only for concrete instances */
         for (int v = 0; v < g_enums[i].nvariants; v++) {
             Variant *var = &g_enums[i].variants[v];
             if (var->npayload == 0) continue;
@@ -7423,12 +7526,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o, " %sf%d;", c_type(var->payload[f]), f);
             fprintf(o, " } E_%s_%s;\n", g_enums[i].name, var->name);
         }
+    }
     /* (3c) enum cell bodies: a value is a pointer to { int tag; union of the
      * payload-bearing variants' field structs }. One allocation per node, fields
      * inline (no separate payload alloc, no void* indirection). Nullary variants
      * carry no fields and share a static singleton cell — zero per-node alloc and
      * dispatch stays a uniform v->tag. */
     for (int i = 0; i < g_nenums; i++) {
+        if (g_enums[i].generic) continue;   /* generics: cell body only for concrete instances */
         EnumDef *ed = &g_enums[i];
         int has_payload = 0;
         for (int v = 0; v < ed->nvariants; v++) if (ed->variants[v].npayload) has_payload = 1;
@@ -7473,6 +7578,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (type_is_heap(T_TUP_BASE + i) && !has_typaram(T_TUP_BASE + i))
             fprintf(o, "static HierTup%d hier_tup%d_copy(Arena *a, HierTup%d v);\n", i, i, i);
     for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
+        if (g_enums[i].generic) continue;   /* generics: no helpers for a template */
         const char *en = g_enums[i].name;
         if (type_is_heap(ENUM_TYPE(i)))
             fprintf(o, "static E_%s *hier_copy_E_%s(Arena *a, E_%s *v);\n", en, en, en);
@@ -7836,6 +7942,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * compares the tag, then the active variant's fields. Recurse via
      * copy_into / gen_eq — all prototyped, so recursive enums (ASTs) work. */
     for (int i = 0; i < g_nenums; i++) {
+        if (g_enums[i].generic) continue;   /* generics: copy/eq bodies only for concrete instances */
         EnumDef *ed = &g_enums[i];
         const char *en = ed->name;
         if (type_is_heap(ENUM_TYPE(i))) {
