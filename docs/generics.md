@@ -4,8 +4,10 @@
 > generic-struct *construction* and *type-position* annotations, struct
 > *dependency-ordering* (`Box(Point)`), *structured type-param patterns*
 > (`fn first(xs: [$T]) -> Option(T)`), *map patterns*
-> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), *`where` constraints*
-> (`fn sum(xs: [$T]) -> T where numeric(T)`), and *explicit call-site type args*
+> (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), generic *enums*
+> (`enum Tree($T)`, including recursive payloads — `Node(Tree($T), $T, Tree($T))`),
+> *`where` constraints* (`fn sum(xs: [$T]) -> T where numeric(T)`), and
+> *explicit call-site type args*
 > (`empty$(int)` for the non-inferable `empty() -> [$T]`). This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
@@ -361,6 +363,22 @@ commit, fully green before the next — same discipline as every other change.
   constraint string encodes a type set as `T=t1|t2` (`=`-marked, `#`-separated
   entries to survive tuple types); the mono check splits and tests base membership.
   Test `tests/generic_typeset.hi` + `tests/reject/typeset_*.hi`.
+- **Post-A2: generic enums — SHIPPED (both compilers).** A user sum type takes
+  `$T`: `enum Tree($T): Leaf; Node(Tree($T), $T, Tree($T))`. Monomorphized like a
+  generic struct — one concrete `enum` per type argument, payloads substituted.
+  Inference is from the constructor's payload values (`Has(42)` ⇒ `T = int`); a
+  nullary variant fixes no `$T`, so it takes an explicit arg (`Empty$(int)`), the
+  same surface as `empty$(int)`. **Recursive** payloads (a variant naming the enum
+  itself) work because, in both compilers, a self-reference resolves to the
+  *template* type and is concretized on demand; the instantiator dedups before
+  substituting, so the cycle terminates (this also fixed a pre-existing gap:
+  *recursive generic structs* — `struct LL($T): tail: [LL($T)]` — were broken the
+  same way in both compilers, and nested generic structs (`Pair(Box(int))`) didn't
+  resolve in hierc0). Variant names are shared across instances, so hierc0 names
+  constructors `mk_<enum>_<variant>` and a `match` binds payloads from the
+  *scrutinee's* instance; the C compiler inlines construction and resolves by type.
+  Tests `tests/generic_enum.hi`, `tests/generic_struct_rec.hi`,
+  `tests/reject/genenum_bare_nullary.hi`.
 
 ## 9. Two-compiler determinism
 
