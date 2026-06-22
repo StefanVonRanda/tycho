@@ -1,0 +1,4 @@
+fn pick(a: $T, b: $T) -> $T where T: int | string:
+    return a
+fn main():
+    println(str(pick(1.5, 2.5)))

@@ -1087,8 +1087,10 @@ typedef struct {
     int     is_extern;     /* FFI: `extern fn` — bodyless, calls a C symbol directly (no arena, name unmangled) */
     const char *lib;       /* FFI: `extern "Lib" fn` — link with -lLib; NULL for bare extern */
     int     generic;       /* generics: a `$T` template — not sig-registered/emitted directly; instantiated per call */
-    char   *con_pred[8];   /* generics: `where` constraint predicate names (numeric/comparable/has_str) */
-    Type    con_tp[8];     /* the type parameter each predicate constrains (a T_TYPARAM) */
+    char   *con_pred[8];   /* generics: `where` predicate name (numeric/comparable/has_str); NULL for a type-set constraint */
+    Type    con_tp[8];     /* the type parameter each constraint constrains (a T_TYPARAM) */
+    Type    con_set[8][16];/* type-set constraint `T: a | b | ...` -- the allowed types (con_nset[c] of them) */
+    int     con_nset[8];   /* type-set member count; 0 => it's a predicate (use con_pred) */
     int     ncon;
     Type    typarams[16];  /* generics: the template's $-params in declaration (first-appearance) order */
     int     ntyparams;     /* for mapping explicit call-site type args `f$(int, ...)` by position */
@@ -2343,18 +2345,35 @@ static Proc *parse_fn(Parser *ps) {
         if (!pr->generic) die_at(cur(ps)->line, "`where` constraints require a generic function (one with a `$T` parameter)");
         ps->p++;
         for (;;) {
-            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate: numeric, comparable, or has_str");
-            if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str"))
-                die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str)", pt->text);
-            eat(ps, TK_LPAREN, "'(' after a `where` predicate");
-            Tok *tn = eat(ps, TK_IDENT, "a type-parameter name");
-            int known = 0;
-            for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], tn->text)) known = 1;
-            if (!known) die_at(tn->line, "`where` refers to '%s', which is not a type parameter of this function", tn->text);
-            eat(ps, TK_RPAREN, "')'");
-            if (pr->ncon >= 8) die_at(pt->line, "at most 8 `where` constraints per function");
-            pr->con_pred[pr->ncon] = pt->text;
-            pr->con_tp[pr->ncon]   = typaram_of(tn->text);
+            if (pr->ncon >= 8) die_at(cur(ps)->line, "at most 8 `where` constraints per function");
+            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate (numeric/comparable/has_str) or a type parameter");
+            if (at(ps, TK_COLON)) {   /* type-set form: T: type1 | type2 | ...  (Go-style) */
+                int known = 0;
+                for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], pt->text)) known = 1;
+                if (!known) die_at(pt->line, "`where %s: ...`: '%s' is not a type parameter of this function", pt->text, pt->text);
+                ps->p++;   /* the ':' */
+                pr->con_pred[pr->ncon] = NULL;
+                pr->con_tp[pr->ncon]   = typaram_of(pt->text);
+                int n = 0;
+                pr->con_set[pr->ncon][n++] = parse_type(ps);
+                while (accept(ps, TK_PIPE)) {
+                    if (n >= 16) die_at(pt->line, "at most 16 types in a `where` type set");
+                    pr->con_set[pr->ncon][n++] = parse_type(ps);
+                }
+                pr->con_nset[pr->ncon] = n;
+            } else {                  /* predicate form: pred(T) */
+                if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str"))
+                    die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str -- or use a type set, `T: int | float`)", pt->text);
+                eat(ps, TK_LPAREN, "'(' after a `where` predicate");
+                Tok *tn = eat(ps, TK_IDENT, "a type-parameter name");
+                int known = 0;
+                for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], tn->text)) known = 1;
+                if (!known) die_at(tn->line, "`where` refers to '%s', which is not a type parameter of this function", tn->text);
+                eat(ps, TK_RPAREN, "')'");
+                pr->con_pred[pr->ncon] = pt->text;
+                pr->con_tp[pr->ncon]   = typaram_of(tn->text);
+                pr->con_nset[pr->ncon] = 0;
+            }
             pr->ncon++;
             if (!accept(ps, TK_COMMA)) break;
         }
@@ -4667,9 +4686,21 @@ static void instantiate_generic(Proc *gt, Expr *e) {
      * instead of a deep "cannot add string and int" inside the substituted body. */
     for (int c = 0; c < gt->ncon; c++) {
         Type ct = binds[(int)(gt->con_tp[c] - T_TYPARAM_BASE)];
-        if (ct != T_VOID && !constraint_ok(gt->con_pred[c], ct))
+        if (ct == T_VOID) continue;
+        if (gt->con_nset[c] > 0) {   /* type-set `T: a | b | ...`: ct's base must be one of the listed types */
+            int inset = 0;
+            for (int j = 0; j < gt->con_nset[c]; j++)
+                if (base_of(ct) == base_of(gt->con_set[c][j])) { inset = 1; break; }
+            if (!inset) {
+                char *setstr = (char *)type_name(gt->con_set[c][0]);
+                for (int j = 1; j < gt->con_nset[c]; j++) setstr = sfmt("%s | %s", setstr, type_name(gt->con_set[c][j]));
+                die_at(e->line, "'%s' instantiated with %s = %s, which is not in the type set { %s }",
+                       gt->name, typaram_name(gt->con_tp[c]), type_name(ct), setstr);
+            }
+        } else if (!constraint_ok(gt->con_pred[c], ct)) {
             die_at(e->line, "'%s' instantiated with %s = %s, which does not satisfy `%s(%s)`",
                    gt->name, typaram_name(gt->con_tp[c]), type_name(ct), gt->con_pred[c], typaram_name(gt->con_tp[c]));
+        }
     }
     /* build the instance's concrete signature (substituting every `$T`) + name */
     char *nm = gt->name;

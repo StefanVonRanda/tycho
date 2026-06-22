@@ -1541,28 +1541,44 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
         cont := true
         for cont:
             if toks[pos].kind != TIdent:
-                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str)")
-            pred := toks[pos].text
-            if pred != "numeric" and pred != "comparable" and pred != "has_str":
-                die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + pred + "' (known: numeric, comparable, has_str)")
+                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str) or a type parameter")
+            first := toks[pos].text
             pos = pos + 1
-            expect(toks, &pos, TLParen)
-            if toks[pos].kind != TIdent:
-                die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name")
-            tpn := toks[pos].text
+            entry := ""
             known := false
             ki := 0
-            for ki < len(bases):
-                if bases[ki] == tpn:
-                    known = true
-                ki = ki + 1
-            if not known:
-                die("parse: line " + str(toks[pos].line) + ": `where` refers to '" + tpn + "', not a type parameter of this function")
-            pos = pos + 1
-            expect(toks, &pos, TRParen)
+            if toks[pos].kind == TColon:           # type-set form: T: type1 | type2 | ... (Go-style)
+                for ki < len(bases):
+                    if bases[ki] == first:
+                        known = true
+                    ki = ki + 1
+                if not known:
+                    die("parse: line " + str(toks[pos].line) + ": `where " + first + ": ...`: '" + first + "' is not a type parameter of this function")
+                pos = pos + 1
+                set := parse_type(toks, &pos)
+                for toks[pos].kind == TPipe:
+                    pos = pos + 1
+                    set = set + "|" + parse_type(toks, &pos)
+                entry = first + "=" + set          # encoded `T=t1|t2|...` (`=` marks a type-set)
+            else:                                  # predicate form: pred(T)
+                if first != "numeric" and first != "comparable" and first != "has_str":
+                    die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + first + "' (known: numeric, comparable, has_str -- or use a type set, `T: int | float`)")
+                expect(toks, &pos, TLParen)
+                if toks[pos].kind != TIdent:
+                    die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name")
+                tpn := toks[pos].text
+                for ki < len(bases):
+                    if bases[ki] == tpn:
+                        known = true
+                    ki = ki + 1
+                if not known:
+                    die("parse: line " + str(toks[pos].line) + ": `where` refers to '" + tpn + "', not a type parameter of this function")
+                pos = pos + 1
+                expect(toks, &pos, TRParen)
+                entry = first + ":" + tpn
             if constraints != "":
-                constraints = constraints + ","
-            constraints = constraints + pred + ":" + tpn
+                constraints = constraints + "#"
+            constraints = constraints + entry
             if toks[pos].kind == TComma:
                 pos = pos + 1
             else:
@@ -8813,12 +8829,17 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc
             i = i + 1
     # generics: enforce `where` constraints up front (clear signature error, not a deep body error)
     if gt.constraints != "":
-        cons := split(gt.constraints, ",")
+        cons := split(gt.constraints, "#")
         ci := 0
         for ci < len(cons):
-            pr := split(cons[ci], ":")
-            cpred := pr[0]
-            ctp := pr[1]
+            entry := cons[ci]
+            eq := find(entry, "=")               # `=` marks a type-set entry `T=t1|t2`; else a predicate `pred:T`
+            ctp := ""
+            if eq >= 0:
+                ctp = substr(entry, 0, eq)
+            else:
+                pp := split(entry, ":")
+                ctp = pp[1]
             cty := ""
             found := false
             bj := 0
@@ -8827,8 +8848,26 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc
                     cty = btypes[bj]
                     found = true
                 bj = bj + 1
-            if found and not constraint_ok_str(cpred, cty, dc):
-                die("generics: '" + gt.name + "' instantiated with " + ctp + " = " + cty + ", which does not satisfy `" + cpred + "(" + ctp + ")`")
+            if found:
+                if eq >= 0:                       # type-set: cty's base must be one of the listed types
+                    members := split(substr(entry, eq + 1, len(entry)), "|")
+                    cb := nt_base_of(cty, dc)
+                    inset := false
+                    setstr := ""
+                    mi := 0
+                    for mi < len(members):
+                        if nt_base_of(members[mi], dc) == cb:
+                            inset = true
+                        if mi > 0:
+                            setstr = setstr + " | "
+                        setstr = setstr + members[mi]
+                        mi = mi + 1
+                    if not inset:
+                        die("generics: '" + gt.name + "' instantiated with " + ctp + " = " + cty + ", which is not in the type set { " + setstr + " }")
+                else:                             # predicate
+                    cpred := split(entry, ":")[0]
+                    if not constraint_ok_str(cpred, cty, dc):
+                        die("generics: '" + gt.name + "' instantiated with " + ctp + " = " + cty + ", which does not satisfy `" + cpred + "(" + ctp + ")`")
             ci = ci + 1
     cparams := []string                          # substitute "$X" -> concrete in the signature
     i = 0

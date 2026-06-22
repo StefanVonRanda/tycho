@@ -177,6 +177,18 @@ the substituted body. A `where` on a non-generic function, an unknown predicate,
 or a name that is not a type parameter is rejected at parse. Shipped in both
 compilers (`tests/generic_where.hi`, `tests/reject/where_*.hi`).
 
+**Go-style type sets (also shipped).** Beyond the fixed predicates, a constraint
+may be a *user-listed type set* — `where T: int | float | Meters` — bounding `T`
+to one of the named types (Go's `~int | ~float64` idea, minus the runtime
+machinery). Membership is checked against the **newtype-resolved base**, so it
+composes with `distinct` the same way the predicates do, and a type set may mix
+with predicates in one clause (`where numeric(T), U: int | string`). A violation
+is the same instantiation-time signature error (`… T = float, which is not in the
+type set { int | float }`). This is the *expressiveness* lever Go's type sets
+buy, kept fully monomorphizable and free of type classes — no dictionaries, no
+boxing; it is a compile-time membership test. Shipped in both compilers
+(`tests/generic_typeset.hi`, `tests/reject/typeset_*.hi`).
+
 ## 6. When `$T` can't be inferred
 
 Some signatures name a type parameter that no argument pins — `fn
@@ -337,6 +349,15 @@ commit, fully green before the next — same discipline as every other change.
   pass rewrites a UFCS-generic call (dotted-`ECall` and chained-`ECallV` forms) to a
   plain instance call, with `type_of` substituting the generic method's return from
   the receiver so chaining resolves. Test `tests/generic_ufcs.hi`.
+- **Post-A2: Go-style type sets — SHIPPED.** A `where` constraint can be a
+  user-listed type set, `where T: int | float` (see [§5](#5-constraints-checked-at-instantiation)),
+  mixable with the fixed predicates. Membership uses the newtype-resolved base;
+  it's a compile-time check, still fully monomorphized (no dictionaries, no
+  boxing). hierc: `Proc` gains `con_set`/`con_nset`; the `where` parser branches on
+  the token after the first ident (`:` → type set, `(` → predicate). hierc0: the
+  constraint string encodes a type set as `T=t1|t2` (`=`-marked, `#`-separated
+  entries to survive tuple types); the mono check splits and tests base membership.
+  Test `tests/generic_typeset.hi` + `tests/reject/typeset_*.hi`.
 
 ## 9. Two-compiler determinism
 

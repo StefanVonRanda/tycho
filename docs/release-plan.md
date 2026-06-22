@@ -369,6 +369,13 @@ two-compiler determinism rules, the non-goals, and a 3-stage plan.
   paths. hierc0: the mono pass rewrites the dotted-`ECall` and chained-`ECallV` forms
   to a plain instance call (`type_of` substitutes the method's return from the
   receiver, so chaining resolves). Test `tests/generic_ufcs.hi`; all gates green.
+- **Post-A2: Go-style type sets — DONE** (both compilers). A `where` constraint can be
+  a user-listed type set, `where T: int | float | Meters`, mixable with the fixed
+  predicates; membership tests the newtype-resolved base (compile-time, still fully
+  monomorphized). hierc: `Proc.con_set`/`con_nset`; the parser branches on `:` (type
+  set) vs `(` (predicate). hierc0: type sets encode as `T=t1|t2` (`=`-marked,
+  `#`-separated entries to survive tuple types). Tests `tests/generic_typeset.hi` +
+  two `tests/reject/typeset_*.hi`; all gates green.
 
 The "decided against" passages (`docs/arrays-structs.md §7/§9`, `CONTRIBUTING.md`,
 README) have been rewritten and the design doc flipped from *design* to
