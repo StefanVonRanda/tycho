@@ -1,8 +1,10 @@
 # Learning Hier — for programmers coming from Python, JavaScript, or Ruby
 
-A hands-on, project-driven introduction to Hier — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have built ten progressively larger programs and understand how Hier's value-semantic model gives you memory safety without garbage collection, lifetimes, or manual `malloc`/`free`.
+A hands-on, project-driven introduction to Hier — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have written real programs in it and understand how Hier's value-semantic model gives you memory safety without a garbage collector, lifetimes, or manual `malloc`/`free`.
 
-**Audience:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You've maybe heard "stack vs heap" but haven't managed memory yourself. This guide meets you there and walks you into a systems language.
+Hier is an experimental, open proof-of-concept. It's small on purpose — usually one way to do each thing — so this guide can cover the whole language and still fit in one sitting.
+
+**Who this is for:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You may have heard "stack vs heap" but never managed memory yourself. This guide meets you there and walks you into a systems language one concept at a time. Read it top to bottom: each section builds on the last, and the projects at the end pull everything together.
 
 ---
 
@@ -58,7 +60,9 @@ Three things make Hier different from the languages you know:
 | Errors | Exceptions | `Result<T, E>` | `Result(T, E)` |
 | Concurrency | Shared mutable state | `Send`/`Sync` + lifetimes | Copy-in/copy-out (race-free) |
 
-The key insight: **every value is independently owned**. When you assign `b = a`, `b` gets its own deep copy. Two variables never share storage. This is "value semantics," and it's what lets the compiler manage memory for you automatically — each scope gets an arena (a memory pool), and when the scope ends, the whole arena is freed at once. You never write `free()`, never count references, and never annotate lifetimes.
+The key insight, and the one idea to hold onto for the whole guide: **every value is independently owned**. When you assign `b = a`, `b` gets its own deep copy. Two variables never share storage. This is "value semantics," and it's what lets the compiler manage memory for you automatically — each scope gets an arena (a memory pool), and when the scope ends, the whole arena is freed at once. You never write `free()`, never count references, and never annotate lifetimes.
+
+Don't worry if that's abstract right now. You'll *see* it in every section, and section 14 returns to it once you have enough code under your belt for it to click.
 
 ---
 
@@ -66,7 +70,7 @@ The key insight: **every value is independently owned**. When you assign `b = a`
 
 ### Building the compiler
 
-You need a C compiler (`gcc` or `clang`) and `make`:
+You need a C compiler (`gcc` or `clang`) and `make`. Building Hier is one step — there are no dependencies to install:
 
 ```
 git clone <repo-url> hier
@@ -74,9 +78,11 @@ cd hier
 make
 ```
 
-This produces `./hierc`, the Hier compiler.
+This produces `./hierc`, the Hier compiler. (On macOS, see `docs/macos.md`.)
 
 ### Compiling and running a program
+
+`hierc` compiles a `.hi` source file to a native executable next to it, then you run that executable:
 
 ```
 ./hierc examples/hello.hi     # produces ./examples/hello
@@ -99,6 +105,8 @@ Compile and run:
 ./hello
 ```
 
+That's the full edit-compile-run loop you'll use for every program in this guide.
+
 **Key differences from JavaScript/Python:**
 - `fn` instead of `function` / `def`
 - `-> type` declares the return type
@@ -112,6 +120,8 @@ Compile and run:
 ---
 
 ## 3. Variables, Types, and Arithmetic
+
+Hier has two ways to introduce a variable: `:=` declares a new one and infers its type from the value, while `=` reassigns an existing one. Types are static — every variable has one fixed type — but you rarely write the type yourself.
 
 ```
 fn main():
@@ -181,6 +191,8 @@ chr(65)            # int  -> string: "A"
 ---
 
 ## 4. Functions
+
+A function declares its parameter types and, if it returns a value, its return type after `->`. The arguments come in *by value* — the function works on its own copies — which is your first taste of value semantics in action.
 
 ```
 # a function that returns an int
@@ -1674,9 +1686,9 @@ math.gcd(12, 8)   s.argsort(xs)
 - **Read the tests:** `tests/*.hi` covers every language feature with focused examples.
 - **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and where it doesn't.
 - **Read the source:** The self-hosted compiler `compiler/hierc0.hi` is ~3,500 lines of Hier written in Hier — a real program that exercises every feature.
-- **Run the benchmarks:** `make bench` to see the performance properties.
-- **Try the fuzzer:** `make fuzz` to see how correctness is verified.
+- **Run the benchmarks:** `make bench` to see the performance properties for yourself.
+- **Try the fuzzer:** `make fuzz` to see how the two compilers are checked against each other.
 
 ---
 
-*This guide covers Hier as of the repository version. The language is deliberately small — one way to do each thing — but what's there is tested, measured, and self-hosting. Welcome to systems programming without the memory management.*
+*The language is deliberately small — one way to do each thing — and it's an experimental proof-of-concept, not a production toolchain. But what's there is tested, measured, and self-hosting. Welcome to systems programming without the memory management.*

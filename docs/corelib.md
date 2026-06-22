@@ -1,6 +1,8 @@
 # corelib — Hier's standard library
 
-A growing set of packages under `corelib/`, imported with the `core:` collection root:
+corelib is Hier's standard library: a set of packages under `corelib/`, imported with the
+`core:` collection root. It is experimental, like the rest of Hier, but the modules below
+are usable today.
 
 ```
 import "core:math"
@@ -9,24 +11,34 @@ fn main():
     print(f"gcd={math.gcd(12, 18)}\n")
 ```
 
+## Quick start
+
+1. Point `HIER_CORELIB` at your corelib directory. In this repo it is `corelib` (the
+   Makefile and `make ci` export `HIER_CORELIB=corelib`, repo-relative).
+2. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
+3. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
+   (`x.abs()`).
+
 ## Resolution
 
-`import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` and binds the name `<pkg>`. Set
-`HIER_CORELIB` to your corelib directory — the Makefile and CI export
-`HIER_CORELIB=corelib` (repo-relative). Non-`core:` imports stay relative to the importing
-package, unchanged. Both compilers resolve `core:` natively, so the self-hosted `hierc0` is
-a fully standalone corelib-aware compiler with no bundling step required.
+`import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` and binds the name `<pkg>`.
+Non-`core:` imports stay relative to the importing package, unchanged. Both Hier compilers
+(`hierc` and the self-hosted `hierc0`) resolve `core:` natively, so `hierc0` is a fully
+standalone corelib-aware compiler with no bundling step required.
 
-## Shape (constrained by the language)
+## How corelib is shaped
 
-corelib is **concrete free functions over concrete types**; array utilities are
-per-element-type (currently `[int]`). It predates generics and UFCS methods (both
-have since shipped) and stays concrete for now — its functions are already
-callable method-style via UFCS, and `$T` generics could later collapse the
-per-type families. Higher-order helpers
-(map/filter/reduce taking a function) **are** expressible since closures shipped — they
-live in `core:iter` and take a first-class `fn`/closure argument. This shape is a
-deliberate consequence of the language's minimalism, not a corelib limitation.
+corelib is **concrete free functions over concrete types**. Hier has no generics, so array
+utilities come as one package per element type (for example `[int]`, `[string]`, and
+`[float]` each get their own sibling package). The functions are also callable method-style
+through UFCS, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
+
+Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
+its siblings, and take a first-class `fn`/closure argument. Lambdas in Hier are
+expression-bodied; pass a named function where you need a multi-line body.
+
+This concrete, per-type shape is a consequence of the language's minimalism rather than a
+corelib limitation.
 
 ## Packages
 
@@ -65,8 +77,7 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
 - **`arrays_float`** — the same over `[float]`: `contains`, `index_of`, `count`, `sum`,
   `fmin`, `fmax`, `reverse`, `is_sorted`, `sort`. (Equality/`contains` use exact float `==`.)
 - **`iter`** — higher-order over `[int]`, each taking a `fn`/closure: `map`, `filter`,
-  `reduce`, `count`, `any`. (Lambdas in hier are expression-bodied; pass a named fn for a
-  multi-line predicate.)
+  `reduce`, `count`, `any`.
 - **`iter_str`**, **`iter_float`** — the same five over `[string]` / `[float]`.
 - **`sort`** — `argsort(keys)` / `argsort_desc(keys)` (`[int]`) / `argsort_str(keys)`:
   return the index permutation that orders the keys — the no-generics way to sort
@@ -103,8 +114,7 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   `body(r)` (arena-copied), `release(r)` (the handle is C-owned). Convenience: `get_body(url)`
   / `get_status(url)` do the request and free the handle. The body is arena-copied via the
   FFI string-return, so a binary body with interior `0x00` truncates — this is for text
-  APIs. Verified live (`get("https://example.com")` → 200) and by a deterministic offline
-  error-path golden; skipped where libcurl is absent.
+  APIs. Tests are skipped where libcurl is absent.
 - **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.hi`
   demo promoted to a reusable module). The document is a value-semantic tree, the
   `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
@@ -155,20 +165,19 @@ deliberate consequence of the language's minimalism, not a corelib limitation.
   (8-digit lowercase). All return a non-negative int in `[0, 2^32)` and are kept UB-free the
   same way `core:rand` is — values never leave `[0, 2^32)` and shifts/masks use `* / %` so no
   signed 64-bit overflow (only `^` among the bit-operators). Hashing only reads bytes, so
-  there is no `0x00` caveat on the input. (Verified against published vectors:
-  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`.)
+  there is no `0x00` caveat on the input. Matches published vectors:
+  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`.
 - **`md5`** — the MD5 message-digest (RFC 1321): `hex(s)` (32-char lowercase digest) and
   `digest(s)` (16 raw bytes). Pure 32-bit arithmetic — adds masked with `% 4294967296`, the
   32-bit NOT is `4294967295 - x`, and the left-rotate uses `* / +` (disjoint halves), all
   UB-free. **MD5 is broken for security** (use it for checksums / content-addressing / interop,
-  never passwords or signatures). Verified bit-exact against the RFC 1321 suite
-  (`md5("abc") = 900150983cd24fb0d6963f7d28e17f72`) and a multi-block message.
+  never passwords or signatures). Bit-exact against the RFC 1321 suite
+  (`md5("abc") = 900150983cd24fb0d6963f7d28e17f72`).
 - **`sha256`** — the SHA-256 hash (FIPS 180-4): `hex(s)` (64-char lowercase digest) and
   `digest(s)` (32 raw bytes). Pure 32-bit arithmetic, UB-free like `md5`/`hash`; big-endian
   (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
   content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
-  for that). Verified bit-exact against NIST vectors
-  (`sha256("abc") = ba7816bf…f20015ad`) and a multi-block message.
+  for that). Bit-exact against NIST vectors (`sha256("abc") = ba7816bf…f20015ad`).
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
@@ -184,9 +193,8 @@ the `.hi`; the compiler auto-compiles and links it on `import "core:<module>"` (
 `--shim` needed). The `.hi` declares the shim's functions with `extern fn` (and
 `extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
 POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
-dereferenced or arena-managed — `null` / `is_null`). The corelib harness links a
-module's shim on the hierc0 paths too, so all three (hierc, hierc0 `--bundle`,
-standalone hierc0) stay in agreement.
+dereferenced or arena-managed — `null` / `is_null`). Both compilers link a module's shim,
+so `hierc`, `hierc0 --bundle`, and standalone `hierc0` all build C-shim modules.
 
 ### External dependencies (C-shim `deps`)
 

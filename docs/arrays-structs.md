@@ -1,14 +1,19 @@
 # Hier aggregates: arrays & structs under value semantics
 
-Status: **implemented** (this began as a design pressure-test; arrays,
-structs, heap-bearing/nested struct fields, structural equality, and `mut`
-all ship as described — see the [README](../README.md) and
-[thesis.md](thesis.md)). It answered one question: *do implicit hierarchical
-arenas still hold once the language has arrays and structs, given strict value
-semantics and no pointer type?* Conclusion: **yes**, subject to five
-invariants and three honest costs, both listed below — and the costs are now
-largely sealed by two compiler optimizations (return-slot move, in-place
-append) documented in [thesis.md](thesis.md) §4.
+Hier is an experimental, value-semantic language with implicit hierarchical
+arenas and **no pointer or reference type**. This document explains how
+aggregates — arrays and structs, including heap-bearing and nested fields —
+behave under those rules, and why the memory model stays sound without a
+borrow checker or whole-program alias analysis.
+
+The central question it answers: *do implicit arenas still hold once the
+language has arrays and structs, given strict value semantics and no pointer
+type?* The answer is **yes**, subject to five invariants and three honest
+costs, both listed below. Two compiler optimizations (return-slot move,
+in-place append) keep the costs from biting in practice; see
+[thesis.md](thesis.md) §4. Arrays, structs, nested struct fields, structural
+equality, and `mut` all ship as described — see the [README](../README.md)
+and [thesis.md](thesis.md).
 
 ## 1. The model in one paragraph
 
@@ -110,10 +115,10 @@ fn main():
    value is O(size). Mitigated, never for correctness, by:
    - *Build-in-destination*: if a local is returned, the compiler
      allocates it in the parent arena from the start → the return is free.
-     (We already do the leaf version: a return expression targets the
+     (The leaf version applies today: a return expression targets the
      parent arena.) Conservative when a value *may* be returned on some
      path; still sound, still local.
-   - *Move on last use* (✅ done): `b := a` / `b = a` where `a` is a
+   - *Move on last use*: `b := a` / `b = a` where `a` is a
      uniquely-owned local read exactly once (so this is its last use on every
      path), not inside a loop, and in the same arena as the destination, hands
      off `a`'s buffer instead of deep-copying it. Conservative and static; a
@@ -145,7 +150,7 @@ fn main():
    geometric and tight. "One right way" should make in-place building the
    one way; immutable rebuild stays *correct* but is the slow path.
 
-## 6. Pressure-test results
+## 6. Aliasing and lifetime hazards, by scenario
 
 | Scenario | Aliasing/lifetime hazard? | Resolution |
 | --- | --- | --- |
@@ -185,27 +190,26 @@ struct Box($T):                          # generic struct
     v: T
 ```
 
-You **can** now write `struct Box($T)` and `fn id(x: $T) -> T`. This reverses an
-earlier "no generics (firm)" stance — reversed once it was clear that the
-"cross-module monomorphization registry" such an engine is supposed to need
-**already exists**: it is exactly what stamps out `Option(int)` versus
-`Option(string)`. Opening it to user `$T` definitions adds a substitution pass,
-not a new subsystem, and stays memory-model-neutral (§9). The full design, the
-reversal argument, and the staged rollout are in [generics.md](generics.md).
-Shipped, both compilers — the full set: generic functions, generic structs
+You can write `struct Box($T)` and `fn id(x: $T) -> T`. The monomorphization
+engine such generics need **already exists**: it is exactly what stamps out
+`Option(int)` versus `Option(string)`. Opening it to user `$T` definitions adds
+a substitution pass, not a new subsystem, and stays memory-model-neutral (§9).
+The full design is in [generics.md](generics.md).
+
+The full set is available in both compilers: generic functions, generic structs
 (construction + `Box(int)` type-position annotations), structured patterns
 (`[$T]` → `Option(T)`), `[$K: $V]` map patterns, `where` constraints
 (`numeric` / `comparable` / `has_str`), and explicit call-site type args
 (`empty$(int)` for the non-inferable case).
 
-Still required, and none of these is generics:
+Companion features that work alongside generics (none of these is generics):
 
 - **`mut` parameters** (exclusive mutable borrow) — efficient mutation
   without copies or aliasing.
 - **`Option(T)` + exhaustive `match`** — the no-`null` story.
-- **Slices** (`xs[a:b]`) — ✅ done: a non-storable view (zero-copy when passed
+- **Slices** (`xs[a:b]`) — a non-storable view (zero-copy when passed
   to a read-only param, deep-copied when stored), no borrow checker needed.
-- **`distinct` newtypes** (`type Meters = float`) — ✅ done: a distinct,
+- **`distinct` newtypes** (`type Meters = float`) — a distinct,
   zero-cost type over `int`/`float` (same C rep, type-incompatible with the base
   and other newtypes); arithmetic/ordering/`str` only between the same newtype.
 
@@ -242,9 +246,9 @@ alias tracking — which is exactly why such languages reach for explicit
 tools instead. The no-pointer rule turns that hardest problem into a local
 optimization.
 
-## 9. Verdict
+## 9. Why generics don't weaken the model
 
-Future A holds, and **adding generics does not weaken it**: each `$T`
+The arena model holds, and **adding generics does not change that**: each `$T`
 instantiation is monomorphized to concrete, value-semantic code *before* the
 signature-directed escape analysis (§8) runs, so it is ordinary concrete code
 with the same locally-decidable lifetimes — nothing generic survives to analyze.
@@ -252,6 +256,7 @@ Correctness still rests entirely on **"no reference type + copy on cross-arena
 move."** What grows is a substitution pass feeding the *same* per-type
 emission the built-in containers already use — not a new generics engine, and
 not the memory model.
+
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
 signature-directed escape strategy (§8) reclaim memory without copies. Arena

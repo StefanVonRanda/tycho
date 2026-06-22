@@ -1,16 +1,26 @@
 # Concurrency in Hier
 
-Hier's call convention — arguments deep-copied in, result copied out, a private
-arena per call — is already a sound thread boundary. Concurrency is that same
-convention run on other threads: after the copy-in, a task shares zero bytes with
-its spawner, so race freedom falls out of value semantics. There is no
-`Sendable`, no lifetime annotation, and no lock in the language. (Erlang gets the
-same guarantee from per-process heaps and message copying; Swift's
-Sendable/region machinery exists to patch first-class aliasing, which Hier does
-not have.)
+Hier is value-semantic: every call deep-copies its arguments in, copies its result
+out, and runs against a private arena. That call convention is already a sound
+thread boundary. Concurrency is the same convention run on other threads — after
+the copy-in, a task shares zero bytes with its spawner, so race freedom falls out
+of value semantics. There is no `Sendable`, no lifetime annotation, and no lock in
+the language. (Erlang gets the same guarantee from per-process heaps and message
+copying; Swift's Sendable/region machinery exists to patch first-class aliasing,
+which Hier does not have.)
 
-The price is honest and stated, not hidden: every value crossing a thread
-boundary is a deep copy, the same rule as an ordinary call.
+The model has four constructs:
+
+- **`spawn` / `wait`** — structured tasks with by-value capture and automatic join.
+- **`parallel for`** — fork-join data parallelism with reductions.
+- **channels** — bounded lock-free queues, the one shared object.
+- **`select`** — multi-channel fan-in.
+
+The cost is stated, not hidden: every value crossing a thread boundary is a deep
+copy, the same rule as an ordinary call.
+
+Concurrency is implemented in both the C reference compiler (`hierc`) and the
+self-hosted compiler (`hierc0`).
 
 ## spawn / wait — structured tasks
 
@@ -116,12 +126,9 @@ reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 | parreduce (4×10⁸ int reduce) | **37 ms / 1.6 MB** | 36 ms / 1.6 MB | 62 ms | 43 ms |
 | pipeline (10⁶ strings, 1→4 consumers) | **73 ms / 2.8 MB** | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
 
-`parallel for` is at exact C parity. The lock-free channels beat everything,
-including Go, while paying two deep copies per message that the others do not.
-What first looked like a 2.7× scheduler gap (242 ms) turned out to be false
-sharing — the enqueue/dequeue counters packed on one cache line, and cells
-straddling lines. Padding them apart closed it; it was never the locking, a
-scheduler, or a memory-model question.
+`parallel for` is at exact C parity. The lock-free channels are competitive with
+Go and faster than the other reference implementations measured, while paying two
+deep copies per message that the others do not.
 
 ## Limits (deliberate)
 
@@ -134,17 +141,16 @@ scheduler, or a memory-model question.
 
 ## Verification
 
-Concurrency ships in both compilers. `make conc` runs every positive fixture
-native, under AddressSanitizer + LeakSanitizer, and under ThreadSanitizer against
-recorded goldens, and asserts the self-hosted compiler reproduces the same
-outputs (the parity differential); it is part of `make ci`. The cross-language
+`make conc` runs every fixture natively, under AddressSanitizer + LeakSanitizer,
+and under ThreadSanitizer against recorded goldens, and asserts that `hierc` and
+`hierc0` produce the same outputs. It is part of `make ci`. The cross-language
 benchmarks live in `bench/conc/`.
 
 ---
 
 ## Appendix: implementation & lineage
 
-For contributors. Everything exists twice — `src/hierc.c` and
+For contributors. The feature exists in both compilers — `src/hierc.c` and
 `compiler/hierc0.hi` emit different C dialects with identical semantics — plus
 once in the shared runtime (`runtime/hier_rt.c`).
 
@@ -166,19 +172,12 @@ trampoline per site; per-element-type send/recv wrappers bracket `copy_into`
 around the runtime claim/commit; the implicit-join finalizers ride a codegen
 stack mirroring the scope-arena stack; `parallel for` lifts its body into a chunk
 procedure reusing the spawn machinery. `hierc0` represents the types as strings,
-adds `ESpawn`/`SParFor`/`SSelect` AST variants (every exhaustive match is
-extended — the compiler's non-exhaustive-match errors enumerate the sites),
-inlines the channel copies inside the claim/commit bracket, and emits the
-finalizers LIFO at each scope exit.
+adds `ESpawn`/`SParFor`/`SSelect` AST variants, inlines the channel copies inside
+the claim/commit bracket, and emits the finalizers LIFO at each scope exit.
 
 **Lineage.** Structured spawn/await with no function colouring follows Hylo/Val's
 structured-concurrency work (Val's first design required sink-only spawn
 environments — exactly Hier's only mode); Hier skips the `mut`-to-disjoint-parts
 machinery and gets the expressiveness from chunk-copy + merge at a copy cost that
-*is* the thesis. Share-nothing message copying is the Erlang/Pony model at
-industrial scale, and the channel core is Vyukov's bounded MPMC queue.
-
-**Possible next levers** (performance only — the model is closed): batched
-dequeues or per-consumer sub-rings to cut dequeue-CAS contention behind the
-remaining Go gap; send arms in `select`; and per-channel waiter registration to
-replace select's pause ladder with real parking.
+*is* the design point. Share-nothing message copying is the Erlang/Pony model, and
+the channel core is Vyukov's bounded MPMC queue.

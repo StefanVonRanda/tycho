@@ -2,11 +2,11 @@
 
 Once a map can hold any value type ([map-values.md](map-values.md)), the next
 question is how to *grow* one of those values without copying it. This note
-covers `m[k]` — indexing a map both as a write target and as a read — and why
-it stays sound with no borrow checker. The user-facing map surface is in the
+covers `m[k]` — indexing a map both as a write target and as a read — and why it
+stays sound with no borrow checker. The user-facing map surface is in the
 README's [Maps](../README.md#maps-string-v-int-v) section.
 
-## Motivation
+## Why in-place mutation
 
 With value semantics, changing a stored composite value would otherwise mean
 reading it out, mutating the copy, and reinserting it — and the reinsert copies
@@ -94,21 +94,13 @@ of a call-bearing key, and the value-semantics check that a copied map's
 in-place mutation leaves the original alone. `tests/map_index_read.hi` covers
 the pure read across scalar value types and both key kinds.
 
-## Verification
-
-Both compilers implement `m[k]` identically, checked by the golden tests above
-under AddressSanitizer + LeakSanitizer (auto-insert and grow-in-place are
-leak-free), the `hierc`/`hierc0` differential, and `make fixpoint`. The fuzzer
-emits `push(m[k], v)` and `m[k] op= e` against map variables; its
-value-semantics oracle flags any in-place mutation that wrongly aliases.
-
 ## Implementation notes
 
 For contributors. `m[k]` as a place lowers to a slot-pointer accessor —
 `*hier_mapc<id>_slotptr(owner, &m, k)` — that does the find-or-insert (setting
 the zero value on insert) and returns the slot address. The existing place
-machinery (assignment, index-set, field-set, `push`/`reserve`/`pop`) reuses
-that accessor through the recursive place-lowering pass, so the deeper chains
+machinery (assignment, index-set, field-set, `push`/`reserve`/`pop`) reuses that
+accessor through the recursive place-lowering pass, so the deeper chains
 (`m[k].field`, `m[k][i]`) compose for free. A compound op single-evaluates the
 slot pointer and hoists a call-bearing key to a temporary, reusing the same
 double-eval guard the compound array-index path already had. A scalar rvalue

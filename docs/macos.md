@@ -1,18 +1,35 @@
 # Hier on macOS (Apple Silicon)
 
-Proof that Hier builds, self-hosts, passes its full correctness suite, and hits
-its performance thesis on macOS/arm64 — not just Linux. Run on 2026-06-15.
+Hier is a first-class target on macOS/Apple Silicon: it builds, self-hosts,
+passes its full correctness suite, and meets its performance thesis on
+macOS/arm64 the same way it does on Linux. This page is a practical setup
+guide — what you need, how to build, and what to expect.
 
-## Environment
+## Requirements
+
+| | |
+|---|---|
+| OS | macOS on Apple Silicon (arm64) |
+| Toolchain | Apple `clang` and `make` (install the Xcode Command Line Tools) |
+
+If you don't have the Command Line Tools yet:
+
+```sh
+xcode-select --install
+```
+
+The numbers and results on this page were produced on the following setup;
+yours will differ but should track the same shape.
 
 | | |
 |---|---|
 | Machine | Apple M3 Pro (11 cores, 18 GB) |
 | OS | macOS 26.5.1 (build 25F80), Darwin 25.5.0, arm64 |
 | Compiler | Apple clang 21.0.0 (clang-2100.0.123.102) |
-| Hier | commit `767f6bf` + the two portability fixes below |
 
-## Reproduce
+## Build and verify
+
+From the repository root:
 
 ```sh
 make                 # build the C compiler (hierc) — clang -O2, clean
@@ -26,7 +43,11 @@ make bench-guard     # wall time vs hand-written C on tree workloads
 make bench-prongB    # cross-language head-to-head (C / Rust / Go)
 ```
 
-## Correctness — all green
+`make` alone gives you a working compiler (`./hierc`). The rest verify
+correctness, the self-hosting bootstrap, concurrency, FFI, the standard
+library, and performance.
+
+## What passes on macOS
 
 | gate | result |
 |---|---|
@@ -37,41 +58,31 @@ make bench-prongB    # cross-language head-to-head (C / Rust / Go)
 | `make ffi` | green (hierc + hierc0 agree, ASan-clean, match golden) |
 | `make corelib` | green |
 
-## Two portability fixes this run required
+## Platform notes
 
-1. **Test harnesses forced LeakSanitizer, which Apple's ASan lacks.**
-   `tests/run.sh` and `tests/conc/run.sh` hardcoded
-   `ASAN_OPTIONS=detect_leaks=1`; Apple's arm64/x86_64 AddressSanitizer ships no
-   LeakSanitizer, so every sanitizer binary aborted at exit (`detect_leaks is
-   not supported on this platform`, exit 134) — 123 false failures with nothing
-   actually wrong. Fixed by gating leak detection on `uname -s` (Darwin → 0,
-   else → 1): full leak checking stays on Linux, ASan + UBSan still run on macOS.
+Two things differ between macOS and Linux that are worth knowing about.
 
-2. **A latent codegen UB the macOS toolchain exposed.**
-   A self-referential shadowing decl `y := y + 2` (shadowing an outer `y`)
-   emitted `long h_y = (h_y + 2L);` — a C local read in its own initializer
-   (use-before-init). Linux happened to read a zeroed stack slot; macOS read
-   stack garbage, and the harness's native-vs-sanitizer differential check
-   caught the divergence. The correct semantics (Go/Odin lexical scope + value
-   semantics — and what the typechecker already does, resolving the RHS against
-   the *enclosing* binding before the new name is in scope): the RHS reads the
-   outer `y` and binds a fresh independent value, so `y := y + 2` with outer
-   `y = 1` is **3**, with the outer `y` unchanged. The fix evaluates the RHS
-   into a temp *before* the new C local exists
-   (`long _sh_y = (h_y + 2L); long h_y = _sh_y;`), in both the plain and the
-   transient (has-call) decl paths, applied to **both** compilers
-   (`src/hierc.c`, `compiler/hierc0.hi`). Tests:
-   `tests/lambda_shadow_decl.hi` (plain, golden `3`), `tests/shadow_string.hi`
-   (heap), `tests/shadow_call.hi` (has-call). Verified: fixpoint B==C, both
-   compilers agree on output, 150-seed differential fuzz clean.
+**LeakSanitizer is not available on macOS.** Apple's arm64/x86_64
+AddressSanitizer ships no LeakSanitizer, so a sanitizer binary built with
+`ASAN_OPTIONS=detect_leaks=1` aborts at exit (`detect_leaks is not supported
+on this platform`, exit 134). The test harnesses (`tests/run.sh`,
+`tests/conc/run.sh`) gate leak detection on `uname -s`: Darwin runs ASan +
+UBSan without leak checking, Linux runs the full leak check. This is a
+harness difference, not a language difference — leak coverage on Linux is
+unchanged.
 
-Neither was a macOS-specific defect in the language — (1) was a harness
-assumption, (2) was platform-independent UB that Linux had been silently
-absorbing. macOS surfaced both.
+**Self-referential shadowing decls.** A shadowing declaration like
+`y := y + 2`, where an outer `y` is in scope, reads the *enclosing* `y` and
+binds a fresh independent value (Go/Odin lexical scoping plus value
+semantics): with outer `y = 1` the result is **3**, and the outer `y` is
+unchanged. Both compilers evaluate the right-hand side into a temporary
+before the new local comes into scope, so the new binding never reads its own
+uninitialized storage. See `tests/lambda_shadow_decl.hi` (golden `3`),
+`tests/shadow_string.hi` (heap), and `tests/shadow_call.hi`.
 
 ## Performance
 
-`make bench` (17 workloads) and `make bench-guard` both pass on macOS, with no
+`make bench` (17 workloads) and `make bench-guard` both pass on macOS with no
 platform-specific anomalies — the numbers track the documented Linux thesis
 results.
 
@@ -124,9 +135,9 @@ Peak RSS (MB) — `hier/C` is the headline thesis metric:
 - **Consistently beats Go on memory** everywhere (GC overhead: Go 6–37 MB where
   hier uses 1–16 MB).
 
-## Conclusion
+## Summary
 
 macOS/Apple Silicon is a first-class Hier target: clean build, full self-host
-fixpoint, 153/153 tests, and the memory/speed thesis holds. The only changes
-needed were harness portability (leak detection) and fixing one platform-
-independent UB that Linux had been masking.
+fixpoint, 153/153 tests, and the memory/speed thesis holds. The only
+macOS-specific adjustment is harness leak detection — Apple's ASan ships no
+LeakSanitizer — and that is a harness setting, not a language change.
