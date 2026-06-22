@@ -1,0 +1,17 @@
+# Recursive generic enum whose recursive constructor `Node` has NO direct $T
+# payload — both payloads are `Tree($T)`. The compiler recovers T from the
+# instance type of a self-referential argument (provenance inference).
+enum Tree($T):
+    Leaf($T)
+    Node(Tree($T), Tree($T))
+
+fn tsum(t: Tree(int)) -> int:
+    match t:
+        Leaf(v):
+            return v
+        Node(l, r):
+            return tsum(l) + tsum(r)
+
+fn main():
+    t := Node(Node(Leaf(1), Leaf(2)), Node(Leaf(3), Leaf(4)))
+    println(str(tsum(t)))

@@ -480,6 +480,7 @@ struct EnumDef:
     name: string
     variants: [Variant]
     typeparams: [string]      # generics: `enum Tree($T)` -> ["T"]; empty for a normal enum
+    inst_args: [string]       # generics: an INSTANCE's concrete type args (typeparam order); [] otherwise. Lets a recursive-enum constructor recover $T from a self-referential argument.
 
 # Read-only typing/codegen context, threaded by value: function return types,
 # struct layouts, and enum definitions. (The mutable per-block var env stays as
@@ -1805,7 +1806,7 @@ fn parse_enum(toks: [Token], pos: mut int) -> EnumDef:
                 pj = pj + 1
             variants[vi] = Variant(variants[vi].name, npt)
             vi = vi + 1
-    return EnumDef(name, variants, typeparams)
+    return EnumDef(name, variants, typeparams, []string)
 
 fn parse_newtype(toks: [Token], pos: mut int) -> Param:   # `type Name = Underlying`
     expect_ident(toks, &pos, "type")
@@ -2188,7 +2189,7 @@ fn mangle_enum(m: Mctx, ed: EnumDef) -> EnumDef:
     for i < len(ed.variants):
         push(vs, Variant(m.prefix + ed.variants[i].name, mangle_types(m, ed.variants[i].ptypes)))
         i = i + 1
-    return EnumDef(m.prefix + ed.name, vs, ed.typeparams)
+    return EnumDef(m.prefix + ed.name, vs, ed.typeparams, ed.inst_args)
 
 fn path_last(path: string) -> string:                  # "math/geom" -> "geom"
     out := path
@@ -9068,6 +9069,7 @@ fn find_generic_enum(enums: [EnumDef], name: string) -> int:
 # later resolve pass; instantiate dedups before substituting, so recursion ends.
 fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut [EnumDef]) -> string:
     nm := t.name
+    iargs := []string                            # concrete type args, in typeparam order (provenance)
     i := 0
     for i < len(t.typeparams):
         ct := ""
@@ -9076,6 +9078,7 @@ fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut 
             if bnames[k] == t.typeparams[i]:
                 ct = btypes[k]
             k = k + 1
+        push(iargs, ct)
         nm = nm + "__" + gen_inst_mangle(ct)
         i = i + 1
     e := 0
@@ -9093,8 +9096,37 @@ fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut 
             pj = pj + 1
         push(vs, Variant(t.variants[i].name, npt))
         i = i + 1
-    push(einsts, EnumDef(nm, vs, []string))
+    push(einsts, EnumDef(nm, vs, []string, iargs))
     return nm
+
+# When a generic-enum-application pattern (e.g. "Tree($T)") is matched against a
+# concrete instance ("Tree__int") that has no parens to recurse into,
+# match_typaram_str fails. Recover the bindings from the instance's recorded type
+# args, so a recursive enum constructor whose payloads are all self-references
+# (no bare $T to pin T), like `Node(Tree($T), Tree($T))`, still infers T.
+fn recover_enum_binds(pat: string, concrete: string, enums: [EnumDef], einsts: [EnumDef], bnames: mut [string], btypes: mut [string]) -> bool:
+    pp := find(pat, "(")
+    if pp <= 0 or pat[len(pat) - 1] != 41:       # ')'
+        return false
+    gi := find_generic_enum(enums, substr(pat, 0, pp))
+    if gi < 0:
+        return false
+    pargs := split_type_args(substr(pat, pp + 1, len(pat) - 1))
+    tps := enums[gi].typeparams
+    if len(pargs) != len(tps):
+        return false
+    e := 0
+    for e < len(einsts):
+        if einsts[e].name == concrete and len(einsts[e].inst_args) == len(tps):
+            mb := true
+            i := 0
+            for i < len(tps):
+                mb = match_typaram_str(pargs[i], einsts[e].inst_args[i], &bnames, &btypes)
+                i = i + 1
+            mb = mb
+            return true
+        e = e + 1
+    return false
 
 # Split a type-argument string at top-level commas (respecting nested ()/[]).
 fn split_type_args(s: string) -> [string]:
@@ -9328,11 +9360,15 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                             push(bnames, gten.typeparams[ek])
                             push(btypes, explicit[ek])
                         ek = ek + 1
-                pk := 0                               # infer $T from each payload value (a self-ref payload may not bind; that's fine, another payload pins it)
+                pk := 0                               # infer $T from each payload value
                 gotm := false
                 for pk < len(margs):
                     if pk < len(gten.variants[gevi].ptypes):
-                        gotm = match_typaram_str(gten.variants[gevi].ptypes[pk], type_of(margs[pk], names, types, dc, ctx), &bnames, &btypes)
+                        pat := gten.variants[gevi].ptypes[pk]
+                        aty := type_of(margs[pk], names, types, dc, ctx)
+                        gotm = match_typaram_str(pat, aty, &bnames, &btypes)
+                        if not gotm:                  # a self-reference payload ("Tree($T)" vs a "Tree__int" arg) doesn't structurally match -- recover $T from the instance's provenance
+                            gotm = recover_enum_binds(pat, aty, dc.enums, einsts, &bnames, &btypes)
                     pk = pk + 1
                 gotm = gotm
                 inste := instantiate_enum(gten, bnames, btypes, &einsts)
@@ -9548,7 +9584,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
                     pk = pk + 1
                 push(rvs, Variant(prog.enums[i].variants[vj].name, npts))
                 vj = vj + 1
-            push(renums, EnumDef(prog.enums[i].name, rvs, []string))
+            push(renums, EnumDef(prog.enums[i].name, rvs, []string, []string))
         i = i + 1
     # Resolve generic references inside instance fields/payloads so nested/recursive
     # generics work: LL__int.tail "[LL(int)]" -> "[LL__int]"; Tree__int.Node payload
@@ -9576,7 +9612,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
                     pk2 = pk2 + 1
                 push(rvs2, Variant(einsts[edone].variants[vj2].name, npt2))
                 vj2 = vj2 + 1
-            einsts[edone] = EnumDef(einsts[edone].name, rvs2, []string)
+            einsts[edone] = EnumDef(einsts[edone].name, rvs2, []string, einsts[edone].inst_args)
             edone = edone + 1
     i = 0
     for i < len(einsts):                          # enum instances after the concrete enums
