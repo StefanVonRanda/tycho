@@ -1,6 +1,6 @@
-len: 19
-s[0] as int: 104
-first 4: hier
-find 'arena': 13
-first word: hierarchical
+len: 12
+s[0] as int: 116
+first 4: tych
+find 'arena': 6
+first word: tycho
 apple < banana
