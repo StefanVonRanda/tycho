@@ -1228,9 +1228,9 @@ None of this appears in Hier source.
 
 - **A user `enum` is monomorphic** — only the built-in `Option(T)` / `Result(T, E)`
   are generic over their payload; `enum Tree($T)` is not supported. Generic
-  *functions* and *structs* do take `$T`, with a fixed compiler-known constraint
-  set (`numeric` / `comparable` / `has_str`) rather than user-defined traits — see
-  [docs/generics.md](docs/generics.md).
+  *functions* and *structs* do take `$T`, constrained by compiler-known predicates
+  (`numeric` / `comparable` / `has_str`) or Go-style type sets (`where T: int | float`)
+  rather than user-defined traits — see [docs/generics.md](docs/generics.md).
 
 ## Repository layout
 
