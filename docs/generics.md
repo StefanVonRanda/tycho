@@ -365,21 +365,27 @@ change.
   entries to survive tuple types); the mono check splits and tests base membership.
   Test `tests/generic_typeset.hi` + `tests/reject/typeset_*.hi`.
 - **Generic enums** (both compilers). A user sum type takes
-  `$T`: `enum Tree($T): Leaf; Node(Tree($T), $T, Tree($T))`. Monomorphized like a
-  generic struct — one concrete `enum` per type argument, payloads substituted.
-  Inference is from the constructor's payload values (`Has(42)` ⇒ `T = int`); a
-  nullary variant fixes no `$T`, so it takes an explicit arg (`Empty$(int)`), the
-  same surface as `empty$(int)`. **Recursive** payloads (a variant naming the enum
-  itself) work because, in both compilers, a self-reference resolves to the
-  *template* type and is concretized on demand; the instantiator dedups before
-  substituting, so the cycle terminates (this also fixed a pre-existing gap:
-  *recursive generic structs* — `struct LL($T): tail: [LL($T)]` — were broken the
-  same way in both compilers, and nested generic structs (`Pair(Box(int))`) didn't
-  resolve in hierc0). Variant names are shared across instances, so hierc0 names
-  constructors `mk_<enum>_<variant>` and a `match` binds payloads from the
-  *scrutinee's* instance; the C compiler inlines construction and resolves by type.
-  Tests `tests/generic_enum.hi`, `tests/generic_struct_rec.hi`,
-  `tests/reject/genenum_bare_nullary.hi`.
+  `$T`: `enum Box($T): Has($T); Empty`. Monomorphized like a generic struct —
+  one concrete `enum` per type argument, payloads substituted. Inference is from
+  the constructor's payload values (`Has(42)` ⇒ `T = int`); a nullary variant
+  fixes no `$T`, so it takes an explicit arg (`Empty$(int)`), the same surface as
+  `empty$(int)`.
+- **Recursive generic enums work in both compilers.** A variant may name the
+  enum itself — `enum Tree($T): Leaf($T); Node(Tree($T), Tree($T))`, the
+  generic-AST case. A self-reference resolves to the *template* type and is
+  concretized on demand; the instantiator dedups before substituting, so the
+  cycle terminates, and the payload stays finite because enum payloads are
+  arena-allocated. `T` is inferred even when **no payload is a bare `$T`** —
+  `Node(left, right)` recovers `T` from the instance type of its arguments,
+  because each enum instance records the concrete type args it was built with.
+  Closing this also fixed two pre-existing gaps: *recursive generic structs*
+  (`struct LL($T): tail: [LL($T)]`) were broken the same way in both compilers,
+  and nested generic structs (`Pair(Box(int))`) didn't resolve in hierc0.
+  Variant names are shared across instances, so hierc0 names constructors
+  `mk_<enum>_<variant>` and a `match` binds payloads from the *scrutinee's*
+  instance; the C compiler inlines construction and resolves by type. Tests
+  `tests/generic_enum.hi`, `tests/generic_enum_tree.hi` (the no-direct-`$T`
+  case), `tests/generic_struct_rec.hi`, `tests/reject/genenum_bare_nullary.hi`.
 
 ## 9. Two-compiler determinism
 
