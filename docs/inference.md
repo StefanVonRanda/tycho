@@ -181,10 +181,8 @@ synthesizes).
   line — "cannot type `[]` here: no expected type" — never a unification
   residue two functions away.
 - *Per-site, in both compilers.* Each rule is an extension of the existing
-  mechanism rather than a new solver. (hierc0 note: its `type_of`/`gen_rhs`
-  lack an expected parameter — the expectation is threaded as a `want:
-  string` ("" = none) through the consuming sites; contained, unlike a
-  solver.)
+  mechanism rather than a new solver — an expectation threaded through the
+  consuming sites, not a unification engine.
 
 ## 6. What stays annotated, and the grounding rule
 

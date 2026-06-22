@@ -8,10 +8,17 @@ behaves on a real, allocation-heavy, deeply-recursive workload.
 
 The figures here are indicative, not a rigorous benchmark suite. They are
 best-of-N wall time and peak RSS (via `getrusage(RUSAGE_CHILDREN)`) on a
-single machine with `cc -O2`. Cross-language comparisons live elsewhere:
-`bench/prongB/` (vs C/Go/Rust/Koka), `bench/dbquery/` (real SQLite via FFI),
-and `bench/conc/` (concurrency vs C/Go/Rust). This file tracks only the
-self-hosted compiler.
+single machine with `cc -O2`. Cross-language comparisons live elsewhere: the
+cross-language benchmark suite (`bench/prongB/`, vs C/Go/Rust/Koka),
+`bench/dbquery/` (real SQLite via FFI), and `bench/conc/` (concurrency vs
+C/Go/Rust). This file tracks only the self-hosted compiler.
+
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `hierc` is the C-hosted compiler, `hierc0` the self-hosted one; each figure names which.
+
+Every change described here is checked by the byte-identical self-build
+(`make fixpoint`) and the sanitizer and fuzzer suite (`make test` under
+`-fsanitize=address,undefined`, `make bootstrap`, and the differential
+fuzzer).
 
 ## The three compilers in play
 
@@ -31,9 +38,9 @@ own output.
 The self-hosted `hierc0` compiles its own source in **~20 ms** — about 3.1×
 faster than its starting baseline — and emits the same implicit-arena C the
 reference compiler does. With that codegen, `hierc0` beats `hierc` on both
-memory and time on 3 of 4 workloads in the systems-workload benchmark suite
-(`bench/prongB/`, [RESULTS.md](../bench/prongB/RESULTS.md)) and is best-in-class
-on binary-trees.
+memory and time on 3 of 4 workloads in the cross-language benchmark suite
+(`bench/prongB/`, [RESULTS.md](../bench/prongB/RESULTS.md)) and leads the suite
+on binary-trees here.
 
 The earliest version of `hierc0` used a naive codegen — `malloc`, no frees,
 value-copy concatenation — and the first two sections below were measured
@@ -53,7 +60,7 @@ and emitting C. That step is genuinely fast, but it is **not** the time to
 build the compiler. A full `make bootstrap` / `make fixpoint` takes about a
 minute of wall clock, and almost all of that belongs to the *host* C compiler,
 not to Hier. A representative breakdown on one machine (`cc -O2`; `hierc0.hi`
-= 8.5k lines → ~18.8k lines of emitted C):
+= ~10,000 lines → emitted C):
 
 | step | wall |
 |------|------|
@@ -63,11 +70,11 @@ not to Hier. A representative breakdown on one machine (`cc -O2`; `hierc0.hi`
 
 So "hier compiles itself in milliseconds" is true of the **hier→C pass**; the
 `cc` back-end owns the bootstrap wall clock (roughly 100:1). It is not
-"instant" end to end. (The ~20 ms figure was measured on a ~3.5k-line
-`hierc0.hi`; the source is 8.5k lines now and on a different machine, so
+"instant" end to end. (The ~20 ms figure was measured on an earlier, smaller
+`hierc0.hi`; the source is ~10,000 lines now and on a different machine, so
 re-measure for a current, machine-specific number.)
 
-## (1) Compiler speed — compiling hierc0.hi (~2970 lines) to C
+## (1) Compiler speed — compiling an earlier hierc0.hi to C
 
 | compiler | ms |
 |---|---|
@@ -104,66 +111,62 @@ re-measure for a current, machine-specific number.)
 
 That per-scope block churn is the arena concern addressed by the tuning below.
 
-## Arena-overhead tuning (runtime/hier_rt.c)
+## How the per-scope arena tax is managed (runtime/hier_rt.c)
 
-**Diagnosis.** `HIER_BLOCK_DEFAULT` is 64 KB, and a fresh arena is created per
-block scope, call, and loop iteration. The original `arena_alloc`/`arena_free`
-did a `malloc`/`free` of a 64 KB block for *every* scope that allocated even a
-few bytes. On the deeply-recursive self-compile that meant a flood of
-`malloc(64K)`/`free` pairs (plus page faults) — the dominant cost.
+`HIER_BLOCK_DEFAULT` is 64 KB, and a fresh arena is created per block scope,
+call, and loop iteration. A naive `arena_alloc`/`arena_free` does a
+`malloc`/`free` of a 64 KB block for *every* scope that allocates even a few
+bytes; on the deeply-recursive self-compile that is a flood of
+`malloc(64K)`/`free` pairs (plus page faults), the dominant cost. Two runtime
+mechanisms keep that churn off the hot path:
 
-**Fix 1 — global block free-list (pool).** `arena_reset`/`arena_free` now hand
-their blocks to a process-global free-list instead of `free`ing; `arena_alloc`
-takes from it first. Block churn becomes O(1) pointer ops with no `malloc`/
-`free` and no page re-faulting. Peak live memory is unchanged (the pool holds
-at most what a scope just released; reclaimed by the OS at exit).
+- **Global block free-list (pool).** `arena_reset`/`arena_free` hand their
+  blocks to a process-global free-list instead of `free`ing; `arena_alloc`
+  takes from it first. Block churn is O(1) pointer ops with no `malloc`/`free`
+  and no page re-faulting. Peak live memory is unchanged (the pool holds at
+  most what a scope just released; reclaimed by the OS at exit).
+- **Block-retaining `arena_reset`.** A loop's scratch arena keeps its head
+  block and just rewinds it (`off = 0`), releasing only overflow blocks. The
+  common one-block-per-iteration loop does zero pool traffic per iteration.
 
-**Fix 2 — block-retaining `arena_reset`.** A loop's scratch arena now keeps its
-head block and just rewinds it (`off = 0`), releasing only overflow blocks. The
-common one-block-per-iteration loop does zero pool traffic per iteration.
-
-**Result** (self-compiling hierc0.hi, A = hierc0 under arena codegen):
+The effect on the self-compile (A = hierc0 under arena codegen):
 
 | arena strategy | ms |
 |---|---|
-| original (malloc/free per scope) | ~520 |
+| naive (malloc/free per scope) | ~520 |
 | + block pool | ~231 (**2.2× faster**) |
-| + retain-reset | ~231 (neutral here — the pool already made reset cheap; retain-reset pays off on loop-scratch-heavy code) |
+| + retain-reset | ~231 (neutral here — the pool already makes reset cheap; retain-reset pays off on loop-scratch-heavy code) |
 
 Generated-code benchmarks are unchanged or slightly better (`accumulate_big`
-1.07 → 0.59 ms; `memo`/`optimize` ~equal; peak RSS steady at ~11 MB). `make
-test` / `bootstrap` / `fixpoint` stay green.
+1.07 → 0.59 ms; `memo`/`optimize` ~equal; peak RSS steady at ~11 MB).
 
 **Residual gap (after the pool).** Arena codegen was still ~6× slower than the
 naive-leak baseline on the compiler workload (231 ms vs ~39 ms). That remainder
-turned out to be almost entirely the value-semantics deep-copies the arena
+is almost entirely the value-semantics deep-copies the arena
 model performs and the leak-everything model skips — *not* arena bookkeeping
 (the pool already made `arena_child`/`free` O(1)). See the codegen work below.
 
-## Codegen-level arena work (src/hierc.c)
+## Codegen-level arena handling (src/hierc.c)
 
-Two codegen changes, in order. Each is verified by `make test` (57 programs,
-byte-identical output vs the reference compiler, under
-`-fsanitize=address,undefined`), `make bootstrap`, `make fixpoint` (B≡C), and
-`make bench`.
+Two codegen properties keep the arena model's overhead low.
 
-**Step 1 — elide child arenas for if/match blocks.** if/else/match-arm blocks
-created a child arena (`_b%d = arena_child(scope)`) freed at block end. But the
-enclosing `scope` always outlives the block, so block transients can fall back
-to it with no early-free, and escaping values already promote to `_parent`
-independent of any `_bN`. Removing them dropped `arena_child` in A's emission of
-hierc0.hi from **722 → 219** (the 503 `_b` arenas). Wall-clock and RSS were
-unchanged — the pool had already made those ops nearly free. The value is
-smaller emitted C, fewer runtime ops per program, and isolating the real cost.
+**Child arenas are elided for if/match blocks.** if/else/match-arm blocks would
+otherwise create a child arena (`_b%d = arena_child(scope)`) freed at block end.
+The enclosing `scope` always outlives the block, so block transients fall back
+to it with no early-free, and escaping values promote to `_parent` independent
+of any `_bN`. Eliding them drops `arena_child` in A's emission of hierc0.hi from
+**722 → 219** (the 503 `_b` arenas). Wall-clock and RSS are unchanged — the pool
+already makes those ops nearly free — but the emitted C is smaller, with fewer
+runtime ops per program, which isolates the real cost.
 
-**Step 2 — borrow read-only heap struct params instead of deep-copying.** This
-is the real lever. Heap-bearing by-value struct params were unconditionally
-deep-copied into the callee `_scope` on entry (for independence under
-mutation). Gating that copy on `block_mutates(body, param)` — copy only if the
-body mutates the param, else borrow the caller's value (the caller outlives the
-call; unmutated aliasing is unobservable; `return param` still deep-copies via
-the return path) — removed the dominant cost: the `Ctx` symbol table cloned on
-every call.
+**Read-only heap struct params are borrowed, not deep-copied.** This is the real
+lever. A heap-bearing by-value struct param would otherwise be unconditionally
+deep-copied into the callee `_scope` on entry (for independence under mutation).
+Gating that copy on `block_mutates(body, param)` — copy only if the body mutates
+the param, else borrow the caller's value (the caller outlives the call;
+unmutated aliasing is unobservable; `return param` still deep-copies via the
+return path) — removes the dominant cost: the `Ctx` symbol table cloned on every
+call.
 
 | metric (A self-compiling hierc0.hi) | before step 2 | after |
 |---|---|---|
@@ -181,8 +184,8 @@ implicit-arena model matches a leak-everything allocator on a real,
 allocation-heavy, deeply-recursive workload to within ~26%, with bounded
 memory.
 
-The borrow-iff-not-mutated rule (step 2) is the same predicate already proven
-on match-arm payloads through the self-host stages and the fixpoint.
+The borrow-iff-not-mutated rule is the same predicate proven on match-arm
+payloads through the self-host stages and the byte-identical self-build.
 
 ## Where the remaining time goes
 
@@ -211,19 +214,18 @@ not distorted) show ~1.7M `arena_alloc`, ~1.3M `hier_str_copy`, and ~2.1M
 bounded-array gets per self-compile — the volume of small string allocations the
 string-building codegen does, plus value-semantic copies.
 
-### Finding the real hotspots
+### The real hotspots
 
 Because `perf` is blocked on the measurement machine (`perf_event_paranoid=3`,
 with a "no new privileges" flag that stops `sudo` even with a password) and
-valgrind is not installable, a dependency-free statistical CPU-time sampler was
-built instead (`tools/prof/`, using `ITIMER_PROF`+`SIGPROF`, with no `mcount`
-artifact). It found, in one shot, a hotspot the gprof profile had hidden
-entirely: **`scan_token` recomputed `len(src)` — a full `strlen` of the whole
-source — once per token**, so lexing was O(tokens × len) = **O(n²)**. The fix
-is purely algorithmic and touches no bounds-checking: thread the already-known
-length (`lex` computes `n := len(src)` once) into `scan_token` instead of
-recomputing it. The self-hosted self-compile (B) dropped **62 → 33 ms
-(~1.9×)**; fixpoint B≡C with the suite green.
+valgrind is not installable, a dependency-free statistical CPU-time sampler is
+used instead (`tools/prof/`, using `ITIMER_PROF`+`SIGPROF`, with no `mcount`
+artifact). It surfaces a hotspot the gprof profile hid entirely: **`scan_token`
+recomputed `len(src)` — a full `strlen` of the whole source — once per token**,
+so lexing was O(tokens × len) = **O(n²)**. The fix is purely algorithmic and
+touches no bounds-checking: thread the already-known length (`lex` computes
+`n := len(src)` once) into `scan_token` instead of recomputing it. The
+self-hosted self-compile (B) dropped **62 → 33 ms (~1.9×)**.
 
 This also revealed B was always ~2× faster than the A binary this doc had been
 timing: `hierc0`'s codegen emits a direct O(1) `s[i]` where `hierc` emitted a
@@ -237,9 +239,8 @@ invariant) gets one hoisted `_slen_h_<v> = strlen(v)` sidecar at scope entry,
 and its index sites use a new `hier_str_get_n(s, i, len)` — the **same bounds
 check, now O(1)** instead of re-`strlen`-ing per access. Full safety is kept
 (verified: out-of-bounds and negative indices still `exit(1)` with the bounds
-error). The `hierc`-built A self-compile dropped **126 → 75 ms (~1.7×)**; `make
-test` 58 byte-identical plus ASan, fixpoint B≡C, and `tests/str_index.hi` guards
-it with hand-verifiable output.
+error). The `hierc`-built A self-compile dropped **126 → 75 ms (~1.7×)**, with
+`tests/str_index.hi` guarding it with hand-verifiable output.
 
 ### The "diffuse floor" was one thing: Ctx reconstruction
 
@@ -261,10 +262,9 @@ per-scope/per-fn fields, so `with_owner`/`enter_block` rebuild a tiny struct.
 `dc` is threaded through all 67 `ctx`-taking functions (which pushed
 `gen_match_optres` to 9 params, so `hierc`'s fixed `Sig` param cap was raised
 8→16; `hierc0` uses dynamic arrays). Result: **B self-hosted self-compile 33.5 →
-22.7 ms (~1.48×)**, with `with_owner`/`enter_block` gone from the profile;
-fixpoint B≡C with the suite and fuzzer green. The new top is genuine codegen logic
-(`type_of` ~13%, `gen_expr` ~11%, `compute_movables` ~7%, `sig_ret` ~5%) — a
-smaller, more diffuse next layer.
+22.7 ms (~1.48×)**, with `with_owner`/`enter_block` gone from the profile. The
+new top is genuine codegen logic (`type_of` ~13%, `gen_expr` ~11%,
+`compute_movables` ~7%, `sig_ret` ~5%) — a smaller, more diffuse next layer.
 
 Two more from that layer, both output-invariant. The Decls split also made it
 safe to add O(1) lookup *maps* to the immutable `Decls` (built once, never
@@ -272,32 +272,32 @@ reconstructed — the per-clone copy cost that doomed an earlier such attempt is
 gone). (1) `compute_movables` (the move-on-last-use pre-pass) was O(reads²) — it
 called `count_str_occ(reads, n)` for every read; a one-pass frequency map plus
 loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
-became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**;
-fixpoint B≡C with the suite and fuzzer green. What remains
-(`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk) is the
+became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**. What
+remains (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk)
+is the
 inherent string-building codegen: `hierc0` returns `sc()`-concatenated owned
 strings, so output bytes are copied once per nesting level — the value-semantic
 string-copy floor. No logic-level change moves it.
 
-### Two codegen-quality fixes to hierc0's own output
+### Codegen quality of hierc0's own output
 
-These improve the code `hierc0` *emits* when compiling itself (B = hierc0
-compiled by hierc0, compiling `hierc0.hi`), and are output-invisible (fixpoint
-B≡C with the suite and the fuzzer):
+These properties of the code `hierc0` *emits* when compiling itself (B = hierc0
+compiled by hierc0, compiling `hierc0.hi`) are output-invisible — the self-build
+stays byte-identical:
 
-- A **block free-list pool** in the emitted arena runtime cut time **106 → 64
+- A **block free-list pool** in the emitted arena runtime cuts time **106 → 64
   ms (1.66×)** by removing malloc/free churn per scope.
-- A **compact tagged-union enum layout** cut peak RSS **18.2 → 9.9 MB (1.84×)**:
-  the flat `Expr`/`Stmt` nodes — 25 and 33 fields — shrink to their active
-  variant.
+- A **compact tagged-union enum layout** cuts peak RSS **18.2 → 9.9 MB
+  (1.84×)**: the flat `Expr`/`Stmt` nodes — 25 and 33 fields — shrink to their
+  active variant.
 
-A third fix closed the last generated-code gap on the cross-language suite.
-Profiling binary-trees showed `hierc0` doing 3× the allocations (102.7M vs
-`hierc`'s 34.0M) from two leaf-path bugs: a redundant deep-copy on `return Leaf`
-and no shared singleton for nullary variants. Fixing both dropped binary-trees
-**38 → 13 MB, 289 → 124 ms** — now `hierc`'s exact allocation count. With this,
-`hierc0` beats `hierc` on both memory and time on 3 of 4 workloads in the
-systems-workload benchmark suite and is best-in-class on binary-trees.
+The last generated-code gap on the cross-language suite was a pair of leaf-path
+bugs: profiling binary-trees showed `hierc0` doing 3× the allocations (102.7M vs
+`hierc`'s 34.0M) from a redundant deep-copy on `return Leaf` and no shared
+singleton for nullary variants. With both fixed, binary-trees drops **38 → 13
+MB, 289 → 124 ms** — `hierc`'s exact allocation count. With this, `hierc0` beats
+`hierc` on both memory and time on 3 of 4 workloads in the cross-language
+benchmark suite and leads the suite on binary-trees here.
 
 The former string-pipeline gap is closed by the additive `char` type: `'x'`
 literals, `char ± int → char`, and `string + char` compiling to a one-byte
@@ -336,11 +336,8 @@ the body) with cursor names keyed on `ctx.depth`.
 
 **Result:** `iter_transform` 1249 → 416 ms (6.7× → 2.3× C) and 4 → 3 MB;
 `arr_pipeline` 53 → 30 ms (2.2× → 1.25× C). It applies generally — every scalar
-push loop, including the self-compiler. Verified: `make test` all green
-(ASan/UBSan); `make fixpoint` B≡C in both compilers (fusion correctly compiles
-the push-heavy `hierc0.hi`, which self-reproduces byte-identically and compiles
-itself faster); `bench-prongB` all outputs identical, no regression;
-differential fuzz 300 seeds FAIL=0 (×2, one per compiler);
+push loop, including the self-compiler. Fusion correctly compiles the push-heavy
+`hierc0.hi`, which self-reproduces byte-identically and compiles itself faster;
 `tests/push_fusion.hi` covers break/continue/return/nested/two-array/while/bail.
 
 **Every element type now fuses** (both compilers): not just scalars, but
@@ -355,12 +352,10 @@ push does, preserving value semantics. The win is largest for scalars; for heap
 elements the per-element deep-copy dominates, so the descriptor-elision is a
 smaller fraction — a consistency/completeness close more than a hot-path
 multiplier, though it still cuts a call plus a descriptor write-back per push on
-the very common build-a-list loop. Verified: `make fixpoint` B≡C byte-identical
-(composite fusion fires on `hierc0.hi`'s own struct/tuple array push loops, +400
-lines C vs scalar-only, still self-reproduces); `make test` 137 green incl
-`tests/str_fuse.hi` and `tests/comp_fuse.hi` under ASan/UBSan; corelib, conc,
-ffi, and bench-guard green; differential fuzz 500 FAIL=0. Every array element
-type fuses.
+the very common build-a-list loop. Composite fusion fires on `hierc0.hi`'s own
+struct/tuple array push loops (+400 lines C vs scalar-only) and the self-build
+stays byte-identical, with `tests/str_fuse.hi` and `tests/comp_fuse.hi`
+covering it. Every array element type fuses.
 
 ## The self-compile gap: status
 
@@ -386,9 +381,10 @@ pointers. No logic-level change moves it; outperforming the C compiler with a
 value-semantic self-hosted one is likely not reachable incrementally.
 
 **The C compiler `src/hierc.c` stays the default, production compiler.**
-`hierc0` is the self-hosting proof — `make fixpoint` B≡C is the definitive
-dogfood of the value-semantic plus arena model on a real ~9.3k-line-of-C
-compiler — and the counterpart in the differential oracle. It is not retired and
+`hierc0` is the self-hosting proof — the byte-identical self-build
+(`make fixpoint`) is the definitive dogfood of the value-semantic plus arena
+model on a real ~9.3k-line-of-C compiler — and the counterpart in the
+differential oracle. It is not retired and
 is not on the correctness-critical path for production. By project convention,
 retiring the C compiler would require `hierc0` to *outperform* it, not merely
 match; that gap is a fundamental property of the value-semantic model rather

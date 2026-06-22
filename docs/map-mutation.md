@@ -87,12 +87,12 @@ be pre-sized.
 
 ## Example
 
-`tests/map_mutation.hi` exercises every form — a `[string: [int]]` index built
-with `push(m[k], v)`, a nested `m[k][i] = x`, an `[int: int]` counter with
-`m[k] += 1` from a zero start, a struct value via `m[k].field = x`, single-eval
-of a call-bearing key, and the value-semantics check that a copied map's
-in-place mutation leaves the original alone. `tests/map_index_read.hi` covers
-the pure read across scalar value types and both key kinds.
+The test suite exercises every form: a `[string: [int]]` index built with
+`push(m[k], v)`, a nested `m[k][i] = x`, an `[int: int]` counter with `m[k] += 1`
+from a zero start, a struct value via `m[k].field = x`, single-eval of a
+call-bearing key, the value-semantics check that a copied map's in-place mutation
+leaves the original alone, and the pure read across scalar value types and both
+key kinds.
 
 ## Implementation notes
 

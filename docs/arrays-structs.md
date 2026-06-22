@@ -114,7 +114,7 @@ fn main():
 1. **Deep copy on cross-arena move.** Returning or out-assigning a big
    value is O(size). Mitigated, never for correctness, by:
    - *Build-in-destination*: if a local is returned, the compiler
-     allocates it in the parent arena from the start → the return is free.
+     allocates it in the parent arena from the start → the return needs no copy.
      (The leaf version applies today: a return expression targets the
      parent arena.) Conservative when a value *may* be returned on some
      path; still sound, still local.
@@ -128,7 +128,7 @@ fn main():
      can't be stored (invariant 4) and the caller is suspended.
    The important part: in this model escape analysis is an **optimization**.
    In a pointer-having language the same analysis is a **soundness
-   requirement**. That is the whole reason value semantics has legs here.
+   requirement**. This is why value semantics is viable here.
 
 2. **No recursive types.** `struct Node: next: Node` is infinite-size and
    illegal — there is no pointer to break the cycle. Trees, lists, and
@@ -165,9 +165,9 @@ fn main():
 | recursive/graph types | would need pointers | not allowed; use array + indices |
 | return a reference to a local | classic dangling | **inexpressible** — no reference type exists |
 
-The last row is the crux: the dangling-pointer bug that forces every other
-region system to ship escape analysis *for correctness* is simply not
-expressible in Hier, so it can't occur.
+The last row is the key point: the dangling-pointer bug that forces every other
+region system to ship escape analysis *for correctness* is not expressible in
+Hier, so it cannot occur.
 
 ## 7. Generics — monomorphized over the built-in container machinery
 
@@ -191,9 +191,9 @@ struct Box($T):                          # generic struct
 ```
 
 You can write `struct Box($T)` and `fn id(x: $T) -> T`. The monomorphization
-engine such generics need **already exists**: it is exactly what stamps out
-`Option(int)` versus `Option(string)`. Opening it to user `$T` definitions took
-one substitution pass, not a new subsystem, and stays memory-model-neutral (§9).
+engine such generics need is the same one that stamps out `Option(int)` versus
+`Option(string)`. User `$T` definitions reuse it directly rather than adding a
+new subsystem, and stay memory-model-neutral (§9).
 The full design is in [generics.md](generics.md).
 
 The full set is available in both compilers: generic functions, generic structs
@@ -206,7 +206,7 @@ Companion features that work alongside generics (none of these is generics):
 
 - **`mut` parameters** (exclusive mutable borrow) — efficient mutation
   without copies or aliasing.
-- **`Option(T)` + exhaustive `match`** — the no-`null` story.
+- **`Option(T)` + exhaustive `match`** — no `null`.
 - **Slices** (`xs[a:b]`) — a non-storable view (zero-copy when passed
   to a read-only param, deep-copied when stored), no borrow checker needed.
 - **`distinct` newtypes** (`type Meters = float`) — a distinct,
@@ -260,7 +260,7 @@ not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
 signature-directed escape strategy (§8) reclaim memory without copies. Arena
-allocation itself is well-proven; Hier's wager is that removing pointers turns
-the *visible* memory tools and *whole-program* analyses such systems usually need
-into *invisible*, *local* ones — and generics, being monomorphized to concrete
+allocation itself is well-proven; the claim Hier tests is that removing pointers
+turns the visible memory tools and whole-program analyses such systems usually
+need into invisible, local ones — and generics, being monomorphized to concrete
 code first, ride along without re-introducing either.

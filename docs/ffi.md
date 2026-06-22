@@ -70,7 +70,7 @@ Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 | `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
 | (none)    | `void`      | out only  | return-less extern |
 
-**The string win.** A Hier `string` is a NUL-terminated `char *`, so a C
+**String passing.** A Hier `string` is a NUL-terminated `char *`, so a C
 function taking `const char *` takes a Hier `string` directly — no wrapper type,
 no conversion at the call site. (Languages whose string is a fat pointer
 `{ptr, len}` are forced into an explicit `c_str()` conversion; Hier is not.)

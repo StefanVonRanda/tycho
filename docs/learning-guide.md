@@ -629,7 +629,7 @@ fn main():
 
 ## 10. Option and Result
 
-### Option(T) — the no-null story
+### Option(T) — no null
 
 Instead of `null`, Hier uses `Option(T)`: it's either `Some(value)` or `None`.
 
@@ -650,7 +650,7 @@ fn main():
 
 The `match` is **exhaustive** — you must handle both `Some` and `None`. This is the compiler ensuring you don't forget the null check.
 
-### Result(T, E) — the no-exceptions story
+### Result(T, E) — no exceptions
 
 Instead of throwing exceptions, functions that can fail return `Result(T, E)`:
 
@@ -1688,7 +1688,7 @@ math.gcd(12, 8)   s.argsort(xs)
 - **Read the examples:** `examples/` has 20 programs, from trivial to substantial.
 - **Read the tests:** `tests/*.hi` covers every language feature with focused examples.
 - **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and where it doesn't.
-- **Read the source:** The self-hosted compiler `compiler/hierc0.hi` is ~3,500 lines of Hier written in Hier — a real program that exercises every feature.
+- **Read the source:** The self-hosted compiler `compiler/hierc0.hi` is ~10,000 lines of Hier written in Hier — a real program that exercises every feature.
 - **Run the benchmarks:** `make bench` to see the performance properties for yourself.
 - **Try the fuzzer:** `make fuzz` to see how the two compilers are checked against each other.
 

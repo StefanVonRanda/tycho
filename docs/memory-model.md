@@ -112,8 +112,8 @@ reference counts anywhere.
   the last *W* entries are live — and relies on a segregated size-class free-list
   so the eviction window's dead chunks are reused in O(1).
 
-Together these turn the arena's two known defeats (loop-carried reassignment and
-sliding-window eviction) into wins, matching C and beating Go (GC) and Koka
+Together these close the arena's two known weak spots (loop-carried reassignment
+and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
 (reference counting) across the cross-language suite.
 
 ## Verification
@@ -123,7 +123,7 @@ ways an over-aggressive move or recycle could go wrong:
 
 - **Byte-identical self-build.** `make fixpoint` confirms the self-hosted compiler
   is a fixed point — the compiler compiling itself reproduces itself byte for byte
-  (`B≡C`) and matches the C compiler's program output. This is the soundness
+  and matches the C compiler's program output. This is the soundness
   oracle: a move or recycle that aliased would diverge the output.
 - **Sanitizers.** `make test` runs the self-emitted C under AddressSanitizer,
   UndefinedBehaviorSanitizer, and LeakSanitizer.
@@ -146,59 +146,57 @@ zero annotations.
 
 ---
 
-## Appendix: how the self-hosted code generator reached the model
+## Appendix: what each mechanism buys, type by type
 
-For contributors. The self-hosted compiler first became a fixed point while
-emitting naive `malloc`/leak C — correct output, but unbounded RSS. It was then
-brought onto the arena model one type family at a time, each step held to the
-byte-identical fixpoint and the sanitizers above. Because placing one type on
-arenas while others stay on `malloc` is sound (see *Why arena migration is sound
-incrementally*), the work could proceed type-by-type rather than as one large
-rewrite. The order below is roughly how the families were brought on; RSS figures
-are for the workload that exercises the named type.
+For contributors. Because placing one type on arenas while others stay on
+`malloc` is sound (see *Why arena migration is sound incrementally*), the
+self-hosted code generator can be reasoned about one type family at a time. This
+appendix records what each mechanism buys for each family. RSS figures are for
+the workload that exercises the named type. Soundness throughout is checked by
+the byte-identical self-build and the sanitizers above.
 
-**Strings.** The first target, because `hierc0`'s own code generation is one
-giant string build. The self-append `out = out + x` originally compiled to a
-fresh leaked buffer per step (O(n²)); rewriting it to grow one buffer in place
-took a 30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×),
-using only `malloc`/`realloc`. The threading spine landed next — the irreducible
-step where every function gains `Arena *_parent` and `_scope`, every call threads
-it, and returns build into `_parent` — bringing transient, local, and returned
-strings onto the arena. Stored strings followed when store sites moved onto the arena with the compound
-types below. The growth buffer behind `acc = acc + x` stays on `malloc`/`realloc`
-by necessity — an arena cannot `realloc` in place — but it is freed, not leaked.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `hierc` is the C-hosted compiler, `hierc0` the self-hosted one.
 
-**Compound types.** Arrays (~31×), maps (~3.7×), then structs, tuples, and boxes
-(~1.67×) followed the same coupled pattern: allocators take `Arena*`, copies
+**Strings.** `hierc0`'s own code generation is one giant string build, so strings
+matter most. The self-append `out = out + x` naively compiles to a fresh leaked
+buffer per step (O(n²)); growing one buffer in place instead takes a
+30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×), using
+only `malloc`/`realloc`. The threading spine — the irreducible step where every
+function gains `Arena *_parent` and `_scope`, every call threads it, and returns
+build into `_parent` — brings transient, local, and returned strings onto the
+arena; stored strings move onto the arena with the compound types below. The
+growth buffer behind `acc = acc + x` stays on `malloc`/`realloc` by necessity —
+an arena cannot `realloc` in place — but it is freed, not leaked.
+
+**Compound types.** Arrays (~31×), maps (~3.7×), and structs, tuples, and boxes
+(~1.67×) all use the same coupled pattern: allocators take `Arena*`, copies
 become recursive and arena-aware, and store sites force the value into the
-container's arena. After this, every heap type is arena-managed at function scope.
+container's arena. Every heap type is then arena-managed at function scope.
 
-**Per-block arenas.** A child arena per `if`/loop block, freed per iteration, so a
-loop-local container frees per-iteration instead of at function return
+**Per-block arenas.** A child arena per `if`/loop block, freed per iteration, lets
+a loop-local container free per-iteration instead of at function return
 (loop-local array build 245 MB → 10 MB). Routing is lexical (the current block's
 env extent), not dataflow.
 
-**Element-level ownership.** A series of changes moving container *elements* into
-their container's arena: map keys; array string elements (~274×); nested-array
-elements (~77×); struct/tuple array elements (~140×); option/result array
-elements with scalar payload (~45×); and `mut` container home-arena threading
-(~582×) plus its extension to `mut` heap-struct fields. The last residual —
-heap-payload option/result elements such as `[Option(str)]` — was closed by
-making options first-class deep-copied value types (245 → 11 MB at 4M iterations,
-flat).
+**Element-level ownership.** Moving container *elements* into their container's
+arena: map keys; array string elements (~274×); nested-array elements (~77×);
+struct/tuple array elements (~140×); option/result array elements with scalar
+payload (~45×); and `mut` container home-arena threading (~582×) plus its
+extension to `mut` heap-struct fields. The hardest case — heap-payload
+option/result elements such as `[Option(str)]` — is handled by making options
+first-class deep-copied value types (245 → 11 MB at 4M iterations, flat).
 
-**Recursive enums and transient placement.** Enum nodes became arena value types
-with a recursive deep-copy at every escape point; transient placement landed the
+**Recursive enums and transient placement.** Enum nodes are arena value types
+with a recursive deep-copy at every escape point; transient placement buys the
 tree-workload win (binary-trees 2374 MB → 38 MB, tree-rewrite 825 MB → 9 MB);
 per-variable block depth (a stack of block-entry indices rather than a single
-marker) closed the array-pipeline gap (358 MB → 5 MB); and move-on-last-use
-mirrored the C compiler's deep-copy elision.
+marker) closes the array-pipeline gap (358 MB → 5 MB); and move-on-last-use
+mirrors the C compiler's deep-copy elision.
 
 **Liveness-driven reuse.** The arena free-list and `arena_recycle` turn the
 loop-carried reassignment worst case into a win — `iter-transform` 3.5 GB → 4 MB
-(`hierc`) / 6 MB (`hierc0`). Two latent corruption bugs (recycling a moved-out
-buffer) were caught and pinned by distinct-value tests; the fix is the
-read-≥-twice condition described above.
+(`hierc`) / 6 MB (`hierc0`). The read-≥-twice condition described above is what
+keeps a moved-out buffer from being recycled.
 
 **Element-overwrite recycle.** Recycling the evicted element on `arr[k] = v`,
 backed by a per-size-class free-list, closes the sliding-window case — `window`

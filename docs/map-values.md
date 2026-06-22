@@ -78,8 +78,8 @@ These are for contributors; users need only the surface above.
 - **hierc** (`src/hierc.c`): composite value types are interned in a side table
   (`g_maptypes`, base id `T_MAPC_BASE`) and emitted as one monomorphic runtime
   per pair by `emit_aggregate`, mirroring the existing scheme for `[Struct]`
-  arrays. The four original scalar maps stay hand-written, so the composite path
-  is purely additive.
+  arrays. The scalar maps are hand-written; composite value types share the
+  interned-and-emitted path independently of them.
 - **hierc0** (`compiler/hierc0.hi`): maps are generated per `(k, v)` by
   `gen_map_type` / `gen_map_fns`, so the composite work is the heap-value
   deep-copy on put/get and value-type mangling, not a new code path. Type

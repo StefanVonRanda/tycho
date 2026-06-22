@@ -65,7 +65,7 @@ parallel-loop level, a `mut` of a capture, and range steps are all compile
 errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
-On the compute-bound reduction this lands at **C-pthreads parity** (37 ms vs C's 36 ms, same peak RSS).
+On the compute-bound reduction this matches C-pthreads here: 37 ms vs C's 36 ms, same peak RSS.
 
 ## Channels — the one shared object
 
@@ -122,11 +122,11 @@ reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 
 | workload | hier | C | Go | Rust |
 |---|---:|---:|---:|---:|
-| parreduce (4×10⁸ int reduce) | **37 ms / 1.6 MB** | 36 ms / 1.6 MB | 62 ms | 43 ms |
-| pipeline (10⁶ strings, 1→4 consumers) | **73 ms / 2.8 MB** | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
+| parreduce (4×10⁸ int reduce) | 37 ms / 1.6 MB | 36 ms / 1.6 MB | 62 ms | 43 ms |
+| pipeline (10⁶ strings, 1→4 consumers) | 73 ms / 2.8 MB | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
 
 `parallel for` is at C parity (within a millisecond, same peak RSS). The lock-free channels are competitive with
-Go and faster than the other reference implementations measured, while paying two
+Go, and faster than the other reference implementations in this benchmark, while paying two
 deep copies per message that the others do not.
 
 ## Limits (deliberate)

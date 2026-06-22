@@ -23,7 +23,7 @@ fn main():
 
 `import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` and binds the name `<pkg>`.
 Non-`core:` imports stay relative to the importing package, unchanged. Both Hier compilers
-(`hierc` and the self-hosted `hierc0`) resolve `core:` natively, so `hierc0` is a fully
+(`hierc` and the self-hosted `hierc0`) resolve `core:` natively, so `hierc0` is a
 standalone corelib-aware compiler with no bundling step required.
 
 ## How corelib is shaped
@@ -209,11 +209,10 @@ example `corelib/http/deps` is just `libcurl`.
   per platform, so `#include <curl/curl.h>` + `-lcurl` just work without hardcoding paths.
 - **Skip, don't fail:** `corelib/run.sh` probes the same `deps` with `pkg-config --exists`;
   if any dependency is missing it **skips** that module's test (printing `skip <name>
-  (missing dependency: …)`) instead of failing, so `make ci` stays green on machines
-  without the library. When present, it passes the same `--cflags --libs` on the hierc0
-  link paths.
+  (missing dependency: …)`) instead of failing, so machines without the library still
+  build. When present, it passes the same `--cflags --libs` on the hierc0 link paths.
 
-This keeps `make ci` libc-only and portable while still allowing library-backed modules.
+This keeps the test suite libc-only and portable while still allowing library-backed modules.
 A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file can still use
 `extern "Lib" fn` for a bare `-lLib`.
 

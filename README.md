@@ -123,7 +123,7 @@ reference; [docs/corelib.md](docs/corelib.md) catalogs the standard library; and
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
 | `make bench` | Run the performance guard (see below). |
 | `make bootstrap` | Build the self-hosted compiler `compiler/hierc0.hi` with `./hierc` and validate it on its fixtures. |
-| `make fixpoint` | Stage-4 self-host check: assert the Hier-built compiler reproduces itself byte-identically (B≡C) and matches the C compiler's output. |
+| `make fixpoint` | Self-host check: assert the Hier-built compiler reproduces itself byte-identically and matches the C compiler's output. |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both compilers, assert byte-identical output and no sanitizer fault. |
 | `make corelib` | Build + validate the standard library (`corelib/`) three ways (C compiler vs the self-hosted `hierc0`, against goldens), with usage examples and the `site` dogfood. |
 | `make ci` | The full local gate (no cloud CI): build, test, fixpoint, corelib + examples, concurrency, FFI, the three fuzz lanes, tooling, and the perf guard. |
@@ -192,7 +192,7 @@ Besides the C reference compiler (`src/hierc.c`), Hier has a second compiler
 language large enough to compile its own source, and it **self-hosts** — `make
 fixpoint` builds it three ways (the C compiler builds it, then that build
 rebuilds it, then that rebuild rebuilds it again) and asserts the last two
-emissions are byte-identical (B≡C) and that the Hier-built compiler reproduces
+emissions are byte-identical and that the Hier-built compiler reproduces
 the C compiler's output across every `tests/` and `examples/` program. Run
 `make bootstrap` to build the self-hosted compiler and `make fixpoint` to check
 the byte-identical reproduction.
@@ -209,34 +209,25 @@ type family at a time (strings, arrays, maps, structs/tuples/boxes, every array
 element type, enum node trees, mutable containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
 elements), all now arena-managed and freed per scope. It is documented in
-[docs/memory-model.md](docs/memory-model.md). With the last residual closed
-(`[Option(str)]` payloads that leaked at construction), `hierc0` now has **no
-known memory gap versus the C compiler** — every element type, common and rare —
-and full codegen-feature parity.
+[docs/memory-model.md](docs/memory-model.md). `hierc0` reproduces the C
+compiler's memory behaviour across every element type, common and rare, with
+no known gap, and has full codegen-feature parity.
 
 The language `hierc0` compiles is no longer a strict subset: it reproduces the C
 compiler's output byte-for-byte across all `tests/` + `examples/` programs,
 including the additive `char` type, `float`, `Result`, newtypes, slices, and SOA.
 A differential + sanitizer **fuzzer** (`fuzz/`, type-directed random programs
-compiled by both compilers under ASan/UBSan) backs this up — its coverage spans
-those types, and its first run found a real latent use-after-free the hand-written
-test suite had missed.
+compiled by both compilers under ASan/UBSan) backs this up, with coverage
+spanning those types.
 
-**Self-compile speed.** A from-scratch sampling profiler (`tools/prof/`, built
-because `perf` is sandbox-blocked and `gprof` mis-attributes time on tiny
-million-call functions) drove a round of algorithmic fixes to the self-hosted
-compiler: an O(n²) in the lexer (`scan_token` recomputed `strlen(src)` per token),
-an O(n²) in string indexing (a per-access bounds-check `strlen`, fixed with a
-hoisted length-carrying check that keeps the bounds check at O(1)), and the
-biggest one — `with_owner`/`enter_block` were deep-copying the immutable
-`sigs`/`structs`/`enums` on every scope change, fixed by splitting that
-parse-invariant data into a `Decls` value threaded read-only (which in turn made
-it safe to add O(1) lookup maps to it, retiring an O(reads²) move-analysis pass
-and a linear signature scan). Net: `hierc0` self-compiling its own ~3.5k-line
-source went from ~62 ms to ~20 ms (~3.1×), every step verified by the fixpoint +
-the fuzzer. What remains is the inherent string-building codegen (each function
-deep-copies its result on return) — the value-semantic string-copy floor,
-measured in [docs/perf.md](docs/perf.md); no logic-level change moves it.
+**Self-compile speed.** When `hierc0` compiles its own source, the dominant
+remaining cost is the value-semantic string-building in its codegen: each
+function deep-copies its result string on return. That is the floor set by the
+memory model, not a logic-level inefficiency, and no algorithmic change removes
+it; it is measured in [docs/perf.md](docs/perf.md). The repository includes a
+small sampling profiler (`tools/prof/`) used for this analysis, since `perf` is
+sandbox-blocked and `gprof` mis-attributes time on tiny, frequently-called
+functions.
 
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in five languages, built optimized, peak RSS + best-of-3 wall time;
@@ -258,17 +249,17 @@ not the millisecond counts: the reference toolchains are in RESULTS.md (gcc 15.2
 on an **AMD Ryzen 7 7735HS, x86-64 Linux** box and an **Apple Silicon arm64,
 macOS** box — the latter ~3–4× slower in wall time.) On the allocation-heavy
 tree workloads the
-self-hosted compiler is at or near **best in class** — on binary-trees it has the
-lowest memory of all five (13 MB, under Koka's 15) and is the fastest (107 ms),
-beating C, Rust, Go, and Koka on both axes and the mature `hierc` on time at equal
-memory — no GC, no refcounts, just lexical arenas and value semantics. On
-tree-rewrite it is the fastest of the five and lightest on x86-64, though Rust
-edges its memory by ~2 MB on arm64 (the allocator and target shift that margin;
-hier leads on time on both). With the additive `char` type, the formerly-trailing
-string-pipeline now **matches C's 1 ms**: `s = s + ('0' + d)` is an in-place
-one-byte append, the same byte-write C/Rust/Go do, instead of allocating a
-one-char string per digit. On memory it is lowest of all five on binary-trees and
-within ~1–2 MB of the leader on the other workloads, trailing C/Rust only on
+self-hosted compiler is competitive with all four reference languages on this
+machine. On binary-trees it has the lowest memory of the five (13 MB, below
+Koka's 15) and the lowest wall time (107 ms), at equal memory to the mature
+`hierc` — with no GC and no reference counting, only lexical arenas and value
+semantics. On tree-rewrite it is the fastest of the five and lightest on x86-64,
+though Rust edges its memory by ~2 MB on arm64 (the allocator and target shift
+that margin; hier leads on time on both). With the additive `char` type, the
+string-pipeline reaches C's 1 ms: `s = s + ('0' + d)` is an in-place one-byte
+append — the same byte-write C, Rust, and Go do — instead of allocating a
+one-char string per digit. On memory it is lowest of the five on binary-trees and
+within ~1–2 MB of the leader on the other workloads, trailing C and Rust only on
 array-pipeline time (per-element bounds-checking, not the memory model). The
 compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
@@ -1038,8 +1029,8 @@ procedure: captures deep-copy into each task, reduction accumulators (`+`
 or `*` on int/float) start from the op's identity per chunk and fold at the
 in-order join — so integer results are identical for any thread count. Any
 other write to an outer variable is a compile error: there is nothing to
-race on. On the compute-bound reduction benchmark this lands at **exact
-C-pthreads parity** (same wall, same peak RSS — see `bench/conc/`).
+race on. On the compute-bound reduction benchmark this matches C-pthreads here
+(same wall, same peak RSS — see `bench/conc/`).
 
 ```
 ch := channel(string, 256)          # bounded; the creating scope frees it
@@ -1059,9 +1050,9 @@ syscalls), so value semantics outside it are untouched. `send` deep-copies
 the payload into the claimed cell's arena (channel memory is bounded by
 capacity × payload, for *every* element type) and `recv` copies out into the
 receiver's arena, returning `Option(T)` with `None` meaning
-closed-and-drained. On the 1M-message pipeline benchmark this is the
-**fastest of hier/C/Go/Rust (73 ms vs Go's 91)** — 9× a hand-written C mutex
-ring — while still paying the two copies the others don't (the queue's hot
+closed-and-drained. On the 1M-message pipeline benchmark this runs in 73 ms
+(Go 91 ms; about 9× faster than a hand-written C mutex ring) while still
+paying the two copies the others don't (the queue's hot
 counters and cells are cache-line padded, Vyukov's layout; see
 `bench/conc/`). Channels can't be returned, stored, or
 captured; the creating scope frees the channel after the implicit joins
@@ -1308,9 +1299,9 @@ grows one buffer in place, `b := a` becomes a move when `a` is dead, `match` arm
 borrow the scrutinee's payload, and loop-carried rebuilds hand off their buffer.
 A copy happens only when a value genuinely escapes to two live owners — which is
 exactly when a GC or refcount would also do work. The result is measured, not
-asserted: best-in-class memory *and* time on the allocation-heavy tree workloads
-(beating C, Rust, Go, and Koka), exact C-pthreads parity on the parallel
-reduction, and the fastest channel pipeline of the four — see
+asserted: on the allocation-heavy tree workloads it has the lowest memory and
+time of the five languages benchmarked, it matches C-pthreads on the parallel
+reduction, and it has the fastest channel pipeline of the four — see
 [bench/](bench/) and [docs/thesis.md](docs/thesis.md).
 
 **"No GC and no borrow checker — how is it memory-safe?"** There is no reference

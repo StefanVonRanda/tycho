@@ -50,7 +50,7 @@ both visible in the syntax:
    directly in that destination's arena, so it survives the inner scope's
    collapse).
 
-That is the whole escape story, and it is *locally decidable* — from the
+That is the whole escape rule, and it is *locally decidable* — from the
 statement and the signature, never from a global analysis. So the compiler can
 insert every allocation, promotion, and free itself. The arenas become
 invisible. **The no-pointer rule turns the arena allocator's hardest
@@ -118,9 +118,11 @@ escape analysis (`collect_escapes`) can see that `r` is returned by name and
 allocate it in the *caller's* arena from birth — so the `return` is a header
 move, not an O(n) copy. It composes across call frames: a value returned up
 several levels is built once, in the final consumer's arena, with **zero copy
-call-sites** along the way (destination-passing, emergent). Soundness is §3:
+call-sites** (destination-passing, emergent). Soundness is §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
+
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `hierc` is the C-hosted compiler, `hierc0` the self-hosted one.
 
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
@@ -242,15 +244,15 @@ Three further validations back the thesis, written up separately.
 
 **Self-hosting.** A second compiler written in Hier itself
 (`compiler/hierc0.hi`) reaches a byte-identical fixpoint (`make fixpoint`), and
-its codegen runs on this same implicit-arena model — migrated onto it one type
-family at a time, each step gated by the fixpoint plus sanitizers
-([docs/memory-model.md](memory-model.md)). That makes the model eat its own dog
+its codegen runs on this same implicit-arena model
+([docs/memory-model.md](memory-model.md)). Soundness is checked by that
+byte-identical self-build and sanitizers. That makes the model eat its own dog
 food on a real, allocation-heavy, deeply-recursive program. A differential
 fuzzer cross-checks the two compilers under AddressSanitizer to keep them in
 agreement.
 
-**Head-to-head performance.** A cross-language benchmark suite (`bench/prongB/`,
-Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the
+**Head-to-head performance.** The cross-language benchmark suite under `bench/`
+(Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the
 compiler-vs-generated-code numbers are in [docs/perf.md](perf.md).
 
 **Concurrency as a corollary.** The same call convention — deep-copy in, copy
