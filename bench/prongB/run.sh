@@ -1,6 +1,6 @@
 #!/bin/sh
-# Prong B — head-to-head memory benchmarks. The same program in Hier, C, Rust,
-# Go, and Koka, each at its standard release opt (hier/C -O3, rustc opt-level=3,
+# Prong B — head-to-head memory benchmarks. The same program in Tycho, C, Rust,
+# Go, and Koka, each at its standard release opt (tycho/C -O3, rustc opt-level=3,
 # go build, koka -O2) and run under bench/peakrss (peak RSS + wall time). Every binary in a workload must print byte-identical output
 # (the cross-language correctness check). See RESULTS.md.
 #
@@ -9,12 +9,12 @@
 #   iter-transform reassign a loop-carried value each step — the arena's WORST
 #                  case (every dead intermediate retained until scope exit)
 #
-# Languages: Hier (implicit arenas), C (manual malloc/free), Rust (Box/RAII),
+# Languages: Tycho (implicit arenas), C (manual malloc/free), Rust (Box/RAII),
 # Go (GC), Koka (Perceus reference counting + reuse — the direct rival).
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc — run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 D=bench/prongB
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 CC="${CC:-cc}"
@@ -22,13 +22,13 @@ $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 
 fail=0; ref=""
-build_hier() {                                # <src.hi> <out-binary> — fail-closed:
-    # a hier build failure prints the compiler error and exits nonzero (it must
+build_tycho() {                                # <src.ty> <out-binary> — fail-closed:
+    # a tycho build failure prints the compiler error and exits nonzero (it must
     # never become a silent "(not built)" green run).
-    if ! $HIERC "$1" --emit-c -o "$2" > "$T/hier_err" 2>&1; then
-        echo "HIER BUILD FAILED: $1"; cat "$T/hier_err"; exit 2
+    if ! $TYCHOC "$1" --emit-c -o "$2" > "$T/tycho_err" 2>&1; then
+        echo "TYCHO BUILD FAILED: $1"; cat "$T/tycho_err"; exit 2
     fi
-    $CC -O3 -o "$2" "$2.c" || { echo "cc failed on hier-emitted C for $1"; exit 2; }
+    $CC -O3 -o "$2" "$2.c" || { echo "cc failed on tycho-emitted C for $1"; exit 2; }
 }
 REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>" rows, for the summary scorecard
 WL="-"                                         # current workload slug (set by workload()/json_workload())
@@ -48,11 +48,11 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
     title="$1"; b="$2"; kk="$3"; ref=""; WL="$b"
     echo "== $title =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
-    build_hier "$D/$b.hi" "$T/w_hier"
-    run_one hier "$T/w_hier"
-    if [ -f "$D/${b}_scoped.hi" ]; then
-        build_hier "$D/${b}_scoped.hi" "$T/w_hiers"
-        run_one hier_scoped "$T/w_hiers"
+    build_tycho "$D/$b.ty" "$T/w_tycho"
+    run_one tycho "$T/w_tycho"
+    if [ -f "$D/${b}_scoped.ty" ]; then
+        build_tycho "$D/${b}_scoped.ty" "$T/w_tychos"
+        run_one tycho_scoped "$T/w_tychos"
     fi
     $CC -O3 -o "$T/w_c" "$D/$b.c" 2>/dev/null; run_one c "$T/w_c"
     command -v rustc >/dev/null 2>&1 && rustc -C opt-level=3 -o "$T/w_rs" "$D/$b.rs" 2>/dev/null
@@ -82,10 +82,10 @@ json_workload() {
     ref=""; WL="json_parse"
     echo "== json-parse (recursive-descent: K parse-and-discard passes over a ~4.4MB doc) =="
     printf '%-12s %10s %8s   %s\n' lang peakRSS time output
-    build_hier "$D/json_gen.hi" "$T/jgen"
+    build_tycho "$D/json_gen.ty" "$T/jgen"
     "$T/jgen" > "$T/json_in" || { echo "json doc generation failed"; exit 2; }
-    build_hier "$D/json_parse.hi" "$T/j_hi"
-    json_run hier "$T/j_hi" stdin
+    build_tycho "$D/json_parse.ty" "$T/j_hi"
+    json_run tycho "$T/j_hi" stdin
     $CC -O3 -o "$T/j_c" "$D/json_parse.c" 2>/dev/null; json_run c "$T/j_c" stdin
     command -v rustc >/dev/null 2>&1 && rustc -C opt-level=3 -o "$T/j_rs" "$D/json_parse.rs" 2>/dev/null
     json_run rust "$T/j_rs" stdin
@@ -99,16 +99,16 @@ json_workload() {
 summary() {                                   # normalized head-to-head scorecard from the accumulated records
     ORDER="binary_trees maptree arr_pipeline string_pipe iter_transform dispatch json_parse"
     echo "==========================================================="
-    echo "SUMMARY — peak RSS (MB).  'hier/C' is the headline thesis metric:"
+    echo "SUMMARY — peak RSS (MB).  'tycho/C' is the headline thesis metric:"
     echo "implicit arenas vs hand-written malloc/free; ~1x = parity, lower is better."
     awk -v ord="$ORDER" '
       function v(w,l){ return (m[w"|"l]!="")? m[w"|"l] : "-" }
       { m[$1"|"$2]=$3 }
       END{ n=split(ord,o," ")
-        printf "  %-16s %7s %7s %7s %7s %7s   %7s\n","workload","hier","c","rust","go","koka","hier/C"
-        for(i=1;i<=n;i++){ w=o[i]; h=m[w"|hier"]; c=m[w"|c"]
+        printf "  %-16s %7s %7s %7s %7s %7s   %7s\n","workload","tycho","c","rust","go","koka","tycho/C"
+        for(i=1;i<=n;i++){ w=o[i]; h=m[w"|tycho"]; c=m[w"|c"]
           r=(h!=""&&c!=""&&c+0>0)? sprintf("%.2fx",h/c) : "-"
-          printf "  %-16s %7s %7s %7s %7s %7s   %7s\n", w, v(w,"hier"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka"), r }
+          printf "  %-16s %7s %7s %7s %7s %7s   %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka"), r }
       }' "$REC"
     echo
     echo "SUMMARY — wall time (ms):"
@@ -116,8 +116,8 @@ summary() {                                   # normalized head-to-head scorecar
       function v(w,l){ return (t[w"|"l]!="")? t[w"|"l] : "-" }
       { t[$1"|"$2]=$4 }
       END{ n=split(ord,o," ")
-        printf "  %-16s %7s %7s %7s %7s %7s\n","workload","hier","c","rust","go","koka"
-        for(i=1;i<=n;i++){ w=o[i]; printf "  %-16s %7s %7s %7s %7s %7s\n", w, v(w,"hier"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka") }
+        printf "  %-16s %7s %7s %7s %7s %7s\n","workload","tycho","c","rust","go","koka"
+        for(i=1;i<=n;i++){ w=o[i]; printf "  %-16s %7s %7s %7s %7s %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka") }
       }' "$REC"
     echo
 }

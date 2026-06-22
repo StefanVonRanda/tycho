@@ -1,4 +1,4 @@
-/* dbquery — C port. Same SQLite work + same checksum as dbquery.hi, written the
+/* dbquery — C port. Same SQLite work + same checksum as dbquery.ty, written the
  * way a C programmer would: the column_text pointer is used in place (no copy,
  * since it's only read within the row), and the per-round cat grouping is a
  * small fixed array (cat is 0..31). This is the manual-memory baseline; the

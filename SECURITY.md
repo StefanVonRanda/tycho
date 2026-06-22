@@ -1,6 +1,6 @@
 # Security policy
 
-**Hier is experimental, proof-of-concept software** with no stability or security
+**Tycho is experimental, proof-of-concept software** with no stability or security
 guarantees. It has **not** been security-audited. Please do not use it for
 anything where a compromise would matter.
 
@@ -10,7 +10,7 @@ Some sharp edges are inherent, by design:
   misbehaving C library can corrupt memory. The boundary is checked only at the
   type level (scalars / `string` / opaque `ptr`).
 - A few corelib codecs (`base64`, `hex`, `url`) note a **`0x00`-byte caveat** on
-  decode — a hier string built with `chr()` can't hold an interior NUL, so a
+  decode — a tycho string built with `chr()` can't hold an interior NUL, so a
   decoded NUL byte is dropped. They are exact for text and non-NUL binary.
 - The hashes in `core:hash` are **non-cryptographic**; `core:md5` is broken for
   security (use `core:sha256` or a real KDF where it matters).
@@ -26,7 +26,7 @@ opening a public issue:
   under the repository's **Security** tab), or
 - contact the maintainer directly.
 
-Include a minimal `.hi` (or input) that reproduces it and your platform. Because
+Include a minimal `.ty` (or input) that reproduces it and your platform. Because
 this is a pre-1.0 research project, expect a best-effort response, not an SLA.
 
 Routine miscompiles and crashes that aren't security-sensitive are fine to file

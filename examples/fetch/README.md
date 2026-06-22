@@ -18,7 +18,7 @@ status : 200
 bytes  : 559
 sha256 : ff67a9d764d6a2367a187734e697f6a53217db9a21c101d410a113ca871a299d
 content: text, 559 bytes
-cached : hier_fetch_ff67a9d764d6a236.txt
+cached : tycho_fetch_ff67a9d764d6a236.txt
 ```
 
 The whole document lives in a per-scope arena and is freed when `main` exits —
@@ -29,7 +29,7 @@ program rather than a micro-benchmark.
 ## Running
 
 `make fetch` (or `sh examples/fetch/run.sh`) builds the program by **both**
-compilers (the C `hierc` and the self-hosted `hierc0`), runs each against a local
+compilers (the C `tychoc` and the self-hosted `tychoc0`), runs each against a local
 `file://` fixture so the whole pipeline is exercised **deterministically and
 offline**, asserts byte-identical output against `expected.out`, and re-runs the
 emitted C under ASan/UBSan (proving the transient libcurl response body is

@@ -1,0 +1,69 @@
+# corelib: HTTP(S) client over libcurl (C-shim, FFI). Import with
+# `import "core:http"`. The shim (http_shim.c) and its dependency (deps ->
+# libcurl) are auto-discovered; pkg-config supplies the per-platform flags, and
+# the corelib harness skips this module where libcurl is absent.
+#
+#     r := http.get("https://example.com")
+#     if http.ok(r):
+#         code := http.status(r)            # e.g. 200
+#         text := http.body(r)              # the response body
+#         http.release(r)                   # the handle is C-owned -- free it
+#
+# A request returns an opaque handle (ptr), or null on a transport failure
+# (`ok`/`is_null` to check). The handle is C-owned (not arena-managed), so
+# `release` it. `body` is arena-copied on return; a binary body with interior
+# 0x00 bytes truncates at the copy (a tycho string limit), so this is for text.
+package http
+
+extern fn http_get(url: string) -> ptr
+extern fn http_post(url: string, body: string, content_type: string) -> ptr
+extern fn http_status(resp: ptr) -> int
+extern fn http_body(resp: ptr) -> string
+extern fn http_free(resp: ptr)
+
+# Perform a GET. Returns a response handle, or null on a transport failure.
+fn get(url: string) -> ptr:
+    return http_get(url)
+
+# Perform a POST with a request body and Content-Type (e.g. "application/json").
+fn post(url: string, body: string, content_type: string) -> ptr:
+    return http_post(url, body, content_type)
+
+# Did the request reach the server (a handle, even for a 4xx/5xx status)?
+fn ok(resp: ptr) -> bool:
+    return is_null(resp) == false
+
+# The HTTP status code (e.g. 200), or 0 if the request never completed.
+fn status(resp: ptr) -> int:
+    if is_null(resp):
+        return 0
+    return http_status(resp)
+
+# The response body ("" if the request failed). Arena-copied; see the NUL note.
+fn body(resp: ptr) -> string:
+    if is_null(resp):
+        return ""
+    return http_body(resp)
+
+# Free a response handle (C-owned memory; call exactly once).
+fn release(resp: ptr):
+    if is_null(resp) == false:
+        http_free(resp)
+
+# Convenience: GET a URL and return just the body ("" on failure); frees the handle.
+fn get_body(url: string) -> string:
+    r := http_get(url)
+    if is_null(r):
+        return ""
+    b := http_body(r)
+    http_free(r)
+    return b
+
+# Convenience: GET a URL and return just the status code (0 on failure); frees the handle.
+fn get_status(url: string) -> int:
+    r := http_get(url)
+    if is_null(r):
+        return 0
+    s := http_status(r)
+    http_free(r)
+    return s

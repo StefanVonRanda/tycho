@@ -60,7 +60,7 @@ forms above, e.g. `cnt[w] += 1`, are the more direct way to write the counter.)
 
 ## Why it can't dangle
 
-`m[k]` as a place is a **transient**: Hier has no way to take a reference to a
+`m[k]` as a place is a **transient**: Tycho has no way to take a reference to a
 value, so `m[k]` can only appear *as* (or *inside*) a single mutation target,
 and it cannot be stored, bound, or carried past that one statement. That single
 property is what makes it sound:
@@ -97,7 +97,7 @@ key kinds.
 ## Implementation notes
 
 For contributors. `m[k]` as a place lowers to a slot-pointer accessor —
-`*hier_mapc<id>_slotptr(owner, &m, k)` — that does the find-or-insert (setting
+`*tycho_mapc<id>_slotptr(owner, &m, k)` — that does the find-or-insert (setting
 the zero value on insert) and returns the slot address. The existing place
 machinery (assignment, index-set, field-set, `push`/`reserve`/`pop`) reuses that
 accessor through the recursive place-lowering pass, so the deeper chains

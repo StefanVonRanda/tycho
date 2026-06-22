@@ -1,0 +1,81 @@
+# corelib test: exercises core:path; the C compiler and tychoc0 must agree, and
+# the output is locked to corelib/test/path.out (corelib/run.sh).
+# (f-string holes can't hold string literals -- the lexer stops at the inner
+#  quote -- so every call result is bound to a local first, then interpolated.)
+package main
+import "core:path"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # ---- base: trailing slashes ignored; "."/"/" sentinels ----
+    be := path.base("")
+    bs := path.base("/")
+    bf := path.base("file.txt")
+    print(f"base ''=[{be}] '/'=[{bs}] f=[{bf}]\n")
+    b1 := path.base("/a/b/c")
+    b2 := path.base("/a/b/c/")
+    b3 := path.base("a/b/")
+    print(f"base /a/b/c=[{b1}] /a/b/c/=[{b2}] a/b/=[{b3}]\n")
+
+    # ---- dir: everything but the final element ----
+    de := path.dir("")
+    df := path.dir("foo")
+    dr := path.dir("/foo")
+    print(f"dir ''=[{de}] foo=[{df}] /foo=[{dr}]\n")
+    d1 := path.dir("/a/b/c")
+    d2 := path.dir("/a/b/c/")
+    d3 := path.dir("a/b")
+    print(f"dir /a/b/c=[{d1}] /a/b/c/=[{d2}] a/b=[{d3}]\n")
+
+    # ---- ext / stem: a leading dot is not an extension ----
+    e1 := path.ext("a.txt")
+    e2 := path.ext(".bashrc")
+    e3 := path.ext("archive.tar.gz")
+    e4 := path.ext("noext")
+    print(f"ext a.txt=[{e1}] .bashrc=[{e2}] tar.gz=[{e3}] none=[{e4}]\n")
+    e5 := path.ext("/a/b.c/d")
+    print(f"ext dirdot=[{e5}]\n")
+    s1 := path.stem("a.txt")
+    s2 := path.stem(".bashrc")
+    s3 := path.stem("archive.tar.gz")
+    print(f"stem a.txt=[{s1}] .bashrc=[{s2}] tar.gz=[{s3}]\n")
+
+    # ---- join: exactly one separator; empties drop out ----
+    j1 := path.join("a", "b")
+    j2 := path.join("a/", "b")
+    j3 := path.join("a", "/b")
+    print(f"join a|b=[{j1}] a/|b=[{j2}] a|/b=[{j3}]\n")
+    j4 := path.join("/", "x")
+    j5 := path.join("", "b")
+    j6 := path.join("a", "")
+    print(f"join /|x=[{j4}] ''|b=[{j5}] a|''=[{j6}]\n")
+
+    # ---- is_abs ----
+    a1 := b2i(path.is_abs("/a"))
+    a2 := b2i(path.is_abs("a"))
+    a3 := b2i(path.is_abs(""))
+    print(f"abs /a={a1} a={a2} empty={a3}\n")
+
+    # ---- split_path: the inverse of join ----
+    pd, pb := path.split_path("/a/b/c.txt")
+    print(f"split /a/b/c.txt -> dir=[{pd}] base=[{pb}]\n")
+
+    # ---- clean: collapse //, drop ., resolve .. ----
+    c1 := path.clean("a/./b/../c")
+    c2 := path.clean("/a//b/")
+    print(f"clean a/./b/../c=[{c1}] /a//b/=[{c2}]\n")
+    c3 := path.clean("/..")
+    c4 := path.clean("")
+    c5 := path.clean(".")
+    print(f"clean /..=[{c3}] ''=[{c4}] .=[{c5}]\n")
+    c6 := path.clean("../a")
+    c7 := path.clean("a/b/../../c")
+    c8 := path.clean("a/../../b")
+    print(f"clean ../a=[{c6}] a/b/../../c=[{c7}] a/../../b=[{c8}]\n")
+    c9 := path.clean("///")
+    c10 := path.clean("./x")
+    print(f"clean ///=[{c9}] ./x=[{c10}]\n")

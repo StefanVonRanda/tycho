@@ -1,6 +1,6 @@
-# Contributing to Hier
+# Contributing to Tycho
 
-Thanks for trying Hier and wanting to help. **Hier is an experimental
+Thanks for trying Tycho and wanting to help. **Tycho is an experimental
 proof-of-concept** (see the status note in the [README](README.md)) — the most
 valuable contributions right now are **bug reports, repros, and design
 feedback**, more than large features. Don't be shy about filing an issue.
@@ -9,7 +9,7 @@ feedback**, more than large features. Don't be shy about filing an issue.
 
 - **Found a miscompile, crash, or wrong output?** Open a
   [bug report](.github/ISSUE_TEMPLATE/bug_report.md) — the single most useful
-  thing is a **small `.hi` program that reproduces it** plus what you expected
+  thing is a **small `.ty` program that reproduces it** plus what you expected
   vs. what happened, and your OS.
 - **Have an idea, a rough edge, or a "why does it work this way?"** Open an
   [idea / feedback](.github/ISSUE_TEMPLATE/idea.md) issue. Even "I bounced off
@@ -23,13 +23,13 @@ Prerequisites are just a C compiler (`cc`) and `make` — the compiler is a sing
 dependency-free C file. See the README's [Getting started](README.md#getting-started).
 
 ```
-make                 # build ./hierc
-./hierc f.hi && ./f  # compile + run a program
+make                 # build ./tychoc
+./tychoc f.ty && ./f  # compile + run a program
 ```
 
 ## The local CI gate (run it before a PR)
 
-**Hier has no cloud CI — by design.** There are no GitHub Actions; the gate is
+**Tycho has no cloud CI — by design.** There are no GitHub Actions; the gate is
 `scripts/ci.sh`, run locally:
 
 ```
@@ -44,9 +44,9 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
 
 ## Two rules that will surprise you
 
-1. **Every language feature lands in BOTH compilers, or not at all.** Hier has a
-   C reference compiler (`src/hierc.c`) and a self-hosted one written in Hier
-   (`compiler/hierc0.hi`). `make fixpoint` asserts the Hier-built compiler
+1. **Every language feature lands in BOTH compilers, or not at all.** Tycho has a
+   C reference compiler (`src/tychoc.c`) and a self-hosted one written in Tycho
+   (`compiler/tychoc0.ty`). `make fixpoint` asserts the Tycho-built compiler
    reproduces itself byte-identically **and** matches the C compiler across the
    whole suite. A feature in only one compiler turns the fixpoint red. This is
    the parity discipline that keeps the two from drifting — plan for it.
@@ -65,8 +65,8 @@ hand, *are* supported — `$T`, see [docs/generics.md](docs/generics.md).
 ## Code style
 
 - Match the surrounding code — its comment density, naming, and idioms.
-- C in `src/`/`runtime/` follows the existing C89/C11-ish style; Hier in
-  `compiler/`/`corelib/` follows the existing Hier style (run `hier fmt` /
+- C in `src/`/`runtime/` follows the existing C89/C11-ish style; Tycho in
+  `compiler/`/`corelib/` follows the existing Tycho style (run `tycho fmt` /
   `make tools-check`).
 - One focused change per commit; the commit message says **what was wrong** and
   **how the fix was verified** (which test / fixpoint / fuzz run).

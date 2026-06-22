@@ -6,8 +6,8 @@
 # bounded. peak RSS via bench/peakrss; string-case checksums must match across langs.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 D=bench/window
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -24,9 +24,9 @@ meas() {  # <label> <binary> <check?>
     fi
 }
 echo "sliding window of HEAP records (string) — 2M stream, 50k window:"
-$HIERC "$D/window_naive.hi" --emit-c -o "$T/wn" >/dev/null 2>&1 && $CC -O3 -o "$T/wn" "$T/wn.c" -lm; meas "hier (string)" "$T/wn" check
+$TYCHOC "$D/window_naive.ty" --emit-c -o "$T/wn" >/dev/null 2>&1 && $CC -O3 -o "$T/wn" "$T/wn.c" -lm; meas "tycho (string)" "$T/wn" check
 $CC -O3 -o "$T/wc" "$D/window.c"; meas "C (string)" "$T/wc" check
 if command -v go >/dev/null 2>&1; then cp "$D/window.go" "$T/wg.go" && ( cd "$T" && go build -o wgo wg.go 2>/dev/null ); meas "Go (string)" "$T/wgo" check; fi
 echo "same window with FIXED-SIZE records (int) — slots reused, no per-element heap:"
-$HIERC "$D/window_int.hi" --emit-c -o "$T/wi" >/dev/null 2>&1 && $CC -O3 -o "$T/wi" "$T/wi.c" -lm; meas "hier (int)" "$T/wi" nocheck
+$TYCHOC "$D/window_int.ty" --emit-c -o "$T/wi" >/dev/null 2>&1 && $CC -O3 -o "$T/wi" "$T/wi.c" -lm; meas "tycho (int)" "$T/wi" nocheck
 [ "$FAIL" = 0 ] && echo "window: ok (string-case checksums agree)" || { echo "window: FAIL"; exit 1; }

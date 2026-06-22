@@ -1,0 +1,798 @@
+# tycho-lsp — a Language Server for tycho, written in tycho (dogfood). One server,
+# driven by any LSP client (VS Code, Zed, ...). JSON-RPC transport + lifecycle,
+# and these features: diagnostics (compile the buffer -> publishDiagnostics),
+# hover, go-to-definition, documentSymbol (outline), completion, references,
+# documentHighlight, rename, and inlay type hints. Navigation/types come from
+# `tychoc --symbols` (post-resolve index); references/rename scan the buffer with
+# string/comment awareness so they never edit text inside a literal or comment.
+# Build:  tychoc tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
+#
+# The JSON value model + parser + serializer are reused verbatim from
+# examples/json.ty (a proven recursive value-semantic parser); only the transport,
+# a couple of accessors (as_str), and the dispatch loop are new.
+
+extern fn tycho_read_line() -> string          # one stdin line (through \n); "" on EOF
+extern fn tycho_read_n(n: int) -> string       # exactly n stdin bytes (the JSON body)
+extern fn tycho_write(s: string) -> int        # write to stdout + flush
+extern fn tycho_run(cmd: string) -> int        # run the compiler on a buffer (diagnostics)
+
+# ---- JSON (from examples/json.ty) -------------------------------------------
+enum Json:
+    JNull
+    JBool(bool)
+    JNum(int)
+    JStr(string)
+    JArr([Json])
+    JObj([string], [Json])
+
+fn skip_ws(s: string, n: int, pos: mut int):
+    for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+        pos = pos + 1
+
+fn parse_string(s: string, n: int, pos: mut int) -> string:
+    pos = pos + 1
+    r := ""
+    for pos < n and s[pos] != 34:
+        if s[pos] == 92:
+            pos = pos + 1
+            e := s[pos]
+            if e == 110:
+                r = r + '\n'
+            elif e == 116:
+                r = r + '\t'
+            elif e == 114:
+                r = r + '\r'
+            elif e == 34:
+                r = r + '"'
+            elif e == 92:
+                r = r + '\\'
+            elif e == 47:
+                r = r + '/'
+            else:
+                r = r + ('\0' + e)
+        else:
+            r = r + ('\0' + s[pos])
+        pos = pos + 1
+    pos = pos + 1
+    return r
+
+fn parse_number(s: string, n: int, pos: mut int) -> int:
+    neg := false
+    if s[pos] == 45:
+        neg = true
+        pos = pos + 1
+    v := 0
+    for pos < n and s[pos] >= 48 and s[pos] <= 57:
+        v = v * 10 + (s[pos] - 48)
+        pos = pos + 1
+    if neg:
+        return 0 - v
+    return v
+
+fn parse_array(s: string, n: int, pos: mut int) -> Json:
+    pos = pos + 1
+    xs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 93:
+        push(xs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1
+    return JArr(xs)
+
+fn parse_object(s: string, n: int, pos: mut int) -> Json:
+    pos = pos + 1
+    ks := []string
+    vs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 125:
+        k := parse_string(s, n, &pos)
+        skip_ws(s, n, &pos)
+        pos = pos + 1                          # skip :
+        push(ks, k)
+        push(vs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1
+    return JObj(ks, vs)
+
+fn parse_value(s: string, n: int, pos: mut int) -> Json:
+    skip_ws(s, n, &pos)
+    if pos >= n:
+        return JNull
+    c := s[pos]
+    if c == 123:
+        return parse_object(s, n, &pos)
+    if c == 91:
+        return parse_array(s, n, &pos)
+    if c == 34:
+        return JStr(parse_string(s, n, &pos))
+    if c == 116:
+        pos = pos + 4
+        return JBool(true)
+    if c == 102:
+        pos = pos + 5
+        return JBool(false)
+    if c == 110:
+        pos = pos + 4
+        return JNull
+    return JNum(parse_number(s, n, &pos))
+
+fn esc(s: string) -> string:
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if c == 34:
+            out = out + "\\\""
+        elif c == 92:
+            out = out + "\\\\"
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        elif c == 13:
+            out = out + "\\r"
+        else:
+            out = out + ('\0' + c)
+    return out
+
+fn to_json(j: Json) -> string:
+    match j:
+        JNull:
+            return "null"
+        JBool(b):
+            if b:
+                return "true"
+            return "false"
+        JNum(x):
+            return str(x)
+        JStr(s):
+            return "\"" + esc(s) + "\""
+        JArr(xs):
+            out := "["
+            for i in range(len(xs)):
+                if i > 0:
+                    out = out + ","
+                out = out + to_json(xs[i])
+            return out + "]"
+        JObj(ks, vs):
+            out := "{"
+            for i in range(len(ks)):
+                if i > 0:
+                    out = out + ","
+                out = out + "\"" + esc(ks[i]) + "\":" + to_json(vs[i])
+            return out + "}"
+
+fn get(j: Json, key: string) -> Json:
+    match j:
+        JObj(ks, vs):
+            for i in range(len(ks)):
+                if ks[i] == key:
+                    return vs[i]
+            return JNull
+        JNull:
+            return JNull
+        JBool(b):
+            return JNull
+        JNum(x):
+            return JNull
+        JStr(s):
+            return JNull
+        JArr(xs):
+            return JNull
+
+fn as_str(j: Json) -> string:
+    match j:
+        JStr(s):
+            return s
+        JNull:
+            return ""
+        JBool(b):
+            return ""
+        JNum(x):
+            return ""
+        JArr(xs):
+            return ""
+        JObj(ks, vs):
+            return ""
+
+fn jat(j: Json, i: int) -> Json:                # i-th element of a JArr, else JNull
+    match j:
+        JArr(xs):
+            if i >= 0 and i < len(xs):
+                return xs[i]
+            return JNull
+        JNull:
+            return JNull
+        JBool(b):
+            return JNull
+        JNum(x):
+            return JNull
+        JStr(s):
+            return JNull
+        JObj(ks, vs):
+            return JNull
+
+fn as_num(j: Json) -> int:
+    match j:
+        JNum(x):
+            return x
+        JNull:
+            return 0
+        JBool(b):
+            return 0
+        JStr(s):
+            return 0
+        JArr(xs):
+            return 0
+        JObj(ks, vs):
+            return 0
+
+# ---- small string helpers ---------------------------------------------------
+fn trim_eol(s: string) -> string:
+    n := len(s)
+    for n > 0 and (s[n - 1] == 10 or s[n - 1] == 13 or s[n - 1] == 32):
+        n = n - 1
+    return substr(s, 0, n)
+
+fn starts_with(s: string, p: string) -> bool:
+    if len(s) < len(p):
+        return false
+    return substr(s, 0, len(p)) == p
+
+fn digits_to_int(s: string) -> int:
+    v := 0
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 48 and c <= 57:
+            v = v * 10 + (c - 48)
+    return v
+
+# ---- JSON-RPC transport -----------------------------------------------------
+fn crlf() -> string:
+    return "" + '\r' + '\n'                     # string literals can't carry \r; char literals can
+
+fn send_msg(body: string):
+    tycho_write("Content-Length: " + str(len(body)) + crlf() + crlf() + body)
+
+fn send_result(id: Json, result: string):
+    send_msg("{\"jsonrpc\":\"2.0\",\"id\":" + to_json(id) + ",\"result\":" + result + "}")
+
+# read one framed message body; "" on EOF
+fn read_message() -> string:
+    clen := 0 - 1
+    for true:
+        line := tycho_read_line()
+        if line == "":
+            return ""                          # EOF
+        t := trim_eol(line)
+        if t == "":
+            break                              # blank line ends the headers
+        if starts_with(t, "Content-Length:"):
+            clen = digits_to_int(substr(t, 15, len(t)))
+    if clen < 0:
+        return ""
+    return tycho_read_n(clen)
+
+fn compiler() -> string:
+    c := getenv("TYCHOC")
+    if c == "":
+        return "tychoc"
+    return c
+
+# length of 1-based source line `ln` in `text` (for a full-line diagnostic range)
+fn line_len(text: string, ln: int) -> int:
+    lines := split(text, "\n")
+    idx := ln - 1
+    if idx >= 0 and idx < len(lines):
+        return len(lines[idx])
+    return 0
+
+# ---- diagnostics: compile the buffer, parse errors, publish -----------------
+# Write the buffer to a temp, run the compiler (front-end only, no cc), and turn
+# each `path:line: error: msg` header line of its stderr into an LSP diagnostic
+# (full-line range, 0-based). Always publishes -- an empty array clears stale
+# errors once the buffer is clean again.
+fn diagnose(uri: string, text: string, cc: string):
+    tmp := "/tmp/.tycholsp_doc.ty"
+    errf := "/tmp/.tycholsp_err.txt"
+    write_file(tmp, text)
+    tycho_run(cc + " " + tmp + " --emit-c -o /tmp/.tycholsp_out > /dev/null 2> " + errf)
+    errtext := read_file(errf)
+    diags := ""
+    nd := 0
+    elines := split(errtext, "\n")
+    for i in range(len(elines)):
+        el := elines[i]
+        if starts_with(el, tmp):                       # a diagnostic header (not a snippet/caret line)
+            sev := 1
+            mskip := 7                                 # len(" error:")
+            p := find(el, " error:")
+            if p < 0:
+                p = find(el, " warning:")
+                sev = 2
+                mskip = 9                              # len(" warning:")
+            if p >= 0:
+                head := substr(el, 0, p)               # "<tmp>:<line>:"
+                msg := substr(el, p + mskip, len(el))
+                if len(msg) > 0 and msg[0] == 32:
+                    msg = substr(msg, 1, len(msg))     # drop the leading space
+                parts := split(head, ":")              # [tmp, line, ""]  (tmp has no ':')
+                ln := 1
+                if len(parts) >= 2:
+                    ln = digits_to_int(parts[len(parts) - 2])
+                l0 := ln - 1
+                if l0 < 0:
+                    l0 = 0
+                ec := line_len(text, ln)
+                d := "{\"range\":{\"start\":{\"line\":" + str(l0) + ",\"character\":0},\"end\":{\"line\":" + str(l0) + ",\"character\":" + str(ec) + "}},\"severity\":" + str(sev) + ",\"message\":\"" + esc(msg) + "\"}"
+                if nd > 0:
+                    diags = diags + ","
+                diags = diags + d
+                nd = nd + 1
+    send_msg("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + esc(uri) + "\",\"diagnostics\":[" + diags + "]}}")
+
+# ---- symbol navigation (hover + go-to-definition) --------------------------
+# Lightweight, buffer-only: scan the open document for top-level definitions
+# (fn/struct/enum/type <name>) and answer hover with the definition's signature
+# line + go-to-definition with its location. No compiler symbol table needed;
+# local/param/expression types would require type export from the compiler.
+
+fn ltrim(s: string) -> string:
+    i := 0
+    for i < len(s) and (s[i] == 32 or s[i] == 9):
+        i = i + 1
+    return substr(s, i, len(s))
+
+fn is_ident_ch(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95
+
+# the identifier under the cursor (0-based line/character), or ""
+fn word_at(text: string, ln: int, ch: int) -> string:
+    lines := split(text, "\n")
+    if ln < 0 or ln >= len(lines):
+        return ""
+    s := lines[ln]
+    n := len(s)
+    if ch < 0 or ch > n:
+        return ""
+    a := ch
+    for a > 0 and is_ident_ch(s[a - 1]):
+        a = a - 1
+    b := ch
+    for b < n and is_ident_ch(s[b]):
+        b = b + 1
+    if a >= b:
+        return ""
+    return substr(s, a, b)
+
+# does `line` define `name` with keyword `kw` (fn/struct/enum/type)?
+fn def_matches(line: string, kw: string, name: string) -> bool:
+    s := ltrim(line)
+    pre := kw + " "
+    if not starts_with(s, pre):
+        return false
+    rest := substr(s, len(pre), len(s))
+    if not starts_with(rest, name):
+        return false
+    after := len(name)
+    if after >= len(rest):
+        return true
+    return not is_ident_ch(rest[after])
+
+# 0-based line where `name` is defined (fn/struct/enum/type), else -1
+fn find_def(text: string, name: string) -> int:
+    lines := split(text, "\n")
+    for i in range(len(lines)):
+        s := lines[i]
+        if def_matches(s, "fn", name) or def_matches(s, "struct", name) or def_matches(s, "enum", name) or def_matches(s, "type", name):
+            return i
+    return 0 - 1
+
+# document store: parallel arrays uri -> (buffer text, --symbols index)
+fn doc_set(uris: mut [string], texts: mut [string], syms: mut [string], uri: string, text: string, sym: string):
+    for i in range(len(uris)):
+        if uris[i] == uri:
+            texts[i] = text
+            syms[i] = sym
+            return
+    push(uris, uri)
+    push(texts, text)
+    push(syms, sym)
+
+fn doc_get(uris: [string], arr: [string], uri: string) -> string:
+    for i in range(len(uris)):
+        if uris[i] == uri:
+            return arr[i]
+    return ""
+
+# run `tychoc --symbols` on the buffer; "" if it doesn't parse (hover falls back)
+fn compute_syms(text: string, cc: string) -> string:
+    write_file("/tmp/.tycholsp_doc.ty", text)
+    tycho_run(cc + " /tmp/.tycholsp_doc.ty --symbols > /tmp/.tycholsp_syms.txt 2>/dev/null")
+    return read_file("/tmp/.tycholsp_syms.txt")
+
+# --- symbol-index queries (TAB-separated records from `tychoc --symbols`) ------
+# 1-based start line of the fn enclosing 0-based cursor line cl, or -1
+fn sym_enclosing_fn(syms: string, cl: int) -> int:
+    lines := split(syms, "\n")
+    best := 0 - 1
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and f[0] == "fn":
+            fl := digits_to_int(f[2])
+            if fl <= cl + 1 and fl > best:
+                best = fl
+    return best
+
+# type of param `name` in the function whose start line is `fnline`, or ""
+fn sym_param_type(syms: string, name: string, fnline: int) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "param" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return f[2]
+    return ""
+
+# resolved description of a top-level `name` (fn sig / struct / enum / type), or ""
+fn sym_describe(syms: string, name: string) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "fn" and f[1] == name:
+            return f[3]
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 2 and f[1] == name:
+            if f[0] == "struct":
+                return "struct " + name
+            if f[0] == "enum":
+                return "enum " + name
+            if f[0] == "type" and len(f) >= 3:
+                return "type " + name + " = " + f[2]
+    return ""
+
+# 0-based def line of a top-level `name` (fn/struct/enum) from the index, or -1
+fn sym_def_line(syms: string, name: string) -> int:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and f[1] == name and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
+            return digits_to_int(f[2]) - 1
+    return 0 - 1
+
+# inferred type of local `name` in the function whose start line is `fnline`, or ""
+fn sym_local_type(syms: string, name: string, fnline: int) -> string:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return f[2]
+    return ""
+
+# 0-based decl line of local `name` in the function at `fnline`, or -1
+fn sym_local_defline(syms: string, name: string, fnline: int) -> int:
+    lines := split(syms, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 5 and f[0] == "local" and f[1] == name and digits_to_int(f[3]) == fnline:
+            return digits_to_int(f[4]) - 1
+    return 0 - 1
+
+fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
+    pos := get(params, "position")
+    cl := as_num(get(pos, "line"))
+    w := word_at(text, cl, as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "null")
+        return
+    info := ""
+    efn := sym_enclosing_fn(sx, cl)            # a local or param of the enclosing function?
+    if efn >= 0:
+        lt := sym_local_type(sx, w, efn)
+        if lt == "":
+            lt = sym_param_type(sx, w, efn)
+        if lt != "":
+            info = w + ": " + lt
+    if info == "":                             # a top-level fn/struct/enum/type?
+        info = sym_describe(sx, w)
+    if info == "":                             # buffer-side fallback: the def's source line
+        dln := find_def(text, w)
+        if dln >= 0:
+            lines := split(text, "\n")
+            info = ltrim(lines[dln])
+    if info == "":
+        send_result(id, "null")
+        return
+    md := "```tycho\n" + info + "\n```"
+    send_result(id, "{\"contents\":{\"kind\":\"markdown\",\"value\":\"" + esc(md) + "\"}}")
+
+fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
+    pos := get(params, "position")
+    cl := as_num(get(pos, "line"))
+    w := word_at(text, cl, as_num(get(pos, "character")))
+    dln := 0 - 1
+    if w != "":
+        efn := sym_enclosing_fn(sx, cl)
+        if efn >= 0:
+            dln = sym_local_defline(sx, w, efn)        # local -> its decl line
+            if dln < 0 and sym_param_type(sx, w, efn) != "":
+                dln = efn - 1                          # param -> the enclosing fn line
+        if dln < 0:
+            dln = sym_def_line(sx, w)                  # top-level fn/struct/enum
+        if dln < 0:
+            dln = find_def(text, w)                    # buffer-side fallback
+    if dln < 0:
+        send_result(id, "null")
+        return
+    lines := split(text, "\n")
+    ec := 0
+    if dln < len(lines):
+        ec = len(lines[dln])
+    send_result(id, "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(dln) + ",\"character\":0},\"end\":{\"line\":" + str(dln) + ",\"character\":" + str(ec) + "}}}")
+
+# ---- occurrence scanning (references / rename / highlight) ------------------
+# Whole-word identifier occurrences of `name`, skipping string literals and `#`
+# comments so a rename never edits text inside a string or comment. Returned as a
+# flat [line, startCol, endCol, ...] triple list. (f-strings are skipped whole, so
+# identifiers inside f"...{hole}..." are conservatively not matched -- safe for
+# rename, at the cost of missing those refs; a known limitation.)
+fn find_occurrences(text: string, name: string) -> [int]:
+    out := []int
+    lines := split(text, "\n")
+    for li in range(len(lines)):
+        s := lines[li]
+        n := len(s)
+        c := 0
+        for c < n:
+            ch := s[c]
+            if ch == 35:                                   # '#' -> rest of line is a comment
+                c = n
+            elif ch == 34 or ch == 39:                     # "..." or '...' string literal
+                q := ch
+                c = c + 1
+                for c < n and s[c] != q:
+                    if s[c] == 92:
+                        c = c + 1
+                    c = c + 1
+                if c < n:
+                    c = c + 1                              # closing quote
+            elif is_ident_ch(ch) and not (ch >= 48 and ch <= 57):   # identifier (not a number)
+                a := c
+                for c < n and is_ident_ch(s[c]):
+                    c = c + 1
+                if substr(s, a, c) == name:
+                    push(out, li)
+                    push(out, a)
+                    push(out, c)
+            else:
+                c = c + 1
+    return out
+
+# end column of the first whole-word `name` on line `s`, or -1
+fn name_end_col(s: string, name: string) -> int:
+    n := len(s)
+    nl := len(name)
+    c := 0
+    for c + nl <= n:
+        if substr(s, c, c + nl) == name and (c == 0 or not is_ident_ch(s[c - 1])) and (c + nl >= n or not is_ident_ch(s[c + nl])):
+            return c + nl
+        c = c + 1
+    return 0 - 1
+
+# append space-separated `words` as completion items of `kind`
+fn add_items_from(words: string, kind: int, out: mut string, nd: mut int):
+    ws := split(words, " ")
+    for wi in range(len(ws)):
+        w := ws[wi]
+        if w != "":
+            if nd > 0:
+                out = out + ","
+            out = out + "{\"label\":\"" + esc(w) + "\",\"kind\":" + str(kind) + "}"
+            nd = nd + 1
+
+fn comp_item(label: string, kind: int, detail: string) -> string:
+    return "{\"label\":\"" + esc(label) + "\",\"kind\":" + str(kind) + ",\"detail\":\"" + esc(detail) + "\"}"
+
+# ---- handlers for the new capabilities --------------------------------------
+# documentSymbol: an outline of the top-level fn/struct/enum from the index.
+fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    sx := doc_get(uris, syms, uri)
+    out := ""
+    nd := 0
+    lines := split(sx, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 3 and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
+            kind := 12                                     # SymbolKind.Function
+            if f[0] == "struct":
+                kind = 23                                  # .Struct
+            elif f[0] == "enum":
+                kind = 10                                  # .Enum
+            l0 := digits_to_int(f[2]) - 1
+            if nd > 0:
+                out = out + ","
+            out = out + "{\"name\":\"" + esc(f[1]) + "\",\"kind\":" + str(kind) + ",\"location\":{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(l0) + ",\"character\":0},\"end\":{\"line\":" + str(l0) + ",\"character\":0}}}}"
+            nd = nd + 1
+    send_result(id, "[" + out + "]")
+
+# completion: enclosing-fn locals/params + top-level defs + builtins/keywords.
+# (The client filters by the typed prefix; cross-package members aren't indexed.)
+fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    sx := doc_get(uris, syms, uri)
+    cl := as_num(get(get(params, "position"), "line"))
+    efn := sym_enclosing_fn(sx, cl)
+    out := ""
+    nd := 0
+    lines := split(sx, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and (f[0] == "local" or f[0] == "param") and digits_to_int(f[3]) == efn:
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 6, f[2])           # Variable
+            nd = nd + 1
+        elif len(f) >= 4 and f[0] == "fn":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 3, f[3])           # Function (detail = signature)
+            nd = nd + 1
+        elif len(f) >= 2 and f[0] == "struct":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 22, "struct")
+            nd = nd + 1
+        elif len(f) >= 2 and f[0] == "enum":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[1], 13, "enum")
+            nd = nd + 1
+        elif len(f) >= 3 and f[0] == "enum_arm":
+            if nd > 0:
+                out = out + ","
+            out = out + comp_item(f[2], 20, "variant of " + f[1])   # EnumMember
+            nd = nd + 1
+    add_items_from("print println eprint input read_all read_file write_file list_dir args getenv len push pop range str substr find split chr sqrt pow floor fabs clock now is_null Some Ok Err None", 3, &out, &nd)
+    add_items_from("fn struct enum type import package extern mut if elif else for match return break continue and or not in or_return spawn wait true false soa select", 14, &out, &nd)
+    send_result(id, "{\"isIncomplete\":false,\"items\":[" + out + "]}")
+
+# references: every whole-word use in the buffer (string/comment-aware).
+fn handle_references(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "[]")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}}}"
+        k = k + 3
+    send_result(id, "[" + out + "]")
+
+# documentHighlight: same occurrences, as in-file highlights.
+fn handle_highlight(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "":
+        send_result(id, "[]")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}},\"kind\":1}"
+        k = k + 3
+    send_result(id, "[" + out + "]")
+
+# rename: a WorkspaceEdit replacing every occurrence with newName.
+fn handle_rename(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    newname := as_str(get(params, "newName"))
+    w := word_at(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if w == "" or newname == "":
+        send_result(id, "null")
+        return
+    occ := find_occurrences(text, w)
+    out := ""
+    k := 0
+    for k < len(occ):
+        if k > 0:
+            out = out + ","
+        out = out + "{\"range\":{\"start\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 1]) + "},\"end\":{\"line\":" + str(occ[k]) + ",\"character\":" + str(occ[k + 2]) + "}},\"newText\":\"" + esc(newname) + "\"}"
+        k = k + 3
+    send_result(id, "{\"changes\":{\"" + esc(uri) + "\":[" + out + "]}}")
+
+# inlayHint: a `: type` hint after each inferred (`:=`) local, from the index.
+fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    sx := doc_get(uris, syms, uri)
+    lines := split(text, "\n")
+    slines := split(sx, "\n")
+    out := ""
+    nd := 0
+    for i in range(len(slines)):
+        f := split(slines[i], "\t")
+        if len(f) >= 5 and f[0] == "local":
+            l0 := digits_to_int(f[4]) - 1                  # decl line, 0-based
+            if l0 >= 0 and l0 < len(lines):
+                ec := name_end_col(lines[l0], f[1])
+                if ec >= 0:
+                    if nd > 0:
+                        out = out + ","
+                    out = out + "{\"position\":{\"line\":" + str(l0) + ",\"character\":" + str(ec) + "},\"label\":\": " + esc(f[2]) + "\",\"kind\":1,\"paddingLeft\":false}"
+                    nd = nd + 1
+    send_result(id, "[" + out + "]")
+
+fn main():
+    cc := compiler()
+    uris := []string
+    texts := []string
+    syms := []string
+    for true:
+        body := read_message()
+        if body == "":
+            return                             # client closed the pipe
+        pos := 0
+        msg := parse_value(body, len(body), &pos)
+        method := as_str(get(msg, "method"))
+        id := get(msg, "id")
+        params := get(msg, "params")
+        if method == "initialize":
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
+        elif method == "textDocument/didOpen":
+            td := get(params, "textDocument")
+            u := as_str(get(td, "uri"))
+            t := as_str(get(td, "text"))
+            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
+            diagnose(u, t, cc)
+        elif method == "textDocument/didChange":
+            u := as_str(get(get(params, "textDocument"), "uri"))
+            t := as_str(get(jat(get(params, "contentChanges"), 0), "text"))
+            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
+            diagnose(u, t, cc)
+        elif method == "textDocument/hover":
+            handle_hover(id, uris, texts, syms, params)
+        elif method == "textDocument/definition":
+            handle_definition(id, uris, texts, syms, params)
+        elif method == "textDocument/documentSymbol":
+            handle_document_symbol(id, uris, syms, params)
+        elif method == "textDocument/completion":
+            handle_completion(id, uris, texts, syms, params)
+        elif method == "textDocument/references":
+            handle_references(id, uris, texts, params)
+        elif method == "textDocument/documentHighlight":
+            handle_highlight(id, uris, texts, params)
+        elif method == "textDocument/rename":
+            handle_rename(id, uris, texts, params)
+        elif method == "textDocument/inlayHint":
+            handle_inlay(id, uris, texts, syms, params)
+        elif method == "shutdown":
+            send_result(id, "null")
+        elif method == "exit":
+            return
+        # initialized / didSave / others: ignored

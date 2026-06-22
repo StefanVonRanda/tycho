@@ -1,8 +1,8 @@
-# Learning Hier — for programmers coming from Python, JavaScript, or Ruby
+# Learning Tycho — for programmers coming from Python, JavaScript, or Ruby
 
-A hands-on, project-driven introduction to Hier — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have written real programs in it and understand how Hier's value-semantic model gives you memory safety without a garbage collector, lifetimes, or manual `malloc`/`free`.
+A hands-on, project-driven introduction to Tycho — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have written real programs in it and understand how Tycho's value-semantic model gives you memory safety without a garbage collector, lifetimes, or manual `malloc`/`free`.
 
-Hier is an experimental, open proof-of-concept. It's small on purpose — usually one way to do each thing — so this guide can cover the whole language and still fit in one sitting.
+Tycho is an experimental, open proof-of-concept. It's small on purpose — usually one way to do each thing — so this guide can cover the whole language and still fit in one sitting.
 
 **Who this is for:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You may have heard "stack vs heap" but never managed memory yourself. This guide meets you there and walks you into a systems language one concept at a time. Read it top to bottom: each section builds on the last, and the projects at the end pull everything together.
 
@@ -10,7 +10,7 @@ Hier is an experimental, open proof-of-concept. It's small on purpose — usuall
 
 ## Table of Contents
 
-1. [What is Hier?](#1-what-is-hier)
+1. [What is Tycho?](#1-what-is-tycho)
 2. [Setup and Hello World](#2-setup-and-hello-world)
 3. [Variables, Types, and Arithmetic](#3-variables-types-and-arithmetic)
 4. [Functions](#4-functions)
@@ -36,9 +36,9 @@ Hier is an experimental, open proof-of-concept. It's small on purpose — usuall
 
 ---
 
-## 1. What is Hier?
+## 1. What is Tycho?
 
-Hier is a **systems language** — it compiles to native machine code, like C or Rust. But its syntax looks like Python:
+Tycho is a **systems language** — it compiles to native machine code, like C or Rust. But its syntax looks like Python:
 
 ```
 fn greet(name: string) -> string:
@@ -50,9 +50,9 @@ fn main():
     print(greet(name))
 ```
 
-Three things make Hier different from the languages you know:
+Three things make Tycho different from the languages you know:
 
-| Concept | JavaScript/Python | Rust | Hier |
+| Concept | JavaScript/Python | Rust | Tycho |
 |---|---|---|---|
 | Memory | Garbage collector | Borrow checker + lifetimes | Implicit arenas (automatic) |
 | Types | Dynamic | Static, inferred | Static, inferred |
@@ -70,28 +70,28 @@ Don't worry if that's abstract right now. You'll *see* it in every section, and 
 
 ### Building the compiler
 
-You need a C compiler (`gcc` or `clang`) and `make`. Building Hier is one step — there are no dependencies to install:
+You need a C compiler (`gcc` or `clang`) and `make`. Building Tycho is one step — there are no dependencies to install:
 
 ```
-git clone <repo-url> hier
-cd hier
+git clone <repo-url> tycho
+cd tycho
 make
 ```
 
-This produces `./hierc`, the Hier compiler. (On macOS, install the Xcode Command Line Tools first: `xcode-select --install`.)
+This produces `./tychoc`, the Tycho compiler. (On macOS, install the Xcode Command Line Tools first: `xcode-select --install`.)
 
 ### Compiling and running a program
 
-`hierc` compiles a `.hi` source file to a native executable next to it, then you run that executable:
+`tychoc` compiles a `.ty` source file to a native executable next to it, then you run that executable:
 
 ```
-./hierc examples/hello.hi     # produces ./examples/hello
+./tychoc examples/hello.ty     # produces ./examples/hello
 ./examples/hello
 ```
 
 ### Hello World
 
-Create `hello.hi`:
+Create `hello.ty`:
 
 ```
 fn main():
@@ -101,7 +101,7 @@ fn main():
 Compile and run:
 
 ```
-./hierc hello.hi
+./tychoc hello.ty
 ./hello
 ```
 
@@ -121,7 +121,7 @@ That's the full edit-compile-run loop you'll use for every program in this guide
 
 ## 3. Variables, Types, and Arithmetic
 
-Hier has two ways to introduce a variable: `:=` declares a new one and infers its type from the value, while `=` reassigns an existing one. Types are static — every variable has one fixed type — but you rarely write the type yourself.
+Tycho has two ways to introduce a variable: `:=` declares a new one and infers its type from the value, while `=` reassigns an existing one. Types are static — every variable has one fixed type — but you rarely write the type yourself.
 
 ```
 fn main():
@@ -340,7 +340,7 @@ fn main():
 
 ### Building strings in a loop
 
-Hier has a secret optimization: when you accumulate a string with `total = total + x` in a loop, the compiler grows the buffer in place — O(n) total, not O(n²). This is automatic:
+Tycho has a secret optimization: when you accumulate a string with `total = total + x` in a loop, the compiler grows the buffer in place — O(n) total, not O(n²). This is automatic:
 
 ```
 fn main():
@@ -477,7 +477,7 @@ struct Rect:
     hi: Point
 
 fn area(r: Rect) -> int:
-    return (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
+    return (r.ty.x - r.lo.x) * (r.ty.y - r.lo.y)
 
 fn main():
     # positional construction (fields in declaration order)
@@ -631,7 +631,7 @@ fn main():
 
 ### Option(T) — no null
 
-Instead of `null`, Hier uses `Option(T)`: it's either `Some(value)` or `None`.
+Instead of `null`, Tycho uses `Option(T)`: it's either `Some(value)` or `None`.
 
 ```
 fn index_of(xs: [int], target: int) -> Option(int):
@@ -767,7 +767,7 @@ fn main():
 
 ## 13. Type Inference
 
-Hier infers types — you don't annotate everything:
+Tycho infers types — you don't annotate everything:
 
 ```
 x := 42                # int (inferred from the literal)
@@ -792,7 +792,7 @@ Function signatures are always explicit — they're the module interface.
 
 ## 14. Value Semantics: The Mental Model
 
-This is the most important concept in Hier. Internalize these three rules and everything else follows:
+This is the most important concept in Tycho. Internalize these three rules and everything else follows:
 
 ### Rule 1: Assignment copies
 
@@ -956,7 +956,7 @@ Calls chain: `a.vadd(b).vlen()` = `vlen(vadd(a, b))`.
 
 ## 17. Concurrency
 
-Hier's concurrency model is **race-free by construction**. Every value that crosses a thread boundary is deep-copied. No locks, no lifetimes, no `Send`/`Sync` bounds.
+Tycho's concurrency model is **race-free by construction**. Every value that crosses a thread boundary is deep-copied. No locks, no lifetimes, no `Send`/`Sync` bounds.
 
 ### spawn / wait
 
@@ -1023,7 +1023,7 @@ Channels are bounded lock-free queues. `send` blocks when full, `recv` blocks wh
 
 ## 18. Packages and the Standard Library
 
-Hier has packages: a directory of `.hi` files sharing one namespace.
+Tycho has packages: a directory of `.ty` files sharing one namespace.
 
 ```
 package main
@@ -1059,7 +1059,7 @@ fn main():
 
 ## 19. Calling C (FFI)
 
-`extern fn` declares a C function Hier can call:
+`extern fn` declares a C function Tycho can call:
 
 ```
 extern fn getpid() -> int
@@ -1070,16 +1070,16 @@ fn main():
     print(str(cos(0.0)) + "\n")             # 1.0
 ```
 
-The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Hier's arena), and the opaque `ptr` type for foreign handles. Composites and `mut` are rejected for safety.
+The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Tycho's arena), and the opaque `ptr` type for foreign handles. Composites and `mut` are rejected for safety.
 
 ---
 
 ## 20. Project: Inverted-Index Search Engine
 
-This is a real text search engine — index documents, query them with boolean AND, count term frequencies. Adapted from `examples/invindex.hi`.
+This is a real text search engine — index documents, query them with boolean AND, count term frequencies. Adapted from `examples/invindex.ty`.
 
 ```
-# invindex.hi — An inverted-index search engine in ~80 lines
+# invindex.ty — An inverted-index search engine in ~80 lines
 #
 # Concepts exercised:
 #   - structs with array fields (Posting)
@@ -1197,12 +1197,12 @@ fn main():
 
 ## 21. Project: JSON Parser
 
-A full recursive-descent JSON parser + serializer in ~200 lines. This is `examples/json.hi`, adapted for learning.
+A full recursive-descent JSON parser + serializer in ~200 lines. This is `examples/json.ty`, adapted for learning.
 
 The key insight: the parsed document is a recursive `Json` enum — an AST. The parser builds it by recursive descent, the serializer walks it, and **zero memory management appears in the source**. Every node lives in a lexical arena and is freed when its scope exits.
 
 ```
-# json.hi — A JSON parser + serializer
+# json.ty — A JSON parser + serializer
 #
 # Concepts exercised:
 #   - recursive enums (ASTs)
@@ -1386,7 +1386,7 @@ fn as_num(j: Json) -> int:
             return 0
 
 fn main():
-    src := "{\"name\": \"hier\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}}"
+    src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}}"
     pos := 0
     j := parse_value(src, len(src), &pos)
 
@@ -1412,7 +1412,7 @@ fn main():
 A tiny diffuse ray tracer rendering spheres to a PPM image. Exercises float math, nested structs, arrays of structs, and the O(n) in-place string accumulator.
 
 ```
-# raytrace.hi — A diffuse ray tracer
+# raytrace.ty — A diffuse ray tracer
 #
 # Concepts exercised:
 #   - float math (sqrt, arithmetic)
@@ -1534,7 +1534,7 @@ fn main():
 Compile and render:
 
 ```
-./hierc raytrace.hi
+./tychoc raytrace.ty
 ./raytrace > out.ppm
 ```
 
@@ -1686,9 +1686,9 @@ math.gcd(12, 8)   s.argsort(xs)
 ## Where to Go Next
 
 - **Read the examples:** `examples/` has 20 programs, from trivial to substantial.
-- **Read the tests:** `tests/*.hi` covers every language feature with focused examples.
+- **Read the tests:** `tests/*.ty` covers every language feature with focused examples.
 - **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and where it doesn't.
-- **Read the source:** The self-hosted compiler `compiler/hierc0.hi` is ~10,000 lines of Hier written in Hier — a real program that exercises every feature.
+- **Read the source:** The self-hosted compiler `compiler/tychoc0.ty` is ~10,000 lines of Tycho written in Tycho — a real program that exercises every feature.
 - **Run the benchmarks:** `make bench` to see the performance properties for yourself.
 - **Try the fuzzer:** `make fuzz` to see how the two compilers are checked against each other.
 

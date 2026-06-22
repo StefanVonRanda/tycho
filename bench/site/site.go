@@ -1,8 +1,8 @@
 // site benchmark (Go): render N Markdown pages to HTML, transiently -- the same
-// work as site.hi, gated by the same FNV-1a-32 checksum. Each render allocates
+// work as site.ty, gated by the same FNV-1a-32 checksum. Each render allocates
 // strings that become garbage; Go's GC reclaims them, so peak RSS reflects the
 // GC's headroom (it holds garbage between collections) rather than the per-page
-// working set hier's arena keeps.
+// working set tycho's arena keeps.
 package main
 
 import (

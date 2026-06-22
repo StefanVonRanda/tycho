@@ -1,6 +1,6 @@
 /* FFI test fixture — a tiny C library linked via `extern "ffidemo"`.
  * Exercises every Stage-1 boundary shape: scalar in/out (int + float) and
- * string in/out, plus a NULL string return (must surface as "" in hier). */
+ * string in/out, plus a NULL string return (must surface as "" in tycho). */
 #include <stdio.h>
 
 static char buf[256];

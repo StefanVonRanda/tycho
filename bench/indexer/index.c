@@ -1,11 +1,11 @@
-/* Parallel text indexer -- C rival for the hier concurrency dogfood.
+/* Parallel text indexer -- C rival for the tycho concurrency dogfood.
  *
  *   index <corpus-dir>
  *
- * Same algorithm as index.hi: K=4 pthreads pull file paths off a shared,
+ * Same algorithm as index.ty: K=4 pthreads pull file paths off a shared,
  * mutex-guarded work queue (the channel analogue), each tallies a LOCAL
  * open-addressing string->long table, then the main thread merges. C owns every
- * allocation by hand (strdup keys, realloc tables, free at the end); hier's
+ * allocation by hand (strdup keys, realloc tables, free at the end); tycho's
  * arenas reclaim the equivalent for free. Prints the identical checksum. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +63,7 @@ static void map_grow(Map *m) {
     *m = nm;
 }
 
-/* ---- tokenizer: identical rule to index.hi / index.go ---- */
+/* ---- tokenizer: identical rule to index.ty / index.go ---- */
 static void tally(const char *text, long len, Map *acc) {
     char cur[256]; long cl = 0;
     for (long i = 0; i < len; i++) {

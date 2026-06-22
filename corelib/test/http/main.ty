@@ -1,0 +1,29 @@
+# corelib test: exercises core:http; the C compiler and tychoc0 must agree, and
+# the output is locked to corelib/test/http.out (corelib/run.sh). Skipped where
+# libcurl is absent (via corelib/http/deps).
+#
+# This is the DETERMINISTIC OFFLINE path: nothing listens on the loopback port,
+# so the request fails at transport and returns a null handle. It proves the FFI
+# round-trip and the error handling without a server or external network. A
+# successful live GET can't be a stable golden, so that is verified manually.
+package main
+import "core:http"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    dead := "http://127.0.0.1:1/"          # a closed loopback port: connection refused
+
+    r := http.get(dead)
+    okv := b2i(http.ok(r))
+    nullv := b2i(is_null(r))
+    print(f"ok={okv} null={nullv} status={http.status(r)}\n")   # ok=0 null=1 status=0
+    print("body=[" + http.body(r) + "]\n")                      # body=[]
+    http.release(r)                                             # safe on a null handle
+
+    gb := http.get_body(dead)
+    gs := http.get_status(dead)
+    print(f"get_body=[{gb}] get_status={gs}\n")                 # get_body=[] get_status=0

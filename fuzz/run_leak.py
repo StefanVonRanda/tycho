@@ -10,7 +10,7 @@
 # catches. This lane closes that hole -- it directly tests the arena model's
 # "everything is reclaimed at scope/program exit" claim, the project's thesis.
 #
-# Why it's clean by construction: a well-formed terminating hier program frees its
+# Why it's clean by construction: a well-formed terminating tycho program frees its
 # root arena at exit, so correct codegen leaves ZERO unreachable memory. The
 # intentional never-frees stay REACHABLE via statics, so LSan does NOT report them:
 #   - interned string literals: each site holds the malloc via `static char *_l`
@@ -26,7 +26,7 @@ import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen.py")
-HIERC = os.path.join(REPO, "hierc")
+TYCHOC = os.path.join(REPO, "tychoc")
 FFI_SHIM = os.path.join(REPO, "fuzz", "ffi_shim.c")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
@@ -40,11 +40,11 @@ LENV = dict(os.environ,
 TIMEOUT = 30        # compile steps
 RUN_TIMEOUT = 60    # generated binaries (LSan adds exit-time work)
 
-def emit_hierc(src_path, out_c):
-    r = subprocess.run([HIERC, src_path, "--emit-c", "-o", out_c[:-2]], capture_output=True, text=True, timeout=TIMEOUT)
+def emit_tychoc(src_path, out_c):
+    r = subprocess.run([TYCHOC, src_path, "--emit-c", "-o", out_c[:-2]], capture_output=True, text=True, timeout=TIMEOUT)
     return r.returncode == 0 and os.path.exists(out_c)
 
-def emit_hierc0(h0, src_path, out_c):
+def emit_tychoc0(h0, src_path, out_c):
     with open(src_path) as fi, open(out_c, "w") as fo:
         r = subprocess.run([h0], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, timeout=TIMEOUT)
     return r.returncode == 0 and os.path.getsize(out_c) > 0
@@ -77,18 +77,18 @@ def run_seed(seed, h0, tmp):
     g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True, text=True, timeout=TIMEOUT)
     if g.returncode != 0 or not g.stdout.strip():
         return "GENFAIL", "gen.py rc=%d, %d bytes" % (g.returncode, len(g.stdout))
-    src = os.path.join(tmp, "p.hi")
+    src = os.path.join(tmp, "p.ty")
     with open(src, "w") as f:
         f.write(g.stdout)
     try:
-        hc_ok = emit_hierc(src, os.path.join(tmp, "hc.c"))
-        h0_ok = emit_hierc0(h0, src, os.path.join(tmp, "h0.c"))
+        hc_ok = emit_tychoc(src, os.path.join(tmp, "hc.c"))
+        h0_ok = emit_tychoc0(h0, src, os.path.join(tmp, "h0.c"))
     except subprocess.TimeoutExpired:
         return "skip", None
     if not hc_ok and not h0_ok:
         return "skip", None                       # both reject -> not a valid program
-    for label, ok, cf, exe in (("hierc", hc_ok, "hc.c", "run_hc"),
-                               ("hierc0", h0_ok, "h0.c", "run_h0")):
+    for label, ok, cf, exe in (("tychoc", hc_ok, "hc.c", "run_hc"),
+                               ("tychoc0", h0_ok, "h0.c", "run_h0")):
         if not ok:
             continue
         v, d = build_run_leak(os.path.join(tmp, cf), os.path.join(tmp, exe), label)
@@ -113,9 +113,9 @@ def main():
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()
     h0 = os.path.join(tmp, "h0")
-    print("building hierc0 (for the differential leak check)...")
-    if subprocess.run([HIERC, os.path.join(REPO, "compiler", "hierc0.hi"), "-o", h0]).returncode != 0:
-        print("hierc0 build failed"); shutil.rmtree(tmp, ignore_errors=True); return 2
+    print("building tychoc0 (for the differential leak check)...")
+    if subprocess.run([TYCHOC, os.path.join(REPO, "compiler", "tychoc0.ty"), "-o", h0]).returncode != 0:
+        print("tychoc0 build failed"); shutil.rmtree(tmp, ignore_errors=True); return 2
     counts = {"ok": 0, "skip": 0, "FAIL": 0}
     for seed in range(start, start + n):
         try:
@@ -127,7 +127,7 @@ def main():
             shutil.rmtree(tmp, ignore_errors=True); return 1
         counts[v] = counts.get(v, 0) + 1
         if v == "FAIL":
-            shutil.copy(os.path.join(tmp, "p.hi"), os.path.join(FINDINGS, "leak_seed_%d.hi" % seed))
+            shutil.copy(os.path.join(tmp, "p.ty"), os.path.join(FINDINGS, "leak_seed_%d.ty" % seed))
             print("FAIL seed %d: %s" % (seed, msg))
         if seed % 50 == 0:
             print("... %d/%d  ok=%d skip=%d FAIL=%d" % (seed - start + 1, n, counts["ok"], counts["skip"], counts["FAIL"]))

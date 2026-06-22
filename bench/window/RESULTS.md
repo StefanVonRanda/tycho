@@ -13,7 +13,7 @@ arena's one honest loss (~14× C). **MM-9 closes it**: see below.
 Records are heap-bearing strings (`"rec" + i%100000`); all ports print the same
 checksum `15777800`. Peak RSS via `bench/peakrss`.
 
-| record kind            | hier (hierc) | hier (hierc0) | C | Go |
+| record kind            | tycho (tychoc) | tycho (tychoc0) | C | Go |
 |------------------------|-----:|-----:|--:|---:|
 | **string (heap)** before MM-9 | 47.3 MB | ~stream | 3.3 MB | 7.6 MB |
 | **string (heap)** after MM-9  | **4.2 MB** | **3.6 MB** | 3.3 MB | 7.6 MB |
@@ -21,16 +21,16 @@ checksum `15777800`. Peak RSS via `bench/peakrss`.
 
 From **14× C to ~1.3× C** — now under Go, ~par C, with no manual frees and no GC.
 
-Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string hier 4.3 MB, C 3.2 MB,
-Go 7.5 MB; int hier 2.3 MB — all flag-independent). Wall, best-of-3: string hier
-106 ms, C 77 ms, Go 81 ms; int hier 3 ms. `run.sh` now builds at `-O3`.
+Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string tycho 4.3 MB, C 3.2 MB,
+Go 7.5 MB; int tycho 2.3 MB — all flag-independent). Wall, best-of-3: string tycho
+106 ms, C 77 ms, Go 81 ms; int tycho 3 ms. `run.sh` now builds at `-O3`.
 
 ### macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09)
 
 The MM-9 close holds on a second OS. `sh bench/window/run.sh` (string checksum
-`15777800` agrees across langs): string hier **4.7 MB**/363 ms, C 2.5 MB/275 ms,
-Go 9.8 MB/415 ms; int hier 2.3 MB/249 ms. Fair `-O3` best-of-3 (`bench/fair_rest.sh`):
-string hier 4.7 MB/244 ms, C 2.5 MB/112 ms, Go 9.7 MB/64 ms; int hier 2.3 MB/2 ms.
+`15777800` agrees across langs): string tycho **4.7 MB**/363 ms, C 2.5 MB/275 ms,
+Go 9.8 MB/415 ms; int tycho 2.3 MB/249 ms. Fair `-O3` best-of-3 (`bench/fair_rest.sh`):
+string tycho 4.7 MB/244 ms, C 2.5 MB/112 ms, Go 9.7 MB/64 ms; int tycho 2.3 MB/2 ms.
 Still **~1.9× C and under Go on memory** — the eviction loss stays closed. (macOS
 peak RSS reads a touch higher than Linux per 16 KB pages / allocator; the runner's
 bytes-vs-KB `ru_maxrss` unit bug was fixed first — see prongB `RESULTS.md`.)
@@ -47,7 +47,7 @@ instead of the arena growing with the whole stream. Two pieces:
    value is built first (the RHS may read the slot, e.g. `s[k] = s[k] + x`);
    `arena_owns` recycles only buffers this arena actually allocated (never an
    interned literal or a cross-arena string); the freshly-stored buffer is never
-   recycled (`old != new`). hierc: `runtime/hier_rt.c` `hier_arr_str_set`. hierc0:
+   recycled (`old != new`). tychoc: `runtime/tycho_rt.c` `tycho_arr_str_set`. tychoc0:
    the `SFieldAssign` emission, which also moves the element from malloc (owner 0)
    into the array's arena so it is recyclable.
 2. **Segregated free-list.** A single capped (32) best-fit free-list dropped ~half
@@ -63,7 +63,7 @@ in-place reuse without reference counts — extended from whole-variable reassig
 
 ## The fixed-size case (unchanged, for contrast)
 
-**Fixed-size window records: hier is bounded (2.3 MB), ties C/Go.** An `int` (or a
+**Fixed-size window records: tycho is bounded (2.3 MB), ties C/Go.** An `int` (or a
 struct of scalars) lives *inside* the ring slot, so overwriting reuses the slot —
 no per-element heap, nothing accumulates. The heap-bearing case now matches it.
 
@@ -73,6 +73,6 @@ The thesis — "competitive C-class memory with no manual management" — now ho
 **including** eviction of heap-bearing records, the one case it previously did
 not. Verified: checksum matches C/Go on both compilers; clean under ASan/UBSan;
 `make test` 97/0; `make fixpoint` B==C; differential fuzz clean;
-`tests/elem_recycle.hi` is the distinct-value alias regression.
+`tests/elem_recycle.ty` is the distinct-value alias regression.
 
 **Reproduce:** `make bench-window` (skips Go if absent).

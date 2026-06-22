@@ -1,10 +1,10 @@
-# Hier
+# Tycho
 
 A tiny AOT-compiled, statically typed systems language. The compiler is
-written in C, transpiles Hier to C, and the C is compiled to a native
+written in C, transpiles Tycho to C, and the C is compiled to a native
 binary.
 
-> **Status: experimental.** Hier is a proof-of-concept exploring one idea —
+> **Status: experimental.** Tycho is a proof-of-concept exploring one idea —
 > implicit arenas + value semantics, no GC and no manual `free` — not a
 > production language. It self-hosts, is fuzzed and benchmarked, and builds with
 > just `cc` + `make`; but there are **no stability guarantees** and the language
@@ -13,7 +13,7 @@ binary.
 > an issue. (Honest scope and limits are in
 > [Known limitations](#known-limitations-proof-of-concept).)
 
-Hier's defining idea: **memory is managed by implicit hierarchical
+Tycho's defining idea: **memory is managed by implicit hierarchical
 arenas**, one per scope, with scratch arenas for loops. The programmer
 never sees an arena — you declare and use values as if the language were
 dynamically managed. The compiler inserts all allocation, promotion, and
@@ -46,7 +46,7 @@ where it doesn't, with measured numbers, is written up in
 
 ```
 $ make
-$ ./hierc examples/hello.hi
+$ ./tychoc examples/hello.ty
 $ ./examples/hello
 what is your name: Ada
 hello Ada
@@ -61,21 +61,21 @@ a Go toolchain for the cross-language benchmarks; both are skipped cleanly when
 absent.)*
 
 ```
-$ git clone https://github.com/StefanVonRanda/hier
-$ cd hier
-$ make                          # builds ./hierc (the compiler)
+$ git clone https://github.com/StefanVonRanda/tycho
+$ cd tycho
+$ make                          # builds ./tychoc (the compiler)
 ```
 
-**Run a program.** `./hierc f.hi` transpiles `f.hi` to a `f.c` and compiles it to
+**Run a program.** `./tychoc f.ty` transpiles `f.ty` to a `f.c` and compiles it to
 a native binary `f`; `-o name` names the output, `--emit-c` stops at the C.
 
 ```
-$ ./hierc examples/hello.hi && ./examples/hello
+$ ./tychoc examples/hello.ty && ./examples/hello
 what is your name: Ada
 hello Ada
 ```
 
-**Write your own** — save as `hi.hi`, then `./hierc hi.hi && ./hi`:
+**Write your own** — save as `hi.ty`, then `./tychoc hi.ty && ./hi`:
 
 ```
 fn main():
@@ -83,21 +83,21 @@ fn main():
         print("line " + str(i) + "\n")
 ```
 
-**Use the standard library.** `corelib/` is hier's stdlib, imported as
-`core:<name>`. The compiler finds it next to its own binary by default (`./hierc`
-sits beside `./corelib`), so no setup is needed; set `HIER_CORELIB` to point at a
+**Use the standard library.** `corelib/` is tycho's stdlib, imported as
+`core:<name>`. The compiler finds it next to its own binary by default (`./tychoc`
+sits beside `./corelib`), so no setup is needed; set `TYCHO_CORELIB` to point at a
 different corelib if you want to override that. A file with an `import` is a
 *package*, so give it its own directory:
 
 ```
-mysite/main.hi:
+mysite/main.ty:
     package main
     import "core:strings"
     fn main():
         print(strings.to_upper("hello") + "\n")     # HELLO
 ```
 ```
-$ ./hierc mysite/main.hi && ./mysite/main
+$ ./tychoc mysite/main.ty && ./mysite/main
 HELLO
 ```
 
@@ -116,22 +116,22 @@ reference; [docs/corelib.md](docs/corelib.md) catalogs the standard library; and
 
 | Command | What it does |
 | --- | --- |
-| `make` | Build the `./hierc` compiler (native host). |
-| `./hierc f.hi` | Transpile `f.hi` → `f.c`, then compile to native `f` with `cc`. |
-| `./hierc f.hi --emit-c` | Only write `f.c`. |
-| `./hierc f.hi -o name` | Write `name.c` and binary `name`. |
-| `make demo` | Build and run `examples/hello.hi`. |
+| `make` | Build the `./tychoc` compiler (native host). |
+| `./tychoc f.ty` | Transpile `f.ty` → `f.c`, then compile to native `f` with `cc`. |
+| `./tychoc f.ty --emit-c` | Only write `f.c`. |
+| `./tychoc f.ty -o name` | Write `name.c` and binary `name`. |
+| `make demo` | Build and run `examples/hello.ty`. |
 | `make test` | Run the test suite (see below). |
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
 | `make bench` | Run the performance guard (see below). |
-| `make bootstrap` | Build the self-hosted compiler `compiler/hierc0.hi` with `./hierc` and validate it on its fixtures. |
-| `make fixpoint` | Self-host check: assert the Hier-built compiler reproduces itself byte-identically and matches the C compiler's output. |
+| `make bootstrap` | Build the self-hosted compiler `compiler/tychoc0.ty` with `./tychoc` and validate it on its fixtures. |
+| `make fixpoint` | Self-host check: assert the Tycho-built compiler reproduces itself byte-identically and matches the C compiler's output. |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both compilers, assert byte-identical output and no sanitizer fault. |
-| `make corelib` | Build + validate the standard library (`corelib/`) three ways (C compiler vs the self-hosted `hierc0`, against goldens), with usage examples and the `site` dogfood. |
+| `make corelib` | Build + validate the standard library (`corelib/`) three ways (C compiler vs the self-hosted `tychoc0`, against goldens), with usage examples and the `site` dogfood. |
 | `make ci` | The full local gate (no cloud CI): build, test, fixpoint, corelib + examples, concurrency, FFI, the three fuzz lanes, tooling, and the perf guard. |
 | `make clean` | Remove build artifacts. |
 
-`make test` builds every `examples/*.hi` and `tests/*.hi` program twice — a
+`make test` builds every `examples/*.ty` and `tests/*.ty` program twice — a
 native `-O2` binary and one under `-fsanitize=address,undefined` — runs both on
 the same stdin, and asserts four things: exit 0, no sanitizer report,
 **byte-identical output** between the two builds, and that the output matches
@@ -147,7 +147,7 @@ can't silently rebake itself into the expected files. This is the standard
 described in [docs/thesis.md](docs/thesis.md) §3, now wired as a target.
 
 `make bench` guards the *performance* claims the way `make test` guards
-correctness. Each `bench/*.hi` program exercises one optimization and asserts a
+correctness. Each `bench/*.ty` program exercises one optimization and asserts a
 single metric against a deliberately generous bound — peak RSS for the
 memory-shape claims (in-place string append, loop scratch reset, the map
 accumulator, and move-on-last-use) and wall time for the `mut` memo. The
@@ -156,7 +156,7 @@ holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
 bound sits firmly between a working and a broken optimization; likewise the
 `move` bench holds ~126 MB where deep-copying the dead local would be ~187 MB.
 
-**Platform notes.** Hier builds and self-hosts on Linux and macOS (Apple Silicon
+**Platform notes.** Tycho builds and self-hosts on Linux and macOS (Apple Silicon
 and Intel) with `cc`/`clang` and `make`. On macOS, install the Xcode Command
 Line Tools (`xcode-select --install`). One difference worth knowing: Apple's
 AddressSanitizer ships no LeakSanitizer, so the leak-detection half of the
@@ -189,12 +189,12 @@ browser).
 
 ## Self-hosting
 
-Besides the C reference compiler (`src/hierc.c`), Hier has a second compiler
-**written in Hier itself**: `compiler/hierc0.hi`. It compiles a subset of the
+Besides the C reference compiler (`src/tychoc.c`), Tycho has a second compiler
+**written in Tycho itself**: `compiler/tychoc0.ty`. It compiles a subset of the
 language large enough to compile its own source, and it **self-hosts** — `make
 fixpoint` builds it three ways (the C compiler builds it, then that build
 rebuilds it, then that rebuild rebuilds it again) and asserts the last two
-emissions are byte-identical and that the Hier-built compiler reproduces
+emissions are byte-identical and that the Tycho-built compiler reproduces
 the C compiler's output across every `tests/` and `examples/` program. Run
 `make bootstrap` to build the self-hosted compiler and `make fixpoint` to check
 the byte-identical reproduction.
@@ -205,24 +205,24 @@ packages, closures, FFI all exist twice (the two compilers emit different C
 dialects with identical semantics), and shared test fixtures run through both
 via the fixpoint differential, so the compilers cannot drift.
 
-Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
+Since reaching the fixpoint, `tychoc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses — one
 type family at a time (strings, arrays, maps, structs/tuples/boxes, every array
 element type, enum node trees, mutable containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
 elements), all now arena-managed and freed per scope. It is documented in
-[docs/memory-model.md](docs/memory-model.md). `hierc0` reproduces the C
+[docs/memory-model.md](docs/memory-model.md). `tychoc0` reproduces the C
 compiler's memory behaviour across every element type, common and rare, with
 no known gap, and has full codegen-feature parity.
 
-The language `hierc0` compiles is no longer a strict subset: it reproduces the C
+The language `tychoc0` compiles is no longer a strict subset: it reproduces the C
 compiler's output byte-for-byte across all `tests/` + `examples/` programs,
 including the additive `char` type, `float`, `Result`, newtypes, slices, and SOA.
 A differential + sanitizer **fuzzer** (`fuzz/`, type-directed random programs
 compiled by both compilers under ASan/UBSan) backs this up, with coverage
 spanning those types.
 
-**Self-compile speed.** When `hierc0` compiles its own source, the dominant
+**Self-compile speed.** When `tychoc0` compiles its own source, the dominant
 remaining cost is the value-semantic string-building in its codegen: each
 function deep-copies its result string on return. That is the floor set by the
 memory model, not a logic-level inefficiency, and no algorithmic change removes
@@ -233,10 +233,10 @@ functions.
 
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in five languages, built optimized, peak RSS + best-of-3 wall time;
-every binary prints byte-identical output. `hier (hierc0)` is the self-hosted
+every binary prints byte-identical output. `tycho (tychoc0)` is the self-hosted
 compiler after the migration:
 
-| workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
+| workload         | tycho (tychoc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |
 | binary-trees     |  13 MB/107 ms | 33/765 ms | 34/855 ms | 32/1756 ms |      15/269 ms |
 | tree-rewrite     |   6 MB/89 ms  | 13/556 ms | 10/404 ms |  21/837 ms |       8/178 ms |
@@ -254,10 +254,10 @@ tree workloads the
 self-hosted compiler is competitive with all four reference languages on this
 machine. On binary-trees it has the lowest memory of the five (13 MB, below
 Koka's 15) and the lowest wall time (107 ms), at equal memory to the mature
-`hierc` — with no GC and no reference counting, only lexical arenas and value
+`tychoc` — with no GC and no reference counting, only lexical arenas and value
 semantics. On tree-rewrite it is the fastest of the five and lightest on x86-64,
 though Rust edges its memory by ~2 MB on arm64 (the allocator and target shift
-that margin; hier leads on time on both). With the additive `char` type, the
+that margin; tycho leads on time on both). With the additive `char` type, the
 string-pipeline reaches C's 1 ms: `s = s + ('0' + d)` is an in-place one-byte
 append — the same byte-write C, Rust, and Go do — instead of allocating a
 one-char string per digit. On memory it is lowest of the five on binary-trees and
@@ -267,21 +267,21 @@ compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
 **Realistic workload (`bench/site/`, [RESULTS.md](bench/site/RESULTS.md), `make
 bench-site`).** The same static-site generator — render *N* Markdown pages to
-HTML — written in hier / C / Go, an FNV checksum of every rendered byte gating
+HTML — written in tycho / C / Go, an FNV checksum of every rendered byte gating
 that all three do identical work. It scales the `examples/site` dogfood down to
 its allocation-heavy core, so it measures the memory model on a real composing
 workload rather than a micro-benchmark:
 
-| pages  |  hier  |   C    |  Go (GC) |
+| pages  |  tycho  |   C    |  Go (GC) |
 | -----: | -----: | -----: | -------: |
 |  1,000 | 1.5 MB | 1.5 MB |   6.9 MB |
 |  5,000 | 1.5 MB | 1.3 MB |   7.8 MB |
 | 20,000 | 1.5 MB | 1.6 MB |   8.5 MB |
 
-hier's peak RSS is **flat ~1.5 MB across a 20× scale** — each page is rendered in
+tycho's peak RSS is **flat ~1.5 MB across a 20× scale** — each page is rendered in
 a loop-body arena reclaimed every iteration, so the working set is one page
 regardless of *N*, matching C with no manual `free` and no GC, where Go grows to
-~5× (runtime floor + GC headroom). The honest trade-off: on this workload hier is
+~5× (runtime floor + GC headroom). The honest trade-off: on this workload tycho is
 ~2× C on wall-clock (its string-rebuild vs C's `realloc` buffer; Go between) — the
 arena's win here is memory, not raw speed.
 
@@ -324,7 +324,7 @@ structs, and the heap aggregates `[int]`/`[string]` and heap-bearing structs —
 including `push`/growth and element/field mutation through the borrow.
 `mut string` works too: the string value itself stays immutable, but
 reassignment through the borrow (`s = s + "."`) reaches the caller, with the
-new bytes built in the caller's arena (`tests/inout_string.hi`).
+new bytes built in the caller's arena (`tests/inout_string.ty`).
 
 ### Types
 
@@ -361,7 +361,7 @@ struct Rect:
     hi: Point
 
 fn area(r: Rect) -> int:
-    return (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
+    return (r.ty.x - r.lo.x) * (r.ty.y - r.lo.y)
 
 fn main():
     a := Point(1, 2)        # positional construction, fields in order
@@ -440,7 +440,7 @@ cell := grid[0][2]                 # 3
 A composite-array element is also a **mutable place** — you can write through it
 in place instead of rebuilding the whole element (a *projection*: the compiler
 yields the element's slot in the backing buffer, bounds-checked, with no pointer
-ever exposed in Hier):
+ever exposed in Tycho):
 
 ```
 ps[0].x = 10                       # field of an element
@@ -530,7 +530,7 @@ for i in range(len(ks)):
 `keys(m)` returns the live keys as a `[string]` (or `[int]` for an int-keyed
 map) in unspecified order; iterate it with `for k in keys(m):` (or index it) to
 walk the map — `k in m` tests membership, it does not iterate. `delete m[k]`
-removes a key (a no-op if absent). See [`examples/wordcount.hi`](examples/wordcount.hi).
+removes a key (a no-op if absent). See [`examples/wordcount.ty`](examples/wordcount.ty).
 
 **`m[k]` is a place** you can write through — `m[k] = v`, `m[k] += 1`,
 `push(m[k], v)`, `m[k].field = x` — inserting the value type's zero for a missing
@@ -649,7 +649,7 @@ anywhere the unwrapped value is wanted — `foo(parse(s) or_return)`,
 `Err`'s payload is promoted into the caller's arena, so it outlives the
 short-circuit. `or_return` also works on `Option`: in a function that returns
 `Option(T)`, `v := opt or_return` binds `v` on `Some(v)` and returns `None` on
-`None` (see `tests/or_return_option.hi`).
+`None` (see `tests/or_return_option.ty`).
 
 ### Tuples and multiple return values
 
@@ -680,7 +680,7 @@ assigns a tuple's elements to existing variables. Tuple elements are read-only
 ### Enums (sum types)
 
 An `enum` is a value that is exactly one of several named **variants**, each
-with a payload tuple of zero or more types — Hier's tagged union / algebraic
+with a payload tuple of zero or more types — Tycho's tagged union / algebraic
 data type. `Option(T)` is the built-in special case; an `enum` is the
 user-defined general one, and `match` works on both. Variants may be recursive
 (an enum carrying itself), which makes it an AST:
@@ -725,7 +725,7 @@ generic-AST case); see [docs/generics.md](docs/generics.md).
 `type Meters = float` declares a **distinct** type: it has the same runtime
 representation as its underlying type (zero cost — a `Meters` *is* a `double` in
 the generated C) but is type-incompatible with `float` and with every other
-newtype. This is exactly Odin's `Meters :: distinct f32` — Hier has no
+newtype. This is exactly Odin's `Meters :: distinct f32` — Tycho has no
 *transparent* alias, so `type` always means distinct (no keyword needed to say
 so). The underlying type is `int`, `float`, `string`, `bool`, an array, a map,
 or a struct.
@@ -758,17 +758,17 @@ return, struct field, array element.
 bare `[]` literal grounds to the underlying type), unwrap with the generic
 `to_under(x)` — zero-cost, works on *any* newtype — and operate on the
 unwrapped value; `==` stays deep between two values of the same newtype, and
-copies keep the underlying's value semantics (`tests/newtype_agg.hi`).
+copies keep the underlying's value semantics (`tests/newtype_agg.ty`).
 
 A newtype over `string` or `int` is also a valid **map key**
 (`[UserId: int]`): the map type carries the declared key, so a raw base
 value is rejected at the door, while storage and hashing are the base's —
-`keys()` returns `[UserId]`, still wrapped (`tests/newtype_key.hi`).
+`keys()` returns `[UserId]`, still wrapped (`tests/newtype_key.ty`).
 
 A **fieldless enum** keys a map the same way (`[Color: int]`): the key is
 stored and hashed as its tag — deterministic, never pointer-dependent — and
 `keys()` rebuilds the wrapped values from the variant singletons, so they
-round-trip through `match` (`tests/enum_key.hi`). An enum with a payload
+round-trip through `match` (`tests/enum_key.ty`). An enum with a payload
 variant is rejected as a key: equal tags would not mean equal values.
 
 ### Type inference (bidirectional)
@@ -970,7 +970,7 @@ longer-lived), each closure's captured environment re-homes along with it — th
 same value-semantic deep copy that applies to every other heap value. The common
 higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators, factory
 functions, dispatch tables) are all covered — see
-[`corelib/iter`](corelib/iter/iter.hi).
+[`corelib/iter`](corelib/iter/iter.ty).
 
 ### Methods (UFCS)
 
@@ -993,11 +993,11 @@ n.doubled()             # == doubled(n) — int receiver
 
 If the receiver's struct has a *fn-typed field* with the same name, the field
 wins: `b.doubled(7)` calls the stored function value, not the free `doubled`.
-See `tests/methods.hi`.
+See `tests/methods.ty`.
 
 ### Concurrency (spawn, parallel for, channels)
 
-Hier's call convention — arguments deep-copied in, result copied out, a
+Tycho's call convention — arguments deep-copied in, result copied out, a
 private arena per call — is already a sound thread boundary, so concurrency
 is that same convention run on another thread. After the copy-in, a task
 shares zero bytes with its spawner: race freedom falls out of value
@@ -1022,7 +1022,7 @@ its tasks run, and an un-waited task can never leak or detach.
 
 ```
 total := 0
-parallel for i in range(1000000):   # K = ncpu chunk tasks (HIER_THREADS overrides)
+parallel for i in range(1000000):   # K = ncpu chunk tasks (TYCHO_THREADS overrides)
     total += score(i)               # reduction: chunk-local partials, folded at join
 ```
 
@@ -1084,27 +1084,27 @@ suite is part of `make ci`).
 
 ### FFI (calling C)
 
-`extern fn` declares a C function hier can call — bodyless, direct C symbol,
+`extern fn` declares a C function tycho can call — bodyless, direct C symbol,
 optionally naming the library to link:
 
 ```
 extern fn getpid() -> int                      # libc
 extern "m" fn cos(x: float) -> float           # links -lm
-extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, hier string out
+extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, tycho string out
 ```
 
 The boundary covers scalars, `string`, and the opaque foreign-handle type `ptr`
-(a `void*` hier never dereferences; `null` literal, `is_null(p)`). A C-returned
-string is **copied into the caller's arena** at the call site, so hier never
+(a `void*` tycho never dereferences; `null` literal, `is_null(p)`). A C-returned
+string is **copied into the caller's arena** at the call site, so tycho never
 holds a pointer into C-owned memory. Composites and `mut` across the boundary
-are rejected (fail closed). Linking ergonomics on the `hierc` line: `--link`,
+are rejected (fail closed). Linking ergonomics on the `tychoc` line: `--link`,
 `--pkg` (pkg-config), `--shim` (companion `.c`). A real binding lives at
 `examples/sqlite/` (in-memory SQLite); design and full rules in
 [docs/ffi.md](docs/ffi.md).
 
 ### Packages
 
-Packages: a directory of `.hi` files sharing one namespace, named by
+Packages: a directory of `.ty` files sharing one namespace, named by
 a `package` declaration, pulled in with `import` and used via qualified
 `pkg.symbol` names (functions, types, enum variants); an alias renames the
 prefix:
@@ -1117,9 +1117,9 @@ fn main():
     r := g.add(g.Point(3, 4), g.Point(1, 2))
 ```
 
-`./hierc pkg/main.hi` follows the imports and emits one binary; `import
+`./tychoc pkg/main.ty` follows the imports and emits one binary; `import
 "core:strings"` resolves the corelib found next to the compiler binary (or at
-`HIER_CORELIB` if set). No privacy — everything in a package is visible.
+`TYCHO_CORELIB` if set). No privacy — everything in a package is visible.
 Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 
 ### Builtins
@@ -1164,7 +1164,7 @@ String escapes: `\n \t \\ \"`. Strings are byte buffers; `len`, `s[i]`,
 
 ## Memory model
 
-This isn't only a benchmark story. `examples/json.hi` is a full recursive-descent
+This isn't only a benchmark story. `examples/json.ty` is a full recursive-descent
 JSON parser + serializer (~220 lines): a recursive `Json` sum type, parsed by
 recursive descent and walked to serialize and query — real systems code with real
 recursion and **zero** `malloc`/`free`/refcount/GC in the source. It runs clean
@@ -1214,7 +1214,7 @@ loop-scratch local is never lifted to a longer lifetime.
 
 **In-place append (build a string in a loop, cheaply).** The accumulator
 pattern `acc = acc + e` repeated in a loop is the textbook O(n²) trap —
-naively each step copies the whole accumulator. Hier compiles a *self-append*
+naively each step copies the whole accumulator. Tycho compiles a *self-append*
 (`acc` on the left of `+`, reassigned to `acc`) to grow `acc`'s buffer in
 place with geometric capacity, like an array's `push`, so the loop is O(n)
 time and O(n) memory. This is sound because value semantics already
@@ -1224,7 +1224,7 @@ else. Measured: accumulating an n-char string went from ~836 MB at n=40 000
 (quadratic) to a flat ~3 MB (linear). Like the others, it changes nothing in
 the source — `acc = acc + e` is still just value-semantic concatenation.
 
-None of this appears in Hier source.
+None of this appears in Tycho source.
 
 ### Known limitations (proof-of-concept)
 
@@ -1238,37 +1238,37 @@ None of this appears in Hier source.
 ## Repository layout
 
 ```
-src/hierc.c        the C reference compiler (lexer, parser, type resolver, C codegen)
-runtime/hier_rt.c  the arena runtime, embedded verbatim into every output
-compiler/hierc0.hi the self-hosted compiler, written in Hier (see make fixpoint)
+src/tychoc.c        the C reference compiler (lexer, parser, type resolver, C codegen)
+runtime/tycho_rt.c  the arena runtime, embedded verbatim into every output
+compiler/tychoc0.ty the self-hosted compiler, written in Tycho (see make fixpoint)
 compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
                    mut, memo, collect, context, generics_tour, optimize, json,
-                   raytrace, grep, invindex (.hi) — 21 programs (generics_tour.hi
+                   raytrace, grep, invindex (.ty) — 21 programs (generics_tour.ty
                    tours `$T` functions/structs/enums, incl. a recursive
-                   `Tree($T)`; json.hi is a full recursive-descent JSON parser +
-                   serializer; raytrace.hi a float-math PPM renderer; grep.hi a
-                   CLI text tool over args()/read_file; invindex.hi an
+                   `Tree($T)`; json.ty is a full recursive-descent JSON parser +
+                   serializer; raytrace.ty a float-math PPM renderer; grep.ty a
+                   CLI text tool over args()/read_file; invindex.ty an
                    inverted-index text search engine)
 examples/corelib/  a runnable usage example for every corelib module (make corelib-examples)
 examples/fetch/    composing dogfood — an HTTP client (http + json + sha256 + io + path)
 examples/site/     composing dogfood — a static-site generator (8 corelib modules)
 corelib/           the standard library, imported as `import "core:<name>"` (make corelib)
 tests/run.sh       test harness (native -O2 vs ASan/UBSan, + golden output)
-tests/*.hi         dedicated regression programs, one per feature/bug (+ tests/pkg/ package fixtures, + optional <name>.in stdin)
+tests/*.ty         dedicated regression programs, one per feature/bug (+ tests/pkg/ package fixtures, + optional <name>.in stdin)
 tests/*.out        recorded expected output (goldens) for every test program
 tests/conc/        concurrency suite: spawn/parallel-for/channels/select under
-                   native + ASan/LSan + TSan, hierc0 parity differential,
+                   native + ASan/LSan + TSan, tychoc0 parity differential,
                    reject + abort fixtures (make conc; part of make ci)
 bench/conc/        concurrency head-to-head vs C/Go/Rust (make bench-conc)
 bench/run.sh       performance guard (peak RSS / time bounds per optimization)
-bench/*.hi         one benchmark program per optimization (17); bench/peakrss.c helper
-bench/prongB/      cross-language benchmark suite (Hier vs C, Go, Rust, Koka) + RESULTS.md
-bench/site/        realistic-workload head-to-head: static-site render, Hier vs C vs Go (make bench-site)
+bench/*.ty         one benchmark program per optimization (17); bench/peakrss.c helper
+bench/prongB/      cross-language benchmark suite (Tycho vs C, Go, Rust, Koka) + RESULTS.md
+bench/site/        realistic-workload head-to-head: static-site render, Tycho vs C vs Go (make bench-site)
 fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; make fuzz)
-tools/prof/        dependency-free sampling CPU profiler for hier-compiled binaries
+tools/prof/        dependency-free sampling CPU profiler for tycho-compiled binaries
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 docs/memory-model.md   how the self-hosted compiler runs on the implicit-arena model
@@ -1276,13 +1276,13 @@ docs/perf.md       compiler + generated-code performance, incl. the cross-langua
 ```
 
 The runtime is turned into a C string literal at build time (`make`
-generates `build/hier_rt_embed.h` from `runtime/hier_rt.c`) and prepended
+generates `build/tycho_rt_embed.h` from `runtime/tycho_rt.c`) and prepended
 to every generated `.c`, so output files are self-contained.
 
 ## FAQ
 
 **"It just transpiles to C — that's not a real compiler."** Emitting C is a
-deliberate backend choice, not a shortcut: it makes Hier portable to any target
+deliberate backend choice, not a shortcut: it makes Tycho portable to any target
 with a C compiler and inherits decades of mature optimization and tooling for
 free. C is the *assembler* here. The compiler still does all the real work —
 lexing, parsing, bidirectional type inference, the implicit-arena escape
@@ -1316,7 +1316,7 @@ construction. Every test runs under AddressSanitizer + UndefinedBehaviorSanitize
 (plus LeakSanitizer and, for concurrency, ThreadSanitizer), and a differential
 fuzzer cross-checks both compilers.
 
-**"Is it production-ready?"** No. Hier is **experimental, proof-of-concept**
+**"Is it production-ready?"** No. Tycho is **experimental, proof-of-concept**
 software exploring one idea (implicit hierarchical arenas under value semantics).
 It has a single implementation, the language surface is still moving, and there
 is no stability guarantee. Use it to learn, experiment, and give feedback — not
@@ -1324,7 +1324,7 @@ to ship a service.
 
 ## License
 
-Hier is licensed under the **[Apache License 2.0](LICENSE)** (see
+Tycho is licensed under the **[Apache License 2.0](LICENSE)** (see
 [`NOTICE`](NOTICE) for the copyright). It is experimental, proof-of-concept
 software provided "as is", without warranty — security notes are in
 [SECURITY.md](SECURITY.md), and how to build, test, contribute, or report a bug

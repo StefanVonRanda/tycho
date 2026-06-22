@@ -1,0 +1,160 @@
+# tycho — the daily-driver CLI for .ty programs. A thin, dogfooded wrapper over
+# the compiler (tychoc) so the common loop isn't the manual emit-then-cc dance:
+#
+#   tycho run   <file.ty> [args...]   build + execute (args forwarded)
+#   tycho build <file.ty> [-o out]    build a binary (default name = file sans .ty)
+#   tycho check <file.ty>             front-end only: parse/type, no cc (fast)
+#   tycho watch <file.ty>             re-check whenever the file changes
+#   tycho fmt   <file.ty> [-w]        format to stdout, or safely in-place with -w
+#
+# Set TYCHOC/TYCHOFMT to pick the compiler/formatter. Shell-out + sleep come from
+# tools/tycho_shim.c (libc system()/usleep() the FFI can't name directly); build
+# this with:  tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
+
+extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
+extern fn tycho_sleep_ms(ms: int) -> int       # usleep(ms*1000)
+
+# the compiler to invoke (TYCHOC override, else "tychoc" off PATH)
+fn compiler() -> string:
+    c := getenv("TYCHOC")
+    if c == "":
+        return "tychoc"
+    return c
+
+# the formatter to invoke (TYCHOFMT override, else "tychofmt" off PATH)
+fn formatter() -> string:
+    f := getenv("TYCHOFMT")
+    if f == "":
+        return "tychofmt"
+    return f
+
+# output binary name for `build`: drop the directory and a trailing ".ty"
+fn out_name(file: string) -> string:
+    parts := split(file, "/")
+    base := parts[len(parts) - 1]
+    n := len(base)
+    if n > 3:
+        if substr(base, n - 3, n) == ".ty":
+            return substr(base, 0, n - 3)
+    return base
+
+# join a[start:] with single spaces (forwarded program args)
+fn join_from(a: [string], start: int) -> string:
+    s := ""
+    i := start
+    for i < len(a):
+        if i > start:
+            s = s + " "
+        s = s + a[i]
+        i = i + 1
+    return s
+
+fn usage():
+    print("tycho - build/run/check/watch for .ty programs\n")
+    print("usage:\n")
+    print("  tycho run   <file.ty> [args...]   build + run (args forwarded)\n")
+    print("  tycho build <file.ty> [-o out]    build to a binary\n")
+    print("  tycho check <file.ty>             parse/type only, no cc (fast)\n")
+    print("  tycho watch <file.ty>             re-check on change\n")
+    print("  tycho fmt   <file.ty> [-w]        format to stdout (-w: safe in-place write)\n")
+    print("  (TYCHOC/TYCHOFMT override compiler/formatter; defaults 'tychoc'/'tychofmt')\n")
+
+fn cmd_run(a: [string], cc: string):
+    file := a[2]
+    exe := "/tmp/.tycho_run_bin"
+    if tycho_run(cc + " " + file + " -o " + exe + " > /dev/null") != 0:
+        die("tycho run: build failed: " + file)
+    if tycho_run(exe + " " + join_from(a, 3)) != 0:
+        die("tycho run: program exited non-zero")
+
+fn cmd_build(a: [string], cc: string):
+    file := a[2]
+    out := out_name(file)
+    if len(a) >= 5:
+        if a[3] == "-o":
+            out = a[4]
+    if tycho_run(cc + " " + file + " -o " + out + " > /dev/null") != 0:
+        die("tycho build: failed: " + file)
+    print("built " + out + "\n")
+
+fn cmd_check(a: [string], cc: string):
+    file := a[2]
+    # --emit-c runs the whole front-end (parse + type + codegen) but skips cc;
+    # the throwaway C goes to a temp, errors land on stderr (inherited -> shown).
+    if tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null") != 0:
+        die("tycho check: " + file + " has errors")
+    print("ok: " + file + "\n")
+
+# `tycho fmt <file>` prints the formatted source (safe, works on any file).
+# `tycho fmt -w <file>` rewrites it IN PLACE -- but only after proving the program
+# is unchanged: format to a sibling temp, emit-C the original AND the formatted
+# from the SAME path (controls for the filename), require byte-identical C, then
+# atomically rename. Any failure leaves the original untouched (fail closed).
+fn cmd_fmt(a: [string], cc: string):
+    fmtr := formatter()
+    write := false
+    file := ""
+    i := 2
+    for i < len(a):
+        if a[i] == "-w":
+            write = true
+        else:
+            file = a[i]
+        i = i + 1
+    if file == "":
+        die("tycho fmt: no file given")
+    if not write:
+        tycho_run(fmtr + " " + file)                          # preview to stdout
+        return
+    tmp := file + ".tychofmt~"                                # sibling temp -> same FS -> atomic mv
+    if tycho_run(fmtr + " " + file + " > " + tmp) != 0:
+        tycho_run("rm -f " + tmp)
+        die("tycho fmt -w: formatter failed on " + file)
+    chk := "/tmp/.tychofmt_check.ty"
+    tycho_run("cp " + file + " " + chk)
+    if tycho_run(cc + " " + chk + " --emit-c -o /tmp/.tychofmt_a > /dev/null 2>&1") != 0:
+        tycho_run("rm -f " + tmp)
+        die("tycho fmt -w: " + file + " does not compile -- fix it first (preview with: tycho fmt " + file + ")")
+    tycho_run("cp " + tmp + " " + chk)
+    if tycho_run(cc + " " + chk + " --emit-c -o /tmp/.tychofmt_b > /dev/null 2>&1") != 0:
+        tycho_run("rm -f " + tmp)
+        die("tycho fmt -w: REFUSED -- formatted output does not compile; " + file + " left unchanged")
+    if tycho_run("diff -q /tmp/.tychofmt_a.c /tmp/.tychofmt_b.c > /dev/null 2>&1") != 0:
+        tycho_run("rm -f " + tmp)
+        die("tycho fmt -w: REFUSED -- formatting would change the program; " + file + " left unchanged")
+    if tycho_run("mv " + tmp + " " + file) != 0:
+        die("tycho fmt -w: failed to replace " + file)
+    print("formatted " + file + "\n")
+
+fn cmd_watch(a: [string], cc: string):
+    file := a[2]
+    print("watching " + file + " (Ctrl-C to stop)\n")
+    last := ""
+    for true:
+        cur := read_file(file)
+        if cur != last:
+            last = cur
+            print("--- change detected, checking ---\n")
+            tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null")
+        tycho_sleep_ms(300)
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        usage()
+        return
+    cc := compiler()
+    cmd := a[1]
+    if cmd == "run":
+        cmd_run(a, cc)
+    elif cmd == "build":
+        cmd_build(a, cc)
+    elif cmd == "check":
+        cmd_check(a, cc)
+    elif cmd == "watch":
+        cmd_watch(a, cc)
+    elif cmd == "fmt":
+        cmd_fmt(a, cc)
+    else:
+        print("tycho: unknown command '" + cmd + "'\n")
+        usage()

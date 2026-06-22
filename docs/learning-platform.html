@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Learn Hier — Interactive Guide</title>
+<title>Learn Tycho — Interactive Guide</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Rethink+Sans:ital,wght@0,400..800;1,400..800&display=swap');
 /* ── Reset & Base ── */
@@ -268,7 +268,7 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 
 <nav id="sidebar">
   <div id="sidebar-header">
-    <h2>Learn Hier</h2>
+    <h2>Learn Tycho</h2>
     <div class="subtitle">Interactive Guide</div>
     <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
     <div id="progress-text">0 / 17 complete</div>
@@ -284,7 +284,7 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 <!-- ═══════════════════════════════════════════ -->
 <div class="section active" id="sec-welcome">
 <div class="welcome">
-  <h1>Learn <span style="color:var(--accent)">Hier</span></h1>
+  <h1>Learn <span style="color:var(--accent)">Tycho</span></h1>
   <div class="tagline">A systems language with Python syntax and zero manual memory management.</div>
   <div class="features">
     <div class="feat"><div class="icon">&#9889;</div><h3>Fast</h3><p>AOT-compiled to native code. No GC pauses, no interpreter overhead.</p></div>
@@ -296,15 +296,15 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
-<!-- SECTION 0: WHAT IS HIER                    -->
+<!-- SECTION 0: WHAT IS TYCHO                    -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="section" id="sec-0">
 <div class="section-num">Chapter 1</div>
-<h1>What is Hier?</h1>
+<h1>What is Tycho?</h1>
 
-<p>Hier is a <strong>systems language</strong> &mdash; it compiles to native machine code, like C or Rust. But its syntax looks like Python:</p>
+<p>Tycho is a <strong>systems language</strong> &mdash; it compiles to native machine code, like C or Rust. But its syntax looks like Python:</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">greet</span>(name: <span class="ty">string</span>) -> <span class="ty">string</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">greet</span>(name: <span class="ty">string</span>) -> <span class="ty">string</span>:
     <span class="kw">return</span> <span class="str">"hello "</span> + name
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -312,10 +312,10 @@ td code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-family
     name := <span class="fn">input</span>()
     <span class="fn">println</span>(<span class="fn">greet</span>(name))</code></pre></div>
 
-<p>Three things make Hier different from the languages you know:</p>
+<p>Three things make Tycho different from the languages you know:</p>
 
 <div class="table-wrap"><table>
-<tr><th>Concept</th><th>JS / Python</th><th>Rust</th><th>Hier</th></tr>
+<tr><th>Concept</th><th>JS / Python</th><th>Rust</th><th>Tycho</th></tr>
 <tr><td>Memory</td><td>Garbage collector</td><td>Borrow checker + lifetimes</td><td><strong>Implicit arenas</strong> (automatic)</td></tr>
 <tr><td>Types</td><td>Dynamic</td><td>Static, inferred</td><td>Static, inferred</td></tr>
 <tr><td>Null</td><td><code>null</code> / <code>None</code></td><td><code>Option&lt;T&gt;</code></td><td><code>Option(T)</code></td></tr>
@@ -333,14 +333,14 @@ Every value is independently owned. When you assign <code>b = a</code>, <code>b<
 <div class="quiz" id="quiz-0">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="2">
-<p>1. How does Hier manage memory?</p>
+<p>1. How does Tycho manage memory?</p>
 <div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Garbage collection, like JavaScript</div>
 <div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Manual malloc/free, like C</div>
 <div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Implicit arenas &mdash; the compiler inserts all allocation and reclamation</div>
 <div class="quiz-option" onclick="selectOption(this,0)"><div class="radio"></div>Borrow checker with lifetimes, like Rust</div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! Hier uses lexical arenas &mdash; one per scope &mdash; that free everything at once when the scope exits. The programmer never sees an arena API.</div>
-<div class="quiz-explanation" data-wrong="1">Not quite. Hier uses <strong>implicit hierarchical arenas</strong> &mdash; one per scope, freed automatically. No GC, no lifetimes, no manual free.</div>
+<div class="quiz-explanation" data-correct="1">Correct! Tycho uses lexical arenas &mdash; one per scope &mdash; that free everything at once when the scope exits. The programmer never sees an arena API.</div>
+<div class="quiz-explanation" data-wrong="1">Not quite. Tycho uses <strong>implicit hierarchical arenas</strong> &mdash; one per scope, freed automatically. No GC, no lifetimes, no manual free.</div>
 <button class="quiz-submit" onclick="submitQuiz(0)">Check Answers</button>
 </div>
 </div>
@@ -355,19 +355,19 @@ Every value is independently owned. When you assign <code>b = a</code>, <code>b<
 <h2>Building the compiler</h2>
 <p>You need a C compiler (<code>gcc</code> or <code>clang</code>) and <code>make</code>:</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>git clone &lt;repo-url&gt; hier
-cd hier
+<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>git clone &lt;repo-url&gt; tycho
+cd tycho
 make</code></pre></div>
 
-<p>This produces <code>./hierc</code>, the Hier compiler.</p>
+<p>This produces <code>./tychoc</code>, the Tycho compiler.</p>
 
 <h2>Hello World</h2>
-<p>Create <code>hello.hi</code>:</p>
+<p>Create <code>hello.ty</code>:</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
     <span class="fn">println</span>(<span class="str">"Hello, world!"</span>)</code></pre></div>
 
-<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>./hierc hello.hi     # compiles to ./hello
+<div class="code-block"><div class="code-header"><span class="lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>./tychoc hello.ty     # compiles to ./hello
 ./hello              # Hello, world!</code></pre></div>
 
 <div class="callout tip">
@@ -417,14 +417,14 @@ make</code></pre></div>
 <div class="quiz" id="quiz-1">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="0">
-<p>1. What does <code>./hierc hello.hi</code> produce?</p>
+<p>1. What does <code>./tychoc hello.ty</code> produce?</p>
 <div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A native binary called <code>hello</code></div>
 <div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A bytecode file <code>hello.hic</code></div>
 <div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>An optimized AST in memory</div>
 <div class="quiz-option" onclick="selectOption(this,1)"><div class="radio"></div>A JavaScript file <code>hello.js</code></div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! <code>hierc</code> transpiles Hier to C, then compiles to a native binary with <code>cc</code>.</div>
-<div class="quiz-explanation" data-wrong="1">Not quite. Hier is AOT-compiled: it transpiles to C, then compiles to a <strong>native binary</strong> with your system C compiler.</div>
+<div class="quiz-explanation" data-correct="1">Correct! <code>tychoc</code> transpiles Tycho to C, then compiles to a native binary with <code>cc</code>.</div>
+<div class="quiz-explanation" data-wrong="1">Not quite. Tycho is AOT-compiled: it transpiles to C, then compiles to a <strong>native binary</strong> with your system C compiler.</div>
 <button class="quiz-submit" onclick="submitQuiz(1)">Check Answers</button>
 </div>
 </div>
@@ -436,7 +436,7 @@ make</code></pre></div>
 <div class="section-num">Chapter 3</div>
 <h1>Variables, Types, and Arithmetic</h1>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
     <span class="cm"># declarations</span>
     x := <span class="num">41</span>              <span class="cm"># type inferred (int)</span>
     y : <span class="ty">int</span> = <span class="num">10</span>         <span class="cm"># explicit type</span>
@@ -506,7 +506,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>Creates a mutable reference to the value 42</div>
 </div>
 <div class="quiz-question" data-answer="2">
-<p>2. What is <code>10 / 3</code> in Hier?</p>
+<p>2. What is <code>10 / 3</code> in Tycho?</p>
 <div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3.333...</div>
 <div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3 (with a runtime error for the remainder)</div>
 <div class="quiz-option" onclick="selectOption(this,2)"><div class="radio"></div>3 (truncates toward zero)</div>
@@ -524,7 +524,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <div class="section-num">Chapter 4</div>
 <h1>Functions</h1>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># returns an int</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># returns an int</span>
 <span class="kw">fn</span> <span class="fn">add</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>:
     <span class="kw">return</span> a + b
 
@@ -552,7 +552,7 @@ You can't do <code>1 + 2.0</code> &mdash; use <code>to_float(1) + 2.0</code>. Th
 <h2>String Interpolation</h2>
 <p>Like template literals in JS:</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>name := <span class="str">"Ada"</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>name := <span class="str">"Ada"</span>
 age := <span class="num">36</span>
 <span class="fn">println</span>(<span class="str">f"{name} is {age}"</span>)           <span class="cm"># Ada is 36</span>
 <span class="fn">println</span>(<span class="str">f"2 + 3 = {2 + 3}"</span>)          <span class="cm"># 2 + 3 = 5</span></code></pre></div>
@@ -597,7 +597,7 @@ age := <span class="num">36</span>
 <div class="quiz-option" onclick="selectOption(this,3)"><div class="radio"></div>Use <code>mut</code> like in Rust</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! <code>mut</code> in the parameter + <code>&amp;</code> at the call site. This is copy-in/copy-out, preserving value semantics.</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <code>mut</code> in the function signature and <code>&amp;variable</code> at the call site. No <code>mut</code>, no implicit mutation.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho uses <code>mut</code> in the function signature and <code>&amp;variable</code> at the call site. No <code>mut</code>, no implicit mutation.</div>
 <button class="quiz-submit" onclick="submitQuiz(3)">Check Answers</button>
 </div>
 </div>
@@ -610,7 +610,7 @@ age := <span class="num">36</span>
 <h1>Control Flow</h1>
 
 <h2>if / elif / else</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">classify</span>(n: <span class="ty">int</span>) -> <span class="ty">string</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">classify</span>(n: <span class="ty">int</span>) -> <span class="ty">string</span>:
     <span class="kw">if</span> n &lt; <span class="num">0</span>:
         <span class="kw">return</span> <span class="str">"negative"</span>
     <span class="kw">elif</span> n == <span class="num">0</span>:
@@ -622,9 +622,9 @@ age := <span class="num">36</span>
 
 <div class="callout tip">
 <div class="callout-icon">&#128161;</div>
-<div>There is no <code>while</code> keyword in Hier. <code>for</code> does everything.</div></div>
+<div>There is no <code>while</code> keyword in Tycho. <code>for</code> does everything.</div></div>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># 1. Condition form (like while)</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># 1. Condition form (like while)</span>
 x := <span class="num">10</span>
 <span class="kw">for</span> x > <span class="num">0</span>:
     <span class="fn">print</span>(<span class="fn">str</span>(x) + <span class="str">" "</span>)
@@ -644,7 +644,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
     <span class="fn">println</span>(name)</code></pre></div>
 
 <h2>break, continue, and logical operators</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
     <span class="kw">if</span> i == <span class="num">5</span>:
         <span class="kw">continue</span>        <span class="cm"># skip 5</span>
     <span class="kw">if</span> i > <span class="num">10</span>:
@@ -677,7 +677,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
 <div class="quiz" id="quiz-4">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="0">
-<p>1. How many loop keywords does Hier have?</p>
+<p>1. How many loop keywords does Tycho have?</p>
 <div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>One: <code>for</code> (in three shapes)</div>
 <div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Two: <code>for</code> and <code>while</code></div>
 <div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Three: <code>for</code>, <code>while</code>, and <code>loop</code></div>
@@ -689,7 +689,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
 <div class="quiz-option" onclick="selectOption(this,4)"><div class="radio"></div>Runs exactly once if <code>x > 0</code></div>
 </div>
 <div class="quiz-explanation" data-correct="2">Correct! <code>for cond:</code> is the condition form (like <code>while</code> in other languages). <code>for i in range(n):</code> is the counting form. <code>for x in xs:</code> is foreach.</div>
-<div class="quiz-explanation" data-wrong="2">Hier has <strong>one</strong> loop keyword: <code>for</code>. It comes in three shapes: condition (<code>for cond:</code>), counting (<code>for i in range(n):</code>), and foreach (<code>for x in xs:</code>).</div>
+<div class="quiz-explanation" data-wrong="2">Tycho has <strong>one</strong> loop keyword: <code>for</code>. It comes in three shapes: condition (<code>for cond:</code>), counting (<code>for i in range(n):</code>), and foreach (<code>for x in xs:</code>).</div>
 <button class="quiz-submit" onclick="submitQuiz(4)">Check Answers</button>
 </div>
 </div>
@@ -703,7 +703,7 @@ names := [<span class="str">"Ada"</span>, <span class="str">"Grace"</span>, <spa
 
 <p>Strings are <strong>immutable byte buffers</strong>. You build new ones with <code>+</code>.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
 <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(s)))         <span class="cm"># 5</span>
 <span class="fn">println</span>(<span class="fn">str</span>(s[<span class="num">0</span>]))           <span class="cm"># 104 (byte value of 'h')</span>
 s2 := s + <span class="str">" world"</span>               <span class="cm"># "hello world"</span>
@@ -720,7 +720,7 @@ parts := <span class="fn">split</span>(<span class="str">"a,b,c"</span>, <span c
 When you write <code>total = total + x</code> in a loop, the compiler grows <code>total</code>'s buffer in place &mdash; O(n) total, not O(n&sup2;). This is automatic: the source just looks like normal string concatenation.
 </div></div>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">main</span>():
     total := <span class="str">""</span>
     <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">6</span>):
         total = total + <span class="fn">str</span>(i)        <span class="cm"># O(n), not O(n^2)!</span>
@@ -731,7 +731,7 @@ When you write <code>total = total + x</code> in a loop, the compiler grows <cod
 <h2>The <code>char</code> Type</h2>
 <p><code>char</code> is a single byte. Use <code>'x'</code> syntax. Appending a char to a string is a zero-alloc byte push:</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>s := <span class="str">"hello"</span>
 s = s + <span class="str">'\n'</span>             <span class="cm"># zero-alloc byte append</span>
 s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <span class="cm"># appends '5' (char arithmetic)</span></code></pre></div>
 
@@ -758,7 +758,7 @@ s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <sp
 <div class="quiz-option" onclick="selectOption(this,5)"><div class="radio"></div>It's a compile error &mdash; strings are immutable</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! The self-append pattern <code>acc = acc + x</code> is optimized by the compiler to grow the buffer in place, so it's O(n) total.</div>
-<div class="quiz-explanation" data-wrong="1">Hier optimizes the <code>total = total + x</code> self-rebind pattern to grow the buffer in place &mdash; O(n) total, not O(n&sup2;). The source looks like normal concatenation.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho optimizes the <code>total = total + x</code> self-rebind pattern to grow the buffer in place &mdash; O(n) total, not O(n&sup2;). The source looks like normal concatenation.</div>
 <button class="quiz-submit" onclick="submitQuiz(5)">Check Answers</button>
 </div>
 </div>
@@ -772,7 +772,7 @@ s = s + (<span class="str">'0'</span> + <span class="num">5</span>)          <sp
 
 <p>Arrays are <strong>dynamic, heap-allocated, value-semantic</strong> lists. Assigning one makes a deep copy.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]           <span class="cm"># [int] literal</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]           <span class="cm"># [int] literal</span>
 empty := []<span class="ty">int</span>               <span class="cm"># empty (type required)</span>
 <span class="fn">push</span>(xs, <span class="num">40</span>)                 <span class="cm"># [10, 20, 30, 40]</span>
 last := <span class="fn">pop</span>(xs)              <span class="cm"># 40</span>
@@ -793,12 +793,12 @@ A <code>[int]</code> parameter is a borrow &mdash; no copy, but you can't mutate
 <h2>Slices</h2>
 <p><code>xs[a:b]</code> is a sub-range. Passed to a read-only parameter: <strong>zero-copy view</strong>. Stored in a variable: <strong>deep copy</strong>.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>xs := [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
 <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">sum</span>(xs[<span class="num">1</span>:<span class="num">4</span>])))     <span class="cm"># 90 &mdash; zero-copy view</span>
 mid := xs[<span class="num">1</span>:<span class="num">4</span>]                <span class="cm"># deep copy: [20, 30, 40]</span></code></pre></div>
 
 <h2>Returning Arrays</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">make_squares</span>(n: <span class="ty">int</span>) -> [<span class="ty">int</span>]:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">make_squares</span>(n: <span class="ty">int</span>) -> [<span class="ty">int</span>]:
     r := []<span class="ty">int</span>
     <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n):
         <span class="fn">push</span>(r, i * i)
@@ -826,8 +826,8 @@ mid := xs[<span class="num">1</span>:<span class="num">4</span>]                
 <div class="quiz-option" onclick="selectOption(this,6)"><div class="radio"></div><code>ys</code> becomes a reference to the same array</div>
 <div class="quiz-option" onclick="selectOption(this,6)"><div class="radio"></div>Compile error &mdash; arrays can't be assigned</div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! Hier has value semantics: assignment always deep-copies. <code>ys</code> is completely independent of <code>xs</code>.</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <strong>value semantics</strong>: <code>ys := xs</code> makes an independent deep copy. Mutating <code>ys</code> never affects <code>xs</code>.</div>
+<div class="quiz-explanation" data-correct="1">Correct! Tycho has value semantics: assignment always deep-copies. <code>ys</code> is completely independent of <code>xs</code>.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho uses <strong>value semantics</strong>: <code>ys := xs</code> makes an independent deep copy. Mutating <code>ys</code> never affects <code>xs</code>.</div>
 <button class="quiz-submit" onclick="submitQuiz(6)">Check Answers</button>
 </div>
 </div>
@@ -841,7 +841,7 @@ mid := xs[<span class="num">1</span>:<span class="num">4</span>]                
 
 <p>Structs are <strong>named product types</strong> with value semantics. Think plain objects that are always deep-copied.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>:
     x: <span class="ty">int</span>
     y: <span class="ty">int</span>
 
@@ -850,7 +850,7 @@ mid := xs[<span class="num">1</span>:<span class="num">4</span>]                
     hi: <span class="ty">Point</span>
 
 <span class="kw">fn</span> <span class="fn">area</span>(r: <span class="ty">Rect</span>) -> <span class="ty">int</span>:
-    <span class="kw">return</span> (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
+    <span class="kw">return</span> (r.ty.x - r.lo.x) * (r.ty.y - r.lo.y)
 
 <span class="kw">fn</span> <span class="fn">main</span>():
     a := <span class="ty">Point</span>(<span class="num">1</span>, <span class="num">2</span>)              <span class="cm"># positional construction</span>
@@ -888,8 +888,8 @@ A struct can own strings, arrays, and other structs. On assignment, <strong>ever
 <div class="quiz-option" onclick="selectOption(this,7)"><div class="radio"></div>Deep &mdash; all fields, strings, arrays, and nested structs are fully copied</div>
 <div class="quiz-option" onclick="selectOption(this,7)"><div class="radio"></div>Depends on whether the field is a value type or reference type</div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! Every copy in Hier is deep &mdash; all strings, arrays, and nested structs are duplicated. The copy is 100% independent.</div>
-<div class="quiz-explanation" data-wrong="1">All copies in Hier are <strong>deep</strong>. There are no reference types. Strings, arrays, nested structs &mdash; everything is duplicated.</div>
+<div class="quiz-explanation" data-correct="1">Correct! Every copy in Tycho is deep &mdash; all strings, arrays, and nested structs are duplicated. The copy is 100% independent.</div>
+<div class="quiz-explanation" data-wrong="1">All copies in Tycho are <strong>deep</strong>. There are no reference types. Strings, arrays, nested structs &mdash; everything is duplicated.</div>
 <button class="quiz-submit" onclick="submitQuiz(7)">Check Answers</button>
 </div>
 </div>
@@ -901,7 +901,7 @@ A struct can own strings, arrays, and other structs. On assignment, <strong>ever
 <div class="section-num">Chapter 9</div>
 <h1>Maps</h1>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := [<span class="str">"ada"</span>: <span class="num">1</span>, <span class="str">"alan"</span>: <span class="num">2</span>]     <span class="cm"># [string: int]</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := [<span class="str">"ada"</span>: <span class="num">1</span>, <span class="str">"alan"</span>: <span class="num">2</span>]     <span class="cm"># [string: int]</span>
 empty := []<span class="ty">string</span>: <span class="ty">int</span>              <span class="cm"># empty map</span>
 
 v := counts[<span class="str">"ada"</span>]                   <span class="cm"># 1   (read; a missing key gives 0)</span>
@@ -913,7 +913,7 @@ ks := <span class="fn">keys</span>(counts)                   <span class="cm"># 
 <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(counts)))            <span class="cm"># entry count</span></code></pre></div>
 
 <h2>The Counter Idiom</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># canonical word-frequency pattern</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># canonical word-frequency pattern</span>
 counts := []<span class="ty">string</span>: <span class="ty">int</span>
 words := <span class="fn">split</span>(<span class="str">"the cat sat on the mat"</span>, <span class="str">" "</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(words)):
@@ -929,7 +929,7 @@ Despite looking like it might rebuild the map each step, <code>counts[w] += 1</c
 
 <h2><code>m[k]</code> is a place</h2>
 <p>A map entry is a <strong>place</strong> you can write through and update in place, and reading one is a pure zero-default read:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := []<span class="ty">string</span>: <span class="ty">int</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>counts := []<span class="ty">string</span>: <span class="ty">int</span>
 counts[<span class="str">"ada"</span>] = <span class="num">1</span>            <span class="cm"># write</span>
 counts[<span class="str">"ada"</span>] += <span class="num">1</span>           <span class="cm"># compound update -> 2</span>
 counts[<span class="str">"new"</span>] += <span class="num">5</span>           <span class="cm"># missing key starts at 0, then += 5 -> 5</span>
@@ -980,9 +980,9 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <h1>Option and Result</h1>
 
 <h2>Option(T) &mdash; the no-null story</h2>
-<p>Instead of <code>null</code>, Hier uses <code>Option(T)</code>: either <code>Some(value)</code> or <code>None</code>.</p>
+<p>Instead of <code>null</code>, Tycho uses <code>Option(T)</code>: either <code>Some(value)</code> or <code>None</code>.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">index_of</span>(xs: [<span class="ty">int</span>], target: <span class="ty">int</span>) -> <span class="ty">Option</span>(<span class="ty">int</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">index_of</span>(xs: [<span class="ty">int</span>], target: <span class="ty">int</span>) -> <span class="ty">Option</span>(<span class="ty">int</span>):
     <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(xs)):
         <span class="kw">if</span> xs[i] == target:
             <span class="kw">return</span> <span class="ty">Some</span>(i)
@@ -1001,7 +1001,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 
 <h2>Result(T, E) &mdash; the no-exceptions story</h2>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">checked_div</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">Result</span>(<span class="ty">int</span>, <span class="ty">string</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">checked_div</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">Result</span>(<span class="ty">int</span>, <span class="ty">string</span>):
     <span class="kw">if</span> b == <span class="num">0</span>:
         <span class="kw">return</span> <span class="ty">Err</span>(<span class="str">"divide by zero"</span>)
     <span class="kw">return</span> <span class="ty">Ok</span>(a / b)
@@ -1029,13 +1029,13 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <div class="quiz" id="quiz-9">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="2">
-<p>1. What is Hier's equivalent of <code>null</code>?</p>
+<p>1. What is Tycho's equivalent of <code>null</code>?</p>
 <div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div>A special <code>null</code> literal</div>
 <div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div><code>undefined</code></div>
 <div class="quiz-option" onclick="selectOption(this,9)"><div class="radio"></div><code>None</code> (as <code>Option(T)</code>)</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! There is no <code>null</code>. Use <code>Option(T)</code> with <code>Some(value)</code> or <code>None</code>, and exhaustive <code>match</code> to handle both cases.</div>
-<div class="quiz-explanation" data-wrong="1">Hier has no <code>null</code>. Use <code>Option(T)</code> &mdash; either <code>Some(value)</code> or <code>None</code>. The exhaustive <code>match</code> ensures you never forget to check.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho has no <code>null</code>. Use <code>Option(T)</code> &mdash; either <code>Some(value)</code> or <code>None</code>. The exhaustive <code>match</code> ensures you never forget to check.</div>
 <button class="quiz-submit" onclick="submitQuiz(9)">Check Answers</button>
 </div>
 </div>
@@ -1049,7 +1049,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 
 <p>An <code>enum</code> is a tagged union &mdash; a value that is exactly one of several variants, each carrying data. Think of it as a type-safe <code>switch</code> on steroids.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Shape</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Shape</span>:
     <span class="ty">Circle</span>(<span class="ty">float</span>)
     <span class="ty">Rect</span>(<span class="ty">float</span>, <span class="ty">float</span>)
 
@@ -1062,7 +1062,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 
 <h2>Recursive Enums (Trees / ASTs)</h2>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Expr</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Expr</span>:
     <span class="ty">Num</span>(<span class="ty">int</span>)
     <span class="ty">Add</span>(<span class="ty">Expr</span>, <span class="ty">Expr</span>)
     <span class="ty">Mul</span>(<span class="ty">Expr</span>, <span class="ty">Expr</span>)
@@ -1107,8 +1107,8 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <div class="quiz-option" onclick="selectOption(this,10)"><div class="radio"></div>Compile error &mdash; every match must be exhaustive</div>
 <div class="quiz-option" onclick="selectOption(this,10)"><div class="radio"></div>Runtime panic when that variant is encountered</div>
 </div>
-<div class="quiz-explanation" data-correct="1">Correct! Hier requires exhaustive matches. If you forget a variant, the compiler rejects the program.</div>
-<div class="quiz-explanation" data-wrong="1">Hier requires <strong>exhaustive</strong> matches. Every variant must have an arm. Missing one is a compile error, not a runtime issue.</div>
+<div class="quiz-explanation" data-correct="1">Correct! Tycho requires exhaustive matches. If you forget a variant, the compiler rejects the program.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho requires <strong>exhaustive</strong> matches. Every variant must have an arm. Missing one is a compile error, not a runtime issue.</div>
 <button class="quiz-submit" onclick="submitQuiz(10)">Check Answers</button>
 </div>
 </div>
@@ -1121,7 +1121,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <h1>Tuples and Type Inference</h1>
 
 <h2>Tuples</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">divmod</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> (<span class="ty">int</span>, <span class="ty">int</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">divmod</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> (<span class="ty">int</span>, <span class="ty">int</span>):
     q := a / b
     <span class="kw">return</span> q, a - q * b
 
@@ -1133,7 +1133,7 @@ A missing key yields the value type's zero (<code>0</code>, <code>0.0</code>, <c
 <h2>Type Inference</h2>
 <p>Locals infer from their initializer. Empty collections need a type hint. Function signatures are always explicit.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># int</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># int</span>
 s := <span class="str">"hello"</span>           <span class="cm"># string</span>
 f := <span class="num">1.5</span>               <span class="cm"># float</span>
 g := f + <span class="num">2</span>             <span class="cm"># float (2 adapts to float context)</span>
@@ -1147,7 +1147,7 @@ m := []<span class="ty">string</span>: <span class="ty">int</span>     <span cla
 <p>1. When do you need an explicit type annotation?</p>
 <div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>On function signatures and empty collections</div>
 <div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>On every variable declaration</div>
-<div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>Never &mdash; Hier infers everything</div>
+<div class="quiz-option" onclick="selectOption(this,11)"><div class="radio"></div>Never &mdash; Tycho infers everything</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! Function signatures are always explicit (they're the module interface). Locals infer from initializers, except empty collections which need a hint.</div>
 <div class="quiz-explanation" data-wrong="1">Function signatures are always explicit. Locals with non-empty initializers infer their type. Empty collections (<code>[]int</code>, <code>[]string: int</code>) need a type hint.</div>
@@ -1164,10 +1164,10 @@ m := []<span class="ty">string</span>: <span class="ty">int</span>     <span cla
 
 <div class="callout info">
 <div class="callout-icon">&#127919;</div>
-<div>This is the <strong>most important concept</strong> in Hier. Internalize these three rules and everything else follows.</div></div>
+<div>This is the <strong>most important concept</strong> in Tycho. Internalize these three rules and everything else follows.</div></div>
 
 <h2>Rule 1: Assignment copies</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
 b := a              <span class="cm"># independent copy</span>
 <span class="fn">push</span>(b, <span class="num">4</span>)
 <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(a)))  <span class="cm"># 3 &mdash; a is unchanged</span></code></pre></div>
@@ -1176,7 +1176,7 @@ b := a              <span class="cm"># independent copy</span>
 <p>A <code>[int]</code> parameter is a read-only borrow. To mutate, copy first or use <code>mut</code>.</p>
 
 <h2>Rule 3: No two variables ever share storage</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := <span class="ty">Person</span>(<span class="str">"Ada"</span>, [<span class="str">"x"</span>])
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>a := <span class="ty">Person</span>(<span class="str">"Ada"</span>, [<span class="str">"x"</span>])
 b := a               <span class="cm"># deep copy</span>
 b.name = <span class="str">"Alan"</span>
 b.tags[<span class="num">0</span>] = <span class="str">"y"</span>
@@ -1188,7 +1188,7 @@ b.tags[<span class="num">0</span>] = <span class="str">"y"</span>
 <div class="quiz" id="quiz-12">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="0">
-<p>1. Can two variables share storage in Hier?</p>
+<p>1. Can two variables share storage in Tycho?</p>
 <div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>No &mdash; every assignment makes an independent deep copy</div>
 <div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>Yes &mdash; arrays and strings are shared by default</div>
 <div class="quiz-option" onclick="selectOption(this,12)"><div class="radio"></div>Only through explicit reference types</div>
@@ -1206,7 +1206,7 @@ b.tags[<span class="num">0</span>] = <span class="str">"y"</span>
 <div class="section-num">Chapter 15</div>
 <h1>Closures and Higher-Order Functions</h1>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">apply</span>(f: <span class="kw">fn</span>(<span class="ty">int</span>) -> <span class="ty">int</span>, x: <span class="ty">int</span>) -> <span class="ty">int</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">apply</span>(f: <span class="kw">fn</span>(<span class="ty">int</span>) -> <span class="ty">int</span>, x: <span class="ty">int</span>) -> <span class="ty">int</span>:
     <span class="kw">return</span> f(x)
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1248,10 +1248,10 @@ Closures deep-copy captured variables when created. Mutating the original afterw
 <p>1. How do closures capture variables?</p>
 <div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>By value &mdash; deep-copied when the closure is created</div>
 <div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>By reference &mdash; the closure sees later mutations</div>
-<div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>Closures can't capture variables in Hier</div>
+<div class="quiz-option" onclick="selectOption(this,13)"><div class="radio"></div>Closures can't capture variables in Tycho</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! Closures capture by value (deep copy). This means the closure is independent of later changes to the captured variable.</div>
-<div class="quiz-explanation" data-wrong="1">Hier closures capture <strong>by value</strong> (deep copy). The captured variable is frozen at closure-creation time. Mutating the original doesn't affect the closure.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho closures capture <strong>by value</strong> (deep copy). The captured variable is frozen at closure-creation time. Mutating the original doesn't affect the closure.</div>
 <button class="quiz-submit" onclick="submitQuiz(13)">Check Answers</button>
 </div>
 </div>
@@ -1265,7 +1265,7 @@ Closures deep-copy captured variables when created. Mutating the original afterw
 
 <p><code>x.foo(a, b)</code> is sugar for <code>foo(x, a, b)</code> &mdash; Uniform Function Call Syntax. No classes, no <code>self</code>.</p>
 
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Vec3</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Vec3</span>:
     x: <span class="ty">float</span>
     y: <span class="ty">float</span>
     z: <span class="ty">float</span>
@@ -1305,10 +1305,10 @@ Closures deep-copy captured variables when created. Mutating the original afterw
 <div class="section-num">Chapter 17</div>
 <h1>Concurrency</h1>
 
-<p>Hier's concurrency is <strong>race-free by construction</strong>. Every value crossing a thread boundary is deep-copied. No locks, no lifetimes.</p>
+<p>Tycho's concurrency is <strong>race-free by construction</strong>. Every value crossing a thread boundary is deep-copied. No locks, no lifetimes.</p>
 
 <h2>spawn / wait</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">fib</span>(n: <span class="ty">int</span>) -> <span class="ty">int</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">fib</span>(n: <span class="ty">int</span>) -> <span class="ty">int</span>:
     <span class="kw">if</span> n &lt; <span class="num">2</span>: <span class="kw">return</span> n
     <span class="kw">return</span> <span class="fn">fib</span>(n-<span class="num">1</span>) + <span class="fn">fib</span>(n-<span class="num">2</span>)
 
@@ -1319,12 +1319,12 @@ Closures deep-copy captured variables when created. Mutating the original afterw
     b := t2.<span class="fn">wait</span>()             <span class="cm"># alternative syntax</span></code></pre></div>
 
 <h2>parallel for</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>total := <span class="num">0</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>total := <span class="num">0</span>
 <span class="kw">parallel for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1000000</span>):
     total += <span class="fn">score</span>(i)          <span class="cm"># reduction: safe</span></code></pre></div>
 
 <h2>Channels</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>ch := <span class="fn">channel</span>(<span class="ty">string</span>, <span class="num">16</span>)     <span class="cm"># bounded lock-free queue</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>ch := <span class="fn">channel</span>(<span class="ty">string</span>, <span class="num">16</span>)     <span class="cm"># bounded lock-free queue</span>
 ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <span class="cm"># deep-copies in</span>
 <span class="kw">match</span> <span class="fn">recv</span>(ch):                <span class="cm"># deep-copies out</span>
     <span class="ty">Some</span>(s): ...
@@ -1334,13 +1334,13 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <div class="quiz" id="quiz-15">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="1">
-<p>1. How does Hier prevent data races?</p>
+<p>1. How does Tycho prevent data races?</p>
 <div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>A borrow checker rejects unsafe code at compile time</div>
 <div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>Every value crossing a thread boundary is deep-copied</div>
 <div class="quiz-option" onclick="selectOption(this,15)"><div class="radio"></div>Runtime locks are automatically inserted</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! The copy-in/copy-out convention means a task shares zero bytes with its spawner. Race freedom falls out of value semantics.</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <strong>copy-in/copy-out</strong>: arguments are deep-copied into the task, results are deep-copied back. No shared state = no races. No borrow checker needed.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho uses <strong>copy-in/copy-out</strong>: arguments are deep-copied into the task, results are deep-copied back. No shared state = no races. No borrow checker needed.</div>
 <button class="quiz-submit" onclick="submitQuiz(15)">Check Answers</button>
 </div>
 </div>
@@ -1353,7 +1353,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <h1>Packages, Corelib, and FFI</h1>
 
 <h2>Packages</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">package</span> main
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">package</span> main
 <span class="kw">import</span> <span class="str">"core:math"</span>
 <span class="kw">import</span> s <span class="str">"core:sort"</span>          <span class="cm"># alias</span>
 
@@ -1373,7 +1373,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 </table></div>
 
 <h2>Calling C (FFI)</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">extern fn</span> <span class="fn">getpid</span>() -> <span class="ty">int</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">extern fn</span> <span class="fn">getpid</span>() -> <span class="ty">int</span>
 <span class="kw">extern</span> <span class="str">"m"</span> <span class="kw">fn</span> <span class="fn">cos</span>(x: <span class="ty">float</span>) -> <span class="ty">float</span>  <span class="cm"># links -lm</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1389,7 +1389,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <div class="quiz-option" onclick="selectOption(this,16)"><div class="radio"></div><code>require("math")</code></div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! Use <code>import "core:name"</code> for standard library packages. Access with <code>name.symbol</code> (or an alias).</div>
-<div class="quiz-explanation" data-wrong="1">Hier uses <code>import "core:name"</code> for the standard library. Symbols are accessed as <code>name.symbol</code> (qualified access).</div>
+<div class="quiz-explanation" data-wrong="1">Tycho uses <code>import "core:name"</code> for the standard library. Symbols are accessed as <code>name.symbol</code> (qualified access).</div>
 <button class="quiz-submit" onclick="submitQuiz(16)">Check Answers</button>
 </div>
 </div>
@@ -1401,11 +1401,11 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <div class="section-num">Chapter 18</div>
 <h1>Generics</h1>
 
-<p>A <strong>generic</strong> is a function or struct written once and reused for many types. Hier's generics work like this: mark a type parameter with <code>$T</code>, and the compiler <strong>infers</strong> it from how you call it, then stamps out a separate concrete copy for each type actually used. That is <strong>monomorphization</strong> &mdash; no boxing, no runtime dispatch, no cost.</p>
+<p>A <strong>generic</strong> is a function or struct written once and reused for many types. Tycho's generics work like this: mark a type parameter with <code>$T</code>, and the compiler <strong>infers</strong> it from how you call it, then stamps out a separate concrete copy for each type actually used. That is <strong>monomorphization</strong> &mdash; no boxing, no runtime dispatch, no cost.</p>
 
 <h2>Generic functions</h2>
 <p>Write <code>$T</code> on a parameter's type to introduce a type parameter; a later bare <code>T</code> refers to it. <code>id</code> here works for <em>any</em> type, inferred from its argument:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">id</span>(x: <span class="ty">$T</span>) -> <span class="ty">T</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">id</span>(x: <span class="ty">$T</span>) -> <span class="ty">T</span>:
     <span class="kw">return</span> x
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1413,7 +1413,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
     <span class="fn">println</span>(<span class="fn">id</span>(<span class="str">"hello"</span>))      <span class="cm"># hello -> generates id__string</span></code></pre></div>
 
 <p>Calling <code>id(42)</code> and <code>id("hello")</code> generates two concrete functions; two calls with the same type share one. A <code>$T</code> can also sit <em>inside</em> a container &mdash; <code>first</code> takes an array of any element type and returns an <code>Option</code> of that type, with <code>T</code> inferred from inside <code>[int]</code> or <code>[string]</code>:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">first</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">Option</span>(<span class="ty">T</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">first</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">Option</span>(<span class="ty">T</span>):
     <span class="kw">if</span> <span class="fn">len</span>(xs) &gt; <span class="num">0</span>:
         <span class="kw">return</span> <span class="fn">Some</span>(xs[<span class="num">0</span>])
     <span class="kw">return</span> <span class="ty">None</span>
@@ -1425,7 +1425,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 
 <h2>Generic structs</h2>
 <p>A struct can take type parameters too. Construction <strong>infers</strong> them from the field values; in a type position (a parameter, return, or field) you name the instance with explicit arguments, just like the built-in <code>Option(int)</code>:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Box</span>(<span class="ty">$T</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Box</span>(<span class="ty">$T</span>):
     v: <span class="ty">T</span>
 
 <span class="kw">struct</span> <span class="ty">Pair</span>(<span class="ty">$A</span>, <span class="ty">$B</span>):
@@ -1451,7 +1451,7 @@ Each instantiation is ordinary concrete, value-semantic code, produced <strong>b
 <div class="callout-icon">&#128161;</div>
 <div>
 <div class="callout-title">Explicit, not inferred-everywhere</div>
-You opt into generics with <code>$T</code>; Hier never silently generalizes an ordinary function (the Hindley&ndash;Milner route it deliberately avoids). Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
+You opt into generics with <code>$T</code>; Tycho never silently generalizes an ordinary function (the Hindley&ndash;Milner route it deliberately avoids). Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
 </div></div>
 
 <h3>There's more</h3>
@@ -1474,13 +1474,13 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 <div class="quiz" id="quiz-17">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="1">
-<p>1. How does Hier implement a generic function like <code>fn id(x: $T) -> T</code>?</p>
+<p>1. How does Tycho implement a generic function like <code>fn id(x: $T) -> T</code>?</p>
 <div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It boxes every value behind a pointer so one function body serves all types</div>
 <div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It monomorphizes &mdash; stamps out a separate concrete copy for each type used, inferred from the call</div>
 <div class="quiz-option" onclick="selectOption(this,17)"><div class="radio"></div>It dispatches on a runtime type tag, like a virtual method</div>
 </div>
 <div class="quiz-explanation" data-correct="1">Correct! Generics are monomorphized: <code>id(5)</code> and <code>id("x")</code> generate two concrete functions, each inferred from its argument. No boxing, no runtime dispatch &mdash; and the value-semantic memory model never sees anything generic.</div>
-<div class="quiz-explanation" data-wrong="1">Hier monomorphizes &mdash; one concrete copy per type used, inferred from the call. Boxing would destroy the value-semantic memory model, so it is exactly what the design avoids.</div>
+<div class="quiz-explanation" data-wrong="1">Tycho monomorphizes &mdash; one concrete copy per type used, inferred from the call. Boxing would destroy the value-semantic memory model, so it is exactly what the design avoids.</div>
 <button class="quiz-submit" onclick="submitQuiz(17)">Check Answers</button>
 </div>
 </div>
@@ -1496,7 +1496,7 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 
 <h2>Map patterns: <code>[$K: $V]</code></h2>
 <p>A type parameter can sit inside a map type. Both the key and the value are inferred from the map argument, and one concrete instance is stamped per <code>(key, value)</code> pair:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">lookup</span>(m: [<span class="ty">$K</span>: <span class="ty">$V</span>], k: <span class="ty">$K</span>, d: <span class="ty">$V</span>) -> <span class="ty">$V</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">lookup</span>(m: [<span class="ty">$K</span>: <span class="ty">$V</span>], k: <span class="ty">$K</span>, d: <span class="ty">$V</span>) -> <span class="ty">$V</span>:
     <span class="kw">return</span> <span class="fn">map_get</span>(m, k, d)
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1507,7 +1507,7 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 
 <h2><code>where</code> constraints</h2>
 <p>A generic body that uses an operation on <code>T</code> (arithmetic, ordering, <code>str()</code>) can declare what it needs with a <code>where</code> clause. The predicates are a <strong>fixed, compiler-known</strong> set &mdash; not user-defined type classes:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">sum</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="fn">numeric</span>(<span class="ty">T</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">sum</span>(xs: [<span class="ty">$T</span>]) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="fn">numeric</span>(<span class="ty">T</span>):
     total := xs[<span class="num">0</span>]
     <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="fn">len</span>(xs)):
         total = total + xs[i]
@@ -1530,7 +1530,7 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 
 <h2>Type sets: a one-off constraint</h2>
 <p>When none of the three predicates names the set you want, list the concrete types yourself with <code>where T: A | B</code> &mdash; the <em>type set</em>. It admits exactly the types you spell out, nothing else:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">dbl</span>(x: <span class="ty">$T</span>) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="ty">T</span>: <span class="ty">int</span> | <span class="ty">float</span>:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">dbl</span>(x: <span class="ty">$T</span>) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="ty">T</span>: <span class="ty">int</span> | <span class="ty">float</span>:
     <span class="kw">return</span> x + x
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1546,7 +1546,7 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 
 <h2>Explicit type args: the non-inferable case</h2>
 <p>Inference is argument-directed, so every <code>$T</code> normally has to appear in some argument. When it does not &mdash; a type parameter that lives only in the return, like <code>empty() -> [$T]</code> &mdash; supply it at the call with <code>name$(T)</code>:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">empty</span>() -> [<span class="ty">$T</span>]:
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">empty</span>() -> [<span class="ty">$T</span>]:
     <span class="kw">return</span> []<span class="ty">T</span>
 
 <span class="kw">fn</span> <span class="fn">main</span>():
@@ -1563,7 +1563,7 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 
 <h2>Generic enums: recursive and all</h2>
 <p>A <code>$T</code> can parameterise a <em>sum type</em>, too. The variants are monomorphized exactly like a generic struct &mdash; one concrete enum per type argument &mdash; and a payload may name the enum itself, so a generic <strong>tree</strong> (or AST) just works:</p>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Tree</span>(<span class="ty">$T</span>):
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Tree</span>(<span class="ty">$T</span>):
     <span class="ty">Leaf</span>
     <span class="ty">Node</span>(<span class="ty">Tree</span>(<span class="ty">$T</span>), <span class="ty">$T</span>, <span class="ty">Tree</span>(<span class="ty">$T</span>))
 
@@ -1613,18 +1613,18 @@ An enum payload is arena-allocated (a pointer), so a recursive <code>Tree($T)</c
 <h1>Cheat Sheet</h1>
 
 <h2>Declarations</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># inferred declaration</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>x := <span class="num">42</span>                <span class="cm"># inferred declaration</span>
 y : <span class="ty">int</span> = <span class="num">10</span>           <span class="cm"># explicit type</span>
 x = <span class="num">43</span>                 <span class="cm"># assignment</span>
 x += <span class="num">1</span>                 <span class="cm"># compound: += -= *= /= %=</span></code></pre></div>
 
 <h2>Functions</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">name</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>: <span class="kw">return</span> a + b
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">name</span>(a: <span class="ty">int</span>, b: <span class="ty">int</span>) -> <span class="ty">int</span>: <span class="kw">return</span> a + b
 <span class="kw">fn</span> <span class="fn">void_fn</span>(): <span class="fn">println</span>(<span class="str">"ok"</span>)
 <span class="kw">fn</span> <span class="fn">mutate</span>(x: <span class="kw">mut</span> <span class="ty">int</span>): x += <span class="num">1</span></code></pre></div>
 
 <h2>Control Flow</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">if</span> cond: ... <span class="kw">elif</span> cond: ... <span class="kw">else</span>: ...
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">if</span> cond: ... <span class="kw">elif</span> cond: ... <span class="kw">else</span>: ...
 <span class="kw">for</span> cond: ...                          <span class="cm"># while</span>
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(n): ...               <span class="cm"># 0..n-1</span>
 <span class="kw">for</span> x <span class="kw">in</span> xs: ...                      <span class="cm"># foreach</span>
@@ -1632,26 +1632,26 @@ x += <span class="num">1</span>                 <span class="cm"># compound: += 
 <span class="kw">match</span> expr: <span class="ty">Some</span>(v): ... <span class="ty">None</span>: ...</code></pre></div>
 
 <h2>Strings</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="str">"hello"</span> + <span class="str">" world"</span>       <span class="cm"># concat</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="str">"hello"</span> + <span class="str">" world"</span>       <span class="cm"># concat</span>
 <span class="str">f"{name} is {age}"</span>       <span class="cm"># interpolate</span>
 <span class="fn">len</span>(s)  <span class="fn">substr</span>(s,a,b)  <span class="fn">find</span>(s,sub)  <span class="fn">split</span>(s,sep)
 <span class="fn">str</span>(<span class="num">42</span>)  <span class="fn">chr</span>(<span class="num">65</span>)  s[i]     <span class="cm"># byte at index</span></code></pre></div>
 
 <h2>Arrays &amp; Maps</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># Arrays</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="cm"># Arrays</span>
 [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]    []<span class="ty">int</span>     <span class="fn">push</span> <span class="fn">pop</span> <span class="fn">len</span>  xs[i]  xs[a:b]
 <span class="cm"># Maps</span>
 [<span class="str">"a"</span>: <span class="num">1</span>]    []<span class="ty">string</span>: <span class="ty">int</span>
 m[k] = v   m[k]   k <span class="kw">in</span> m   <span class="kw">delete</span> m[k]   <span class="fn">map_get</span>(m,k,d)   <span class="fn">keys</span>(m)</code></pre></div>
 
 <h2>Structs &amp; Enums</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>: x: <span class="ty">int</span>; y: <span class="ty">int</span>
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">struct</span> <span class="ty">Point</span>: x: <span class="ty">int</span>; y: <span class="ty">int</span>
 p := <span class="ty">Point</span>(<span class="num">1</span>,<span class="num">2</span>)   q := p    <span class="cm"># deep copy</span>
 <span class="kw">enum</span> <span class="ty">Expr</span>: <span class="ty">Num</span>(<span class="ty">int</span>); <span class="ty">Add</span>(<span class="ty">Expr</span>,<span class="ty">Expr</span>)
 <span class="kw">match</span> e: <span class="ty">Num</span>(v): ...  <span class="cm"># exhaustive</span></code></pre></div>
 
 <h2>Concurrency</h2>
-<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>t := <span class="kw">spawn</span> <span class="fn">f</span>(args)       <span class="fn">wait</span>(t)
+<div class="code-block"><div class="code-header"><span class="lang">tycho</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>t := <span class="kw">spawn</span> <span class="fn">f</span>(args)       <span class="fn">wait</span>(t)
 <span class="kw">parallel for</span> i <span class="kw">in</span> <span class="fn">range</span>(n): total += work(i)
 ch := <span class="fn">channel</span>(<span class="ty">T</span>, cap)  ch.<span class="fn">send</span>(v)  <span class="fn">recv</span>(ch)  <span class="fn">close</span>(ch)</code></pre></div>
 
@@ -1669,9 +1669,9 @@ ch := <span class="fn">channel</span>(<span class="ty">T</span>, cap)  ch.<span 
 <h2>Where to Go Next</h2>
 <ul>
 <li><strong>Read the examples:</strong> <code>examples/</code> has 20 programs, from trivial to substantial.</li>
-<li><strong>Read the tests:</strong> <code>tests/*.hi</code> covers every language feature with focused examples.</li>
+<li><strong>Read the tests:</strong> <code>tests/*.ty</code> covers every language feature with focused examples.</li>
 <li><strong>Read the thesis:</strong> <code>docs/thesis.md</code> explains <em>why</em> value semantics makes implicit arenas work.</li>
-<li><strong>Read the source:</strong> The self-hosted compiler <code>compiler/hierc0.hi</code> is ~3,500 lines of Hier written in Hier.</li>
+<li><strong>Read the source:</strong> The self-hosted compiler <code>compiler/tychoc0.ty</code> is ~3,500 lines of Tycho written in Tycho.</li>
 <li><strong>Run the benchmarks:</strong> <code>make bench</code> to see the performance properties.</li>
 </ul>
 
@@ -1687,7 +1687,7 @@ ch := <span class="fn">channel</span>(<span class="ty">T</span>, cap)  ch.<span 
 <script>
 /* ── Data ── */
 const SECTIONS = [
-  {id:'sec-0',  title:'What is Hier?',             nav:'1. What is Hier'},
+  {id:'sec-0',  title:'What is Tycho?',             nav:'1. What is Tycho'},
   {id:'sec-1',  title:'Setup & Hello World',       nav:'2. Setup & Hello World'},
   {id:'sec-2',  title:'Variables & Types',          nav:'3. Variables & Types'},
   {id:'sec-3',  title:'Functions',                  nav:'4. Functions'},
@@ -1714,10 +1714,10 @@ let progress = loadProgress();
 
 /* ── Persistence ── */
 function loadProgress() {
-  try { return JSON.parse(localStorage.getItem('hier-learn') || '{}'); } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem('tycho-learn') || '{}'); } catch { return {}; }
 }
 function saveProgress() {
-  try { localStorage.setItem('hier-learn', JSON.stringify(progress)); } catch {}
+  try { localStorage.setItem('tycho-learn', JSON.stringify(progress)); } catch {}
 }
 
 /* ── Navigation ── */

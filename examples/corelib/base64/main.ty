@@ -1,0 +1,11 @@
+# Example: core:base64 -- RFC 4648 encode/decode, plus the URL-safe variant.
+package main
+import "core:base64"
+
+fn main():
+    msg := "hello tycho"
+    enc := base64.encode(msg)
+    print("encode       = " + enc + "\n")                          # aGVsbG8gdHljaG8=
+    print("decode       = " + base64.decode(enc) + "\n")           # hello tycho
+    print("encode_url   = " + base64.encode_url(msg) + "\n")       # aGVsbG8gdHljaG8 (no padding)
+    print("decode wraps = " + base64.decode("aGVs\nbG8=") + "\n")  # hello (newline skipped)

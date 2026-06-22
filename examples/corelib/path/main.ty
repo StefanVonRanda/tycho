@@ -1,0 +1,12 @@
+# Example: core:path -- POSIX path utilities (pure string math, no filesystem access).
+package main
+import "core:path"
+
+fn main():
+    p := "/usr/local/bin/tycho"
+    print("base         = " + path.base(p) + "\n")                     # tycho
+    print("dir          = " + path.dir(p) + "\n")                      # /usr/local/bin
+    print("ext          = " + path.ext("archive.tar.gz") + "\n")       # .gz
+    print("stem         = " + path.stem("notes.txt") + "\n")           # notes
+    print("join         = " + path.join("/etc", "conf.d") + "\n")      # /etc/conf.d
+    print("clean        = " + path.clean("a/./b/../c") + "\n")         # a/c

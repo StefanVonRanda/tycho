@@ -1,7 +1,7 @@
 /* Channel pipeline -- C, hand-rolled bounded ring (mutex + condvars),
  * 1 producer -> 4 consumers. Payloads are malloc'd strings passed BY
  * POINTER (no copy) and freed by the consumer -- C's manual-ownership
- * fast path, the unsafety hier's deep copies buy out. */
+ * fast path, the unsafety tycho's deep copies buy out. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -4,15 +4,15 @@
 # FFI-shim example, so it has its own runner (the main tests/run.sh can't link a shim).
 set -u
 cd "$(dirname "$0")"
-HIERC="${HIERC:-../../hierc}"
-[ -x "$HIERC" ] || { echo "no $HIERC -- run 'make' at the repo root first"; exit 2; }
+TYCHOC="${TYCHOC:-../../tychoc}"
+[ -x "$TYCHOC" ] || { echo "no $TYCHOC -- run 'make' at the repo root first"; exit 2; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-"$HIERC" mine.hi --shim mine_shim.c -o "$TMP/mine" || { echo "build failed"; exit 1; }
+"$TYCHOC" mine.ty --shim mine_shim.c -o "$TMP/mine" || { echo "build failed"; exit 1; }
 "$TMP/mine" > "$TMP/out.txt"
 if diff -q mine.out "$TMP/out.txt" >/dev/null; then
     echo "ok   minesweeper (deterministic demo matches golden)"
 else
     echo "FAIL minesweeper: output != golden"; diff mine.out "$TMP/out.txt" | head; exit 1
 fi
-echo "     interactive:  $HIERC mine.hi --shim mine_shim.c -o mine && ./mine play"
+echo "     interactive:  $TYCHOC mine.ty --shim mine_shim.c -o mine && ./mine play"

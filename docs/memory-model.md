@@ -1,13 +1,13 @@
 # Memory model in the self-hosted compiler
 
-Hier's memory model — value semantics over implicit per-scope arenas — is
+Tycho's memory model — value semantics over implicit per-scope arenas — is
 described in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and
 the README's [Memory model](../README.md#memory-model) section. This document is
-about the *self-hosted* compiler, `hierc0`: how it generates code on that same
+about the *self-hosted* compiler, `tychoc0`: how it generates code on that same
 model, and the reclamation techniques that let its output match the C reference
-compiler, `hierc`.
+compiler, `tychoc`.
 
-`hierc0` emits the same value-semantic, implicit-arena C that `hierc` does. There
+`tychoc0` emits the same value-semantic, implicit-arena C that `tychoc` does. There
 is no known memory gap between the two compilers, and they have full feature
 parity. The sections below describe the model as it stands; a closing appendix
 sketches, for contributors, how the self-hosted code generator was brought onto
@@ -17,7 +17,7 @@ This is an experimental, proof-of-concept compiler. The memory model is the
 central idea it exists to demonstrate, and the cross-language benchmarks below
 are encouraging, but the implementation is young and should be evaluated as such.
 
-## What `hierc0` emits
+## What `tychoc0` emits
 
 Every function threads an arena hierarchy and frees per scope. The shape, from
 the emitted C:
@@ -155,9 +155,9 @@ appendix records what each mechanism buys for each family. RSS figures are for
 the workload that exercises the named type. Soundness throughout is checked by
 the byte-identical self-build and the sanitizers above.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `hierc` is the C-hosted compiler, `hierc0` the self-hosted one.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
 
-**Strings.** `hierc0`'s own code generation is one giant string build, so strings
+**Strings.** `tychoc0`'s own code generation is one giant string build, so strings
 matter most. The self-append `out = out + x` naively compiles to a fresh leaked
 buffer per step (O(n²)); growing one buffer in place instead takes a
 30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×), using
@@ -195,12 +195,12 @@ mirrors the C compiler's deep-copy elision.
 
 **Liveness-driven reuse.** The arena free-list and `arena_recycle` turn the
 loop-carried reassignment worst case into a win — `iter-transform` 3.5 GB → 4 MB
-(`hierc`) / 6 MB (`hierc0`). The read-≥-twice condition described above is what
+(`tychoc`) / 6 MB (`tychoc0`). The read-≥-twice condition described above is what
 keeps a moved-out buffer from being recycled.
 
 **Element-overwrite recycle.** Recycling the evicted element on `arr[k] = v`,
 backed by a per-size-class free-list, closes the sliding-window case — `window`
-47.3 MB → 4.2 MB (`hierc`) / 3.6 MB (`hierc0`), and faster.
+47.3 MB → 4.2 MB (`tychoc`) / 3.6 MB (`tychoc0`), and faster.
 
 **Per-statement transient reclaim.** Each expression statement's discarded value
 is wrapped in a per-statement arena, so a depth-19 stretch tree from a discarded

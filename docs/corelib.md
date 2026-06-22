@@ -1,7 +1,7 @@
-# corelib — Hier's standard library
+# corelib — Tycho's standard library
 
-corelib is Hier's standard library: a set of packages under `corelib/`, imported with the
-`core:` collection root. It is experimental, like the rest of Hier, but the modules below
+corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
+`core:` collection root. It is experimental, like the rest of Tycho, but the modules below
 are usable today.
 
 ```
@@ -15,27 +15,27 @@ fn main():
 
 1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
    The compiler finds `corelib/` next to its own binary by default, so no setup is
-   needed in this repo. Set `HIER_CORELIB` to a corelib directory to override.
+   needed in this repo. Set `TYCHO_CORELIB` to a corelib directory to override.
 2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
    (`x.abs()`).
 
 ## Resolution
 
 `import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
-`<corelib>` is `HIER_CORELIB` if set, otherwise `corelib/` next to the compiler binary.
-Non-`core:` imports stay relative to the importing package, unchanged. Both Hier compilers
-(`hierc` and the self-hosted `hierc0`) resolve `core:` natively, so `hierc0` is a
+`<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the compiler binary.
+Non-`core:` imports stay relative to the importing package, unchanged. Both Tycho compilers
+(`tychoc` and the self-hosted `tychoc0`) resolve `core:` natively, so `tychoc0` is a
 standalone corelib-aware compiler with no bundling step required.
 
 ## How corelib is shaped
 
-corelib is **concrete free functions over concrete types**. Hier has no generics, so array
+corelib is **concrete free functions over concrete types**. Tycho has no generics, so array
 utilities come as one package per element type (for example `[int]`, `[string]`, and
 `[float]` each get their own sibling package). The functions are also callable method-style
 through UFCS, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
 
 Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
-its siblings, and take a first-class `fn`/closure argument. Lambdas in Hier are
+its siblings, and take a first-class `fn`/closure argument. Lambdas in Tycho are
 expression-bodied; pass a named function where you need a multi-line body.
 
 This concrete, per-type shape is a consequence of the language's minimalism rather than a
@@ -72,7 +72,7 @@ corelib limitation.
   `drop(xs, n)`, `concat(a, b)`, `fill(n, v)`, `dedup` (consecutive — sort first for a full
   dedup). All return a new array — value semantics, the input is never mutated. (`push`/
   `pop`/`len`/`range` are builtins.)
-- **`arrays_str`** — the same over `[string]` (no overloading in hier, so per-type variants
+- **`arrays_str`** — the same over `[string]` (no overloading in tycho, so per-type variants
   are sibling packages): `contains`, `index_of`, `count`, `join(xs, sep)`, `smin`, `smax`
   (lexicographic), `reverse`, `is_sorted`, `sort`.
 - **`arrays_float`** — the same over `[float]`: `contains`, `index_of`, `count`, `sum`,
@@ -84,7 +84,7 @@ corelib limitation.
   return the index permutation that orders the keys — the no-generics way to sort
   anything (keep data in parallel arrays, argsort one, walk all through the permutation).
   All stable. Plus `by_key(xs, key)`: sort `[int]` by a derived key fn/closure.
-- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in hier, so the
+- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in tycho, so the
   state is an explicit int threaded via `mut`: `st := rand.seed(42)`,
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
   (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
@@ -96,7 +96,7 @@ corelib limitation.
   to avoid shadowing the builtin and recursing).
 - **`datetime`** — civil (proleptic Gregorian) calendar math over UNIX timestamps, all
   pure integer arithmetic (Howard Hinnant's `days_from_civil`/`civil_from_days`, which
-  port verbatim because hier's int `/` truncates like C's). A `DateTime` struct
+  port verbatim because tycho's int `/` truncates like C's). A `DateTime` struct
   (`year`/`month`/`day`/`hour`/`minute`/`second`/`weekday`, all UTC). `from_unix(secs)`
   and its exact inverse `to_unix(dt)`; `days_from_civil`/`civil_from_days`/
   `weekday_from_days` (the day-count core); `weekday(y,m,d)` (0=Sun..6=Sat), `is_leap`,
@@ -116,7 +116,7 @@ corelib limitation.
   / `get_status(url)` do the request and free the handle. The body is arena-copied via the
   FFI string-return, so a binary body with interior `0x00` truncates — this is for text
   APIs. Tests are skipped where libcurl is absent.
-- **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.hi`
+- **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.ty`
   demo promoted to a reusable module). The document is a value-semantic tree, the
   `Json` enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`, objects as parallel
   key/value arrays). `parse(s) -> Json` (truncated input fails closed to `JNull`,
@@ -139,9 +139,9 @@ corelib limitation.
   `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
   (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is
   lenient: it skips any non-alphabet byte (padding `=`, whitespace, newlines in wrapped
-  Base64) and accepts both alphabets. **Byte-safety caveat** (a hier string-model limit,
+  Base64) and accepts both alphabets. **Byte-safety caveat** (a tycho string-model limit,
   not a Base64 one): `encode` is fully byte-safe, but `decode` builds its result with
-  `chr()`, and a hier string can't hold an interior `0x00` (`chr(0)` appends nothing), so
+  `chr()`, and a tycho string can't hold an interior `0x00` (`chr(0)` appends nothing), so
   decoding plaintext that contains a NUL byte silently drops it — `decode` is exact for
   text and any non-NUL binary, lossy only for data containing `0x00`.
 - **`hex`** — hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, two digits per
@@ -190,12 +190,12 @@ corelib limitation.
 ## C-shim (FFI-backed) modules
 
 A core module can wrap a C library via FFI. Drop a `<module>/<module>_shim.c` next to
-the `.hi`; the compiler auto-compiles and links it on `import "core:<module>"` (no
-`--shim` needed). The `.hi` declares the shim's functions with `extern fn` (and
+the `.ty`; the compiler auto-compiles and links it on `import "core:<module>"` (no
+`--shim` needed). The `.ty` declares the shim's functions with `extern fn` (and
 `extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
 POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
 dereferenced or arena-managed — `null` / `is_null`). Both compilers link a module's shim,
-so `hierc`, `hierc0 --bundle`, and standalone `hierc0` all build C-shim modules.
+so `tychoc`, `tychoc0 --bundle`, and standalone `tychoc0` all build C-shim modules.
 
 ### External dependencies (C-shim `deps`)
 
@@ -204,14 +204,14 @@ flag that **varies by platform** — declares it in a `corelib/<module>/deps` ma
 pkg-config package names, one per line (`#` comments and blank lines ignored). For
 example `corelib/http/deps` is just `libcurl`.
 
-- **Build:** when `hierc` auto-discovers a module's shim it reads the sibling `deps` and
+- **Build:** when `tychoc` auto-discovers a module's shim it reads the sibling `deps` and
   runs `pkg-config --cflags --libs <name>` for each, splicing the result onto the cc line
-  (`add_pkg_deps` in `src/hierc.c`). pkg-config resolves the right include path and libs
+  (`add_pkg_deps` in `src/tychoc.c`). pkg-config resolves the right include path and libs
   per platform, so `#include <curl/curl.h>` + `-lcurl` just work without hardcoding paths.
 - **Skip, don't fail:** `corelib/run.sh` probes the same `deps` with `pkg-config --exists`;
   if any dependency is missing it **skips** that module's test (printing `skip <name>
   (missing dependency: …)`) instead of failing, so machines without the library still
-  build. When present, it passes the same `--cflags --libs` on the hierc0 link paths.
+  build. When present, it passes the same `--cflags --libs` on the tychoc0 link paths.
 
 This keeps the test suite libc-only and portable while still allowing library-backed modules.
 A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file can still use
@@ -219,8 +219,8 @@ A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file ca
 
 ## Testing
 
-`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.hi` is compiled three
-ways — by the C compiler, via `hierc --bundle | hierc0`, and via **standalone** `hierc0`
+`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is compiled three
+ways — by the C compiler, via `tychoc --bundle | tychoc0`, and via **standalone** `tychoc0`
 (which resolves `core:` itself) — and all three must produce the golden
 `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.
@@ -228,7 +228,7 @@ ways — by the C compiler, via `hierc --bundle | hierc0`, and via **standalone*
 ## Examples
 
 Every module also has a small, readable **usage example** at
-`examples/corelib/<name>/main.hi` — usage as documentation (idiomatic calls, human-friendly
+`examples/corelib/<name>/main.ty` — usage as documentation (idiomatic calls, human-friendly
 output), as opposed to the assertion-style tests above. `make corelib-examples`
 (→ `examples/corelib/run.sh`) validates them the same three ways against
 `examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.

@@ -1,23 +1,23 @@
 #!/bin/sh
-# dbquery head-to-head: a REAL in-memory SQLite workload, the same in hier / C /
+# dbquery head-to-head: a REAL in-memory SQLite workload, the same in tycho / C /
 # Go, measuring peak RSS + wall (via bench/peakrss) with a byte-identical
 # checksum as the cross-language correctness check. SQLite work is held constant;
-# what differs is the host-side data handling -- hier's arena vs C's stack/manual
+# what differs is the host-side data handling -- tycho's arena vs C's stack/manual
 # vs Go's GC. Needs libsqlite3; skips any language whose toolchain is absent.
 # NOT wired into `make ci` (system dependency). See RESULTS.md.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 # Detect sqlite3 portably. Prefer pkg-config (Linux); on macOS Apple ships
 # libsqlite3 + sqlite3.h in the SDK but NO .pc file, so fall back to a bare
-# `-lsqlite3` link probe and pass hier `--link sqlite3` (skips pkg-config)
+# `-lsqlite3` link probe and pass tycho `--link sqlite3` (skips pkg-config)
 # instead of `--pkg sqlite3`.
 if pkg-config --exists sqlite3 2>/dev/null; then
-    LIBS="$(pkg-config --libs sqlite3)"; HIER_SQLITE="--pkg sqlite3"
+    LIBS="$(pkg-config --libs sqlite3)"; TYCHO_SQLITE="--pkg sqlite3"
 elif echo 'int main(void){return 0;}' | $CC -xc - -lsqlite3 -o /dev/null 2>/dev/null; then
-    LIBS="-lsqlite3"; HIER_SQLITE="--link sqlite3"
+    LIBS="-lsqlite3"; TYCHO_SQLITE="--link sqlite3"
 else
     echo "dbquery: SKIP (libsqlite3 not installed)"; exit 0
 fi
@@ -37,13 +37,13 @@ runlang() {                                           # <label> <binary>
 }
 
 printf '%-8s %10s %9s   %s\n' lang peakRSS time checksum
-# Fail-closed: libsqlite3 is present (checked above), so a hier build failure
+# Fail-closed: libsqlite3 is present (checked above), so a tycho build failure
 # here is a real failure -- print the compiler error and exit nonzero, never
 # a silent "(build skipped)" followed by "dbquery: ok".
-if ! $HIERC "$D/dbquery.hi" -o "$T/dbq_hier" --shim "$D/db_shim.c" $HIER_SQLITE > "$T/hier_err" 2>&1; then
-    echo "dbquery: HIER BUILD FAILED"; cat "$T/hier_err"; exit 2
+if ! $TYCHOC "$D/dbquery.ty" -o "$T/dbq_tycho" --shim "$D/db_shim.c" $TYCHO_SQLITE > "$T/tycho_err" 2>&1; then
+    echo "dbquery: TYCHO BUILD FAILED"; cat "$T/tycho_err"; exit 2
 fi
-runlang hier "$T/dbq_hier"
+runlang tycho "$T/dbq_tycho"
 $CC -O3 "$D/dbquery.c" -o "$T/dbq_c" $LIBS 2>/dev/null
 runlang C "$T/dbq_c"
 if command -v go >/dev/null 2>&1; then

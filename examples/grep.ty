@@ -1,0 +1,50 @@
+# grep: a real CLI utility in Tycho. Prints every line of each input file that
+# contains a (plain, non-regex) substring pattern, in grep -n style. Reads the
+# filesystem through the args()/read_file()/read_all() builtins, and leans on
+# split/find for the line work -- no compiler machinery, just a normal program.
+#
+#   tychoc examples/grep.ty -o grep
+#   ./grep PATTERN file1 [file2 ...]      # search the named files
+#   ./grep PATTERN                        # search stdin
+#
+# Output: "path:lineno:line" when more than one file is searched, otherwise
+# "lineno:line". Exercises [string] arrays, value-semantic string slices from
+# split(), the in-place string accumulator, and integer formatting via str().
+
+# scan one already-loaded text buffer; tag lines with `name` when show_name is set
+fn grep_text(name: string, pat: string, text: string, show_name: bool):
+    lines := split(text, "\n")
+    n := len(lines)
+    # a file that ends in "\n" yields a trailing empty line from split(); drop it
+    if n > 0:
+        if lines[n - 1] == "":
+            n = n - 1
+    for i in range(0, n):
+        line := lines[i]
+        if find(line, pat) >= 0:
+            lineno := str(i + 1)
+            if show_name:
+                print(name + ":" + lineno + ":" + line + "\n")
+            else:
+                print(lineno + ":" + line + "\n")
+
+fn main():
+    a := args()
+    # a[0] is the binary path; a[1] is the pattern, a[2:] are files.
+    if len(a) < 2:
+        # No CLI args (e.g. the golden test harness, which can't pass argv):
+        # run a deterministic self-demo over a built-in sample so the matcher
+        # is still exercised with a stable, recordable output.
+        sample := "the quick brown fox\njumps over\nthe lazy dog\nthe end\n"
+        grep_text("", "the", sample, false)
+    else:
+        pat := a[1]
+        nfiles := len(a) - 2
+        if nfiles == 0:
+            # a pattern but no files -> read stdin as one buffer
+            grep_text("", pat, read_all(), false)
+        else:
+            show_name := nfiles > 1
+            for i in range(2, len(a)):
+                path := a[i]
+                grep_text(path, pat, read_file(path), show_name)

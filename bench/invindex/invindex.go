@@ -1,5 +1,5 @@
 // Inverted-index build, at scale — Go, GC + built-in map. Same LCG, same add
-// logic, same checksum as invindex.hi (the cross-language oracle).
+// logic, same checksum as invindex.ty (the cross-language oracle).
 package main
 
 import (

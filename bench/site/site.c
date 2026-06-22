@@ -1,7 +1,7 @@
 /* site benchmark (C): render N Markdown pages to HTML, transiently -- the same
- * work as site.hi, gated by the same FNV-1a-32 checksum. Every page's buffers
+ * work as site.ty, gated by the same FNV-1a-32 checksum. Every page's buffers
  * are malloc'd and freed by hand, so peak RSS is the per-page working set: the
- * manual-memory baseline hier's arena must match WITHOUT any free() in the
+ * manual-memory baseline tycho's arena must match WITHOUT any free() in the
  * source. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +32,7 @@ static void esc(Buf *out, const char *s, size_t n) {
 }
 
 /* block-level Markdown subset -> HTML, splitting `body` on '\n' (trailing empty
- * segments kept, matching hier's split). */
+ * segments kept, matching tycho's split). */
 static void render(Buf *out, const char *body) {
     int in_list = 0;
     const char *p = body;

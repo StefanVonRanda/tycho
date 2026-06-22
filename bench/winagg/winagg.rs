@@ -1,6 +1,6 @@
 // Windowed group-by aggregation — Rust, HashMap<i64, Vec<i64>> per window, dropped each
 // cycle (RAII frees every Vec + the map at scope end — the manual-but-automatic churn
-// teardown). Same LCG and checksum as winagg.hi (oracle: windows=40 checksum=505098931).
+// teardown). Same LCG and checksum as winagg.ty (oracle: windows=40 checksum=505098931).
 use std::collections::HashMap;
 
 fn main() {

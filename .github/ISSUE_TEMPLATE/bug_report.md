@@ -10,7 +10,7 @@ assignees: ""
 A clear description of the bug.
 
 **Minimal repro**
-The smallest `.hi` program that triggers it (paste it inline — this is the single
+The smallest `.ty` program that triggers it (paste it inline — this is the single
 most useful thing you can include):
 
 ```
@@ -18,7 +18,7 @@ fn main():
     ...
 ```
 
-How you compiled/ran it (e.g. `./hierc bug.hi && ./bug`, or `make ci`):
+How you compiled/ran it (e.g. `./tychoc bug.ty && ./bug`, or `make ci`):
 
 ```
 $ ...
@@ -29,11 +29,11 @@ $ ...
 - Actual: … (paste the exact output / error / sanitizer report)
 
 **Does it reproduce in both compilers?** (helps a lot, if you can check)
-- [ ] `./hierc bug.hi` (the C reference compiler)
+- [ ] `./tychoc bug.ty` (the C reference compiler)
 - [ ] the self-hosted compiler — easiest via `make fixpoint`, which builds with both
 - [ ] not sure
 
 **Environment**
 - OS / arch: (e.g. Linux x86_64, macOS arm64)
 - C compiler: (`cc --version` first line)
-- Hier commit / tag: (`git rev-parse --short HEAD` or the release tag)
+- Tycho commit / tag: (`git rev-parse --short HEAD` or the release tag)

@@ -35,7 +35,7 @@ $ site <site_dir> <out_dir>
 ```
 
 `make site` (or `sh examples/site/run.sh`) builds the program by all three
-compilers (the C `hierc`, `hierc0` via `--bundle`, and standalone `hierc0`), runs
+compilers (the C `tychoc`, `tychoc0` via `--bundle`, and standalone `tychoc0`), runs
 each against this fixture site, and asserts the build report (page list + per-page
 content hashes) byte-identical against `expected.out`. The emitted C is also run
 under ASan/UBSan — a heavy string-building / per-scope-arena workload that

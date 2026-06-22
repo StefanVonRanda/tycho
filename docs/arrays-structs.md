@@ -1,6 +1,6 @@
-# Hier aggregates: arrays & structs under value semantics
+# Tycho aggregates: arrays & structs under value semantics
 
-Hier is an experimental, value-semantic language with implicit hierarchical
+Tycho is an experimental, value-semantic language with implicit hierarchical
 arenas and **no pointer or reference type**. This document explains how
 aggregates — arrays and structs, including heap-bearing and nested fields —
 behave under those rules, and why the memory model stays sound without a
@@ -167,11 +167,11 @@ fn main():
 
 The last row is the key point: the dangling-pointer bug that forces every other
 region system to ship escape analysis *for correctness* is not expressible in
-Hier, so it cannot occur.
+Tycho, so it cannot occur.
 
 ## 7. Generics — monomorphized over the built-in container machinery
 
-Hier has **monomorphized generics**: a `$T` type parameter on a
+Tycho has **monomorphized generics**: a `$T` type parameter on a
 function or struct, inferred at the use site and stamped out to concrete code at
 compile time. They reuse the *same* per-concrete-type interning + emission the
 compiler already runs for its built-in parametric types:
@@ -221,9 +221,9 @@ returned value is already in the right place — **zero-copy returns**. The
 price: a function's throwaway temporaries also live in the caller's arena
 until the caller returns, so reclamation has to be recovered with *visible*
 tools — named sub-arena blocks and pools. That works, but it puts memory
-back in the programmer's face, the opposite of Hier's goal.
+back in the programmer's face, the opposite of Tycho's goal.
 
-Hier can do better **because it has no pointers**. With value semantics and
+Tycho can do better **because it has no pointers**. With value semantics and
 no reference type, a value escapes a function only by being **returned** or
 written through an **`mut`** parameter — both visible in the signature. A
 callee cannot stash an argument anywhere that outlives the call (there is
@@ -260,7 +260,7 @@ not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
 signature-directed escape strategy (§8) reclaim memory without copies. Arena
-allocation itself is well-proven; the claim Hier tests is that removing pointers
+allocation itself is well-proven; the claim Tycho tests is that removing pointers
 turns the visible memory tools and whole-program analyses such systems usually
 need into invisible, local ones — and generics, being monomorphized to concrete
 code first, ride along without re-introducing either.

@@ -1,6 +1,6 @@
 # Sampling profiler (`prof_shim.c` + `profile.sh`)
 
-A dependency-free statistical CPU-time profiler for hier-compiled programs, for
+A dependency-free statistical CPU-time profiler for tycho-compiled programs, for
 environments where the usual tools don't work:
 
 - **`perf`** needs `kernel.perf_event_paranoid <= 2` (root to lower); blocked in
@@ -27,14 +27,14 @@ sample — hundreds of runs are aggregated.
 ## Use
 
 ```sh
-make hierc
-tools/prof/profile.sh compiler/hierc0.hi compiler/hierc0.hi 600 self
+make tychoc
+tools/prof/profile.sh compiler/tychoc0.ty compiler/tychoc0.ty 600 self
 ```
 
-`emitter=self` profiles the **self-hosted** codegen (hierc0 emitting itself);
-`hierc` (default) profiles hierc's emission. They can differ a lot — hierc emits
-a `strlen`-bounds-checked `hier_str_get` for `s[i]` where hierc0 emits a direct
-index, so the same `.hi` profiles differently depending on who built it.
+`emitter=self` profiles the **self-hosted** codegen (tychoc0 emitting itself);
+`tychoc` (default) profiles tychoc's emission. They can differ a lot — tychoc emits
+a `strlen`-bounds-checked `tycho_str_get` for `s[i]` where tychoc0 emits a direct
+index, so the same `.ty` profiles differently depending on who built it.
 
 ## What it found
 

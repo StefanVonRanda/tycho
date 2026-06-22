@@ -1,11 +1,11 @@
 #!/bin/sh
-# Stage E dogfood: split the single-file self-hosted compiler hierc0.hi into a
+# Stage E dogfood: split the single-file self-hosted compiler tychoc0.ty into a
 # two-package program and write it to <outdir>:
 #
-#   <outdir>/main.hi      package main  — the lexer/parser/typecheck/codegen,
+#   <outdir>/main.ty      package main  — the lexer/parser/typecheck/codegen,
 #                                          importing "rt"; the 5 emitter calls
 #                                          are qualified rt.<name>(...)
-#   <outdir>/rt/rt.hi     package rt    — the pure C-runtime / string emitters
+#   <outdir>/rt/rt.ty     package rt    — the pure C-runtime / string emitters
 #                                          (preamble, gen_strlib, gen_mhash,
 #                                          gen_map_type, gen_map_fns): leaf
 #                                          functions with primitive signatures,
@@ -13,13 +13,13 @@
 #                                          main, so the cut is narrow (a one-way
 #                                          main -> rt dependency).
 #
-# Generated from hierc0.hi by function NAME (robust to line shifts), so it never
+# Generated from tychoc0.ty by function NAME (robust to line shifts), so it never
 # drifts: the split is always exactly the current compiler, just repackaged.
 # `make fixpoint` regenerates it and asserts it (a) self-hosts byte-identically
 # and (b) emits identical C to the single-file compiler on every fixture.
 set -eu
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-H="$HERE/hierc0.hi"
+H="$HERE/tychoc0.ty"
 OUT="$1"
 # gen_map_type/gen_map_fns moved to MAIN: they are now type-aware (use cty/
 # cp_field/mangle, all in main) like gen_arr_fns, so they can't sit in the lower
@@ -40,7 +40,7 @@ BEGIN { n = split(rt, a, " "); for (i = 1; i <= n; i++) isrt[a[i]] = 1; cur = "M
 { print cur "\t" $0 }
 ' "$H" > "$OUT/.tagged"
 
-{ echo "package rt"; echo; sed -n 's/^RT\t//p' "$OUT/.tagged"; } > "$OUT/rt/rt.hi"
+{ echo "package rt"; echo; sed -n 's/^RT\t//p' "$OUT/.tagged"; } > "$OUT/rt/rt.ty"
 {
     echo "package main"
     echo 'import "rt"'
@@ -50,6 +50,6 @@ BEGIN { n = split(rt, a, " "); for (i = 1; i <= n; i++) isrt[a[i]] = 1; cur = "M
     # (^|[^A-Za-z0-9_]) guard stops substring hits like `xpreamble(`.
     sed -n 's/^MAIN\t//p' "$OUT/.tagged" \
         | sed -E 's/(^|[^A-Za-z0-9_])(preamble|gen_strlib|gen_mhash)\(/\1rt.\2(/g'
-} > "$OUT/main.hi"
+} > "$OUT/main.ty"
 
 rm -f "$OUT/.tagged"

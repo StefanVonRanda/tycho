@@ -2,7 +2,7 @@
 # Malformed-input generator for the robustness ("fail-closed") fuzzer.
 #
 # Unlike gen.py -- which emits well-TYPED programs for the differential output
-# oracle -- this emits BROKEN or near-broken Hier source: a real corpus program
+# oracle -- this emits BROKEN or near-broken Tycho source: a real corpus program
 # (tests/ + examples/) with random corruption applied, or pure token/byte soup.
 # The harness (run_reject.py) asserts both compilers FAIL CLOSED on it: a clean
 # error, never a crash (SIGSEGV / abort / ASan / UBSan / hang), and -- when a
@@ -19,8 +19,8 @@ import sys, os, random, glob
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_corpus():
-    files = sorted(glob.glob(os.path.join(REPO, "tests", "*.hi")) +
-                   glob.glob(os.path.join(REPO, "examples", "*.hi")))
+    files = sorted(glob.glob(os.path.join(REPO, "tests", "*.ty")) +
+                   glob.glob(os.path.join(REPO, "examples", "*.ty")))
     out = []
     for f in files:
         try:

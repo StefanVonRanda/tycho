@@ -1,4 +1,4 @@
-# build artifacts (run.sh builds in a tmpdir; these are from manual `hierc demo.hi ...`)
+# build artifacts (run.sh builds in a tmpdir; these are from manual `tychoc demo.ty ...`)
 demo
 demo.c
 demo0

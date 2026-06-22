@@ -1,3 +1,3 @@
-map shout[1]  = HIER
+map shout[1]  = TYCHO
 filter len>=4 = 2
-reduce concat = hihiergorust
+reduce concat = hitychogorust

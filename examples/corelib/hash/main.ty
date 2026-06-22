@@ -1,0 +1,13 @@
+# Example: core:hash -- fast non-cryptographic hashes (for hash tables, checksums,
+# dedup; NOT for security). All 32-bit; to_hex shows them as 8 hex digits.
+package main
+import "core:hash"
+
+fn main():
+    s := "tycho"
+    print("fnv1a_32     = " + hash.to_hex(hash.fnv1a_32(s)) + "\n")
+    print("crc32        = " + hash.to_hex(hash.crc32(s)) + "\n")
+    print("djb2         = " + str(hash.djb2(s)) + "\n")
+    print("sdbm         = " + str(hash.sdbm(s)) + "\n")
+    # the canonical CRC-32 check value
+    print("crc32 check  = " + hash.to_hex(hash.crc32("123456789")) + "\n")  # cbf43926

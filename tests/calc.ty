@@ -1,0 +1,257 @@
+# A tiny expression-language interpreter in Tycho — dogfooding the axes the games
+# never touched: custom RECURSIVE enums (a Tok stream and an Expr AST), nested and
+# exhaustive `match`, and the Result / or_return error pipeline (parse and eval
+# errors propagate as Err instead of crashing). Lexer -> recursive-descent parser
+# -> tree-walking eval, with variables in a [string: float] env.
+#
+#   calc          # run a deterministic script of expressions (the golden)
+#   calc repl     # read expressions from stdin until "quit"/EOF
+
+enum Tok:
+    TNum(float)
+    TName(string)
+    TOp(string)
+
+# the AST is recursive (EBin/ENeg/ECall hold Exprs) — like the compiler's own AST,
+# but in user code: exercises recursive enum construction + match.
+enum Expr:
+    ENum(float)
+    EVar(string)
+    ENeg(Expr)
+    EBin(string, Expr, Expr)
+    ECall(string, Expr)
+
+# ---- lexer ----------------------------------------------------------------
+
+# parse a number starting at s[i]; returns (value, index-after). s[k] is a byte code.
+fn parse_num(s: string, i: int) -> (float, int):
+    n := len(s)
+    ival := 0
+    for i < n and s[i] >= 48 and s[i] <= 57:        # digits 0-9
+        ival = ival * 10 + (s[i] - 48)
+        i = i + 1
+    val := to_float(ival)
+    if i < n and s[i] == 46:                          # '.'
+        i = i + 1
+        frac := 0
+        scale := 1
+        for i < n and s[i] >= 48 and s[i] <= 57:
+            frac = frac * 10 + (s[i] - 48)
+            scale = scale * 10
+            i = i + 1
+        val = val + to_float(frac) / to_float(scale)
+    return (val, i)
+
+fn is_alpha(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+
+fn lex(s: string) -> [Tok]:
+    toks := []Tok
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if c == 32 or c == 9:                        # whitespace
+            i = i + 1
+        elif c >= 48 and c <= 57:                     # number
+            val, ni := parse_num(s, i)
+            push(toks, TNum(val))
+            i = ni
+        elif is_alpha(c):                             # identifier
+            start := i
+            for i < n and (is_alpha(s[i]) or (s[i] >= 48 and s[i] <= 57)):
+                i = i + 1
+            push(toks, TName(substr(s, start, i)))
+        else:                                         # single-char operator
+            push(toks, TOp(substr(s, i, i + 1)))
+            i = i + 1
+    return toks
+
+# ---- parser (recursive descent, errors via Result) ------------------------
+
+fn peek_op(toks: [Tok], pos: int) -> string:         # op string at pos, else ""
+    if pos >= len(toks):
+        return ""
+    match toks[pos]:
+        TNum(v):
+            return ""
+        TName(nm):
+            return ""
+        TOp(o):
+            return o
+
+fn is_addop(o: string) -> bool:
+    return o == "+" or o == "-"
+
+fn is_mulop(o: string) -> bool:
+    return o == "*" or o == "/"
+
+fn parse_factor(toks: [Tok], pos: mut int) -> Result(Expr, string):
+    if pos >= len(toks):
+        return Err("unexpected end of input")
+    t := toks[pos]
+    match t:
+        TNum(v):
+            pos = pos + 1
+            return Ok(ENum(v))
+        TName(nm):
+            pos = pos + 1
+            if peek_op(toks, pos) == "(":            # builtin call: name(expr)
+                pos = pos + 1
+                arg := parse_expr(toks, &pos) or_return
+                if peek_op(toks, pos) != ")":
+                    return Err("expected ')' after argument to " + nm)
+                pos = pos + 1
+                return Ok(ECall(nm, arg))
+            return Ok(EVar(nm))
+        TOp(o):
+            if o == "(":
+                pos = pos + 1
+                e := parse_expr(toks, &pos) or_return
+                if peek_op(toks, pos) != ")":
+                    return Err("expected ')'")
+                pos = pos + 1
+                return Ok(e)
+            if o == "-":                             # unary minus
+                pos = pos + 1
+                f := parse_factor(toks, &pos) or_return
+                return Ok(ENeg(f))
+            return Err("unexpected token: " + o)
+
+fn parse_term(toks: [Tok], pos: mut int) -> Result(Expr, string):
+    left := parse_factor(toks, &pos) or_return
+    for is_mulop(peek_op(toks, pos)):
+        op := peek_op(toks, pos)
+        pos = pos + 1
+        right := parse_factor(toks, &pos) or_return
+        left = EBin(op, left, right)
+    return Ok(left)
+
+fn parse_expr(toks: [Tok], pos: mut int) -> Result(Expr, string):
+    left := parse_term(toks, &pos) or_return
+    for is_addop(peek_op(toks, pos)):
+        op := peek_op(toks, pos)
+        pos = pos + 1
+        right := parse_term(toks, &pos) or_return
+        left = EBin(op, left, right)
+    return Ok(left)
+
+fn parse(s: string) -> Result(Expr, string):
+    toks := lex(s)
+    pos := 0
+    e := parse_expr(toks, &pos) or_return
+    if pos < len(toks):
+        return Err("trailing tokens after expression")
+    return Ok(e)
+
+# ---- evaluator (recursive match on the AST, errors via Result/or_return) ---
+
+fn eval(e: Expr, env: [string: float]) -> Result(float, string):
+    match e:
+        ENum(v):
+            return Ok(v)
+        EVar(name):
+            if name in env:
+                return Ok(map_get(env, name, 0.0))
+            return Err("undefined variable: " + name)
+        ENeg(x):
+            v := eval(x, env) or_return
+            return Ok(0.0 - v)
+        EBin(op, l, r):
+            a := eval(l, env) or_return
+            b := eval(r, env) or_return
+            if op == "+":
+                return Ok(a + b)
+            if op == "-":
+                return Ok(a - b)
+            if op == "*":
+                return Ok(a * b)
+            if op == "/":
+                if b == 0.0:
+                    return Err("division by zero")
+                return Ok(a / b)
+            return Err("unknown operator: " + op)
+        ECall(fname, x):
+            v := eval(x, env) or_return
+            if fname == "sqrt":
+                if v < 0.0:
+                    return Err("sqrt of negative")
+                return Ok(sqrt(v))
+            if fname == "abs":
+                return Ok(fabs(v))
+            return Err("unknown function: " + fname)
+
+# ---- driver ---------------------------------------------------------------
+
+fn trim(s: string) -> string:
+    a := 0
+    b := len(s)
+    for a < b and s[a] == 32:
+        a = a + 1
+    for b > a and s[b - 1] == 32:
+        b = b - 1
+    return substr(s, a, b)
+
+# evaluate one line ("let NAME = EXPR" or a bare EXPR); returns a display string
+fn run_line(line: string, env: mut [string: float]) -> string:
+    src := line
+    name := ""
+    is_let := false
+    if len(line) >= 4 and substr(line, 0, 4) == "let ":
+        rest := substr(line, 4, len(line))
+        eq := find(rest, "=")
+        if eq < 0:
+            return "error: 'let' needs '='"
+        name = trim(substr(rest, 0, eq))
+        src = substr(rest, eq + 1, len(rest))
+        is_let = true
+    pr := parse(src)
+    match pr:
+        Err(msg):
+            return "parse error: " + msg
+        Ok(e):
+            er := eval(e, env)
+            match er:
+                Err(msg):
+                    return "error: " + msg
+                Ok(v):
+                    if is_let:
+                        env[name] = v        # place-assign (map_set does not write back through mut)
+                        return name + " = " + str(v)
+                    return str(v)
+
+fn run_demo():
+    env := []string: float
+    lines := []string
+    push(lines, "1 + 2 * 3")
+    push(lines, "(1 + 2) * 3")
+    push(lines, "10 / 4")
+    push(lines, "let x = 3 + 4")
+    push(lines, "x * x")
+    push(lines, "let y = x + 1")
+    push(lines, "sqrt(y * 2)")
+    push(lines, "abs(0 - 9)")
+    push(lines, "-x + 1")
+    push(lines, "2 * (x - 1)")
+    push(lines, "1 / 0")
+    push(lines, "z + 1")
+    push(lines, "2 +")
+    push(lines, "foo(2)")
+    push(lines, "sqrt(0 - 4)")
+    for i in range(0, len(lines)):
+        print(lines[i] + "  =>  " + run_line(lines[i], &env) + "\n")
+
+fn run_repl():
+    env := []string: float
+    for tick in range(0, 100000):
+        line := input()
+        if line == "" or line == "quit":
+            return
+        print(run_line(line, &env) + "\n")
+
+fn main():
+    a := args()
+    if len(a) >= 2 and a[1] == "repl":
+        run_repl()
+    else:
+        run_demo()

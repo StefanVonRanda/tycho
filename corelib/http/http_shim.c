@@ -3,11 +3,11 @@
  * this module is turnkey on any platform that has libcurl, and its test is
  * skipped where it doesn't.
  *
- * A request returns an opaque handle (a malloc'd Resp) that hier holds as a
- * `ptr` and never dereferences; the body is a NUL-terminated C string that hier
+ * A request returns an opaque handle (a malloc'd Resp) that tycho holds as a
+ * `ptr` and never dereferences; the body is a NUL-terminated C string that tycho
  * arena-copies on return, so the handle must be freed with http_free once done
  * (FFI memory is not arena-managed). Binary bodies with interior NUL bytes
- * truncate at the arena-copy (a hier string limitation), so this is for text. */
+ * truncate at the arena-copy (a tycho string limitation), so this is for text. */
 #include <curl/curl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,7 +43,7 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "hier-corelib-http/1.0");
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "tycho-corelib-http/1.0");
 
     struct curl_slist *hdrs = NULL;
     if (post_body) {

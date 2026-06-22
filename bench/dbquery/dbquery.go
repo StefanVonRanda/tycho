@@ -1,5 +1,5 @@
 // dbquery — Go port, via cgo against the system libsqlite3 (no external driver
-// module needed). Same SQLite work + same checksum as the hier/C ports; host
+// module needed). Same SQLite work + same checksum as the tycho/C ports; host
 // grouping in Go (GC-managed). Build: go build -o dbq_go dbquery.go
 package main
 

@@ -1,5 +1,5 @@
 /* Inverted-index build, count-then-fill (exact preallocation) — C. The fair
- * architecture-matched baseline for invindex_exact.hi: pass 1 counts each term's
+ * architecture-matched baseline for invindex_exact.ty: pass 1 counts each term's
  * occurrences, each posting list is malloc'd ONCE at its exact size, pass 2 fills.
  * Same LCG / checksum as the others. */
 #include <stdio.h>

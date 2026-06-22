@@ -1,12 +1,12 @@
-# The Hier thesis: value semantics makes implicit arenas work
+# The Tycho thesis: value semantics makes implicit arenas work
 
-This document explains the core idea behind Hier — the *why*. The
+This document explains the core idea behind Tycho — the *why*. The
 [README](../README.md) is the reference overview;
 [arrays-structs.md](arrays-structs.md) works through the design under pressure.
 This document makes the argument the implementation backs up with running,
 measured code.
 
-Hier is an experimental, small, ahead-of-time language: Python-looking syntax,
+Tycho is an experimental, small, ahead-of-time language: Python-looking syntax,
 value semantics, no garbage collector, no `malloc`/`free`, no
 lifetime annotations, no borrow checker. You write code as if memory were
 managed for you, and it is. The claim is not "arenas are good" — everyone knows
@@ -69,12 +69,12 @@ every level wants the same fix. Call it **the seam**:
 A bare variable read allocates nothing — it is a pointer copy. So returning or
 assigning a bare local heap value, naively, leaves a pointer into a scope
 that is about to be freed: a use-after-free. The fix is **deep copy on
-cross-arena move** (`copy_into` in the compiler; per-struct `hier_copy_S_X`
+cross-arena move** (`copy_into` in the compiler; per-struct `tycho_copy_S_X`
 deep-copy functions generated into the output C). It nests: copying a
 `[string]` copies the buffer *and* every element's bytes; copying a struct
 copies each heap field, recursing. Structural equality (`==`) is the mirror
 image — compare by content, recursing the same way (`gen_eq`,
-`hier_eq_S_X`) — so `a == b` is true exactly when `b` is an independent copy
+`tycho_eq_S_X`) — so `a == b` is true exactly when `b` is an independent copy
 of `a`.
 
 Immutability is not a substitute for this copy. Immutability makes *aliasing*
@@ -122,7 +122,7 @@ call-sites** (destination-passing, emergent). Soundness is §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `hierc` is the C-hosted compiler, `hierc0` the self-hosted one.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
 
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
@@ -131,10 +131,10 @@ before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
 
 `acc = acc + e` in a loop is the textbook O(n²) trap: each step allocates a
 fresh buffer, copies the whole accumulator, and abandons the old one in the
-bump arena (which can't reclaim it) — O(n²) in *both* time and memory. Hier
+bump arena (which can't reclaim it) — O(n²) in *both* time and memory. Tycho
 recognizes the *self-append* shape (`acc` on the left of `+`, reassigned to
 `acc`) and grows `acc`'s buffer in place with geometric capacity, exactly like
-an array's `push`. This is the Hier analog of Perceus reuse — and the
+an array's `push`. This is the Tycho analog of Perceus reuse — and the
 uniqueness check Perceus needs reference counting to perform is **free here**:
 value semantics already guarantees `acc` is uniquely owned at the rebind (any
 `b := acc` took its own deep copy), so growing it in place is invisible to
@@ -200,7 +200,7 @@ held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference. This is forbidden **by
 construction**, and `mut` deliberately does not provide it (it is call-scoped,
 not storable). That forbiddance is *what value semantics is*. Removing it would
-not extend Hier; it would make it a different language.
+not extend Tycho; it would make it a different language.
 
 ## 6. Where that leaves the idea
 
@@ -226,12 +226,12 @@ disappear* — and the domain is large and real.
 The figures above are measured on the committed compiler. To reproduce:
 
 ```
-make                                  # build ./hierc
+make                                  # build ./tychoc
 # return-slot (build a baseline compiler from an earlier commit to compare):
-git show 9d3367f:src/hierc.c > /tmp/b.c   # last commit before return-slot
-# ...build it against a regenerated embed header, then A/B the same .hi
-examples/accumulate_big.hi            # in-place append, large N
-examples/memo.hi                      # mut memoized fib(40)
+git show 9d3367f:src/tychoc.c > /tmp/b.c   # last commit before return-slot
+# ...build it against a regenerated embed header, then A/B the same .ty
+examples/accumulate_big.ty            # in-place append, large N
+examples/memo.ty                      # mut memoized fib(40)
 ```
 
 Peak RSS was read from `/proc/<pid>/status` `VmHWM`; the optimized append
@@ -242,8 +242,8 @@ required to match native `-O2`.
 
 Three further validations back the thesis, written up separately.
 
-**Self-hosting.** A second compiler written in Hier itself
-(`compiler/hierc0.hi`) reaches a byte-identical fixpoint (`make fixpoint`), and
+**Self-hosting.** A second compiler written in Tycho itself
+(`compiler/tychoc0.ty`) reaches a byte-identical fixpoint (`make fixpoint`), and
 its codegen runs on this same implicit-arena model
 ([docs/memory-model.md](memory-model.md)). Soundness is checked by that
 byte-identical self-build and sanitizers. That makes the model eat its own dog
@@ -252,7 +252,7 @@ fuzzer cross-checks the two compilers under AddressSanitizer to keep them in
 agreement.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
-(Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the
+(Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
 compiler-vs-generated-code numbers are in [docs/perf.md](perf.md).
 
 **Concurrency as a corollary.** The same call convention — deep-copy in, copy

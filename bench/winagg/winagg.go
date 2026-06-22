@@ -1,5 +1,5 @@
 // Windowed group-by aggregation — Go, map[int][]int per window, discarded each cycle
-// (the GC reclaims it). Same LCG and checksum as winagg.hi (oracle: windows=40
+// (the GC reclaims it). Same LCG and checksum as winagg.ty (oracle: windows=40
 // checksum=505098931).
 package main
 

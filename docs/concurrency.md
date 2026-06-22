@@ -1,13 +1,13 @@
-# Concurrency in Hier
+# Concurrency in Tycho
 
-Hier is value-semantic: every call deep-copies its arguments in, copies its result
+Tycho is value-semantic: every call deep-copies its arguments in, copies its result
 out, and runs against a private arena. That call convention is already a sound
 thread boundary. Concurrency is the same convention run on other threads — after
 the copy-in, a task shares zero bytes with its spawner, so race freedom falls out
 of value semantics. There is no `Sendable`, no lifetime annotation, and no lock in
 the language. (Erlang gets the same guarantee from per-process heaps and message
 copying; Swift's Sendable/region machinery exists to patch first-class aliasing,
-which Hier does not have.)
+which Tycho does not have.)
 
 The model has four constructs:
 
@@ -19,8 +19,8 @@ The model has four constructs:
 The cost is stated, not hidden: every value crossing a thread boundary is a deep
 copy, the same rule as an ordinary call.
 
-Concurrency is implemented in both the C reference compiler (`hierc`) and the
-self-hosted compiler (`hierc0`).
+Concurrency is implemented in both the C reference compiler (`tychoc`) and the
+self-hosted compiler (`tychoc0`).
 
 ## spawn / wait — structured tasks
 
@@ -43,13 +43,13 @@ structured**:
   `or_return` — is joined and freed right there. A function can never return
   while its tasks run, and an unwaited task can never leak or detach.
 - A second `wait` on the same task dies loudly at runtime
-  (`hier: task already waited`) — never undefined behavior.
+  (`tycho: task already waited`) — never undefined behavior.
 
 ## parallel for — fork-join data parallelism
 
 ```
 total := 0
-parallel for i in range(400000000):   # K = ncpu chunk tasks; HIER_THREADS overrides
+parallel for i in range(400000000):   # K = ncpu chunk tasks; TYCHO_THREADS overrides
     total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
 ```
 
@@ -120,7 +120,7 @@ to the *user's* enclosing loop.
 languages (AMD Ryzen 7 7735HS, 16 hardware threads — full details and the honest
 reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 
-| workload | hier | C | Go | Rust |
+| workload | tycho | C | Go | Rust |
 |---|---:|---:|---:|---:|
 | parreduce (4×10⁸ int reduce) | 37 ms / 1.6 MB | 36 ms / 1.6 MB | 62 ms | 43 ms |
 | pipeline (10⁶ strings, 1→4 consumers) | 73 ms / 2.8 MB | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
@@ -141,17 +141,17 @@ deep copies per message that the others do not.
 ## Verification
 
 `make conc` runs every fixture natively, under AddressSanitizer + LeakSanitizer,
-and under ThreadSanitizer against recorded goldens, and asserts that `hierc` and
-`hierc0` produce the same outputs. It is part of `make ci`. The cross-language
+and under ThreadSanitizer against recorded goldens, and asserts that `tychoc` and
+`tychoc0` produce the same outputs. It is part of `make ci`. The cross-language
 benchmarks live in `bench/conc/`.
 
 ---
 
 ## Appendix: implementation & lineage
 
-For contributors. The feature exists in both compilers — `src/hierc.c` and
-`compiler/hierc0.hi` emit different C dialects with identical semantics — plus
-once in the shared runtime (`runtime/hier_rt.c`).
+For contributors. The feature exists in both compilers — `src/tychoc.c` and
+`compiler/tychoc0.ty` emit different C dialects with identical semantics — plus
+once in the shared runtime (`runtime/tycho_rt.c`).
 
 **Runtime.** The block pool is thread-local, so allocation never contends; a
 spawned thread flushes its pool before exiting, and `wait` frees a task's arena
@@ -165,18 +165,18 @@ syscalls and the check-then-park race costs at most one extra retry rather than 
 lost wakeup. Generated programs `#define _DEFAULT_SOURCE` so `clock_gettime` /
 `sched_yield` / `nanosleep` are visible.
 
-**Compilers.** `hierc` interns `Task`/`Channel` as type ranges, registers spawn
+**Compilers.** `tychoc` interns `Task`/`Channel` as type ranges, registers spawn
 sites at resolve (the lambda-lift pattern), and emits one args-struct +
 trampoline per site; per-element-type send/recv wrappers bracket `copy_into`
 around the runtime claim/commit; the implicit-join finalizers ride a codegen
 stack mirroring the scope-arena stack; `parallel for` lifts its body into a chunk
-procedure reusing the spawn machinery. `hierc0` represents the types as strings,
+procedure reusing the spawn machinery. `tychoc0` represents the types as strings,
 adds `ESpawn`/`SParFor`/`SSelect` AST variants, inlines the channel copies inside
 the claim/commit bracket, and emits the finalizers LIFO at each scope exit.
 
 **Lineage.** Structured spawn/await with no function colouring follows Hylo/Val's
 structured-concurrency work (Val's first design required sink-only spawn
-environments — exactly Hier's only mode); Hier skips the `mut`-to-disjoint-parts
+environments — exactly Tycho's only mode); Tycho skips the `mut`-to-disjoint-parts
 machinery and gets the expressiveness from chunk-copy + merge at a copy cost that
 *is* the design point. Share-nothing message copying is the Erlang/Pony model, and
 the channel core is Vyukov's bounded MPMC queue.

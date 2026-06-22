@@ -1,12 +1,12 @@
 # Packages & modules
 
-Hier organizes code into **packages**. A package is a *directory* of
-`.hi` files that share one flat namespace. You `import` a package and reference
+Tycho organizes code into **packages**. A package is a *directory* of
+`.ty` files that share one flat namespace. You `import` a package and reference
 its symbols with a qualified `pkg.symbol` name.
 
 Three properties define the model:
 
-- **A package is a directory**, not a file. Every `.hi` file in the directory
+- **A package is a directory**, not a file. Every `.ty` file in the directory
   belongs to the same package and contributes to one shared namespace.
 - **There is no privacy.** Every top-level symbol in a package is visible to
   importers; there is no `public`/`private` distinction.
@@ -24,7 +24,7 @@ package_decl := "package" IDENT NEWLINE          # first non-comment line
 import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
 ```
 
-- **A package is a directory.** Every `.hi` file in it declares the same
+- **A package is a directory.** Every `.ty` file in it declares the same
   `package <name>`, and `<name>` must equal the directory name.
 - **`import "math/geom"`** binds the package under its last path component
   (`geom`); **`import g "math/geom"`** aliases it to `g`. Paths resolve relative
@@ -39,13 +39,13 @@ import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
 
 ```
 proj/
-  main.hi            # package main
+  main.ty            # package main
   geom/
-    point.hi         # package geom
-    vec.hi           # package geom (same package, second file)
+    point.ty         # package geom
+    vec.ty           # package geom (same package, second file)
 ```
 
-`geom/point.hi`
+`geom/point.ty`
 
 ```
 package geom
@@ -56,7 +56,7 @@ fn add(a: Point, b: Point) -> Point:
     return Point(a.x + b.x, a.y + b.y)
 ```
 
-`main.hi`
+`main.ty`
 
 ```
 package main
@@ -66,7 +66,7 @@ fn main():
     print("sum = (" + str(r.x) + "," + str(r.y) + ")\n")   # (4,6)
 ```
 
-`./hierc proj/main.hi` reads the `main` package, follows `import "geom"` to
+`./tychoc proj/main.ty` reads the `main` package, follows `import "geom"` to
 `proj/geom/`, parses both `geom` files, and emits one `.c` with package-prefixed
 symbols (`geom__Point`, `geom__add`).
 
@@ -95,7 +95,7 @@ generated C.
 The standard library is reached through a **collection** — a named root for
 imports that resolve outside the local directory tree. `import "core:strings"`
 pulls in the corelib package `strings`, located next to the compiler binary by
-default (or at `HIER_CORELIB` if set) rather than relative to the importer. The
+default (or at `TYCHO_CORELIB` if set) rather than relative to the importer. The
 corelib is documented in [corelib.md](corelib.md).
 
 Only the `core:` collection is exposed today; arbitrary named roots (Odin's wider
@@ -103,24 +103,24 @@ Only the `core:` collection is exposed today; arbitrary named roots (Odin's wide
 
 ## Both compilers
 
-Packages work identically in the C reference compiler (`hierc`) and the
-self-hosted compiler (`hierc0`).
+Packages work identically in the C reference compiler (`tychoc`) and the
+self-hosted compiler (`tychoc0`).
 
-`hierc0` can compile a package directly — `hierc0 path/main.hi` walks the
+`tychoc0` can compile a package directly — `tychoc0 path/main.ty` walks the
 directory and follows its imports through the same filesystem builtins — or read a
-pre-bundled, post-order source stream on stdin, which the C compiler produces with `hierc --bundle <entry>`: it emits imports first, with
-the entry package's header rewritten to `package main`. `hierc0` then applies the
+pre-bundled, post-order source stream on stdin, which the C compiler produces with `tychoc --bundle <entry>`: it emits imports first, with
+the entry package's header rewritten to `package main`. `tychoc0` then applies the
 same package mangling in a post-parse pass — dormant unless a `package`
 declaration was seen, so a single-file compile stays identical.
 
-Package fixtures live in `tests/pkg/<name>/` (entry `main.hi`, golden
-`tests/pkg/<name>.out`). `make test` compiles the entry with `hierc`, and
-`make fixpoint` additionally builds each fixture with `hierc0` and checks that its
+Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
+`tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`, and
+`make fixpoint` additionally builds each fixture with `tychoc0` and checks that its
 output is byte-identical to the C compiler's.
 
 The compiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
 self-hosted compiler into a two-package program — `rt` (the leaf
-C-runtime/string emitters) and `main` (`import "rt"`) — derived from `hierc0.hi`
+C-runtime/string emitters) and `main` (`import "rt"`) — derived from `tychoc0.ty`
 by function name, with no duplicate source to maintain. This serves as a
 real-world test that a multi-package build emits the same C as the single-file
 build.

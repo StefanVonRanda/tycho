@@ -1,6 +1,6 @@
 // array-pipeline benchmark, Koka — Perceus RC. Each pass allocates a fresh
 // mapped list of N ints, sums it, and drops it. (Koka uses a linked list where
-// C/Rust/Go/Hier use a flat array; the comparison is allocate-and-discard
+// C/Rust/Go/Tycho use a flat array; the comparison is allocate-and-discard
 // throughput, not identical layout.)
 fun pass(xs : list<int>, j : int, k : int) : list<int>
   xs.map(fn(x) (x * 1103515245 + 12345 + j) % k)

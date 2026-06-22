@@ -1,0 +1,16 @@
+{
+  "grammars": [
+    {
+      "name": "tycho",
+      "camelcase": "Tycho",
+      "scope": "source.tycho",
+      "path": ".",
+      "file-types": ["hi"]
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "Flat tree-sitter grammar for the Tycho language (highlighting + LSP registration)"
+  }
+}

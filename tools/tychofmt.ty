@@ -1,0 +1,349 @@
+# tychofmt — the tycho source formatter. STAGE 1: a LOSSLESS lexer.
+#
+# A formatter must preserve comments (and, for a faithful round-trip, every other
+# byte too), so it can't reuse the compiler's lexer, which DISCARDS comments and
+# whitespace. This is a separate, *lossless* tokenizer: every byte of the source
+# lands in exactly one token's `text` -- code tokens (ident/number/string/op...)
+# PLUS trivia tokens (whitespace, newline, comment). Concatenating all token text
+# reproduces the input byte-for-byte; that round-trip is STAGE 1's correctness bar.
+# STAGE 2 (done) reasons over this stream to canonicalize formatting, comments
+# intact: 4-space indentation re-derived from block structure, inter-token spacing
+# re-spaced by token adjacency (`x:int` -> `x: int`, `a+b` -> `a + b`, `f(a)`/`a[i]`
+# tight, prefix `&x` vs binary `a & b`), blank runs collapsed to one, and one blank
+# line between top-level defs. Whitespace-only within a line, so it can't change the
+# program; the gate (scripts/tools_check.sh) proves it: `tychoc --emit-c` is byte-
+# identical before/after across the whole corpus, and fmt(fmt(x)) == fmt(x).
+#
+#   tychoc tools/tychofmt.ty -o tychofmt
+#   ./tychofmt <file.ty>            # prints the canonically-formatted source
+
+enum TKind:
+    KWS         # a run of spaces/tabs
+    KNL         # a single newline
+    KComment    # `#` to end of line (the newline is a separate KNL)
+    KIdent      # identifier or keyword
+    KInt
+    KFloat
+    KStr        # "..."
+    KFStr       # f"..."
+    KChar       # '...'
+    KOp         # operator or punctuation (one lexeme)
+
+struct Tok:
+    kind: TKind
+    text: string
+    line: int
+    col: int
+
+fn is_dig(c: int) -> bool:
+    return c >= 48 and c <= 57
+
+fn is_alp(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+
+fn is_aln(c: int) -> bool:
+    return is_alp(c) or is_dig(c)
+
+# 2-char operators worth keeping as a single lexeme (so stage 2 spaces them as a
+# unit). Round-trip is unaffected either way; this is for the formatter's benefit.
+fn is_two_op(s: string) -> bool:
+    return s == "->" or s == ":=" or s == "==" or s == "!=" or s == "<=" or s == ">=" or s == "<<" or s == ">>" or s == "+=" or s == "-=" or s == "*=" or s == "/=" or s == "%=" or s == "&=" or s == "|=" or s == "^="
+
+fn lex(src: string) -> [Tok]:
+    toks := []Tok
+    n := len(src)
+    i := 0
+    line := 1
+    col := 0
+    for i < n:
+        c := src[i]
+        start := i
+        sl := line
+        sc := col
+        if c == 10:                                   # newline
+            i = i + 1
+            push(toks, Tok(KNL, "\n", sl, sc))
+            line = line + 1
+            col = 0
+        elif c == 32 or c == 9 or c == 13:            # whitespace run (space/tab/CR)
+            for i < n and (src[i] == 32 or src[i] == 9 or src[i] == 13):
+                i = i + 1
+            push(toks, Tok(KWS, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif c == 35:                                 # comment: # ... (not the \n)
+            for i < n and src[i] != 10:
+                i = i + 1
+            push(toks, Tok(KComment, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif c == 34:                                 # string "..."
+            i = i + 1
+            for i < n and src[i] != 34:
+                if src[i] == 92:
+                    i = i + 1
+                i = i + 1
+            if i < n:
+                i = i + 1                             # closing quote
+            push(toks, Tok(KStr, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif c == 102 and i + 1 < n and src[i + 1] == 34:   # f"..." (depth-aware, mirrors the compiler)
+            i = i + 2
+            depth := 0
+            for i < n and (src[i] != 34 or depth > 0):
+                ch := src[i]
+                if ch == 92:
+                    i = i + 2
+                elif depth == 0 and ch == 123 and i + 1 < n and src[i + 1] == 123:
+                    i = i + 2
+                elif depth == 0 and ch == 125 and i + 1 < n and src[i + 1] == 125:
+                    i = i + 2
+                elif ch == 123:
+                    depth = depth + 1
+                    i = i + 1
+                elif depth > 0 and ch == 125:
+                    depth = depth - 1
+                    i = i + 1
+                elif depth > 0 and ch == 34:
+                    i = i + 1
+                    for i < n and src[i] != 34:
+                        if src[i] == 92:
+                            i = i + 1
+                        i = i + 1
+                    if i < n:
+                        i = i + 1
+                else:
+                    i = i + 1
+            if i < n:
+                i = i + 1                             # closing quote
+            push(toks, Tok(KFStr, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif c == 39:                                 # char '...'
+            i = i + 1
+            for i < n and src[i] != 39:
+                if src[i] == 92:
+                    i = i + 1
+                i = i + 1
+            if i < n:
+                i = i + 1
+            push(toks, Tok(KChar, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif is_dig(c):                               # number (int or float)
+            for i < n and is_dig(src[i]):
+                i = i + 1
+            if i < n and src[i] == 46 and i + 1 < n and is_dig(src[i + 1]):
+                i = i + 1
+                for i < n and is_dig(src[i]):
+                    i = i + 1
+                push(toks, Tok(KFloat, substr(src, start, i), sl, sc))
+            else:
+                push(toks, Tok(KInt, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif is_alp(c):                               # identifier / keyword
+            for i < n and is_aln(src[i]):
+                i = i + 1
+            push(toks, Tok(KIdent, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        else:                                         # operator / punctuation
+            two := ""
+            if i + 1 < n:
+                two = substr(src, i, i + 2)
+            if is_two_op(two):
+                i = i + 2
+            else:
+                i = i + 1                             # catch-all 1-char: guarantees no byte is skipped
+            push(toks, Tok(KOp, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+    return toks
+
+# ---- Stage 2: pretty-printer ------------------------------------------------
+# Within a line tycho is whitespace-insensitive (only LEADING indentation carries
+# meaning), so re-spacing a line can never change the program -- the one hazard is
+# merging two tokens by dropping a separator, which we avoid by only COLLAPSING
+# existing whitespace to one space, never removing a separator that was there.
+# Indentation IS semantic, so we re-derive block depth from the source's own
+# indent structure (an indent stack of leading widths) and re-emit it as 4 spaces
+# per level. Proof it preserves the program: `tychoc --emit-c` yields identical C
+# before and after (verified across the whole corpus).
+
+fn indent_str(depth: int) -> string:
+    s := ""
+    k := 0
+    for k < depth:
+        s = s + "    "
+        k = k + 1
+    return s
+
+fn is_blank(line: [Tok]) -> bool:
+    i := 0
+    for i < len(line):
+        if not (line[i].kind == KWS):
+            return false
+        i = i + 1
+    return true
+
+# a line whose only non-whitespace token is a comment (a full-line comment)
+fn is_comment_only(line: [Tok]) -> bool:
+    sawc := false
+    i := 0
+    for i < len(line):
+        k := line[i].kind
+        if k == KComment:
+            sawc = true
+        elif not (k == KWS):
+            return false
+        i = i + 1
+    return sawc
+
+# full-line comments pass through verbatim: their indentation is often deliberate
+# (aligned continuations of a trailing comment), they don't affect the program, and
+# leaving them out of the indent stack keeps depth derivation purely code-driven.
+fn comment_line(line: [Tok]) -> string:
+    out := ""
+    i := 0
+    for i < len(line):
+        out = out + line[i].text
+        i = i + 1
+    return out
+
+# keywords (never call/index targets): used so `if (`/`return (` keep a space
+# while `f(`/`a[` tighten. Builtins (print/len/range/...) are NOT keywords -- they
+# are ordinary call targets. `wait`/`spawn` are excluded: spawn is a value prefix
+# and wait(t) is call-form, both fine as plain idents.
+fn is_kw(s: string) -> bool:
+    return s == "fn" or s == "struct" or s == "enum" or s == "type" or s == "import" or s == "package" or s == "extern" or s == "mut" or s == "if" or s == "elif" or s == "else" or s == "for" or s == "while" or s == "match" or s == "return" or s == "break" or s == "continue" or s == "and" or s == "or" or s == "not" or s == "in" or s == "or_return" or s == "as" or s == "select" or s == "default" or s == "closed"
+
+# an "operand": something a binary operator can follow. Distinguishes binary `&`
+# (a & b) from a prefix mut `&` (f(&x)) by what precedes the `&`.
+fn is_operand(t: Tok) -> bool:
+    if t.kind == KIdent:
+        return not is_kw(t.text)
+    if t.kind == KInt or t.kind == KFloat or t.kind == KStr or t.kind == KFStr or t.kind == KChar:
+        return true
+    return t.text == ")" or t.text == "]"
+
+# Should a single space go between significant tokens reals[i-1] and reals[i]?
+# Default yes; the exceptions all sit next to punctuation, so dropping the space
+# can never MERGE two lexemes (the one real hazard). Everything here is
+# whitespace-only, so the program is unchanged (gate: emit-C identical).
+fn sep_needs_space(reals: [Tok], i: int) -> bool:
+    p := reals[i - 1]
+    c := reals[i]
+    pt := p.text
+    ct := c.text
+    if pt == "(" or pt == "[":                    # no padding after an opener
+        return false
+    if ct == ")" or ct == "]" or ct == "," or ct == ":":   # nor before a closer / separator / colon
+        return false
+    if pt == "." or ct == ".":                    # field access a.b
+        return false
+    if ct == "(" and ((p.kind == KIdent and not is_kw(pt)) or pt == ")" or pt == "]"):
+        return false                              # call: f(  )(  ](
+    if ct == "[" and ((p.kind == KIdent and not is_kw(pt)) or pt == ")" or pt == "]" or p.kind == KStr or p.kind == KFStr):
+        return false                              # index: a[  )[  ][  "..."[
+    if pt == "]" and i >= 2 and reals[i - 2].text == "[":
+        return false                              # empty `[]` then a type: []int, []K
+    if pt == "&" and (i < 2 or not is_operand(reals[i - 2])):
+        return false                              # prefix mut `&x` (not binary `a & b`)
+    return true
+
+# format one non-blank line: canonical 4-space indent + content re-spaced by
+# token adjacency (inline-comment leading space is preserved, for alignment).
+fn fmt_line(line: [Tok], levels: mut [int]) -> string:
+    w := 0
+    start := 0
+    if len(line) > 0:
+        if line[0].kind == KWS:
+            w = len(line[0].text)
+            start = 1
+    # indent stack: push on deeper, pop on shallower; depth = stack height - 1
+    if w > levels[len(levels) - 1]:
+        push(levels, w)
+    else:
+        for len(levels) > 1 and w < levels[len(levels) - 1]:
+            pop(levels)
+        if w > levels[len(levels) - 1]:
+            push(levels, w)            # inconsistent indent (not valid tycho): treat as new level
+    out := indent_str(len(levels) - 1)
+    endp := len(line)
+    for endp > start and line[endp - 1].kind == KWS:
+        endp = endp - 1
+    # gather the significant tokens, remembering the raw whitespace before each
+    # (only used to keep an inline comment's column alignment).
+    reals := []Tok
+    leadws := []string
+    pend := ""
+    j := start
+    for j < endp:
+        t := line[j]
+        if t.kind == KWS:
+            pend = pend + t.text
+        else:
+            push(reals, t)
+            push(leadws, pend)
+            pend = ""
+        j = j + 1
+    i := 0
+    for i < len(reals):
+        t := reals[i]
+        if i > 0:
+            if t.kind == KComment:
+                out = out + leadws[i]            # keep inline-comment alignment verbatim
+            elif sep_needs_space(reals, i):
+                out = out + " "
+        out = out + t.text
+        i = i + 1
+    return out
+
+# a depth-0 definition line (fn/struct/enum) -- gets one blank line before it.
+# extern is excluded so a run of `extern fn` declarations stays tight.
+fn is_topdef(line: [Tok]) -> bool:
+    if len(line) == 0:
+        return false
+    i := 0
+    if line[0].kind == KWS:
+        if len(line[0].text) != 0:               # any leading indent => not top level
+            return false
+        i = 1
+    if i >= len(line):
+        return false
+    t := line[i]
+    return t.kind == KIdent and (t.text == "fn" or t.text == "struct" or t.text == "enum")
+
+fn fmt(toks: [Tok]) -> string:
+    levels := [0]
+    out := ""
+    blanks := 0
+    prevkind := "none"                           # none | blank | comment | code
+    i := 0
+    n := len(toks)
+    for i < n:
+        line := []Tok
+        for i < n and not (toks[i].kind == KNL):
+            push(line, toks[i])
+            i = i + 1
+        if i < n:
+            i = i + 1                            # consume the KNL
+        if is_blank(line):
+            blanks = blanks + 1
+            if blanks <= 1:                      # collapse runs of blank lines to one
+                out = out + "\n"
+                prevkind = "blank"
+        elif is_comment_only(line):
+            blanks = 0
+            out = out + comment_line(line) + "\n"    # preserve full-line comments as written
+            prevkind = "comment"
+        else:
+            blanks = 0
+            if is_topdef(line) and prevkind == "code":   # group top-level defs with one blank
+                out = out + "\n"
+            out = out + fmt_line(line, &levels) + "\n"
+            prevkind = "code"
+    return out
+
+fn main():
+    a := args()
+    if len(a) < 2:
+        print("usage: tychofmt <file.ty>\n")
+        return
+    src := read_file(a[1])
+    toks := lex(src)
+    print(fmt(toks))

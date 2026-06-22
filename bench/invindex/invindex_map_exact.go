@@ -1,6 +1,6 @@
 // Inverted-index build, map-native COUNT-FILL — Go. Same as invindex_map.go but each
 // posting slice is make()'d at its exact capacity from a first counting pass, no append
-// growth. The analogue of invindex_map_exact.hi's reserve(idx[term], count). Same LCG
+// growth. The analogue of invindex_map_exact.ty's reserve(idx[term], count). Same LCG
 // corpus and checksum (540001838890).
 package main
 

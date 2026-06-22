@@ -1,10 +1,10 @@
-// Parallel text indexer -- Go rival for the hier concurrency dogfood.
+// Parallel text indexer -- Go rival for the tycho concurrency dogfood.
 //
 //	index <corpus-dir>
 //
-// Same algorithm as index.hi: fan file paths through a buffered channel to K=4
+// Same algorithm as index.ty: fan file paths through a buffered channel to K=4
 // worker goroutines, each tallying a LOCAL map[string]int, then merge. Go
-// shares the string bodies under its GC; hier deep-copies every worker map back
+// shares the string bodies under its GC; tycho deep-copies every worker map back
 // across the thread boundary (value semantics). Prints the identical checksum.
 package main
 
@@ -19,7 +19,7 @@ import (
 const K = 4
 
 // tally one document body: a term is a maximal run of letters, 'A'..'Z' fold to
-// lowercase, every other byte is a separator. Identical to index.hi / index.c.
+// lowercase, every other byte is a separator. Identical to index.ty / index.c.
 func tally(text []byte, acc map[string]int) {
 	var cur []byte
 	for _, c := range text {

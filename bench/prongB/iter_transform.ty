@@ -1,0 +1,29 @@
+# iterated-transform, Tycho — the arena's former WORST case, now CLOSED.
+# A long-lived value `a` is reassigned each step (`a = step(a)`): only the latest
+# array is ever live, but an arena cannot free one object mid-scope, so by default
+# every dead intermediate stayed in main's arena until return -- peak = TOTAL
+# allocation (~3.5 GB at m=2000 vs ~3 MB for C), the case Koka's Perceus handles
+# with runtime refcounts. Tycho now closes it WITHOUT refcounts: value semantics
+# proves the reassigned old buffer is dead + uniquely owned, so the compiler emits
+# arena_recycle to hand it back for the next iteration to reuse (FBIP from STATIC
+# reasoning). 3.5 GB -> 4 MB, flat in m. See RESULTS.md "the arena's worst case,
+# then CLOSED" and docs/memory-model.md.
+fn step(a: [int], p: int) -> [int]:
+    b := []int
+    for i in range(len(a)):
+        t := a[i] * 1103515245 + 12345
+        push(b, t - (t / p) * p)
+    return b
+fn main():
+    n := 100000
+    m := 2000
+    p := 2147483647
+    a := []int
+    for i in range(n):
+        push(a, i)
+    for j in range(m):
+        a = step(a, p)
+    s := 0
+    for i in range(len(a)):
+        s = s + a[i]
+    print(str(s - (s / 1000003) * 1000003) + "\n")

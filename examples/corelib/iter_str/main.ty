@@ -1,0 +1,21 @@
+# Example: core:iter_str -- higher-order helpers over [string]. Composes with
+# core:strings here (map applies a named fn that upper-cases each word).
+package main
+import "core:iter_str"
+import "core:strings"
+
+fn shout(w: string) -> string:
+    return strings.to_upper(w)
+
+fn long_enough(w: string) -> int:        # predicate: nonzero -> keep
+    if len(w) >= 4:
+        return 1
+    return 0
+
+fn main():
+    words := ["hi", "tycho", "go", "rust"]
+    shouted := iter_str.map(words, shout)
+    print("map shout[1]  = " + shouted[1] + "\n")                              # TYCHO
+    print("filter len>=4 = " + str(len(iter_str.filter(words, long_enough))) + "\n")  # 2
+    joined := iter_str.reduce(words, "", fn(a: string, b: string) -> string: a + b)
+    print("reduce concat = " + joined + "\n")                                  # hitychogorust

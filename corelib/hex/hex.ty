@@ -1,0 +1,65 @@
+# corelib: hexadecimal encode / decode. Import with `import "core:hex"`, use
+# `hex.encode(s)` / `hex.decode(s)`.
+#
+# Each byte becomes two hex digits. Pure arithmetic over the unsigned 0..255
+# that `s[i]` returns; decoding reuses `core:char`'s `hex_val` classifier.
+#
+# Byte-safety caveat (the same tycho string-model limit as core:base64): `encode`
+# is fully byte-safe (its output is ASCII), but `decode` builds its result with
+# `chr()`, and a tycho string can't hold an interior 0x00 (`chr(0)` appends
+# nothing), so `decode("00")` is "" -- a decoded NUL byte is dropped. decode is
+# exact for text and any non-NUL binary, lossy only for data containing 0x00.
+package hex
+import "core:char"
+
+# A nibble (0..15) -> its hex-digit byte. `upper` picks 'A'..'F' over 'a'..'f'.
+fn hex_digit(n: int, upper: bool) -> int:
+    if n < 10:
+        return 48 + n                  # '0'..'9'
+    if upper:
+        return 65 + (n - 10)           # 'A'..'F'
+    return 97 + (n - 10)               # 'a'..'f'
+
+fn encode_impl(s: string, upper: bool) -> string:
+    out := ""
+    for i in range(len(s)):
+        b := s[i]
+        out = out + chr(hex_digit(b / 16, upper))
+        out = out + chr(hex_digit(b % 16, upper))
+    return out
+
+# Lowercase hex (two digits per byte).
+fn encode(s: string) -> string:
+    return encode_impl(s, false)
+
+# Uppercase hex.
+fn encode_upper(s: string) -> string:
+    return encode_impl(s, true)
+
+# Decode hex to bytes. Lenient: any non-hex byte is skipped (so spaces, ':' and
+# newline separators are ignored, e.g. "de:ad:be:ef"), accepting upper or lower
+# case. A trailing odd nibble is dropped. See the byte-safety caveat above.
+fn decode(s: string) -> string:
+    nibs := []int
+    for i in range(len(s)):
+        v := char.hex_val(s[i])
+        if v >= 0:
+            push(nibs, v)
+    out := ""
+    m := len(nibs)
+    j := 0
+    for j + 2 <= m:
+        out = out + chr(nibs[j] * 16 + nibs[j + 1])
+        j = j + 2
+    return out
+
+# True if `s` is a clean hex string: an even number of digits, all hex, with no
+# separators. (`decode` is more lenient; this is the strict check.)
+fn is_valid(s: string) -> bool:
+    n := len(s)
+    if n % 2 != 0:
+        return false
+    for i in range(n):
+        if char.hex_val(s[i]) < 0:
+            return false
+    return true

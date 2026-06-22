@@ -1,0 +1,7 @@
+# An unknown string escape -- here `\ ` (backslash-space) -- is invalid: only
+# \n \t \\ \" are valid string escapes. tychoc rejected this at lex time, but
+# tychoc0 silently ACCEPTED it (fail-open: it skipped the escaped byte without
+# validating, then emitted a C string literal gcc would mangle). The reject-fuzzer
+# surfaced it as an accept/reject divergence (divergence_6). Both lexers now reject.
+fn main():
+    print("oops\ here\n")

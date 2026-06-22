@@ -1,9 +1,9 @@
-/* A thin C shim adapting SQLite's out-param / callback API into hier-friendly
+/* A thin C shim adapting SQLite's out-param / callback API into tycho-friendly
  * signatures (handles as ptr, results by return value). This is the `*_shim.c`
- * companion-file pattern (FFI Stage 3, `--shim`): hier's FFI can't express
+ * companion-file pattern (FFI Stage 3, `--shim`): tycho's FFI can't express
  * `sqlite3**` out-params, so the shim returns the handle instead.
  *
- * Build:  hierc demo.hi -o demo --shim sqlite_shim.c --link sqlite3
+ * Build:  tychoc demo.ty -o demo --shim sqlite_shim.c --link sqlite3
  * (or --pkg sqlite3 instead of --link). */
 #include <sqlite3.h>
 #include <stddef.h>
@@ -34,7 +34,7 @@ long sx_step(void *stmt) {                          /* 1 = a row is ready, 0 = d
 long sx_col_int(void *stmt, long i)  { return sqlite3_column_int((sqlite3_stmt *)stmt, (int)i); }
 
 const char *sx_col_text(void *stmt, long i) {       /* the pointer is valid only until the next
-                                                     * step/finalize — hier arena-copies it on
+                                                     * step/finalize — tycho arena-copies it on
                                                      * return, so the copy outlives the cursor. */
     const unsigned char *t = sqlite3_column_text((sqlite3_stmt *)stmt, (int)i);
     return t ? (const char *)t : "";

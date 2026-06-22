@@ -1,0 +1,33 @@
+# Channel pipeline: 1 producer -> bounded Channel(string, 256) -> 4 consumers.
+# tycho is the only contender that DEEP-COPIES every payload twice (into the
+# slot arena on send, into the receiver's arena on recv) -- the price of value
+# semantics with zero GC and zero lifetime rules. The others share the bytes:
+# C passes raw pointers, Go shares the string body under its GC, Rust moves
+# ownership. Checksum: total payload length over 1e6 "item-<i>" strings.
+fn producer(ch: Channel(string), n: int) -> int:
+    for i in range(n):
+        ch.send("item-" + str(i))
+    return n
+
+fn consumer(ch: Channel(string)) -> int:
+    count := 0
+    for true:
+        match recv(ch):
+            Some(s):
+                count = count + len(s)
+            None:
+                return count
+    return count
+
+fn main():
+    ch := channel(string, 256)
+    c1 := spawn consumer(ch)
+    c2 := spawn consumer(ch)
+    c3 := spawn consumer(ch)
+    c4 := spawn consumer(ch)
+    p := spawn producer(ch, 1000000)
+    n := wait(p)
+    close(ch)
+    total := wait(c1) + wait(c2) + wait(c3) + wait(c4)
+    if n > 0:
+        print(str(total))

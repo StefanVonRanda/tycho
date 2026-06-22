@@ -1,8 +1,0 @@
-# The same invalid escape `\ ` in an f-string's LITERAL part -- a separate lexer
-# path in hierc0 (the f"..." scanner) that had the identical fail-open gap. hierc
-# rejects it; hierc0 now does too. (A bad escape in a string INSIDE an f-string
-# hole already rejected in both -- the hole re-lexes through the regular string
-# path -- so this locks the literal-part path specifically.)
-fn main():
-    x := 1
-    print(f"oops\ {x}\n")

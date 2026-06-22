@@ -1,6 +1,6 @@
-/* Companion C for examples/snake/snake.hi, linked via `hierc --shim`. Provides raw
- * (non-canonical, non-blocking) terminal input + a millisecond sleep, which hier has
- * no builtins for. Signatures match hier's extern emission: hier `int` == C `long`.
+/* Companion C for examples/snake/snake.ty, linked via `tychoc --shim`. Provides raw
+ * (non-canonical, non-blocking) terminal input + a millisecond sleep, which tycho has
+ * no builtins for. Signatures match tycho's extern emission: tycho `int` == C `long`.
  * Only the interactive `./snake play` mode calls these; the deterministic demo does
  * not, so it stays tty-independent. */
 #define _DEFAULT_SOURCE 1   /* expose usleep / tcgetattr even under a strict -std=c11 */

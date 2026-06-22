@@ -1,47 +1,47 @@
 {
-  "name": "hier",
-  "displayName": "Hier",
-  "description": "Hier language support: syntax highlighting + live diagnostics via hier-lsp.",
+  "name": "tycho",
+  "displayName": "Tycho",
+  "description": "Tycho language support: syntax highlighting + live diagnostics via tycho-lsp.",
   "version": "0.0.1",
-  "publisher": "hier",
+  "publisher": "tycho",
   "license": "SEE LICENSE IN ../../LICENSE",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages"],
-  "activationEvents": ["onLanguage:hier"],
+  "activationEvents": ["onLanguage:tycho"],
   "main": "./extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "hier",
-        "aliases": ["Hier", "hier"],
-        "extensions": [".hi"],
+        "id": "tycho",
+        "aliases": ["Tycho", "tycho"],
+        "extensions": [".ty"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "hier",
-        "scopeName": "source.hier",
-        "path": "./syntaxes/hier.tmLanguage.json"
+        "language": "tycho",
+        "scopeName": "source.tycho",
+        "path": "./syntaxes/tycho.tmLanguage.json"
       }
     ],
     "configuration": {
-      "title": "Hier",
+      "title": "Tycho",
       "properties": {
-        "hier.lspPath": {
+        "tycho.lspPath": {
           "type": "string",
-          "default": "hier-lsp",
-          "description": "Path to the hier-lsp language server binary (built by `make hier-lsp`)."
+          "default": "tycho-lsp",
+          "description": "Path to the tycho-lsp language server binary (built by `make tycho-lsp`)."
         },
-        "hier.compilerPath": {
+        "tycho.compilerPath": {
           "type": "string",
-          "default": "hierc",
-          "description": "Path to the hier compiler the server runs for diagnostics (passed as HIERC)."
+          "default": "tychoc",
+          "description": "Path to the tycho compiler the server runs for diagnostics (passed as TYCHOC)."
         },
-        "hier.enableServer": {
+        "tycho.enableServer": {
           "type": "boolean",
           "default": true,
-          "description": "Run hier-lsp for live diagnostics. Disable for highlighting only."
+          "description": "Run tycho-lsp for live diagnostics. Disable for highlighting only."
         }
       }
     }

@@ -1,2 +1,2 @@
-tests/diag/dym_type.hi:5: error: unknown type 'Pointt'; did you mean 'Point'?
+tests/diag/dym_type.ty:5: error: unknown type 'Pointt'; did you mean 'Point'?
      5 |     q: Pointt = p

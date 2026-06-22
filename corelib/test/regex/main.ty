@@ -1,0 +1,26 @@
+# corelib test: exercises core:regex (POSIX ERE via the auto-discovered C shim).
+# All three paths (tychoc, tychoc0 --bundle, standalone tychoc0) must agree; the
+# harness links corelib/regex/regex_shim.c (no string literals in f-string holes,
+# so match args are passed to normal calls and the bools/ints interpolated).
+package main
+import "core:regex"
+
+fn main():
+    re := regex.compile("[0-9]+")
+    m1 := regex.is_match(re, "abc123")
+    m2 := regex.is_match(re, "xyz")
+    f1 := regex.find(re, "abc123")
+    e1 := regex.find_end(re, "abc123")
+    sub := regex.matched(re, "ab12cd34")
+    print(f"ok={regex.ok(re)} m1={m1} m2={m2} find={f1} end={e1}\n")
+    print("matched=" + sub + "\n")
+    # an anchored alternation
+    re2 := regex.compile("^(foo|bar)$")
+    a1 := regex.is_match(re2, "foo")
+    a2 := regex.is_match(re2, "foobar")
+    print(f"alt={a1},{a2}\n")
+    regex.release(re)
+    regex.release(re2)
+    # a bad pattern compiles to a null handle
+    bad := regex.compile("[")
+    print(f"bad_ok={regex.ok(bad)}\n")

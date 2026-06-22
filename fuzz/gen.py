@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Type-directed random Hier program generator for soundness fuzzing.
+# Type-directed random Tycho program generator for soundness fuzzing.
 # Emits a well-typed, deterministic, terminating program that stresses the
 # arena/value-semantics paths: copy-binds (`b := a`), heap built in loops/blocks,
 # pushes, struct/array nesting, returns, mut, match. It accumulates an int
@@ -8,7 +8,7 @@
 # It ALSO emits value-semantics self-checks (the `vscheck` kind): copy a heap
 # value, mutate the COPY, and assert the ORIGINAL is unchanged, calling die() if
 # not. These catch deep-copy/aliasing miscompiles present in BOTH compilers --
-# which the hierc-vs-hierc0 differential structurally cannot, since the two would
+# which the tychoc-vs-tychoc0 differential structurally cannot, since the two would
 # agree on the same wrong answer; the self-check turns such a bug into a fault.
 # Types covered: int, float, string, char, arrays ([int]/[string]/[float]),
 # structs, recursive enums, Option(int), Result([int], string), (int, string)
@@ -18,7 +18,7 @@
 # to_int), and nothing is emitted that can fault at runtime in a valid program
 # (e.g. array slices use only whole-array forms, since OOB array slices exit(1)).
 #
-# Usage: gen.py <seed>   -> a .hi program on stdout
+# Usage: gen.py <seed>   -> a .ty program on stdout
 import sys, random
 
 SCALARS = ["int", "string"]
@@ -289,11 +289,11 @@ class Gen:
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use", "opt_res_eq", "map_in"]
-        # constructs hierc0 historically miscompiled -- keep the class covered:
+        # constructs tychoc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
         # self-referential shadow decls (`x := f(x)` in a nested scope) -- the RHS
         # reads the ENCLOSING binding, so codegen must evaluate it into a temp
-        # before the new local exists. hierc once segfaulted on the lambda-capture
+        # before the new local exists. tychoc once segfaulted on the lambda-capture
         # variant (captures live on the lifted proc, not in lhs/rhs/args).
         kinds += ["shadow", "shadow"]
         # concurrency (CC-1..5) + bidirectional inference (B-0..3) coverage.
@@ -489,8 +489,8 @@ class Gen:
             return
         if k == "closure":             # a lambda value (closure): capture BY VALUE, call, fold into the checksum.
             # The mutate-then-call variants are value-semantics probes: a closure
-            # captures a COPY, so the result must not see the later mutation. hierc
-            # and hierc0 must agree (differential) and ASan/LSan must stay clean
+            # captures a COPY, so the result must not see the later mutation. tychoc
+            # and tychoc0 must agree (differential) and ASan/LSan must stay clean
             # (the env lives in the function arena, freed on return; never escapes).
             r = self.r.random()
             f = self.fresh("cl")
@@ -574,7 +574,7 @@ class Gen:
             # If a deep-copy/aliasing bug makes the copy share the original's
             # storage, mutating the copy changes the original -> _s1 != _s0 -> die().
             # This catches value-semantics miscompiles present in BOTH compilers,
-            # which the hierc-vs-hierc0 differential structurally cannot (they would
+            # which the tychoc-vs-tychoc0 differential structurally cannot (they would
             # agree on the same wrong answer). die() exits 1 -> the runner flags it.
             if vs_map and (not (vs_arr or vs_struct) or self.r.random() < 0.34):
                 # #2: mutate a COPIED map in place via m[k]; the original must not move.
@@ -619,7 +619,7 @@ class Gen:
             env[b] = t0
             return
 
-        if k == "soa_use":                          # SOA core ops (the hierc0-supported subset:
+        if k == "soa_use":                          # SOA core ops (the tychoc0-supported subset:
             n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
             s = self.fresh("sp"); kk = self.fresh("k"); g = self.fresh("g"); ii = self.fresh("i")
             self.emit(ind, s + " := soa []SoaP")
@@ -714,8 +714,8 @@ class Gen:
             return
         if k == "slice":                            # owning sub-copy: b := v[lo:hi]
             n0, t0 = self.r.choice(slice_vars)
-            # string slices CLAMP out-of-range bounds (hier_str_substr) -> any form is safe.
-            # array slices ERROR + exit(1) on OOB (hierc.c E_SLICE) -> only whole-array
+            # string slices CLAMP out-of-range bounds (tycho_str_substr) -> any form is safe.
+            # array slices ERROR + exit(1) on OOB (tychoc.c E_SLICE) -> only whole-array
             # forms ([:], [0:], both = len) are guaranteed in-bounds at unknown runtime length.
             form = self.r.choice([":", "0:", ":1", "0:1"]) if t0 == "string" else self.r.choice([":", "0:"])
             n = self.fresh("sl")
@@ -810,7 +810,7 @@ class Gen:
             # `f"...{e}..."` lowers to str()-of-each-hole concatenated with the literal
             # segments. Fold the result LENGTH into the checksum: a miscompiled desugar
             # (wrong str(), a dropped/reordered segment or hole) shifts the length, which
-            # the hierc-vs-hierc0 differential catches; ASan catches a bad concat. Holes
+            # the tychoc-vs-tychoc0 differential catches; ASan catches a bad concat. Holes
             # are int vars / an int expr / a string var ONLY -- a string LITERAL inside a
             # hole would terminate the f-string at the lexer.
             iv = self.r.choice(int_vars)
@@ -862,7 +862,7 @@ class Gen:
             benv = dict(env); benv[i] = "int"
             if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
                 bc = self.r.choice(["continue", "break"])   # the loop-iteration arena (and the
-                ls = self.fresh("ls")                       # if-block arena in hierc0) must free
+                ls = self.fresh("ls")                       # if-block arena in tychoc0) must free
                 self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1,4)) + ")")  # on the jump
                 self.emit(ind+1, "acc = acc + len(" + ls + ")")
                 self.emit(ind+1, "if " + i + " % 2 == 1:")

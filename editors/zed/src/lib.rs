@@ -1,17 +1,17 @@
-// Zed extension for Hier. Highlighting comes from the tree-sitter grammar +
-// languages/hier/highlights.scm (declarative); this code only tells Zed how to
-// launch the language server (hier-lsp) so .hi files get live diagnostics.
+// Zed extension for Tycho. Highlighting comes from the tree-sitter grammar +
+// languages/tycho/highlights.scm (declarative); this code only tells Zed how to
+// launch the language server (tycho-lsp) so .ty files get live diagnostics.
 //
 // Compiled to WASM by Zed. If the build fails on the API, bump
 // `zed_extension_api` in Cargo.toml to match your Zed version (the trait shape
 // has changed across versions); see README.md.
 use zed_extension_api as zed;
 
-struct HierExtension;
+struct TychoExtension;
 
-impl zed::Extension for HierExtension {
+impl zed::Extension for TychoExtension {
     fn new() -> Self {
-        HierExtension
+        TychoExtension
     }
 
     fn language_server_command(
@@ -21,12 +21,12 @@ impl zed::Extension for HierExtension {
     ) -> zed::Result<zed::Command> {
         // Find the server (and the compiler it shells out to) on the worktree PATH.
         let server = worktree
-            .which("hier-lsp")
-            .ok_or_else(|| "hier-lsp not found on PATH (build it with `make hier-lsp`)".to_string())?;
+            .which("tycho-lsp")
+            .ok_or_else(|| "tycho-lsp not found on PATH (build it with `make tycho-lsp`)".to_string())?;
 
         let mut env = Vec::new();
-        if let Some(hierc) = worktree.which("hierc") {
-            env.push(("HIERC".to_string(), hierc));
+        if let Some(tychoc) = worktree.which("tychoc") {
+            env.push(("TYCHOC".to_string(), tychoc));
         }
 
         Ok(zed::Command {
@@ -37,4 +37,4 @@ impl zed::Extension for HierExtension {
     }
 }
 
-zed::register_extension!(HierExtension);
+zed::register_extension!(TychoExtension);

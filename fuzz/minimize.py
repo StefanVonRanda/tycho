@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-# Shrink a failing program (fuzz/findings/seed_N.hi) while preserving the
-# hierc0-under-ASan use-after-free, by greedily deleting statement blocks
+# Shrink a failing program (fuzz/findings/seed_N.ty) while preserving the
+# tychoc0-under-ASan use-after-free, by greedily deleting statement blocks
 # (a line + its more-indented continuation). A deletion that breaks compilation
 # or kills the fault is rejected, so the result stays a valid, minimal repro.
 #
-#   python3 fuzz/minimize.py fuzz/findings/seed_690.hi
+#   python3 fuzz/minimize.py fuzz/findings/seed_690.ty
 import subprocess, sys, os, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HIERC = os.path.join(REPO, "hierc")
+TYCHOC = os.path.join(REPO, "tychoc")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0")
 TMP = tempfile.mkdtemp()
 H0 = os.path.join(TMP, "h0")
-subprocess.run([HIERC, os.path.join(REPO, "compiler", "hierc0.hi"), "-o", H0], check=True)
+subprocess.run([TYCHOC, os.path.join(REPO, "compiler", "tychoc0.ty"), "-o", H0], check=True)
 
 def faults(src):
-    p = os.path.join(TMP, "p.hi"); c = os.path.join(TMP, "p.c"); e = os.path.join(TMP, "p")
+    p = os.path.join(TMP, "p.ty"); c = os.path.join(TMP, "p.c"); e = os.path.join(TMP, "p")
     open(p, "w").write(src)
     with open(p) as fi, open(c, "w") as fo:
         if subprocess.run([H0], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL).returncode != 0:

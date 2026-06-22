@@ -11,30 +11,30 @@
 #                             elements per iteration (elements live in the block
 #                             arena). Before the element-residual fix the
 #                             substrings were malloc'd and leaked (~368 MB at
-#                             this N under hierc0); bound 32 MB.
+#                             this N under tychoc0); bound 32 MB.
 #   nestarr_build peak RSS  — a loop-local [[int]] built by push frees its inner
 #                             buffers per iteration (nested-array elements live in
 #                             the block arena, deep-copied on copy). Before the
 #                             nested-element fix the inner [int] buffers were
-#                             malloc'd and leaked (~108 MB at this N under hierc0);
+#                             malloc'd and leaked (~108 MB at this N under tychoc0);
 #                             bound 32 MB.
 #   structarr_buildpeak RSS  — a loop-local [Item] (Item has a string field) built
 #                             by push frees its struct elements + their string
 #                             fields per iteration. Before the struct-element fix,
 #                             struct construction built string fields with owner 0
 #                             (malloc/immortal), leaking every iteration (~184 MB
-#                             at this N under hierc0); bound 32 MB.
+#                             at this N under tychoc0); bound 32 MB.
 #   optarr_build  peak RSS  — a loop-local [Option(int)] built by push frees its
 #                             option boxes per iteration (boxes re-homed into the
 #                             array's block arena). Before the option-element fix
 #                             the boxes were malloc'd (owner 0) and leaked (~62 MB
-#                             at this N under hierc0); bound 32 MB.
+#                             at this N under tychoc0); bound 32 MB.
 #   inout_fill    peak RSS  — a callee pushes into an `mut [int]` whose array
 #                             lives in the caller's per-iteration block arena; with
 #                             the home arena threaded (the _ina_ param), the grown
 #                             buffer frees each iteration. Before the threading,
 #                             owner_arena_of(mut)=0 grew it via malloc and leaked
-#                             (~798 MB at this N under hierc0); bound 32 MB.
+#                             (~798 MB at this N under tychoc0); bound 32 MB.
 #   loop_scratch  peak RSS  — loop scratch arena resets, so memory is constant
 #                             over 5M iterations (bound 32 MB).
 #   map_accum     peak RSS  — map accumulator reuses its table (pure deep-copy
@@ -77,8 +77,8 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc — run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -93,7 +93,7 @@ printf '%-14s %10s %8s   %s\n' "bench" "peakRSS" "time" "result"
 # run_bench <name> <expected-output> <metric: rss|time> <limit> <unit-label>
 run_bench() {
     name="$1"; exp="$2"; metric="$3"; limit="$4"; ulabel="$5"
-    if ! "$HIERC" "bench/$name.hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
+    if ! "$TYCHOC" "bench/$name.ty" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
         printf '%-14s %10s %8s   FAIL (transpile)\n' "$name" "-" "-"; fail=1; return
     fi
     if ! $CC -O2 -std=c11 -o "$TMP/$name" "$TMP/$name.c" 2>"$TMP/$name.log"; then

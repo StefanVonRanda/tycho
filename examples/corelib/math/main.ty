@@ -1,0 +1,13 @@
+# Example: core:math -- integer utility functions.
+# Run via examples/corelib/run.sh (which sets TYCHO_CORELIB).
+package main
+import "core:math"
+
+fn main():
+    print("abs(-7)         = " + str(math.abs(0 - 7)) + "\n")
+    print("clamp(15, 0, 9) = " + str(math.clamp(15, 0, 9)) + "\n")
+    print("imin(3, 8)      = " + str(math.imin(3, 8)) + "\n")
+    print("imax(3, 8)      = " + str(math.imax(3, 8)) + "\n")
+    print("gcd(48, 36)     = " + str(math.gcd(48, 36)) + "\n")
+    print("ipow(2, 10)     = " + str(math.ipow(2, 10)) + "\n")
+    print("sign(-42)       = " + str(math.sign(0 - 42)) + "\n")

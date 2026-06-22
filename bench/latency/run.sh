@@ -1,14 +1,14 @@
 #!/bin/sh
 # Latency / GC-pause predictability. A steadily-churning loop (2000 rounds x 100k
-# working set, discarded each round). hier reclaims with one O(1) arena reset per
+# working set, discarded each round). tycho reclaims with one O(1) arena reset per
 # round, C frees — both with NO GC and zero stop-the-world pause. Go's GC must
 # collect the garbage; it self-reports its collection count + total pause time.
-# The point: hier gets C's pause-free predictability WITHOUT manual frees. Same
+# The point: tycho gets C's pause-free predictability WITHOUT manual frees. Same
 # checksum across langs. peak RSS + wall via bench/peakrss.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 D=bench/latency
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -25,7 +25,7 @@ meas() {  # <label> <binary> <gc?>
     printf '  %-5s %6s MB %6s ms   GC: %-32s out=%s\n' "$1" "$rss" "$ms" "$gc" "$out"
     if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "    ^ CHECKSUM MISMATCH"; FAIL=1; fi
 }
-$HIERC "$D/latency.hi" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O3 -o "$T/lh" "$T/lh.c" -lm; meas hier "$T/lh" nogc
+$TYCHOC "$D/latency.ty" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O3 -o "$T/lh" "$T/lh.c" -lm; meas tycho "$T/lh" nogc
 $CC -O3 -o "$T/lc" "$D/latency.c"; meas C "$T/lc" nogc
 if command -v go >/dev/null 2>&1; then cp "$D/latency.go" "$T/lg.go" && ( cd "$T" && go build -o lgo lg.go 2>/dev/null ); meas Go "$T/lgo" gc; fi
-[ "$FAIL" = 0 ] && echo "latency: ok (checksums agree; hier/C have zero GC pause)" || { echo "latency: FAIL"; exit 1; }
+[ "$FAIL" = 0 ] && echo "latency: ok (checksums agree; tycho/C have zero GC pause)" || { echo "latency: FAIL"; exit 1; }

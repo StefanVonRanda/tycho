@@ -1,0 +1,108 @@
+# A parser-combinator library in Tycho — the closures dogfood that found (and now
+# exercises the fix for) the fn-value capture bug. A "parser" is a closure
+# `fn(string, int) -> PR`; combinators are higher-order functions that capture
+# sub-parsers and return new parser closures. Expression-bodied lambdas wrap a
+# named helper so the closure body stays a single expression while the real work
+# lives in an ordinary function.
+
+struct PR:                          # parse result
+    ok: bool
+    val: string                     # the matched text
+    pos: int                        # next position
+
+# match one byte satisfying pred -- HIGHER-ORDER: captures the predicate closure
+fn sat(pred: fn(int) -> bool) -> fn(string, int) -> PR:
+    return fn(s: string, p: int) -> PR: sat_run(pred, s, p)
+
+fn sat_run(pred: fn(int) -> bool, s: string, p: int) -> PR:
+    if p < len(s) and pred(s[p]):
+        return PR(true, substr(s, p, p + 1), p + 1)
+    return PR(false, "", p)
+
+# match `p` zero or more times, concatenating -- captures the sub-parser closure
+fn many(p: fn(string, int) -> PR) -> fn(string, int) -> PR:
+    return fn(s: string, pos: int) -> PR: many_run(p, s, pos)
+
+fn many_run(p: fn(string, int) -> PR, s: string, pos: int) -> PR:
+    acc := ""
+    cur := pos
+    for tick in range(0, 1000000):
+        r := p(s, cur)
+        if not r.ok or r.pos == cur:     # failed, or matched empty -> stop (no infinite loop)
+            break
+        acc = acc + r.val
+        cur = r.pos
+    return PR(true, acc, cur)
+
+# one or more
+fn many1(p: fn(string, int) -> PR) -> fn(string, int) -> PR:
+    return fn(s: string, pos: int) -> PR: many1_run(p, s, pos)
+
+fn many1_run(p: fn(string, int) -> PR, s: string, pos: int) -> PR:
+    r := many_run(p, s, pos)
+    if len(r.val) == 0:
+        return PR(false, "", pos)
+    return r
+
+# p1 then p2, concatenating -- captures TWO sub-parser closures
+fn seq(p1: fn(string, int) -> PR, p2: fn(string, int) -> PR) -> fn(string, int) -> PR:
+    return fn(s: string, pos: int) -> PR: seq_run(p1, p2, s, pos)
+
+fn seq_run(p1: fn(string, int) -> PR, p2: fn(string, int) -> PR, s: string, pos: int) -> PR:
+    r1 := p1(s, pos)
+    if not r1.ok:
+        return r1
+    r2 := p2(s, r1.pos)
+    if not r2.ok:
+        return r2
+    return PR(true, r1.val + r2.val, r2.pos)
+
+# p1 or, on failure, p2
+fn alt(p1: fn(string, int) -> PR, p2: fn(string, int) -> PR) -> fn(string, int) -> PR:
+    return fn(s: string, pos: int) -> PR: alt_run(p1, p2, s, pos)
+
+fn alt_run(p1: fn(string, int) -> PR, p2: fn(string, int) -> PR, s: string, pos: int) -> PR:
+    r1 := p1(s, pos)
+    if r1.ok:
+        return r1
+    return p2(s, pos)
+
+# transform the matched text -- HIGHER-ORDER: captures the parser AND a fn(string)->string
+fn pmap(p: fn(string, int) -> PR, f: fn(string) -> string) -> fn(string, int) -> PR:
+    return fn(s: string, pos: int) -> PR: pmap_run(p, f, s, pos)
+
+fn pmap_run(p: fn(string, int) -> PR, f: fn(string) -> string, s: string, pos: int) -> PR:
+    r := p(s, pos)
+    if not r.ok:
+        return r
+    return PR(true, f(r.val), r.pos)
+
+fn run_one(label: string, p: fn(string, int) -> PR, input: string):
+    r := p(input, 0)
+    if r.ok:
+        print(label + " on '" + input + "': matched '" + r.val + "', rest '" + substr(input, r.pos, len(input)) + "'\n")
+    else:
+        print(label + " on '" + input + "': FAILED\n")
+
+fn main():
+    is_digit := fn(c: int) -> bool: c >= 48 and c <= 57
+    is_alpha := fn(c: int) -> bool: (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+    is_alnum := fn(c: int) -> bool: (c >= 48 and c <= 57) or (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+    is_space := fn(c: int) -> bool: c == 32
+
+    number := many1(sat(is_digit))                       # captures sat(is_digit)
+    ident := seq(sat(is_alpha), many(sat(is_alnum)))     # nested fn-value captures
+    token := alt(number, ident)                          # captures two parser closures
+    banged := pmap(ident, fn(t: string) -> string: t + "!")   # higher-order transform
+
+    run_one("number", number, "123abc")        # matched '123', rest 'abc'
+    run_one("number", number, "abc")           # FAILED
+    run_one("ident", ident, "foo42 bar")       # matched 'foo42', rest ' bar'
+    run_one("token", token, "x9")              # matched 'x9' (ident branch)
+    run_one("token", token, "42x")             # matched '42' (number branch)
+    run_one("banged", banged, "hello world")   # matched 'hello!', rest ' world'
+
+    # whitespace-separated token list, assembled from combinators at the use site
+    ws := many(sat(is_space))
+    pair := seq(token, ws)
+    run_one("pair", pair, "abc   def")         # matched 'abc   ', rest 'def'

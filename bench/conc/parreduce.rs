@@ -10,7 +10,7 @@ fn main() {
                 let (lo, hi) = (N * c / k, N * (c + 1) / k);
                 s.spawn(move || {
                     let mut acc: i64 = 0;
-                    for i in lo..hi {
+                    for i in lo..ty {
                         acc += (i * 31 + 7) % 1000003;
                     }
                     acc

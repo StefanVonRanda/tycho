@@ -1,0 +1,22 @@
+# corelib test: exercises core:time; the C compiler and tychoc0 must agree (corelib/run.sh).
+# Time values are non-deterministic, so the golden locks RELATIONSHIPS (>=0, >0,
+# monotonic) and the pure unit conversions -- never raw clock/now readings.
+package main
+import "core:time"
+
+fn main():
+    sw := time.start()
+    s := 0
+    for i in range(1000000):
+        s = s + i
+    print(f"sum={s}\n")
+    print(f"elapsed_ns_nonneg={time.elapsed_ns(sw) >= 0}\n")
+    print(f"elapsed_us_nonneg={time.elapsed_us(sw) >= 0}\n")
+    print(f"elapsed_ms_nonneg={time.elapsed_ms(sw) >= 0}\n")
+    print(f"unix_positive={time.unix_secs() > 0}\n")
+    # pure conversions are deterministic
+    print(f"conv={time.ns_to_us(2500)},{time.ns_to_ms(2500000)},{time.ns_to_s(3000000000)}\n")
+    # monotonic: a later reading is never before an earlier one
+    a := time.start()
+    b := time.start()
+    print(f"monotonic={b >= a}\n")

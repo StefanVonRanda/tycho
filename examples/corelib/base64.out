@@ -1,4 +1,4 @@
-encode       = aGVsbG8gaGllcg==
-decode       = hello hier
-encode_url   = aGVsbG8gaGllcg
+encode       = aGVsbG8gdHljaG8=
+decode       = hello tycho
+encode_url   = aGVsbG8gdHljaG8
 decode wraps = hello

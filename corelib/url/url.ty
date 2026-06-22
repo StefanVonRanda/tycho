@@ -1,0 +1,85 @@
+# corelib: URL percent-encoding (RFC 3986). Import with `import "core:url"`,
+# use `url.encode(s)` / `url.decode(s)`.
+#
+# `encode` is component-style (like JS encodeURIComponent): every byte that is
+# not RFC 3986 "unreserved" (A-Z a-z 0-9 - _ . ~) becomes %XX with UPPERCASE hex
+# digits. To build a full URL, encode each component and join with the structural
+# characters yourself. `encode_form` / `decode_form` use the
+# application/x-www-form-urlencoded convention where a space is `+`.
+#
+# Byte-safety caveat (the same tycho string-model limit as core:base64/hex):
+# `encode` is byte-safe (output is ASCII), but `decode` builds its result with
+# `chr()`, and a tycho string can't hold an interior 0x00, so `decode("%00")` is
+# "" -- a decoded NUL byte is dropped. Exact for text and any non-NUL binary.
+#
+# `decode` is lenient: a `%` not followed by two hex digits is emitted literally.
+package url
+import "core:char"
+
+# RFC 3986 unreserved: never percent-encoded.
+fn is_unreserved(c: int) -> bool:
+    if c >= 65 and c <= 90:                # A-Z
+        return true
+    if c >= 97 and c <= 122:               # a-z
+        return true
+    if c >= 48 and c <= 57:                # 0-9
+        return true
+    if c == 45 or c == 95 or c == 46 or c == 126:   # - _ . ~
+        return true
+    return false
+
+fn up_hex(n: int) -> int:                  # nibble (0..15) -> uppercase hex byte
+    if n < 10:
+        return 48 + n                      # '0'..'9'
+    return 65 + (n - 10)                   # 'A'..'F'
+
+fn encode_impl(s: string, plus_space: bool) -> string:
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if is_unreserved(c):
+            out = out + chr(c)
+        elif c == 32 and plus_space:
+            out = out + "+"
+        else:
+            out = out + "%" + chr(up_hex(c / 16)) + chr(up_hex(c % 16))
+    return out
+
+# Percent-encode a component; a space becomes %20.
+fn encode(s: string) -> string:
+    return encode_impl(s, false)
+
+# Encode for application/x-www-form-urlencoded; a space becomes '+'.
+fn encode_form(s: string) -> string:
+    return encode_impl(s, true)
+
+fn decode_impl(s: string, plus_space: bool) -> string:
+    out := ""
+    n := len(s)
+    i := 0
+    for i < n:
+        c := s[i]
+        if c == 37 and i + 2 < n:          # '%' with two following bytes
+            h := char.hex_val(s[i + 1])
+            l := char.hex_val(s[i + 2])
+            if h >= 0 and l >= 0:
+                out = out + chr(h * 16 + l)
+                i = i + 3
+            else:
+                out = out + chr(c)         # malformed escape -> literal '%'
+                i = i + 1
+        elif c == 43 and plus_space:       # '+' -> space (form only)
+            out = out + " "
+            i = i + 1
+        else:
+            out = out + chr(c)
+            i = i + 1
+    return out
+
+# Decode percent-escapes; '+' is left as-is.
+fn decode(s: string) -> string:
+    return decode_impl(s, false)
+
+# Decode application/x-www-form-urlencoded; '+' becomes a space.
+fn decode_form(s: string) -> string:
+    return decode_impl(s, true)

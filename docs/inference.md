@@ -1,48 +1,48 @@
-# Type inference in hier
+# Type inference in tycho
 
-Hier infers most local types without annotations, but it deliberately does
+Tycho infers most local types without annotations, but it deliberately does
 **not** use Hindley-Milner (HM) inference. Instead it uses *bidirectional*
 (local) type inference: bottom-up synthesis for most expressions, plus a
 top-down checking channel that pushes an expected type into the positions
 that need one. There are no type variables and no constraint solver.
 
-This document explains what hier infers, the rules that govern it, and why
+This document explains what tycho infers, the rules that govern it, and why
 HM-style inference was rejected. The reasoning is part of the design: it
-shows why hier's memory model and type-directed features make
+shows why tycho's memory model and type-directed features make
 argument-directed inference a better fit than unification.
 
-> Hier is an experimental, proof-of-concept language. The inference rules
+> Tycho is an experimental, proof-of-concept language. The inference rules
 > here are implemented in both compilers — the C reference compiler
-> (`src/hierc.c`) and the self-hosted compiler (`compiler/hierc0.hi`) — and
+> (`src/tychoc.c`) and the self-hosted compiler (`compiler/tychoc0.ty`) — and
 > are exercised by a differential test suite. This is research-quality
 > work, not a production type system.
 
-## 1. What hier infers today
+## 1. What tycho infers today
 
 Locals are inferred. `x := e` types `x` from `e`, forward-only and
-bottom-up (`resolve_expr` in src/hierc.c; `type_of` in
-compiler/hierc0.hi).
+bottom-up (`resolve_expr` in src/tychoc.c; `type_of` in
+compiler/tychoc0.ty).
 
-Hier also has one *backward* channel: `resolve_exp(e, expected)` pushes an
+Tycho also has one *backward* channel: `resolve_exp(e, expected)` pushes an
 expected type down at specific sites. It is what fixes a bare `None`
 against a declared `Option(T)`, completes partial `Ok(v)`/`Err(e)` Results
 against a function's return type (via the `T_NONE`/`T_OK_PARTIAL`
 sentinels), and types `return` expressions.
 
-So the question is not "inference: yes or no" — hier already has forward
+So the question is not "inference: yes or no" — tycho already has forward
 inference plus a one-step bidirectional channel. HM would add *type
 variables, unification, and let-generalization* on top of that. The rest
 of this document explains why it doesn't.
 
 ## 2. The annotation burden, measured
 
-Across the full corpus (compiler/hierc0.hi, corelib, examples, tests —
-~21k lines of hier):
+Across the full corpus (compiler/tychoc0.ty, corelib, examples, tests —
+~21k lines of tycho):
 
 | annotation kind | count | what HM would do |
 |---|---:|---|
 | `x := e` local decls (already inferred) | 1730 | nothing — already free |
-| fn signatures (params + return) | 586 | could elide — see §4, hier shouldn't |
+| fn signatures (params + return) | 586 | could elide — see §4, tycho shouldn't |
 | empty literals `[]int` / `[]K: V` | 289 | infer from later use — needs only backward flow, not HM |
 | typed decls `x : T = e` | 69 | mostly `Option`/`Result` context-fixing; backward flow covers |
 | bare `None` needing an annotation | 6 | the canonical HM win — six occurrences |
@@ -58,13 +58,13 @@ propagation. Unification machinery is not required for any of it.
 **(a) Generics are explicit, not inferred.** HM's center of gravity is
 let-generalization: `id` gets type `forall a. a -> a` and every use
 instantiates it — so *every* generalizable function silently becomes
-generic. hier's generics are the opposite — **opt-in and explicit** (`$T`),
+generic. tycho's generics are the opposite — **opt-in and explicit** (`$T`),
 inferred by one-directional structural matching and
 monomorphized ([generics.md](generics.md)). HM minus generalization is not
 HM; it is local unification (§4), which bidirectional inference already
 covers without a union-find. HM *with* generalization would make the first
 `fn first(xs): return xs[0]` implicitly generic and demand type variables
-to track it pervasively, whereas hier monomorphizes only the `$T` sites
+to track it pervasively, whereas tycho monomorphizes only the `$T` sites
 the programmer marked. Two consequences follow:
 
 - **monomorphization is fine — it is bounded.** It is the
@@ -78,7 +78,7 @@ the programmer marked. Two consequences follow:
   wrappers, move-on-last-use, recycling, SOA — every load-bearing
   optimization keys on *ground monotypes at every site*. Boxing is the
   thing the whole thesis exists to avoid paying, which is exactly why
-  hier's generics monomorphize.
+  tycho's generics monomorphize.
 
 **(b) Type-directed features break under deferred types.** Resolution in
 both compilers is not a pure annotation pass — it REWRITES the AST using
@@ -96,14 +96,14 @@ bidirectional constraint solver is a notorious source of slow compile
 times.)
 
 **(c) The dual-compiler cost.** Unification needs type variables and a
-substitution (union-find). hierc's `Type` is an interned int — type vars
-are addable. hierc0's types are *strings* (`"Option(int)"`, `"[str]"`);
+substitution (union-find). tychoc's `Type` is an interned int — type vars
+are addable. tychoc0's types are *strings* (`"Option(int)"`, `"[str]"`);
 variables become `"?17"` strings with a substitution map and occurs checks
 over string parsing. Entirely possible — and a large, subtle,
 performance-sensitive component that would have to be built twice and kept
 byte-identical between the two compilers.
 
-**(d) Error quality.** hier invested in diagnostics — caret, source line,
+**(d) Error quality.** tycho invested in diagnostics — caret, source line,
 did-you-mean suggestions. Unification failures surface far from their cause
 ("expected ?3 but got [int]" two functions later); keeping errors local is
 a known hard problem in HM compilers. Forward inference's errors are always
@@ -128,24 +128,24 @@ the corpus prices at well under a hundred sites. **Feasible, not worth
 it.**
 
 Function *parameter* elision (`fn f(x): ...`) is deliberately excluded even
-from this option: signatures are hier's module interface (packages build
+from this option: signatures are tycho's module interface (packages build
 the Sig table from them up front, before bodies), they are what keeps
 errors local, and eliding them re-imports the generalization problem the
 moment two call sites disagree.
 
 ## 5. The model: bidirectional (local) type inference
 
-Hier uses **bidirectional typing** (Pierce & Turner's *Local Type
+Tycho uses **bidirectional typing** (Pierce & Turner's *Local Type
 Inference*, 2000) — the approach taken in practice by Kotlin, Scala,
 TypeScript's contextual typing, and operationally by Zig's result-location
 semantics. Two modes, no type variables ever:
 
 - **synthesis (⇑)** — bottom-up, "what type does this expression have?" —
-  what hier does everywhere today;
+  what tycho does everywhere today;
 - **checking (⇓)** — top-down, "this expression sits in a position whose
   type is known; push that expectation into it."
 
-Hier already runs checking mode in a handful of places — `resolve_exp(e,
+Tycho already runs checking mode in a handful of places — `resolve_exp(e,
 expected)` is what fixes `None` against `Option(T)`, completes partial
 `Ok`/`Err` against return types, and types match payloads. The design
 makes this channel *systematic*: every position with a known destination
@@ -168,7 +168,7 @@ synthesizes).
 | array/map/tuple literals | recurse the expectation into elements | `[None, Some(3)]`, `((1, 2.5), [])` |
 | lambda literals | params + return from the expected `fn` type | `iter.map(xs, fn(x): x * 2)` |
 
-**Why this fits hier where HM doesn't:**
+**Why this fits tycho where HM doesn't:**
 
 - *Ground monotypes at every line.* An expression is typed the moment it is
   visited — synthesized or checked, never deferred. `type_is_heap`,
@@ -191,7 +191,7 @@ packages build the Sig table from them before any body is typed, and they
 are what keeps errors local.
 
 Beyond signatures, the only remaining case is a *bare* incomplete decl with
-no context on the same line — `xs := []` or `t := None`. For these, hier
+no context on the same line — `xs := []` or `t := None`. For these, tycho
 applies a flow-sensitive **block-local grounding** rule (no unification):
 the decl defers, and its first *grounding* use in the same block fixes the
 type retroactively.
@@ -214,20 +214,20 @@ Example: `xs := []` followed later in the block by `push(xs, 3)` grounds
 Anything else that needs the type *before* it is grounded raises the local
 "used before its type can be inferred" error at that use. A block that ends
 with the decl still pending errors at the declaration. There are no type
-variables: this is a flow-sensitive forward scan, not unification — hierc
-keeps a pending registry through its in-order resolve, while hierc0
+variables: this is a flow-sensitive forward scan, not unification — tychoc
+keeps a pending registry through its in-order resolve, while tychoc0
 rewrites the decl to its annotated form via a forward seek in the lift.
 
 ## 7. Summary
 
 - **Full HM: rejected.** Let-generalization is generics by the back door
-  (hier's generics are explicit and monomorphized instead); its escape
+  (tycho's generics are explicit and monomorphized instead); its escape
   hatches are a dual-compiler monomorphization phase or boxing that attacks
   the arena memory model; deferred types break the resolve-time
   type-directed rewrites in both compilers.
 - **Local (function-body) unification: feasible, declined.** Most of HM's
   cost for dozens of sites of benefit.
-- **Bidirectional local inference: adopted.** It is hier's existing
+- **Bidirectional local inference: adopted.** It is tycho's existing
   `resolve_exp` channel made systematic — no type variables, no solver,
   ground monotypes at every line, eager dispatch, local errors. Inference
   spreads through the cases described above (empty literals, int-literal

@@ -1,0 +1,32 @@
+# Newtype-keyed maps: a newtype over string or int is a valid map key.
+# The map type carries the DECLARED key (so a raw base value is rejected,
+# see tests/reject/newtype_key_mix.ty); storage and hashing are the base's.
+# keys() returns [K] with K still wrapped. Always a composite map.
+
+type UserId = string
+type Slot = int
+
+fn main():
+    scores : [UserId: int] = []
+    scores[UserId("ana")] = 10
+    scores[UserId("bo")] = 7
+    print(str(map_get(scores, UserId("ana"), 0)) + "\n")
+    print(str(len(scores)) + "\n")
+    ks := keys(scores)
+    total := 0
+    i := 0
+    for i < len(ks):
+        total = total + map_get(scores, ks[i], 0)
+        i = i + 1
+    print(str(total) + "\n")
+    names : [Slot: string] = []
+    names[Slot(3)] = "three"
+    s3 := Slot(3)
+    print(map_get(names, s3, "?") + "\n")
+    if Slot(3) in names:
+        print("has 3\n")
+    delete names[Slot(3)]
+    print(str(len(names)) + "\n")
+    counts : [UserId: int] = []
+    counts[UserId("x")] = 5
+    print(str(map_get(counts, UserId("x"), 0)) + "\n")

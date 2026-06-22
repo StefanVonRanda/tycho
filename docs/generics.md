@@ -1,6 +1,6 @@
 # Generics (monomorphized)
 
-> Generics in Hier are monomorphized parametric `fn`s, `struct`s, and
+> Generics in Tycho are monomorphized parametric `fn`s, `struct`s, and
 > `enum`s: generic *functions*, generic-struct *construction* and
 > *type-position* annotations, struct *dependency-ordering* (`Box(Point)`),
 > *structured type-param patterns* (`fn first(xs: [$T]) -> Option(T)`),
@@ -14,7 +14,7 @@
 
 ## 1. The shape in one screen
 
-Hier already has *built-in* parametric types — `Option(T)`, `Result(T, E)`,
+Tycho already has *built-in* parametric types — `Option(T)`, `Result(T, E)`,
 `[T]`, `[K: V]` — that the compiler stamps out one concrete copy per concrete
 inner type. Generics open that same mechanism to user `fn`s and `struct`s. They
 are **monomorphized**: every instantiation is ordinary concrete code, chosen at
@@ -75,7 +75,7 @@ letters, to read distinctly from concrete types.
 
 ## 3. Inference: argument-directed, not Hindley-Milner
 
-Hier deliberately has **no Hindley-Milner**, no unification variables, no
+Tycho deliberately has **no Hindley-Milner**, no unification variables, no
 constraint solver (see [docs/inference.md](inference.md)). Generic inference
 keeps that promise: it is a one-directional **structural match** of each
 concrete argument type against its parameter's type *pattern*, binding the
@@ -117,18 +117,18 @@ Monomorphization is built on the same registry the compiler already runs for
 its built-in parametric types. The compiler already:
 
 - **interns** each concrete parametric type once — `opt_of(inner)`,
-  `res_of(ok, err)`, `arr_of(elem)`, `mapc_of(k, v)` in `src/hierc.c` assign a
+  `res_of(ok, err)`, `arr_of(elem)`, `mapc_of(k, v)` in `src/tychoc.c` assign a
   stable id per concrete inner type and never duplicate it;
 - **emits** one monomorphic C struct + its helpers (constructor, deep-copy,
   `==`, match) per interned type, in a deterministic id order
-  (`HierOpt<id>`, `HierRes<id>`, `HierArrC<id>`, `HierMapC<id>` and the
-  `hier_eq_*`/`*_copy` bodies);
+  (`TychoOpt<id>`, `TychoRes<id>`, `TychoArrC<id>`, `TychoMapC<id>` and the
+  `tycho_eq_*`/`*_copy` bodies);
 - **mangles** a concrete type into a C identifier (`Arr_<elem>_push`,
-  `hier_map_<fn>_has`, `hier_eq_S_<struct>`), and
+  `tycho_map_<fn>_has`, `tycho_eq_S_<struct>`), and
 - **dispatches** every operation (`push`, `Some(x)`, `m[k]`, `==`) to the right
   monomorphic helper from the operand's concrete type.
 
-The self-hosted `compiler/hierc0.hi` mirrors all of this on string-typed type
+The self-hosted `compiler/tychoc0.ty` mirrors all of this on string-typed type
 names (`mangle`, `mangle_type`, the `Arr_*`/`Map_*` families).
 
 Generics add **one pass** on top: at a call site (function) or a type use
@@ -144,7 +144,7 @@ already load-bearing for `Option`/`Result`/`[T]`/maps.
 ## 5. Constraints: checked at instantiation
 
 A generic body uses operations on `T` (`xs[0] + 1`, `a == b`, `str(x)`). Rather
-than a trait/type-class system up front, Hier checks these the way C++ templates
+than a trait/type-class system up front, Tycho checks these the way C++ templates
 (pre-concepts) and Odin (sans `where`) do: **substitute, then type-check the
 concrete body.** If `T = string` reaches `xs[0] + 1`, instantiation fails with
 the ordinary "cannot add string and int" error, attributed to the call site that
@@ -162,7 +162,7 @@ fn sum(xs: [$T]) -> T where numeric(T):
 ```
 
 The `where` predicates are a *fixed, compiler-known* set (not user-defined type
-classes — consistent with Hier's small-surface stance), each defined as exactly
+classes — consistent with Tycho's small-surface stance), each defined as exactly
 the capability the resolver already enforces, over the newtype-resolved base:
 
 - `numeric(T)` — `int` or `float` (supports `+ - * /`).
@@ -198,7 +198,7 @@ empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
    argument type. `fn empty()` is rare; users write `xs := []int` or pass a
    witness. This keeps inference purely argument-directed.
 2. **Explicit type arguments.** Odin passes an explicit `$T: typeid`;
-   Hier already spelled explicit type args for built-in generic *types*
+   Tycho already spelled explicit type args for built-in generic *types*
    (`Option(int)`, `Pair(int, string)`), and now for function calls:
    `name$(T1, ...)`, optionally followed by a value-arg list. `empty$(int)` /
    `empty$(string)` bind the type parameters in declaration order; a return-only
@@ -211,7 +211,7 @@ Two properties make generics a natural fit for a monomorphizing,
 value-semantic language:
 
 1. **The monomorphization registry already exists**
-   ([§4](#4-monomorphization-reuses-the-machinery-that-already-exists)). Hier
+   ([§4](#4-monomorphization-reuses-the-machinery-that-already-exists)). Tycho
    monomorphizes `Option`/`Result`/`[T]`/maps today, with interning, per-type
    emission, mangling, and concrete dispatch. Generics generalize that registry
    to user definitions instead of inventing a new one.
@@ -252,7 +252,7 @@ worth a monomorphization pass that the compiler *already runs* for its built-ins
   registry that feeds the existing per-type emission. UFCS gets generic "methods"
   for free, since `x.f(a)` is already sugar for `f(x, a)`. Constraints checked at
   instantiation ([§5](#5-constraints-checked-at-instantiation)). Current
-  limitation: in hierc0 a generic call nested inside a *declaration's*
+  limitation: in tychoc0 a generic call nested inside a *declaration's*
   initializer isn't instantiation-typed — use the direct call forms; the case
   fails closed (a compile error, never a miscompile).
 - **Generic structs (construction)** (both compilers).
@@ -327,8 +327,8 @@ the rejection cases under `tests/reject/`).
 
 ## 9. Two-compiler determinism
 
-The fixpoint differential requires `hierc` and `hierc0` to emit byte-identical C
-for `hierc0.hi`, and to agree on every fixture. Generics must therefore
+The fixpoint differential requires `tychoc` and `tychoc0` to emit byte-identical C
+for `tychoc0.ty`, and to agree on every fixture. Generics must therefore
 instantiate **deterministically and identically** in both:
 
 - the instantiation key is the `(definition, ordered concrete type args)` tuple,
@@ -350,7 +350,7 @@ Out of scope, to keep the surface small and the model intact:
 - **No variance, no higher-kinded types, no associated types.**
 - **No user-defined type classes / traits** — constraints, if added, are a fixed
   compiler-known predicate set ([§5](#5-constraints-checked-at-instantiation)).
-- **No generic globals** (Hier has no mutable globals anyway).
+- **No generic globals** (Tycho has no mutable globals anyway).
 - **No specialization/overloading** of a generic for particular types — one
   generic body, monomorphized uniformly.
 - **No implicit numeric/`distinct` coercion through `$T`** — a `$T` bound to

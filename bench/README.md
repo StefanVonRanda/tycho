@@ -1,4 +1,4 @@
-# hier benchmarks — the memory model, across the workload space
+# tycho benchmarks — the memory model, across the workload space
 
 The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
 memory and predictable, pause-free reclamation, with no manual frees and no GC** —
@@ -7,15 +7,15 @@ Go (GC), and Koka (Perceus RC) on memory-heavy work, with **byte-identical outpu
 per workload. This file is the map; each row links to a `RESULTS.md` with detail.
 
 All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Build regime:
-each language at its standard release optimization — hier and C at `cc -O3`,
+each language at its standard release optimization — tycho and C at `cc -O3`,
 `rustc -C opt-level=3`, `go build`, `koka -O2` (its max). The authoritative
-numbers under this regime are in each workload's `RESULTS.md`. Both hier
-compilers (the C reference `hierc` and the self-hosted `hierc0`) are measured
+numbers under this regime are in each workload's `RESULTS.md`. Both tycho
+compilers (the C reference `tychoc` and the self-hosted `tychoc0`) are measured
 where shown.
 
 ## Axis 1 — memory (peak RSS)
 
-| workload | what it stresses | hier vs others | verdict | run |
+| workload | what it stresses | tycho vs others | verdict | run |
 |----------|------------------|----------------|---------|-----|
 | **binary-trees** | transient alloc/discard, deep recursion | 25 MB vs C 33, Go 35, Koka 14 | **beats hand-written C** (one arena reset/iter) | `bench-prongB` |
 | **tree-rewrite** | rewrite pass over a tree | 7 MB, lowest with Koka, beats C/Rust/Go | win | `bench-prongB` |
@@ -33,8 +33,8 @@ where shown.
 
 | workload | what it stresses | result | verdict | run |
 |----------|------------------|--------|---------|-----|
-| **latency** | steady churn, pause behavior | hier/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
-| **gcscan** | GC scan cost under a large live set | hier/C never scan; Go cheap at default GOGC, but `GOGC=10` matches hier's RAM only at 2.5× wall | Go faces a memory-vs-CPU tradeoff hier/C don't | `bench-gcscan` |
+| **latency** | steady churn, pause behavior | tycho/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
+| **gcscan** | GC scan cost under a large live set | tycho/C never scan; Go cheap at default GOGC, but `GOGC=10` matches tycho's RAM only at 2.5× wall | Go faces a memory-vs-CPU tradeoff tycho/C don't | `bench-gcscan` |
 
 ## The honest envelope
 
@@ -56,11 +56,11 @@ where shown.
 
 Not cleanly benchmarkable, and why (honest negative space):
 - **Cache locality of pointer-chasing** (a long linked-list traversal). It isn't a
-  hier idiom: value semantics can't move a cursor out of a match-arm borrow
+  tycho idiom: value semantics can't move a cursor out of a match-arm borrow
   (`cur = rest` deep-copies the tail), and a multi-million-deep recursive enum
-  overflows any recursive descent. hier steers you to **arrays** (contiguous in
+  overflows any recursive descent. tycho steers you to **arrays** (contiguous in
   every language → no locality gap) and **bounded-depth trees** (already in
-  `binary-trees`, where the arena's contiguous layout is part of why hier beats C
+  `binary-trees`, where the arena's contiguous layout is part of why tycho beats C
   25 vs 33 MB). So the arena's locality benefit is real but already captured, not a
   separable number.
 - ~~**Concurrency/parallelism**~~ — no longer a gap: `spawn`/`wait`,

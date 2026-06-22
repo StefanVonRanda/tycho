@@ -1,0 +1,14 @@
+# corelib test: exercises core:char; the C compiler and tychoc0 must agree (corelib/run.sh).
+package main
+import "core:char"
+
+fn main():
+    print(f"digit={char.is_digit(53)},{char.is_digit(65)}\n")          # '5' yes, 'A' no
+    print(f"alpha={char.is_alpha(65)},{char.is_alpha(48)}\n")          # 'A','0'
+    print(f"alnum={char.is_alnum(48)},{char.is_alnum(45)}\n")          # '0','-'
+    print(f"case={char.is_upper(65)},{char.is_lower(97)}\n")           # 'A','a'
+    print(f"space={char.is_space(32)},{char.is_space(65)}\n")          # ' ','A'
+    print(f"hex={char.is_hex(70)},{char.is_hex(103)}\n")              # 'F','g'
+    print(f"to_upper={char.to_upper(97)} to_lower={char.to_lower(65)}\n")   # 'a'->65, 'A'->97
+    print(f"digit_val={char.digit_val(55)},{char.digit_val(65)}\n")    # '7'->7, 'A'->-1
+    print(f"hex_val={char.hex_val(57)},{char.hex_val(97)},{char.hex_val(70)}\n")  # '9'->9,'a'->10,'F'->15

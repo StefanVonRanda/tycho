@@ -1,0 +1,139 @@
+# A tiny ray tracer in Tycho — dogfooding the float/math side of the language
+# (the grid games were all-integer). Pure tycho: sqrt is a builtin, no FFI/shim.
+# Vectors are value-semantic structs returned by value; the arena reclaims the
+# per-pixel transients. Renders a few diffuse-shaded spheres on a ground plane
+# under a sky gradient.
+#
+#   tracer        # ASCII-art render to stdout (the golden)
+#   tracer ppm    # a full-colour PPM (P3) to stdout:  tracer ppm > out.ppm
+
+struct Vec3:
+    x: float
+    y: float
+    z: float
+
+struct Ray:
+    orig: Vec3
+    dir: Vec3
+
+struct Sphere:
+    center: Vec3
+    radius: float
+    color: Vec3
+
+fn vadd(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+
+fn vsub(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+
+fn vscale(a: Vec3, t: float) -> Vec3:
+    return Vec3(a.x * t, a.y * t, a.z * t)
+
+fn vmul(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x * b.x, a.y * b.y, a.z * b.z)
+
+fn vdot(a: Vec3, b: Vec3) -> float:
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+fn vlen(a: Vec3) -> float:
+    return sqrt(vdot(a, a))
+
+fn vnorm(a: Vec3) -> Vec3:
+    return vscale(a, 1.0 / vlen(a))
+
+# nearest intersection t along the ray, or -1.0 for a miss
+fn hit_sphere(s: Sphere, r: Ray) -> float:
+    oc := vsub(r.orig, s.center)
+    a := vdot(r.dir, r.dir)
+    hb := vdot(oc, r.dir)                 # half of b
+    c := vdot(oc, oc) - s.radius * s.radius
+    disc := hb * hb - a * c
+    if disc < 0.0:
+        return -1.0
+    return (-hb - sqrt(disc)) / a
+
+fn clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+fn ray_color(r: Ray, spheres: [Sphere], light: Vec3) -> Vec3:
+    best := 1000000.0
+    hi := 0 - 1
+    for k in range(0, len(spheres)):
+        t := hit_sphere(spheres[k], r)
+        if t > 0.001 and t < best:
+            best = t
+            hi = k
+    if hi < 0:                            # sky: vertical gradient white -> blue
+        ud := vnorm(r.dir)
+        tt := 0.5 * (ud.y + 1.0)
+        return vadd(vscale(Vec3(1.0, 1.0, 1.0), 1.0 - tt), vscale(Vec3(0.5, 0.7, 1.0), tt))
+    p := vadd(r.orig, vscale(r.dir, best))
+    n := vnorm(vsub(p, spheres[hi].center))
+    ld := vnorm(vsub(light, p))
+    diff := vdot(n, ld)
+    if diff < 0.0:
+        diff = 0.0
+    amb := 0.2
+    shade := amb + (1.0 - amb) * diff
+    return vscale(spheres[hi].color, shade)
+
+fn build_scene() -> [Sphere]:
+    s := []Sphere
+    push(s, Sphere(Vec3(0.0, -100.5, -1.0), 100.0, Vec3(0.4, 0.8, 0.4)))   # ground
+    push(s, Sphere(Vec3(0.0, 0.0, -1.2), 0.5, Vec3(0.9, 0.3, 0.3)))         # red, centre
+    push(s, Sphere(Vec3(-0.95, 0.0, -1.0), 0.45, Vec3(0.3, 0.4, 0.9)))      # blue, left
+    push(s, Sphere(Vec3(0.95, 0.0, -1.0), 0.45, Vec3(0.9, 0.8, 0.3)))       # yellow, right
+    return s
+
+fn render_ascii(w: int, h: int, spheres: [Sphere], light: Vec3) -> string:
+    ramp := " .:-=+*#%@"
+    aspect := to_float(w) / to_float(h) * 0.62   # chars are ~2x tall as wide
+    out := ""
+    for j in range(0, h):
+        for i in range(0, w):
+            u := (to_float(i) + 0.5) / to_float(w)
+            v := (to_float(j) + 0.5) / to_float(h)
+            px := (2.0 * u - 1.0) * aspect
+            py := 1.0 - 2.0 * v
+            r := Ray(Vec3(0.0, 0.0, 0.0), Vec3(px, py, -1.0))
+            col := ray_color(r, spheres, light)
+            b := 0.299 * col.x + 0.587 * col.y + 0.114 * col.z
+            bi := to_int(b * 9.99)
+            if bi < 0:
+                bi = 0
+            if bi > 9:
+                bi = 9
+            out = out + substr(ramp, bi, bi + 1)
+        out = out + "\n"
+    return out
+
+fn render_ppm(w: int, h: int, spheres: [Sphere], light: Vec3) -> string:
+    aspect := to_float(w) / to_float(h)
+    out := "P3\n" + str(w) + " " + str(h) + "\n255\n"
+    for j in range(0, h):
+        for i in range(0, w):
+            u := (to_float(i) + 0.5) / to_float(w)
+            v := (to_float(j) + 0.5) / to_float(h)
+            px := (2.0 * u - 1.0) * aspect
+            py := 1.0 - 2.0 * v
+            r := Ray(Vec3(0.0, 0.0, 0.0), Vec3(px, py, -1.0))
+            col := ray_color(r, spheres, light)
+            rr := to_int(clamp01(col.x) * 255.0)
+            gg := to_int(clamp01(col.y) * 255.0)
+            bb := to_int(clamp01(col.z) * 255.0)
+            out = out + str(rr) + " " + str(gg) + " " + str(bb) + "\n"
+    return out
+
+fn main():
+    a := args()
+    spheres := build_scene()
+    light := Vec3(2.0, 3.0, 1.0)
+    if len(a) >= 2 and a[1] == "ppm":
+        print(render_ppm(120, 90, spheres, light))
+    else:
+        print(render_ascii(70, 40, spheres, light))

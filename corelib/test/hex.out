@@ -1,10 +1,10 @@
 enc ''   = []
 enc A    = 41
 enc hi   = 6869
-enc hier = 68696572
-dec      = hier
+enc tycho = 747963686f
+dec      = tycho
 dec U/L  = Hi
-dec sep  = hier
+dec sep  = tycho
 dec spc  = hi
 text_rt_ok = 1
 valid dead=1 DEAD=1 odd=0 xyz=0 empty=1

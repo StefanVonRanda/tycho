@@ -1,5 +1,5 @@
 /* Latency angle, C: malloc/free the working set each round -> no GC, predictable.
- * Same checksum as the hier port. */
+ * Same checksum as the tycho port. */
 #include <stdio.h>
 #include <stdlib.h>
 int main(void) {

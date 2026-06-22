@@ -1,13 +1,13 @@
 #!/bin/sh
 # Parallel text indexer head-to-head: the SAME concurrent program in
-# hier / C / Go, measuring peak RSS + wall (bench/peakrss) over an identical
+# tycho / C / Go, measuring peak RSS + wall (bench/peakrss) over an identical
 # synthetic corpus, gated by a cross-language checksum.
 #
 #   gencorpus  writes a deterministic corpus (400 files x 4000 words, 5000-word
 #              vocab) so every language indexes byte-identical input.
-#   index      K=4 workers pull file paths off a channel (hier) / buffered
+#   index      K=4 workers pull file paths off a channel (tycho) / buffered
 #              channel (Go) / mutex work-queue (C), each tallies a LOCAL
-#              term->count map, then main merges. hier deep-copies every worker
+#              term->count map, then main merges. tycho deep-copies every worker
 #              map back across the thread boundary (value semantics, zero GC);
 #              Go shares string bodies under its GC; C owns every byte by hand.
 #
@@ -16,8 +16,8 @@
 # yields one oracle. Best-of-3 wall. Skips any absent toolchain. NOT in make ci.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 D=bench/indexer
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -25,9 +25,9 @@ $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 FAIL=0
 
-# ---- build + generate the corpus (dogfoods hier's write_file builtin) ----
+# ---- build + generate the corpus (dogfoods tycho's write_file builtin) ----
 CORPUS="$T/corpus"; mkdir -p "$CORPUS"
-$HIERC "$D/gencorpus.hi" -o "$T/gencorpus" > "$T/gen_err" 2>&1 || { echo "gencorpus build failed"; cat "$T/gen_err"; exit 2; }
+$TYCHOC "$D/gencorpus.ty" -o "$T/gencorpus" > "$T/gen_err" 2>&1 || { echo "gencorpus build failed"; cat "$T/gen_err"; exit 2; }
 "$T/gencorpus" "$CORPUS" >/dev/null || { echo "corpus generation failed"; exit 2; }
 
 ref=""
@@ -47,8 +47,8 @@ run_one() {                                  # <label> <binary>
 
 printf '  %-6s %10s %10s   %s\n' lang peakRSS time checksum
 
-$HIERC "$D/index.hi" -o "$T/index_hier" > "$T/hier_err" 2>&1 || { echo "indexer: HIER BUILD FAILED"; cat "$T/hier_err"; exit 2; }
-run_one hier "$T/index_hier"
+$TYCHOC "$D/index.ty" -o "$T/index_tycho" > "$T/tycho_err" 2>&1 || { echo "indexer: TYCHO BUILD FAILED"; cat "$T/tycho_err"; exit 2; }
+run_one tycho "$T/index_tycho"
 
 $CC -O3 -pthread "$D/index.c" -o "$T/index_c" 2>/dev/null
 run_one C "$T/index_c"

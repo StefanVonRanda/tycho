@@ -1,0 +1,48 @@
+# gencorpus: write a deterministic synthetic corpus for the parallel indexer
+# head-to-head. Same bytes on every machine, so tycho / Go / C all index the
+# identical input and must agree on the checksum.
+#
+#   gencorpus <out-dir>
+#
+# Writes N_FILES files of WORDS_PER_FILE space/newline-separated lowercase
+# words, each drawn from a VOCAB-sized pool by a fixed LCG. Words are pure
+# [a-z] (base-26 of the pool index), so the indexer's char-scan tokenizer is
+# the identity on them -- the corpus stays language-agnostic.
+
+fn word(n: int) -> string:
+    s := ""
+    m := n
+    for d in range(3):                 # 3 letters -> 17576 distinct, covers VOCAB
+        s = s + chr(97 + m % 26)
+        m = m / 26
+    return s
+
+fn main():
+    a := args()                        # a[0] is the program name
+    if len(a) < 2:
+        print("usage: gencorpus <out-dir>\n")
+        return
+    dir := a[1]
+
+    n_files := 400
+    words_per_file := 4000
+    vocab := 5000
+
+    state := 2463534242             # fixed LCG seed
+    f := 0
+    for f in range(n_files):
+        body := ""
+        w := 0
+        for w in range(words_per_file):
+            state = (state * 1103515245 + 12345) % 2147483648
+            idx := state % vocab
+            body = body + word(idx)
+            if w % 12 == 11:
+                body = body + "\n"
+            else:
+                body = body + " "
+        path := dir + "/doc" + str(f) + ".txt"
+        if not write_file(path, body):
+            print("write failed: " + path + "\n")
+            return
+    print("wrote " + str(n_files) + " files to " + dir + "\n")

@@ -1,4 +1,4 @@
-/* Dependency-free statistical CPU-time profiler for hier-compiled binaries.
+/* Dependency-free statistical CPU-time profiler for tycho-compiled binaries.
  *
  * perf is often blocked (kernel.perf_event_paranoid >= 2 with no root), valgrind
  * may be absent, and gprof (-pg) mis-attributes time on tiny high-call-count
@@ -6,7 +6,7 @@
  * needs none of that: ITIMER_PROF fires SIGPROF on consumed CPU time, and the
  * handler records the interrupted instruction pointer (RIP) plus a few stack
  * words (return-address candidates). At exit it resolves each sample to a symbol
- * with dladdr and appends "leaf <- caller" lines to $HIER_PROF_OUT (default
+ * with dladdr and appends "leaf <- caller" lines to $TYCHO_PROF_OUT (default
  * /tmp/prof_syms.txt — profile.sh points it at a private mktemp dir); many runs
  * accumulate, then `sort | uniq -c | sort -rn` gives the breakdown. Link with the
  * program under test: cc -O2 -no-pie -rdynamic -fno-omit-frame-pointer prog.c
@@ -39,7 +39,7 @@ static void on_prof(int sig, siginfo_t *si, void *uc) {
     pcs[i][0] = (unsigned long)c->uc_mcontext.gregs[REG_RIP];
     /* a true-leaf libc call (memcpy/strlen) leaves its caller's return addr near
      * RSP; a libc call WITH a frame (malloc) needs the saved-RBP chain to reach
-     * the hier function. Capture both; resolution takes the first that's ours. */
+     * the tycho function. Capture both; resolution takes the first that's ours. */
     for (int k = 0; k < 3; k++) pcs[i][1 + k] = (sp ? sp[k] : 0);
     for (int k = 0; k < 3; k++) {
         if (!bp || (bp & 7) || bp < (unsigned long)sp) { pcs[i][4 + k] = 0; continue; }
@@ -64,7 +64,7 @@ __attribute__((constructor)) static void prof_start(void) {
 __attribute__((destructor)) static void prof_stop(void) {
     struct itimerval z = {{0,0},{0,0}};
     setitimer(ITIMER_PROF, &z, 0);
-    const char *out = getenv("HIER_PROF_OUT");
+    const char *out = getenv("TYCHO_PROF_OUT");
     if (!out || !*out) out = "/tmp/prof_syms.txt";
     int fd = open(out, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
@@ -75,7 +75,7 @@ __attribute__((destructor)) static void prof_stop(void) {
         if (dladdr((void *)pcs[i][0], &di) && di.dli_sname) leaf = di.dli_sname;
         else if (dladdr((void *)pcs[i][0], &di) && di.dli_fname == self.dli_fname) leaf = "[ours-static]";
         else leaf = "[libc]";
-        /* caller: first stack word resolving into OUR object (a hier-emitted fn) */
+        /* caller: first stack word resolving into OUR object (a tycho-emitted fn) */
         const char *caller = "?";
         for (int k = 1; k < NW; k++)
             if (dladdr((void *)pcs[i][k], &di) && di.dli_fname == self.dli_fname && di.dli_sname) { caller = di.dli_sname; break; }

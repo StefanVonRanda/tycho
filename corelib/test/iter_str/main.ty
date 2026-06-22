@@ -1,0 +1,30 @@
+# corelib test: core:iter_str (higher-order over [string]; expression closures
+# AND plain named fns as predicates -- lambdas in tycho are expression-bodied).
+package main
+import "core:iter_str"
+
+fn ends_a(s: string) -> int:        # predicate: last char is 'a'
+    if len(s) > 0 and s[len(s) - 1] == 97:
+        return 1
+    return 0
+
+fn is_fig(s: string) -> int:
+    if s == "fig":
+        return 1
+    return 0
+
+fn main():
+    xs := ["apple", "fig", "banana", "kiwi"]
+    up := iter_str.map(xs, fn(s: string) -> string: s + "!")
+    print(up[0] + up[1] + "\n")                                # apple!fig!
+    long := iter_str.filter(xs, fn(s: string) -> int: len(s) - 4)   # nonzero -> keep (len != 4)
+    print(str(len(long)) + long[0] + "\n")                     # 3apple
+    joined := iter_str.reduce(xs, "", fn(a: string, b: string) -> string: a + b)
+    print(str(len(joined)) + "\n")                             # 18
+    nwith := iter_str.count(xs, ends_a)
+    print(f"enda={nwith}\n")                                   # enda=1 (banana)
+    has := iter_str.any(xs, is_fig)
+    hi := 0
+    if has:
+        hi = 1
+    print(f"has={hi}\n")                                       # has=1

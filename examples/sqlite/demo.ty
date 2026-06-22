@@ -1,0 +1,36 @@
+# Dogfooding tycho's FFI on a real C library: SQLite, in-memory.
+# The sx_* symbols come from sqlite_shim.c (--shim); -lsqlite3 (--link/--pkg)
+# provides the sqlite3_* functions the shim calls. Exercises ptr handles
+# (db, stmt), string args (SQL), arena-copied string returns (column text),
+# int returns, is_null, and an extern call in a loop condition.
+extern fn sx_open() -> ptr
+extern fn sx_exec(db: ptr, sql: string) -> int
+extern fn sx_prepare(db: ptr, sql: string) -> ptr
+extern fn sx_step(stmt: ptr) -> int
+extern fn sx_col_int(stmt: ptr, i: int) -> int
+extern fn sx_col_text(stmt: ptr, i: int) -> string
+extern fn sx_finalize(stmt: ptr)
+extern fn sx_close(db: ptr)
+
+fn main():
+    db := sx_open()
+    if is_null(db):
+        die("sqlite: open failed")
+    rc := sx_exec(db, "CREATE TABLE t(id INTEGER, name TEXT)")
+    rc = sx_exec(db, "INSERT INTO t VALUES (1,'alice'),(2,'bob'),(3,'carol')")
+    if rc != 0:
+        die("sqlite: insert failed")
+
+    # row-by-row: each name is a C string the shim returns and tycho arena-copies
+    st := sx_prepare(db, "SELECT id, name FROM t ORDER BY id")
+    for sx_step(st) == 1:
+        print(f"{sx_col_int(st, 0)}:{sx_col_text(st, 1)}\n")
+    sx_finalize(st)
+
+    # an aggregate query
+    agg := sx_prepare(db, "SELECT count(*), sum(id) FROM t")
+    if sx_step(agg) == 1:
+        print(f"count={sx_col_int(agg, 0)} sum={sx_col_int(agg, 1)}\n")
+    sx_finalize(agg)
+
+    sx_close(db)

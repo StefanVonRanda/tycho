@@ -1,4 +1,4 @@
-# Inverted-index build — head-to-head (hier vs C vs Go)
+# Inverted-index build — head-to-head (tycho vs C vs Go)
 
 A *build-and-hold* workload: build a deterministic inverted index from a corpus
 of 300 000 documents × 12 words drawn from an 8 000-term vocabulary (~3.6 M term
@@ -15,17 +15,17 @@ postings; every list is then allocated ONCE at its exact size, no growth):
 
 > **Re-measured at `-O3` (2026-06-07): numbers hold within noise** — this is a
 > memory/`realloc`-bound build, not compute-bound, so the optimizer barely moves it.
-> Side-array growth hier 126 MB/414 ms, C 72/331, Go 96/437; count-fill hier 60/561,
-> C 57/500. Map-form growth hier 64/302, C 37/245, Go 60/293; count-fill hier 32/517,
+> Side-array growth tycho 126 MB/414 ms, C 72/331, Go 96/437; count-fill tycho 60/561,
+> C 57/500. Map-form growth tycho 64/302, C 37/245, Go 60/293; count-fill tycho 32/517,
 > C 30/400, Go 67/522. All ratios (and the conclusions below) are unchanged.
 
 > **macOS (Apple Silicon, Darwin 25.5, clang 21 / go 1.26.4 — 2026-06-09; `sh
-> bench/fair_rest.sh`, fair `-O3`):** side-array growth hier 142.3 MB/351 ms, C
-> 126.1/299, Go 99.4/253; count-fill hier 60.3/566, C 65.2/521. Map-form growth hier
-> 72.1/274, C 64.4/241, Go 67.4/185; count-fill hier 32.0/510, C 33.9/442, Go
-> 69.5/341. Same shape as Linux: on this build-and-hold workload hier tracks C within
+> bench/fair_rest.sh`, fair `-O3`):** side-array growth tycho 142.3 MB/351 ms, C
+> 126.1/299, Go 99.4/253; count-fill tycho 60.3/566, C 65.2/521. Map-form growth tycho
+> 72.1/274, C 64.4/241, Go 67.4/185; count-fill tycho 32.0/510, C 33.9/442, Go
+> 69.5/341. Same shape as Linux: on this build-and-hold workload tycho tracks C within
 > a constant factor on growth and **edges under C on count-fill** (60.3 vs 65.2,
-> 32.0 vs 33.9), while Go is far heavier on count-fill (map 69.5 vs hier 32.0). (macOS peak
+> 32.0 vs 33.9), while Go is far heavier on count-fill (map 69.5 vs tycho 32.0). (macOS peak
 > reads higher than Linux per 16 KB pages/allocator; runner unit bug fixed first —
 > see prongB `RESULTS.md`.)
 
@@ -33,11 +33,11 @@ postings; every list is then allocated ONCE at its exact size, no growth):
 | ---- | -----: | ---------: |
 | C    | 71 MB / ~340 ms | **57 MB** / 533 ms |
 | Go   | 96 MB / 440 ms  | — |
-| hier | 127 MB / 415 ms | **59 MB** / 596 ms |
+| tycho | 127 MB / 415 ms | **59 MB** / 596 ms |
 
 ## Reading this honestly
 
-Two facts, and neither is "hier wins":
+Two facts, and neither is "tycho wins":
 
 1. **On the naive (growth) architecture, the arena loses ~1.8× C** (127 vs 71 MB).
    This is the build-and-hold case the arena is worst at: the index is held to
@@ -76,7 +76,7 @@ structure you reach for the same `reserve` hint you would in Rust or Go, and the
 it lands at parity with C. The arena removes the *unsafe* and *manual-lifetime*
 burden, not the occasional capacity hint every language keeps for the hot path.
 
-hier trails C by ~1.2× on **time** in count-fill (the second counting pass); the
+tycho trails C by ~1.2× on **time** in count-fill (the second counting pass); the
 bump allocator's speed offsets the extra copying in growth, where it equals Go.
 
 ## Map-native form (`#2`: `m[k]` as a place)
@@ -104,11 +104,11 @@ list ONCE before filling — `reserve` reaches into the map value, also `#2`):
 | ---- | -----: | ---------: |
 | C    (`Slot{char*; long* docs; n; cap}` table) | 37 MB / 252 ms | **29 MB** / 420 ms |
 | Go   (`map[string][]int`) | 58 MB / 308 ms | 64 MB / 533 ms |
-| hier (`[string: [int]]`) | 64 MB / 328 ms | **31 MB** / 547 ms |
+| tycho (`[string: [int]]`) | 64 MB / 328 ms | **31 MB** / 547 ms |
 
 Reading this honestly:
 
-1. **The natural data structure now competes.** On growth, hier is ~par with Go
+1. **The natural data structure now competes.** On growth, tycho is ~par with Go
    (1.10× memory, 1.06× time) and ~1.7× C memory / ~1.3× C time — the *same*
    build-and-hold grow-and-abandon penalty plain arrays show (§ above): each geometric
    doubling of a posting list abandons a buffer the bump arena can't `realloc` in place,
@@ -116,13 +116,13 @@ Reading this honestly:
    arrays — **no map-specific regression**, just the array story applied inside a map.
 
 2. **`reserve(idx[term], n)` reaches into a map value and closes the gap.** Sizing each
-   posting list once (a count pass + `reserve`) drops hier from 64 MB to **31 MB —
+   posting list once (a count pass + `reserve`) drops tycho from 64 MB to **31 MB —
    ~1.07× C (29 MB), near parity**, exactly as `reserve` did for plain arrays. So the
    count-fill mitigation is *not* stuck outside maps: `m[k]` is a place for `reserve`
    too, and a count-then-fill build reaches the same near-C memory inside a map. (Go's
    count-fill is *heavier* here, 64 MB — the extra count map plus map+slice header
-   overhead outweighs the per-slice cap saving; hier and C both win on the arena/inline
-   layout.) hier trails ~1.3× C on time (the second counting pass + per-push hashing),
+   overhead outweighs the per-slice cap saving; tycho and C both win on the arena/inline
+   layout.) tycho trails ~1.3× C on time (the second counting pass + per-push hashing),
    the same time/space trade the array count-fill makes.
 
 The win of `#2` here is **expressiveness with competitive cost**: the term → list map
@@ -134,14 +134,14 @@ now reached by the *natural* data structure with no manual lifetime management.
 
     cc -O2 -o /tmp/peakrss bench/peakrss.c
     for v in invindex invindex_exact; do
-      ./hierc bench/invindex/$v.hi -o /tmp/h && /tmp/peakrss /tmp/h
+      ./tychoc bench/invindex/$v.ty -o /tmp/h && /tmp/peakrss /tmp/h
       cc -O2 -o /tmp/c bench/invindex/$v.c 2>/dev/null && /tmp/peakrss /tmp/c
     done
     ( cd bench/invindex && go build -o /tmp/g invindex.go ) && /tmp/peakrss /tmp/g
 
     # map-native form (#2), growth and count-fill:
     for v in invindex_map invindex_map_exact; do
-      ./hierc bench/invindex/$v.hi -o /tmp/h && /tmp/peakrss /tmp/h
+      ./tychoc bench/invindex/$v.ty -o /tmp/h && /tmp/peakrss /tmp/h
       cc -O2 -o /tmp/c bench/invindex/$v.c && /tmp/peakrss /tmp/c
       ( cd bench/invindex && go build -o /tmp/g $v.go ) && /tmp/peakrss /tmp/g
     done

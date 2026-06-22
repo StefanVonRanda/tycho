@@ -1,5 +1,5 @@
-fnv1a_32     = 53e259cd
-crc32        = 3e517fad
-djb2         = 2090328845
-sdbm         = 450773710
+fnv1a_32     = a9d41dc6
+crc32        = e6ffb61b
+djb2         = 276178796
+sdbm         = 4126920613
 crc32 check  = cbf43926

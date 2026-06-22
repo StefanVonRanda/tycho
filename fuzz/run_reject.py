@@ -13,7 +13,7 @@
 #       C must be valid (cc -fsyntax-only). Accepting bad input and emitting
 #       broken C is a missed-rejection / codegen-on-garbage bug.
 #
-# Accept/reject DIVERGENCE between hierc and hierc0 is recorded for review (the
+# Accept/reject DIVERGENCE between tychoc and tychoc0 is recorded for review (the
 # two front-ends legitimately differ near the grammar boundary -- e.g. one's
 # inference grounds a bare [] the other rejects) but is NOT a hard failure;
 # only (1) and (2) fail the run. This keeps the oracle false-positive-free:
@@ -24,7 +24,7 @@ import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen_malformed.py")
-HIERC = os.path.join(REPO, "hierc")
+TYCHOC = os.path.join(REPO, "tychoc")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0:abort_on_error=1",
@@ -42,26 +42,26 @@ def first_marker(err):
             return ln.strip()[:200]
     return (err.strip().splitlines() or [""])[0][:200]
 
-def build_asan_hierc(tmp):
-    exe = os.path.join(tmp, "hierc_asan")
+def build_asan_tychoc(tmp):
+    exe = os.path.join(tmp, "tychoc_asan")
     r = subprocess.run(["cc", "-O1", "-std=c11"] + ASAN + ["-Ibuild",
-                        os.path.join(REPO, "src", "hierc.c"), "-o", exe, "-lm"],
+                        os.path.join(REPO, "src", "tychoc.c"), "-o", exe, "-lm"],
                        cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if r.returncode != 0:
-        print("ASan hierc build FAILED:\n" + r.stderr[:2000]); return None
+        print("ASan tychoc build FAILED:\n" + r.stderr[:2000]); return None
     return exe
 
-def build_asan_hierc0(tmp):
+def build_asan_tychoc0(tmp):
     base = os.path.join(tmp, "h0")
-    r = subprocess.run([HIERC, os.path.join(REPO, "compiler", "hierc0.hi"),
+    r = subprocess.run([TYCHOC, os.path.join(REPO, "compiler", "tychoc0.ty"),
                         "--emit-c", "-o", base], capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if r.returncode != 0 or not os.path.exists(base + ".c"):
-        print("hierc0 emit-c FAILED:\n" + r.stderr[:2000]); return None
-    exe = os.path.join(tmp, "hierc0_asan")
+        print("tychoc0 emit-c FAILED:\n" + r.stderr[:2000]); return None
+    exe = os.path.join(tmp, "tychoc0_asan")
     b = subprocess.run(["cc", "-O1", "-std=c11", "-pthread"] + ASAN + [base + ".c", "-o", exe, "-lm"],
                        capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if b.returncode != 0:
-        print("ASan hierc0 build FAILED:\n" + b.stderr[:2000]); return None
+        print("ASan tychoc0 build FAILED:\n" + b.stderr[:2000]); return None
     return exe
 
 def classify(r, err):
@@ -72,8 +72,8 @@ def classify(r, err):
         return "CRASH", "sanitizer: " + first_marker(err)
     return ("accept" if r.returncode == 0 else "reject"), None
 
-def run_hierc(exe, src, base):
-    """hierc reads a file path; --emit-c -o <base> writes <base>.c on accept."""
+def run_tychoc(exe, src, base):
+    """tychoc reads a file path; --emit-c -o <base> writes <base>.c on accept."""
     try:
         r = subprocess.run([exe, src, "--emit-c", "-o", base],
                            capture_output=True, timeout=RUN_TIMEOUT, env=ENV)
@@ -84,8 +84,8 @@ def run_hierc(exe, src, base):
         return v, detail, None
     return v, None, (base + ".c" if v == "accept" and os.path.exists(base + ".c") else None)
 
-def run_hierc0(exe, src, cpath):
-    """hierc0 reads stdin and writes emitted C to stdout."""
+def run_tychoc0(exe, src, cpath):
+    """tychoc0 reads stdin and writes emitted C to stdout."""
     try:
         with open(src, "rb") as fi:
             r = subprocess.run([exe], stdin=fi, capture_output=True, timeout=RUN_TIMEOUT, env=ENV)
@@ -112,34 +112,34 @@ def emitted_c_invalid(cpath):
     return r.returncode != 0, r.stderr[:300]
 
 def save(tmp, name):
-    shutil.copy(os.path.join(tmp, "p.hi"), os.path.join(FINDINGS, name))
+    shutil.copy(os.path.join(tmp, "p.ty"), os.path.join(FINDINGS, name))
 
 def run_seed(seed, hc, h0, tmp):
     g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if g.returncode != 0:
         return "GENFAIL", "gen_malformed.py rc=%d stderr=%s" % (g.returncode, (g.stderr or "")[:300])
-    src = os.path.join(tmp, "p.hi")
+    src = os.path.join(tmp, "p.ty")
     with open(src, "w") as f:
         f.write(g.stdout)
 
-    hcv, hcd, hcc = run_hierc(hc, src, os.path.join(tmp, "hc"))
+    hcv, hcd, hcc = run_tychoc(hc, src, os.path.join(tmp, "hc"))
     if hcv == "CRASH":
-        return "FAIL", "hierc CRASH: " + hcd
-    h0v, h0d, h0c = run_hierc0(h0, src, os.path.join(tmp, "h0out.c"))
+        return "FAIL", "tychoc CRASH: " + hcd
+    h0v, h0d, h0c = run_tychoc0(h0, src, os.path.join(tmp, "h0out.c"))
     if h0v == "CRASH":
-        return "FAIL", "hierc0 CRASH: " + h0d
+        return "FAIL", "tychoc0 CRASH: " + h0d
 
     if hcv == "accept":
         bad, ce = emitted_c_invalid(hcc)
         if bad:
-            return "FAIL", "hierc FAIL-OPEN (accepted, emitted invalid C): " + ce.strip()[:160]
+            return "FAIL", "tychoc FAIL-OPEN (accepted, emitted invalid C): " + ce.strip()[:160]
     if h0v == "accept":
         bad, ce = emitted_c_invalid(h0c)
         if bad:
-            return "FAIL", "hierc0 FAIL-OPEN (accepted, emitted invalid C): " + ce.strip()[:160]
+            return "FAIL", "tychoc0 FAIL-OPEN (accepted, emitted invalid C): " + ce.strip()[:160]
 
     if hcv != h0v:
-        return "divergence", "hierc=%s hierc0=%s" % (hcv, h0v)
+        return "divergence", "tychoc=%s tychoc0=%s" % (hcv, h0v)
     return ("accept_both" if hcv == "accept" else "reject_both"), None
 
 def main():
@@ -147,9 +147,9 @@ def main():
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()
-    print("building ASan+UBSan compilers (hierc from src, hierc0 from emitted C)...")
-    hc = build_asan_hierc(tmp)
-    h0 = build_asan_hierc0(tmp)
+    print("building ASan+UBSan compilers (tychoc from src, tychoc0 from emitted C)...")
+    hc = build_asan_tychoc(tmp)
+    h0 = build_asan_tychoc0(tmp)
     if not hc or not h0:
         shutil.rmtree(tmp, ignore_errors=True); return 2
     counts = {"accept_both": 0, "reject_both": 0, "divergence": 0, "FAIL": 0}
@@ -164,10 +164,10 @@ def main():
             shutil.rmtree(tmp, ignore_errors=True); return 1
         counts[verdict] = counts.get(verdict, 0) + 1
         if verdict == "FAIL":
-            save(tmp, "reject_seed_%d.hi" % seed)
+            save(tmp, "reject_seed_%d.ty" % seed)
             print("FAIL seed %d: %s" % (seed, msg))
         elif verdict == "divergence" and saved_div < MAX_DIVERGENCE_SAVED:
-            save(tmp, "divergence_%d.hi" % seed); saved_div += 1
+            save(tmp, "divergence_%d.ty" % seed); saved_div += 1
         if seed % 200 == 0:
             print("... %d/%d  accept=%d reject=%d diverge=%d FAIL=%d" % (
                 seed - start + 1, n, counts["accept_both"], counts["reject_both"],

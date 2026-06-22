@@ -1,13 +1,13 @@
-# FFI — calling C from Hier
+# FFI — calling C from Tycho
 
-Hier's model is value semantics over an implicit arena: Hier code never does
+Tycho's model is value semantics over an implicit arena: Tycho code never does
 manual memory management. The FFI is the one deliberate **escape hatch** — a
 narrow, opt-in boundary for calling existing C libraries (libm, libc, SQLite,
 SDL, …). The boundary is kept narrow so the value-semantic model stays intact on
-the Hier side: no foreign pointer ever leaks into Hier's owned world.
+the Tycho side: no foreign pointer ever leaks into Tycho's owned world.
 
 The FFI is an *unsafe* boundary — you can still pass a bad handle to C and crash
-inside C. The design's job is to keep the **Hier side** sound and to make the
+inside C. The design's job is to keep the **Tycho side** sound and to make the
 unsafe surface explicit, which is what the `extern` keyword marks. The README's
 [FFI section](../README.md#ffi-calling-c) is the short version; this page is the
 full rule set. A complete binding lives in
@@ -17,7 +17,7 @@ compilers.
 ## Quick start
 
 To call a C library you (1) declare each C function you need as an `extern fn`,
-(2) call it like any Hier function, and (3) tell the compiler which library to
+(2) call it like any Tycho function, and (3) tell the compiler which library to
 link. Calling `cbrt` from libm needs no link flags, because libm is always
 linked:
 
@@ -49,7 +49,7 @@ extern fn getpid() -> int                                # libc (already linked)
 extern fn sqrt(x: float) -> float                        # libm (already linked)
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
 extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2
-extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Hier string out
+extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Tycho string out
 ```
 
 The symbol name is never mangled, even inside a package — a C symbol is global —
@@ -60,7 +60,7 @@ so an `extern` can be declared and called from any package. A bare `extern fn`
 
 Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 
-| Hier type | C type      | direction | notes |
+| Tycho type | C type      | direction | notes |
 |-----------|-------------|-----------|-------|
 | `int`     | `long`      | in/out    | zero-cost |
 | `char`    | `long`      | in/out    | zero-cost |
@@ -70,13 +70,13 @@ Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 | `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
 | (none)    | `void`      | out only  | return-less extern |
 
-**String passing.** A Hier `string` is a NUL-terminated `char *`, so a C
-function taking `const char *` takes a Hier `string` directly — no wrapper type,
+**String passing.** A Tycho `string` is a NUL-terminated `char *`, so a C
+function taking `const char *` takes a Tycho `string` directly — no wrapper type,
 no conversion at the call site. (Languages whose string is a fat pointer
-`{ptr, len}` are forced into an explicit `c_str()` conversion; Hier is not.)
+`{ptr, len}` are forced into an explicit `c_str()` conversion; Tycho is not.)
 
 **Composites are rejected.** Arrays, maps, structs, `Option`/`Result`, and
-tuples have Hier-internal C representations, not a stable C ABI. The type
+tuples have Tycho-internal C representations, not a stable C ABI. The type
 checker rejects any `extern fn` whose parameter or return type is outside the
 table above — it fails closed rather than emit something that would corrupt
 memory across the boundary. To pass aggregate data, marshal it through scalars,
@@ -84,12 +84,12 @@ strings, and `ptr` handles, or write a small C shim (see [Linking](#linking)).
 
 ## Lifetime & safety
 
-The whole point is that foreign memory never enters Hier's owned world:
+The whole point is that foreign memory never enters Tycho's owned world:
 
-- **`string` argument (Hier → C):** the `char *` is passed through unchanged.
+- **`string` argument (Tycho → C):** the `char *` is passed through unchanged.
   Zero-cost.
-- **`string` return (C → hier):** the C-owned bytes are **copied into the
-  caller's arena** at the call site, so Hier never holds a pointer into memory C
+- **`string` return (C → tycho):** the C-owned bytes are **copied into the
+  caller's arena** at the call site, so Tycho never holds a pointer into memory C
   controls. A `NULL` return becomes `""` rather than a crash. This is the same
   copy the `getenv` builtin does — an `extern fn … -> string` is the general
   case.
@@ -100,30 +100,30 @@ The whole point is that foreign memory never enters Hier's owned world:
     call. Anything that could retain it (binding to a variable, concatenating,
     storing, returning, or comparing two extern strings) keeps the copy. Output
     is byte-identical either way.
-- **`ptr`:** an opaque `void *`. Hier supports only passing it back to C,
+- **`ptr`:** an opaque `void *`. Tycho supports only passing it back to C,
   comparing it (`==`/`!=` against another `ptr` or the `null` literal), and
-  `is_null(p)`. No dereference, no arithmetic — Hier shuttles the handle and
+  `is_null(p)`. No dereference, no arithmetic — Tycho shuttles the handle and
   never touches what it points at. A `ptr` rides the scalar paths, so it can
   also be a local, a struct field, or an array element (copied by value).
 - **No variadics.** A `printf`-style function needs a fixed-arity C wrapper.
-- **No struct-by-value and no callbacks into Hier** — a Hier function value is a
+- **No struct-by-value and no callbacks into Tycho** — a Tycho function value is a
   fat pointer that is not C-ABI, so it cannot cross out.
 
 ## Linking
 
-The C reference compiler (`hierc`) links the program for you:
+The C reference compiler (`tychoc`) links the program for you:
 
 - Each distinct `"Lib"` from an `extern "Lib"` declaration becomes a `-l<Lib>`.
   `-lm` and libc are always passed, so libm/libc externs need no library name.
-- CLI passthrough on the `hierc` line: `-L<dir>` / `-I<dir>` (library and
+- CLI passthrough on the `tychoc` line: `-L<dir>` / `-I<dir>` (library and
   include paths), `--link <lib>` (a bare `-l` for a library not named in
   source), `--pkg <name>` (`pkg-config --cflags --libs`), and `--shim <file.c>`
   (a companion C file compiled and linked alongside the generated `.c` — the
   `*_shim.c` pattern, as an explicit flag rather than auto-discovery). All
   accumulate onto one `cc` invocation, with libraries trailing the objects that
   need them. `--cc <compiler>` overrides the compiler.
-- The self-hosted compiler (`hierc0`) emits C to stdout and does not link, so
-  these flags are `hierc`-only; link `hierc0`'s output with your own `cc`,
+- The self-hosted compiler (`tychoc0`) emits C to stdout and does not link, so
+  these flags are `tychoc`-only; link `tychoc0`'s output with your own `cc`,
   passing the same `-l`/`-L`/shim flags.
 
 A **shim** is the standard way to adapt a C API that the FFI can't express
@@ -139,8 +139,8 @@ What the FFI supports today, in rough order of how much of C it unlocks:
    libm, most of libc, and any C library with a scalar/string ABI.
 2. **Opaque `ptr`** — `void *` plus the `null` literal and `is_null`. Covers
    handle-based libraries (SQLite, SDL, curl).
-3. **Linking ergonomics (`hierc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim` on the
-   `hierc` command line.
+3. **Linking ergonomics (`tychoc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim` on the
+   `tychoc` command line.
 
 Every feature exists in both compilers. The `tests/ffi/` fixtures (a scalar
 round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
@@ -162,24 +162,24 @@ These are deliberate boundaries, not missing work:
 - **No struct-by-value.** Pass an opaque `ptr` handle instead.
 - **No variadics.** Wrap variadic C functions (like `printf`) in a fixed-arity C
   shim.
-- **No callbacks into Hier.** A Hier function value is a fat pointer that is not
-  C-ABI, so C cannot call back into Hier.
+- **No callbacks into Tycho.** A Tycho function value is a fat pointer that is not
+  C-ABI, so C cannot call back into Tycho.
 - **No automatic binding generation.** Each C function you use is declared by
   hand as an `extern fn`.
-- **`ptr` is opaque.** No dereference and no pointer arithmetic on the Hier side
-  — Hier only shuttles handles back to C.
+- **`ptr` is opaque.** No dereference and no pointer arithmetic on the Tycho side
+  — Tycho only shuttles handles back to C.
 
 These keep the boundary narrow on purpose: anything richer would either break
-value semantics on the Hier side or depend on an unstable C ABI.
+value semantics on the Tycho side or depend on an unstable C ABI.
 
 ## Design notes
 
-Two choices keep the boundary cheap. First, a Hier `string` is already a
+Two choices keep the boundary cheap. First, a Tycho `string` is already a
 NUL-terminated `char *`, so there is no wrapper type and no `c_str()` conversion
 at the call site — a fat-pointer string representation would have forced one.
 Second, a returned `string` is always copied into the caller's arena, and a
 `NULL` return is coerced to `""`, so a C function that hands back a transient or
-null pointer can neither dangle nor crash on the Hier side.
+null pointer can neither dangle nor crash on the Tycho side.
 
 The keyword is `extern` because it reads as "defined elsewhere" and matches C; a
 bare `extern fn` assumes libc/libm rather than requiring an explicit `--link`;

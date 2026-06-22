@@ -3,14 +3,14 @@
 # winagg, invindex (side-array + map, growth + count-fill), window, dbquery.
 # peak RSS + best-of-3 wall via bench/peakrss. Self-contained workloads (no stdin).
 cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
-HIERC=./hierc
+TYCHOC=./tychoc
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 # ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 # Fail-closed: a nonzero exit prints a loud FAILED marker instead of numbers
 # (peakrss propagates the child's status). stdout goes to $T/cur.out and is
-# compared against the row's first contender ($T/ref.out — hier() resets it,
-# and hier is always first on a row): a mismatch appends OUT-DIFF.
+# compared against the row's first contender ($T/ref.out — tycho() resets it,
+# and tycho is always first on a row): a mismatch appends OUT-DIFF.
 best() { bms=9999999; bkb=0; rc=0
   for i in 1 2 3; do
     "$T/pk" "$1" > "$T/cur.out" 2> "$T/stat" || rc=$?
@@ -25,36 +25,36 @@ best() { bms=9999999; bkb=0; rc=0
   else cp "$T/cur.out" "$T/ref.out"; fi
   awk "BEGIN{printf \"%5.1fMB/%-7s\", $bkb/1024.0, \"${bms}ms\"}"
 }
-hier() { rm -f "$T/ref.out"; $HIERC "$1" --emit-c -o "$T/b" >/dev/null 2>&1 && cc -O3 -o "$T/b" "$T/b.c" -lm 2>/dev/null && best "$T/b" || echo "build-fail"; }
+tycho() { rm -f "$T/ref.out"; $TYCHOC "$1" --emit-c -o "$T/b" >/dev/null 2>&1 && cc -O3 -o "$T/b" "$T/b.c" -lm 2>/dev/null && best "$T/b" || echo "build-fail"; }
 cc3()  { cc -O3 -o "$T/b" "$1" -lm 2>/dev/null && best "$T/b" || echo "-"; }
 rs3()  { rustc -C opt-level=3 -o "$T/b" "$1" 2>/dev/null && best "$T/b" || echo "-"; }
 go3()  { ( cd "$(dirname "$1")" && go build -o "$T/b" "$(basename "$1")" 2>/dev/null ) && best "$T/b" || echo "-"; }
 
-echo "===== winagg (hier/C/Rust/Go) ====="
+echo "===== winagg (tycho/C/Rust/Go) ====="
 W=bench/winagg
-printf "  hier %s\n  C    %s\n  Rust %s\n  Go   %s\n" "$(hier $W/winagg.hi)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)"
+printf "  tycho %s\n  C    %s\n  Rust %s\n  Go   %s\n" "$(tycho $W/winagg.ty)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)"
 
 echo "===== invindex side-array  (growth: .{hi,c,go} | count-fill: _exact.{hi,c}) ====="
 I=bench/invindex
-printf "  growth     hier %s  C %s  Go %s\n" "$(hier $I/invindex.hi)" "$(cc3 $I/invindex.c)" "$(go3 $I/invindex.go)"
-printf "  count-fill hier %s  C %s\n" "$(hier $I/invindex_exact.hi)" "$(cc3 $I/invindex_exact.c)"
+printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex.ty)" "$(cc3 $I/invindex.c)" "$(go3 $I/invindex.go)"
+printf "  count-fill tycho %s  C %s\n" "$(tycho $I/invindex_exact.ty)" "$(cc3 $I/invindex_exact.c)"
 
 echo "===== invindex map  (growth: _map.{hi,c,go} | count-fill: _map_exact.{hi,c,go}) ====="
-printf "  growth     hier %s  C %s  Go %s\n" "$(hier $I/invindex_map.hi)" "$(cc3 $I/invindex_map.c)" "$(go3 $I/invindex_map.go)"
-printf "  count-fill hier %s  C %s  Go %s\n" "$(hier $I/invindex_map_exact.hi)" "$(cc3 $I/invindex_map_exact.c)" "$(go3 $I/invindex_map_exact.go)"
+printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map.ty)" "$(cc3 $I/invindex_map.c)" "$(go3 $I/invindex_map.go)"
+printf "  count-fill tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map_exact.ty)" "$(cc3 $I/invindex_map_exact.c)" "$(go3 $I/invindex_map_exact.go)"
 
 echo "===== window (string + int) ====="
 WD=bench/window
-printf "  string hier %s  C %s  Go %s\n" "$(hier $WD/window_naive.hi)" "$(cc3 $WD/window.c)" "$(go3 $WD/window.go)"
-printf "  int    hier %s\n" "$(hier $WD/window_int.hi)"
+printf "  string tycho %s  C %s  Go %s\n" "$(tycho $WD/window_naive.ty)" "$(cc3 $WD/window.c)" "$(go3 $WD/window.go)"
+printf "  int    tycho %s\n" "$(tycho $WD/window_int.ty)"
 
 echo "===== dbquery (real SQLite via FFI; skips if no libsqlite3) ====="
 if pkg-config --exists sqlite3 2>/dev/null || echo '#include <sqlite3.h>' | cc -E - >/dev/null 2>&1; then
   DB=bench/dbquery
   # macOS ships libsqlite3 + sqlite3.h but no .pc file — use --link (not --pkg) there.
-  if pkg-config --exists sqlite3 2>/dev/null; then HIER_SQLITE="--pkg sqlite3"; else HIER_SQLITE="--link sqlite3"; fi
+  if pkg-config --exists sqlite3 2>/dev/null; then TYCHO_SQLITE="--pkg sqlite3"; else TYCHO_SQLITE="--link sqlite3"; fi
   rm -f "$T/ref.out"
-  $HIERC "$DB/dbquery.hi" -o "$T/dbh" --shim "$DB/db_shim.c" $HIER_SQLITE >/dev/null 2>&1 && printf "  hier %s\n" "$(best "$T/dbh")" || echo "  hier build-fail"
+  $TYCHOC "$DB/dbquery.ty" -o "$T/dbh" --shim "$DB/db_shim.c" $TYCHO_SQLITE >/dev/null 2>&1 && printf "  tycho %s\n" "$(best "$T/dbh")" || echo "  tycho build-fail"
   LIBS=$(pkg-config --cflags --libs sqlite3 2>/dev/null || echo -lsqlite3)
   cc -O3 $DB/dbquery.c -o "$T/dbc" $LIBS 2>/dev/null && printf "  C    %s\n" "$(best "$T/dbc")" || echo "  C build-fail"
   ( cd "$DB" && go build -o "$T/dbg" dbquery.go 2>/dev/null ) && printf "  Go   %s\n" "$(best "$T/dbg")" || echo "  Go (cgo) skip/fail"

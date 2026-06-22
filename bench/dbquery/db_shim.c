@@ -1,6 +1,6 @@
 /* SQLite shim for the dbquery head-to-head benchmark. Same return-the-handle
  * facade as examples/sqlite, plus bind/reset so the row insert can use a single
- * prepared statement (fast, and identical work across the C / Go / hier ports). */
+ * prepared statement (fast, and identical work across the C / Go / tycho ports). */
 #include <sqlite3.h>
 #include <stddef.h>
 

@@ -1,4 +1,4 @@
-to_upper        = HIER
+to_upper        = TYCHO
 trim            = [padded]
 repeat('ab', 3) = ababab
 replace         = a/b/c

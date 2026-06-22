@@ -1,5 +1,5 @@
 // Inverted-index build, map-native form — Go, map[string][]int with append.
-// Same LCG corpus and checksum as invindex_map.hi/.c (occurrence list, no dedup):
+// Same LCG corpus and checksum as invindex_map.ty/.c (occurrence list, no dedup):
 // the natural Go idiom, idx[term] = append(idx[term], d).
 package main
 

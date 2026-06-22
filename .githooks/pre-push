@@ -1,9 +1,9 @@
 #!/bin/sh
-# hier pre-push gate -- no broken code leaves this machine. (Local. No GitHub
+# tycho pre-push gate -- no broken code leaves this machine. (Local. No GitHub
 # Actions, ever.) Runs the FAST correctness gates that catch regressions in
 # seconds: the golden+sanitizer test suite and the self-host fixpoint. Both
 # include every recycle/soundness regression test, so a reintroduced corruption
-# bug is blocked here. Also runs `make corelib` (C-vs-hierc0 + standalone-hierc0
+# bug is blocked here. Also runs `make corelib` (C-vs-tychoc0 + standalone-tychoc0
 # vs goldens) so a type-system change can't silently break the stdlib's package
 # mangling -- that path is NOT exercised by test or fixpoint.
 #
@@ -19,7 +19,7 @@ cd "$(git rev-parse --show-toplevel)"
 # Private per-run log (mktemp, not a fixed world-shared /tmp path): no multi-user
 # collision/symlink risk, and each step APPENDS under a header so earlier steps'
 # output survives. Kept on failure (path printed); removed on success.
-LOG="$(mktemp "${TMPDIR:-/tmp}/hier-prepush.XXXXXX")"
+LOG="$(mktemp "${TMPDIR:-/tmp}/tycho-prepush.XXXXXX")"
 
 printf 'pre-push: make test ... '
 printf '===== make test =====\n' >>"$LOG"

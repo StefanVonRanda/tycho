@@ -1,4 +1,4 @@
-# Windowed group-by — head-to-head (hier vs C vs Rust vs Go)
+# Windowed group-by — head-to-head (tycho vs C vs Rust vs Go)
 
 A **churn / transient** workload — the honest complement to the inverted index
 (`bench/invindex`, a *build-and-hold* workload). A deterministic 10 M-event stream
@@ -12,25 +12,25 @@ identical algorithm over the identical stream and prints the same oracle:
 
 Peak RSS (`bench/peakrss.c`), best-of-3, `-O3` / `rustc -O3` / `go build` (each
 language's standard optimized build; re-measured 2026-06-07). Each
-language uses its idiomatic per-key-growing-list map: hier `[int: [int]]`, C a
+language uses its idiomatic per-key-growing-list map: tycho `[int: [int]]`, C a
 hand-rolled open-addressing table of `realloc`'d lists, Rust `HashMap<i64, Vec<i64>>`,
 Go `map[int64][]int64`.
 
 | impl | peak RSS | time |
 | ---- | -------: | ---: |
 | C    | **5 MB** | **126 ms** |
-| hier | 7 MB | 172 ms |
+| tycho | 7 MB | 172 ms |
 | Rust | 5 MB | 239 ms |
 | Go   | 11 MB | 330 ms |
 
 (Wall re-measured 2026-06-07 at `-O3` standard opt, best-of-3; peak RSS unchanged —
-allocation is flag-independent. hier 190→172 ms; C/Rust/Go within noise.)
+allocation is flag-independent. tycho 190→172 ms; C/Rust/Go within noise.)
 
 ### macOS (Apple Silicon, Darwin 25.5, clang 21 / rustc 1.95 / go 1.26.4 — 2026-06-09)
 
-Fair `-O3` best-of-3 (`sh bench/fair_rest.sh`, checksum `505098931`): hier
+Fair `-O3` best-of-3 (`sh bench/fair_rest.sh`, checksum `505098931`): tycho
 **8.8 MB / 144 ms**, C 6.6 MB / 104 ms, Rust 6.7 MB / 172 ms, Go 14.4 MB / 191 ms.
-The churn-workload shape holds — hier well under Go on both axes and ties/beats Rust
+The churn-workload shape holds — tycho well under Go on both axes and ties/beats Rust
 on time; C keeps the manual-memory lead. (macOS peak reads a touch higher than Linux;
 the runner's bytes-vs-KB unit bug was fixed first — see prongB `RESULTS.md`.)
 
@@ -39,27 +39,27 @@ the runner's bytes-vs-KB unit bug was fixed first — see prongB `RESULTS.md`.)
 This is the case the implicit arena is *built* for, and it shows — but read the two
 axes separately, because they support different-strength claims.
 
-1. **Peak memory — the clean arena claim (hasher-independent).** hier holds **7 MB:
+1. **Peak memory — the clean arena claim (hasher-independent).** tycho holds **7 MB:
    one window**, not the stream. It is ~1.4× C (5 MB) and **beats GC'd Go (11 MB)**.
    The proof that this is genuine per-window reclamation, not luck: peak tracks the
-   *window size*, not the *window count*. At 6 windows × 600 k events hier peaks at
+   *window size*, not the *window count*. At 6 windows × 600 k events tycho peaks at
    17 MB; at 40 windows × 250 k it peaks at 8 MB — 6.7× more windows, yet peak *fell*
    with the smaller window. The arena frees each window in bulk (one pointer reset), so
    the stream length never accumulates. Contrast `invindex`, where the index is held to
-   the end and hier pays ~1.7× C — the arena's bulk-free advantage never fires there;
+   the end and tycho pays ~1.7× C — the arena's bulk-free advantage never fires there;
    here it is the whole game.
 
 2. **Time — competitive (C–Go band), but with a hasher caveat, so no clean "beats
-   Rust".** hier (190 ms) sits between C (128 ms) and Go (330 ms), and below
+   Rust".** tycho (190 ms) sits between C (128 ms) and Go (330 ms), and below
    out-of-the-box Rust (238 ms). The arena's teardown is the cheap part: dropping a
    window is **one arena reset**, where Rust's RAII must `drop` all ~8 000 `Vec`s + the
    table per window, Go's GC must trace the garbage, and C must `free` each list. That
    O(1)-per-window teardown is real and is why a manually-freed or GC'd language does
    not pull away despite other advantages. **But** the hashers differ and that confounds
-   the time column: C uses a trivial multiplicative hash, hier its int hash, **Rust the
+   the time column: C uses a trivial multiplicative hash, tycho its int hash, **Rust the
    default SipHash (cryptographic, DoS-resistant — and slow)**. A Rust dev reaching for
-   `FxHashMap`/`ahash` would likely drop below hier. So the defensible time claim is
-   *"the bulk-free model keeps hier in the C–Go band on a churn workload"*, not that it
+   `FxHashMap`/`ahash` would likely drop below tycho. So the defensible time claim is
+   *"the bulk-free model keeps tycho in the C–Go band on a churn workload"*, not that it
    out-runs tuned Rust. (C's lead is its trivial hash + no teardown traversal at all —
    `free` of a never-reallocated-past list is cheap, and its peak is lowest.)
 
@@ -72,7 +72,7 @@ axes separately, because they support different-strength claims.
   (~par C, beats Go), and the O(1)-per-window bulk-free teardown keeps time in the C–Go
   band, ahead of default-hasher Rust and Go.
 
-Neither is "hier wins everywhere." Together they map the boundary honestly: the
+Neither is "tycho wins everywhere." Together they map the boundary honestly: the
 value-semantic implicit arena is competitive-to-excellent when lifetimes are
 scope-aligned and churned (its design point), and pays a sizing penalty only on
 long-lived hold-and-grow structures — recoverable there with the same capacity hint
@@ -81,7 +81,7 @@ every language keeps for the hot path.
 ## Reproduce
 
     cc -O2 -o /tmp/peakrss bench/peakrss.c
-    ./hierc bench/winagg/winagg.hi -o /tmp/h && /tmp/peakrss /tmp/h
+    ./tychoc bench/winagg/winagg.ty -o /tmp/h && /tmp/peakrss /tmp/h
     cc -O2 -o /tmp/c bench/winagg/winagg.c && /tmp/peakrss /tmp/c
     rustc -O -o /tmp/r bench/winagg/winagg.rs && /tmp/peakrss /tmp/r
     ( cd bench/winagg && go build -o /tmp/g winagg.go ) && /tmp/peakrss /tmp/g

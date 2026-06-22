@@ -1,21 +1,21 @@
 #!/bin/sh
-# Concurrency head-to-head: the same two workloads in hier / C / Go / Rust,
+# Concurrency head-to-head: the same two workloads in tycho / C / Go / Rust,
 # measuring peak RSS + wall (bench/peakrss) with a cross-language checksum.
 #
-#   parreduce  compute-bound parallel reduction (hier `parallel for`,
+#   parreduce  compute-bound parallel reduction (tycho `parallel for`,
 #              C pthread chunks, Go goroutines, Rust scoped threads)
 #   pipeline   1 producer -> bounded channel(cap 256) -> 4 consumers, 1e6
-#              string payloads (hier channels deep-copy every payload twice
+#              string payloads (tycho channels deep-copy every payload twice
 #              -- value semantics; C passes pointers, Go shares under GC,
 #              Rust moves ownership)
 #
-# Fair-bench rule: each language at its standard optimized build (hier -O3
-# via hierc, C -O3, go build, rustc -O). Each binary picks K = online cores
+# Fair-bench rule: each language at its standard optimized build (tycho -O3
+# via tychoc, C -O3, go build, rustc -O). Each binary picks K = online cores
 # itself. Skips any language whose toolchain is absent. NOT in `make ci`.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc -- run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 D=bench/conc
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -35,10 +35,10 @@ bench() {                                    # <name>
     b=$1
     echo "$b:"
     ref=""
-    if ! $HIERC "$D/$b.hi" -o "$T/${b}_hier" > "$T/hier_err" 2>&1; then
-        echo "conc: HIER BUILD FAILED"; cat "$T/hier_err"; exit 2
+    if ! $TYCHOC "$D/$b.ty" -o "$T/${b}_tycho" > "$T/tycho_err" 2>&1; then
+        echo "conc: TYCHO BUILD FAILED"; cat "$T/tycho_err"; exit 2
     fi
-    run_one hier "$T/${b}_hier"
+    run_one tycho "$T/${b}_tycho"
     $CC -O3 -pthread "$D/$b.c" -o "$T/${b}_c" -lm 2>/dev/null
     run_one C "$T/${b}_c"
     if command -v go >/dev/null 2>&1; then

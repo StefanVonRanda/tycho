@@ -1,0 +1,45 @@
+# binary-trees, Tycho (loop-scoped transient): bind each tree to a local
+# Allocates many short-lived binary trees and one long-lived tree, checksums
+# node counts. The short-lived trees are built inside a loop, so Tycho reclaims
+# each one with a single arena RESET — no GC, no per-node free, no refcounts.
+
+enum Tree:
+    Leaf
+    Node(Tree, Tree)
+
+fn make(d: int) -> Tree:
+    if d == 0:
+        return Leaf
+    return Node(make(d - 1), make(d - 1))
+
+fn check(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 1
+        Node(l, r):
+            return 1 + check(l) + check(r)
+
+fn pow2(n: int) -> int:
+    r := 1
+    for i in range(n):
+        r = r * 2
+    return r
+
+fn main():
+    mind := 4
+    maxd := 18
+
+    stretch := maxd + 1
+    print("stretch tree of depth " + str(stretch) + " check: " + str(check(make(stretch))) + "\n")
+
+    longlived := make(maxd)
+
+    for d in range(mind, maxd + 1, 2):
+        iters := pow2(maxd - d + mind)
+        sum := 0
+        for i in range(iters):
+            t := make(d)            # transient bound to the inner-loop scratch
+            sum = sum + check(t)
+        print(str(iters) + " trees of depth " + str(d) + " check: " + str(sum) + "\n")
+
+    print("long-lived tree of depth " + str(maxd) + " check: " + str(check(longlived)) + "\n")

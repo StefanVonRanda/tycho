@@ -5,15 +5,15 @@
 # own runner rather than the main tests/run.sh harness (which can't link a shim).
 set -u
 cd "$(dirname "$0")"
-HIERC="${HIERC:-../../hierc}"
-[ -x "$HIERC" ] || { echo "no $HIERC -- run 'make' at the repo root first"; exit 2; }
+TYCHOC="${TYCHOC:-../../tychoc}"
+[ -x "$TYCHOC" ] || { echo "no $TYCHOC -- run 'make' at the repo root first"; exit 2; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-"$HIERC" life.hi --shim life_shim.c -o "$TMP/life" || { echo "build failed"; exit 1; }
+"$TYCHOC" life.ty --shim life_shim.c -o "$TMP/life" || { echo "build failed"; exit 1; }
 "$TMP/life" > "$TMP/out.txt"
 if diff -q life.out "$TMP/out.txt" >/dev/null; then
     echo "ok   life (deterministic output matches golden)"
 else
     echo "FAIL life: output != golden"; diff life.out "$TMP/out.txt" | head; exit 1
 fi
-echo "     live animation:  $HIERC life.hi --shim life_shim.c -o life && ./life animate"
+echo "     live animation:  $TYCHOC life.ty --shim life_shim.c -o life && ./life animate"

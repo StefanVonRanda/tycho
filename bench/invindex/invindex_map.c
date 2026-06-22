@@ -1,7 +1,7 @@
 /* Inverted-index build, map-native form — C, manual malloc/realloc. The map value
  * IS the growing posting list (string -> {long* docs, n, cap}), mirroring
- * invindex_map.hi's [string: [int]] with push(idx[term], d). Same LCG corpus and
- * same checksum as invindex_map.hi (the cross-language oracle): every (term, doc)
+ * invindex_map.ty's [string: [int]] with push(idx[term], d). Same LCG corpus and
+ * same checksum as invindex_map.ty (the cross-language oracle): every (term, doc)
  * occurrence is appended (no freq dedup). */
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,2 +1,2 @@
-tests/diag/dym_assign.hi:3: error: assignment to unknown variable 'totel'; did you mean 'total'?
+tests/diag/dym_assign.ty:3: error: assignment to unknown variable 'totel'; did you mean 'total'?
      3 |     totel = 2

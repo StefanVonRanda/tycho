@@ -1,0 +1,15 @@
+# Example: core:rand -- deterministic xorshift32 (NOT cryptographic). tycho has no
+# globals, so the state is an explicit int threaded via mut. Seeded here so the
+# output is reproducible; in real use seed from the clock: rand.seed(now()).
+package main
+import "core:rand"
+
+fn main():
+    st := rand.seed(42)
+    print("next         = " + str(rand.next(&st)) + "\n")
+    print("die roll     = " + str(rand.below(&st, 6) + 1) + "\n")   # 1..6
+
+    deck := [1, 2, 3, 4, 5]
+    shuffled := rand.shuffle(&st, deck)
+    print("shuffled[0]  = " + str(shuffled[0]) + "\n")
+    print("deck kept    = " + str(deck[0]) + "\n")                  # 1 (shuffle returns a new array)

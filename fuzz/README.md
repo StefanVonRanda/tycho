@@ -6,7 +6,7 @@ unsoundness — that the hand-written `tests/` might miss.
 
 ## How it works
 
-`gen.py <seed>` emits a **random, well-typed, deterministic, terminating** Hier
+`gen.py <seed>` emits a **random, well-typed, deterministic, terminating** Tycho
 program. It is type-directed (only constructs that type-check) and biased toward
 the arena-stressing shapes: value-copy binds (`b := a`), heap built in loops/
 blocks, `push`, struct/array/enum/tuple/option/map nesting, recursive enums +
@@ -15,13 +15,13 @@ accumulates an `int` checksum over everything it builds and prints it once.
 
 `run.py <N> [start]` runs `N` seeds. For each, it compiles the program with:
 
-- **hierc** (the C reference compiler) → native `-O2`  — the trusted oracle output.
-- **hierc0** (the self-hosted compiler) → native `-O2` — must match hierc byte-for-byte.
-- **hierc0** → `-fsanitize=address,undefined` — must not fault, and must match its
+- **tychoc** (the C reference compiler) → native `-O2`  — the trusted oracle output.
+- **tychoc0** (the self-hosted compiler) → native `-O2` — must match tychoc byte-for-byte.
+- **tychoc0** → `-fsanitize=address,undefined` — must not fault, and must match its
   own native output (catches UAF / heap corruption / UB).
 
 Any output divergence, sanitizer fault, crash, or compile-acceptance mismatch is
-a **finding**; the program is saved to `fuzz/findings/seed_<n>.hi`. Programs both
+a **finding**; the program is saved to `fuzz/findings/seed_<n>.ty`. Programs both
 compilers reject are skipped, so the generator can be aggressive. Leak detection
 is off — leaks aren't soundness bugs; this targets *correctness*.
 
@@ -33,7 +33,7 @@ make fuzz N=5000     # more
 python3 fuzz/run.py 1000 2000   # 1000 seeds starting at seed 2000
 ```
 
-Deterministic: a finding's `seed_<n>.hi` reproduces with `python3 fuzz/gen.py <n>`.
+Deterministic: a finding's `seed_<n>.ty` reproduces with `python3 fuzz/gen.py <n>`.
 
 ## Coverage / extending
 
@@ -53,7 +53,7 @@ type to `types_simple()` plus its `gen_expr` (construct) and `checksum_into`
 Two oracle-safety rules the generator must keep: (1) every value must reduce
 into the `int` checksum — floats and int-newtypes via `to_int` (deterministic
 truncation, identical in both compilers since they emit the same C); (2) never
-emit a construct that can fault at runtime in a *valid* program, or hierc's own
+emit a construct that can fault at runtime in a *valid* program, or tychoc's own
 run faults and run.py reports a false FAIL. The live example: **array** slices
 `exit(1)` on out-of-bounds (string slices clamp), so array slices are restricted
 to whole-array forms (`[:]`, `[0:]`) whose bounds hold at any runtime length.
@@ -81,7 +81,7 @@ Accept/reject **divergence** between the two front-ends is recorded (saved for
 review) but is **not** a hard failure — they legitimately differ near the
 grammar boundary. `make fuzz-reject` (N defaults to 500).
 
-It found and fixed a series of hierc0 fail-opens (duplicate decls/params/locals,
+It found and fixed a series of tychoc0 fail-opens (duplicate decls/params/locals,
 param-shadow, unknown function in statement position, no-main, unknown type
 name) and a parser leniency (two statements on one line).
 

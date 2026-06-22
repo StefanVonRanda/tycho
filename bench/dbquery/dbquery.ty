@@ -1,0 +1,70 @@
+# dbquery head-to-head: real SQLite (in-memory) is held CONSTANT across the
+# tycho / C / Go ports; what we measure is the HOST-side data handling around it.
+# Setup: insert N rows. Measured loop: Q query-rounds, each pulls a slice and
+# builds TRANSIENT per-round grouping maps + arena-copied label strings, folds
+# them to a checksum, then discards them. That churn is where tycho's per-round
+# arena reclaim meets C's malloc/free and Go's GC. Output = a deterministic
+# checksum (the cross-language correctness check). N/Q below match the C/Go ports.
+extern fn sx_open() -> ptr
+extern fn sx_exec(db: ptr, sql: string) -> int
+extern fn sx_prepare(db: ptr, sql: string) -> ptr
+extern fn sx_bind_int(st: ptr, i: int, v: int)
+extern fn sx_bind_text(st: ptr, i: int, s: string)
+extern fn sx_step(st: ptr) -> int
+extern fn sx_reset(st: ptr)
+extern fn sx_col_int(st: ptr, i: int) -> int
+extern fn sx_col_text(st: ptr, i: int) -> string
+extern fn sx_finalize(st: ptr)
+extern fn sx_close(db: ptr)
+
+fn main():
+    db := sx_open()
+    if is_null(db):
+        die("dbquery: open failed")
+    sx_exec(db, "CREATE TABLE events(id INTEGER, cat INTEGER, amt INTEGER, label TEXT)")
+
+    # setup: bulk insert N rows via a single prepared statement, in one transaction
+    n := 60000
+    sx_exec(db, "BEGIN")
+    ins := sx_prepare(db, "INSERT INTO events VALUES (?,?,?,?)")
+    i := 0
+    for i < n:
+        sx_bind_int(ins, 1, i)
+        sx_bind_int(ins, 2, i % 32)
+        sx_bind_int(ins, 3, (i * 2654435761) % 1000)
+        sx_bind_text(ins, 4, "u" + str(i % 1000))
+        sx_step(ins)
+        sx_reset(ins)
+        i = i + 1
+    sx_finalize(ins)
+    sx_exec(db, "COMMIT")
+
+    # measured loop: Q rounds of query -> group -> reduce -> discard
+    acc := 0
+    qn := 240
+    q := 0
+    for q < qn:
+        st := sx_prepare(db, "SELECT cat, amt, label FROM events WHERE (id % 240) = " + str(q))
+        m_sum := []int: int                 # transient per-round grouping tables
+        m_cnt := []int: int
+        lbllen := 0
+        for sx_step(st) == 1:
+            cat := sx_col_int(st, 0)
+            amt := sx_col_int(st, 1)
+            label := sx_col_text(st, 2)     # C-owned text -> arena-copied on return
+            lbllen = lbllen + len(label)
+            m_sum[cat] = map_get(m_sum, cat, 0) + amt
+            m_cnt[cat] = map_get(m_cnt, cat, 0) + 1
+        sx_finalize(st)
+        chk := lbllen
+        ks := keys(m_sum)
+        ki := 0
+        for ki < len(ks):
+            c := ks[ki]
+            chk = chk + (c + 1) * map_get(m_sum, c, 0) + map_get(m_cnt, c, 0)
+            ki = ki + 1
+        acc = acc + chk
+        q = q + 1
+
+    sx_close(db)
+    print(str(acc) + "\n")

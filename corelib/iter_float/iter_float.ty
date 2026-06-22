@@ -1,0 +1,37 @@
+package iter_float
+
+# Higher-order helpers over [float] -- the float sibling of core:iter
+# (one package per element type; tycho has no generics by decision).
+# Predicates return int: nonzero means true.
+
+fn map(xs: [float], f: fn(float) -> float) -> [float]:
+    out := []float
+    for x in xs:
+        push(out, f(x))
+    return out
+
+fn filter(xs: [float], keep: fn(float) -> int) -> [float]:
+    out := []float
+    for x in xs:
+        if keep(x) != 0:
+            push(out, x)
+    return out
+
+fn reduce(xs: [float], init: float, f: fn(float, float) -> float) -> float:
+    acc := init
+    for x in xs:
+        acc = f(acc, x)
+    return acc
+
+fn count(xs: [float], pred: fn(float) -> int) -> int:
+    n := 0
+    for x in xs:
+        if pred(x) != 0:
+            n = n + 1
+    return n
+
+fn any(xs: [float], pred: fn(float) -> int) -> bool:
+    for x in xs:
+        if pred(x) != 0:
+            return true
+    return false

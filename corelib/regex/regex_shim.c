@@ -1,7 +1,7 @@
 /* core:regex C shim -- POSIX extended regular expressions over <regex.h> (libc,
  * no extra -l). Auto-compiled+linked when a program imports "core:regex" (the
  * compiler discovers <pkg>/<pkg>_shim.c). A compiled pattern is a malloc'd
- * regex_t* handed to hier as an opaque `ptr`; hier never dereferences it and
+ * regex_t* handed to tycho as an opaque `ptr`; tycho never dereferences it and
  * frees it via rx_free (FFI memory is NOT arena-managed). */
 #include <regex.h>
 #include <stdlib.h>

@@ -1,5 +1,5 @@
 /* json-parse prong B — C, manual malloc/free. Same recursive-descent parser,
- * Json tree, and walk-checksum as json_parse.hi; reads the doc from stdin and
+ * Json tree, and walk-checksum as json_parse.ty; reads the doc from stdin and
  * does K parse-and-FREE passes (the tree is freed by hand each pass). */
 #include <stdio.h>
 #include <stdlib.h>

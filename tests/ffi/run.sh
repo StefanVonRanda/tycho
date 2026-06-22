@@ -1,15 +1,15 @@
 #!/bin/sh
 # FFI Stage 1 regression harness. Builds the fixture C lib (tests/ffi/demo.c),
-# then compiles tests/ffi/main.hi BOTH ways — via the C reference compiler
-# (hierc, which links -lffidemo itself from `extern "ffidemo"`) and via the
-# self-hosted compiler (hierc0, which emits C that we link) — and asserts both
+# then compiles tests/ffi/main.ty BOTH ways — via the C reference compiler
+# (tychoc, which links -lffidemo itself from `extern "ffidemo"`) and via the
+# self-hosted compiler (tychoc0, which emits C that we link) — and asserts both
 # produce the golden tests/ffi/expected.out. Also recompiles the emitted C under
 # ASan/UBSan to prove the string-return arena-copy is memory-clean (no UAF/leak).
 # Re-record the golden with RECORD=1 sh tests/ffi/run.sh.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc — run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
 golden="tests/ffi/expected.out"
@@ -21,20 +21,20 @@ $CC -O2 -c tests/ffi/demo.c -o "$T/demo.o" || { echo "FAIL: compiling demo.c"; e
 ar rcs "$T/libffidemo.a" "$T/demo.o"
 
 # the self-hosted compiler
-"$HIERC" compiler/hierc0.hi -o "$T/h0" >/dev/null 2>&1 || { echo "FAIL: could not build hierc0"; exit 1; }
+"$TYCHOC" compiler/tychoc0.ty -o "$T/h0" >/dev/null 2>&1 || { echo "FAIL: could not build tychoc0"; exit 1; }
 
 # (1) C reference compiler: it resolves `extern "ffidemo"` -> -lffidemo on its own
 # cc line; the Stage-3 `-L` flag points the linker at our static lib (no LIBRARY_PATH).
-if ! "$HIERC" tests/ffi/main.hi -o "$T/c_bin" -L "$T" >"$T/c.log" 2>&1; then
-    echo "FAIL: hierc compile"; sed 's/^/      /' "$T/c.log"; fail=1
+if ! "$TYCHOC" tests/ffi/main.ty -o "$T/c_bin" -L "$T" >"$T/c.log" 2>&1; then
+    echo "FAIL: tychoc compile"; sed 's/^/      /' "$T/c.log"; fail=1
 else
     "$T/c_bin" > "$T/c.out" 2>&1
 fi
 
 # (2) self-hosted compiler: emits C to stdout; we compile+link it ourselves.
-if ! { "$T/h0" tests/ffi/main.hi > "$T/h0.c" 2>/dev/null && \
+if ! { "$T/h0" tests/ffi/main.ty > "$T/h0.c" 2>/dev/null && \
        LIBRARY_PATH="$T" $CC -O2 -std=c11 -o "$T/h0_bin" "$T/h0.c" -lffidemo -lm 2>"$T/h0.log"; }; then
-    echo "FAIL: hierc0 compile"; sed 's/^/      /' "$T/h0.log"; fail=1
+    echo "FAIL: tychoc0 compile"; sed 's/^/      /' "$T/h0.log"; fail=1
 else
     "$T/h0_bin" > "$T/h0.out" 2>&1
 fi
@@ -51,13 +51,13 @@ fi
 
 # the two compilers must agree
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$T/h0.out"; then
-    echo "FAIL: hierc vs hierc0 output differ"; diff "$T/c.out" "$T/h0.out" | sed 's/^/      /'; fail=1
+    echo "FAIL: tychoc vs tychoc0 output differ"; diff "$T/c.out" "$T/h0.out" | sed 's/^/      /'; fail=1
 fi
 
 # (4) Stage 3 --shim: an extern implemented by a companion C file, compiled and
 # linked alongside the generated C with no prebuilt library.
-printf 'extern fn ffi_triple(x: int) -> int\nfn main():\n    print(f"triple={ffi_triple(14)}\\n")\n' > "$T/shimtest.hi"
-if ! "$HIERC" "$T/shimtest.hi" -o "$T/shimbin" --shim tests/ffi/shim.c >"$T/shim.log" 2>&1; then
+printf 'extern fn ffi_triple(x: int) -> int\nfn main():\n    print(f"triple={ffi_triple(14)}\\n")\n' > "$T/shimtest.ty"
+if ! "$TYCHOC" "$T/shimtest.ty" -o "$T/shimbin" --shim tests/ffi/shim.c >"$T/shim.log" 2>&1; then
     echo "FAIL: --shim compile"; sed 's/^/      /' "$T/shim.log"; fail=1
 else
     shimout="$("$T/shimbin" 2>&1)"
@@ -65,17 +65,17 @@ else
 fi
 
 # (5) Package-scoped extern: an extern declared+called inside a package. Both
-# compilers must keep the C symbol unmangled (hierc0 regression). Expect tri6=42.
-if ! "$HIERC" tests/ffi/pkgext/main.hi -o "$T/pkg_c" --shim tests/ffi/shim.c >"$T/pkg.log" 2>&1; then
-    echo "FAIL: pkg-extern hierc compile"; sed 's/^/      /' "$T/pkg.log"; fail=1
+# compilers must keep the C symbol unmangled (tychoc0 regression). Expect tri6=42.
+if ! "$TYCHOC" tests/ffi/pkgext/main.ty -o "$T/pkg_c" --shim tests/ffi/shim.c >"$T/pkg.log" 2>&1; then
+    echo "FAIL: pkg-extern tychoc compile"; sed 's/^/      /' "$T/pkg.log"; fail=1
 else
-    [ "$("$T/pkg_c" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern hierc output"; fail=1; }
+    [ "$("$T/pkg_c" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc output"; fail=1; }
 fi
-if ! { "$HIERC" tests/ffi/pkgext/main.hi --bundle 2>/dev/null | "$T/h0" > "$T/pkg_h0.c" 2>/dev/null && \
+if ! { "$TYCHOC" tests/ffi/pkgext/main.ty --bundle 2>/dev/null | "$T/h0" > "$T/pkg_h0.c" 2>/dev/null && \
        $CC -O2 -std=c11 -o "$T/pkg_h0" "$T/pkg_h0.c" tests/ffi/shim.c -lm 2>"$T/pkg_h0.log"; }; then
-    echo "FAIL: pkg-extern hierc0 compile"; sed 's/^/      /' "$T/pkg_h0.log"; fail=1
+    echo "FAIL: pkg-extern tychoc0 compile"; sed 's/^/      /' "$T/pkg_h0.log"; fail=1
 else
-    [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern hierc0 output"; fail=1; }
+    [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc0 output"; fail=1; }
 fi
 
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
@@ -84,4 +84,4 @@ if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (hierc + hierc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }

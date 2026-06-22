@@ -1,0 +1,223 @@
+# A JSON parser + serializer — a real, recursive systems program written in Tycho.
+#
+# The whole point: the parsed document is a recursive value-semantic tree (the
+# `Json` enum), built by recursive descent and walked to serialize, with ZERO
+# manual memory management. No malloc/free, no reference counts, no GC — every
+# node and string lives in a lexical arena and is freed when its scope exits.
+# This is the thesis (value-semantic implicit arenas, docs/thesis.md) on real
+# code with real recursion, not a microbenchmark.
+#
+# Scope: null / bool / integers / strings (with \n \t \" \\ escapes) / arrays /
+# objects, plus whitespace. (Objects are parallel key/value arrays because Tycho's
+# maps are int/float-valued only; floats are left as an exercise.)
+
+enum Json:
+    JNull
+    JBool(bool)
+    JNum(int)
+    JStr(string)
+    JArr([Json])
+    JObj([string], [Json])        # parallel keys / values
+
+# ---- parser (recursive descent; `pos` is threaded by mut) ----------------
+
+fn skip_ws(s: string, n: int, pos: mut int):
+    for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+        pos = pos + 1
+
+fn parse_string(s: string, n: int, pos: mut int) -> string:
+    pos = pos + 1                              # skip opening "
+    r := ""
+    for pos < n and s[pos] != 34:              # until closing "
+        if s[pos] == 92:                       # backslash escape
+            pos = pos + 1
+            e := s[pos]
+            if e == 110:
+                r = r + '\n'
+            elif e == 116:
+                r = r + '\t'
+            elif e == 34:
+                r = r + '"'
+            elif e == 92:
+                r = r + '\\'
+            else:
+                r = r + ('\0' + e)             # '\0' + byte: int -> char (the char type)
+        else:
+            r = r + ('\0' + s[pos])
+        pos = pos + 1
+    pos = pos + 1                              # skip closing "
+    return r
+
+fn parse_number(s: string, n: int, pos: mut int) -> int:
+    neg := false
+    if s[pos] == 45:                           # '-'
+        neg = true
+        pos = pos + 1
+    v := 0
+    for pos < n and s[pos] >= 48 and s[pos] <= 57:
+        v = v * 10 + (s[pos] - 48)
+        pos = pos + 1
+    if neg:
+        return 0 - v
+    return v
+
+fn parse_array(s: string, n: int, pos: mut int) -> Json:
+    pos = pos + 1                              # skip [
+    xs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 93:              # until ]
+        push(xs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:           # ,
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1                              # skip ]
+    return JArr(xs)
+
+fn parse_object(s: string, n: int, pos: mut int) -> Json:
+    pos = pos + 1                              # skip {
+    ks := []string
+    vs := []Json
+    skip_ws(s, n, &pos)
+    for pos < n and s[pos] != 125:             # until }
+        k := parse_string(s, n, &pos)
+        skip_ws(s, n, &pos)
+        pos = pos + 1                          # skip :
+        push(ks, k)
+        push(vs, parse_value(s, n, &pos))
+        skip_ws(s, n, &pos)
+        if pos < n and s[pos] == 44:           # ,
+            pos = pos + 1
+            skip_ws(s, n, &pos)
+    pos = pos + 1                              # skip }
+    return JObj(ks, vs)
+
+fn parse_value(s: string, n: int, pos: mut int) -> Json:
+    skip_ws(s, n, &pos)
+    c := s[pos]
+    if c == 123:                               # {
+        return parse_object(s, n, &pos)
+    if c == 91:                                # [
+        return parse_array(s, n, &pos)
+    if c == 34:                                # "
+        return JStr(parse_string(s, n, &pos))
+    if c == 116:                               # 'true'
+        pos = pos + 4
+        return JBool(true)
+    if c == 102:                               # 'false'
+        pos = pos + 5
+        return JBool(false)
+    if c == 110:                               # 'null'
+        pos = pos + 4
+        return JNull
+    return JNum(parse_number(s, n, &pos))      # number
+
+# ---- serializer (walk the tree, build a string) ----------------------------
+
+fn esc(s: string) -> string:                   # minimal string escaping
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if c == 34:
+            out = out + "\\\""
+        elif c == 92:
+            out = out + "\\\\"
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        else:
+            out = out + ('\0' + c)
+    return out
+
+fn to_json(j: Json) -> string:
+    match j:
+        JNull:
+            return "null"
+        JBool(b):
+            if b:
+                return "true"
+            return "false"
+        JNum(x):
+            return str(x)
+        JStr(s):
+            return "\"" + esc(s) + "\""
+        JArr(xs):
+            out := "["
+            for i in range(len(xs)):
+                if i > 0:
+                    out = out + ","
+                out = out + to_json(xs[i])
+            return out + "]"
+        JObj(ks, vs):
+            out := "{"
+            for i in range(len(ks)):
+                if i > 0:
+                    out = out + ","
+                out = out + "\"" + esc(ks[i]) + "\":" + to_json(vs[i])
+            return out + "}"
+
+# ---- working with the tree (a typed query into the document) ----------------
+
+fn get(j: Json, key: string) -> Json:          # object field lookup, else JNull
+    match j:
+        JObj(ks, vs):
+            for i in range(len(ks)):
+                if ks[i] == key:
+                    return vs[i]
+            return JNull
+        JNull:
+            return JNull
+        JBool(b):
+            return JNull
+        JNum(x):
+            return JNull
+        JStr(s):
+            return JNull
+        JArr(xs):
+            return JNull
+
+fn as_num(j: Json) -> int:                      # extract a JNum, else 0
+    match j:
+        JNum(x):
+            return x
+        JNull:
+            return 0
+        JBool(b):
+            return 0
+        JStr(s):
+            return 0
+        JArr(xs):
+            return 0
+        JObj(ks, vs):
+            return 0
+
+fn count_nums(j: Json) -> int:                  # recursive walk: sum every number in the tree
+    match j:
+        JNum(x):
+            return x
+        JArr(xs):
+            t := 0
+            for i in range(len(xs)):
+                t = t + count_nums(xs[i])
+            return t
+        JObj(ks, vs):
+            t := 0
+            for i in range(len(vs)):
+                t = t + count_nums(vs[i])
+            return t
+        JNull:
+            return 0
+        JBool(b):
+            return 0
+        JStr(s):
+            return 0
+
+fn main():
+    src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
+    pos := 0
+    j := parse_value(src, len(src), &pos)
+    print("round-trip: " + to_json(j) + "\n")
+    print("version    = " + str(as_num(get(j, "version"))) + "\n")
+    print("nested.n   = " + str(as_num(get(get(j, "nested"), "n"))) + "\n")
+    print("sum of nums = " + str(count_nums(j)) + "\n")   # 7 + (-3) = 4

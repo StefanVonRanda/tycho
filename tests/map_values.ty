@@ -1,0 +1,94 @@
+# Maps with arbitrary value types ([string: V], V = string / struct), exercising
+# the composite-map runtime in both compilers: CRUD, literals, keys, the heap-value
+# lifetime (a bound value must survive later rehashes as an independent copy), and
+# value semantics (copying a map and mutating the copy must not touch the original).
+struct P:
+    x: int
+    y: int
+
+fn main():
+    # [string: string]
+    m := []string: string
+    m["a"] = "apple"
+    m["b"] = "banana"
+    m["a"] = "avocado" # overwrite
+    print(map_get(m, "a", "?") + "\n")         # avocado
+    print(map_get(m, "b", "?") + "\n")         # banana
+    print(map_get(m, "z", "none") + "\n")      # none (default)
+    if "a" in m:
+        print("has-a\n")
+    if not "z" in m:
+        print("no-z\n")
+
+    # heap-value lifetime: bind, then force many rehashes; v stays its own copy
+    v := map_get(m, "a", "?")
+    i := 0
+    for i in range(40):
+        m["k" + str(i)] = "v" + str(i)
+    print(v + "\n")                            # avocado (not corrupted by rehash)
+    print(str(len(keys(m))) + "\n")            # 42
+
+    # value semantics: copy the map, mutate the copy, original unchanged
+    base := []string: string
+    base["k"] = "orig"
+    cp := base
+    cp["k"] = "mutated"
+    print(map_get(base, "k", "?") + "\n")      # orig (the copy's change must not leak)
+    print(map_get(cp, "k", "?") + "\n")        # mutated
+
+    delete m["a"]
+    if not "a" in m:
+        print("a-gone\n")
+
+    # [string: Struct] values
+    pts := []string: P
+    pts["origin"] = P(0, 0)
+    pts["unit"] = P(1, 1)
+    q := map_get(pts, "unit", P(9, 9))
+    print(str(q.x) + "," + str(q.y) + "\n")    # 1,1
+    print(str(map_get(pts, "missing", P(7, 8)).y) + "\n")  # 8 (default)
+
+    # [int: V] composite values (occupancy-array scheme; 0 is a real key)
+    im := []int: string
+    im[1] = "one"
+    im[0] = "zero"
+    im[1] = "uno" # overwrite
+    print(map_get(im, 1, "?") + map_get(im, 0, "?") + map_get(im, 5, "x") + "\n")  # unozerox
+    ipt := []int: P
+    ipt[9] = P(8, 7)
+    print(str(map_get(ipt, 9, P(0, 0)).x) + "," + str(map_get(ipt, 9, P(0, 0)).y) + "\n")  # 8,7
+
+    # literal with entries
+    lit := ["x": "ex", "y": "why"]
+    print(map_get(lit, "x", "?") + map_get(lit, "y", "?") + "\n")  # exwhy
+
+    # == on composite-valued maps (deep value equality)
+    e1 := ["k": "v", "j": "w"]
+    e2 := ["j": "w", "k": "v"]                 # same entries, different insertion order
+    e3 := ["k": "v", "j": "DIFF"]
+    if e1 == e2:
+        print("eq-ok\n")
+    if not (e1 == e3):
+        print("neq-ok\n")
+
+    # map_has returns a real bool: str() prints true/false (not 1/0), and both
+    # compilers must agree (map_has was typed int in tychoc0 before — a str divergence).
+    print("has " + str("unit" in pts) + " " + str("nope" in pts) + "\n")  # has true false
+    print("ihas " + str(0 in im) + " " + str(99 in im) + "\n")             # ihas true false
+
+    # aggregate value types: array values and nested-map values (each monomorphized;
+    # the value's own runtime family is emitted, inner map typedef'd before the outer)
+    av := []int: [int]
+    av[1] = [10, 20, 30]
+    da := []int
+    print("arrval=" + str(len(map_get(av, 1, da))) + "\n")                  # arrval=3
+    nv := []string: [string: int]
+    box := []string: int
+    box["x"] = 7
+    nv["a"] = box
+    dn := []string: int
+    print("nestval=" + str(map_get(map_get(nv, "a", dn), "x", 0)) + "\n")   # nestval=7
+    # m[k] = <multi-entry map literal>: the inner map must be built in nv's arena,
+    # NOT owner 0 — else the chained-set intermediate tables leak (LSan, make test).
+    nv["b"] = ["y": 9, "z": 8]
+    print("place=" + str(map_get(map_get(nv, "b", dn), "z", 0)) + "\n")     # place=8

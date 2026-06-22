@@ -1,10 +1,10 @@
-title: Welcome to Hier
+title: Welcome to Tycho
 date: 1690000000
 author: zinc
 ---
 # Welcome
 
-Hier is a systems language with value semantics and implicit arenas.
+Tycho is a systems language with value semantics and implicit arenas.
 
 ## Why it is different
 

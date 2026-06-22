@@ -1,0 +1,37 @@
+# The match subject must be evaluated exactly once, not once per arm test.
+# Regression: tychoc0 pasted the subject's C text into every arm test + payload
+# bind, so a side-effecting subject (pop-like) ran N times.
+enum Step:
+    Go(int)
+    Halt
+
+fn take(s: mut [int]) -> Option(int):
+    if len(s) == 0:
+        return None
+    v := s[len(s) - 1]
+    pop(s)
+    return Some(v)
+
+fn next(n: mut int) -> Step:
+    n = n + 1
+    if n < 3:
+        return Go(n)
+    return Halt
+
+fn main():
+    s := []int
+    push(s, 1)
+    push(s, 2)
+    match take(&s):
+        Some(v):
+            print("got " + str(v))
+        None:
+            print("none")
+    print("left " + str(len(s)))
+    n := 0
+    match next(&n):
+        Go(k):
+            print("go " + str(k))
+        Halt:
+            print("halt")
+    print("n " + str(n))

@@ -1,0 +1,15 @@
+# Example: core:hex -- hexadecimal encode/decode (two digits per byte).
+package main
+import "core:hex"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    print("encode       = " + hex.encode("tycho") + "\n")          # 747963686f
+    print("encode_upper = " + hex.encode_upper("hi") + "\n")      # 6869
+    print("decode       = " + hex.decode("747963686f") + "\n")      # tycho
+    print("decode spaced= " + hex.decode("74 79 63 68 6f") + "\n")  # tycho (separators skipped)
+    print("is_valid     = " + str(b2i(hex.is_valid("deadbeef"))) + "\n")    # 1

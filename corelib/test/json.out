@@ -1,7 +1,7 @@
-round-trip: {"name":"hier","version":7,"tags":["systems","arena"],"nested":{"ok":true,"n":-3},"empty":[],"nothing":null}
+round-trip: {"name":"tycho","version":7,"tags":["systems","arena"],"nested":{"ok":true,"n":-3},"empty":[],"nothing":null}
 kind        = obj
 version     = 7
-name        = hier
+name        = tycho
 nested.n    = -3
 nested.ok   = 1
 tags.len    = 2

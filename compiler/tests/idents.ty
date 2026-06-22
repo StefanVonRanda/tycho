@@ -1,0 +1,39 @@
+# Identifier-namespacing regression. User names that collide with tychoc0's emitted
+# runtime helpers (sc/hs/amem/i2s/scopy/hbox) or C keywords (default/case/static/
+# union/register/goto/volatile) must self-host. The C compiler prefixes user
+# variables/params/functions (h_), struct fields (f_), and struct/enum type names
+# (S_/E_); tychoc0 now does too. tychoc0 and the C compiler must agree (make bootstrap
+# diffs them). NOTE: enum VARIANT names are left raw in BOTH compilers (the variant is
+# a union member), so the variant names here are deliberately non-keywords.
+struct register:                      # struct type named a C keyword (-> S_register)
+    static: int                       # field named a C keyword (-> f_static)
+    volatile: int                     # field named a C keyword (-> f_volatile)
+
+enum goto:                            # enum type named a C keyword (-> E_goto)
+    Vv(int)
+    Nn
+
+fn sc(amem: int) -> int:              # user fn `sc` + param `amem` (both runtime-helper names)
+    return amem + 1
+
+fn use_reg(r: register) -> int:       # keyword-named struct as a parameter type
+    return r.static + r.volatile      # keyword-named field access
+
+fn main():
+    hs := 0                           # var `hs` (runtime helper name)
+    default := 3                      # C keyword as a variable
+    for case in range(default):       # loop var `case` (C keyword)
+        hs = hs + 1
+    scopy := ""                       # string accumulator named like the runtime `scopy`
+    static := 4                       # C keyword
+    for union in range(static):       # loop var `union` (C keyword)
+        scopy = scopy + "x"
+    b := Vv(sc(static))               # call user `sc`; construct the keyword-named enum
+    i2s := 0                          # var `i2s` (runtime helper name)
+    match b:
+        Vv(hbox):                     # match binding `hbox` (runtime helper name)
+            i2s = hbox
+        Nn:
+            i2s = 0
+    rg := register(5, 7)              # construct the keyword-named struct
+    print(str(hs) + "," + str(i2s) + "," + str(len(scopy)) + "," + str(use_reg(rg)) + "\n")   # 3,5,4,12

@@ -1,0 +1,17 @@
+# In-place string append. `acc = acc + e` in a loop is the classic O(n^2)
+# trap, but Tycho grows acc's buffer in place (geometric capacity, like an
+# array push), so this builds a 50000-character string in O(n) time and
+# memory — a few MB, not the ~hundreds of MB a naive copy-each-step would
+# need. The source is ordinary value-semantic concatenation; the
+# optimization is invisible. (See the memory-model section of the README.)
+
+fn repeat(s: string, n: int) -> string:
+    acc := ""
+    for i in range(0, n):
+        acc = acc + s        # in-place append; acc is uniquely owned here
+    return acc               # built directly in the caller's arena (no copy)
+
+fn main():
+    big := repeat("ab", 25000)
+    print("length: " + str(len(big)) + "\n")    # 50000
+    print("head: " + substr(big, 0, 6) + "\n")  # ababab

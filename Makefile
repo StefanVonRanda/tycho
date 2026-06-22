@@ -1,146 +1,146 @@
-# Hier compiler build.
+# Tycho compiler build.
 #
-#   make            -> build ./hierc (native, macOS/Linux host)
-#   make demo       -> compile + run examples/hello.hi natively
+#   make            -> build ./tychoc (native, macOS/Linux host)
+#   make demo       -> compile + run examples/hello.ty natively
 #   make clean
 
 CC      ?= cc
 CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 
-EMBED   := build/hier_rt_embed.h
-RUNTIME := runtime/hier_rt.c
+EMBED   := build/tycho_rt_embed.h
+RUNTIME := runtime/tycho_rt.c
 
 .PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz corelib corelib-examples fetch site ffi ci hooks clean
 
-all: hierc
+all: tychoc
 
 # Turn the runtime C source into a single C string literal the compiler
 # embeds into every generated file. Each line is escaped and suffixed
 # with \n so the emitted C is byte-for-byte the runtime source.
 $(EMBED): $(RUNTIME) | build
-	@awk 'BEGIN{print "static const char *HIER_RUNTIME ="} \
+	@awk 'BEGIN{print "static const char *TYCHO_RUNTIME ="} \
 	     {gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "\"%s\\n\"\n",$$0} \
 	     END{print ";"}' $(RUNTIME) > $(EMBED)
 
 build:
 	@mkdir -p build
 
-hierc: src/hierc.c $(EMBED)
-	$(CC) $(CFLAGS) -Ibuild src/hierc.c -o hierc
+tychoc: src/tychoc.c $(EMBED)
+	$(CC) $(CFLAGS) -Ibuild src/tychoc.c -o tychoc
 
-# The `hier` daily-driver CLI (run/build/check/watch) -- itself a Hier program,
-# built with hierc + the FFI shell-out shim. Run as `./hier <cmd> <file.hi>`
-# (set HIERC=./hierc to use the in-repo compiler). See tools/hier.hi.
-hier: hierc tools/hier.hi tools/hier_shim.c
-	./hierc tools/hier.hi --shim tools/hier_shim.c -o hier
+# The `tycho` daily-driver CLI (run/build/check/watch) -- itself a Tycho program,
+# built with tychoc + the FFI shell-out shim. Run as `./tycho <cmd> <file.ty>`
+# (set TYCHOC=./tychoc to use the in-repo compiler). See tools/tycho.ty.
+tycho: tychoc tools/tycho.ty tools/tycho_shim.c
+	./tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
-# hierfmt -- the source formatter. Lossless, comment-preserving lexer + canonical
+# tychofmt -- the source formatter. Lossless, comment-preserving lexer + canonical
 # pretty-printer: re-indents, re-spaces by token adjacency, groups top-level defs.
-# Whitespace-only (emit-C identical, verified by tools-check). See tools/hierfmt.hi.
-hierfmt: hierc tools/hierfmt.hi
-	./hierc tools/hierfmt.hi -o hierfmt
+# Whitespace-only (emit-C identical, verified by tools-check). See tools/tychofmt.ty.
+tychofmt: tychoc tools/tychofmt.ty
+	./tychoc tools/tychofmt.ty -o tychofmt
 
-# hier-lsp -- the language server (JSON-RPC over stdin/stdout, dogfooded in hier).
+# tycho-lsp -- the language server (JSON-RPC over stdin/stdout, dogfooded in tycho).
 # STAGE 1: lifecycle handshake; stage 2 adds diagnostics. Any LSP client drives it.
-hier-lsp: hierc tools/lsp.hi tools/lsp_shim.c
-	./hierc tools/lsp.hi --shim tools/lsp_shim.c -o hier-lsp
+tycho-lsp: tychoc tools/lsp.ty tools/lsp_shim.c
+	./tychoc tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
 
 # build the whole daily-driver toolchain (driver + formatter + language server)
-tools: hier hierfmt hier-lsp
+tools: tycho tychofmt tycho-lsp
 
 # regression guard for the tooling: formatter idempotence + semantic preservation
 # (emit-C identical before/after) and an LSP JSON-RPC smoke test. Part of `make ci`.
-tools-check: hierc
+tools-check: tychoc
 	@sh scripts/tools_check.sh
 
-demo: hierc
-	./hierc examples/hello.hi
+demo: tychoc
+	./tychoc examples/hello.ty
 	@echo "--- running examples/hello (type a name) ---"
 	@./examples/hello
 
-# Differential test suite: every examples/*.hi and tests/*.hi built both
+# Differential test suite: every examples/*.ty and tests/*.ty built both
 # native -O2 and under -fsanitize=address,undefined, run on matching stdin,
 # asserting exit 0, clean sanitizers, and byte-identical output. See
 # tests/run.sh and docs/thesis.md §3.
-test: hierc
+test: tychoc
 	@sh tests/run.sh
 
-# Concurrency suite (spawn/wait, parallel for, channels): hierc builds each
+# Concurrency suite (spawn/wait, parallel for, channels): tychoc builds each
 # positive fixture native + ASan/LSan + TSan against the goldens, the
-# hierc-built hierc0 must reproduce the same outputs (parity differential),
+# tychoc-built tychoc0 must reproduce the same outputs (parity differential),
 # rejects must fail, aborts must die with their .err message. In `make ci`.
-conc: hierc
+conc: tychoc
 	@sh tests/conc/run.sh
 
 # Re-record the expected-output goldens (tests/*.out) from current output.
 # Opt-in only: a normal `make test` never writes them, so a regression cannot
 # silently rebake itself into the expected files. Review `git diff tests/`.
-test-update: hierc
+test-update: tychoc
 	@RECORD=1 sh tests/run.sh
 
 # Performance guard: assert the thesis's optimizations still hold (peak RSS
 # stays linear, the mut memo stays O(n)). See bench/run.sh.
-bench: hierc
+bench: tychoc
 	@sh bench/run.sh
 
-# Head-to-head memory benchmark: the same workloads in Hier / C / Rust / Go /
+# Head-to-head memory benchmark: the same workloads in Tycho / C / Rust / Go /
 # Koka, peak RSS + wall time + output-identity, with a normalized scorecard.
 # The empirical half of the thesis. See bench/prongB/run.sh and RESULTS.md.
-bench-prongB: hierc
+bench-prongB: tychoc
 	@sh bench/prongB/run.sh
 
-# Real-library head-to-head: the same SQLite workload in hier / C / Go (peak RSS
+# Real-library head-to-head: the same SQLite workload in tycho / C / Go (peak RSS
 # + wall + identical checksum). Needs libsqlite3; skips absent toolchains. NOT in
 # `make ci` (system dependency). See bench/dbquery/RESULTS.md.
-bench-dbquery: hierc
+bench-dbquery: tychoc
 	@sh bench/dbquery/run.sh
 
 # Concurrency head-to-head (parallel reduce + channel pipeline) vs C/Go/Rust.
-bench-conc: hierc
+bench-conc: tychoc
 	@sh bench/conc/run.sh
 
 # Parallel text indexer dogfood (channel fan-out -> worker maps -> mut merge)
 # vs C/Go over an identical synthetic corpus. See bench/indexer/RESULTS.md.
-bench-indexer: hierc
+bench-indexer: tychoc
 	@sh bench/indexer/run.sh
 
-# Static-site generation: render N Markdown pages to HTML, hier vs C vs Go,
-# peak RSS + wall. hier's per-scope arena keeps memory FLAT across a 20x scale
+# Static-site generation: render N Markdown pages to HTML, tycho vs C vs Go,
+# peak RSS + wall. tycho's per-scope arena keeps memory FLAT across a 20x scale
 # (matches C, no manual free) where Go's GC holds garbage; an FNV checksum of
 # every rendered byte gates fairness. See bench/site/RESULTS.md.
-bench-site: hierc
+bench-site: tychoc
 	@sh bench/site/run.sh
 
 # Sliding-window eviction: the arena's weak point, mapped honestly (heap-record
-# window loses ~14x; fixed-size ties). hier vs C vs Go. See bench/window/RESULTS.md.
-bench-window: hierc
+# window loses ~14x; fixed-size ties). tycho vs C vs Go. See bench/window/RESULTS.md.
+bench-window: tychoc
 	@sh bench/window/run.sh
 
-# Latency / GC-pause predictability: hier/C pause-free, Go's GC pause measured.
+# Latency / GC-pause predictability: tycho/C pause-free, Go's GC pause measured.
 # See bench/latency/RESULTS.md.
-bench-latency: hierc
+bench-latency: tychoc
 	@sh bench/latency/run.sh
 
-# Large held set: per-object overhead (hier most compact) + GC-scan cost (Go's
-# memory-vs-CPU tradeoff under a GOGC sweep; hier/C never scan). bench/gcscan/RESULTS.md.
-bench-gcscan: hierc
+# Large held set: per-object overhead (tycho most compact) + GC-scan cost (Go's
+# memory-vs-CPU tradeoff under a GOGC sweep; tycho/C never scan). bench/gcscan/RESULTS.md.
+bench-gcscan: tychoc
 	@sh bench/gcscan/run.sh
 
-# Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
+# Self-hosting bootstrap: build tychoc0 (the subset compiler written in Tycho)
 # and validate it on its fixtures. See compiler/.
-bootstrap: hierc
+bootstrap: tychoc
 	@sh compiler/run.sh
 
 # corelib: the standard library (packages under corelib/, imported as `core:<name>`,
-# resolved via HIER_CORELIB). Each corelib/test/<name> must compile + run identically
-# through the C compiler and the self-hosted hierc0. See corelib/run.sh.
-corelib: hierc
+# resolved via TYCHO_CORELIB). Each corelib/test/<name> must compile + run identically
+# through the C compiler and the self-hosted tychoc0. See corelib/run.sh.
+corelib: tychoc
 	@sh corelib/run.sh
 
 # corelib examples: a small, readable program per core module (usage as
 # documentation, not assertions like corelib/test/), validated 3-way + golden
 # like the tests, with the same deps-skip. See examples/corelib/run.sh.
-corelib-examples: hierc
+corelib-examples: tychoc
 	@sh examples/corelib/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
@@ -148,38 +148,38 @@ corelib-examples: hierc
 # whole pipeline is deterministic + offline). Skips without libcurl. Standalone
 # (not in `make ci`, like examples/sqlite); the http module is covered in ci via
 # corelib-examples. See examples/fetch/run.sh.
-fetch: hierc
+fetch: tychoc
 	@sh examples/fetch/run.sh
 
 # site: a static-site generator dogfood composing eight corelib modules
 # (io+path+json+csv+strings+sort+datetime+sha256) -- no FFI, no external deps, so
 # it is deterministic and IS part of `make ci`. Built by all three compilers +
 # ASan against a fixture site, asserting the build report. See examples/site/run.sh.
-site: hierc
+site: tychoc
 	@sh examples/site/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
-ffi: hierc
+ffi: tychoc
 	@sh tests/ffi/run.sh
 
-# Stage 4 self-host fixpoint: A=hierc·hierc0.hi, B=A·hierc0.hi, C=B·hierc0.hi;
+# Stage 4 self-host fixpoint: A=tychoc·tychoc0.ty, B=A·tychoc0.ty, C=B·tychoc0.ty;
 # assert B==C (byte-identical self-emission) and B matches the C compiler.
-fixpoint: hierc
+fixpoint: tychoc
 	@sh compiler/fixpoint.sh
 
-# Soundness fuzzer: generate N random well-typed Hier programs, compile each
-# with hierc (reference, native) and hierc0 (native + ASan/UBSan), and assert
+# Soundness fuzzer: generate N random well-typed Tycho programs, compile each
+# with tychoc (reference, native) and tychoc0 (native + ASan/UBSan), and assert
 # byte-identical output with no sanitizer fault. N defaults to 500; failing
 # programs are saved to fuzz/findings/. See fuzz/README.md.
 N ?= 500
-fuzz: hierc
+fuzz: tychoc
 	@python3 fuzz/run.py $(N)
 
 # Robustness lane: feed MALFORMED input to BOTH compilers (built under
 # ASan+UBSan) and assert each FAILS CLOSED -- never crashes, and any input it
 # accepts must emit valid C. Wired into `make ci` (scripts/ci.sh, step 8/9).
-fuzz-reject: hierc
+fuzz-reject: tychoc
 	@python3 fuzz/run_reject.py $(N)
 
 # Leak lane: run the SOUNDNESS generator's valid programs (gen.py) under
@@ -187,13 +187,13 @@ fuzz-reject: hierc
 # class the differential lane (detect_leaks=0) can't see. Slowest lane (sequential
 # ASan+LSan); wired into `make ci` (scripts/ci.sh step 9/10) capped at N=150 there.
 # Run a deeper sweep directly: `make fuzz-leak N=500`.
-fuzz-leak: hierc
+fuzz-leak: tychoc
 	@python3 fuzz/run_leak.py $(N)
 
-# Wall-time regression guard: asserts hier beats hand-written C on tree-alloc
+# Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
 # fuzz/fixpoint can't (they check output, not speed -- see commit 6ff7aa1). In CI.
-bench-guard: hierc
+bench-guard: tychoc
 	@sh bench/guard.sh
 
 # Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz + perf guard.
@@ -207,7 +207,7 @@ hooks:
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
 
 clean:
-	rm -f hierc hier hier.c hierfmt hierfmt.c hier-lsp hier-lsp.c build/hier_rt_embed.h
+	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
 	rm -f examples/arrays examples/arrays.c

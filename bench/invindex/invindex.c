@@ -1,5 +1,5 @@
 /* Inverted-index build, at scale — C, manual malloc/free/realloc. Same LCG,
- * same add logic, same checksum as invindex.hi (the cross-language oracle).
+ * same add logic, same checksum as invindex.ty (the cross-language oracle).
  * A hand-written open-addressing string->slot hash map + a growing Posting
  * array whose elements own realloc'd doc/freq arrays. */
 #include <stdio.h>

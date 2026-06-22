@@ -2,7 +2,7 @@
 # Differential + golden test harness — the verification standard from
 # docs/thesis.md §3, plus an expected-output check.
 #
-# For every .hi program in examples/ and tests/, transpile it, build BOTH a
+# For every .ty program in examples/ and tests/, transpile it, build BOTH a
 # native -O2 binary and an AddressSanitizer+UBSan binary, run both on the same
 # stdin, and assert:
 #   (a) both exit 0,
@@ -30,8 +30,8 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
-HIERC=./hierc
-[ -x "$HIERC" ] || { echo "no ./hierc — run 'make' first"; exit 2; }
+TYCHOC=./tychoc
+[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 
 CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
@@ -41,8 +41,8 @@ trap 'rm -rf "$TMP"' EXIT
 # not ship — there, detect_leaks=1 aborts every sanitizer binary at exit
 # regardless of correctness. Gate it by OS: full leak checking on Linux (where
 # a leak is a real arena-free bug), ASan+UBSan only on macOS.
-case "$(uname -s)" in Darwin) HIER_LSAN=0 ;; *) HIER_LSAN=1 ;; esac
-export ASAN_OPTIONS=detect_leaks=$HIER_LSAN
+case "$(uname -s)" in Darwin) TYCHO_LSAN=0 ;; *) TYCHO_LSAN=1 ;; esac
+export ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN
 
 [ "$RECORD" = 1 ] && echo "*** RECORD MODE: rewriting tests/*.out goldens — review the diff before committing ***"
 
@@ -54,7 +54,7 @@ fails=""
 # note a problem (prints only); the per-program tally happens once in run_one.
 note() { echo "FAIL  $1  ($2)"; }
 
-# run_one <entry.hi> <name> <golden.out> <stdin>
+# run_one <entry.ty> <name> <golden.out> <stdin>
 run_one() {
     hi="$1"; name="$2"; g="$3"; in="$4"
     c="$TMP/$name.c"
@@ -62,7 +62,7 @@ run_one() {
     san="$TMP/$name.asan"
     ok=1
 
-    if ! "$HIERC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
+    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
         note "$name" "transpile"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     elif ! $CC -O2 -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "native cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
@@ -103,55 +103,55 @@ run_one() {
     else fail=$((fail + 1)); fails="$fails $name"; fi
 }
 
-for hi in examples/*.hi tests/*.hi; do
+for hi in examples/*.ty tests/*.ty; do
     [ -e "$hi" ] || continue
-    name="$(basename "$hi" .hi)"
+    name="$(basename "$hi" .ty)"
     in="tests/$name.in"; [ -f "$in" ] || in=/dev/null
     run_one "$hi" "$name" "tests/$name.out" "$in"
 done
 
 # Package programs: each tests/pkg/<name>/ is one multi-file package program
-# whose entry is main.hi (the compiler merges the whole directory and follows
+# whose entry is main.ty (the compiler merges the whole directory and follows
 # its imports). Golden is tests/pkg/<name>.out — same native-vs-ASan + golden
 # discipline as single files.
 for d in tests/pkg/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"
-    entry="$d/main.hi"
+    entry="$d/main.ty"
     if [ ! -f "$entry" ]; then
-        note "pkg_$name" "no main.hi"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
+        note "pkg_$name" "no main.ty"; fail=$((fail + 1)); fails="$fails pkg_$name"; continue
     fi
     in="tests/pkg/$name.in"; [ -f "$in" ] || in=/dev/null
     run_one "$entry" "pkg_$name" "tests/pkg/$name.out" "$in"
 done
 
-# Negative paths. tests/reject/*.hi are invalid programs the compiler must
+# Negative paths. tests/reject/*.ty are invalid programs the compiler must
 # REFUSE (nonzero exit + a diagnostic on stderr/stdout) — guards against
-# fail-open parsing/typechecking. tests/abort/*.hi are valid programs whose
-# RUN must die cleanly at runtime (nonzero exit + a 'hier:' message): OOB
+# fail-open parsing/typechecking. tests/abort/*.ty are valid programs whose
+# RUN must die cleanly at runtime (nonzero exit + a 'tycho:' message): OOB
 # index, pop from empty, reserve out of range. Abort programs run native-only:
 # a deliberate exit(1) leaves live arenas, so LeakSanitizer would (correctly,
 # uselessly) report them.
 # BOTH compilers must reject these (the reject path is now differential too --
-# the malformed-input fuzzer found hierc0 had been fail-opening on many of these
-# where hierc rejects). Build hierc0 once for the hierc0-side assertion.
-# SKIP-LIST: newtype distinctness -- hierc0 stores zero-cost newtypes as their
+# the malformed-input fuzzer found tychoc0 had been fail-opening on many of these
+# where tychoc rejects). Build tychoc0 once for the tychoc0-side assertion.
+# SKIP-LIST: newtype distinctness -- tychoc0 stores zero-cost newtypes as their
 # underlying type (identity erased at declaration), so it cannot distinguish a
-# UserId from str; a documented less-strict limitation, with hierc as the
-# validating oracle. See tests/reject/newtype_{agg,key}_mix.hi.
-"$HIERC" compiler/hierc0.hi -o "$TMP/h0" >/dev/null 2>&1 || { echo "could not build hierc0 for reject checks"; exit 2; }
+# UserId from str; a documented less-strict limitation, with tychoc as the
+# validating oracle. See tests/reject/newtype_{agg,key}_mix.ty.
+"$TYCHOC" compiler/tychoc0.ty -o "$TMP/h0" >/dev/null 2>&1 || { echo "could not build tychoc0 for reject checks"; exit 2; }
 H0_REJECT_SKIP=" newtype_agg_mix newtype_key_mix "
-for hi in tests/reject/*.hi; do
+for hi in tests/reject/*.ty; do
     [ -e "$hi" ] || continue
-    base="$(basename "$hi" .hi)"
+    base="$(basename "$hi" .ty)"
     name="reject_$base"
     skip0=0; case "$H0_REJECT_SKIP" in *" $base "*) skip0=1 ;; esac
-    if "$HIERC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
-        note "$name" "hierc ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
+    if "$TYCHOC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
+        note "$name" "tychoc ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rj.log" ]; then
-        note "$name" "hierc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
     elif [ "$skip0" = 0 ] && "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/rj0.log"; then
-        note "$name" "hierc0 ACCEPTED an invalid program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "tychoc0 ACCEPTED an invalid program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi
@@ -163,22 +163,22 @@ done
 for d in tests/reject/pkg/*/; do
     [ -d "$d" ] || continue
     name="rejectpkg_$(basename "$d")"
-    entry="${d}main.hi"
+    entry="${d}main.ty"
     [ -f "$entry" ] || continue
-    if "$HIERC" "$entry" --emit-c -o "$TMP/rjp" >"$TMP/rjp.log" 2>&1; then
-        note "$name" "hierc ACCEPTED an invalid package program"; fail=$((fail + 1)); fails="$fails $name"
+    if "$TYCHOC" "$entry" --emit-c -o "$TMP/rjp" >"$TMP/rjp.log" 2>&1; then
+        note "$name" "tychoc ACCEPTED an invalid package program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rjp.log" ]; then
-        note "$name" "hierc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
     elif "$TMP/h0" "$entry" --emit-c >/dev/null 2>"$TMP/rjp0.log"; then
-        note "$name" "hierc0 ACCEPTED an invalid package program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
+        note "$name" "tychoc0 ACCEPTED an invalid package program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
-for hi in tests/abort/*.hi; do
+for hi in tests/abort/*.ty; do
     [ -e "$hi" ] || continue
-    name="abort_$(basename "$hi" .hi)"
-    if ! "$HIERC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
+    name="abort_$(basename "$hi" .ty)"
+    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
        || ! $CC -O2 -std=c11 -o "$TMP/ab.bin" "$TMP/ab.c" -lm 2>"$TMP/ab.log"; then
         note "$name" "did not build"; sed 's/^/      /' "$TMP/ab.log"
         fail=$((fail + 1)); fails="$fails $name"; continue
@@ -186,24 +186,24 @@ for hi in tests/abort/*.hi; do
     "$TMP/ab.bin" </dev/null >/dev/null 2>"$TMP/ab.err"; rc=$?
     if [ "$rc" -eq 0 ]; then
         note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
-    elif ! grep -q 'hier:' "$TMP/ab.err"; then
-        note "$name" "died (exit $rc) but without a 'hier:' message"; sed 's/^/      /' "$TMP/ab.err"
+    elif ! grep -q 'tycho:' "$TMP/ab.err"; then
+        note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/ab.err"
         fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
 
-# Diagnostics goldens. tests/diag/<name>.hi are invalid programs whose EXACT
+# Diagnostics goldens. tests/diag/<name>.ty are invalid programs whose EXACT
 # compiler stderr (message + source-line snippet + caret + did-you-mean) is
 # locked as tests/diag/<name>.err — so an error-quality regression fails the
 # build, same discipline as the .out goldens (record with RECORD=1, review the
-# diff). hierc only: hierc0's bootstrap diagnostics are deliberately simpler.
-for hi in tests/diag/*.hi; do
+# diff). tychoc only: tychoc0's bootstrap diagnostics are deliberately simpler.
+for hi in tests/diag/*.ty; do
     [ -e "$hi" ] || continue
-    name="diag_$(basename "$hi" .hi)"
-    g="tests/diag/$(basename "$hi" .hi).err"
-    if "$HIERC" "$hi" --emit-c -o "$TMP/dg" >"$TMP/dg.log" 2>&1; then
+    name="diag_$(basename "$hi" .ty)"
+    g="tests/diag/$(basename "$hi" .ty).err"
+    if "$TYCHOC" "$hi" --emit-c -o "$TMP/dg" >"$TMP/dg.log" 2>&1; then
         note "$name" "compiler ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"; continue
     fi
     if [ "$RECORD" = 1 ]; then

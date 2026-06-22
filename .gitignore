@@ -9,32 +9,32 @@
 *.s
 cc??????.s
 
-# The compiled Hier compiler (built by `make`)
-/hierc
+# The compiled Tycho compiler (built by `make`)
+/tychoc
 
-# The compiled `hier` daily-driver CLI + its intermediate C (built by `make hier`)
-/hier
-/hier.c
+# The compiled `tycho` daily-driver CLI + its intermediate C (built by `make tycho`)
+/tycho
+/tycho.c
 
-# The compiled `hierfmt` formatter + its intermediate C (built by `make hierfmt`)
-/hierfmt
-/hierfmt.c
+# The compiled `tychofmt` formatter + its intermediate C (built by `make tychofmt`)
+/tychofmt
+/tychofmt.c
 
-# The compiled `hier-lsp` language server + its intermediate C (`make hier-lsp`)
-/hier-lsp
-/hier-lsp.c
+# The compiled `tycho-lsp` language server + its intermediate C (`make tycho-lsp`)
+/tycho-lsp
+/tycho-lsp.c
 
 # Editor-extension dev artifacts (the sources under editors/ ARE tracked)
 /editors/**/node_modules/
 /editors/**/*.vsix
 
-# Generated runtime-embed header (built by `make` from runtime/hier_rt.c)
+# Generated runtime-embed header (built by `make` from runtime/tycho_rt.c)
 /build/
 
-# Per-example outputs: generated C and native binaries. The .hi sources are
-# tracked; everything else in examples/ is reproducible with `make` / `./hierc`.
+# Per-example outputs: generated C and native binaries. The .ty sources are
+# tracked; everything else in examples/ is reproducible with `make` / `./tychoc`.
 /examples/*
-!/examples/*.hi
+!/examples/*.ty
 # the sqlite FFI example is a multi-file dir (shim + harness); track it (its own
 # .gitignore drops the build artifacts, the root *.out exception keeps the golden).
 !/examples/sqlite
@@ -48,9 +48,9 @@ cc??????.s
 # the corelib usage examples (one program per core module + their goldens) are
 # tracked; the runner builds into a temp dir, so no binaries land here.
 !/examples/corelib
-# the fetch CLI dogfood (main.hi + fixture + runner + golden); builds into a temp dir.
+# the fetch CLI dogfood (main.ty + fixture + runner + golden); builds into a temp dir.
 !/examples/fetch
-# the static-site generator dogfood (main.hi + fixture site + runner + golden).
+# the static-site generator dogfood (main.ty + fixture site + runner + golden).
 !/examples/site
 
 # Editor/OS noise

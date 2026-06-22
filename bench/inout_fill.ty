@@ -1,0 +1,17 @@
+# Inout-container home-arena threading: a callee pushes into an `mut [int]`
+# whose array lives in the caller's per-iteration block arena. With the home
+# arena threaded (the hidden _ina_ param), the grown buffer lives in that block
+# arena and frees every iteration -> O(1) memory. Before the threading,
+# owner_arena_of(mut) was 0, so push grew the buffer via malloc (immortal) and
+# leaked every iteration -> O(n) growth at this N under tychoc0. Asserts constant RSS.
+fn fill(xs: mut [int], n: int):
+    for i in range(n):
+        push(xs, i)
+
+fn main():
+    last := 0
+    for k in range(200000):
+        a := []int
+        fill(&a, 200)
+        last = len(a)
+    print(str(last) + "\n")

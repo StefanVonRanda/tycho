@@ -1,5 +1,5 @@
 /* Sliding-window, C: a ring of strdup'd strings; the evicted slot is freed, so
- * peak RSS tracks the WINDOW (W), not the stream (N). Same checksum as the hier port. */
+ * peak RSS tracks the WINDOW (W), not the stream (N). Same checksum as the tycho port. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

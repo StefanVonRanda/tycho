@@ -1,6 +1,6 @@
 # Maps with arbitrary value types
 
-A Hier map `[K: V]` may hold *any* value type: `[string: string]`,
+A Tycho map `[K: V]` may hold *any* value type: `[string: string]`,
 `[string: Point]`, `[int: [int]]`, even a nested map `[string: [string: int]]`.
 This note explains how that works under value semantics and implicit arenas,
 and why it needs no user `$T` generics. The user-facing surface is in the
@@ -10,7 +10,7 @@ value (`push(m[k], v)`, `m[k] += 1`) has its own note,
 
 ## How any value type works without generics
 
-Hier monomorphizes its containers rather than boxing (and user `$T` generics are
+Tycho monomorphizes its containers rather than boxing (and user `$T` generics are
 themselves erased to concrete code — see [generics.md](generics.md)), so the
 value type cannot be abstracted at runtime. Maps use the same answer arrays use
 for `[Struct]` and `[[T]]`: **monomorphization**. The compiler generates one
@@ -75,12 +75,12 @@ type (see the README's
 
 These are for contributors; users need only the surface above.
 
-- **hierc** (`src/hierc.c`): composite value types are interned in a side table
+- **tychoc** (`src/tychoc.c`): composite value types are interned in a side table
   (`g_maptypes`, base id `T_MAPC_BASE`) and emitted as one monomorphic runtime
   per pair by `emit_aggregate`, mirroring the existing scheme for `[Struct]`
   arrays. The scalar maps are hand-written; composite value types share the
   interned-and-emitted path independently of them.
-- **hierc0** (`compiler/hierc0.hi`): maps are generated per `(k, v)` by
+- **tychoc0** (`compiler/tychoc0.ty`): maps are generated per `(k, v)` by
   `gen_map_type` / `gen_map_fns`, so the composite work is the heap-value
   deep-copy on put/get and value-type mangling, not a new code path. Type
   declarations are emitted in dependency order (a map's value type before the

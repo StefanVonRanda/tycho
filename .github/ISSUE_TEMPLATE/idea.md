@@ -7,7 +7,7 @@ assignees: ""
 ---
 
 **What you were doing / trying**
-What did you reach for? What did you expect Hier to let you do?
+What did you reach for? What did you expect Tycho to let you do?
 
 **The friction or idea**
 What was awkward, surprising, missing, or confusing — or what would you change?

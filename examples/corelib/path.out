@@ -1,4 +1,4 @@
-base         = hier
+base         = tycho
 dir          = /usr/local/bin
 ext          = .gz
 stem         = notes

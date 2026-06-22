@@ -1,0 +1,11 @@
+name = "Tycho"
+grammar = "tycho"
+path_suffixes = ["hi"]
+line_comments = ["# "]
+autoclose_before = ")]}"
+brackets = [
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false },
+]
