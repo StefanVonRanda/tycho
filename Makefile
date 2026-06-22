@@ -127,7 +127,7 @@ bench-gcscan: hierc
 	@sh bench/gcscan/run.sh
 
 # Self-hosting bootstrap: build hierc0 (the subset compiler written in Hier)
-# and validate it on its fixtures. See compiler/ and docs/bootstrap.md.
+# and validate it on its fixtures. See compiler/.
 bootstrap: hierc
 	@sh compiler/run.sh
 

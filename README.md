@@ -164,7 +164,6 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
 | [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers); the reversal argument |
-| [docs/bootstrap.md](docs/bootstrap.md) | the staged path to self-hosting (Stage 0–4) and what came after |
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
@@ -188,9 +187,9 @@ language large enough to compile its own source, and it **self-hosts** — `make
 fixpoint` builds it three ways (the C compiler builds it, then that build
 rebuilds it, then that rebuild rebuilds it again) and asserts the last two
 emissions are byte-identical (B≡C) and that the Hier-built compiler reproduces
-the C compiler's output across every `tests/` and `examples/` program. The
-staged path to self-hosting (Stage 0–4) is written up in
-[docs/bootstrap.md](docs/bootstrap.md).
+the C compiler's output across every `tests/` and `examples/` program. Run
+`make bootstrap` to build the self-hosted compiler and `make fixpoint` to check
+the byte-identical reproduction.
 
 The fixpoint is also the language's parity discipline: **every feature lands
 in both compilers or not at all** — concurrency, bidirectional inference,
@@ -1269,8 +1268,7 @@ fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; 
 tools/prof/        dependency-free sampling CPU profiler for hier-compiled binaries
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
-docs/bootstrap.md  the staged path (0–4) to self-hosting
-docs/memory-model.md   the hierc0 arena-codegen migration (MM-0 … MM-7f)
+docs/memory-model.md   how the self-hosted compiler runs on the implicit-arena model
 docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
 ```
 

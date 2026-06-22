@@ -122,8 +122,8 @@ codegen/memory-model difference.
   cost of unbounded memory). The arena advantage is **large but concentrated in
   the grow-in-place pattern**, not uniform.
 
-This per-scope block churn is the "prong-B" arena concern noted in
-docs/bootstrap.md; see the arena tuning below.
+This per-scope block churn is the "prong-B" arena concern;
+see the arena tuning below.
 
 ## Arena-overhead tuning (runtime/hier_rt.c)
 
