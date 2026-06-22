@@ -9,11 +9,12 @@
 > *`where` constraints* (`fn sum(xs: [$T]) -> T where numeric(T)`), and
 > *explicit call-site type args*
 > (`empty$(int)` for the non-inferable `empty() -> [$T]`). This is
-> the contract the implementation is built against. It reverses an earlier
-> "no generics (firm)" decision; the argument for the reversal is in
-> [§7](#7-the-reversal-the-registry-already-exists). Each feature ships only when
-> both compilers implement it and `make test` / `make fixpoint` / `make fuzz`
-> are green.
+> the contract the implementation is built against. Hier deliberately shipped
+> without generics at first; the case for adding them — and why they don't
+> compromise the memory model — is in
+> [§7](#7-why-generics-fit-the-registry-already-exists). Each feature ships only
+> when both compilers implement it and `make test` / `make fixpoint` / `make
+> fuzz` are green.
 
 ## 1. The shape in one screen
 
@@ -99,7 +100,8 @@ Rules:
   argument's type disagrees with an already-bound parameter, that is a
   call-site type error (`first arg fixes T = int, but T = string here`).
 - Inference is **left-to-right over the parameter list**, reusing the same
-  forward, in-order discipline as B-0..B-3 grounding — no backtracking.
+  forward, in-order discipline as the rest of type-inference grounding — no
+  backtracking.
 - It composes with the existing literal/`[]`/`None` grounding: a bare `[]`
   argument is grounded *by the parameter's pattern* (`fn push_all(xs: mut [$T],
   …)` called with `[]` grounds the array from the other arguments, exactly as
@@ -211,11 +213,10 @@ empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
    own `[]T` / `[]K: V` literal substitutes per instance. Both compilers;
    `tests/generic_explicit.hi`, `tests/reject/explicit_*.hi`.
 
-## 7. The reversal: the registry already exists
+## 7. Why generics fit: the registry already exists
 
-The pre-generics docs recorded this as *"decided against (firm)"*, on two
-grounds (both since reversed — see [arrays-structs.md §7](arrays-structs.md)).
-Both are addressed:
+Generics can look like a poor fit for a monomorphizing, value-semantic language,
+on two grounds. Both dissolve on inspection:
 
 1. *"The cross-module monomorphization registry … simply does not exist."* — It
    does ([§4](#4-monomorphization-reuses-the-machinery-that-already-exists)).
@@ -410,11 +411,3 @@ Out of scope, to keep the surface small and the model intact:
   generic body, monomorphized uniformly.
 - **No implicit numeric/`distinct` coercion through `$T`** — a `$T` bound to
   `Meters` stays `Meters`, matching newtype rules.
-
-## 11. Docs updated when it landed
-
-The "decided against" passages were rewritten to "monomorphized generics,
-reusing the container machinery" — `docs/arrays-structs.md §7/§9`,
-`CONTRIBUTING.md` (the "please don't propose generics" line), and the README's
-container/generics mentions — and this doc's status header moved from *design*
-to *shipped*. Still pending: a short generics section in the learning materials.

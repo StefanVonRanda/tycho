@@ -167,10 +167,10 @@ checks all still run.
 | --- | --- |
 | [docs/thesis.md](docs/thesis.md) | why value semantics makes implicit arenas work — and where it doesn't, with measured numbers |
 | [docs/arrays-structs.md](docs/arrays-structs.md) | the aggregates design pressure-test: arrays and structs under value semantics + implicit arenas, and why dropping pointers makes it sound |
-| [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
+| [docs/memory-model.md](docs/memory-model.md) | the arena model's design and how the self-hosted compiler runs on it |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
-| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers); the reversal argument |
+| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers) |
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
@@ -204,16 +204,15 @@ dialects with identical semantics), and shared test fixtures run through both
 via the fixpoint differential, so the compilers cannot drift.
 
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
-malloc/leak C to the same implicit-arena memory model the C compiler uses, one
-type family at a time, each step gated by the fixpoint + sanitizers. That
-migration (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
-elements, enum node trees, mut containers, per-variable block scoping,
+malloc/leak C to the same implicit-arena memory model the C compiler uses — one
+type family at a time (strings, arrays, maps, structs/tuples/boxes, every array
+element type, enum node trees, mutable containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
-elements, all now arena-managed and freed per scope) is documented in
-[docs/memory-model.md](docs/memory-model.md). With MM-7f closing the last residual
-(`[Option(str)]` payloads leaked at construction), `hierc0` now has **no known
-memory gap versus the C compiler** — every element type, common and rare, is
-closed — and full codegen-feature parity.
+elements), all now arena-managed and freed per scope. It is documented in
+[docs/memory-model.md](docs/memory-model.md). With the last residual closed
+(`[Option(str)]` payloads that leaked at construction), `hierc0` now has **no
+known memory gap versus the C compiler** — every element type, common and rare —
+and full codegen-feature parity.
 
 The language `hierc0` compiles is no longer a strict subset: it reproduces the C
 compiler's output byte-for-byte across all `tests/` + `examples/` programs,
@@ -251,8 +250,8 @@ compiler after the migration:
 | array-pipeline   |    5 MB/30 ms |  3/22 ms |  3/23 ms |   6/53 ms |      18/372 ms |
 | string-pipeline  |    2 MB/1 ms  |   1/1 ms |   2/2 ms |    4/5 ms |       2/17 ms |
 
-(Numbers are the 2026-06-07 standard-opt re-measure from RESULTS.md — that file
-is authoritative; regenerate with `sh bench/fair_full.sh`. Absolute times are
+(Numbers are the standard-optimization measurement recorded in RESULTS.md — that
+file is authoritative; regenerate with `sh bench/fair_full.sh`. Absolute times are
 machine-specific, so the cross-language *ratios and directions* are the claim,
 not the millisecond counts: the reference toolchains are in RESULTS.md (gcc 15.2
 / rustc 1.93 / go 1.26 / koka 3.2.3), and the directions reproduce independently
@@ -791,7 +790,7 @@ f := 1.5
 g := f + 2               # an int LITERAL adapts to a float context
 iter.map(xs, fn(x): x * 2)   # lambda params + return from the expected fn type
 
-ys := []                 # B-3: even a bare decl works -- it stays pending
+ys := []                 # even a bare decl works -- it stays pending
 push(ys, 3)              # ...until its first grounding use in the block types it
 o := None                # (same for None; a use that NEEDS the type first,
 o = Some(5)              #  or a block ending with it pending, is a local error)
@@ -1275,7 +1274,7 @@ tools/prof/        dependency-free sampling CPU profiler for hier-compiled binar
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
 docs/memory-model.md   how the self-hosted compiler runs on the implicit-arena model
-docs/perf.md       compiler + generated-code performance, incl. the prong-B suite
+docs/perf.md       compiler + generated-code performance, incl. the cross-language benchmark suite
 ```
 
 The runtime is turned into a C string literal at build time (`make`
