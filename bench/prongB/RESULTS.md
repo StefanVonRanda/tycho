@@ -6,17 +6,18 @@ memory-heavy workload? This is the empirical half of the thesis: not "it
 passes a 40-program suite", but "here are the numbers next to the other
 memory models."
 
-## Fair standard-opt re-measure (2026-06-07) — AUTHORITATIVE
+## Headline numbers — fair standard-opt comparison
 
 > The per-workload sections further down were taken at `cc -O2`. They are kept for
-> their analysis, but **these are the current headline numbers.** The fair rule is
+> their analysis; the table here is the headline comparison. The fair rule is
 > **each language at its standard optimized build**: hier `-O3` (it transpiles to C,
 > so it rides the C optimizer — this is hier's real default, see `src/hierc.c`),
 > C/Rust `-O3`, `go build` (Go's only level), `koka -O2` (Koka's max). Comparing
-> hier-`-O3` to a rival at `-O2` would be a cheat; this table is apples-to-apples.
+> hier-`-O3` to a rival at `-O2` would not be apples-to-apples; this table holds
+> every language at its own standard optimization level.
 > Peak RSS via `bench/peakrss`; best-of-3 wall; one machine. Regenerate with
 > `sh bench/fair_full.sh`. (The `hierc0` self-host column in "The field" table below
-> was also re-measured at `-O3`.)
+> is also at `-O3`.)
 
 | workload      | hier (hierc)   | C            | Rust         | Go (GC)        | Koka (ARC)     |
 |---------------|---------------:|-------------:|-------------:|---------------:|---------------:|
@@ -29,33 +30,33 @@ memory models."
 
 **What it says, honestly:**
 - **vs Go (GC): hier wins every workload on BOTH time and memory.** Across the board.
-- **vs Koka (ARC): hier now wins every workload on BOTH axes too.** Time was always hier's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by **MM-10** (per-statement transient reclaim, see [memory-model.md](../../docs/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). hier is also far lighter on array/parse where Koka's core has no flat array.
+- **vs Koka (ARC): hier wins every workload on BOTH axes too.** Time is always hier's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by per-statement transient reclaim (see [memory-model.md](../../docs/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). hier is also far lighter on array/parse where Koka's core has no flat array.
 - **vs manual C/Rust** (neither GC nor ARC): hier *beats* them on the tree workloads (bulk-free vs per-node free) and on object-count-bound gcscan; it trails them on flat-array throughput and `latency` (the raw-loop ceiling). That gap is the manual-memory ceiling, not the GC/ARC rivals.
 
 ¹ Koka's json-parse port failed to build in this run (the harness records a 1 ms / 2.7 MB
 sentinel, i.e. it did not execute); excluded rather than reported as a win.
 
-**Regression caught in the making of this table.** At first this re-measure showed
-binary-trees at ~745 ms (≈ C, not ≈ C/4). A `git bisect` pinned it to `6ff7aa1`
-(MM-9): it added an inline `FreeNode *bkt[16]` to `Arena`, bloating the by-value
-per-call scope arena (40→168 B) plus per-call init/clear loops — a ~5× hot-path tax
-on every workload, even those that never recycle. Fixed by making `bkt` a lazily
--allocated pointer (`runtime/hier_rt.c`); trees returned to ~180 ms with the MM-9
-window-eviction win (4.0 MB) intact. Golden/fuzz/fixpoint all stayed green through
-the regression because they check **output, not wall time** — hence the new
-`make bench-guard` perf gate in `make ci`.
+**A perf regression this table caught.** An earlier build showed binary-trees at
+~745 ms (≈ C, not ≈ C/4). The cause was an inline `FreeNode *bkt[16]` added to
+`Arena`, which bloated the by-value per-call scope arena (40→168 B) plus per-call
+init/clear loops — a ~5× hot-path tax on every workload, even those that never
+recycle. Making `bkt` a lazily-allocated pointer (`runtime/hier_rt.c`) returned
+trees to ~180 ms with the window-eviction memory win (4.0 MB) intact.
+Golden/fuzz/fixpoint checks did not catch it because they check **output, not wall
+time** — hence the `make bench-guard` perf gate in `make ci`.
 
-## macOS (Apple Silicon) — fair standard-opt sweep (2026-06-09)
+## macOS (Apple Silicon) — fair standard-opt sweep
 
 > The numbers above are the **Linux** machine (gcc 15.2 / rustc 1.93 / go 1.26 /
-> koka 3.2.3) and stay authoritative. This is a **second machine, second OS**:
+> koka 3.2.3). This is a **second machine, second OS**:
 > Apple Silicon arm64, Darwin 25.5, Apple clang 21.0.0, rustc 1.95.0, go 1.26.4,
 > **Koka not installed** (its column is absent here, not zero). Same fair rule —
 > each language at its standard optimized build (hier/C/Rust `-O3`, `go build`).
 > Peak RSS via `bench/peakrss`; best-of-3 wall. Regenerate with
 > `sh bench/fair_full.sh` (+ `sh bench/fair_rest.sh` for the lower block).
-> hier is built post-**MM-10c** (which is output-invisible and a no-op on every
-> workload here — none has a discarded call-statement inside a loop).
+> The hier build here includes per-statement transient reclaim (output-invisible
+> and a no-op on every workload in this table — none has a discarded call-statement
+> inside a loop).
 
 | workload         | hier (hierc)    | C             | Rust           | Go (GC)        |
 |------------------|----------------:|--------------:|---------------:|---------------:|
@@ -99,12 +100,13 @@ Hier has **two** compilers, and both appear here:
   is about this compiler (its rows are labelled just "Hier").
 - **hier (hierc0)** — the **self-hosted** compiler, written in Hier itself
   (`compiler/hierc0.hi`). Its codegen was migrated onto the same implicit-arena
-  model one type family at a time ([../../docs/memory-model.md](../../docs/memory-model.md),
-  MM-0 … MM-7b). The numbers below are after that campaign.
+  model one type family at a time (see
+  [../../docs/memory-model.md](../../docs/memory-model.md)). The numbers below are
+  after that migration.
 
 All six binaries print **byte-identical output** per workload. Peak RSS via
 `getrusage`; best-of-3 wall time; **each language at its standard optimized build**
-— `cc -O3` / `rustc -O3` / `go build` / `koka -O2` (re-measured 2026-06-07);
+— `cc -O3` / `rustc -O3` / `go build` / `koka -O2`;
 one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 
 | workload          | hier (hierc) | hier (hierc0) |        C |     Rust |  Go (GC) | Koka (Perceus) |
@@ -116,7 +118,7 @@ one machine (gcc 15.2, rustc 1.93, go 1.26, koka 3.2.3).
 | json-parse (real) | 67 MB/1115 ms⁴ | 56 MB/1892 ms¹⁴ | 59/1260 ms | 60/1623 ms | 109/1445 ms | 144/2490 ms⁵ |
 | iter-transform³   | 4 MB/211 ms | 6 MB/283 ms | 3/284 ms | 3/305 ms | 7/407 ms | 14/2778 ms |
 
-⁵ Koka's json-parse did not rebuild in the 2026-06-07 sweep; this is its prior
+⁵ Koka's json-parse did not rebuild in this sweep; this is its prior
 `koka -O2` number (Koka has no `-O3`, so `-O2` is already its standard opt).
 String-pipeline and iter-transform C/Rust/Go/Koka cells are likewise carried from
 the prior run (1 ms-scale, `-O3`-insensitive); the hier/hierc0 columns and the
@@ -126,9 +128,9 @@ larger workloads' C/Rust/Go cells are fresh `-O3` measurements.
 workload are byte-identical, and prints per-workload peak-RSS/time tables plus a
 normalized **scorecard** — a `hier/C` peak-RSS column (the headline metric) and a
 wall-time grid. (`bench/prongB/run.sh` itself still drives `-O2`; the headline
-table above and the AUTHORITATIVE section at the top of this file are the fair
+table above and the fair-comparison section at the top of this file are the
 `-O3` numbers, regenerated by `sh bench/fair_full.sh`.) The hier wall times here
-are post the MM-9 tree-perf regression fix (see the top section); the recycle-heavy
+are after the tree-perf regression fix (see the top section); the recycle-heavy
 iter-transform benefited most (1285→211 ms).
 
 ¹ json-parse is fast on `hierc0` (O(1) bounds-checked index, never O(n²)). Its peak USED to
@@ -190,12 +192,12 @@ general principle still bounds shapes the gate doesn't yet cover (string/struct
 arrays, non-call reassigns) — implicit arenas have no *general* liveness-based
 reclaim, but the canonical case no longer loses, in either compiler.
 
-**The self-hosted compiler is now competitive on the model's home turf.** `hierc0`
-began the memory-model campaign **50–170× worse** than the C compiler on the
+**The self-hosted compiler is competitive on the model's home turf.** `hierc0`
+started out **50–170× worse** than the C compiler on the
 recursive-enum tree workloads (binary-trees 2374 MB, tree-rewrite 825 MB) — every
 tree node leaked, because enum nodes were `malloc`'d immortal and transients were
-retained in function scope. Two changes closed it: **MM-7a** put enum nodes on the
-arena (deep-copied when they cross an arena boundary), and **MM-7b** added
+retained in function scope. Two changes closed it: putting enum nodes on the
+arena (deep-copied when they cross an arena boundary), and adding
 *transient placement* (a scalar-result statement's heap transients build in a
 per-statement arena, freed immediately). Result: **binary-trees 2374 → 38 MB
 (~62×), tree-rewrite 825 → 9 MB (~88×)**. Later codegen-quality fixes then made
@@ -205,21 +207,21 @@ free-list pool + a compact tagged-union enum layout pushed tree-rewrite to
 binary-trees) sharing a static singleton for nullary variants + dropping a
 redundant deep-copy on `return Leaf` cut binary-trees from **38 MB / 289 ms to
 13 MB / 124 ms** — exactly hierc's allocation count. On binary-trees `hierc0` is
-now **best-in-class of all six**: lowest memory (13 MB, under Koka's 14) AND
+**best-in-class of all six**: lowest memory (13 MB, under Koka's 14) AND
 fastest (124 ms). Across the tree workloads it beats hierc on both axes and
 **beats Go's GC outright** (binary-trees 13 MB / 124 ms vs 35 MB / 1523 ms). That
 is the thesis stated against the GC: Go-like "no memory management in the source",
 without the GC's time-and-space tax.
 
-**And the last gap is now closed — array-pipeline `hierc0` 358 → 5 MB (MM-7c).**
+**The last gap — array-pipeline `hierc0` 358 → 5 MB.**
 A heap array declared in an outer block but grown inside a nested loop used to
 route to function scope rather than the loop block, so each pass's array
-accumulated (358 MB). MM-7c replaced the single per-block `block_base` with a
-stack (`bbases`) so `owner_arena_of` recovers each variable's exact declaration
-depth and routes it to *that* block's arena — the per-pass array now frees per
-iteration (5 MB / 32 ms, ties `hierc`/Go, beats Koka). With that, **`hierc0` is
-competitive with the C compiler across all four workloads, with no known memory
-gap** — the self-hosted compiler reproduces the full arena model.
+accumulated (358 MB). Per-variable block scoping replaced the single per-block
+`block_base` with a stack (`bbases`) so `owner_arena_of` recovers each variable's
+exact declaration depth and routes it to *that* block's arena — the per-pass array
+now frees per iteration (5 MB / 32 ms, ties `hierc`/Go, beats Koka). With that,
+**`hierc0` is competitive with the C compiler across all four workloads, with no
+known memory gap** — the self-hosted compiler reproduces the full arena model.
 
 ## Workload
 
@@ -244,9 +246,9 @@ Run it: `sh bench/prongB/run.sh` (needs `cc`; uses `rustc`/`go` if present).
 ## Results
 
 Representative single run, one machine (gcc 15.2, rustc 1.93, go 1.26,
-koka 3.2.3), peak RSS via `bench/peakrss.c`. **Re-measured after the arena
-tuning (block pool + block-retaining `arena_reset`, commit 4b18b89)** — the
-exact loop-scratch fast path this doc previously flagged as a TODO. Only the
+koka 3.2.3), peak RSS via `bench/peakrss.c`. Measured after the arena
+tuning (block pool + block-retaining `arena_reset`) — the
+loop-scratch fast path. Only the
 Hier rows changed (same machine; C/Rust/Go/Koka are unchanged), isolating the
 effect of that compiler change:
 
@@ -260,7 +262,7 @@ effect of that compiler change:
 | Go (GC)                |    33 MB |   1528 ms | 36 MB |
 
 Two compiler changes moved Hier here. **(a) Block-retaining `arena_reset`**
-(4b18b89) cut time ~2× (scoped 399→197 ms): each iteration's scratch arena
+cut time ~2× (scoped 399→197 ms): each iteration's scratch arena
 keeps its block and rewinds it instead of re-`malloc`ing. **(b) Compact node
 representation + 8-byte arena alignment** cut peak memory 33→25 MB: an enum
 value is now a pointer to a single `{ tag; union of variant fields }` cell (one
@@ -355,7 +357,7 @@ above previously noted "Koka still wins wall time (184 ms) … Hier
 bump-allocates a fresh result each iteration and `arena_reset` returns the
 blocks to the OS — so the next iteration re-`malloc`s them," and named "an
 `arena_reset` that *retains* blocks for reuse" as the fix. With that fix
-landed (4b18b89), Hier's per-iteration rewrite cost dropped 379→116 ms: the
+in place, Hier's per-iteration rewrite cost dropped 379→116 ms: the
 loop's scratch arena keeps its block and rewinds it (`off=0`), so each map
 re-fills the same memory with zero allocator traffic — the arena analogue of
 Perceus's in-place reuse, but as a single pointer reset rather than per-cell
@@ -586,25 +588,24 @@ bulk reclaim. No GC, no reference counts — just lexical arenas and value seman
 the string-pipeline time gap, json-parse drove the length-carrying-strings fix
 [116× on recursive descent], and iter-transform drove static in-place reuse.)
 
-## Caveats / TODO
+## Caveats
 
 - Single machine, single run; numbers are representative, not averaged.
 - Koka built with `koka -O2` (the `gcc-drelease` variant — optimized C
   backend with NDEBUG; debug *symbols* only, which don't affect runtime).
-- Six workloads now: two tree-shaped, one flat-array, one string-heavy, one real
+- Six workloads: two tree-shaped, one flat-array, one string-heavy, one real
   recursive-descent parser, and one deliberate arena worst-case (iter-transform).
   The axes (pointer-structured / contiguous / character) are covered, and the
   model's losing boundary is mapped, not just its wins.
-- **Block-retaining `arena_reset` for loop scratch: DONE** (commit 4b18b89) —
-  it cut binary-trees ~2x and tree-rewrite ~3.3x, flipping tree-rewrite to a
-  Hier win on both axes and binary-trees to a Hier win on time. The wall-time
-  gap to Koka is closed (Hier now leads on both workloads' time).
-- **Compact node representation: DONE** (commit 0667eec) — an enum value is now
-  a pointer to one `{ tag; union of variant fields }` cell (one allocation per
-  node, fields inline, nullary variants share a static singleton) instead of a
-  `{tag, void* payload}` descriptor + a separately-allocated payload. With
-  8-byte arena alignment a `Tree` node dropped 32→24 B, cutting binary-trees
-  33→25 MB.
+- **Block-retaining `arena_reset` for loop scratch** cut binary-trees ~2x and
+  tree-rewrite ~3.3x, flipping tree-rewrite to a Hier win on both axes and
+  binary-trees to a Hier win on time. The wall-time gap to Koka is closed (Hier
+  leads on both workloads' time).
+- **Compact node representation** makes an enum value a pointer to one
+  `{ tag; union of variant fields }` cell (one allocation per node, fields inline,
+  nullary variants share a static singleton) instead of a `{tag, void* payload}`
+  descriptor + a separately-allocated payload. With 8-byte arena alignment a
+  `Tree` node dropped 32→24 B, cutting binary-trees 33→25 MB.
 - Remaining binary-trees memory gap (Hier 25 MB vs Koka 14 MB) is **structural,
   not node width**: Koka's Perceus frees the depth-19 *stretch* tree the instant
   its refcount hits zero, so only the long-lived tree is retained; the arena
