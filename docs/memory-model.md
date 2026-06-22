@@ -1,16 +1,21 @@
 # Memory model in the self-hosted compiler
 
-The arena model itself — value semantics over implicit per-scope arenas — is laid
-out in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and the
-README's [Memory model](../README.md#memory-model) section. This document is about
-the *self-hosted* compiler: how `hierc0`'s code generation was brought onto that
-same model, one type family at a time, and the reclamation techniques that make
-the result competitive with the C reference compiler.
+Hier's memory model — value semantics over implicit per-scope arenas — is
+described in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and
+the README's [Memory model](../README.md#memory-model) section. This document is
+about the *self-hosted* compiler, `hierc0`: how it generates code on that same
+model, and the reclamation techniques that let its output match the C reference
+compiler, `hierc`.
 
-**Status: complete.** `hierc0` now emits the same value-semantic implicit-arena C
-that `hierc` does, with **no known memory gap** and full feature parity. The
-staged path that got there (MM-0 … MM-10) is recorded in the appendix; this top
-half describes the model as it stands.
+`hierc0` emits the same value-semantic, implicit-arena C that `hierc` does. There
+is no known memory gap between the two compilers, and they have full feature
+parity. The sections below describe the model as it stands; a closing appendix
+sketches, for contributors, how the self-hosted code generator was brought onto
+the model one type family at a time.
+
+This is an experimental, proof-of-concept compiler. The memory model is the
+central idea it exists to demonstrate, and the cross-language benchmarks below
+are encouraging, but the implementation is young and should be evaluated as such.
 
 ## What `hierc0` emits
 
@@ -60,16 +65,15 @@ site*: `outer = e` targets `outer`'s home block, `push(outer, v)` targets
 caller. So the compiler decides where each allocation lives by reading
 signatures and scopes — a local routing decision, not a dataflow trace.
 
-### Why the migration could be incremental
+### Why arena migration is sound incrementally
 
 `arena_free` reclaims only memory that was `arena_alloc`'d into that arena; heap
-that is still `malloc`'d (a not-yet-migrated type) is untouched and simply leaks,
-exactly as before. So migrating one type family onto arenas while the rest stay
-on `malloc` is sound — no use-after-free, the migrated type stops leaking, the
-rest leak as they did. That property is what let the codegen move type-by-type
-behind a green fixpoint at every step. The one irreducible, all-at-once piece was
-the threading spine: once any function takes `Arena *_parent`, every caller must
-pass one.
+that is still `malloc`'d (for a type not yet placed on an arena) is untouched and
+simply leaks, exactly as a non-arena allocator would. So placing one type family
+on arenas while the rest stay on `malloc` is sound: no use-after-free, the placed
+type stops leaking, the rest leak as they did. The one irreducible, all-at-once
+piece is the threading spine — once any function takes `Arena *_parent`, every
+caller must pass one.
 
 ## Reclamation techniques
 
@@ -97,9 +101,9 @@ reference counts anywhere.
   owner and is dead the instant `new` is computed. The compiler hands that buffer
   back to the arena's free-list and the next allocation reuses it — the win
   reference counting (Perceus/FBIP) is built for, with no runtime refcount. The
-  load-bearing soundness condition, learned from two caught corruption bugs: only
-  recycle a variable read **at least twice**, because a read-once variable may
-  have been moved out by move-on-last-use and no longer own its buffer.
+  load-bearing soundness condition is to recycle only a variable read **at least
+  twice**, because a read-once variable may have been moved out by
+  move-on-last-use and no longer own its buffer.
 
 - **Element-overwrite recycle.** `arr[k] = v` recycles the *evicted* element back
   into the array's arena. The old element is dead and uniquely owned the instant
@@ -114,18 +118,20 @@ sliding-window eviction) into wins, matching C and beating Go (GC) and Koka
 
 ## Verification
 
-Every stage was held to the same bar, with before/after numbers quoted rather
-than a "looks done":
+The memory model is checked by three mechanisms that, between them, catch the
+ways an over-aggressive move or recycle could go wrong:
 
-- `make fixpoint` — the self-build stays a fixed point (B≡C) and matches the C
-  compiler's program output. This is the soundness oracle: an over-aggressive
-  move or recycle that aliased would diverge the output.
-- `make test` green with the self-emitted C running under AddressSanitizer /
-  UndefinedBehaviorSanitizer / LeakSanitizer.
-- Per-type RSS benchmarks, now wired as perf guards, each showing that type's
-  bytes are now freed.
-- The differential fuzzer, with distinct-value regression tests where
-  value-masking could otherwise hide a corruption the differential alone misses.
+- **Byte-identical self-build.** `make fixpoint` confirms the self-hosted compiler
+  is a fixed point — the compiler compiling itself reproduces itself byte for byte
+  (`B≡C`) and matches the C compiler's program output. This is the soundness
+  oracle: a move or recycle that aliased would diverge the output.
+- **Sanitizers.** `make test` runs the self-emitted C under AddressSanitizer,
+  UndefinedBehaviorSanitizer, and LeakSanitizer.
+- **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
+  actually freed.
+- **Differential fuzzing** compares the two compilers' output across generated
+  programs, with distinct-value regression tests so value-masking cannot hide a
+  corruption the differential alone would miss.
 
 ## Across threads
 
@@ -140,71 +146,65 @@ zero annotations.
 
 ---
 
-## Appendix: migration history (MM-0 … MM-10)
+## Appendix: how the self-hosted code generator reached the model
 
-For contributors. `hierc0` reached the Stage-4 fixpoint emitting **naive
-malloc/leak C** — correct output, unbounded RSS. This is the staged migration that
-brought it onto the arena model, each step gated by the fixpoint + sanitizers,
-each commit carrying its verification. Headline RSS deltas are for the workload
-that exercises the migrated type.
+For contributors. The self-hosted compiler first became a fixed point while
+emitting naive `malloc`/leak C — correct output, but unbounded RSS. It was then
+brought onto the arena model one type family at a time, each step held to the
+byte-identical fixpoint and the sanitizers above. Because placing one type on
+arenas while others stay on `malloc` is sound (see *Why arena migration is sound
+incrementally*), the work could proceed type-by-type rather than as one large
+rewrite. The order below is roughly how the families were brought on; RSS figures
+are for the workload that exercises the named type.
 
-**Strings (MM-0 … MM-1).**
-- *MM-0 — string accumulator* (`ef68daa`). The self-append `out = out + x`
-  compiled to a fresh leaked buffer per step (O(n²)); rewritten to grow one
-  buffer in place. A 30 000-iteration build went **4638 MB / 1937 ms → 10 MB /
-  3 ms** (~464×). Pure malloc/realloc — no arena threading — and high-leverage
-  because `hierc0`'s own codegen is one giant string build.
-- *MM-1 — threading spine + strings on arena* (`cc9aa27`, `8407340`, `a850736`,
-  `29c881a`). The irreducible step: every function gains `Arena *_parent` and
-  `_scope`, every call threads it, returns build into `_parent`. Brought on
-  incrementally — print-arg transients (~42×), then sound returns + store-copy,
-  then the locals flip (batch workload ~73×). String migration done: transient,
-  local, and returned strings on the arena; stored strings malloc-copied;
-  accumulator buffers stay malloc by necessity.
+**Strings.** The first target, because `hierc0`'s own code generation is one
+giant string build. The self-append `out = out + x` originally compiled to a
+fresh leaked buffer per step (O(n²)); rewriting it to grow one buffer in place
+took a 30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×),
+using only `malloc`/`realloc`. The threading spine landed next — the irreducible
+step where every function gains `Arena *_parent` and `_scope`, every call threads
+it, and returns build into `_parent` — bringing transient, local, and returned
+strings onto the arena. Stored strings are `malloc`-copied; accumulator buffers
+stay on `malloc` by necessity.
 
-**Compound types (MM-2 … MM-4)** (`5438dc3`, `dfbf2d2`, `605085c`). Arrays
-(~31×), maps (~3.7×), then structs/tuples/boxes (~1.67×) migrated with the same
-coupled pattern (allocators take `Arena*`, copies become recursive and
-arena-aware, store sites force the value into the container's arena). After MM-4
-every heap type is arena-managed at function scope.
+**Compound types.** Arrays (~31×), maps (~3.7×), then structs, tuples, and boxes
+(~1.67×) followed the same coupled pattern: allocators take `Arena*`, copies
+become recursive and arena-aware, and store sites force the value into the
+container's arena. After this, every heap type is arena-managed at function scope.
 
-**Per-block arenas (MM-5 / MM-6a)** (`b9f66c7`). A child arena per if/loop block,
-freed per iteration, so a loop-local container frees per-iteration instead of at
-function return (loop-local array build 245 MB → 10 MB). Routing is lexical (a
-`block_base` marking the current block's env extent), not dataflow.
+**Per-block arenas.** A child arena per `if`/loop block, freed per iteration, so a
+loop-local container frees per-iteration instead of at function return
+(loop-local array build 245 MB → 10 MB). Routing is lexical (the current block's
+env extent), not dataflow.
 
-**Element-level ownership (MM-6b … MM-6g, MM-7e/7f).** A long series moving
-container *elements* into their container's arena: map keys (`f1ff194`); array
-string elements (`c84eb4c`, ~274×); nested-array elements (~77×); struct/tuple
-array elements (~140×); option/result array elements (scalar payload, ~45×); and
-`mut` container home-arena threading (`75d85e4`, ~582×) plus its extension to
-`mut` heap-struct fields. **MM-7f** closed the last residual — heap-payload
-option/result elements like `[Option(str)]` — by making options first-class
-deep-copied value types (245 → 11 MB at 4M iters, flat, verified by a 1200-seed
-heap-payload fuzz run).
+**Element-level ownership.** A series of changes moving container *elements* into
+their container's arena: map keys; array string elements (~274×); nested-array
+elements (~77×); struct/tuple array elements (~140×); option/result array
+elements with scalar payload (~45×); and `mut` container home-arena threading
+(~582×) plus its extension to `mut` heap-struct fields. The last residual —
+heap-payload option/result elements such as `[Option(str)]` — was closed by
+making options first-class deep-copied value types (245 → 11 MB at 4M iterations,
+flat).
 
-**Recursive enums + transient placement (MM-7a … MM-7d).** Enum nodes became
-arena value types with a recursive deep-copy at every escape point (`ff96105`);
-transient placement (`d4d13df`) landed the tree-workload win (binary-trees
-2374 MB → 38 MB, tree-rewrite 825 MB → 9 MB); per-var block depth replaced the
-single `block_base` with a stack of block-entry indices, closing the
-array-pipeline gap (358 MB → 5 MB); and move-on-last-use mirrored the C
-compiler's deep-copy elision.
+**Recursive enums and transient placement.** Enum nodes became arena value types
+with a recursive deep-copy at every escape point; transient placement landed the
+tree-workload win (binary-trees 2374 MB → 38 MB, tree-rewrite 825 MB → 9 MB);
+per-variable block depth (a stack of block-entry indices rather than a single
+marker) closed the array-pipeline gap (358 MB → 5 MB); and move-on-last-use
+mirrored the C compiler's deep-copy elision.
 
-**Liveness-driven reuse (MM-8)** (`bbea2c9` / `7807850`, widened in `aa30d66`,
-`05f22f4`). The arena free-list and `arena_recycle`, turning the loop-carried
-reassignment worst case into a win — `iter-transform` 3.5 GB → 4 MB (`hierc`) /
-6 MB (`hierc0`). Two latent corruption bugs (recycling a moved-out buffer) were
-caught and pinned by distinct-value tests; the fix is the read-≥-twice condition.
+**Liveness-driven reuse.** The arena free-list and `arena_recycle` turn the
+loop-carried reassignment worst case into a win — `iter-transform` 3.5 GB → 4 MB
+(`hierc`) / 6 MB (`hierc0`). Two latent corruption bugs (recycling a moved-out
+buffer) were caught and pinned by distinct-value tests; the fix is the
+read-≥-twice condition described above.
 
-**Element-overwrite recycle (MM-9).** Recycling the evicted element on
-`arr[k] = v`, backed by a per-size-class free-list (`Arena.bkt[16]`), closing the
-sliding-window case — `window` 47.3 MB → 4.2 MB (`hierc`) / 3.6 MB (`hierc0`),
-and faster.
+**Element-overwrite recycle.** Recycling the evicted element on `arr[k] = v`,
+backed by a per-size-class free-list, closes the sliding-window case — `window`
+47.3 MB → 4.2 MB (`hierc`) / 3.6 MB (`hierc0`), and faster.
 
-**Per-statement transient reclaim (MM-10).** Each expression statement's
-discarded value is wrapped in a per-statement arena, so a depth-19 stretch tree
-from a discarded `print(... check(make(19)) ...)` frees at statement end rather
-than at function return — prong-B binary-trees **25 → 13.3 MB**, below Koka's
-reference-counted 14.8 MB, the last workload where a refcounting rival led on
-memory.
+**Per-statement transient reclaim.** Each expression statement's discarded value
+is wrapped in a per-statement arena, so a depth-19 stretch tree from a discarded
+`print(... check(make(19)) ...)` frees at statement end rather than at function
+return — binary-trees 25 → 13.3 MB, below Koka's reference-counted 14.8 MB, the
+last cross-language workload where a reference-counting rival led on memory.

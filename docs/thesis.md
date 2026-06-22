@@ -1,19 +1,24 @@
 # The Hier thesis: value semantics makes implicit arenas work
 
-This document is the *why* behind Hier. The [README](../README.md) is the
-reference; [arrays-structs.md](arrays-structs.md) is the original design
-pressure-test. This is the argument the implementation now backs with running,
+This document explains the core idea behind Hier — the *why*. The
+[README](../README.md) is the reference overview;
+[arrays-structs.md](arrays-structs.md) works through the design under pressure.
+This document makes the argument the implementation backs up with running,
 measured code.
 
-Hier is a small AOT language — Python-looking syntax, Go/Odin value semantics,
-no garbage collector, no `malloc`/`free`, no lifetime annotations, no borrow
-checker. You write code as if memory were managed for you, and it is. The
-claim is not "arenas are good" (everyone knows that). The claim is sharper:
+Hier is an experimental, small, ahead-of-time language: Python-looking syntax,
+Go/Odin-style value semantics, no garbage collector, no `malloc`/`free`, no
+lifetime annotations, no borrow checker. You write code as if memory were
+managed for you, and it is. The claim is not "arenas are good" — everyone knows
+that. The claim is sharper:
 
 > **Value semantics is the missing ingredient that lets hierarchical arena
 > allocation be fully *implicit* — inferred from lexical scope and signatures
 > alone, with no whole-program analysis and no visible memory constructs —
 > while staying competitive on performance.**
+
+This is a proof-of-concept exploration of that claim, not a production system.
+It is general-purpose within a domain (see §6) and deliberately not beyond it.
 
 ## 1. The idea
 
@@ -24,7 +29,7 @@ each loop body — owns an arena: a bump allocator backed by a linked list of
 blocks. Allocation is a pointer increment. Reclamation is freeing the whole
 arena at scope exit; nothing is freed individually. A loop body's arena is
 *reset* each iteration, so a million iterations of throwaway temporaries run in
-constant memory. This is well-trodden (region inference, MLKit, Cyclone,
+constant memory. This is well-trodden ground (region inference, MLKit, Cyclone,
 arena-per-request servers, every game engine's frame allocator).
 
 **Value semantics.** There is **no reference type**. You cannot name, store, or
@@ -32,9 +37,9 @@ return a pointer into another value's storage. Two variables never share
 mutable state: `b := a` copies (deeply), so mutating `b` can never be observed
 through `a`. Assignment, parameters, and returns all copy.
 
-**The hinge.** Arenas are usually *explicit* (you pick the arena, you scope it)
-precisely because, in a language with pointers, the compiler cannot in general
-prove where a value may escape to — that needs whole-program may-alias
+**The hinge.** Arenas are usually *explicit* — you pick the arena, you scope it
+— precisely because, in a language with pointers, the compiler cannot in
+general prove where a value may escape to. That needs whole-program may-alias
 analysis, which is exactly the hard problem. **Value semantics dissolves that
 problem.** With no reference type, a value can escape a scope in only two ways,
 both visible in the syntax:
@@ -45,7 +50,7 @@ both visible in the syntax:
    directly in that destination's arena, so it survives the inner scope's
    collapse).
 
-That's the whole escape story, and it is *locally decidable* — from the
+That is the whole escape story, and it is *locally decidable* — from the
 statement and the signature, never from a global analysis. So the compiler can
 insert every allocation, promotion, and free itself. The arenas become
 invisible. **The no-pointer rule turns the arena allocator's hardest
@@ -54,16 +59,16 @@ prerequisite into a triviality.** That is the thesis in one sentence.
 ## 2. The seam, and the one invariant that governs everything
 
 Building the language out — strings, then `[int]`/`[string]` arrays, then
-heap-bearing and nested structs — repeatedly hit the same hazard, and every
-fix was the same fix. Call it **the seam**:
+heap-bearing and nested structs — hits the same hazard at every level, and
+every level wants the same fix. Call it **the seam**:
 
 > A heap-backed value (a string's bytes, an array's buffer, recursively a
 > struct's heap fields) moved into a longer-lived place must have its bytes in
 > *that place's* arena.
 
-A bare variable read allocates nothing — it's a pointer copy. So returning or
+A bare variable read allocates nothing — it is a pointer copy. So returning or
 assigning a bare local heap value, naively, leaves a pointer into a scope
-that's about to be freed: a use-after-free. The fix is **deep copy on
+that is about to be freed: a use-after-free. The fix is **deep copy on
 cross-arena move** (`copy_into` in the compiler; per-struct `hier_copy_S_X`
 deep-copy functions generated into the output C). It nests: copying a
 `[string]` copies the buffer *and* every element's bytes; copying a struct
@@ -72,12 +77,11 @@ image — compare by content, recursing the same way (`gen_eq`,
 `hier_eq_S_X`) — so `a == b` is true exactly when `b` is an independent copy
 of `a`.
 
-This was found the honest way: the first string version substituted
-*immutability* for the copy and shipped a real use-after-free, caught under
-AddressSanitizer. Immutability makes *aliasing* safe (no one can mutate a
-shared buffer); it does nothing for *lifetime* (a frozen buffer in a freed
-arena is still freed). The invariant above is what actually holds the model
-together, and it is the same at every level of nesting.
+Immutability is not a substitute for this copy. Immutability makes *aliasing*
+safe (no one can mutate a shared buffer); it does nothing for *lifetime* (a
+frozen buffer in a freed arena is still freed). The invariant above is what
+actually holds the model together, and it is the same at every level of
+nesting.
 
 ## 3. Why it's sound, said precisely
 
@@ -90,21 +94,21 @@ Over-approximate "this might escape" and you allocate in a longer-lived arena
 than strictly needed: mild retention, never a bug. There is no symmetric
 disaster, because there are no aliases to invalidate. In a pointer-having
 language the same decision is a *correctness* obligation backed by alias
-analysis (which is why such languages reach for explicit arenas, lifetimes, or
-GC). Removing pointers demotes it to a *performance* knob the compiler may set
+analysis — which is why such languages reach for explicit arenas, lifetimes, or
+GC. Removing pointers demotes it to a *performance* knob the compiler may set
 freely. Every optimization below exploits exactly that asymmetry.
 
-The whole-program verification standard for this repo follows from it: every
-codegen change is checked under `cc -fsanitize=address,undefined`, asserting
-(a) exit 0, (b) clean sanitizers, and (c) ASan output byte-identical to native
-`-O2` output. The full `tests/` + `examples/` suite holds to this.
+The verification standard for this repo follows from it: every codegen change is
+checked under `cc -fsanitize=address,undefined`, asserting (a) exit 0, (b) clean
+sanitizers, and (c) ASan output byte-identical to native `-O2` output. The full
+`tests/` + `examples/` suite holds to this.
 
 ## 4. Where the abstraction would leak — and the two optimizations that seal it
 
-Value semantics buys safety with copies. Two patterns make the copies bite,
-and both are sealed *without making the model visible* — same source, same
-semantics, same bounded memory, just no copy. Each is the local exploitation
-of the asymmetry in §3.
+Value semantics buys safety with copies. Two patterns make the copies bite, and
+both are sealed *without making the model visible* — same source, same
+semantics, same bounded memory, just no copy. Each is the local exploitation of
+the asymmetry in §3.
 
 ### 4a. The return-path copy tax → return-slot move
 
@@ -118,7 +122,7 @@ call-sites** along the way (destination-passing, emergent). Soundness is §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
-*Measured* (`fn build(n)->[int]` returned 20000×, baseline = the compiler just
+*Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
 
 ### 4b. Accumulation retention → in-place append
@@ -151,17 +155,17 @@ guarantee.
 
 ## 5. The walls — what's genuinely hard, honestly mapped
 
-A model is defined as much by what it *can't* do. Three walls were named; two
-fell to the optimizations above. The third turned out to be narrower than
-feared, and was pierced — but it has a residue that is not a bug, it is the
-thesis.
+A model is defined as much by what it *can't* do. Three patterns threaten the
+model. Two are sealed by the optimizations above. The third is narrower than it
+first looks, and is reachable — but it has a residue that is not a bug, it is
+the thesis.
 
-**Wall #1 — return copy tax.** Down (§4a).
+**The return copy tax** and **accumulation retention** are handled in §4a and
+§4b respectively.
 
-**Wall #2 — accumulation retention.** Down (§4b).
-
-**Wall #3 — shared mutable state.** Originally feared as "non-tree data:
-graphs, cycles, caches." Probing this empirically dissolved most of it:
+**Shared mutable state** is the genuinely hard one — sometimes described as
+"non-tree data: graphs, cycles, caches." Probing it empirically dissolves most
+of it:
 
 - **Cyclic and graph-shaped data is *not* a wall.** A directed graph *with a
   cycle* is traversed correctly today using **indices instead of references** —
@@ -172,10 +176,10 @@ graphs, cycles, caches." Probing this empirically dissolved most of it:
 - The real, narrow wall is **shared mutable state threaded through function
   calls** — canonically a memoization table that recursive calls must all
   write to. The thesis-preserving answer is `mut`: an exclusive,
-  copy-in/copy-out mutable borrow (Swift/Hylo's model — *not* a stored
+  copy-in/copy-out mutable borrow (the Swift/Hylo model — *not* a stored
   reference). `mut` does not break value semantics: it is equivalent to
   `x = f(x)`, made safe by an exclusivity rule (the same variable cannot be
-  passed to two `mut` parameters of one call). Heap `mut` — now `[int]`,
+  passed to two `mut` parameters of one call). Heap `mut` — `[int]`,
   `[string]`, and heap-bearing structs, including `push`/growth and
   element/field mutation through the borrow — lets the callee share and mutate
   the caller's aggregate in place, so a memo table (or a recursive output
@@ -192,13 +196,13 @@ impossible is *pointer-identity aliasing of two named variables in one scope* �
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference. This is forbidden **by
-construction**, and `mut` deliberately does not provide it (it is
-call-scoped, not storable). That forbiddance is *what value semantics is*.
-Removing it would not extend Hier; it would make it a different language.
+construction**, and `mut` deliberately does not provide it (it is call-scoped,
+not storable). That forbiddance is *what value semantics is*. Removing it would
+not extend Hier; it would make it a different language.
 
 ## 6. Where that leaves the idea
 
-The honest verdict, now backed by measurement rather than intuition:
+The honest verdict, backed by measurement rather than intuition:
 
 - For **tree-shaped, scope-shaped, build-and-return, accumulate** programs —
   compilers and compiler passes, request handlers, batch transforms, CLI
@@ -217,7 +221,7 @@ disappear* — and the domain is large and real.
 
 ## 7. Reproducing the numbers
 
-All figures above were measured on the committed compiler. To reproduce:
+The figures above are measured on the committed compiler. To reproduce:
 
 ```
 make                                  # build ./hierc
@@ -234,21 +238,26 @@ N=40 000, under 8 MB at N=400 000 — does not scale with N). Every example and
 feature program is checked under `cc -fsanitize=address,undefined` with output
 required to match native `-O2`.
 
-Two further validations have since landed, written up separately. **Self-hosting:**
-a second compiler written in Hier itself (`compiler/hierc0.hi`) reaches a
-byte-identical fixpoint (`make fixpoint`), and its codegen was then migrated onto
-this same implicit-arena model one type family at a time — each step gated by the
-fixpoint + sanitizers ([docs/memory-model.md](memory-model.md)). That migration is
-the model eating its own dog food on a real, allocation-heavy, deeply-recursive
-program. **Head-to-head:** a cross-language benchmark suite (`bench/prongB/`,
-Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the compiler-vs-
-generated-code numbers are in [docs/perf.md](perf.md).
+Two further validations back the thesis, written up separately.
 
-**Concurrency as a corollary:** the same call convention (deep-copy in, copy
-out, a private arena per call) is already a sound thread boundary, so
+**Self-hosting.** A second compiler written in Hier itself
+(`compiler/hierc0.hi`) reaches a byte-identical fixpoint (`make fixpoint`), and
+its codegen runs on this same implicit-arena model — migrated onto it one type
+family at a time, each step gated by the fixpoint plus sanitizers
+([docs/memory-model.md](memory-model.md)). That makes the model eat its own dog
+food on a real, allocation-heavy, deeply-recursive program. A differential
+fuzzer cross-checks the two compilers under AddressSanitizer to keep them in
+agreement.
+
+**Head-to-head performance.** A cross-language benchmark suite (`bench/prongB/`,
+Hier vs C, Go, Rust, and Koka's Perceus reference-counting) and the
+compiler-vs-generated-code numbers are in [docs/perf.md](perf.md).
+
+**Concurrency as a corollary.** The same call convention — deep-copy in, copy
+out, a private arena per call — is already a sound thread boundary, so
 `spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
-on threads — race-free by construction, with no Sendable/lifetime/lock
-machinery in the language. Measured: `parallel for` at exact C-pthreads parity
-on a compute-bound reduction; lock-free channels 2.6x faster than a
-hand-written C mutex ring while still paying the value-semantic copies C
-doesn't ([docs/concurrency.md](concurrency.md), `bench/conc/`).
+on threads: race-free by construction, with no Sendable/lifetime/lock machinery
+in the language. Measured: `parallel for` at exact C-pthreads parity on a
+compute-bound reduction; lock-free channels 2.6x faster than a hand-written C
+mutex ring while still paying the value-semantic copies C doesn't
+([docs/concurrency.md](concurrency.md), `bench/conc/`).
