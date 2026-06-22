@@ -21,6 +21,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #include "hier_rt_embed.h"   /* defines: static const char *HIER_RUNTIME */
 
@@ -2741,10 +2742,66 @@ static const char *pkg_basename(const char *p) {
     const char *slash = strrchr(p, '/');
     return slash ? slash + 1 : p;
 }
+/* argv[0] of this process, captured in main(); a fallback for locating the
+ * binary when /proc/self/exe is unavailable. */
+static const char *g_argv0 = NULL;
+
+static int dir_exists(const char *p) {
+    DIR *d = opendir(p);
+    if (d) { closedir(d); return 1; }
+    return 0;
+}
+
+/* Directory containing the running hierc binary. Tries /proc/self/exe (Linux),
+ * then argv[0]. Returns "." when no directory component is known. Computed once. */
+static const char *exe_dir(void) {
+    static char dirbuf[PATH_MAX];
+    static int computed = 0;
+    if (computed) return dirbuf[0] ? dirbuf : NULL;
+    computed = 1;
+    char buf[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n > 0) buf[n] = '\0';
+    else if (g_argv0) { strncpy(buf, g_argv0, sizeof buf - 1); buf[sizeof buf - 1] = '\0'; }
+    else { dirbuf[0] = '\0'; return NULL; }
+    char *slash = strrchr(buf, '/');
+    if (!slash) strcpy(dirbuf, ".");
+    else { *slash = '\0'; strcpy(dirbuf, buf[0] ? buf : "/"); }
+    return dirbuf;
+}
+
+/* The corelib search root. HIER_CORELIB overrides; otherwise look next to the
+ * hierc binary (so `./hierc prog.hi` finds `./corelib` with no setup), then in
+ * an installed `share/hier/corelib` layout. Returns NULL if none is found. */
+static const char *corelib_root(void) {
+    static int done = 0;
+    static const char *cached = NULL;
+    if (done) return cached;
+    done = 1;
+    const char *env = getenv("HIER_CORELIB");
+    if (env && *env) return (cached = env);
+    const char *ed = exe_dir();
+    if (ed) {
+        char *c1 = sfmt("%s/corelib", ed);
+        if (dir_exists(c1)) return (cached = c1);
+        char *c2 = sfmt("%s/../share/hier/corelib", ed);
+        if (dir_exists(c2)) return (cached = c2);
+    }
+    return (cached = NULL);
+}
+
 static char *resolve_pkg_dir(const char *importer_dir, const char *path) {
     if (!strncmp(path, "core:", 5)) {
-        const char *root = getenv("HIER_CORELIB");
-        if (!root) { fprintf(stderr, "hierc: import \"%s\" needs the HIER_CORELIB environment variable set to the corelib directory\n", path); exit(1); }
+        const char *root = corelib_root();
+        if (!root) {
+            const char *ed = exe_dir();
+            fprintf(stderr,
+                "hierc: cannot find the corelib for import \"%s\".\n"
+                "  Looked next to the hierc binary (%s/corelib) and in %s/../share/hier/corelib.\n"
+                "  Set HIER_CORELIB to the corelib directory to override.\n",
+                path, ed ? ed : "?", ed ? ed : "?");
+            exit(1);
+        }
         return sfmt("%s/%s", root, path + 5);
     }
     return sfmt("%s/%s", importer_dir, path);
@@ -8479,6 +8536,7 @@ static void emit_symbols(ProcVec *prog) {
 }
 
 int main(int argc, char **argv) {
+    g_argv0 = argv[0];
     const char *input = NULL;
     const char *out   = NULL;
     const char *cc    = "cc";

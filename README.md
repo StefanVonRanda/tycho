@@ -84,8 +84,10 @@ fn main():
 ```
 
 **Use the standard library.** `corelib/` is hier's stdlib, imported as
-`core:<name>` and resolved through the `HIER_CORELIB` environment variable. A file
-with an `import` is a *package*, so give it its own directory:
+`core:<name>`. The compiler finds it next to its own binary by default (`./hierc`
+sits beside `./corelib`), so no setup is needed; set `HIER_CORELIB` to point at a
+different corelib if you want to override that. A file with an `import` is a
+*package*, so give it its own directory:
 
 ```
 mysite/main.hi:
@@ -95,7 +97,7 @@ mysite/main.hi:
         print(strings.to_upper("hello") + "\n")     # HELLO
 ```
 ```
-$ HIER_CORELIB="$PWD/corelib" ./hierc mysite/main.hi && ./mysite/main
+$ ./hierc mysite/main.hi && ./mysite/main
 HELLO
 ```
 
@@ -1116,8 +1118,8 @@ fn main():
 ```
 
 `./hierc pkg/main.hi` follows the imports and emits one binary; `import
-"core:strings"` resolves the bundled corelib (via the `HIER_CORELIB`
-environment variable). No privacy — everything in a package is visible.
+"core:strings"` resolves the corelib found next to the compiler binary (or at
+`HIER_CORELIB` if set). No privacy — everything in a package is visible.
 Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 
 ### Builtins

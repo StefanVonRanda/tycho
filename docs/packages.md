@@ -94,9 +94,9 @@ generated C.
 
 The standard library is reached through a **collection** — a named root for
 imports that resolve outside the local directory tree. `import "core:strings"`
-pulls in the bundled corelib package `strings`, located via the `HIER_CORELIB`
-environment variable rather than relative to the importer. The corelib is
-documented in [corelib.md](corelib.md).
+pulls in the corelib package `strings`, located next to the compiler binary by
+default (or at `HIER_CORELIB` if set) rather than relative to the importer. The
+corelib is documented in [corelib.md](corelib.md).
 
 Only the `core:` collection is exposed today; arbitrary named roots (Odin's wider
 `collection:` mechanism) are not.

@@ -13,15 +13,16 @@ fn main():
 
 ## Quick start
 
-1. Point `HIER_CORELIB` at your corelib directory. In this repo it is `corelib` (the
-   Makefile and `make ci` export `HIER_CORELIB=corelib`, repo-relative).
-2. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
-3. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
+1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
+   The compiler finds `corelib/` next to its own binary by default, so no setup is
+   needed in this repo. Set `HIER_CORELIB` to a corelib directory to override.
+2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
    (`x.abs()`).
 
 ## Resolution
 
-`import "core:<pkg>"` resolves to `$HIER_CORELIB/<pkg>` and binds the name `<pkg>`.
+`import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
+`<corelib>` is `HIER_CORELIB` if set, otherwise `corelib/` next to the compiler binary.
 Non-`core:` imports stay relative to the importing package, unchanged. Both Hier compilers
 (`hierc` and the self-hosted `hierc0`) resolve `core:` natively, so `hierc0` is a
 standalone corelib-aware compiler with no bundling step required.

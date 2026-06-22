@@ -7306,14 +7306,54 @@ fn is_package(toks: [Token]) -> bool:              # does the source open with a
         i = i + 1
     return toks[i].kind == TIdent and toks[i].text == "package"
 
+# Index of the last '/' in s, or -1 if none. (hier's find() returns the first.)
+fn last_slash(s: string) -> int:
+    last := 0 - 1
+    i := 0
+    for i < len(s):
+        if substr(s, i, i + 1) == "/":
+            last = i
+        i = i + 1
+    return last
+
+# Directory containing the running hierc0 binary, from argv[0]. "." when the
+# invocation has no directory component.
+fn exe_dir() -> string:
+    a := args()
+    p := ""
+    if len(a) > 0:
+        p = a[0]
+    s := last_slash(p)
+    if s < 0:
+        return "."
+    if s == 0:
+        return "/"
+    return substr(p, 0, s)
+
+# The corelib search root. HIER_CORELIB overrides; otherwise look next to the
+# hierc0 binary (so `./hierc0 prog.hi` finds `./corelib` with no setup), then in
+# an installed share/hier/corelib layout. Empty if none is found.
+fn corelib_root() -> string:
+    env := getenv("HIER_CORELIB")
+    if env != "":
+        return env
+    ed := exe_dir()
+    c1 := ed + "/corelib"
+    if len(list_dir(c1)) > 0:
+        return c1
+    c2 := ed + "/../share/hier/corelib"
+    if len(list_dir(c2)) > 0:
+        return c2
+    return ""
+
 # Resolve an import path to a package directory. `core:<name>` is a corelib
-# import -> $HIER_CORELIB/<name> (a library importable from any program); anything
+# import -> <corelib>/<name> (a library importable from any program); anything
 # else is relative to the importing package's dir. Mirrors hierc's resolve_pkg_dir.
 fn resolve_import_dir(dir: string, imp: string) -> string:
     if has_prefix(imp, "core:"):
-        root := getenv("HIER_CORELIB")
+        root := corelib_root()
         if root == "":
-            die("hierc0: import \"" + imp + "\" needs the HIER_CORELIB environment variable set to the corelib directory")
+            die("hierc0: cannot find the corelib for import \"" + imp + "\" (looked next to the binary at " + exe_dir() + "/corelib); set HIER_CORELIB to override")
         return root + "/" + substr(imp, 5, len(imp))
     return dir + "/" + imp
 
