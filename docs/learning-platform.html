@@ -1492,7 +1492,7 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 <div class="section-num">Chapter 19</div>
 <h1>Generics, continued</h1>
 
-<p>The previous chapter covered the core. Three more pieces complete the picture: matching <em>inside</em> a map, constraining a type parameter, and supplying a type the compiler cannot infer. All three are monomorphized like everything else &mdash; nothing generic survives to runtime.</p>
+<p>The previous chapter covered the core. Three more pieces complete the picture: matching <em>inside</em> a map, constraining a type parameter (with a named predicate or a hand-written type set), and supplying a type the compiler cannot infer. All three are monomorphized like everything else &mdash; nothing generic survives to runtime.</p>
 
 <h2>Map patterns: <code>[$K: $V]</code></h2>
 <p>A type parameter can sit inside a map type. Both the key and the value are inferred from the map argument, and one concrete instance is stamped per <code>(key, value)</code> pair:</p>
@@ -1528,6 +1528,22 @@ You opt into generics with <code>$T</code>; Hier never silently generalizes an o
 The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"])</code> fails with <code>'sum' instantiated with T = string, which does not satisfy numeric(T)</code> &mdash; a signature-level message, not a deep "cannot add string and int" buried inside the substituted body.
 </div></div>
 
+<h2>Type sets: a one-off constraint</h2>
+<p>When none of the three predicates names the set you want, list the concrete types yourself with <code>where T: A | B</code> &mdash; the Go-style <em>type set</em>. It admits exactly the types you spell out, nothing else:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">dbl</span>(x: <span class="ty">$T</span>) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="ty">T</span>: <span class="ty">int</span> | <span class="ty">float</span>:
+    <span class="kw">return</span> x + x
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">dbl</span>(<span class="num">21</span>)))      <span class="cm"># 42</span>
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">dbl</span>(<span class="num">1.5</span>)))     <span class="cm"># 3.0</span></code></pre></div>
+<p>The members are concrete types separated by <code>|</code>. A predicate like <code>numeric(T)</code> is a named, compiler-known set; a type set is the same idea written out by hand for a single function &mdash; no need to add a new predicate to the language for a one-off pairing.</p>
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">Same up-front check, listing the set</div>
+<code>dbl("hi")</code> fails with <code>'dbl' instantiated with T = string, which is not in the type set { int | float }</code> &mdash; checked when the type is fixed at the call, and the message names the exact set you allowed.
+</div></div>
+
 <h2>Explicit type args: the non-inferable case</h2>
 <p>Inference is argument-directed, so every <code>$T</code> normally has to appear in some argument. When it does not &mdash; a type parameter that lives only in the return, like <code>empty() -> [$T]</code> &mdash; supply it at the call with <code>name$(T)</code>:</p>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">empty</span>() -> [<span class="ty">$T</span>]:
@@ -1547,14 +1563,20 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 
 <div class="quiz" id="quiz-18">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
+<div class="quiz-question" data-answer="1">
+<p>1. A function declares <code>where T: int | float</code>. Which types may instantiate it?</p>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Any type whose body supports <code>+</code> &mdash; the type set is just a hint</div>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Exactly <code>int</code> and <code>float</code>; any other type is rejected when the call fixes <code>T</code></div>
+<div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div><code>int</code>, <code>float</code>, and any type that can convert to them</div>
+</div>
 <div class="quiz-question" data-answer="2">
-<p>1. When do you need an explicit type argument like <code>empty$(int)</code>?</p>
+<p>2. When do you need an explicit type argument like <code>empty$(int)</code>?</p>
 <div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Always &mdash; every generic call must spell out its type arguments</div>
 <div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Only for generic structs, never for functions</div>
 <div class="quiz-option" onclick="selectOption(this,18)"><div class="radio"></div>Only when no argument pins the type parameter, e.g. a <code>$T</code> that appears only in the return type</div>
 </div>
-<div class="quiz-explanation" data-correct="2">Correct! Inference is argument-directed, so a <code>$T</code> the arguments determine needs nothing extra. <code>empty() -> [$T]</code> has no such argument, so the call supplies it: <code>empty$(int)</code>.</div>
-<div class="quiz-explanation" data-wrong="2">Generic calls infer their type arguments from the values you pass. You only reach for <code>name$(T)</code> when there is nothing to infer from &mdash; a type parameter that appears only in the return type.</div>
+<div class="quiz-explanation" data-correct="2">Correct! A type set admits exactly the listed types &mdash; <code>where T: int | float</code> rejects anything else when the call fixes <code>T</code>. And inference is argument-directed, so a <code>$T</code> the arguments determine needs nothing extra; <code>empty() -> [$T]</code> has no such argument, so the call supplies it: <code>empty$(int)</code>.</div>
+<div class="quiz-explanation" data-wrong="2">A type set lists concrete members separated by <code>|</code> and admits only those, checked at the call. And generic calls infer type arguments from the values you pass &mdash; you only reach for <code>name$(T)</code> when nothing pins the parameter, e.g. a <code>$T</code> that appears only in the return type.</div>
 <button class="quiz-submit" onclick="submitQuiz(18)">Check Answers</button>
 </div>
 </div>
