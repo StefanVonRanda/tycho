@@ -1252,11 +1252,13 @@ compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   mut, memo, collect, context, optimize, json, raytrace,
-                   grep, invindex (.hi) — 20 programs (json.hi is a full recursive-
-                   descent JSON parser + serializer; raytrace.hi a float-math PPM
-                   renderer; grep.hi a CLI text tool over args()/read_file;
-                   invindex.hi an inverted-index text search engine)
+                   mut, memo, collect, context, generics, optimize, json,
+                   raytrace, grep, invindex (.hi) — 21 programs (generics.hi
+                   tours `$T` functions/structs/enums, incl. a recursive
+                   `Tree($T)`; json.hi is a full recursive-descent JSON parser +
+                   serializer; raytrace.hi a float-math PPM renderer; grep.hi a
+                   CLI text tool over args()/read_file; invindex.hi an
+                   inverted-index text search engine)
 examples/corelib/  a runnable usage example for every corelib module (make corelib-examples)
 examples/fetch/    composing dogfood — an HTTP client (http + json + sha256 + io + path)
 examples/site/     composing dogfood — a static-site generator (8 corelib modules)
