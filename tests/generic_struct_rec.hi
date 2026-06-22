@@ -1,0 +1,31 @@
+# Recursive + nested generic structs (both compilers): a generic struct whose
+# field names the struct itself (via array indirection), and a generic struct
+# nested inside another generic struct.
+
+struct LL($T):
+    head: $T
+    tail: [LL($T)]
+
+fn total(n: LL(int)) -> int:
+    s := n.head
+    for i in range(0, len(n.tail)):
+        s = s + total(n.tail[i])
+    return s
+
+struct Box($T):
+    val: $T
+
+struct Pair($T):
+    a: Box($T)
+    b: $T
+
+fn main():
+    # a recursive linked structure: 1 -> [10, 20]
+    leaf1 := LL(10, []LL(int))
+    leaf2 := LL(20, []LL(int))
+    root := LL(1, [leaf1, leaf2])
+    println(str(total(root)))            # 31
+
+    # nested generic struct
+    p := Pair(Box(5), 9)
+    println(str(p.a.val + p.b))          # 14

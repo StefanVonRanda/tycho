@@ -8,7 +8,7 @@ compiler is itself a non-trivial compiler, so the value-semantics +
 implicit-arena model gets validated on exactly the workload it claims — on a
 real, large program, not a micro-benchmark.
 
-This is a multi-stage campaign, and the value is **front-loaded**. By Stage 1
+This is a multi-step effort, and the value is **front-loaded**. By Stage 1
 we have the first real compiler written in Hier and a concrete list of the
 language's expressiveness gaps. By Stage 3 we have a feature-complete
 alternative front-end. Stage 4 is the dramatic fixpoint where Hier compiles
@@ -20,9 +20,9 @@ standalone win.
 > `examples/` suite). The stage log below is the historical record of getting there.
 > One caveat it repeats — that hierc0 "emits correct-but-naive malloc/value-copy
 > C, not the optimized arena codegen" — was true *at the fixpoint* but has since
-> been closed: a follow-on campaign (MM-0 … MM-7f) migrated hierc0's codegen onto
+> been closed: a follow-on effort (MM-0 … MM-7f) migrated hierc0's codegen onto
 > the same implicit-arena model the C compiler uses, one type family at a time,
-> each step gated by the fixpoint + sanitizers. **That campaign is now complete:
+> each step gated by the fixpoint + sanitizers. **That work is now complete:
 > hierc0 reproduces the full arena model with no known memory gap and full
 > feature parity with the C compiler — it is no longer a "subset" (the "subset"
 > language in the stage log below is historical).** That work is its own doc,
@@ -232,7 +232,7 @@ fixpoint.
 
 ## Risks & off-ramps
 
-- **Effort:** a multi-session campaign. *Off-ramp:* Stage 1 alone proves the
+- **Effort:** a multi-session effort. *Off-ramp:* Stage 1 alone proves the
   thesis and is publishable; every stage ≥ 1 is a standalone win. Reaching
   Stage 4 is not required to have succeeded.
 - **State-threading ergonomics:** if threading `Ctx` everywhere proves painful,

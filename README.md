@@ -163,7 +163,7 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and its staged migration onto the self-hosted compiler (MM-0…MM-10) |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
-| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers); the reversal argument |
+| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers); the reversal argument |
 | [docs/bootstrap.md](docs/bootstrap.md) | the staged path to self-hosting (Stage 0–4) and what came after |
 | [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
@@ -201,7 +201,7 @@ via the fixpoint differential, so the compilers cannot drift.
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
 type family at a time, each step gated by the fixpoint + sanitizers. That
-campaign (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
+migration (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
 elements, enum node trees, mut containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
 elements, all now arena-managed and freed per scope) is documented in
@@ -237,7 +237,7 @@ measured in [docs/perf.md](docs/perf.md); no logic-level change moves it.
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in six languages, built optimized, peak RSS + best-of-3 wall time;
 every binary prints byte-identical output. `hier (hierc0)` is the self-hosted
-compiler after the campaign:
+compiler after the migration:
 
 | workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |
@@ -715,8 +715,10 @@ value is a small value-semantic descriptor whose payload is arena-allocated, so
 even a recursive enum is finite (no infinite type) and copying one is a **deep
 copy of the whole tree**; `==` compares structurally. Variant names are global
 (no `Enum.Variant` qualification). An enum may be a struct field, an array
-element (`[Expr]`), and so on. *Not yet:* generic/parameterised enums (besides
-the built-in `Option(T)`).
+element (`[Expr]`), and so on. A user enum may also be **generic** —
+`enum Tree($T)` — monomorphized like a generic struct, including recursive
+payloads that name the enum itself (`Node(Tree($T), $T, Tree($T))`, the
+generic-AST case); see [docs/generics.md](docs/generics.md).
 
 ### Distinct newtypes (`type`)
 
@@ -1226,11 +1228,12 @@ None of this appears in Hier source.
 
 ### Known limitations (proof-of-concept)
 
-- **A user `enum` is monomorphic** — only the built-in `Option(T)` / `Result(T, E)`
-  are generic over their payload; `enum Tree($T)` is not supported. Generic
-  *functions* and *structs* do take `$T`, constrained by compiler-known predicates
-  (`numeric` / `comparable` / `has_str`) or Go-style type sets (`where T: int | float`)
-  rather than user-defined traits — see [docs/generics.md](docs/generics.md).
+- **Generic constraints are a fixed, compiler-known set** — generic *functions*,
+  *structs*, and *enums* (all including recursive types, e.g. `enum Tree($T)`)
+  take `$T` and are monomorphized, but the only constraints are the built-in
+  predicates (`numeric` / `comparable` / `has_str`) and Go-style type sets
+  (`where T: int | float`). There are no user-defined traits/type-classes, no
+  higher-kinded types, and no variance — see [docs/generics.md](docs/generics.md).
 
 ## Repository layout
 

@@ -479,6 +479,7 @@ struct Variant:
 struct EnumDef:
     name: string
     variants: [Variant]
+    typeparams: [string]      # generics: `enum Tree($T)` -> ["T"]; empty for a normal enum
 
 # Read-only typing/codegen context, threaded by value: function return types,
 # struct layouts, and enum definitions. (The mutable per-block var env stays as
@@ -1757,6 +1758,19 @@ fn parse_enum(toks: [Token], pos: mut int) -> EnumDef:
         die("parse: line " + str(toks[pos].line) + ": expected an enum name")
     name := toks[pos].text
     pos = pos + 1
+    typeparams := []string                       # generics: `enum Tree($T, $U)` type parameters
+    if toks[pos].kind == TLParen:
+        pos = pos + 1
+        for toks[pos].kind != TRParen:
+            tp := parse_type(toks, &pos)
+            if not ty_is_generic(tp):
+                die("parse: line " + str(toks[pos].line) + ": an enum type parameter must be written `$Name`")
+            push(typeparams, substr(tp, 1, len(tp)))
+            if toks[pos].kind == TComma:
+                pos = pos + 1
+            else:
+                break
+        expect(toks, &pos, TRParen)
     expect(toks, &pos, TColon)
     open_block(toks, &pos)
     variants := []Variant
@@ -1781,7 +1795,17 @@ fn parse_enum(toks: [Token], pos: mut int) -> EnumDef:
             if toks[pos].kind == TNewline:
                 pos = pos + 1
     pos = pos + 1                                # consume TDedent
-    return EnumDef(name, variants)
+    if len(typeparams) > 0:                       # generics: rewrite a bare `T` payload type to "$T"
+        vi := 0
+        for vi < len(variants):
+            npt := []string
+            pj := 0
+            for pj < len(variants[vi].ptypes):
+                push(npt, subst_bare_typaram(variants[vi].ptypes[pj], typeparams))
+                pj = pj + 1
+            variants[vi] = Variant(variants[vi].name, npt)
+            vi = vi + 1
+    return EnumDef(name, variants, typeparams)
 
 fn parse_newtype(toks: [Token], pos: mut int) -> Param:   # `type Name = Underlying`
     expect_ident(toks, &pos, "type")
@@ -2164,7 +2188,7 @@ fn mangle_enum(m: Mctx, ed: EnumDef) -> EnumDef:
     for i < len(ed.variants):
         push(vs, Variant(m.prefix + ed.variants[i].name, mangle_types(m, ed.variants[i].ptypes)))
         i = i + 1
-    return EnumDef(m.prefix + ed.name, vs)
+    return EnumDef(m.prefix + ed.name, vs, ed.typeparams)
 
 fn path_last(path: string) -> string:                  # "math/geom" -> "geom"
     out := path
@@ -2318,29 +2342,76 @@ fn build_vmap(enums: [EnumDef]) -> [string: int]:
         i = i + 1
     return m
 
+fn vbase(name: string) -> string:                 # "Has#Box__int" -> "Has"; "Has" -> "Has"
+    h := find(name, "#")
+    if h >= 0:
+        return substr(name, 0, h)
+    return name
+
+fn vinst(name: string) -> string:                 # "Has#Box__int" -> "Box__int" (mono-encoded generic-enum instance); "" if none
+    h := find(name, "#")
+    if h >= 0:
+        return substr(name, h + 1, len(name))
+    return ""
+
 fn is_variant(dc: Decls, ctx: Ctx, name: string) -> bool:
-    return map_get(dc.vmap, name, -1) >= 0
+    return map_get(dc.vmap, vbase(name), -1) >= 0
 
 fn variant_enum(dc: Decls, ctx: Ctx, vname: string) -> string:
-    i := map_get(dc.vmap, vname, -1)
+    inst := vinst(vname)                           # generics: a mono-encoded constructor carries its concrete instance enum
+    if inst != "":
+        return inst
+    i := map_get(dc.vmap, vbase(vname), -1)
     if i < 0:
         die("type: unknown variant")
     return dc.enums[i].name
 
+# Qualified C constructor name mk_<enum>_<variant>, so two instances of one generic
+# enum (Box__int, Box__string) don't collide on a shared variant name.
+fn gen_mk_name(dc: Decls, ctx: Ctx, name: string) -> string:
+    return "mk_" + variant_enum(dc, ctx, name) + "_" + vbase(name)
+
 fn variant_tag(dc: Decls, ctx: Ctx, vname: string) -> int:
+    b := vbase(vname)
+    inst := vinst(vname)                           # generics: prefer the encoded instance's variant order
     i := 0
     for i < len(dc.enums):
-        j := 0
-        for j < len(dc.enums[i].variants):
-            if dc.enums[i].variants[j].name == vname:
-                return j
-            j = j + 1
+        if inst == "" or dc.enums[i].name == inst:
+            j := 0
+            for j < len(dc.enums[i].variants):
+                if dc.enums[i].variants[j].name == b:
+                    return j
+                j = j + 1
         i = i + 1
     die("type: unknown variant")
     return 0
 
 fn variant_ptypes(dc: Decls, ctx: Ctx, vname: string) -> [string]:
     i := 0
+    for i < len(dc.enums):
+        j := 0
+        for j < len(dc.enums[i].variants):
+            if dc.enums[i].variants[j].name == vname:
+                return dc.enums[i].variants[j].ptypes
+            j = j + 1
+        i = i + 1
+    die("type: unknown variant")
+    return []string
+
+# Variant payload types looked up in a SPECIFIC enum -- needed when generic-enum
+# instances (Box__int, Box__string) share a variant name: a `match` must bind the
+# payload from the scrutinee's instance, not whichever instance comes first.
+fn variant_ptypes_in(dc: Decls, ename: string, vname: string) -> [string]:
+    i := 0
+    for i < len(dc.enums):
+        if dc.enums[i].name == ename:
+            j := 0
+            for j < len(dc.enums[i].variants):
+                if dc.enums[i].variants[j].name == vname:
+                    return dc.enums[i].variants[j].ptypes
+                j = j + 1
+        i = i + 1
+    i = 0                                          # fallback: any enum with the variant (non-generic / single instance)
     for i < len(dc.enums):
         j := 0
         for j < len(dc.enums[i].variants):
@@ -2680,6 +2751,26 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 j = j + 1
             die_at(dc, ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
         i = i + 1
+    # generic-application receiver like "LL(int)": the concrete instance isn't interned
+    # in dc during the mono pass, but its layout is the template's with the type args
+    # substituted -- find the field in the template and subst $T. Recurses (the returned
+    # type may itself be a generic application, e.g. "[LL(int)]").
+    pp := -1
+    pi := 0
+    for pi < len(sname):
+        if sname[pi] == 40 and pp < 0:           # first '('
+            pp = pi
+        pi = pi + 1
+    if pp > 0 and sname[len(sname) - 1] == 41:
+        gname := substr(sname, 0, pp)
+        gargs := split_type_args(substr(sname, pp + 1, len(sname) - 1))
+        gsi := find_generic_struct(dc.structs, gname)
+        if gsi >= 0 and len(gargs) == len(dc.structs[gsi].typeparams):
+            fj := 0
+            for fj < len(dc.structs[gsi].fields):
+                if dc.structs[gsi].fields[fj].name == fld:
+                    return subst_field_type(dc.structs[gsi].fields[fj].ty, dc.structs[gsi].typeparams, gargs)
+                fj = fj + 1
     die_at(dc, ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
     return "int"
 
@@ -3816,7 +3907,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "None":
                 return "hnone()"
             if is_variant(dc, ctx, name):            # bare no-payload variant -> constructor call
-                return "mk_" + name + "(" + ctx.owner + ")"
+                return gen_mk_name(dc, ctx, name) + "(" + ctx.owner + ")"
             if not has_str(names, name):             # not a local: a bare fn name -> the fat value {0, thunk}
                 ft := sig_functype(dc, name)
                 if ft != "":
@@ -4107,8 +4198,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hier_chan_close(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if is_newtype(dc, ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, dc, ctx)
-            if is_variant(dc, ctx, name):             # enum construction -> mk_Variant(ar, ...); node
-                return "mk_" + name + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
+            if is_variant(dc, ctx, name):             # enum construction -> mk_<enum>_<variant>(ar, ...); node
+                if len(args) == 0:                    # nullary variant (e.g. `Leaf$(int)`): no payload args, no trailing comma
+                    return gen_mk_name(dc, ctx, name) + "(" + ctx.owner + ")"
+                return gen_mk_name(dc, ctx, name) + "(" + ctx.owner + ", " + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + ")"   # + payload fields inherit the ambient arena (nested children co-located)
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
                 return "(" + ust(name) + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if sig_is_extern(dc, name):               # FFI: call the C symbol directly — no arena, no h_ prefix
@@ -5753,7 +5846,7 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             for i < len(variants):
                 vname := variants[i]
                 binds := allbinds[i]
-                pts := variant_ptypes(dc, ctx, vname)
+                pts := variant_ptypes_in(dc, sty, vname)   # generics: bind from the scrutinee's instance (shared variant names)
                 kw := " else if ("
                 if i == 0:
                     kw = "    if ("
@@ -6409,14 +6502,14 @@ fn gen_enum_ctors(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
         if len(v.ptypes) == 0:                    # nullary variant: one shared immortal singleton,
             sg := "_sing_" + ed.name + "_" + str(i)   # no per-construction allocation (no payload, and
             out = out + "static " + uet(ed.name) + " " + sg + " = { " + str(i) + " };\n"   # enum values are immutable)
-            out = out + "static " + uet(ed.name) + "* mk_" + v.name + "(Arena* ar) { (void)ar; return &" + sg + "; }\n"
+            out = out + "static " + uet(ed.name) + "* mk_" + ed.name + "_" + v.name + "(Arena* ar) { (void)ar; return &" + sg + "; }\n"
         else:
             params := "Arena* ar"                 # the node lives in `ar` (the ambient arena)
             j := 0
             for j < len(v.ptypes):
                 params = params + ", " + cty(dc, ctx, v.ptypes[j]) + "f" + str(j)
                 j = j + 1
-            out = out + "static " + uet(ed.name) + "* mk_" + v.name + "(" + params + ") {\n"
+            out = out + "static " + uet(ed.name) + "* mk_" + ed.name + "_" + v.name + "(" + params + ") {\n"
             out = out + "    " + uet(ed.name) + "* n = amem(ar, offsetof(" + uet(ed.name) + ", u) + sizeof(((" + uet(ed.name) + "*)0)->u." + v.name + "));\n"
             out = out + "    n->tag = " + str(i) + ";\n"
             j = 0
@@ -8961,6 +9054,48 @@ fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: 
     push(sinsts, StructDef(nm, fs, []string))
     return nm
 
+fn find_generic_enum(enums: [EnumDef], name: string) -> int:
+    i := 0
+    for i < len(enums):
+        if enums[i].name == name and len(enums[i].typeparams) > 0:
+            return i
+        i = i + 1
+    return -1
+
+# Intern the concrete instance of generic enum `t` for the bindings (typeparam
+# name -> concrete type); append the new EnumDef to `einsts`, return its mangled
+# name. Variant payloads keep generic-application form (e.g. "Tree(int)") until a
+# later resolve pass; instantiate dedups before substituting, so recursion ends.
+fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut [EnumDef]) -> string:
+    nm := t.name
+    i := 0
+    for i < len(t.typeparams):
+        ct := ""
+        k := 0
+        for k < len(bnames):
+            if bnames[k] == t.typeparams[i]:
+                ct = btypes[k]
+            k = k + 1
+        nm = nm + "__" + gen_inst_mangle(ct)
+        i = i + 1
+    e := 0
+    for e < len(einsts):
+        if einsts[e].name == nm:
+            return nm                            # already instantiated
+        e = e + 1
+    vs := []Variant
+    i = 0
+    for i < len(t.variants):
+        npt := []string
+        pj := 0
+        for pj < len(t.variants[i].ptypes):
+            push(npt, subst_field_type(t.variants[i].ptypes[pj], bnames, btypes))
+            pj = pj + 1
+        push(vs, Variant(t.variants[i].name, npt))
+        i = i + 1
+    push(einsts, EnumDef(nm, vs, []string))
+    return nm
+
 # Split a type-argument string at top-level commas (respecting nested ()/[]).
 fn split_type_args(s: string) -> [string]:
     out := []string
@@ -8984,10 +9119,16 @@ fn split_type_args(s: string) -> [string]:
 # "Box__int", interning the concrete StructDef). Recurses into parametric args
 # ("Option(Box(int))" -> "Option(Box__int)"). Scalars/bare names, arrays, maps,
 # tuples and fn-types pass through (their inner generic structs are Stage 3).
-fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef]) -> string:
+fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: mut [StructDef], einsts: mut [EnumDef]) -> string:
     n := len(ty)
     if n == 0:
         return ty
+    if is_array(ty):                              # "[E]" -> "[resolve(E)]" (recursive generics: `[LL(int)]` -> `[LL__int]`)
+        return "[" + resolve_gtype(elem_ty(ty), structs, enums, &sinsts, &einsts) + "]"
+    if is_soa(ty):                                # "soa[E]" -> "soa[resolve(E)]"
+        return "soa[" + resolve_gtype(soa_struct(ty), structs, enums, &sinsts, &einsts) + "]"
+    if is_map(ty):                                # "{K:V}" -> "{K:resolve(V)}" (keys are scalar)
+        return "{" + map_key(ty) + ":" + resolve_gtype(map_val(ty), structs, enums, &sinsts, &einsts) + "}"
     paren := -1
     i := 0
     for i < n:
@@ -9001,7 +9142,7 @@ fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef
         changed := false
         j := 0
         for j < len(args):
-            r := resolve_gstruct_type(args[j], structs, &sinsts)
+            r := resolve_gtype(args[j], structs, enums, &sinsts, &einsts)
             push(rargs, r)
             if r != args[j]:
                 changed = true
@@ -9009,6 +9150,9 @@ fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef
         gi := find_generic_struct(structs, name)
         if gi >= 0:
             return instantiate_struct(structs[gi], structs[gi].typeparams, rargs, &sinsts)
+        ei := find_generic_enum(enums, name)
+        if ei >= 0:
+            return instantiate_enum(enums[ei], enums[ei].typeparams, rargs, &einsts)
         if not changed:
             return ty
         out := name + "("
@@ -9097,15 +9241,15 @@ fn ufcs_gen_matches(gt: Func, rty: string) -> bool:
     bt := []string
     return match_typaram_str(gt.ptypes[0], rty, &bn, &bt)
 
-fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Expr]:
+fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
-        push(out, mono_expr(es[i], names, types, gens, &insts, &sinsts, dc, ctx))
+        push(out, mono_expr(es[i], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
         i = i + 1
     return out
 
-fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> Expr:
+fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> Expr:
     match e:
         EInt(s, el):
             return e
@@ -9120,13 +9264,13 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
         EVar(s, el):
             return e
         EArrEmpty(t, el):
-            return e
+            return EArrEmpty(resolve_gtype(t, dc.structs, dc.enums, &sinsts, &einsts), el)   # generics: `[]LL(int)` -> `[]LL__int`
         EMapEmpty(k, v, el):
-            return e
+            return EMapEmpty(resolve_gtype(k, dc.structs, dc.enums, &sinsts, &einsts), resolve_gtype(v, dc.structs, dc.enums, &sinsts, &einsts), el)
         EBin(o, l, r, el):
-            return EBin(o, mono_expr(l, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(r, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return EBin(o, mono_expr(l, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(r, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ECall(nm, a, el):
-            margs := mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx)
+            margs := mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
             rn := nm                                  # generics: decode `name$<T;...>` explicit type args
             explicit := []string
             mk := find(nm, "$<")
@@ -9161,6 +9305,38 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                     k = k + 1
                 newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit)
                 return ECall(newnm, margs, el)
+            geni := -1                                # generic enum constructor: a variant of a generic enum
+            gevi := -1
+            gk := 0
+            for gk < len(dc.enums):
+                if len(dc.enums[gk].typeparams) > 0 and geni < 0:
+                    vk := 0
+                    for vk < len(dc.enums[gk].variants):
+                        if dc.enums[gk].variants[vk].name == rn:
+                            geni = gk
+                            gevi = vk
+                        vk = vk + 1
+                gk = gk + 1
+            if geni >= 0:
+                gten := dc.enums[geni]
+                bnames := []string
+                btypes := []string
+                if len(explicit) > 0:                 # `Leaf$(int)`: explicit type args (the only way to fix a nullary variant)
+                    ek := 0
+                    for ek < len(gten.typeparams):
+                        if ek < len(explicit):
+                            push(bnames, gten.typeparams[ek])
+                            push(btypes, explicit[ek])
+                        ek = ek + 1
+                pk := 0                               # infer $T from each payload value (a self-ref payload may not bind; that's fine, another payload pins it)
+                gotm := false
+                for pk < len(margs):
+                    if pk < len(gten.variants[gevi].ptypes):
+                        gotm = match_typaram_str(gten.variants[gevi].ptypes[pk], type_of(margs[pk], names, types, dc, ctx), &bnames, &btypes)
+                    pk = pk + 1
+                gotm = gotm
+                inste := instantiate_enum(gten, bnames, btypes, &einsts)
+                return ECall(rn + "#" + inste, margs, el)   # encode the instance so codegen emits mk_<inste>_<rn> (variants are shared across instances)
             if mk >= 0:
                 die("generics: explicit type arguments given, but '" + rn + "' is not a generic function")
             gsi := find_generic_struct(dc.structs, nm)   # generic struct construction: infer from field values
@@ -9178,19 +9354,19 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                 return ECall(newnm, margs, el)
             return ECall(nm, margs, el)
         EField(b, f, el):
-            return EField(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), f, el)
+            return EField(mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), f, el)
         EIndex(b, ix, el):
-            return EIndex(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(ix, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return EIndex(mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(ix, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         EArrLit(es, el):
-            return EArrLit(mono_exprs(es, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return EArrLit(mono_exprs(es, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         EMapLit(ks, vs, el):
-            return EMapLit(mono_exprs(ks, names, types, gens, &insts, &sinsts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return EMapLit(mono_exprs(ks, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ETuple(es, el):
-            return ETuple(mono_exprs(es, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return ETuple(mono_exprs(es, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ESlice(b, lo, hi, el):
-            return ESlice(mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(lo, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(hi, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return ESlice(mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(lo, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(hi, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         EAddr(x, el):
-            return EAddr(mono_expr(x, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return EAddr(mono_expr(x, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ELambda(id, ps, pts, r, bx, cn, ct, el):
             return e                              # lambda bodies with generic calls are 1c
         ECallV(c, a, el):
@@ -9203,23 +9379,23 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                     if ufcs_gen_matches(gens[ug], rty):
                         allargs := []Expr
                         at := []string
-                        push(allargs, mono_expr(origrecv, names, types, gens, &insts, &sinsts, dc, ctx))   # instantiate a nested generic receiver
+                        push(allargs, mono_expr(origrecv, names, types, gens, &insts, &sinsts, &einsts, dc, ctx))   # instantiate a nested generic receiver
                         push(at, rty)
                         ai := 0
                         for ai < len(a):
-                            push(allargs, mono_expr(a[ai], names, types, gens, &insts, &sinsts, dc, ctx))
+                            push(allargs, mono_expr(a[ai], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
                             push(at, type_of(a[ai], names, types, dc, ctx))
                             ai = ai + 1
                         newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
                         return ECall(newnm, allargs, el)
-            return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ESpawn(id, nm, a, el):
-            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, dc, ctx), el)
+            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
 
-fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> Stmt:
+fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> Stmt:
     match s:
         SDecl(nm, rhs, ln):
-            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx)
+            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
             # type the ORIGINAL rhs: its generic calls resolve via the template
             # sigs (still in dc) to "$T" — a harmless env placeholder. The rewritten
             # `mr` names instances not yet in dc; the final codegen recomputes the
@@ -9229,49 +9405,49 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             push(types, ty)
             return SDecl(nm, mr, ln)
         STypedDecl(nm, ty, rhs, ln):
-            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx)
-            rty := resolve_gstruct_type(ty, dc.structs, &sinsts)   # Stage 2b: `x: Box(int)` annotation
+            mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
+            rty := resolve_gtype(ty, dc.structs, dc.enums, &sinsts, &einsts)   # Stage 2b: `x: Box(int)` annotation
             push(names, nm)
             push(types, rty)
             return STypedDecl(nm, rty, mr, ln)
         SAssign(nm, rhs, ln):
-            return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SAssign(nm, mono_expr(rhs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SFieldAssign(lv, rhs, ln):
-            return SFieldAssign(mono_expr(lv, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(rhs, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SFieldAssign(mono_expr(lv, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(rhs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SPrint(e, ln):
-            return SPrint(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SPrint(mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SReturn(e, ln):
-            return SReturn(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SReturn(mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SReturnVoid:
             return s
         SIf(c, th, el, ln):
-            return SIf(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(th, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(el, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SIf(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(th, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(el, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SWhile(c, body, ln):
-            return SWhile(mono_expr(c, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SWhile(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(body, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SForRange(v, a, b, st, body, ln):
             nn := names
             tt := types
             push(nn, v)
             push(tt, "int")
-            return SForRange(v, mono_expr(a, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(st, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, dc, ctx), ln)
+            return SForRange(v, mono_expr(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(st, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SExpr(e, ln):
-            return SExpr(mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SExpr(mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SOrReturn(nm, e, ln):
-            mr := mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx)
+            mr := mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
             push(names, nm)
             push(types, "int")                    # precise unwrap type is 1c; unused by 1a
             return SOrReturn(nm, mr, ln)
         SDestructure(nms, e, ln):
-            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SMultiAssign(nms, e, ln):
-            return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, &sinsts, dc, ctx), ln)
+            return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SMatch(subj, vars, binds, bodies, ln):
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, dc, ctx))
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
                 i = i + 1
-            return SMatch(mono_expr(subj, names, types, gens, &insts, &sinsts, dc, ctx), vars, binds, nb, ln)
+            return SMatch(mono_expr(subj, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), vars, binds, nb, ln)
         SBreak:
             return s
         SContinue:
@@ -9280,23 +9456,23 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, dc, ctx))
+                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
                 i = i + 1
-            return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, &sinsts, dc, ctx), bnds, nb, ln)
+            return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), bnds, nb, ln)
         SParFor(v, a, b, body, pid, fl):
             nn := names
             tt := types
             push(nn, v)
             push(tt, "int")
-            return SParFor(v, mono_expr(a, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, dc, ctx), pid, fl)
+            return SParFor(v, mono_expr(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, &einsts, dc, ctx), pid, fl)
 
-fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], dc: Decls, ctx: Ctx) -> [Stmt]:
+fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> [Stmt]:
     nm := names                                   # by-value copy -> a block's decls don't leak to the caller (scope)
     ty := types
     out := []Stmt
     i := 0
     for i < len(stmts):
-        push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, &sinsts, dc, ctx))
+        push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, &sinsts, &einsts, dc, ctx))
         i = i + 1
     return out
 
@@ -9316,10 +9492,17 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         if len(prog.structs[gs].typeparams) > 0:
             has_gstruct = true
         gs = gs + 1
-    if len(gens) == 0 and not has_gstruct:
+    has_genum := false
+    ge := 0
+    for ge < len(prog.enums):
+        if len(prog.enums[ge].typeparams) > 0:
+            has_genum = true
+        ge = ge + 1
+    if len(gens) == 0 and not has_gstruct and not has_genum:
         return prog                               # no templates: program unchanged (byte-identical)
     insts := []Func
     sinsts := []StructDef
+    einsts := []EnumDef
     out := []Func
     i = 0
     for i < len(concrete):
@@ -9327,13 +9510,13 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         names := []string
         types := []string
         seed_env(f, &names, &types)
-        nbody := mono_block(f.body, names, types, gens, &insts, &sinsts, dc, ctx)
+        nbody := mono_block(f.body, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
         rpt := []string                           # Stage 2b: resolve `Box(int)` type-position in the signature
         j := 0
         for j < len(f.ptypes):
-            push(rpt, resolve_gstruct_type(f.ptypes[j], dc.structs, &sinsts))
+            push(rpt, resolve_gtype(f.ptypes[j], dc.structs, dc.enums, &sinsts, &einsts))
             j = j + 1
-        rret := resolve_gstruct_type(f.ret, dc.structs, &sinsts)
+        rret := resolve_gtype(f.ret, dc.structs, dc.enums, &sinsts, &einsts)
         push(out, Func(f.name, f.params, rpt, rret, nbody, f.is_extern, f.lib, f.constraints))
         i = i + 1
     i = 0
@@ -9347,9 +9530,57 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
             rf := []Field                         # Stage 2b: resolve `Box(int)` type-position in fields
             j := 0
             for j < len(prog.structs[i].fields):
-                push(rf, Field(prog.structs[i].fields[j].name, resolve_gstruct_type(prog.structs[i].fields[j].ty, dc.structs, &sinsts)))
+                push(rf, Field(prog.structs[i].fields[j].name, resolve_gtype(prog.structs[i].fields[j].ty, dc.structs, dc.enums, &sinsts, &einsts)))
                 j = j + 1
             push(rconcrete, StructDef(prog.structs[i].name, rf, []string))
+        i = i + 1
+    renums := []EnumDef                           # drop generic enum templates; resolve concrete payload types
+    i = 0
+    for i < len(prog.enums):
+        if len(prog.enums[i].typeparams) == 0:
+            rvs := []Variant
+            vj := 0
+            for vj < len(prog.enums[i].variants):
+                npts := []string
+                pk := 0
+                for pk < len(prog.enums[i].variants[vj].ptypes):
+                    push(npts, resolve_gtype(prog.enums[i].variants[vj].ptypes[pk], dc.structs, dc.enums, &sinsts, &einsts))
+                    pk = pk + 1
+                push(rvs, Variant(prog.enums[i].variants[vj].name, npts))
+                vj = vj + 1
+            push(renums, EnumDef(prog.enums[i].name, rvs, []string))
+        i = i + 1
+    # Resolve generic references inside instance fields/payloads so nested/recursive
+    # generics work: LL__int.tail "[LL(int)]" -> "[LL__int]"; Tree__int.Node payload
+    # "Tree(int)" -> "Tree__int". struct and enum instances can reference each other,
+    # so loop until neither list grows; instantiate_* dedups, so recursion terminates.
+    sdone := 0
+    edone := 0
+    for sdone < len(sinsts) or edone < len(einsts):
+        for sdone < len(sinsts):
+            rf2 := []Field
+            fj := 0
+            for fj < len(sinsts[sdone].fields):
+                push(rf2, Field(sinsts[sdone].fields[fj].name, resolve_gtype(sinsts[sdone].fields[fj].ty, dc.structs, dc.enums, &sinsts, &einsts)))
+                fj = fj + 1
+            sinsts[sdone] = StructDef(sinsts[sdone].name, rf2, []string)
+            sdone = sdone + 1
+        for edone < len(einsts):
+            rvs2 := []Variant
+            vj2 := 0
+            for vj2 < len(einsts[edone].variants):
+                npt2 := []string
+                pk2 := 0
+                for pk2 < len(einsts[edone].variants[vj2].ptypes):
+                    push(npt2, resolve_gtype(einsts[edone].variants[vj2].ptypes[pk2], dc.structs, dc.enums, &sinsts, &einsts))
+                    pk2 = pk2 + 1
+                push(rvs2, Variant(einsts[edone].variants[vj2].name, npt2))
+                vj2 = vj2 + 1
+            einsts[edone] = EnumDef(einsts[edone].name, rvs2, []string)
+            edone = edone + 1
+    i = 0
+    for i < len(einsts):                          # enum instances after the concrete enums
+        push(renums, einsts[i])
         i = i + 1
     # hierc0 emits struct bodies in list order (no topo sort). A struct instance can
     # depend on a concrete struct (Box(Point)) or vice versa, so topologically sort
@@ -9363,7 +9594,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
     for i < len(sinsts):
         push(allstructs, sinsts[i])
         i = i + 1
-    return Program(topo_structs(allstructs), prog.enums, out, prog.ntnames, prog.ntunder)
+    return Program(topo_structs(allstructs), renums, out, prog.ntnames, prog.ntunder)
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)

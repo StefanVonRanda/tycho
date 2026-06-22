@@ -1561,6 +1561,30 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 <code>empty$(int)</code> and <code>empty$(string)</code> stamp out two distinct concrete functions. Because the type parameter is not pinned by any argument, the compiler folds the supplied type into the instance's name so the two never collide.
 </div></div>
 
+<h2>Generic enums: recursive and all</h2>
+<p>A <code>$T</code> can parameterise a <em>sum type</em>, too. The variants are monomorphized exactly like a generic struct &mdash; one concrete enum per type argument &mdash; and a payload may name the enum itself, so a generic <strong>tree</strong> (or AST) just works:</p>
+<div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">enum</span> <span class="ty">Tree</span>(<span class="ty">$T</span>):
+    <span class="ty">Leaf</span>
+    <span class="ty">Node</span>(<span class="ty">Tree</span>(<span class="ty">$T</span>), <span class="ty">$T</span>, <span class="ty">Tree</span>(<span class="ty">$T</span>))
+
+<span class="kw">fn</span> <span class="fn">sum</span>(t: <span class="ty">Tree</span>(<span class="ty">int</span>)) -> <span class="ty">int</span>:
+    <span class="kw">match</span> t:
+        <span class="ty">Leaf</span>:
+            <span class="kw">return</span> <span class="num">0</span>
+        <span class="ty">Node</span>(l, v, r):
+            <span class="kw">return</span> <span class="fn">sum</span>(l) + v + <span class="fn">sum</span>(r)
+
+<span class="kw">fn</span> <span class="fn">main</span>():
+    t := <span class="ty">Node</span>(<span class="ty">Node</span>(<span class="ty">Leaf</span>$(<span class="ty">int</span>), <span class="num">1</span>, <span class="ty">Leaf</span>$(<span class="ty">int</span>)), <span class="num">2</span>, <span class="ty">Leaf</span>$(<span class="ty">int</span>))
+    <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">sum</span>(t)))      <span class="cm"># 3</span></code></pre></div>
+<p>A payload value pins <code>$T</code> by inference (<code>Node(&hellip;, 2, &hellip;)</code> &rarr; <code>T = int</code>). A <em>nullary</em> variant carries no value to infer from, so it takes an explicit type argument &mdash; <code>Leaf$(int)</code> &mdash; the same surface as <code>empty$(int)</code> above.</p>
+<div class="callout tip">
+<div class="callout-icon">&#9889;</div>
+<div>
+<div class="callout-title">Finite by construction</div>
+An enum payload is arena-allocated (a pointer), so a recursive <code>Tree($T)</code> is finite and copying one is a deep copy of the whole tree &mdash; no manual boxing, no <code>Box</code>/<code>Rc</code> ceremony.
+</div></div>
+
 <div class="quiz" id="quiz-18">
 <div class="quiz-title"><span class="icon">&#10067;</span> Check Your Understanding</div>
 <div class="quiz-question" data-answer="1">

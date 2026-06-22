@@ -1,0 +1,63 @@
+# Generic user enums (monomorphized): non-recursive payload inference, explicit
+# nullary type args, generic-enum type annotations, and RECURSIVE generic enums
+# (a variant payload naming the enum itself -- the generic-AST case).
+
+enum Box($T):
+    Has($T)
+    Empty
+
+# a generic enum used as a parameter/return type annotation
+fn unwrap(b: Box(int), d: int) -> int:
+    match b:
+        Has(v):
+            return v
+        Empty:
+            return d
+
+# recursive generic enum: payloads name Tree($T) itself; finite because enum
+# payloads are heap (arena) pointers.
+enum Tree($T):
+    Leaf
+    Node(Tree($T), $T, Tree($T))
+
+fn sum(t: Tree(int)) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return sum(l) + v + sum(r)
+
+fn build(d: int) -> Tree(int):
+    if d <= 0:
+        return Leaf$(int)
+    return Node(build(d - 1), d, build(d - 1))
+
+fn sz(t: Tree(int)) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return 1 + sz(l) + sz(r)
+
+fn main():
+    # payload type inferred from the argument
+    a := Has(42)
+    match a:
+        Has(v):
+            println(str(v))
+        Empty:
+            println("empty")
+    # a distinct instance: T = string
+    s := Has("hi")
+    match s:
+        Has(v):
+            println(v)
+        Empty:
+            println("empty")
+    # explicit type arg fixes a nullary variant
+    println(str(unwrap(Empty$(int), -1)))
+    println(str(unwrap(Has(7), 0)))
+    # recursive generic enum: a small tree, summed and sized
+    t := Node(Node(Leaf$(int), 1, Leaf$(int)), 5, Node(Leaf$(int), 3, Leaf$(int)))
+    println(str(sum(t)))
+    println(str(sz(build(10))))
