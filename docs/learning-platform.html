@@ -1836,15 +1836,14 @@ function submitQuiz(quizIdx) {
     }
   });
 
-  // Show explanation
-  quizEl.querySelectorAll('.quiz-explanation').forEach(el => {
-    el.classList.add('show');
-    if (!el.classList.contains(allCorrect ? 'correct-exp' : 'wrong-exp')) {
-      // swap class
-      el.classList.remove('correct-exp', 'wrong-exp');
-      el.classList.add(allCorrect ? 'correct-exp' : 'wrong-exp');
-    }
-  });
+  // Show ONLY the matching explanation: the "Correct!" one when every answer is
+  // right, otherwise the "Not quite" one. (Adding .show to both displayed both.)
+  quizEl.querySelectorAll('.quiz-explanation').forEach(el => el.classList.remove('show'));
+  const exp = quizEl.querySelector(allCorrect ? '.quiz-explanation[data-correct]' : '.quiz-explanation[data-wrong]');
+  if (exp) {
+    exp.classList.add(allCorrect ? 'correct-exp' : 'wrong-exp');
+    exp.classList.add('show');
+  }
 
   // Disable submit
   quizEl.querySelector('.quiz-submit').disabled = true;
