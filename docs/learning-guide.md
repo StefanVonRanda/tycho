@@ -78,7 +78,7 @@ cd hier
 make
 ```
 
-This produces `./hierc`, the Hier compiler. (On macOS, see `docs/macos.md`.)
+This produces `./hierc`, the Hier compiler. (On macOS, install the Xcode Command Line Tools first: `xcode-select --install`.)
 
 ### Compiling and running a program
 

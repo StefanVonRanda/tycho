@@ -154,6 +154,13 @@ holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
 bound sits firmly between a working and a broken optimization; likewise the
 `move` bench holds ~126 MB where deep-copying the dead local would be ~187 MB.
 
+**Platform notes.** Hier builds and self-hosts on Linux and macOS (Apple Silicon
+and Intel) with `cc`/`clang` and `make`. On macOS, install the Xcode Command
+Line Tools (`xcode-select --install`). One difference worth knowing: Apple's
+AddressSanitizer ships no LeakSanitizer, so the leak-detection half of the
+sanitizer builds is skipped there — the correctness, UBSan, and byte-identical
+checks all still run.
+
 ## Documentation
 
 | doc | what it covers |
@@ -170,7 +177,6 @@ bound sits firmly between a working and a broken optimization; likewise the
 | [docs/map-values.md](docs/map-values.md) | maps with arbitrary value types (`[string: Point]`, `[int: [int]]`) without generics, and the heap-value lifetimes |
 | [docs/map-mutation.md](docs/map-mutation.md) | `m[k]` as a place: in-place map-value mutation (`push(m[k], v)`, `m[k] += 1`) and why it stays sound |
 | [docs/perf.md](docs/perf.md) | self-hosted-compiler performance history; cross-language numbers live in `bench/` |
-| [docs/macos.md](docs/macos.md) | macOS/Apple Silicon run: full suite + self-host fixpoint green, cross-language benchmarks, the two portability fixes it took |
 | [bench/README.md](bench/README.md) | the benchmark suite's map, incl. what is deliberately *not* measured and why |
 
 **New to the language?** The [learning guide](docs/learning-guide.md) is a
