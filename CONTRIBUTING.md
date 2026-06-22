@@ -59,8 +59,8 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
    doubt, read [docs/memory-model.md](docs/memory-model.md).
 
 Also out of scope **by decision** (please don't propose them): a
-ternary/conditional expression and a package manager. (Generics *were* out of
-scope; they've since shipped — Odin-style `$T`, see [docs/generics.md](docs/generics.md).)
+ternary/conditional expression and a package manager. Generics, on the other
+hand, *are* supported — Odin-style `$T`, see [docs/generics.md](docs/generics.md).
 
 ## Code style
 
