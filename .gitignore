@@ -84,3 +84,6 @@ cc??????.s
 .koka/
 # concurrency suite goldens (tests/conc/<name>.out) are tracked too
 !/tests/conc/*.out
+
+# Claude Code session state (locks, worktrees) — never publish
+/.claude/

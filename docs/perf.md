@@ -223,7 +223,7 @@ source — once per token**, so lexing was O(tokens × len) = **O(n²)**. The fi
 is purely algorithmic and touches no bounds-checking: thread the already-known
 length (`lex` computes `n := len(src)` once) into `scan_token` instead of
 recomputing it. The self-hosted self-compile (B) dropped **62 → 33 ms
-(~1.9×)**; fixpoint B≡C plus 60 tests green.
+(~1.9×)**; fixpoint B≡C with the suite green.
 
 This also revealed B was always ~2× faster than the A binary this doc had been
 timing: `hierc0`'s codegen emits a direct O(1) `s[i]` where `hierc` emitted a
@@ -262,7 +262,7 @@ per-scope/per-fn fields, so `with_owner`/`enter_block` rebuild a tiny struct.
 `gen_match_optres` to 9 params, so `hierc`'s fixed `Sig` param cap was raised
 8→16; `hierc0` uses dynamic arrays). Result: **B self-hosted self-compile 33.5 →
 22.7 ms (~1.48×)**, with `with_owner`/`enter_block` gone from the profile;
-fixpoint B≡C plus 58 tests plus fuzz green. The new top is genuine codegen logic
+fixpoint B≡C with the suite and fuzzer green. The new top is genuine codegen logic
 (`type_of` ~13%, `gen_expr` ~11%, `compute_movables` ~7%, `sig_ret` ~5%) — a
 smaller, more diffuse next layer.
 
@@ -273,7 +273,7 @@ gone). (1) `compute_movables` (the move-on-last-use pre-pass) was O(reads²) —
 called `count_str_occ(reads, n)` for every read; a one-pass frequency map plus
 loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
 became an O(1) `dc.sigmap` lookup. Together: **B 22.7 → 19.8 ms (~13%)**;
-fixpoint B≡C plus 58 tests plus fuzz green. What remains
+fixpoint B≡C with the suite and fuzzer green. What remains
 (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk) is the
 inherent string-building codegen: `hierc0` returns `sc()`-concatenated owned
 strings, so output bytes are copied once per nesting level — the value-semantic
@@ -283,7 +283,7 @@ string-copy floor. No logic-level change moves it.
 
 These improve the code `hierc0` *emits* when compiling itself (B = hierc0
 compiled by hierc0, compiling `hierc0.hi`), and are output-invisible (fixpoint
-B≡C plus 58 tests plus the fuzzer):
+B≡C with the suite and the fuzzer):
 
 - A **block free-list pool** in the emitted arena runtime cut time **106 → 64
   ms (1.66×)** by removing malloc/free churn per scope.
