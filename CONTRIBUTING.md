@@ -60,7 +60,7 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
 
 Also out of scope **by decision** (please don't propose them): a
 ternary/conditional expression and a package manager. Generics, on the other
-hand, *are* supported — Odin-style `$T`, see [docs/generics.md](docs/generics.md).
+hand, *are* supported — `$T`, see [docs/generics.md](docs/generics.md).
 
 ## Code style
 

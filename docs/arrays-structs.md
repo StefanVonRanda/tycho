@@ -171,7 +171,7 @@ expressible in Hier, so it can't occur.
 
 ## 7. Generics — monomorphized over the built-in container machinery
 
-Hier has **monomorphized generics**, Odin-style: a `$T` type parameter on a
+Hier has **monomorphized generics**: a `$T` type parameter on a
 function or struct, inferred at the use site and stamped out to concrete code at
 compile time. They reuse the *same* per-concrete-type interning + emission the
 compiler already runs for its built-in parametric types:

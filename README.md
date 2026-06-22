@@ -29,8 +29,8 @@ fn main():
     print(greet(name))
 ```
 
-Python-looking syntax, Go/Odin semantics (static types, value semantics,
-explicit returns), arena memory underneath. The same idea carries the
+Python-looking syntax; static types, value semantics, and explicit returns;
+arena memory underneath. The same idea carries the
 concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
 ordinary copy-in/copy-out call convention run on threads — race-free by
 construction, no locks or lifetime rules in the language (see
@@ -170,8 +170,8 @@ checks all still run.
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and how the self-hosted compiler runs on it |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
-| [docs/generics.md](docs/generics.md) | Odin-style `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers) |
-| [docs/packages.md](docs/packages.md) | Odin-style multi-file packages: `import`, qualified names, the corelib hook |
+| [docs/generics.md](docs/generics.md) | `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers) |
+| [docs/packages.md](docs/packages.md) | multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
 | [docs/map-values.md](docs/map-values.md) | maps with arbitrary value types (`[string: Point]`, `[int: [int]]`) without generics, and the heap-value lifetimes |
@@ -1108,7 +1108,7 @@ are rejected (fail closed). Linking ergonomics on the `hierc` line: `--link`,
 
 ### Packages
 
-Odin-style packages: a directory of `.hi` files sharing one namespace, named by
+Packages: a directory of `.hi` files sharing one namespace, named by
 a `package` declaration, pulled in with `import` and used via qualified
 `pkg.symbol` names (functions, types, enum variants); an alias renames the
 prefix:
@@ -1235,7 +1235,7 @@ None of this appears in Hier source.
 - **Generic constraints are a fixed, compiler-known set** — generic *functions*,
   *structs*, and *enums* (all including recursive types, e.g. `enum Tree($T)`)
   take `$T` and are monomorphized, but the only constraints are the built-in
-  predicates (`numeric` / `comparable` / `has_str`) and Go-style type sets
+  predicates (`numeric` / `comparable` / `has_str`) and type sets
   (`where T: int | float`). There are no user-defined traits/type-classes, no
   higher-kinded types, and no variance — see [docs/generics.md](docs/generics.md).
 

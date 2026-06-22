@@ -7,7 +7,7 @@ This document makes the argument the implementation backs up with running,
 measured code.
 
 Hier is an experimental, small, ahead-of-time language: Python-looking syntax,
-Go/Odin-style value semantics, no garbage collector, no `malloc`/`free`, no
+value semantics, no garbage collector, no `malloc`/`free`, no
 lifetime annotations, no borrow checker. You write code as if memory were
 managed for you, and it is. The claim is not "arenas are good" — everyone knows
 that. The claim is sharper:

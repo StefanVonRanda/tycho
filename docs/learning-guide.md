@@ -1023,7 +1023,7 @@ Channels are bounded lock-free queues. `send` blocks when full, `recv` blocks wh
 
 ## 18. Packages and the Standard Library
 
-Hier has Odin-style packages: a directory of `.hi` files sharing one namespace.
+Hier has packages: a directory of `.hi` files sharing one namespace.
 
 ```
 package main

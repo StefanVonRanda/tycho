@@ -1,6 +1,6 @@
 # Packages & modules
 
-Hier organizes code into **Odin-style packages**. A package is a *directory* of
+Hier organizes code into **packages**. A package is a *directory* of
 `.hi` files that share one flat namespace. You `import` a package and reference
 its symbols with a qualified `pkg.symbol` name.
 

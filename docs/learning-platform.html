@@ -1401,7 +1401,7 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <div class="section-num">Chapter 18</div>
 <h1>Generics</h1>
 
-<p>A <strong>generic</strong> is a function or struct written once and reused for many types. Hier's generics are Odin-style: mark a type parameter with <code>$T</code>, and the compiler <strong>infers</strong> it from how you call it, then stamps out a separate concrete copy for each type actually used. That is <strong>monomorphization</strong> &mdash; no boxing, no runtime dispatch, no cost.</p>
+<p>A <strong>generic</strong> is a function or struct written once and reused for many types. Hier's generics work like this: mark a type parameter with <code>$T</code>, and the compiler <strong>infers</strong> it from how you call it, then stamps out a separate concrete copy for each type actually used. That is <strong>monomorphization</strong> &mdash; no boxing, no runtime dispatch, no cost.</p>
 
 <h2>Generic functions</h2>
 <p>Write <code>$T</code> on a parameter's type to introduce a type parameter; a later bare <code>T</code> refers to it. <code>id</code> here works for <em>any</em> type, inferred from its argument:</p>
@@ -1529,7 +1529,7 @@ The constraint is checked when the type is fixed at a call. <code>sum(["a", "b"]
 </div></div>
 
 <h2>Type sets: a one-off constraint</h2>
-<p>When none of the three predicates names the set you want, list the concrete types yourself with <code>where T: A | B</code> &mdash; the Go-style <em>type set</em>. It admits exactly the types you spell out, nothing else:</p>
+<p>When none of the three predicates names the set you want, list the concrete types yourself with <code>where T: A | B</code> &mdash; the <em>type set</em>. It admits exactly the types you spell out, nothing else:</p>
 <div class="code-block"><div class="code-header"><span class="lang">hier</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code><span class="kw">fn</span> <span class="fn">dbl</span>(x: <span class="ty">$T</span>) -> <span class="ty">$T</span> <span class="kw">where</span> <span class="ty">T</span>: <span class="ty">int</span> | <span class="ty">float</span>:
     <span class="kw">return</span> x + x
 

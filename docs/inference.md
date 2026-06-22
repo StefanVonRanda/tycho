@@ -58,8 +58,8 @@ propagation. Unification machinery is not required for any of it.
 **(a) Generics are explicit, not inferred.** HM's center of gravity is
 let-generalization: `id` gets type `forall a. a -> a` and every use
 instantiates it — so *every* generalizable function silently becomes
-generic. hier's generics are the opposite — **opt-in and explicit** (`$T`,
-Odin-style), inferred by one-directional structural matching and
+generic. hier's generics are the opposite — **opt-in and explicit** (`$T`),
+inferred by one-directional structural matching and
 monomorphized ([generics.md](generics.md)). HM minus generalization is not
 HM; it is local unification (§4), which bidirectional inference already
 covers without a union-find. HM *with* generalization would make the first

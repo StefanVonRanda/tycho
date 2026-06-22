@@ -1,4 +1,4 @@
-# Generics (Odin-style, monomorphized)
+# Generics (monomorphized)
 
 > **Status: shipped (both compilers)** — generic *functions*,
 > generic-struct *construction* and *type-position* annotations, struct
@@ -181,14 +181,14 @@ the substituted body. A `where` on a non-generic function, an unknown predicate,
 or a name that is not a type parameter is rejected at parse. Shipped in both
 compilers (`tests/generic_where.hi`, `tests/reject/where_*.hi`).
 
-**Go-style type sets (also shipped).** Beyond the fixed predicates, a constraint
+**Type sets (also shipped).** Beyond the fixed predicates, a constraint
 may be a *user-listed type set* — `where T: int | float | Meters` — bounding `T`
 to one of the named types (Go's `~int | ~float64` idea, minus the runtime
 machinery). Membership is checked against the **newtype-resolved base**, so it
 composes with `distinct` the same way the predicates do, and a type set may mix
 with predicates in one clause (`where numeric(T), U: int | string`). A violation
 is the same instantiation-time signature error (`… T = float, which is not in the
-type set { int | float }`). This is the *expressiveness* lever Go's type sets
+type set { int | float }`). This is the *expressiveness* lever type sets
 buy, kept fully monomorphizable and free of type classes — no dictionaries, no
 boxing; it is a compile-time membership test. Shipped in both compilers
 (`tests/generic_typeset.hi`, `tests/reject/typeset_*.hi`). For a worked,
@@ -204,7 +204,7 @@ empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
 1. **Forbid them by default.** Require every `$`-parameter to appear in some
    argument type. `fn empty()` is rare; users write `xs := []int` or pass a
    witness. This keeps inference purely argument-directed.
-2. **Explicit type arguments — SHIPPED.** Odin passes an explicit `$T: typeid`;
+2. **Explicit type arguments.** Odin passes an explicit `$T: typeid`;
    Hier already spelled explicit type args for built-in generic *types*
    (`Option(int)`, `Pair(int, string)`), and now for function calls:
    `name$(T1, ...)`, optionally followed by a value-arg list. `empty$(int)` /
@@ -355,7 +355,7 @@ change.
   pass rewrites a UFCS-generic call (dotted-`ECall` and chained-`ECallV` forms) to a
   plain instance call, with `type_of` substituting the generic method's return from
   the receiver so chaining resolves. Test `tests/generic_ufcs.hi`.
-- **Go-style type sets.** A `where` constraint can be a
+- **Type sets.** A `where` constraint can be a
   user-listed type set, `where T: int | float` (see [§5](#5-constraints-checked-at-instantiation)),
   mixable with the fixed predicates. Membership uses the newtype-resolved base;
   it's a compile-time check, still fully monomorphized (no dictionaries, no
