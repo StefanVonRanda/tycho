@@ -1252,8 +1252,8 @@ compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   mut, memo, collect, context, generics, optimize, json,
-                   raytrace, grep, invindex (.hi) — 21 programs (generics.hi
+                   mut, memo, collect, context, generics_tour, optimize, json,
+                   raytrace, grep, invindex (.hi) — 21 programs (generics_tour.hi
                    tours `$T` functions/structs/enums, incl. a recursive
                    `Tree($T)`; json.hi is a full recursive-descent JSON parser +
                    serializer; raytrace.hi a float-math PPM renderer; grep.hi a
