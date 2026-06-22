@@ -201,7 +201,7 @@ via the fixpoint differential, so the compilers cannot drift.
 Since reaching the fixpoint, `hierc0`'s codegen has been migrated from naive
 malloc/leak C to the same implicit-arena memory model the C compiler uses, one
 type family at a time, each step gated by the fixpoint + sanitizers. That
-campaign (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
+migration (MM-0 … MM-7f — strings, arrays, maps, structs/tuples/boxes, all array
 elements, enum node trees, mut containers, per-variable block scoping,
 transient placement, move-on-last-use, and finally heap-payload option/result
 elements, all now arena-managed and freed per scope) is documented in
@@ -237,7 +237,7 @@ measured in [docs/perf.md](docs/perf.md); no logic-level change moves it.
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in six languages, built optimized, peak RSS + best-of-3 wall time;
 every binary prints byte-identical output. `hier (hierc0)` is the self-hosted
-compiler after the campaign:
+compiler after the migration:
 
 | workload         | hier (hierc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |

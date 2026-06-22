@@ -143,7 +143,7 @@ zero annotations.
 ## Appendix: migration history (MM-0 … MM-10)
 
 For contributors. `hierc0` reached the Stage-4 fixpoint emitting **naive
-malloc/leak C** — correct output, unbounded RSS. This is the staged campaign that
+malloc/leak C** — correct output, unbounded RSS. This is the staged migration that
 brought it onto the arena model, each step gated by the fixpoint + sanitizers,
 each commit carrying its verification. Headline RSS deltas are for the workload
 that exercises the migrated type.
@@ -181,7 +181,7 @@ array elements (~140×); option/result array elements (scalar payload, ~45×); a
 `mut` heap-struct fields. **MM-7f** closed the last residual — heap-payload
 option/result elements like `[Option(str)]` — by making options first-class
 deep-copied value types (245 → 11 MB at 4M iters, flat, verified by a 1200-seed
-heap-payload fuzz campaign).
+heap-payload fuzz run).
 
 **Recursive enums + transient placement (MM-7a … MM-7d).** Enum nodes became
 arena value types with a recursive deep-copy at every escape point (`ff96105`);

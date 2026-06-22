@@ -133,7 +133,7 @@ flow:
 Cost: the two-phase resolve restructuring from §3(b) (UFCS/dispatch still
 needs solved receivers), the dual implementation, and codegen ordering:
 copy/move/accumulator analyses must run post-solve. That is a multi-week
-campaign for the delta between "later use" and "annotate the decl" — a
+effort for the delta between "later use" and "annotate the decl" — a
 delta the corpus prices at well under a hundred sites. **Feasible, not
 worth it.**
 

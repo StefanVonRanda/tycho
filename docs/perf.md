@@ -9,7 +9,7 @@ are indicative, not a rigorous benchmark suite.
 > C/Go/Rust). This file tracks the self-hosted compiler only.
 
 **Headline.** The self-hosted `hierc0` now compiles its own ~3,500-line source in
-**~20 ms** (~3.1× faster than the campaign start) and, after the memory-model
+**~20 ms** (~3.1× faster than the starting baseline) and, after the memory-model
 migration, emits the same implicit-arena C the reference compiler does — beating
 `hierc` on both memory and time on 3 of 4 cross-language workloads, and
 best-in-class on binary-trees. The status blocks below trace how it got there;
@@ -25,12 +25,12 @@ the arena model bought rather than to describe the current compiler.
 > sections document is **closed**. Concretely, the headline `accumulate_big` row
 > below (B naive: 257 ms / 598 MB) is now **B arena: ~0 ms / ~1.6 MB**, identical
 > to A — the O(n²)/leak is gone. The sections are kept because they quantify *what
-> the arena model bought* (the motivation for the whole MM campaign); read them as
+> the arena model bought* (the motivation for the whole memory-model migration); read them as
 > "naive vs arena," not as the current B. The prong-B section further down (tuning
 > of the C compiler `src/hierc.c`) is current.
 
 > **CURRENT self-hosted compiler speed (2026-06): ~20 ms** (B = hierc0 compiling
-> its own ~3.5k-line source; ~3.1× faster than the campaign start). The numbers in
+> its own ~3.5k-line source; ~3.1× faster than the starting baseline). The numbers in
 > this block (down to ~64 ms) are intermediate; the RESOLUTION/CORRECTION blocks
 > further down trace the lexer-O(n²), string-index-O(n²), `Ctx`/`Decls`-split, and
 > `compute_movables`/`sig_ret` map fixes that reached ~20 ms. After the arena
