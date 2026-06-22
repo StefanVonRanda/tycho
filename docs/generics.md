@@ -187,7 +187,10 @@ is the same instantiation-time signature error (`… T = float, which is not in 
 type set { int | float }`). This is the *expressiveness* lever Go's type sets
 buy, kept fully monomorphizable and free of type classes — no dictionaries, no
 boxing; it is a compile-time membership test. Shipped in both compilers
-(`tests/generic_typeset.hi`, `tests/reject/typeset_*.hi`).
+(`tests/generic_typeset.hi`, `tests/reject/typeset_*.hi`). For a worked,
+runnable walk-through see the *Type sets: a one-off constraint* subsection of
+Chapter 19 ("Generics, continued") in
+[`docs/learning-platform.html`](learning-platform.html).
 
 ## 6. When `$T` can't be inferred
 
