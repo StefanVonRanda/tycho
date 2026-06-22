@@ -62,9 +62,13 @@ fn usage():
 fn cmd_run(a: [string], cc: string):
     file := a[2]
     exe := "/tmp/.tycho_run_bin"
+    # build to a throwaway temp; tychoc emits <exe> and the transpiled <exe>.c
     if tycho_run(cc + " " + file + " -o " + exe + " > /dev/null") != 0:
+        tycho_run("rm -f " + exe + " " + exe + ".c")
         die("tycho run: build failed: " + file)
-    if tycho_run(exe + " " + join_from(a, 3)) != 0:
+    code := tycho_run(exe + " " + join_from(a, 3))
+    tycho_run("rm -f " + exe + " " + exe + ".c")   # delete the generated binary + transpiled C
+    if code != 0:
         die("tycho run: program exited non-zero")
 
 fn cmd_build(a: [string], cc: string):
