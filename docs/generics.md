@@ -1,6 +1,6 @@
 # Generics (Odin-style, monomorphized)
 
-> **Status: ALL stages shipped (both compilers)** — generic *functions*,
+> **Status: shipped (both compilers)** — generic *functions*,
 > generic-struct *construction* and *type-position* annotations, struct
 > *dependency-ordering* (`Box(Point)`), *structured type-param patterns*
 > (`fn first(xs: [$T]) -> Option(T)`), *map patterns*
@@ -11,9 +11,9 @@
 > (`empty$(int)` for the non-inferable `empty() -> [$T]`). This is
 > the contract the implementation is built against. It reverses an earlier
 > "no generics (firm)" decision; the argument for the reversal is in
-> [§7](#7-the-reversal-the-registry-already-exists). Each stage ships only when
+> [§7](#7-the-reversal-the-registry-already-exists). Each feature ships only when
 > both compilers implement it and `make test` / `make fixpoint` / `make fuzz`
-> are green — Stage 1 is, via `tests/generics.hi`.
+> are green.
 
 ## 1. The shape in one screen
 
@@ -153,12 +153,12 @@ concrete body.** If `T = string` reaches `xs[0] + 1`, instantiation fails with
 the ordinary "cannot add string and int" error, attributed to the call site that
 asked for `T = string`.
 
-This keeps Stage 1 small. It has a known cost — an error inside a deep generic
+This keeps the rule simple. It has a known cost — an error inside a deep generic
 helper points at the instantiation, not always the line a user expected — which
-[§8](#8-stages) addresses by adding optional explicit constraints later:
+[§8](#8-whats-shipped) addresses with optional explicit constraints:
 
 ```
-# Stage 3 (shipped): a `where` clause turns an instantiation-time body error
+# a `where` clause turns an instantiation-time body error
 # into a checked-up-front signature error with a clear message.
 fn sum(xs: [$T]) -> T where numeric(T):
     …
@@ -199,7 +199,7 @@ Chapter 19 ("Generics, continued") in
 Some signatures name a type parameter that no argument pins — `fn
 empty() -> [$T]`, `fn zero($T) -> T`. Two options, in order of preference:
 
-1. **Forbid them in Stage 1.** Require every `$`-parameter to appear in some
+1. **Forbid them by default.** Require every `$`-parameter to appear in some
    argument type. `fn empty()` is rare; users write `xs := []int` or pass a
    witness. This keeps inference purely argument-directed.
 2. **Explicit type arguments — SHIPPED.** Odin passes an explicit `$T: typeid`;
@@ -249,12 +249,13 @@ The wager is the same one Go made at 1.18 and Odin makes by design: the handful
 of parametric shapes people actually need (containers, a couple of helpers) are
 worth a monomorphization pass that the compiler *already runs* for its built-ins.
 
-## 8. Stages
+## 8. What's shipped
 
-Each stage lands in **both** compilers behind `make fixpoint`, its own focused
-commit, fully green before the next — same discipline as every other change.
+Each feature lands in **both** compilers behind `make fixpoint`, in its own
+focused commit, fully green before the next — same discipline as every other
+change.
 
-- **Stage 1 — generic functions — SHIPPED** (both compilers). `fn f(x: $T) -> T`,
+- **Generic functions** (both compilers). `fn f(x: $T) -> T`,
   parameters inferred from argument types
   ([§3](#3-inference-argument-directed-not-hindley-milner)), every
   `$`-parameter required to appear in an argument
@@ -269,10 +270,10 @@ commit, fully green before the next — same discipline as every other change.
   function body with a type environment, infers each `$T`, interns one instance
   Func sharing the template body (sound because hierc0 recomputes types per
   function), rewrites the calls, and drops the templates; the mangled instance
-  name matches hierc byte-for-byte. Known edge (Stage 1c): a generic call nested
+  name matches hierc byte-for-byte. Known edge: a generic call nested
   inside a *declaration's* initializer in hierc0 isn't instantiation-typed — the
   test uses the direct forms; fails closed (a compile error, never a miscompile).
-- **Stage 2a — generic structs (construction) — SHIPPED** (both compilers).
+- **Generic structs (construction)** (both compilers).
   `struct Box($T)` / `struct Pair($A, $B)` are templates; each construction
   *infers* the type arguments from the field values (`Box(5)` → `Box__int`,
   `Pair(7, "x")` → `Pair__int__string`) and monomorphizes one concrete struct
@@ -284,7 +285,7 @@ commit, fully green before the next — same discipline as every other change.
   interns the concrete `StructDef` (field types string-substituted) and rewrites
   the construction call; the instance name matches hierc. Generic functions
   compose with generic structs (a `$T` binds to `Box__int`).
-- **Stage 2b — generic structs (type-position) — SHIPPED** (both compilers).
+- **Generic structs (type-position)** (both compilers).
   `Box(int)` as an explicit-type-args annotation in a parameter, return, field, or
   typed-declaration position — the same surface as the built-in `Option(int)` /
   `Result(int, string)`. In hierc, `parse_type` interns the instance directly at
@@ -293,7 +294,7 @@ commit, fully green before the next — same discipline as every other change.
   every signature, struct field, and typed-decl annotation, interning the concrete
   `StructDef` and rewriting the string to `"Box__int"`. A generic struct now
   crosses non-generic function boundaries.
-- **Stage 3 (struct dep-ordering) — SHIPPED.** A generic struct parameterized by
+- **Struct dependency-ordering.** A generic struct parameterized by
   another *concrete struct* (`Box(Point)`, where the instance embeds `Point` by
   value) now works in both compilers. hierc already topo-ordered via
   `emit_aggregate`; hierc0 gained a stable struct topological sort
@@ -302,7 +303,7 @@ commit, fully green before the next — same discipline as every other change.
   ties breaking by input order. It runs only for generic programs, so hierc0.hi's
   own emission is untouched and B==C stays byte-identical. Test:
   `tests/generic_struct_deps.hi`.
-- **Stage 3 (structured type-param patterns) — SHIPPED.**
+- **Structured type-param patterns.**
   `fn first(xs: [$T]) -> Option(T)` — `$T` is inferred from *inside* a container
   argument (`[$T]` matched structurally against `[int]`) and the return/param
   types (`Option(T)`, `[T]`, `Result($T,$E)`) are substituted and monomorphized.
@@ -313,7 +314,7 @@ commit, fully green before the next — same discipline as every other change.
   are *dropped* before codegen so those types never reach it — only a structural
   string match (`match_typaram_str`) and a recursive bare-`T`→`$T` rewrite are
   needed. Test: `tests/generic_structured.hi`.
-- **Stage 3 (map patterns) — SHIPPED.**
+- **Map patterns.**
   `fn lookup(m: [$K: $V], k: $K, d: $V) -> $V` — both the key and value type are
   inferred from inside the map argument, substituted, and monomorphized per
   concrete map. In hierc the same `match_type`/`subst_type`/`has_typaram`
@@ -324,7 +325,7 @@ commit, fully green before the next — same discipline as every other change.
   `{K:V}` (curly) case in `match_typaram_str` and `gen_inst_mangle`, split on the
   first top-level colon (`find_top_colon`); the string substitution already
   rewrites `$K`/`$V` in place. Test: `tests/generic_map.hi`.
-- **Stage 3 (`where` constraints) — SHIPPED.**
+- **`where` constraints.**
   A `where pred(T), …` clause over the fixed predicate set `numeric` /
   `comparable` / `has_str` ([§5](#5-constraints-checked-at-instantiation)),
   parsed after the return type and checked at instantiation against each inferred
@@ -332,7 +333,7 @@ commit, fully green before the next — same discipline as every other change.
   and `instantiate_generic` checks them via `constraint_ok`; in hierc0 they ride a
   `"pred:T,…"` string on `Func`, checked in `mono_instantiate` (newtype base via
   `dc.ntnames`). Tests `tests/generic_where.hi` + `tests/reject/where_*.hi`.
-- **Stage 3 (explicit type args) — SHIPPED.**
+- **Explicit type args.**
   `name$(T1, ...)` supplies the type params when no argument pins them
   ([§6](#6-when-t-cant-be-inferred) option 2). In hierc the call carries `typeargs`
   on the `Expr`, seeded into `binds` in `instantiate_generic` (declaration order),
@@ -343,8 +344,7 @@ commit, fully green before the next — same discipline as every other change.
   over the value-semantics-copied instance body (this also fixed a pre-existing gap:
   hierc0 could not substitute `[]$T` in *any* generic body). Tests
   `tests/generic_explicit.hi` + `tests/reject/explicit_*.hi`.
-- **Stage 3 — COMPLETE.** Generics (A2) is fully shipped in both compilers.
-- **Post-A2: UFCS × generics — SHIPPED.** A generic free function is callable as a
+- **UFCS × generics.** A generic free function is callable as a
   method: `xs.first()` == `first(xs)`, `n.dbl().dbl()`. UFCS dispatch, when no
   concrete method matches, tries the generic templates — a candidate is one whose
   first-parameter *pattern* accepts the receiver (`match_type` / `match_typaram_str`)
@@ -354,7 +354,7 @@ commit, fully green before the next — same discipline as every other change.
   pass rewrites a UFCS-generic call (dotted-`ECall` and chained-`ECallV` forms) to a
   plain instance call, with `type_of` substituting the generic method's return from
   the receiver so chaining resolves. Test `tests/generic_ufcs.hi`.
-- **Post-A2: Go-style type sets — SHIPPED.** A `where` constraint can be a
+- **Go-style type sets.** A `where` constraint can be a
   user-listed type set, `where T: int | float` (see [§5](#5-constraints-checked-at-instantiation)),
   mixable with the fixed predicates. Membership uses the newtype-resolved base;
   it's a compile-time check, still fully monomorphized (no dictionaries, no
@@ -363,7 +363,7 @@ commit, fully green before the next — same discipline as every other change.
   constraint string encodes a type set as `T=t1|t2` (`=`-marked, `#`-separated
   entries to survive tuple types); the mono check splits and tests base membership.
   Test `tests/generic_typeset.hi` + `tests/reject/typeset_*.hi`.
-- **Post-A2: generic enums — SHIPPED (both compilers).** A user sum type takes
+- **Generic enums** (both compilers). A user sum type takes
   `$T`: `enum Tree($T): Leaf; Node(Tree($T), $T, Tree($T))`. Monomorphized like a
   generic struct — one concrete `enum` per type argument, payloads substituted.
   Inference is from the constructor's payload values (`Has(42)` ⇒ `T = int`); a
