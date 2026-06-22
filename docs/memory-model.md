@@ -164,8 +164,9 @@ took a 30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×),
 using only `malloc`/`realloc`. The threading spine landed next — the irreducible
 step where every function gains `Arena *_parent` and `_scope`, every call threads
 it, and returns build into `_parent` — bringing transient, local, and returned
-strings onto the arena. Stored strings are `malloc`-copied; accumulator buffers
-stay on `malloc` by necessity.
+strings onto the arena. Stored strings followed when store sites moved onto the arena with the compound
+types below. The growth buffer behind `acc = acc + x` stays on `malloc`/`realloc`
+by necessity — an arena cannot `realloc` in place — but it is freed, not leaked.
 
 **Compound types.** Arrays (~31×), maps (~3.7×), then structs, tuples, and boxes
 (~1.67×) followed the same coupled pattern: allocators take `Arena*`, copies

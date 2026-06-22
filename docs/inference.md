@@ -47,7 +47,7 @@ Across the full corpus (compiler/hierc0.hi, corelib, examples, tests —
 | typed decls `x : T = e` | 69 | mostly `Option`/`Result` context-fixing; backward flow covers |
 | bare `None` needing an annotation | 6 | the canonical HM win — six occurrences |
 
-The burden HM uniquely removes is measured in dozens of sites, in a corpus
+The burden HM uniquely removes is measured in single digits — the six bare-`None` sites above — in a corpus
 where seventeen hundred declarations are already annotation-free. The
 biggest real annoyance — empty literals, 289 sites — needs *expected types
 at declaration and argument positions*, which is bidirectional

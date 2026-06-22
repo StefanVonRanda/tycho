@@ -238,7 +238,7 @@ N=40 000, under 8 MB at N=400 000 — does not scale with N). Every example and
 feature program is checked under `cc -fsanitize=address,undefined` with output
 required to match native `-O2`.
 
-Two further validations back the thesis, written up separately.
+Three further validations back the thesis, written up separately.
 
 **Self-hosting.** A second compiler written in Hier itself
 (`compiler/hierc0.hi`) reaches a byte-identical fixpoint (`make fixpoint`), and
@@ -257,7 +257,7 @@ compiler-vs-generated-code numbers are in [docs/perf.md](perf.md).
 out, a private arena per call — is already a sound thread boundary, so
 `spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
 on threads: race-free by construction, with no Sendable/lifetime/lock machinery
-in the language. Measured: `parallel for` at exact C-pthreads parity on a
+in the language. Measured: `parallel for` at C-pthreads parity on a
 compute-bound reduction; lock-free channels 2.6x faster than a hand-written C
 mutex ring while still paying the value-semantic copies C doesn't
 ([docs/concurrency.md](concurrency.md), `bench/conc/`).

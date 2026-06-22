@@ -1498,12 +1498,15 @@ fn main():
                     best = t
                     hit = k
 
+            r := 0.0
+            g := 0.0
+            b := 0.0
             if hit < 0:
                 # sky gradient
                 tt := 0.5 * (dir.y + 1.0)
-                r := (1.0 - tt) + tt * 0.5
-                g := (1.0 - tt) + tt * 0.7
-                b := (1.0 - tt) + tt * 1.0
+                r = (1.0 - tt) + tt * 0.5
+                g = (1.0 - tt) + tt * 0.7
+                b = (1.0 - tt) + tt * 1.0
             else:
                 s := scene[hit]
                 p := Vec3(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best)
@@ -1512,9 +1515,9 @@ fn main():
                 if diff < 0.0:
                     diff = 0.0
                 sh := 0.15 + 0.85 * diff
-                r := s.color.x * sh
-                g := s.color.y * sh
-                b := s.color.z * sh
+                r = s.color.x * sh
+                g = s.color.y * sh
+                b = s.color.z * sh
 
             # IMPORTANT: each piece is a separate `out = out + X`
             # so the in-place string-append optimization fires.

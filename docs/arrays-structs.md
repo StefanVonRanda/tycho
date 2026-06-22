@@ -192,8 +192,8 @@ struct Box($T):                          # generic struct
 
 You can write `struct Box($T)` and `fn id(x: $T) -> T`. The monomorphization
 engine such generics need **already exists**: it is exactly what stamps out
-`Option(int)` versus `Option(string)`. Opening it to user `$T` definitions adds
-a substitution pass, not a new subsystem, and stays memory-model-neutral (§9).
+`Option(int)` versus `Option(string)`. Opening it to user `$T` definitions took
+one substitution pass, not a new subsystem, and stays memory-model-neutral (§9).
 The full design is in [generics.md](generics.md).
 
 The full set is available in both compilers: generic functions, generic structs

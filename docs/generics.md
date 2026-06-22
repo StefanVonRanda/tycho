@@ -117,7 +117,7 @@ forward scan, decidable and cheap, with no solver.
 
 ## 4. Monomorphization reuses the machinery that already exists
 
-The §7 "no generics" verdict (below) rested on one claim: that a generics
+The earlier "no generics" stance (§7) rested on one claim: that a generics
 engine needs *"the cross-module monomorphization registry that is a major source
 of complexity … [and] simply does not exist."* It exists. The compiler already:
 
@@ -157,7 +157,7 @@ asked for `T = string`.
 
 This keeps the rule simple. It has a known cost — an error inside a deep generic
 helper points at the instantiation, not always the line a user expected — which
-[§8](#8-whats-shipped) addresses with optional explicit constraints:
+[§5](#5-constraints-checked-at-instantiation) addresses with optional explicit constraints:
 
 ```
 # a `where` clause turns an instantiation-time body error

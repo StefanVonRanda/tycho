@@ -95,7 +95,7 @@ The whole point is that foreign memory never enters Hier's owned world:
   case.
   - *Read-once borrow (an optimization, not a semantic change).* When the
     returned string is the direct argument of a read-once consumer —
-    `len(f())` or `print(f())` — the copy is skipped and the C pointer is read
+    `len(f())`, `print(f())`, or `println(f())` — the copy is skipped and the C pointer is read
     in place (NULL-guarded), because the borrow cannot escape the consuming
     call. Anything that could retain it (binding to a variable, concatenating,
     storing, returning, or comparing two extern strings) keeps the copy. Output

@@ -65,8 +65,7 @@ parallel-loop level, a `mut` of a capture, and range steps are all compile
 errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
-On the compute-bound reduction this lands at **exact C-pthreads parity** (same
-wall, same peak RSS), ~6.8× on 8 threads.
+On the compute-bound reduction this lands at **C-pthreads parity** (37 ms vs C's 36 ms, same peak RSS).
 
 ## Channels — the one shared object
 
@@ -110,9 +109,9 @@ for true:
 
 Arms are one or more `recv(ch, x):`, plus at most one `default:` (runs when
 nothing is immediately ready, making the select non-blocking) and at most one
-`closed:`. Without `default`, select waits on a bounded spin → yield → 50µs-sleep
+`closed:`. Without `default`, select waits on a bounded spin → yield → 1ms-park
 ladder — a select cannot park on N condition variables, so worst-case wake
-latency is ~50µs, fine for fan-in servers. `break`/`continue` inside an arm bind
+latency is ~1ms, fine for fan-in servers. `break`/`continue` inside an arm bind
 to the *user's* enclosing loop.
 
 ## Measured
@@ -126,7 +125,7 @@ reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 | parreduce (4×10⁸ int reduce) | **37 ms / 1.6 MB** | 36 ms / 1.6 MB | 62 ms | 43 ms |
 | pipeline (10⁶ strings, 1→4 consumers) | **73 ms / 2.8 MB** | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
 
-`parallel for` is at exact C parity. The lock-free channels are competitive with
+`parallel for` is at C parity (within a millisecond, same peak RSS). The lock-free channels are competitive with
 Go and faster than the other reference implementations measured, while paying two
 deep copies per message that the others do not.
 

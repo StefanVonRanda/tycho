@@ -106,9 +106,9 @@ Only the `core:` collection is exposed today; arbitrary named roots (Odin's wide
 Packages work identically in the C reference compiler (`hierc`) and the
 self-hosted compiler (`hierc0`).
 
-`hierc0` reads source on stdin, so it consumes a package program as a single
-post-order source stream rather than walking a directory itself. The C compiler
-produces that stream with `hierc --bundle <entry>`: it emits imports first, with
+`hierc0` can compile a package directly — `hierc0 path/main.hi` walks the
+directory and follows its imports through the same filesystem builtins — or read a
+pre-bundled, post-order source stream on stdin, which the C compiler produces with `hierc --bundle <entry>`: it emits imports first, with
 the entry package's header rewritten to `package main`. `hierc0` then applies the
 same package mangling in a post-parse pass — dormant unless a `package`
 declaration was seen, so a single-file compile stays identical.
