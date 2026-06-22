@@ -2680,6 +2680,26 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 j = j + 1
             die_at(dc, ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
         i = i + 1
+    # generic-application receiver like "LL(int)": the concrete instance isn't interned
+    # in dc during the mono pass, but its layout is the template's with the type args
+    # substituted -- find the field in the template and subst $T. Recurses (the returned
+    # type may itself be a generic application, e.g. "[LL(int)]").
+    pp := -1
+    pi := 0
+    for pi < len(sname):
+        if sname[pi] == 40 and pp < 0:           # first '('
+            pp = pi
+        pi = pi + 1
+    if pp > 0 and sname[len(sname) - 1] == 41:
+        gname := substr(sname, 0, pp)
+        gargs := split_type_args(substr(sname, pp + 1, len(sname) - 1))
+        gsi := find_generic_struct(dc.structs, gname)
+        if gsi >= 0 and len(gargs) == len(dc.structs[gsi].typeparams):
+            fj := 0
+            for fj < len(dc.structs[gsi].fields):
+                if dc.structs[gsi].fields[fj].name == fld:
+                    return subst_field_type(dc.structs[gsi].fields[fj].ty, dc.structs[gsi].typeparams, gargs)
+                fj = fj + 1
     die_at(dc, ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
     return "int"
 
@@ -8988,6 +9008,12 @@ fn resolve_gstruct_type(ty: string, structs: [StructDef], sinsts: mut [StructDef
     n := len(ty)
     if n == 0:
         return ty
+    if is_array(ty):                              # "[E]" -> "[resolve(E)]" (recursive generics: `[LL(int)]` -> `[LL__int]`)
+        return "[" + resolve_gstruct_type(elem_ty(ty), structs, &sinsts) + "]"
+    if is_soa(ty):                                # "soa[E]" -> "soa[resolve(E)]"
+        return "soa[" + resolve_gstruct_type(soa_struct(ty), structs, &sinsts) + "]"
+    if is_map(ty):                                # "{K:V}" -> "{K:resolve(V)}" (keys are scalar)
+        return "{" + map_key(ty) + ":" + resolve_gstruct_type(map_val(ty), structs, &sinsts) + "}"
     paren := -1
     i := 0
     for i < n:
@@ -9120,9 +9146,9 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
         EVar(s, el):
             return e
         EArrEmpty(t, el):
-            return e
+            return EArrEmpty(resolve_gstruct_type(t, dc.structs, &sinsts), el)   # generics: `[]LL(int)` -> `[]LL__int`
         EMapEmpty(k, v, el):
-            return e
+            return EMapEmpty(resolve_gstruct_type(k, dc.structs, &sinsts), resolve_gstruct_type(v, dc.structs, &sinsts), el)
         EBin(o, l, r, el):
             return EBin(o, mono_expr(l, names, types, gens, &insts, &sinsts, dc, ctx), mono_expr(r, names, types, gens, &insts, &sinsts, dc, ctx), el)
         ECall(nm, a, el):
@@ -9351,6 +9377,20 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
                 j = j + 1
             push(rconcrete, StructDef(prog.structs[i].name, rf, []string))
         i = i + 1
+    # Resolve generic references inside instance fields so nested/recursive generics
+    # work: Pair__int.a "Box(int)" -> "Box__int"; LL__int.tail "Option(LL(int))" ->
+    # "Option(LL__int)". resolve_gstruct_type appends any new instances, so iterate by
+    # index as sinsts grows; instantiate_struct dedups, so a self-reference terminates.
+    si := 0
+    for si < len(sinsts):
+        rf2 := []Field
+        fj := 0
+        for fj < len(sinsts[si].fields):
+            rty := resolve_gstruct_type(sinsts[si].fields[fj].ty, dc.structs, &sinsts)
+            push(rf2, Field(sinsts[si].fields[fj].name, rty))
+            fj = fj + 1
+        sinsts[si] = StructDef(sinsts[si].name, rf2, []string)
+        si = si + 1
     # hierc0 emits struct bodies in list order (no topo sort). A struct instance can
     # depend on a concrete struct (Box(Point)) or vice versa, so topologically sort
     # them by by-value embedding (stable: ties keep input order).
