@@ -1,0 +1,17 @@
+# Leading-dot float literals (.5, .25e3) and the disambiguation from field/tuple
+# access: after a value-producing token (ident, ')', ']') a '.' is field access
+# (t.0), so `.5` is a float ONLY where field access is impossible. Both compilers
+# must agree (fixpoint). No leading-dot after a value: `t.0` stays a tuple index.
+struct P:
+    a: int
+    b: int
+fn main():
+    print(str(.5) + "\n")
+    print(str(.25e3) + "\n")
+    print(str(0 - .5) + "\n")
+    print(str(1.0 + .5) + "\n")
+    print(str(.5 * 2.0) + "\n")
+    t := (10, 20)
+    print(str(t.0 + t.1) + "\n")     # tuple index, NOT a float
+    p := P(3, 4)
+    print(str(p.a + p.b) + "\n")     # struct field

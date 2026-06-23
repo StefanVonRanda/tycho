@@ -141,6 +141,15 @@ static void tv_push(TokVec *t, Tok tok) {
     t->v[t->n++] = tok;
 }
 
+/* After a value-producing token, a '.' is field/tuple access (t.0, x.field), so
+ * `.5` there is NOT a leading-dot float -- it stays DOT + INT. Everywhere else
+ * (after an operator, '(', '[', ',', '=', a keyword, or at line start) a '.'
+ * before a digit begins a float. */
+static int tok_postfixable(int k) {
+    return k == TK_IDENT || k == TK_INT || k == TK_FLOAT || k == TK_STR
+        || k == TK_CHAR || k == TK_RPAREN || k == TK_RBRACKET;
+}
+
 static TokKind keyword(const char *s) {
     if (!strcmp(s, "fn"))     return TK_FN;
     if (!strcmp(s, "return")) return TK_RETURN;
@@ -229,9 +238,11 @@ static TokVec lex(const char *src) {
             if (c == ' ' || c == '\t' || c == '\r') { p++; continue; }
             int tcol = (int)(p - ls) + 1;   /* token start column (1-based), for the error caret */
 
-            if (isdigit((unsigned char)c)) {
+            int lead_dot = (c == '.' && isdigit((unsigned char)p[1]) &&
+                            (out.n == 0 || !tok_postfixable(out.v[out.n - 1].kind)));
+            if (isdigit((unsigned char)c) || lead_dot) {
                 const char *s = p;
-                while (isdigit((unsigned char)*p)) p++;
+                while (isdigit((unsigned char)*p)) p++;   /* integer part (empty for .5) */
                 /* a '.' immediately followed by a digit makes it a float (D.D);
                  * an `e`/`E` exponent (optionally signed) does too, with or
                  * without a fractional part (1e10, 1.5e-3, 2E8). A bare trailing

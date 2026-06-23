@@ -69,6 +69,11 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
+# After a value-producing token a '.' is field/tuple access (t.0, x.field), so a
+# `.5` there stays DOT + INT; everywhere else `.<digit>` begins a leading-dot float.
+fn tok_postfixable(k: Tok) -> bool:
+    return k == TIdent or k == TInt or k == TFloat or k == TStr or k == TChar or k == TRParen or k == TRBracket
+
 # Lexer diagnostic: print `msg` then the offending source line + a caret under
 # byte offset `at`, then exit. die() is terminal, so this never returns. (Mirrors
 # tychoc's snippet+caret for lex errors; src + offset are local to the lexer, so no
@@ -260,6 +265,22 @@ fn scan_token(src: string, n: int, i: int, toks: mut [Token], line: int, linesta
     elif c == 44:
         push(toks, Token(TComma, ",", line, col))
         return i + 1
+    elif c == 46 and i + 1 < n and is_digit(src[i + 1]) and (len(toks) == 0 or not tok_postfixable(toks[len(toks) - 1].kind)):
+        # leading-dot float: .5 / .5e3 (the '.' is not field/tuple access here)
+        start := i
+        i = i + 1                                       # consume '.'
+        for i < n and is_digit(src[i]):
+            i = i + 1
+        if i < n and (src[i] == 101 or src[i] == 69):   # e/E exponent (101='e' 69='E')
+            j := i + 1
+            if j < n and (src[j] == 43 or src[j] == 45):   # 43='+' 45='-'
+                j = j + 1
+            if j < n and is_digit(src[j]):
+                i = j
+                for i < n and is_digit(src[i]):
+                    i = i + 1
+        push(toks, Token(TFloat, substr(src, start, i), line, col))
+        return i
     elif c == 46:
         push(toks, Token(TDot, ".", line, col))
         return i + 1
