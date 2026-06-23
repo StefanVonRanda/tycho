@@ -580,6 +580,36 @@ char *tycho_str_concat(Arena *a, const char *x, const char *y) {
     return r;
 }
 
+/* Multi-piece concat: the compiler flattens an all-string `a + b + c [+ d [+ e]]`
+ * chain to ONE of these instead of N-2 chained tycho_str_concat calls, so a
+ * k-piece concat does ONE allocation + one copy per piece (no throwaway
+ * intermediates, no re-copying the growing prefix). */
+#define TYCHO_SLEN(s) (((const long *)(s))[-1])
+char *tycho_str_concat3(Arena *a, const char *s0, const char *s1, const char *s2) {
+    long n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2);
+    char *r = tycho_str_alloc(a, n0 + n1 + n2), *p = r;
+    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2);
+    return r;
+}
+char *tycho_str_concat4(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3) {
+    long n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3);
+    char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3), *p = r;
+    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3);
+    return r;
+}
+char *tycho_str_concat5(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4) {
+    long n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4);
+    char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4), *p = r;
+    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3); p += n3; memcpy(p, s4, (size_t)n4);
+    return r;
+}
+char *tycho_str_concat6(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4, const char *s5) {
+    long n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4), n5 = TYCHO_SLEN(s5);
+    char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4 + n5), *p = r;
+    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3); p += n3; memcpy(p, s4, (size_t)n4); p += n4; memcpy(p, s5, (size_t)n5);
+    return r;
+}
+
 /* In-place string append for the accumulator pattern `acc = acc + e`. The
  * compiler emits this only for a uniquely-owned local string it tracks with
  * sidecar len/cap, so growing the buffer in place is sound (value semantics
@@ -854,10 +884,16 @@ void tycho_die(const char *msg) {
 }
 
 char *tycho_int_to_str(Arena *a, long n) {
-    char tmp[32];
-    int m = snprintf(tmp, sizeof tmp, "%ld", n);
+    /* hand-rolled itoa: no snprintf format parsing. Digits written backward then
+     * copied out. Unsigned magnitude so LONG_MIN negates without UB. */
+    char tmp[24];
+    int i = (int)sizeof tmp;
+    unsigned long u = n < 0 ? -(unsigned long)n : (unsigned long)n;
+    do { tmp[--i] = (char)('0' + u % 10); u /= 10; } while (u);
+    if (n < 0) tmp[--i] = '-';
+    int m = (int)sizeof tmp - i;
     char *r = tycho_str_alloc(a, m);
-    memcpy(r, tmp, (size_t)m);
+    memcpy(r, tmp + i, (size_t)m);
     return r;
 }
 

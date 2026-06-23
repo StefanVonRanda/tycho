@@ -6387,6 +6387,30 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("(-%s)", gen_expr(e->lhs, arena));
             if (e->op == TK_TILDE)                     /* unary bitwise NOT */
                 return sfmt("(~%s)", gen_expr(e->lhs, arena));
+            /* multi-piece string concat: flatten an all-string left-spine chain
+             * of 3..6 pieces to one tycho_str_concatN (one alloc + one copy per
+             * piece) instead of N-2 chained tycho_str_concat intermediates. A char
+             * piece, or a chain outside 3..6, falls through to the pairwise emit
+             * below (which still flattens its own sub-chains). Argument evaluation
+             * order is unspecified -- exactly as for the nested pairwise concat it
+             * replaces -- so side-effect ordering is unchanged. */
+            if (e->op == TK_PLUS && e->type == T_STRING) {
+                Expr *pieces[6]; int np = 0, ok = 1;
+                for (Expr *cur = e; ; ) {
+                    int more = (cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_STRING);
+                    Expr *leaf = more ? cur->rhs : cur;
+                    if (leaf->type != T_STRING || np >= 6) { ok = 0; break; }
+                    pieces[np++] = leaf;
+                    if (!more) break;
+                    cur = cur->lhs;
+                }
+                if (ok && np >= 3) {
+                    char *out = sfmt("tycho_str_concat%d(%s", np, arena);
+                    for (int k = np - 1; k >= 0; k--)   /* pieces are rightmost-first; emit leftmost first */
+                        out = sfmt("%s, %s", out, gen_expr(pieces[k], arena));
+                    return sfmt("%s)", out);
+                }
+            }
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */

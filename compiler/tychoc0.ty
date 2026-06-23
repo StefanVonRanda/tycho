@@ -3968,6 +3968,57 @@ fn teq(dc: Decls, ctx: Ctx, ty: string) -> string:
         return uet(ty) + "_eq"
     return ust(ty) + "_eq"
 
+# Collect the leaf pieces of an all-string left-spine `+` chain into `out`
+# (forward / source order). A string-`+` node recurses left then appends its rhs;
+# anything else (incl. a sub-expr like `a + 'c'` that isn't a plain string-`+`) is
+# a single leaf. Lets gen_expr flatten `a + b + c [..]` to one scN call.
+fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx, out: mut [Expr]):
+    match e:
+        EBin(op, l, r, _el):
+            if op == "+" and type_of(l, names, types, dc, ctx) == "str" and type_of(r, names, types, dc, ctx) == "str":
+                concat_pieces(l, names, types, dc, ctx, &out)
+                push(out, r)
+            else:
+                push(out, e)
+        EInt(t, _el):
+            push(out, e)
+        EBool(t, _el):
+            push(out, e)
+        EChar(t, _el):
+            push(out, e)
+        EFloat(t, _el):
+            push(out, e)
+        EStr(s, _el):
+            push(out, e)
+        EVar(n, _el):
+            push(out, e)
+        ECall(n, a, _el):
+            push(out, e)
+        EField(b, f, _el):
+            push(out, e)
+        EIndex(b, ix, _el):
+            push(out, e)
+        EArrLit(es, _el):
+            push(out, e)
+        EArrEmpty(t, _el):
+            push(out, e)
+        EMapEmpty(k, v, _el):
+            push(out, e)
+        EMapLit(ks, vs, _el):
+            push(out, e)
+        ETuple(es, _el):
+            push(out, e)
+        ESlice(b, lo, hi, _el):
+            push(out, e)
+        EAddr(x, _el):
+            push(out, e)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            push(out, e)
+        ECallV(callee, cargs, _el):
+            push(out, e)
+        ESpawn(sid, snm, sa, _el):
+            push(out, e)
+
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t, _el):
@@ -4125,6 +4176,16 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if rcat == "char":                 # str + char: append one byte
                     return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
                 if rcat == "str":
+                    pieces := []Expr            # flatten a 3..6-piece all-string chain to one scN call
+                    concat_pieces(e, names, types, dc, ctx, &pieces)
+                    np := len(pieces)
+                    if np >= 3 and np <= 6:
+                        call := "sc" + str(np) + "(" + ctx.owner
+                        k := 0
+                        for k < np:
+                            call = call + ", " + gen_expr(pieces[k], names, types, dc, ctx)
+                            k = k + 1
+                        return call + ")"
                     return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
                 # str + non-(str/char) falls through to the operand-type check below (rejected, like tychoc)
             if is_cmp(op) and lt == "str" and type_of(r, names, types, dc, ctx) == "str":   # lexicographic string compare; BOTH operands must be strings
@@ -6802,8 +6863,12 @@ fn preamble() -> string:
     out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
     out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"tycho: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
+    out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
+    out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"
+    out = out + "static char* sc5(Arena* ar, const char* a, const char* b, const char* c, const char* d, const char* e) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1], le = ((const long*)e)[-1]; char* r = hs(ar, la + lb + lc + ld + le); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); p += ld; memcpy(p, e, (size_t)le); return r; }\n"
+    out = out + "static char* sc6(Arena* ar, const char* a, const char* b, const char* c, const char* d, const char* e, const char* f) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1], le = ((const long*)e)[-1], lf = ((const long*)f)[-1]; char* r = hs(ar, la + lb + lc + ld + le + lf); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); p += ld; memcpy(p, e, (size_t)le); p += le; memcpy(p, f, (size_t)lf); return r; }\n"
     out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = ((const long*)a)[-1]; char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
-    out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int m = snprintf(t, sizeof t, \"%ld\", n); char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
+    out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int i = (int)sizeof t; unsigned long u = n < 0 ? -(unsigned long)n : (unsigned long)n; do { t[--i] = (char)('0' + u % 10); u /= 10; } while (u); if (n < 0) t[--i] = '-'; int m = (int)sizeof t - i; char* r = hs(ar, m); memcpy(r, t + i, (size_t)m); return r; }\n"
     out = out + "static char* b2s(Arena* ar, long b) { const char* s = b ? \"true\" : \"false\"; long m = (long)strlen(s); char* r = hs(ar, m); memcpy(r, s, (size_t)m); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { long n = ((const long*)s)[-1]; char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     out = out + "static int str_cmp(const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; long n = la < lb ? la : lb; int c = n ? memcmp(a, b, (size_t)n) : 0; if (c != 0) return c < 0 ? -1 : 1; return la < lb ? -1 : (la > lb ? 1 : 0); }\n"
