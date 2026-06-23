@@ -4055,11 +4055,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
-            if op == "+" and type_of(e, names, types, dc, ctx) == "str":
-                if type_of(r, names, types, dc, ctx) == "char":   # str + char: append one byte
+            if op == "+" and lt == "str":         # string concat: the left operand is a string
+                rcat := type_of(r, names, types, dc, ctx)
+                if rcat == "char":                 # str + char: append one byte
                     return "sc_char(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
-                return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
-            if is_cmp(op) and lt == "str":        # lexicographic string compare (== / != / < ...)
+                if rcat == "str":
+                    return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
+                # str + non-(str/char) falls through to the operand-type check below (rejected, like tychoc)
+            if is_cmp(op) and lt == "str" and type_of(r, names, types, dc, ctx) == "str":   # lexicographic string compare; BOTH operands must be strings
                 return "(strcmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
@@ -4070,31 +4073,28 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "(!(" + eqx + "))"
                 return eqx
             frt := type_of(r, names, types, dc, ctx)
-            if (lt == "float" and frt == "int") or (lt == "int" and frt == "float"):   # int/float mixing matches tychoc: only an int LITERAL adapts to float (arith + ordering); equality needs exact types; a non-literal int never widens
-                if op == "==" or op == "!=":
-                    die_at(dc, _el, "cannot compare float with int")
-                ilit := false
-                if frt == "int":
-                    ilit = is_int_lit(r)
-                else:
-                    ilit = is_int_lit(l)
-                if not ilit:
-                    if is_cmp(op):
-                        die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+            # Binary-operator operand typing, mirroring tychoc (src/tychoc.c E_BINOP),
+            # so the two compilers agree on accept/reject (locked by the type-parity
+            # lane). String concat/compare and structural == already returned above.
+            # Conditions stay INLINE -- tychoc0 mistypes a `:=` local bound to a bool
+            # from a string compare. A newtype resolves to its base for the orderable/
+            # numeric tests; and/or/bitwise require the literal bool/int type (tychoc).
+            rlt := resolve_nt(dc, ctx, lt)
+            if op == "&&" or op == "||":          # `and`/`or` are spelled &&/|| in the AST
+                if lt != "bool" or frt != "bool":
+                    die_at(dc, _el, "and / or need two bool operands")
+            elif op == "==" or op == "!=":
+                if lt != frt:
+                    die_at(dc, _el, "cannot compare " + lt + " with " + frt)
+            elif op == "%" or op == "<<" or op == ">>" or op == "&" or op == "|" or op == "^":
+                if lt != "int" or frt != "int":
+                    die_at(dc, _el, "modulo / shift / bitwise operators require two ints")
+            elif is_cmp(op):     # ordering: same type with an orderable base; an int LITERAL adapts to a float operand
+                if not ((lt == "float" and frt == "int" and is_int_lit(r)) or (lt == "int" and frt == "float" and is_int_lit(l)) or (lt == frt and (rlt == "int" or rlt == "float" or rlt == "char"))):
+                    die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+            else:                # arithmetic + - * /
+                if not ((lt == "int" and frt == "int") or (lt == "float" and frt == "float") or ((op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or lt == "int") and (frt == "char" or frt == "int")) or (lt == frt and (rlt == "int" or rlt == "float")) or (lt == "float" and frt == "int" and is_int_lit(r)) or (lt == "int" and frt == "float" and is_int_lit(l))):
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
-            # char mixing matches tychoc: a char combines only with a char, or with
-            # an int via +/- (-> char); everything else is a type error. (Conditions
-            # stay inline -- tychoc0 mistypes a `:=` local bound to a string compare.)
-            if (lt == "char" or frt == "char") and not (lt == "char" and frt == "char"):   # exactly one operand is a char
-                other := lt
-                if lt == "char":
-                    other = frt
-                if not ((op == "+" or op == "-") and other == "int"):
-                    if op == "==" or op == "!=":
-                        die_at(dc, _el, "cannot compare char with int")
-                    if is_cmp(op):
-                        die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
-                    die_at(dc, _el, "a char combines only with a char, or with an int via + or -")
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
             cdi := find(name, ".")

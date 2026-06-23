@@ -23,45 +23,48 @@ printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/11] build (make tychoc)"
+step "[1/12] build (make tychoc)"
 make -s tychoc
 
-step "[2/11] make test  (golden output + ASan/UBSan/LeakSanitizer)"
+step "[2/12] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
-step "[3/11] make fixpoint  (self-host B==C + packages + standalone driver)"
+step "[3/12] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 
-step "[4/11] make corelib  (corelib packages + examples + the site dogfood: C compiler vs tychoc0 + goldens)"
+step "[4/12] make corelib  (corelib packages + examples + the site dogfood: C compiler vs tychoc0 + goldens)"
 make -s corelib
 make -s corelib-examples
 make -s site
 
-step "[5/11] make conc  (spawn/parallel-for/channels: ASan+TSan + tychoc0 parity)"
+step "[5/12] make conc  (spawn/parallel-for/channels: ASan+TSan + tychoc0 parity)"
 make -s conc
 
-step "[6/11] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
+step "[6/12] make ffi  (extern fn: both compilers vs golden, ASan-clean)"
 make -s ffi
 
 if [ "$N" -gt 0 ]; then
-    step "[7/11] make fuzz N=$N  (differential tychoc vs tychoc0 + ASan/UBSan)"
+    step "[7/12] make fuzz N=$N  (differential tychoc vs tychoc0 + ASan/UBSan)"
     python3 fuzz/run.py "$N"
-    step "[8/11] make fuzz-reject N=$N  (malformed input: both compilers must fail closed)"
+    step "[8/12] make fuzz-reject N=$N  (malformed input: both compilers must fail closed)"
     python3 fuzz/run_reject.py "$N"
     # leak lane is the slowest (sequential ASan+LeakSanitizer, both compilers per
     # seed) and leak bugs surface fast (seeds <50), so cap it to keep `make ci`
     # practical; `make fuzz-leak N=...` runs a deeper sweep.
     LN="$N"; [ "$LN" -gt 150 ] && LN=150
-    step "[9/11] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
+    step "[9/12] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
     python3 fuzz/run_leak.py "$LN"
 else
-    step "[7/11] fuzz lanes skipped (N=0)"
+    step "[7/12] fuzz lanes skipped (N=0)"
 fi
 
-step "[10/11] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
+step "[10/12] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
 sh scripts/tools_check.sh
 
-step "[11/11] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)"
+step "[11/12] make typeparity  (binary-op operand types: tychoc and tychoc0 must agree on accept/reject)"
+make -s typeparity
+
+step "[12/12] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)"
 sh bench/guard.sh
 
 bar

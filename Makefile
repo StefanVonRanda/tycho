@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity corelib corelib-examples fetch site ffi ci hooks clean
 
 all: tychoc
 
@@ -189,6 +189,13 @@ fuzz-reject: tychoc
 # Run a deeper sweep directly: `make fuzz-leak N=500`.
 fuzz-leak: tychoc
 	@python3 fuzz/run_leak.py $(N)
+
+# Type-parity lane: assert tychoc and tychoc0 agree on accept/reject for the
+# EXHAUSTIVE scalar binary-operator matrix (every type x literal/var x operator).
+# A TYPE-boundary accept/reject divergence is a bug -- unlike the tolerated
+# grammar-boundary divergence in fuzz-reject. Deterministic, no seeds. In `make ci`.
+typeparity: tychoc
+	@python3 fuzz/run_typeparity.py
 
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
