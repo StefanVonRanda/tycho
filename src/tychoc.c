@@ -233,11 +233,27 @@ static TokVec lex(const char *src) {
                 const char *s = p;
                 while (isdigit((unsigned char)*p)) p++;
                 /* a '.' immediately followed by a digit makes it a float (D.D);
-                 * otherwise the '.' is a separate token (e.g. struct field). No
-                 * exponent or leading-dot form yet. */
+                 * an `e`/`E` exponent (optionally signed) does too, with or
+                 * without a fractional part (1e10, 1.5e-3, 2E8). A bare trailing
+                 * '.' stays a field token, and a malformed exponent (1e, 1.e5,
+                 * 1e+) is NOT consumed -- the 'e...' lexes as a separate ident.
+                 * No leading-dot form. */
+                int is_float = 0;
                 if (*p == '.' && isdigit((unsigned char)p[1])) {
+                    is_float = 1;
                     p++;
                     while (isdigit((unsigned char)*p)) p++;
+                }
+                if (*p == 'e' || *p == 'E') {
+                    const char *eq = p + 1;
+                    if (*eq == '+' || *eq == '-') eq++;
+                    if (isdigit((unsigned char)*eq)) {
+                        is_float = 1;
+                        p = eq;
+                        while (isdigit((unsigned char)*p)) p++;
+                    }
+                }
+                if (is_float) {
                     double dv = strtod(s, NULL);
                     tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {

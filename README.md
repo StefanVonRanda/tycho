@@ -817,9 +817,10 @@ array element (`a[i] += 1`), or a struct field (`p.x *= 2`).
   at the additive level, so every bitwise op binds *tighter* than a comparison
   (no C `a & b == c` surprise: it parses as `(a & b) == c`).
 - Arithmetic on `float`: `+ - * /` (`/` is true division), unary `-`. A float
-  literal is `digits.digits` (e.g. `3.14`, `4.0` — no exponent or leading-dot
-  form yet). `int` and `float` never mix implicitly: convert with `to_float(n)`
-  / `to_int(x)` (the latter truncates toward zero).
+  literal is `digits.digits` or an exponent form `digits[.digits]e[±]digits`
+  (e.g. `3.14`, `4.0`, `1e10`, `1.5e-3`, `2E8` — no leading-dot form yet). `int`
+  and `float` never mix implicitly: convert with `to_float(n)` / `to_int(x)`
+  (the latter truncates toward zero).
 - `+` on `string` concatenates.
 - Comparisons `== != < > <= >=` produce `bool`. `==`/`!=` work on any
   matching pair (including `string`); ordering (`< > <= >=`) works on two

@@ -204,10 +204,22 @@ fn scan_token(src: string, n: int, i: int, toks: mut [Token], line: int, linesta
         start := i
         for i < n and is_digit(src[i]):
             i = i + 1
-        if i < n and src[i] == 46 and i + 1 < n and is_digit(src[i + 1]):   # D.D float
+        isf := false
+        if i < n and src[i] == 46 and i + 1 < n and is_digit(src[i + 1]):   # D.D fractional part (46 = '.')
+            isf = true
             i = i + 1
             for i < n and is_digit(src[i]):
                 i = i + 1
+        if i < n and (src[i] == 101 or src[i] == 69):   # e/E exponent (101='e' 69='E'): optional sign, >=1 digit
+            j := i + 1
+            if j < n and (src[j] == 43 or src[j] == 45):   # 43='+' 45='-'
+                j = j + 1
+            if j < n and is_digit(src[j]):                 # well-formed only; else 'e...' stays a separate ident
+                isf = true
+                i = j
+                for i < n and is_digit(src[i]):
+                    i = i + 1
+        if isf:
             push(toks, Token(TFloat, substr(src, start, i), line, col))
             return i
         push(toks, Token(TInt, substr(src, start, i), line, col))

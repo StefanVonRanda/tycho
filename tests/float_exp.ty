@@ -1,0 +1,14 @@
+# Float-literal exponent forms: e/E, optional sign, with or without a fractional
+# part (1e10, 1.5e-3, 2E8). A bare trailing dot or a malformed exponent (1e,
+# 1.e5) is not a float -- see tests/reject. Both compilers must agree (fixpoint).
+fn main():
+    print(str(1e10) + "\n")
+    print(str(1.5e-3) + "\n")
+    print(str(2E8) + "\n")
+    print(str(1e+5) + "\n")
+    print(str(6.022e23) + "\n")
+    a := 2.0e3
+    b := 1e3
+    print(str(a + b) + "\n")
+    print(str(0 - 1e2) + "\n")
+    print(str(1e3 * 2.0) + "\n")
