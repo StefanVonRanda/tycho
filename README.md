@@ -35,7 +35,7 @@ concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
 ordinary copy-in/copy-out call convention run on threads — race-free by
 construction, no locks or lifetime rules in the language (see
 [Concurrency](#concurrency-spawn-parallel-for-channels)). Types are inferred
-bidirectionally (Pierce–Turner local inference, not Hindley–Milner): locals
+bidirectionally (Pierce–Turner local inference): locals
 from their initializers, literals/lambdas/bare empties from their destination
 — with every type ground at its own line (see
 [Type inference](#type-inference-bidirectional)).
@@ -171,7 +171,6 @@ checks all still run.
 | [docs/arrays-structs.md](docs/arrays-structs.md) | the aggregates design pressure-test: arrays and structs under value semantics + implicit arenas, and why dropping pointers makes it sound |
 | [docs/memory-model.md](docs/memory-model.md) | the arena model's design and how the self-hosted compiler runs on it |
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
-| [docs/inference.md](docs/inference.md) | the Hindley–Milner feasibility study and the shipped bidirectional (Pierce–Turner) design |
 | [docs/generics.md](docs/generics.md) | `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers) |
 | [docs/packages.md](docs/packages.md) | multi-file packages: `import`, qualified names, the corelib hook |
 | [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
@@ -776,8 +775,8 @@ variant is rejected as a key: equal tags would not mean equal values.
 Locals infer forward from their initializer (`x := e`). In the other
 direction, every position with a known destination type — declarations,
 assignments, call arguments, `return`, stores, literal elements — *checks*
-the expression against it (Pierce–Turner local inference; see
-[docs/inference.md](docs/inference.md)), which lets these elide:
+the expression against it (Pierce–Turner local inference), which lets these
+elide:
 
 ```
 xs : [int] = []          # bare [] takes the expected array/map type
@@ -1321,6 +1320,13 @@ software exploring one idea (implicit hierarchical arenas under value semantics)
 It has a single implementation, the language surface is still moving, and there
 is no stability guarantee. Use it to learn, experiment, and give feedback — not
 to ship a service.
+
+**"Where is the package manager?"** There isn't one, on purpose — Tycho does not
+automate dependency hell. A package is a directory of `.ty` files you import by
+relative path, and the standard library lives under `core:`. Adding third-party
+code is a deliberate, manual act — vendor the source into your tree — never a
+one-line command that pulls in a transitive graph you have never read. System C
+libraries are linked explicitly through your own build via the FFI.
 
 ## License
 

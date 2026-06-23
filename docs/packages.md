@@ -8,8 +8,10 @@ Three properties define the model:
 
 - **A package is a directory**, not a file. Every `.ty` file in the directory
   belongs to the same package and contributes to one shared namespace.
-- **There is no privacy.** Every top-level symbol in a package is visible to
-  importers; there is no `public`/`private` distinction.
+- **Privacy is by leading underscore.** A top-level symbol whose name begins
+  with `_` is private to its own package: it is usable from any file *within*
+  the package, but a qualified `pkg._name` from another package is rejected by
+  both compilers. Every other top-level symbol is exported.
 - **There is no separate compilation.** The compiler follows the import graph,
   merges everything reachable into one program, and emits a single `.c`.
 

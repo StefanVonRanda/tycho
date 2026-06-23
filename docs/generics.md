@@ -65,7 +65,7 @@ every later mention is plain `T`. This is Odin's convention, and it reads as
 - `fn keys_of(m: [$K: $V]) -> [K]` — K, V from a map's key/value types.
 
 `$T` may appear nested inside a structured type (`[$T]`, `Option($T)`,
-`($A, $B)`, `[$K: $V]`); the inference in [§3](#3-inference-argument-directed-not-hindley-milner)
+`($A, $B)`, `[$K: $V]`); the inference in [§3](#3-inference-argument-directed-structural-matching)
 peels the argument's type apart to bind each parameter. A parameter that never
 appears in any argument type cannot be inferred — see
 [§6](#6-when-t-cant-be-inferred).
@@ -73,10 +73,10 @@ appears in any argument type cannot be inferred — see
 Naming: `$T`, `$K`, `$V`, `$A`… any identifier. By convention single uppercase
 letters, to read distinctly from concrete types.
 
-## 3. Inference: argument-directed, not Hindley-Milner
+## 3. Inference: argument-directed structural matching
 
-Tycho deliberately has **no Hindley-Milner**, no unification variables, no
-constraint solver (see [docs/inference.md](inference.md)). Generic inference
+Tycho's generic inference has no unification variables and no constraint
+solver. Generic inference
 keeps that promise: it is a one-directional **structural match** of each
 concrete argument type against its parameter's type *pattern*, binding the
 `$`-parameters as it goes. There is no two-way unification and no global
@@ -132,7 +132,7 @@ The self-hosted `compiler/tychoc0.ty` mirrors all of this on string-typed type
 names (`mangle`, `mangle_type`, the `Arr_*`/`Map_*` families).
 
 Generics add **one pass** on top: at a call site (function) or a type use
-(struct), bind the `$`-parameters ([§3](#3-inference-argument-directed-not-hindley-milner)),
+(struct), bind the `$`-parameters ([§3](#3-inference-argument-directed-structural-matching)),
 **intern the instantiation** `(generic_def, [concrete type args])` in a new
 side-table exactly like `opt_of` interns `(inner)`, and emit one substituted,
 concrete copy of the body the first time that key is seen. The mangled name
@@ -246,7 +246,7 @@ worth a monomorphization pass that the compiler *already runs* for its built-ins
 
 - **Generic functions** (both compilers). `fn f(x: $T) -> T`,
   parameters inferred from argument types
-  ([§3](#3-inference-argument-directed-not-hindley-milner)), every
+  ([§3](#3-inference-argument-directed-structural-matching)), every
   `$`-parameter required to appear in an argument
   ([§6](#6-when-t-cant-be-inferred) option 1). Monomorphized via an instantiation
   registry that feeds the existing per-type emission. UFCS gets generic "methods"

@@ -1451,7 +1451,7 @@ Each instantiation is ordinary concrete, value-semantic code, produced <strong>b
 <div class="callout-icon">&#128161;</div>
 <div>
 <div class="callout-title">Explicit, not inferred-everywhere</div>
-You opt into generics with <code>$T</code>; Tycho never silently generalizes an ordinary function (the Hindley&ndash;Milner route it deliberately avoids). Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
+You opt into generics with <code>$T</code>; Tycho never silently generalizes an ordinary function. Inference is a one-directional structural match of the argument types against the parameter pattern &mdash; no unification, no type variables. Every <code>$T</code> must appear in some argument, so the compiler can always infer it.
 </div></div>
 
 <h3>There's more</h3>
