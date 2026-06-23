@@ -1,0 +1,8 @@
+int has4=1 idx9=5 min=1 max=9 sum=31
+int joined=3,1,4,1,5,9,2,6
+int sorted=1..9
+int rev=6..3
+str min=apple max=pear hasfig=1 joined=pear,apple,fig,kiwi
+str sorted=apple..pear
+float sum=5.5 min=0.5 joined=1.5,0.5,2.5,1.0
+float sorted=0.5..2.5

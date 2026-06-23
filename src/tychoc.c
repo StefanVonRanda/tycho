@@ -417,7 +417,7 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
        T_OK_PARTIAL, T_ERR_PARTIAL,
        T_CHAR, /* one byte; represented as `long` in C, prints as a char via string append */
        T_PTR, /* FFI opaque handle: void* in C. No deref/arithmetic in tycho — only pass to C, compare to null, is_null */
-       T_PENDING /* B-3 (docs/inference.md): a bare `xs := []` / `x := None` decl, awaiting its
+       T_PENDING /* B-3 (bidirectional inference): a bare `xs := []` / `x := None` decl, awaiting its
                   * first grounding use in the same block; never survives resolve */ };
 #define T_STRUCT_BASE   64
 /* structs occupy [64, T_ARRC_BASE); composite arrays sit above that (both are
@@ -1612,7 +1612,7 @@ static Expr *parse_primary(Parser *ps) {
         Expr *e = new_expr(E_ARRLIT, t->line);
         if (at(ps, TK_RBRACKET)) {           /* empty: []int / []string / []string: int / bare [] (typed by context) */
             ps->p++;
-            /* B-0 (docs/inference.md): a `[]` NOT followed by a type-starter
+            /* B-0 (bidirectional inference): a `[]` NOT followed by a type-starter
              * token is a bare empty literal; resolve_exp grounds it from the
              * expected type (checking mode), or dies with a local error. */
             TokKind nk = cur(ps)->kind;
@@ -2955,12 +2955,14 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
     for (int i = 0; i < g_ntyparams; i++) b[i] = T_VOID;
     return match_type(gt->params[0].type, recv, b) ? gt->name : NULL;
 }
-typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; } GInst;
+/* Stage-2 generics: each instance carries its OWN cloned body — a deep copy of
+ * the template body with `$T` substituted at clone time — so instances resolve
+ * independently with no shared/sticky resolved state (the source of the prior
+ * multi-instantiation, typed-local, and nested-call bugs). */
+typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody; } GInst;
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
-/* generics: the active instance's typaram->concrete map while its (SHARED) body
- * resolves. Lets an explicit `[]T` / `[]K: V` literal in the body substitute its
- * element type per instance, written into e->type without mutating e->ival. */
-static Type *g_active_binds = NULL;
+static Stmt **clone_block(Stmt **body, int n, Type *binds);   /* per-instance body clone; defined near ginst_to_proc */
+static Proc **g_inst_procs; static int g_ninst_procs = 0, g_inst_procs_cap = 0;   /* resolved generic-instance Procs, shared by the prototype + body emit loops (Stage-2 #3) */
 static void instantiate_generic(Proc *gt, Expr *e);   /* defined after resolve_expr */
 static char *type_mangle_ident(Type t);               /* C-identifier-safe spelling of a type */
 
@@ -3119,7 +3121,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
 static int *g_spawn;   /* indices into g_sigs (not Sig* -- g_sigs may realloc) */
 static int g_nspawn = 0, g_spawn_cap = 0;
 
-/* B-3 pending declarations (docs/inference.md): `xs := []` / `x := None`
+/* B-3 pending declarations (bidirectional inference): `xs := []` / `x := None`
  * with no context declares at T_PENDING; the FIRST grounding use in its
  * block — an assignment, push/map_set, or any expected-type position (the
  * resolve_exp head) — retroactively types the variable, its decl, and its
@@ -3351,9 +3353,8 @@ static Type resolve_expr(Expr *e) {
             if (e->nargs == 0) {               /* empty literal: type from []T, or from context (bare []) */
                 if ((Type)e->ival == T_VOID)
                     die_at(e->line, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)");
-                /* generics: an explicit `[]T` in an instance body substitutes T per instance */
-                return e->type = (g_active_binds && has_typaram((Type)e->ival))
-                                 ? subst_type((Type)e->ival, g_active_binds) : (Type)e->ival;
+                /* generics: a `[]$T` element type was already substituted at clone time */
+                return e->type = (Type)e->ival;
             }
             Type elem = resolve_expr(e->args[0]);
             if (elem == T_VOID || elem == T_BOOL)
@@ -3576,12 +3577,16 @@ static Type resolve_expr(Expr *e) {
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
                 if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
                     e->sval = q;
+                else if (generic_find(q))     /* a generic template lives in the generics registry, not a Sig */
+                    { e->sval = q; e->qual = NULL; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
                 else
                     die_at(e->line, "package '%s' has no symbol '%s'", e->qual, e->sval);
             } else if (e->pkg && e->pkg[0]) {
                 int _vi;
                 char *q = sfmt("%s%s", e->pkg, e->sval);
                 if (sig_find(q) || struct_find(q) >= 0 || newtype_find(q) >= 0 || variant_find(q, &_vi) >= 0)
+                    e->sval = q;
+                else if (generic_find(q))      /* a package-local generic: rewrite so the generic dispatch below instantiates it */
                     e->sval = q;
             }
             /* a call whose name is a newtype wraps its underlying value: Meters(x)
@@ -4075,7 +4080,7 @@ static Type resolve_expr(Expr *e) {
  * the one place None can learn which Option it is. The chosen type is written
  * back onto the E_NONE node so codegen emits the right TychoOpt. */
 static Type resolve_exp(Expr *e, Type want) {
-    /* Pierce-Turner checking mode (docs/inference.md): a known destination
+    /* Pierce-Turner checking mode (bidirectional inference): a known destination
      * type flows INTO the few expressions that can consume one, before
      * synthesis would have to fail. Dispatch/receivers always synthesize;
      * only literal-ish constructs consume — types stay ground at every line. */
@@ -4519,7 +4524,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * the channel(...) resolve case reject every other position */
             if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
                 s->expr->op = TK_COLONEQ;
-            /* B-3 (docs/inference.md): an UNTYPED decl from a bare [] / None
+            /* B-3 (bidirectional inference): an UNTYPED decl from a bare [] / None
              * defers -- T_PENDING until the first grounding use in this block
              * (resolve_block audits the leftovers). Checked BEFORE resolution:
              * resolving the bare initializer itself would fail. */
@@ -4957,9 +4962,13 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
     GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret;
     gi.binds = (Type *)xmalloc((size_t)(g_ntyparams > 0 ? g_ntyparams : 1) * sizeof(Type));
-    for (int i = 0; i < g_ntyparams; i++) gi.binds[i] = binds[i];   /* for per-instance body subst (g_active_binds) */
+    for (int i = 0; i < g_ntyparams; i++) gi.binds[i] = binds[i];
+    gi.body = clone_block(gt->body, gt->nbody, gi.binds);   /* Stage-2: the instance's own `$T`-substituted body */
+    gi.nbody = gt->nbody;
     for (int j = 0; j < gt->nparams; j++) gi.params[j] = cparams[j];
     g_ginsts[g_nginsts++] = gi;
+    if (g_nginsts > 1024)   /* runaway guard: fail closed on a recursive generic at a strictly-growing type */
+        die_at(e->line, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?");
 }
 
 static void resolve_program(ProcVec *prog) {
@@ -7535,6 +7544,74 @@ static void check_finite_types(void) {
 /* Materialize a generic instance as an ordinary Proc: the template's body
  * (shared), the template's parameter names, but the instance's concrete types.
  * Used both to emit its prototype and to resolve+emit its body. */
+/* ---- Generics Stage-2: deep-clone a template body per instance ----
+ * Every child pointer is deep-copied so two instances never share a mutable
+ * node (the prior bug: re-resolving one shared body leaked types across
+ * instances). `$T` is substituted only where a type appears as SOURCE (an
+ * explicit `[]$T` element type, a `x : $T` annotation, explicit call type-args);
+ * resolver-filled fields (Expr.type, Stmt.decl_type/mtypes) stay at the
+ * template's pristine unresolved values and are filled fresh per instance.
+ * Strings (sval/name/pkg/qual/variant) are immutable and shared. */
+static Expr *clone_expr(Expr *e, Type *binds);
+static Stmt *clone_stmt(Stmt *s, Type *binds);
+
+static Expr **clone_exprs(Expr **a, int n, Type *binds) {
+    if (n == 0) return NULL;
+    Expr **out = (Expr **)xmalloc((size_t)n * sizeof(Expr *));
+    for (int i = 0; i < n; i++) out[i] = clone_expr(a[i], binds);
+    return out;
+}
+
+static Expr *clone_expr(Expr *e, Type *binds) {
+    if (!e) return NULL;
+    Expr *c = (Expr *)xmalloc(sizeof(Expr));
+    *c = *e;
+    c->lhs  = clone_expr(e->lhs, binds);
+    c->rhs  = clone_expr(e->rhs, binds);
+    c->args = clone_exprs(e->args, e->nargs, binds);
+    if (e->kind == E_ARRLIT && has_typaram((Type)e->ival))   /* `[]$T` element type */
+        c->ival = (long)subst_type((Type)e->ival, binds);
+    if (e->ntypeargs > 0) {                                   /* explicit `f$(T, ...)` type args */
+        c->typeargs = (Type *)xmalloc((size_t)e->ntypeargs * sizeof(Type));
+        for (int i = 0; i < e->ntypeargs; i++) c->typeargs[i] = subst_type(e->typeargs[i], binds);
+    }
+    return c;
+}
+
+static Stmt **clone_block(Stmt **body, int n, Type *binds) {
+    if (n == 0) return NULL;
+    Stmt **out = (Stmt **)xmalloc((size_t)n * sizeof(Stmt *));
+    for (int i = 0; i < n; i++) out[i] = clone_stmt(body[i], binds);
+    return out;
+}
+
+static Stmt *clone_stmt(Stmt *s, Type *binds) {
+    if (!s) return NULL;
+    Stmt *c = (Stmt *)xmalloc(sizeof(Stmt));
+    *c = *s;
+    c->expr    = clone_expr(s->expr, binds);
+    c->target  = clone_expr(s->target, binds);
+    c->r_start = clone_expr(s->r_start, binds);
+    c->r_stop  = clone_expr(s->r_stop, binds);
+    c->r_step  = clone_expr(s->r_step, binds);
+    c->body = clone_block(s->body, s->nbody, binds);
+    c->els  = clone_block(s->els, s->nels, binds);
+    if (s->typed_decl && has_typaram(s->annot))   /* `x : $T = ...` annotation */
+        c->annot = subst_type(s->annot, binds);
+    if (s->narms > 0) {
+        c->arms = (MatchArm *)xmalloc((size_t)s->narms * sizeof(MatchArm));
+        for (int i = 0; i < s->narms; i++) {
+            c->arms[i] = s->arms[i];                          /* variant + binds[] strings shared */
+            c->arms[i].body = clone_block(s->arms[i].body, s->arms[i].nbody, binds);
+        }
+    }
+    if (s->sel_ch && s->narms > 0) {                          /* S_SELECT per-arm channel exprs */
+        c->sel_ch = (Expr **)xmalloc((size_t)s->narms * sizeof(Expr *));
+        for (int i = 0; i < s->narms; i++) c->sel_ch[i] = clone_expr(s->sel_ch[i], binds);
+    }
+    return c;
+}
+
 static Proc *ginst_to_proc(GInst *gi) {
     Proc *p = (Proc *)xmalloc(sizeof(Proc));
     *p = *gi->tmpl;
@@ -7545,12 +7622,33 @@ static Proc *ginst_to_proc(GInst *gi) {
         p->params[j].type = gi->params[j];     /* bound concrete type */
     }
     p->nparams = gi->nparams;
+    p->body = gi->body; p->nbody = gi->nbody;   /* Stage-2: resolve+emit the instance's OWN cloned body */
     return p;
 }
 
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(TYCHO_RUNTIME, o);
     fputs("\n/* ---- generated from Tycho source ---- */\n\n", o);
+    /* Stage-2 (#3): resolve every generic instance body to a fixpoint UP FRONT,
+     * before any emission, so a generic body that calls another generic
+     * discovers + interns the nested instance now — it then gets both a
+     * prototype and a body below. The loop re-reads g_nginsts as nested
+     * instances append; each resolved Proc is kept for the emit loops. gen_proc
+     * is self-contained, so resolve (here) and emit (below) can be separated. */
+    g_ninst_procs = 0;
+    for (int i = 0; i < g_nginsts; i++) {
+        Proc *p = ginst_to_proc(&g_ginsts[i]);
+        g_nvars = 0;
+        for (int j = 0; j < p->nparams; j++) {
+            Type pt = p->params[j].type;
+            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout;
+            vars_push(p->params[j].name, pt, mutable);
+        }
+        g_fn_ret = p->ret; g_dup_base = 0;
+        resolve_block(p->body, p->nbody, p->ret);
+        TBL_ENSURE(g_inst_procs, g_ninst_procs, g_inst_procs_cap);
+        g_inst_procs[g_ninst_procs++] = p;
+    }
     /* Types reference one another, sometimes cyclically (a `[Node]` field is a
      * TychoArrC descriptor holding S_Node*). Emit in dependency layers:
      *   1. forward-declare every struct tag,
@@ -8121,8 +8219,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_laminfo[i].ftype != T_VOID) gen_proto(o, g_laminfo[i].proc);
     for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk prototypes (CC-3) */
         gen_proto(o, g_parprocs.v[i]);
-    for (int i = 0; i < g_nginsts; i++)      /* generics: one prototype per monomorphic instance */
-        gen_proto(o, ginst_to_proc(&g_ginsts[i]));
+    for (int i = 0; i < g_nginsts; i++)      /* generics: one prototype per monomorphic instance (all resolved up front, so nested ones are covered) */
+        gen_proto(o, g_inst_procs[i]);
     fputs("\n", o);
     /* spawn sites: one args struct + thread trampoline each. The trampoline
      * runs the call with the task's root arena as _parent (so the return value
@@ -8196,23 +8294,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_laminfo[i].ftype != T_VOID) gen_proc(o, g_laminfo[i].proc);
     for (int i = 0; i < g_parprocs.n; i++)   /* lifted parallel-for chunk bodies (CC-3) */
         gen_proc(o, g_parprocs.v[i]);
-    /* generics: resolve+emit each monomorphic instance from the SHARED template
-     * body, sequentially — the body's resolved types are consumed by gen_proc
-     * before the next instance re-resolves it with different bindings. */
-    for (int i = 0; i < g_nginsts; i++) {
-        Proc *p = ginst_to_proc(&g_ginsts[i]);
-        g_active_binds = g_ginsts[i].binds;   /* per-instance subst for an explicit `[]T` in the shared body */
-        g_nvars = 0;
-        for (int j = 0; j < p->nparams; j++) {
-            Type pt = p->params[j].type;
-            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout;
-            vars_push(p->params[j].name, pt, mutable);
-        }
-        g_fn_ret = p->ret; g_dup_base = 0;
-        resolve_block(p->body, p->nbody, p->ret);
-        gen_proc(o, p);
-        g_active_binds = NULL;
-    }
+    /* generics: emit each monomorphic instance body. All instances were resolved
+     * up front (so a nested-generic instance already has its prototype above) and
+     * gen_proc is self-contained, so this is emit-only. */
+    for (int i = 0; i < g_nginsts; i++)
+        gen_proc(o, g_inst_procs[i]);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n", o);
     fputs("    Arena _root = arena_new(0);  /* root arena; default block size */\n", o);

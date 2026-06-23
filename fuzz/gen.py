@@ -75,9 +75,37 @@ class Gen:
                 or t.startswith("Option(") or t.startswith("Result(")
                 or t in self.structs or t in self.enums)
 
+    def _genlit(self, t):
+        # a concrete literal of a scalar type -- safe as a generic-call argument
+        if t == "int":
+            return str(self.r.randint(0, 9))
+        if t == "float":
+            return str(self.r.randint(0, 9)) + ".0"
+        return '"' + "".join(self.r.choice("abcxyz") for _ in range(self.r.randint(1, 3))) + '"'
+
     # ---- expressions (type-directed) -----------------------------------
     # env: dict name->type. Returns a string expression of type `t`.
     def gen_expr(self, t, env, depth=0):
+        # generics fuzz: wrap a scalar LITERAL in a generic id / first-of-two call,
+        # so the differential + ASan oracle covers monomorphization + per-instance
+        # body cloning. Arguments are literals ONLY: a generic call's argument must
+        # be concrete and must not (even transitively) be another generic call or a
+        # variable holding a generic-call result -- feeding a generic result into
+        # another generic is not yet supported in tychoc0, so generating it would be
+        # a false positive, not a real miscompile. A literal is always safe; the
+        # result then flows into the surrounding (non-generic) expression.
+        if depth < 3 and t in ("int", "string", "float") and self.r.random() < 0.30:
+            a = self._genlit(t)
+            if self.r.random() < 0.5:
+                g = "fz_gid(" + a + ")"
+            else:
+                g = "fz_gfst(" + a + ", " + self._genlit(t) + ")"
+            # Wrap in a NEUTRAL op so the expression's type is concrete even when
+            # the result is bound to a variable. Binding a bare-`$T` generic result
+            # makes tychoc0 type the variable as `$T` (the generic-result-typing
+            # gap), so the bare call must never escape as the whole expression.
+            neutral = {"int": "0", "float": "0.0", "string": '""'}[t]
+            return "(" + g + " + " + neutral + ")"
         choices = []
         vars_t = [n for n, ty in env.items() if ty == t]
         if vars_t:
@@ -914,6 +942,12 @@ class Gen:
                      "            return (sum" + name + "(l) + sum" + name + "(r))", ""]
 
     def emit_helpers(self):
+        # generic free functions (Stage-2 fuzz): an id and a first-of-two, both
+        # unconstrained; gen_expr instantiates them at int/string/float so the
+        # differential + ASan oracle covers monomorphization + per-instance body
+        # cloning in both compilers.
+        self.out += ["fn fz_gid(x: $T) -> T:", "    return x", ""]
+        self.out += ["fn fz_gfst(a: $T, b: $T) -> T:", "    return a", ""]
         self.out += ["fn fillA(xs: mut [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
         self.out += ["fn fz_sgrow(s: mut string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]

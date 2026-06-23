@@ -783,7 +783,7 @@ fn parse_atom(toks: [Token], pos: mut int) -> Expr:
         pos = pos + 1
         if toks[pos].kind == TRBracket:          # []T : empty array  /  []K: V : empty map  /  bare []
             pos = pos + 1
-            # B-0 (docs/inference.md): `[]` not followed by a type-starter token
+            # B-0 (bidirectional inference): `[]` not followed by a type-starter token
             # is a bare empty literal, grounded from the destination type by the
             # pre-lift checking pass (ground_pre) at every supplying position.
             if toks[pos].kind != TIdent and toks[pos].kind != TLBracket and toks[pos].kind != TLParen:
@@ -899,7 +899,7 @@ fn parse_not(toks: [Token], pos: mut int) -> Expr:
     _el := tloc(toks[pos])
     if toks[pos].kind == TIdent and toks[pos].text == "not":
         pos = pos + 1
-        return EBin("==", parse_not(toks, &pos), EInt("0", _el), _el)   # logical not: (X == 0)
+        return EBin("not", parse_not(toks, &pos), EInt("0", _el), _el)   # logical not; operand must be bool (validated in codegen). rhs is an unused placeholder
     return parse_cmp(toks, &pos)
 
 fn parse_and(toks: [Token], pos: mut int) -> Expr:
@@ -1919,6 +1919,10 @@ fn mangle_type_list(m: Mctx, s: string) -> string:
     return out + mangle_type(m, part)
 
 fn mangle_type(m: Mctx, ty: string) -> string:
+    if ty == "":
+        return ty                  # an empty/pending element type (e.g. a bare `[]`) is never package-qualified
+    if has_prefix(ty, "$"):
+        return ty                  # a `$T` type parameter is never package-qualified (generics)
     if has_prefix(ty, "&"):
         return "&" + mangle_type(m, substr(ty, 1, len(ty)))
     if has_prefix(ty, "soa["):
@@ -3124,6 +3128,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         EAddr(inner, _el):
             return type_of(inner, names, types, dc, ctx)
         EBin(op, l, r, _el):
+            if op == "not":                       # logical not -> bool (operand validated in codegen)
+                return "bool"
             lt := type_of(l, names, types, dc, ctx)
             rt := type_of(r, names, types, dc, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
@@ -4029,6 +4035,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r, _el):
             lt := type_of(l, names, types, dc, ctx)
+            if op == "not":                       # logical not: operand MUST be bool (matches tychoc; fixes the `not <non-bool>` fail-open)
+                if lt != "bool":
+                    die_at(dc, _el, "not needs a bool operand")
+                return "(!" + gen_expr(l, names, types, dc, ctx) + ")"
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
@@ -7667,7 +7677,7 @@ fn fnty_split(ft: string, parts: mut [string]) -> string:
         i = i + 1
     return "void"
 
-# Pierce-Turner checking mode (docs/inference.md), the pre-lift grounding: a
+# Pierce-Turner checking mode (bidirectional inference), the pre-lift grounding: a
 # known destination type `want` ("" = none) flows into the expressions that
 # can consume one -- bare [] empties, int literals in float contexts, lambdas
 # with elided param/return types -- BEFORE the lift, so capture analysis and
@@ -7952,7 +7962,7 @@ fn lift_expr(e: Expr, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             push(spawns, SpawnInfo(nm, dc.sigs[si].ptypes, dc.sigs[si].ret))
             return ESpawn(sid, nm, nsa, _el)
 
-# B-3 (docs/inference.md): is `e` a bare incomplete initializer? 1 = bare [],
+# B-3 (bidirectional inference): is `e` a bare incomplete initializer? 1 = bare [],
 # 2 = bare None, 0 = neither. (tychoc parses None as an E_NONE node; tychoc0
 # parses it as the 0-arg builtin call ECall("None", [], _el).)
 fn pend_init_kind(e: Expr) -> int:
@@ -9031,6 +9041,8 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc
             return nm                            # already instantiated
         e = e + 1
     push(insts, Func(nm, gt.params, cparams, cret, subst_block_t(gt.body, bnames, btypes), 0, "", ""))
+    if len(insts) > 1024:                        # runaway guard: recursive generic at a growing type
+        die("generics: too many instantiations (> 1024) -- a recursive generic at a growing type?")
     return nm
 
 # Generics (structs): a struct with type parameters is a template; each
@@ -9595,6 +9607,23 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         rret := resolve_gtype(f.ret, dc.structs, dc.enums, &sinsts, &einsts)
         push(out, Func(f.name, f.params, rpt, rret, nbody, f.is_extern, f.lib, f.constraints))
         i = i + 1
+    # Stage-2 (#3): re-drive each instance body through mono_block to discover and
+    # rename NESTED generic calls (a generic calling another generic). An instance
+    # body came from subst_block_t, which substituted TYPES but left a nested call
+    # under its template name; mono_block (via mono_expr's ECall -> mono_instantiate)
+    # renames it and appends any newly-needed instance. The index re-reads
+    # len(insts) each iteration, so the worklist drains to a fixpoint; mono_instantiate
+    # dedups by name, so non-recursive and same-type-recursive chains terminate
+    # (a growing-type recursion would not -- that guard is a later step).
+    wi := 0
+    for wi < len(insts):
+        inst := insts[wi]
+        inames := []string
+        itypes := []string
+        seed_env(inst, &inames, &itypes)
+        ibody := mono_block(inst.body, inames, itypes, gens, &insts, &sinsts, &einsts, dc, ctx)
+        insts[wi] = Func(inst.name, inst.params, inst.ptypes, inst.ret, ibody, inst.is_extern, inst.lib, inst.constraints)
+        wi = wi + 1
     i = 0
     for i < len(insts):                           # instances last, in first-encounter order (matches tychoc)
         push(out, insts[i])

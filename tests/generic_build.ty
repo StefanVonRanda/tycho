@@ -1,0 +1,29 @@
+# Stage-2: generic functions that BUILD a fresh collection (`out := []` then
+# push), instantiated at MORE THAN ONE element type. Each instance must get its
+# own independently-grounded `out` (per-instance body clone); the prior shared
+# template re-resolve grounded `out` to the first instance's type and rejected
+# the second.
+fn rev(xs: [$T]) -> [$T]:
+    out := []
+    i := len(xs) - 1
+    for i >= 0:
+        push(out, xs[i])
+        i = i - 1
+    return out
+
+fn dup2(xs: [$T]) -> [$T]:        # each element twice
+    out := []
+    for v in xs:
+        push(out, v)
+        push(out, v)
+    return out
+
+fn main():
+    a := rev([1, 2, 3])
+    println(str(a[0]) + str(a[1]) + str(a[2]))            # 321
+    b := rev(["x", "y", "z"])                              # 2nd instance, string
+    println(b[0] + b[1] + b[2])                            # zyx
+    c := dup2([7, 8])
+    println(str(len(c)) + ":" + str(c[0]) + str(c[3]))    # 4:78
+    d := dup2(["a"])                                       # string instance
+    println(str(len(d)) + ":" + d[0] + d[1])              # 2:aa

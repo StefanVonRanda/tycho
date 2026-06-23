@@ -1,0 +1,8 @@
+# A recursive generic at a STRICTLY-GROWING type: grow($T) calls grow([$T]),
+# which needs grow([[$T]]), ... -- unbounded monomorphization. Both compilers
+# must fail closed (the instantiation cap) rather than hang or OOM.
+fn grow(x: $T) -> int:
+    return grow([x])
+
+fn main():
+    println(str(grow(1)))

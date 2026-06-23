@@ -1,0 +1,40 @@
+package main
+import "gc"
+
+# Stage-2 acceptance dogfood: ONE generic gc module, used over int / string /
+# float. Demonstrates the supported envelope: generic calls instantiate per
+# element type, and their results are used in NON-generic positions (indexing,
+# str, concatenation, comparison).
+#
+# Known limits (see notes): a generic call's result cannot yet be fed into
+# ANOTHER generic call in tychoc0 (nested OR via a bound variable) -- so e.g.
+# join(sort(xs)) is not expressible here; sort's result is shown by indexing.
+# Higher-order generics (map/filter, a fn-typed parameter) need typaram
+# inference through function types and are not exercised.
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # ---- int ----
+    xs := [3, 1, 4, 1, 5, 9, 2, 6]
+    println("int has4=" + str(b2i(gc.contains(xs, 4))) + " idx9=" + str(gc.index_of(xs, 9)) + " min=" + str(gc.min(xs)) + " max=" + str(gc.max(xs)) + " sum=" + str(gc.sum(xs)))
+    println("int joined=" + gc.join(xs, ","))
+    s := gc.sort(xs)
+    println("int sorted=" + str(s[0]) + ".." + str(s[7]))
+    r := gc.reverse(xs)
+    println("int rev=" + str(r[0]) + ".." + str(r[7]))
+
+    # ---- string (comparable + has_str; NOT numeric) ----
+    ss := ["pear", "apple", "fig", "kiwi"]
+    println("str min=" + gc.min(ss) + " max=" + gc.max(ss) + " hasfig=" + str(b2i(gc.contains(ss, "fig"))) + " joined=" + gc.join(ss, ","))
+    ssorted := gc.sort(ss)
+    println("str sorted=" + ssorted[0] + ".." + ssorted[3])
+
+    # ---- float (numeric + comparable + has_str) ----
+    fs := [1.5, 0.5, 2.5, 1.0]
+    println("float sum=" + str(gc.sum(fs)) + " min=" + str(gc.min(fs)) + " joined=" + gc.join(fs, ","))
+    fsorted := gc.sort(fs)
+    println("float sorted=" + str(fsorted[0]) + ".." + str(fsorted[3]))
