@@ -1,0 +1,4 @@
+# pkg-config modules linked when core:crypto is imported (one per line).
+# The corelib harness skips this package if any is missing, keeping CI green
+# on hosts without the OpenSSL dev package.
+libcrypto

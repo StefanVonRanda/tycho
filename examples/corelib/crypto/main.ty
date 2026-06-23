@@ -1,0 +1,54 @@
+# Example: core:crypto -- security-grade crypto via OpenSSL libcrypto (a C shim).
+# Secret keys are opaque HANDLES (their bytes never enter Tycho's arena and are
+# wiped on key_free); public/ephemeral data (nonces, ciphertext, signatures,
+# public keys) is lowercase hex -- use core:hex to turn text into hex. Needs the
+# OpenSSL dev package (corelib/crypto/deps); the harness skips this if it's
+# absent. Output is deterministic: random keys/nonces are used but never printed.
+package main
+import "core:crypto"
+import "core:hex"
+
+fn yesno(b: bool) -> string:
+    if b:
+        return "yes"
+    return "no"
+
+fn main():
+    # a digest (the message is passed as hex)
+    print("sha256('abc')    = " + crypto.sha256(hex.encode("abc")) + "\n")
+
+    # a secret key lives in an opaque handle, not a Tycho string
+    key := crypto.key_random(32)
+    print("key bytes        = " + str(crypto.key_len(key)) + "\n")
+
+    # authenticated encryption round-trip (ChaCha20-Poly1305)
+    nonce := crypto.random_hex(12)                       # MUST be unique per message
+    aad := hex.encode("hdr-v1")
+    box := crypto.aead_encrypt(key, nonce, hex.encode("attack at dawn"), aad)
+    plain := crypto.aead_decrypt(key, nonce, box, aad)
+    print("decrypt verified = " + yesno(plain != "!err") + "\n")
+    print("recovered text   = " + hex.decode(plain) + "\n")
+    crypto.key_free(key)
+
+    # Ed25519 sign / verify (the signing key is a handle; public key + sig are hex)
+    signer := crypto.ed25519_key_from_seed("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    pub := crypto.ed25519_pubkey(signer)
+    msg := hex.encode("ship it")
+    sig := crypto.ed25519_sign(signer, msg)
+    crypto.key_free(signer)
+    print("signature valid  = " + yesno(crypto.ed25519_verify(pub, msg, sig)) + "\n")
+
+    # X25519: two parties independently derive the same shared secret
+    a := crypto.x25519_key_random()
+    b := crypto.x25519_key_from_secret("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
+    a_pub := crypto.x25519_pubkey(a)
+    b_pub := crypto.x25519_pubkey(b)
+    a_shared := crypto.x25519_shared(a, b_pub)
+    b_shared := crypto.x25519_shared(b, a_pub)
+    a_hex := crypto.key_export_hex(a_shared)
+    b_hex := crypto.key_export_hex(b_shared)
+    print("key agreement    = " + yesno(a_hex == b_hex) + "\n")
+    crypto.key_free(a)
+    crypto.key_free(b)
+    crypto.key_free(a_shared)
+    crypto.key_free(b_shared)

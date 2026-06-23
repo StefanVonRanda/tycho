@@ -1,0 +1,91 @@
+# core:crypto regression. Every printed line is "<name>=1" iff the primitive is
+# correct. Expected values are independent known-answer vectors (Python
+# hashlib/hmac for SHA/HMAC/PBKDF2; the `cryptography` library for AEAD, Ed25519,
+# X25519) -- so a green golden proves the OpenSSL binding is correct, and the
+# tychoc-vs-tychoc0 diff proves the two compilers agree on the FFI. Secrets are
+# opaque key handles; this test also exercises key import/export/len/free.
+package main
+
+import "core:crypto"
+
+fn yn(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # ---- secret key handle import/export/len ----
+    kh := crypto.key_from_hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    println("key_roundtrip=" + str(yn(crypto.key_export_hex(kh) == "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")))
+    println("key_len=" + str(yn(crypto.key_len(kh) == 32)))
+
+    # ---- hashing: SHA-256("abc"), SHA-512("abc") ----
+    println("sha256=" + str(yn(crypto.sha256("616263") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")))
+    println("sha512=" + str(yn(crypto.sha512("616263") == "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f")))
+
+    # ---- HMAC-SHA256 (RFC 4231 test case 1); key is a handle ----
+    hk := crypto.key_from_hex("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+    println("hmac=" + str(yn(crypto.hmac_sha256(hk, "4869205468657265") == "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")))
+    crypto.key_free(hk)
+
+    # ---- PBKDF2-HMAC-SHA256 -> derived KEY handle (P="passwd" S="salt" c=1 dkLen=32) ----
+    dk := crypto.pbkdf2_sha256("passwd", "73616c74", 1, 32)
+    println("pbkdf2=" + str(yn(crypto.key_export_hex(dk) == "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc")))
+    crypto.key_free(dk)
+
+    # ---- constant-time compare ----
+    println("ct_eq=" + str(yn(crypto.ct_equal("aabb", "aabb"))))
+    println("ct_ne=" + str(yn(crypto.ct_equal("aabb", "aabc") == false)))
+
+    # ---- AEAD ChaCha20-Poly1305 (key handle kh, 32 bytes) ----
+    nonce := "000000000000000000000001"
+    pt := "68656c6c6f20776f726c64"          # "hello world"
+    aad := "686472"                          # "hdr"
+    ct := crypto.aead_encrypt(kh, nonce, pt, aad)
+    println("aead_kat=" + str(yn(ct == "013910b55e2acf155f1d1a235ccfc805ac83ec59ea52b5e3003883")))
+    println("aead_roundtrip=" + str(yn(crypto.aead_decrypt(kh, nonce, ct, aad) == pt)))
+    # tampered ciphertext (first byte flipped) must fail authentication
+    println("aead_tamper=" + str(yn(crypto.aead_decrypt(kh, nonce, "ff3910b55e2acf155f1d1a235ccfc805ac83ec59ea52b5e3003883", aad) == "!err")))
+    # wrong associated data must fail authentication
+    println("aead_aad=" + str(yn(crypto.aead_decrypt(kh, nonce, ct, "00") == "!err")))
+    crypto.key_free(kh)
+
+    # ---- Ed25519 (signing key is a handle; public key + sig are hex) ----
+    ek := crypto.ed25519_key_from_seed("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    smsg := "7369676e206d65"                 # "sign me"
+    pub := crypto.ed25519_pubkey(ek)
+    println("ed_pub=" + str(yn(pub == "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8")))
+    sig := crypto.ed25519_sign(ek, smsg)
+    println("ed_sig=" + str(yn(sig == "92d2ce62f56a840184a8a916bf430b33248d2a25db8e9804d37cdd30712ae2b7a715e7b092c561df1487b7a491d2759e6af9aeb6ab33564cb1a8f53f53c91306")))
+    crypto.key_free(ek)
+    println("ed_verify=" + str(yn(crypto.ed25519_verify(pub, smsg, sig))))
+    # a signature with one byte flipped must be rejected
+    println("ed_reject=" + str(yn(crypto.ed25519_verify(pub, smsg, "02d2ce62f56a840184a8a916bf430b33248d2a25db8e9804d37cdd30712ae2b7a715e7b092c561df1487b7a491d2759e6af9aeb6ab33564cb1a8f53f53c91306") == false)))
+
+    # ---- X25519 (secrets are handles; shared secret is also a handle) ----
+    ka := crypto.x25519_key_from_secret("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    kb := crypto.x25519_key_from_secret("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
+    puba := crypto.x25519_pubkey(ka)
+    pubb := crypto.x25519_pubkey(kb)
+    println("x_puba=" + str(yn(puba == "8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f")))
+    println("x_pubb=" + str(yn(pubb == "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254")))
+    sa := crypto.x25519_shared(ka, pubb)
+    sb := crypto.x25519_shared(kb, puba)
+    sa_hex := crypto.key_export_hex(sa)
+    println("x_shared_kat=" + str(yn(sa_hex == "9663aa1da97e848a914a436d04163dfbb89178f107f1b5b77ed3854203382854")))
+    println("x_agree=" + str(yn(sa_hex == crypto.key_export_hex(sb))))
+    crypto.key_free(ka)
+    crypto.key_free(kb)
+    crypto.key_free(sa)
+    crypto.key_free(sb)
+
+    # ---- CSPRNG: non-deterministic, so assert shape + uniqueness ----
+    rk := crypto.key_random(32)
+    rk2 := crypto.key_random(32)
+    println("key_random_len=" + str(yn(crypto.key_len(rk) == 32)))
+    rk_hex := crypto.key_export_hex(rk)
+    rk2_hex := crypto.key_export_hex(rk2)
+    println("key_random_uniq=" + str(yn(rk_hex != rk2_hex)))
+    crypto.key_free(rk)
+    crypto.key_free(rk2)
+    println("rand_hex_len=" + str(yn(len(crypto.random_hex(12)) == 24)))

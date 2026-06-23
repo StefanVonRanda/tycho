@@ -179,6 +179,18 @@ corelib limitation.
   (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
   content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
   for that). Bit-exact against NIST vectors (`sha256("abc") = ba7816bf…f20015ad`).
+- **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
+  [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
+  pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what you reach for
+  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512` of
+  binary, `hmac_sha256`, `pbkdf2_sha256`, constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
+  (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), Ed25519
+  (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Real crypto must
+  be constant-time and audited, which pure Tycho can't promise, so the primitives are bound
+  to OpenSSL rather than reimplemented. Every value (keys, nonces, ciphertext, signatures,
+  digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
+  `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
+  RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins,
   and **the first corelib module to compose others** (imports `core:strings` for line
   splitting, `core:path` for `exists`). `read(p)` (`""` if missing/unreadable),
