@@ -1,0 +1,6 @@
+# A char combines with an int only via + or - (byte offset). Any other arithmetic
+# (here *) is a type error in BOTH compilers. tychoc0 used to coerce the char to int.
+fn main():
+    c := 'A'
+    d := c * 2
+    println(str(d == 'A'))

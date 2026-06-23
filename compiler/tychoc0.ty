@@ -4082,6 +4082,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     if is_cmp(op):
                         die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
+            # char mixing matches tychoc: a char combines only with a char, or with
+            # an int via +/- (-> char); everything else is a type error. (Conditions
+            # stay inline -- tychoc0 mistypes a `:=` local bound to a string compare.)
+            if (lt == "char" or frt == "char") and not (lt == "char" and frt == "char"):   # exactly one operand is a char
+                other := lt
+                if lt == "char":
+                    other = frt
+                if not ((op == "+" or op == "-") and other == "int"):
+                    if op == "==" or op == "!=":
+                        die_at(dc, _el, "cannot compare char with int")
+                    if is_cmp(op):
+                        die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+                    die_at(dc, _el, "a char combines only with a char, or with an int via + or -")
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
             cdi := find(name, ".")

@@ -1,0 +1,5 @@
+# Ordering a char against an int is a type error in BOTH compilers (a char orders
+# only against another char). Locks the parity: tychoc0 used to coerce the char.
+fn main():
+    c := 'A'
+    println(str(c < 66))
