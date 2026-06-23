@@ -8,6 +8,9 @@
 /tmp*
 *.s
 cc??????.s
+# transpiled C emitted by `tychoc <pkg>.ty --emit-c` next to the source
+# (e.g. compiler/tychoc0.c) — a build artifact, never source
+/compiler/*.c
 
 # The compiled Tycho compiler (built by `make`)
 /tychoc
