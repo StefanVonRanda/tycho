@@ -11,6 +11,8 @@ fn main():
         print("eq\n")
     else:
         print("ne\n")                    # ne: a\0b != c\0d
+    print(str(find(s, ",")) + "\n")      # 3: comma found past the first NUL
+    print(str(find(s, parts[1])) + "\n") # 4: needle "c\0b" CONTAINS a NUL
     m := [parts[0]: 1]
     m[parts[1]] = 2
     print(str(m[parts[0]]) + " " + str(m[parts[1]]) + "\n")       # 1 2
