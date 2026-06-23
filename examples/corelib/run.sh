@@ -33,10 +33,10 @@ for entry in examples/corelib/*/main.ty; do
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1
-    if ! { "$TYCHOC" "$entry" --bundle 2>/dev/null | "$T/h0" > "$T/h0c.c" 2>/dev/null && $CC -O2 -o "$T/h0b" "$T/h0c.c" $shim -lm $depflags 2>/dev/null; }; then echo "FAIL $name (tychoc0 compile)"; fail=1; continue; fi
+    if ! { "$TYCHOC" "$entry" --bundle 2>/dev/null | "$T/h0" > "$T/h0c.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/h0b" "$T/h0c.c" $shim -lm $depflags 2>/dev/null; }; then echo "FAIL $name (tychoc0 compile)"; fail=1; continue; fi
     "$T/h0b" > "$T/ho" 2>&1
     if ! cmp -s "$T/co" "$T/ho"; then echo "FAIL $name (tychoc vs tychoc0 differ)"; diff "$T/co" "$T/ho" | head | sed 's/^/      /'; fail=1; continue; fi
-    if ! { "$T/h0" "$entry" > "$T/sdc.c" 2>/dev/null && $CC -O2 -o "$T/sdb" "$T/sdc.c" $shim -lm $depflags 2>/dev/null; }; then echo "FAIL $name (standalone tychoc0 compile)"; fail=1; continue; fi
+    if ! { "$T/h0" "$entry" > "$T/sdc.c" 2>/dev/null && $CC -O2 -fwrapv -o "$T/sdb" "$T/sdc.c" $shim -lm $depflags 2>/dev/null; }; then echo "FAIL $name (standalone tychoc0 compile)"; fail=1; continue; fi
     "$T/sdb" > "$T/sdo" 2>&1
     if ! cmp -s "$T/co" "$T/sdo"; then echo "FAIL $name (standalone tychoc0 differs)"; diff "$T/co" "$T/sdo" | head | sed 's/^/      /'; fail=1; continue; fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; continue; fi

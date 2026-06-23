@@ -51,7 +51,7 @@ def emit_tychoc0(h0, src_path, out_c):
 
 def build_run_leak(c_file, exe, label):
     """Build under ASan+LSan and run. Returns (verdict, detail)."""
-    cc = ["cc", "-O1", "-std=c11", "-pthread"] + ASAN + [c_file, FFI_SHIM, "-o", exe]
+    cc = ["cc", "-O1", "-fwrapv", "-std=c11", "-pthread"] + ASAN + [c_file, FFI_SHIM, "-o", exe]
     try:
         b = subprocess.run(cc, capture_output=True, text=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:

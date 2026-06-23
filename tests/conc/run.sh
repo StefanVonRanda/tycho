@@ -34,7 +34,7 @@ for f in tests/conc/*.ty; do
         note "$name" "tychoc"; sed 's/^/      /' "$TMP/$name.log"; fail=$((fail+1)); continue
     fi
     ok=1
-    for variant in "-O3:nat" "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1:asan" "-fsanitize=thread -g -O1:tsan"; do
+    for variant in "-O3 -fwrapv:nat" "-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv:asan" "-fsanitize=thread -g -O1 -fwrapv:tsan"; do
         flags=${variant%:*}; tag=${variant#*:}
         if ! $CC $flags -pthread -o "$TMP/$name.$tag" "$c" -lm 2>"$TMP/$name.cc"; then
             note "$name" "$tag cc"; sed 's/^/      /' "$TMP/$name.cc"; ok=0; break
@@ -52,7 +52,7 @@ for f in tests/conc/*.ty; do
     if [ $ok -eq 1 ]; then
         # parity differential: the SELF-HOSTED compiler must agree on the golden
         if ! "$TMP/tychoc0" < "$f" > "$TMP/$name.h0.c" 2>"$TMP/$name.h0e" \
-           || ! $CC -O2 -pthread -o "$TMP/$name.h0" "$TMP/$name.h0.c" -lm 2>"$TMP/$name.h0e" \
+           || ! $CC -O2 -fwrapv -pthread -o "$TMP/$name.h0" "$TMP/$name.h0.c" -lm 2>"$TMP/$name.h0e" \
            || ! "$TMP/$name.h0" > "$TMP/$name.h0out" 2>&1 \
            || ! cmp -s "$TMP/$name.h0out" "$gold"; then
             note "$name" "tychoc0 parity"; sed 's/^/      /' "$TMP/$name.h0e" 2>/dev/null | head -3; ok=0

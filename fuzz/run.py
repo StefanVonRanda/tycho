@@ -41,7 +41,7 @@ def emit_tychoc0(h0, src_path, out_c):
     return r.returncode == 0 and os.path.getsize(out_c) > 0
 
 def build_run(c_file, exe, tmp, asan=False):
-    cc = ["cc", "-O1" if asan else "-O2", "-std=c11", "-pthread"] + (ASAN if asan else []) + [c_file, FFI_SHIM, "-o", exe]
+    cc = ["cc", "-O1" if asan else "-O2", "-fwrapv", "-std=c11", "-pthread"] + (ASAN if asan else []) + [c_file, FFI_SHIM, "-o", exe]
     try:
         b = sh(cc)
     except subprocess.TimeoutExpired:

@@ -16,7 +16,7 @@ for f in compiler/tests/*.ty; do
     if ! /tmp/tychoc0 < "$f" > /tmp/bs.c 2>/tmp/bs.err; then
         echo "FAIL $name (tychoc0 errored: $(cat /tmp/bs.err))"; fail=1; continue
     fi
-    if ! $CC -O2 -o /tmp/bs_got /tmp/bs.c 2>/dev/null; then
+    if ! $CC -O2 -fwrapv -o /tmp/bs_got /tmp/bs.c 2>/dev/null; then
         echo "FAIL $name (emitted C did not compile)"; fail=1; continue
     fi
     if [ "$ref" = "$(/tmp/bs_got)" ]; then echo "ok   $name"; else echo "FAIL $name"; fail=1; fi

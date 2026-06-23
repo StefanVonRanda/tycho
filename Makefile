@@ -5,7 +5,10 @@
 #   make clean
 
 CC      ?= cc
-CFLAGS  ?= -O2 -Wall -Wextra -std=c11
+# -fwrapv: signed integer overflow wraps (two's complement), never C UB -- the
+# compiler's own arithmetic must honour the same overflow contract it gives
+# generated programs (see the -fwrapv on the codegen cc line in src/tychoc.c).
+CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c

@@ -64,9 +64,9 @@ run_one() {
 
     if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/$name" >"$TMP/$name.log" 2>&1; then
         note "$name" "transpile"; sed 's/^/      /' "$TMP/$name.log"; ok=0
-    elif ! $CC -O2 -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
+    elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "native cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
-    elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 \
+    elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
                -std=c11 -o "$san" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "sanitizer cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     else
@@ -179,7 +179,7 @@ for hi in tests/abort/*.ty; do
     [ -e "$hi" ] || continue
     name="abort_$(basename "$hi" .ty)"
     if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
-       || ! $CC -O2 -std=c11 -o "$TMP/ab.bin" "$TMP/ab.c" -lm 2>"$TMP/ab.log"; then
+       || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/ab.bin" "$TMP/ab.c" -lm 2>"$TMP/ab.log"; then
         note "$name" "did not build"; sed 's/^/      /' "$TMP/ab.log"
         fail=$((fail + 1)); fails="$fails $name"; continue
     fi

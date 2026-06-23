@@ -23,7 +23,7 @@ def faults(src):
             return False
     if os.path.getsize(c) == 0:
         return False
-    if subprocess.run(["cc", "-O1", "-std=c11"] + ASAN + [c, "-o", e], capture_output=True).returncode != 0:
+    if subprocess.run(["cc", "-O1", "-fwrapv", "-std=c11"] + ASAN + [c, "-o", e], capture_output=True).returncode != 0:
         return False
     try:
         r = subprocess.run([e], capture_output=True, text=True, env=ENV, timeout=15)

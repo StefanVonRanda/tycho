@@ -278,7 +278,7 @@ def build_tychoc0(tmp):
     if r.returncode != 0 or not os.path.exists(base + ".c"):
         print("FATAL: tychoc could not emit tychoc0 C:\n" + r.stderr[:1500]); sys.exit(2)
     exe = os.path.join(tmp, "tychoc0")
-    b = subprocess.run(["cc", "-O2", "-std=c11", "-pthread", base + ".c", "-o", exe, "-lm"],
+    b = subprocess.run(["cc", "-O2", "-fwrapv", "-std=c11", "-pthread", base + ".c", "-o", exe, "-lm"],
                        capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if b.returncode != 0:
         print("FATAL: tychoc0 C did not compile:\n" + b.stderr[:1500]); sys.exit(2)

@@ -8789,11 +8789,14 @@ int main(int argc, char **argv) {
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, g_links[i]);
     /* sources (generated .c + any --shim companions), then -lm + extern libs +
      * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
-    /* -O3 is the portable default; --native opts into -march=native (host-CPU only). */
+    /* -O3 is the portable default; --native opts into -march=native (host-CPU only).
+     * -fwrapv: signed integer overflow is DEFINED as two's-complement wrapping
+     * (not C UB), so the optimizer can never miscompile overflowing arithmetic.
+     * This is the language's integer-overflow contract; see docs/notes. */
     const char *march = native ? " -march=native" : "";
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
-    char *cmd = sfmt("%s -O3%s -pthread -o %s %s%s -lm%s%s %s", cc, march, base, c_path, shims, links, extra, pkgdeps);
+    char *cmd = sfmt("%s -O3 -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, march, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);

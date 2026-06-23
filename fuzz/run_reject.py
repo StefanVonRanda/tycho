@@ -44,7 +44,7 @@ def first_marker(err):
 
 def build_asan_tychoc(tmp):
     exe = os.path.join(tmp, "tychoc_asan")
-    r = subprocess.run(["cc", "-O1", "-std=c11"] + ASAN + ["-Ibuild",
+    r = subprocess.run(["cc", "-O1", "-fwrapv", "-std=c11"] + ASAN + ["-Ibuild",
                         os.path.join(REPO, "src", "tychoc.c"), "-o", exe, "-lm"],
                        cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if r.returncode != 0:
@@ -58,7 +58,7 @@ def build_asan_tychoc0(tmp):
     if r.returncode != 0 or not os.path.exists(base + ".c"):
         print("tychoc0 emit-c FAILED:\n" + r.stderr[:2000]); return None
     exe = os.path.join(tmp, "tychoc0_asan")
-    b = subprocess.run(["cc", "-O1", "-std=c11", "-pthread"] + ASAN + [base + ".c", "-o", exe, "-lm"],
+    b = subprocess.run(["cc", "-O1", "-fwrapv", "-std=c11", "-pthread"] + ASAN + [base + ".c", "-o", exe, "-lm"],
                        capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if b.returncode != 0:
         print("ASan tychoc0 build FAILED:\n" + b.stderr[:2000]); return None

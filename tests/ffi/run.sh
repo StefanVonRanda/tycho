@@ -17,7 +17,7 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
 
 # fixture C library: libffidemo.a (static, so the binary needs no LD path at run time)
-$CC -O2 -c tests/ffi/demo.c -o "$T/demo.o" || { echo "FAIL: compiling demo.c"; exit 1; }
+$CC -O2 -fwrapv -c tests/ffi/demo.c -o "$T/demo.o" || { echo "FAIL: compiling demo.c"; exit 1; }
 ar rcs "$T/libffidemo.a" "$T/demo.o"
 
 # the self-hosted compiler
@@ -33,14 +33,14 @@ fi
 
 # (2) self-hosted compiler: emits C to stdout; we compile+link it ourselves.
 if ! { "$T/h0" tests/ffi/main.ty > "$T/h0.c" 2>/dev/null && \
-       LIBRARY_PATH="$T" $CC -O2 -std=c11 -o "$T/h0_bin" "$T/h0.c" -lffidemo -lm 2>"$T/h0.log"; }; then
+       LIBRARY_PATH="$T" $CC -O2 -fwrapv -std=c11 -o "$T/h0_bin" "$T/h0.c" -lffidemo -lm 2>"$T/h0.log"; }; then
     echo "FAIL: tychoc0 compile"; sed 's/^/      /' "$T/h0.log"; fail=1
 else
     "$T/h0_bin" > "$T/h0.out" 2>&1
 fi
 
 # (3) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
-if ! LIBRARY_PATH="$T" $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 \
+if ! LIBRARY_PATH="$T" $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
         -std=c11 -o "$T/h0_san" "$T/h0.c" -lffidemo -lm 2>"$T/san.log"; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/san.log"; fail=1
 else
@@ -72,7 +72,7 @@ else
     [ "$("$T/pkg_c" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc output"; fail=1; }
 fi
 if ! { "$TYCHOC" tests/ffi/pkgext/main.ty --bundle 2>/dev/null | "$T/h0" > "$T/pkg_h0.c" 2>/dev/null && \
-       $CC -O2 -std=c11 -o "$T/pkg_h0" "$T/pkg_h0.c" tests/ffi/shim.c -lm 2>"$T/pkg_h0.log"; }; then
+       $CC -O2 -fwrapv -std=c11 -o "$T/pkg_h0" "$T/pkg_h0.c" tests/ffi/shim.c -lm 2>"$T/pkg_h0.log"; }; then
     echo "FAIL: pkg-extern tychoc0 compile"; sed 's/^/      /' "$T/pkg_h0.log"; fail=1
 else
     [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc0 output"; fail=1; }
