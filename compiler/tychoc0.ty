@@ -4069,6 +4069,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if op == "!=":
                     return "(!(" + eqx + "))"
                 return eqx
+            frt := type_of(r, names, types, dc, ctx)
+            if (lt == "float" and frt == "int") or (lt == "int" and frt == "float"):   # int/float mixing matches tychoc: only an int LITERAL adapts to float (arith + ordering); equality needs exact types; a non-literal int never widens
+                if op == "==" or op == "!=":
+                    die_at(dc, _el, "cannot compare float with int")
+                ilit := false
+                if frt == "int":
+                    ilit = is_int_lit(r)
+                else:
+                    ilit = is_int_lit(l)
+                if not ilit:
+                    if is_cmp(op):
+                        die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+                    die_at(dc, _el, "arithmetic requires two ints or two floats")
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
             cdi := find(name, ".")
@@ -4724,6 +4737,49 @@ fn is_evar(e: Expr, name: string) -> bool:
             return n == name
         EInt(t, _el):
             return false
+        EBool(t, _el):
+            return false
+        EChar(t, _el):
+            return false
+        EFloat(f, _el):
+            return false
+        EStr(s, _el):
+            return false
+        EBin(o, l, r, _el):
+            return false
+        ECall(nm, a, _el):
+            return false
+        EField(b, f, _el):
+            return false
+        EIndex(b, i, _el):
+            return false
+        EArrLit(es, _el):
+            return false
+        EArrEmpty(t, _el):
+            return false
+        EMapEmpty(k, v, _el):
+            return false
+        EMapLit(ks, vs, _el):
+            return false
+        ETuple(es, _el):
+            return false
+        ESlice(b, lo, hi, _el):
+            return false
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return false
+        ECallV(callee, cargs, _el):
+            return false
+        EAddr(x, _el):
+            return false
+        ESpawn(sid, snm, sa, _el):
+            return false
+
+fn is_int_lit(e: Expr) -> bool:           # is `e` a literal int -- the only int that adapts to a float operand (matches tychoc's `kind == E_INT`)
+    match e:
+        EVar(n, _el):
+            return false
+        EInt(t, _el):
+            return true
         EBool(t, _el):
             return false
         EChar(t, _el):

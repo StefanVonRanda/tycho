@@ -4036,7 +4036,14 @@ static Type resolve_expr(Expr *e) {
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
                 } else {
                     /* ordering: two ints, two floats, two strings, or two values
-                     * of the SAME numeric/string newtype */
+                     * of the SAME numeric/string newtype. An int LITERAL adapts to a
+                     * float operand (B-1, same as arithmetic — literals only, a
+                     * variable never widens), so `f < 0` is `f < 0.0`. */
+                    if (lt == T_FLOAT && rt == T_INT && e->rhs->kind == E_INT) {
+                        e->rhs->kind = E_FLOAT; e->rhs->fval = (double)e->rhs->ival; e->rhs->type = T_FLOAT; rt = T_FLOAT;
+                    } else if (rt == T_FLOAT && lt == T_INT && e->lhs->kind == E_INT) {
+                        e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; e->lhs->type = T_FLOAT; lt = T_FLOAT;
+                    }
                     Type b = base_of(lt);
                     int ok = lt == rt && (b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING);
                     if (!ok)
