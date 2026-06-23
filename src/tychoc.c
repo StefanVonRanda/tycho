@@ -5742,7 +5742,7 @@ static int self_rebuild_move(Stmt *s) {
  * Recurses through nesting exactly as the deep copy does. */
 static char *gen_eq(Type t, const char *a, const char *b) {
     if (IS_NEWTYPE(t))       return gen_eq(nt_under(t), a, b);
-    if (t == T_STRING)       return sfmt("(strcmp(%s, %s) == 0)", a, b);
+    if (t == T_STRING)       return sfmt("(tycho_str_cmp(%s, %s) == 0)", a, b);
     if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_eq(%s, %s)", a, b);
@@ -6401,7 +6401,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             }
             /* ordering on strings is lexicographic via strcmp */
             if (is_cmp(e->op) && base_of(e->lhs->type) == T_STRING)   /* string or a string newtype */
-                return sfmt("(strcmp(%s, %s) %s 0)", l, r, op_str(e->op));
+                return sfmt("(tycho_str_cmp(%s, %s) %s 0)", l, r, op_str(e->op));
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }
     }

@@ -4128,7 +4128,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
                 # str + non-(str/char) falls through to the operand-type check below (rejected, like tychoc)
             if is_cmp(op) and lt == "str" and type_of(r, names, types, dc, ctx) == "str":   # lexicographic string compare; BOTH operands must be strings
-                return "(strcmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
+                return "(str_cmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
@@ -6579,7 +6579,7 @@ fn gen_tuple_eq(dc: Decls, ctx: Ctx, ty: string) -> string:
 
 fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str":
-        return "strcmp(" + a + ", " + b + ") == 0"
+        return "str_cmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
         return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
     if is_enum(dc, ctx, ty):
@@ -6806,13 +6806,14 @@ fn preamble() -> string:
     out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int m = snprintf(t, sizeof t, \"%ld\", n); char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
     out = out + "static char* b2s(Arena* ar, long b) { const char* s = b ? \"true\" : \"false\"; long m = (long)strlen(s); char* r = hs(ar, m); memcpy(r, s, (size_t)m); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { long n = ((const long*)s)[-1]; char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
+    out = out + "static int str_cmp(const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; long n = la < lb ? la : lb; int c = n ? memcmp(a, b, (size_t)n) : 0; if (c != 0) return c < 0 ? -1 : 1; return la < lb ? -1 : (la > lb ? 1 : 0); }\n"
     out = out + "static char* s_from_c(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     out = out + "static void hi_puts(const char* s) { fwrite(s, 1, (size_t)((const long*)s)[-1], stdout); }\n"
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = hs(ar, n); memcpy(r, s + a, (size_t)n); return r; }\n"
-    out = out + "static long hi_find(const char* s, const char* sub) { const char* p = strstr(s, sub); return p ? (long)(p - s) : -1; }\n"
+    out = out + "static long hi_find(const char* s, const char* sub) { long ls = ((const long*)s)[-1], lsub = ((const long*)sub)[-1]; if (lsub == 0) return 0; for (long i = 0; i + lsub <= ls; i++) if (memcmp(s + i, sub, (size_t)lsub) == 0) return i; return -1; }\n"
     out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
     out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return s_from_c(ar, v ? v : \"\"); }\n"
@@ -6966,11 +6967,11 @@ fn gen_strlib() -> string:
     # and free with it instead of leaking.
     out := "static Arr_str hi_split(Arena* ar, const char* s, const char* sep) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
-    out = out + "    long n = strlen(s), sl = strlen(sep);\n"
+    out = out + "    long n = ((const long*)s)[-1], sl = ((const long*)sep)[-1];\n"
     out = out + "    if (sl == 0) { Arr_str_push(ar, &r, substr(ar, s, 0, n)); return r; }\n"
     out = out + "    long start = 0, i = 0;\n"
     out = out + "    while (i + sl <= n) {\n"
-    out = out + "        if (strncmp(s + i, sep, sl) == 0) { Arr_str_push(ar, &r, substr(ar, s, start, i)); i += sl; start = i; }\n"
+    out = out + "        if (memcmp(s + i, sep, (size_t)sl) == 0) { Arr_str_push(ar, &r, substr(ar, s, start, i)); i += sl; start = i; }\n"
     out = out + "        else i = i + 1;\n"
     out = out + "    }\n"
     out = out + "    Arr_str_push(ar, &r, substr(ar, s, start, n));\n"
@@ -6997,7 +6998,7 @@ fn gen_strlib() -> string:
 # map delete). Mirroring it byte-for-byte is what makes keys()-order match.
 # Depends on Arr_str.
 fn gen_mhash() -> string:                        # shared string FNV-1a + int SplitMix64 hashes
-    out := "static unsigned long mhash(const char* s) { unsigned long h = 1469598103934665603UL; for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; } return h; }\n"
+    out := "static unsigned long mhash(const char* s) { unsigned long h = 1469598103934665603UL; long n = ((const long*)s)[-1]; for (long i = 0; i < n; i++) { h ^= (unsigned char)s[i]; h *= 1099511628211UL; } return h; }\n"
     out = out + "static unsigned long ikhash(long k) { unsigned long x = (unsigned long)k + 0x9e3779b97f4a7c15UL; x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9UL; x = (x ^ (x >> 27)) * 0x94d049bb133111ebUL; return x ^ (x >> 31); }\n"
     return out
 
@@ -7065,7 +7066,7 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
         return out
     out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
     out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
-    out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
+    out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (str_cmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
     out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; } m->vals[t] = " + vcopy + "; }\n"
     # in-place value projection: find-or-insert, return &slot value (#2). dormant until step 2 routes m[k] here.
     out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, const char* k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
@@ -7073,7 +7074,7 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
     out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
     out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
-    out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && strcmp(m.keys[i], k) != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
+    out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0 && str_cmp(m.keys[i], k) != 0) " + f + "_put(ar, &r, m.keys[i], m.vals[i]); return r; }\n"
     out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.cap; i++) if (m.keys[i] != 0) " + ka + "_push(ar, &r, scopy(ar, m.keys[i])); return r; }\n"
     # structural equality: same length, and every live key in a present in b with
     # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).

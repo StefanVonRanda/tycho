@@ -682,6 +682,18 @@ void tycho_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr wri
 
 long tycho_str_len(const char *s) { return ((const long *)s)[-1]; }   /* O(1): the length header */
 
+/* Byte-safe lexicographic compare: -1/0/1, using the length headers (NOT NUL
+ * termination) so a string with an interior '\0' (e.g. from read_file of a binary
+ * file) compares by its true bytes. Replaces strcmp everywhere a Tycho string is
+ * compared (==, !=, <, >, <=, >=, map keys, array equality). */
+int tycho_str_cmp(const char *a, const char *b) {
+    long la = ((const long *)a)[-1], lb = ((const long *)b)[-1];
+    long n = la < lb ? la : lb;
+    int c = n ? memcmp(a, b, (size_t)n) : 0;
+    if (c != 0) return c < 0 ? -1 : 1;
+    return la < lb ? -1 : (la > lb ? 1 : 0);
+}
+
 long tycho_str_get(const char *s, long i) {
     long n = ((const long *)s)[-1];
     if (i < 0 || i >= n) {
@@ -715,10 +727,14 @@ char *tycho_str_substr(Arena *a, const char *s, long start, long end) {
     return r;
 }
 
-/* byte index of the first occurrence of sub in s, or -1 if absent */
+/* byte index of the first occurrence of sub in s, or -1 if absent. Byte-safe:
+ * scans by the length headers, not NUL, so interior '\0' bytes are matched. */
 long tycho_str_find(const char *s, const char *sub) {
-    const char *p = strstr(s, sub);
-    return p ? (long)(p - s) : -1;
+    long ls = ((const long *)s)[-1], lsub = ((const long *)sub)[-1];
+    if (lsub == 0) return 0;
+    for (long i = 0; i + lsub <= ls; i++)
+        if (memcmp(s + i, sub, (size_t)lsub) == 0) return i;
+    return -1;
 }
 
 char *tycho_input(Arena *a) {
@@ -1147,7 +1163,7 @@ TychoArrStr tycho_arr_str_copy(Arena *a, TychoArrStr src) {
 int tycho_arr_str_eq(TychoArrStr x, TychoArrStr y) {
     if (x.len != y.len) return 0;
     for (long i = 0; i < x.len; i++)
-        if (strcmp(x.data[i], y.data[i]) != 0) return 0;
+        if (tycho_str_cmp(x.data[i], y.data[i]) != 0) return 0;
     return 1;
 }
 
@@ -1156,26 +1172,27 @@ int tycho_arr_str_eq(TychoArrStr x, TychoArrStr y) {
  * fields); an empty s yields one empty field. An empty separator has no
  * well-defined splitting, so fail closed rather than guess. */
 TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
-    size_t seplen = strlen(sep);
-    if (seplen == 0) {
+    long sl = ((const long *)s)[-1], pl = ((const long *)sep)[-1];   /* byte-safe: header lengths, not strlen/strstr */
+    if (pl == 0) {
         fprintf(stderr, "tycho: split with an empty separator\n");
         exit(1);
     }
     TychoArrStr r = tycho_arr_str_with_cap(a, 4);
-    const char *start = s;
-    for (;;) {
-        const char *hit = strstr(start, sep);
-        if (!hit) {                              /* last field: rest of string */
-            tycho_arr_str_push(a, &r, tycho_str_from_c(a, start));   /* bare C tail -> headered */
-            break;
+    long start = 0, i = 0;
+    while (i + pl <= sl) {
+        if (memcmp(s + i, sep, (size_t)pl) == 0) {   /* field is [start, i) */
+            char *field = tycho_str_alloc(a, i - start);
+            memcpy(field, s + start, (size_t)(i - start));
+            tycho_arr_str_push(a, &r, field);
+            i += pl; start = i;
+        } else {
+            i++;
         }
-        /* field is [start, hit); build a length-headered Tycho string */
-        size_t flen = (size_t)(hit - start);
-        char *field = tycho_str_alloc(a, (long)flen);   /* headered: push's copy reads the header */
-        memcpy(field, start, flen);
-        tycho_arr_str_push(a, &r, field);
-        start = hit + seplen;
     }
+    /* last field: [start, sl) -- byte-safe, no strlen on a tail that may hold a NUL */
+    char *tail = tycho_str_alloc(a, sl - start);
+    memcpy(tail, s + start, (size_t)(sl - start));
+    tycho_arr_str_push(a, &r, tail);
     return r;
 }
 
@@ -1229,7 +1246,8 @@ static int tycho_map_live(const char *p) { return p != NULL && p != TYCHO_MAP_TO
 
 static unsigned long tycho_si_hash(const char *s) {        /* FNV-1a */
     unsigned long h = 1469598103934665603UL;
-    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211UL; }
+    long n = ((const long *)s)[-1];   /* hash the true bytes (header length), not up to a NUL */
+    for (long i = 0; i < n; i++) { h ^= (unsigned char)s[i]; h *= 1099511628211UL; }
     return h;
 }
 
@@ -1252,7 +1270,7 @@ static long tycho_map_si_find(TychoMapSI m, const char *k) {
     unsigned long mask = (unsigned long)m.cap - 1;
     long i = (long)(tycho_si_hash(k) & mask);
     while (m.keys[i] != NULL) {
-        if (m.keys[i] != TYCHO_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i;
+        if (m.keys[i] != TYCHO_MAP_TOMB && tycho_str_cmp(m.keys[i], k) == 0) return i;
         i = (long)((i + 1) & mask);
     }
     return -1;
@@ -1266,7 +1284,7 @@ static long tycho_map_si_slot(TychoMapSI m, const char *k) {
     long tomb = -1;
     while (m.keys[i] != NULL) {
         if (m.keys[i] == TYCHO_MAP_TOMB) { if (tomb < 0) tomb = i; }
-        else if (strcmp(m.keys[i], k) == 0) return i;
+        else if (tycho_str_cmp(m.keys[i], k) == 0) return i;
         i = (long)((i + 1) & mask);
     }
     return tomb >= 0 ? tomb : i;
@@ -1409,7 +1427,7 @@ static long tycho_map_sf_find(TychoMapSF m, const char *k) {
     unsigned long mask = (unsigned long)m.cap - 1;
     long i = (long)(tycho_si_hash(k) & mask);
     while (m.keys[i] != NULL) {
-        if (m.keys[i] != TYCHO_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i;
+        if (m.keys[i] != TYCHO_MAP_TOMB && tycho_str_cmp(m.keys[i], k) == 0) return i;
         i = (long)((i + 1) & mask);
     }
     return -1;
@@ -1421,7 +1439,7 @@ static long tycho_map_sf_slot(TychoMapSF m, const char *k) {
     long tomb = -1;
     while (m.keys[i] != NULL) {
         if (m.keys[i] == TYCHO_MAP_TOMB) { if (tomb < 0) tomb = i; }
-        else if (strcmp(m.keys[i], k) == 0) return i;
+        else if (tycho_str_cmp(m.keys[i], k) == 0) return i;
         i = (long)((i + 1) & mask);
     }
     return tomb >= 0 ? tomb : i;

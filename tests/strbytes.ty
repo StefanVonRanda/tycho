@@ -1,0 +1,20 @@
+# Byte-safe strings: a read_file'd string with interior NUL bytes must compare,
+# split, hash, and map-key by its TRUE bytes (length header), not truncated at the
+# first '\0'. Locks the fix that replaced strcmp/strstr with length-aware ops.
+fn main():
+    s := read_file("tests/data/strbytes.bin")
+    print(str(len(s)) + "\n")            # 7
+    parts := split(s, ",")
+    print(str(len(parts)) + "\n")        # 2
+    print(str(len(parts[0])) + " " + str(len(parts[1])) + "\n")   # 3 3
+    if parts[0] == parts[1]:
+        print("eq\n")
+    else:
+        print("ne\n")                    # ne: a\0b != c\0d
+    m := [parts[0]: 1]
+    m[parts[1]] = 2
+    print(str(m[parts[0]]) + " " + str(m[parts[1]]) + "\n")       # 1 2
+    if "a" in m:
+        print("collide\n")
+    else:
+        print("distinct\n")              # interior-NUL key != "a"
