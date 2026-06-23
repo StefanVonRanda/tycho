@@ -1,6 +1,7 @@
 # Example: core:fmath -- float utilities over the float builtins.
 package main
 import "core:fmath"
+import "core:math"     # min/max/clamp/sign moved here (generic)
 
 fn b2i(b: bool) -> int:
     if b:
@@ -10,7 +11,7 @@ fn b2i(b: bool) -> int:
 fn main():
     print("round(3.7)       = " + str(fmath.round(3.7)) + "\n")
     print("trunc(3.7)       = " + str(fmath.trunc(3.7)) + "\n")
-    print("clamp(99,0,10)   = " + str(fmath.clamp(99.0, 0.0, 10.0)) + "\n")
-    print("max(2.5, 7.5)    = " + str(fmath.max(2.5, 7.5)) + "\n")
+    print("clamp(99,0,10)   = " + str(math.clamp(99.0, 0.0, 10.0)) + "\n")
+    print("max(2.5, 7.5)    = " + str(math.max(2.5, 7.5)) + "\n")
     print("lerp(0,10,0.25)  = " + str(fmath.lerp(0.0, 10.0, 0.25)) + "\n")
     print("approx_eq .1+.2=.3 = " + str(b2i(fmath.approx_eq(0.1 + 0.2, 0.3, 0.0001))) + "\n")

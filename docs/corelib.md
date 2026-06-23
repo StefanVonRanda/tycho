@@ -43,10 +43,12 @@ corelib limitation.
 
 ## Packages
 
-- **`math`** — integer utilities: `abs`, `imin`, `imax`, `clamp(x, lo, hi)`, `sign`,
-  `gcd`, `ipow(base, exp)` (exp ≥ 0). (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
-- **`fmath`** — float utilities over the float builtins: `pi`, `e`, `min`, `max`,
-  `clamp`, `sign`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
+- **`math`** — scalar math. `min`/`max`/`clamp(x, lo, hi)` are generic over any
+  comparable type (int/float/string/char) and `sign(x)` over any numeric type
+  (returns an int −1/0/1); `abs`, `gcd`, `ipow(base, exp)` (exp ≥ 0) are integer-
+  specific. (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
+- **`fmath`** — float-only helpers (scalar `min`/`max`/`clamp`/`sign` live in `math`):
+  `pi`, `e`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
   `approx_eq(a, b, eps)`. (No trig — the language has no libm sin/cos builtin.)
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,

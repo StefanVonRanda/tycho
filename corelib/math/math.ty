@@ -1,39 +1,43 @@
-# corelib: integer math utilities. Import with `import "core:math"`, use `math.abs(x)`.
+# corelib: scalar math. Import with `import "core:math"`, use `math.min(a, b)`.
+# min/max/clamp are generic over any comparable type (int/float/string/char) and
+# sign over any numeric type; abs/gcd/ipow are integer-specific. (Float-only
+# helpers -- round/trunc/lerp/pi/e -- live in core:fmath.)
 package math
 
-fn abs(x: int) -> int:
-    # EDGE: abs(min int64) is not representable; negating it would overflow (UB).
-    # Like C labs in practice, that one input returns min int64 itself — checked
-    # explicitly so no signed negation ever overflows.
-    if x == (0 - 9223372036854775807) - 1:
-        return x
-    if x < 0:
-        return 0 - x
-    return x
-
-fn imin(a: int, b: int) -> int:
+fn min(a: $T, b: $T) -> $T where comparable(T):
     if a < b:
         return a
     return b
 
-fn imax(a: int, b: int) -> int:
+fn max(a: $T, b: $T) -> $T where comparable(T):
     if a > b:
         return a
     return b
 
-fn clamp(x: int, lo: int, hi: int) -> int:
+fn clamp(x: $T, lo: $T, hi: $T) -> $T where comparable(T):
     if x < lo:
         return lo
     if x > hi:
         return hi
     return x
 
-fn sign(x: int) -> int:
-    if x < 0:
+fn sign(x: $T) -> int where numeric(T):  # -1 / 0 / 1; the zero is derived as x-x, so this works for int and float without a typed literal
+    z := x - x
+    if x < z:
         return 0 - 1
-    if x > 0:
+    if x > z:
         return 1
     return 0
+
+fn abs(x: int) -> int:
+    # EDGE: abs(min int64) is not representable; negating it would overflow (UB).
+    # Like C labs in practice, that one input returns min int64 itself — checked
+    # explicitly so no signed negation ever overflows. (Floats: use the fabs builtin.)
+    if x == (0 - 9223372036854775807) - 1:
+        return x
+    if x < 0:
+        return 0 - x
+    return x
 
 fn gcd(a: int, b: int) -> int:           # greatest common divisor (Euclid), non-negative
     x := abs(a)

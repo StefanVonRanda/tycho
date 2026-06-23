@@ -1,6 +1,7 @@
-# corelib: float math. Import with `import "core:fmath"`, use `fmath.clamp(x, lo, hi)`.
-# Complements the int-only core:math. sqrt/pow/floor/fabs are float builtins, so
-# these build on them. No trig (the language has no libm sin/cos builtin).
+# corelib: float math. Import with `import "core:fmath"`. The scalar comparators
+# (min/max/clamp/sign) are generic in core:math now; these are the float-specific
+# pieces. sqrt/pow/floor/fabs are float builtins, so these build on them. No trig
+# (the language has no libm sin/cos builtin).
 package fmath
 
 fn pi() -> float:
@@ -8,30 +9,6 @@ fn pi() -> float:
 
 fn e() -> float:
     return 2.718281828459045
-
-fn min(a: float, b: float) -> float:
-    if a < b:
-        return a
-    return b
-
-fn max(a: float, b: float) -> float:
-    if a > b:
-        return a
-    return b
-
-fn clamp(x: float, lo: float, hi: float) -> float:
-    if x < lo:
-        return lo
-    if x > hi:
-        return hi
-    return x
-
-fn sign(x: float) -> float:                  # -1.0 / 0.0 / 1.0
-    if x < 0.0:
-        return 0.0 - 1.0
-    if x > 0.0:
-        return 1.0
-    return 0.0
 
 fn round(x: float) -> float:                 # round half away from zero
     if x < 0.0:

@@ -6,7 +6,7 @@ import "core:math"
 
 fn main():
     print(f"abs={math.abs(0 - 7)},{math.abs(7)},{math.abs(0)}\n")                                # abs=7,7,0
-    print(f"minmax={math.imin(3, 9)},{math.imax(3, 9)}\n")                                       # minmax=3,9
+    print(f"minmax={math.min(3, 9)},{math.max(3, 9)}\n")                                         # minmax=3,9
     print(f"clamp={math.clamp(15, 0, 10)},{math.clamp(0 - 5, 0, 10)},{math.clamp(5, 0, 10)}\n")  # clamp=10,0,5
     print(f"sign={math.sign(0 - 4)},{math.sign(4)},{math.sign(0)}\n")                            # sign=-1,1,0
     print(f"gcd={math.gcd(12, 18)},{math.gcd(17, 5)}\n")                                         # gcd=6,1
