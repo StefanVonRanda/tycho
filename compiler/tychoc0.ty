@@ -622,12 +622,12 @@ fn parse_atom(toks: [Token], pos: mut int) -> Expr:
     elif t.kind == TFStr:                        # f"a{e}b" -> ("a" + str(e) + "b")
         pos = pos + 1
         return desugar_interp(t.text)
-    elif t.kind == TMinus:                       # unary minus: -E  ==>  (0 - E)
-        pos = pos + 1
-        return EBin("-", EInt("0", _el), parse_atom(toks, &pos), _el)
-    elif t.kind == TTilde:                       # unary bitwise NOT: ~E ==> ((0 - E) - 1)
-        pos = pos + 1
-        return EBin("-", EBin("-", EInt("0", _el), parse_atom(toks, &pos), _el), EInt("1", _el), _el)
+    elif t.kind == TMinus:                       # unary minus -E: marker op (operand in L); the
+        pos = pos + 1                            # strict int/float check + the (0 - E) emit live in
+        return EBin("u-", parse_atom(toks, &pos), EInt("0", _el), _el)   # codegen, so `-char` etc. reject like tychoc
+    elif t.kind == TTilde:                        # unary bitwise NOT ~E: marker op; codegen checks the
+        pos = pos + 1                            # operand is EXACTLY int and emits ((0 - E) - 1). Was
+        return EBin("u~", parse_atom(toks, &pos), EInt("0", _el), _el)   # desugared here, which over-accepted ~float/~char
     elif t.kind == TAmp:                         # &place : pass to a mut param
         pos = pos + 1
         return EAddr(parse_postfix(toks, &pos), _el)
@@ -3130,6 +3130,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         EBin(op, l, r, _el):
             if op == "not":                       # logical not -> bool (operand validated in codegen)
                 return "bool"
+            if op == "u-":                        # unary minus -> the operand's (numeric) type
+                return type_of(l, names, types, dc, ctx)
+            if op == "u~":                        # unary bitwise NOT -> int
+                return "int"
             lt := type_of(l, names, types, dc, ctx)
             rt := type_of(r, names, types, dc, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
@@ -4052,6 +4056,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if lt != "bool":
                     die_at(dc, _el, "not needs a bool operand")
                 return "(!" + gen_expr(l, names, types, dc, ctx) + ")"
+            if op == "u-":                        # unary minus: base must be int/float (numeric newtype ok, like tychoc's base_of)
+                if resolve_nt(dc, ctx, lt) != "int" and resolve_nt(dc, ctx, lt) != "float":
+                    die_at(dc, _el, "unary - needs an int or a float")
+                return gen_expr(EBin("-", EInt("0", _el), l, _el), names, types, dc, ctx)   # same (0 - E) emit as the old desugar -> byte-identical
+            if op == "u~":                        # unary bitwise NOT: operand MUST be exactly int (tychoc rejects even a newtype-int it can see; tychoc0 erases so ~newtype-int still accepts -- the eq/unary lanes skip that)
+                if lt != "int":
+                    die_at(dc, _el, "unary ~ needs an int")
+                return gen_expr(EBin("-", EBin("-", EInt("0", _el), l, _el), EInt("1", _el), _el), names, types, dc, ctx)   # same ((0 - E) - 1) emit
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"

@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi ci hooks clean
 
 all: tychoc
 
@@ -213,6 +213,14 @@ parforparity: tychoc
 # no seeds (4 newtype-erasure pairs skipped by design). In CI.
 eqparity: tychoc
 	@python3 fuzz/run_eqparity.py
+
+# unary-operator accept/reject parity: tychoc and tychoc0 must agree on `-x`,
+# `~x`, `not x`. tychoc0 used to desugar `-x`/`~x` into binary arithmetic at
+# parse, so the permissive arithmetic rules over-accepted `~float`, `~char`,
+# `-char` (4 fail-opens) -- tychoc's unary rules are stricter. Deterministic,
+# no seeds (1 newtype-erasure pair skipped). In CI.
+unaryparity: tychoc
+	@python3 fuzz/run_unaryparity.py
 
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
