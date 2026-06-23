@@ -1,0 +1,58 @@
+# keys()/`for k in m` iterate in INSERTION ORDER (not bucket order), and the
+# order is stable under the documented dict semantics:
+#   - first insertion fixes a key's position;
+#   - updating an existing key keeps its position;
+#   - delete then re-insert moves the key to the END.
+# Locks the hash-flooding-hardening invariant (insertion order makes a random
+# hash seed output-invisible). Exercised for string and int keys + a composite
+# value type. See docs/notes/map-hash-dos-plan.md.
+
+struct P:
+    x: int
+    y: int
+
+fn dump_s(m: [string: int]):
+    for k in keys(m):
+        print(k + " ")
+    print("\n")
+
+fn dump_i(m: [int: int]):
+    for k in keys(m):
+        print(str(k) + " ")
+    print("\n")
+
+fn main():
+    # string keys: insert b, a, zzz, m
+    m := []string: int
+    m["b"] = 1
+    m["a"] = 2
+    m["zzz"] = 3
+    m["m"] = 4
+    dump_s(m)                      # b a zzz m
+
+    m["b"] = 99                    # update keeps position
+    dump_s(m)                      # b a zzz m
+
+    delete m["a"]                  # remove from the middle
+    dump_s(m)                      # b zzz m
+    m["a"] = 7                     # re-insert appends to the END
+    dump_s(m)                      # b zzz m a
+
+    # int keys: same guarantees (no clustering by value)
+    im := []int: int
+    im[10] = 1
+    im[3] = 2
+    im[7] = 3
+    dump_i(im)                     # 10 3 7
+    delete im[3]
+    im[3] = 9
+    dump_i(im)                     # 10 7 3
+
+    # composite value type ([string: P]) iterates in insertion order too
+    cm := []string: P
+    cm["q"] = P(1, 2)
+    cm["a"] = P(3, 4)
+    cm["mmm"] = P(5, 6)
+    for k in keys(cm):
+        print(k + " ")
+    print("\n")                    # q a mmm

@@ -1,5 +1,12 @@
 # Map hash-flooding hardening — implementation plan
 
+> **STATUS: SHIPPED 2026-06-23.** Both phases landed in both compilers and all map
+> families (incl. the composite-valued `tycho_mapc%d` codegen families, which this
+> plan originally omitted — they need `ord` too). Verified: fixpoint B==C
+> byte-identical with different per-process seeds, test 217/0, all 4 parity lanes,
+> corelib/conc/ffi, fuzz N=80. Regression: tests/map_insorder.ty. Kept as the
+> implementation record.
+>
 > Internal working note (not part of the public docs surface). Source: a 2026
 > podcast review surfaced this; verified against the code. Design validated on one
 > map family, then reverted — this plan is the dedicated implementation pass.
