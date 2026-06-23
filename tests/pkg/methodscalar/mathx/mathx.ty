@@ -1,0 +1,13 @@
+package mathx
+
+fn triple(n: int) -> int:
+    return n * 3
+
+fn use_int(n: int) -> int:
+    return n.triple()            # same-package UFCS on a scalar (int) receiver
+
+fn shout(s: string) -> string:
+    return s + "!"
+
+fn use_str(s: string) -> string:
+    return s.shout()             # same-package UFCS on a scalar (string) receiver

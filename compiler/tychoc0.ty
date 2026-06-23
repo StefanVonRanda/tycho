@@ -546,6 +546,9 @@ struct Ctx:                   # mutable per-scope / per-function state only
     fusesuf: [string]         # parallel: the C cursor suffix (e.g. "3_0") -> _fd3_0/_fl3_0/_fc3_0
     fusety: [string]          # parallel: scalar element type ("int" | "float") for the grow hook
     line: int               # current statement source line, for resolve/codegen diagnostics
+    curpkg: string            # current function's package prefix ("mathx__", or "" if unmangled/main); lets a
+                              # UFCS method on a NON-package-typed receiver (e.g. a scalar) find a same-package
+                              # method whose mangled name can't be derived from the receiver type
 
 struct Program:
     structs: [StructDef]
@@ -2932,8 +2935,11 @@ fn sig_functype(dc: Decls, name: string) -> string:
 # parse) to a call-on-expression with an EField callee. At codegen, if the field
 # name isn't a fn-typed struct field but IS a free fn whose first parameter has
 # the receiver's type, it's a method call -> foo(recv, args). Static dispatch;
-# mirrors tychoc. (Bare field name resolves against package main; a same-package
-# method would need its prefix threaded — deferred, like tychoc's scope.)
+# mirrors tychoc. Resolution (ufcs_name) tries the bare name, then the receiver
+# TYPE's package (geom__Circle -> geom__area), then the CURRENT function's package
+# (ctx.curpkg) -- the last covers a same-package method on a receiver whose type
+# carries no package prefix (a scalar/builtin), which the receiver-type lookup
+# can't reach. This is tychoc's package scope, threaded through ctx.curpkg.
 fn efield_fname(e: Expr) -> string:               # field name if e is EField, else ""
     match e:
         EField(b, f, _el):
@@ -3034,6 +3040,15 @@ fn struct_fn_field(dc: Decls, sname: string, fname: string) -> bool:   # sname h
     return false
 
 # Method name (matches un()) if `callee` is a UFCS method call, else "".
+# The package prefix of a mangled function name: "mathx__use_int" -> "mathx__".
+# "" if unmangled (single-file fn) or a leading-"__" compiler-internal name
+# (__par<N> chunk procs), which carry no user package.
+fn pkg_prefix_of(name: string) -> string:
+    us := find(name, "__")
+    if us > 0:
+        return substr(name, 0, us + 2)
+    return ""
+
 fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr) -> string:
     fname := efield_fname(callee)
     if fname == "":
@@ -3057,6 +3072,11 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
         sj := map_get(dc.sigmap, qn, -1)
         if sj >= 0 and len(dc.sigs[sj].ptypes) >= 1 and dc.sigs[sj].ptypes[0] == bt:
             return qn
+    if ctx.curpkg != "":                          # same-package method on a receiver whose TYPE carries no
+        cn := ctx.curpkg + fname                  # package prefix (a scalar/builtin): try <curpkg>__method
+        sk := map_get(dc.sigmap, cn, -1)
+        if sk >= 0 and len(dc.sigs[sk].ptypes) >= 1 and dc.sigs[sk].ptypes[0] == bt:
+            return cn
     return ""
 
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
@@ -3446,11 +3466,11 @@ fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hi
 # expression built with this ctx allocate into `o` (an arena lvalue string like
 # "&_t" / "_parent", or "0" for malloc).
 fn with_owner(dc: Decls, ctx: Ctx, o: string) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, o, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line, ctx.curpkg)
 
 # set the current statement source line (for resolve/codegen diagnostics)
 fn with_line(ctx: Ctx, n: int) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, n)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, n, ctx.curpkg)
 
 # a statement's source line (0 for the no-payload variants -- callers fall back to ctx.line)
 fn stmt_line(s: Stmt) -> int:
@@ -3876,7 +3896,7 @@ fn enter_block(dc: Decls, ctx: Ctx, base: int) -> Ctx:
     d := ctx.depth + 1
     nb := ctx.bbases                              # push this block's entry index (depth d -> nb[d-1])
     push(nb, base)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, "&_b" + str(d), d, nb, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line, ctx.curpkg)
 
 # C lvalue of the current block's arena.
 fn cur_arena(dc: Decls, ctx: Ctx) -> string:
@@ -3911,7 +3931,7 @@ fn loop_frees(dc: Decls, ctx: Ctx) -> string:
 # Mark a block ctx as a loop body: its own depth becomes the boundary that an
 # enclosed break/continue frees down to (nested if-blocks inherit it via enter_block).
 fn in_loop(ctx: Ctx) -> Ctx:
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.depth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line, ctx.curpkg)
 
 # Emitted C name for a USER variable / parameter / function identifier. Prefixed so a
 # user name can never collide with tychoc0's emitted runtime helpers (sc/hs/amem/i2s/
@@ -5192,7 +5212,7 @@ fn add_fuse(ctx: Ctx, nm: string, suf: string, ety: string) -> Ctx:
     push(fa, nm)
     push(fs, suf)
     push(ft, ety)
-    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, fa, fs, ft, ctx.line)
+    return Ctx(ctx.vparams, ctx.saccums, ctx.rettype, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, fa, fs, ft, ctx.line, ctx.curpkg)
 
 # Return the fusible scalar arrays of `body` as parallel (name, cursor-suffix,
 # elem-type) lists. A candidate qualifies iff: scalar int/float local (the env
@@ -6349,7 +6369,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
             push(saccums, raw[si])
         si = si + 1
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
-    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string, 0)
+    fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string, 0, pkg_prefix_of(f.name))
     if f.name == "main":
         # root arena + a child scope; the scope parents every top-level call.
         return "int main(int argc, char **argv) {\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
@@ -10436,7 +10456,7 @@ fn main():
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
     dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums))
-    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
+    ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
     pars := []ParInfo                                 # CC-3: parallel-for sites
@@ -10451,7 +10471,7 @@ fn main():
             sigmap[funcs[i].name] = i
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
-    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0)
+    ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     # generics: expand `$T` templates into concrete instances, then rebuild the
     # sig tables from the monomorphized program (templates dropped, instances added)
     prog = monomorphize_program(prog, dc, ctx)
