@@ -1,0 +1,34 @@
+# Gap fix (higher-order generics): a generic with a `fn($T)->$T` parameter,
+# instantiated at multiple element types -- the typaram is inferred by structurally
+# matching the function-typed parameter against the concrete function argument.
+fn gmap(xs: [$T], f: fn($T) -> $T) -> [$T]:
+    out := []
+    for v in xs:
+        push(out, f(v))
+    return out
+
+fn gfilter(xs: [$T], keep: fn($T) -> int) -> [$T]:   # keep(x) nonzero -> retain
+    out := []
+    for v in xs:
+        if keep(v) != 0:
+            push(out, v)
+    return out
+
+fn inc(x: int) -> int:
+    return x + 1
+
+fn even(x: int) -> int:
+    if x % 2 == 0:
+        return 1
+    return 0
+
+fn bang(s: string) -> string:
+    return s + "!"
+
+fn main():
+    a := gmap([1, 2, 3], inc)
+    println(str(a[0]) + str(a[2]))                       # 24
+    b := gfilter([1, 2, 3, 4], even)
+    println(str(len(b)) + ":" + str(b[0]) + str(b[1]))   # 2:24
+    c := gmap(["a", "b"], bang)                           # string instance (2nd)
+    println(c[0] + c[1])                                  # a!b!

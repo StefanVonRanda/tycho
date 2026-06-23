@@ -3184,6 +3184,19 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Result(" + type_of(args[0], names, types, dc, ctx) + ",)"
             if name == "Err":
                 return "Result(," + type_of(args[0], names, types, dc, ctx) + ")"
+            gsi := map_get(dc.sigmap, name, -1)
+            if gsi >= 0 and ty_is_generic(dc.sigs[gsi].ret):   # generic call: infer type args from the argument types and substitute the CONCRETE return, so a generic result can feed a bound var or another generic (matches tychoc; was returning the template's "$T")
+                gbn := []string
+                gbt := []string
+                gok := true
+                gk := 0
+                for gk < len(dc.sigs[gsi].ptypes) and gk < len(args):
+                    if ty_is_generic(dc.sigs[gsi].ptypes[gk]):
+                        if not match_typaram_str(dc.sigs[gsi].ptypes[gk], type_of(args[gk], names, types, dc, ctx), &gbn, &gbt):
+                            gok = false
+                    gk = gk + 1
+                if gok:
+                    return resolve_nt(dc, ctx, subst_field_type(dc.sigs[gsi].ret, gbn, gbt))
             return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
 
 fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
@@ -8688,6 +8701,17 @@ fn gen_inst_mangle(ty: string) -> string:
         col := find_top_colon(inner)
         if col >= 0:
             return "map_" + gen_inst_mangle(substr(inner, 0, col)) + "_" + gen_inst_mangle(substr(inner, col + 1, len(inner)))
+    if has_prefix(ty, "fn(") and ty[n - 1] == 41:    # "fn(P...->R)" -> C-identifier-safe fn_<P>..._ret_<R> (must precede the Name(args) arm, which would keep the "->")
+        fin := func_inner(ty)
+        far := func_arrow(fin)
+        if far >= 0:
+            fout := "fn"
+            fps := split_type_args(substr(fin, 0, far))
+            fj := 0
+            for fj < len(fps):
+                fout = fout + "_" + gen_inst_mangle(fps[fj])
+                fj = fj + 1
+            return fout + "_ret_" + gen_inst_mangle(substr(fin, far + 2, len(fin)))
     p := -1
     i := 0
     for i < n:
@@ -8753,6 +8777,25 @@ fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes
         ccol := find_top_colon(cin)
         if pcol >= 0 and ccol >= 0:
             return match_typaram_str(substr(pin, 0, pcol), substr(cin, 0, ccol), &bnames, &btypes) and match_typaram_str(substr(pin, pcol + 1, len(pin)), substr(cin, ccol + 1, len(cin)), &bnames, &btypes)
+    if has_prefix(pat, "fn(") and has_prefix(concrete, "fn(") and pat[pn - 1] == 41 and concrete[cn - 1] == 41:   # "fn(P...->R)" function type: match the param + return types (higher-order generics)
+        fpin := func_inner(pat)
+        fcin := func_inner(concrete)
+        fpa := func_arrow(fpin)
+        fca := func_arrow(fcin)
+        if fpa >= 0 and fca >= 0:
+            if not match_typaram_str(substr(fpin, fpa + 2, len(fpin)), substr(fcin, fca + 2, len(fcin)), &bnames, &btypes):
+                return false
+            fpps := split_type_args(substr(fpin, 0, fpa))
+            fcps := split_type_args(substr(fcin, 0, fca))
+            if len(fpps) != len(fcps):
+                return false
+            fok := true
+            fi := 0
+            for fi < len(fpps):
+                if not match_typaram_str(fpps[fi], fcps[fi], &bnames, &btypes):
+                    fok = false
+                fi = fi + 1
+            return fok
     pp := -1
     cp := -1
     i := 0
@@ -9384,8 +9427,8 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
             if gi >= 0:
                 at := []string
                 k := 0
-                for k < len(margs):
-                    push(at, type_of(margs[k], names, types, dc, ctx))
+                for k < len(a):
+                    push(at, type_of(a[k], names, types, dc, ctx))   # type the ORIGINAL args: a nested generic call resolves to its concrete return via type_of, whereas the mono'd arg names its instance (not yet in dc)
                     k = k + 1
                 newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit)
                 return ECall(newnm, margs, el)

@@ -78,6 +78,15 @@ fn join(xs: [$T], sep: string) -> string where has_str(T):
         out = out + str(v)
     return out
 
-# NOTE: higher-order generics (map/filter with a `fn($T)->$T` parameter) are not
-# included -- inferring a typaram through a function-typed parameter is not yet
-# supported, and emitting such a template currently produces invalid C in tychoc.
+fn map(xs: [$T], f: fn($T) -> $T) -> [$T]:           # higher-order: transform each element
+    out := []
+    for v in xs:
+        push(out, f(v))
+    return out
+
+fn filter(xs: [$T], keep: fn($T) -> int) -> [$T]:    # higher-order: keep(x) nonzero -> retain x
+    out := []
+    for v in xs:
+        if keep(v) != 0:
+            push(out, v)
+    return out

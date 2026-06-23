@@ -1157,6 +1157,11 @@ static Type subst_type(Type t, Type *binds) {
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
     if (is_map(t))  return map_of(subst_type(map_key(t), binds), subst_type(map_val(t), binds));   /* map_of canonicalizes [string:int]->T_MAP_SI */
+    if (IS_FUNC(t)) {   /* fn(P...)->R: substitute each parameter + the return (higher-order generics) */
+        Type ps[8]; int n = func_n(t);
+        for (int i = 0; i < n; i++) ps[i] = subst_type(func_param(t, i), binds);
+        return funcc_of(ps, n, subst_type(func_ret(t), binds));
+    }
     return t;
 }
 
@@ -1170,6 +1175,11 @@ static int has_typaram(Type t) {
     if (IS_OPT(t))  return has_typaram(opt_inner(t));
     if (IS_RES(t))  return has_typaram(g_restypes[RES_ID(t)].ok) || has_typaram(g_restypes[RES_ID(t)].err);
     if (is_map(t))  return has_typaram(map_key(t)) || has_typaram(map_val(t));
+    if (IS_FUNC(t)) {
+        if (has_typaram(func_ret(t))) return 1;
+        for (int i = 0; i < func_n(t); i++) if (has_typaram(func_param(t, i))) return 1;
+        return 0;
+    }
     return 0;
 }
 
@@ -1202,6 +1212,12 @@ static int match_type(Type pat, Type concrete, Type *binds) {
         EnumDef *in = &g_enums[ENUM_ID(concrete)];
         for (int i = 0; i < in->nfrom_args; i++)
             if (!match_type(g_enums[ENUM_ID(pat)].typarams[i], in->from_args[i], binds)) return 0;
+        return 1;
+    }
+    if (IS_FUNC(pat) && IS_FUNC(concrete) && func_n(pat) == func_n(concrete)) {   /* fn(P...)->R: bind $T from the param + return types (higher-order generics) */
+        if (!match_type(func_ret(pat), func_ret(concrete), binds)) return 0;
+        for (int i = 0; i < func_n(pat); i++)
+            if (!match_type(func_param(pat, i), func_param(concrete, i), binds)) return 0;
         return 1;
     }
     return pat == concrete;
@@ -7691,6 +7707,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * 3-word FAT POINTER {env, call, copyenv}; common param/ret types (scalars,
      * strings, scalar arrays) are complete here. */
     for (int i = 0; i < g_nfunctypes; i++) {
+        if (has_typaram(T_FUNC_BASE + i)) continue;   /* a `fn($T)->...` lives only in a generic template; instances use a concrete fn type. Emitting it would be invalid C (a `void` param). */
         FuncTy *f = &g_functypes[i];
         fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
         for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));

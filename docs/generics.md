@@ -251,10 +251,10 @@ worth a monomorphization pass that the compiler *already runs* for its built-ins
   ([§6](#6-when-t-cant-be-inferred) option 1). Monomorphized via an instantiation
   registry that feeds the existing per-type emission. UFCS gets generic "methods"
   for free, since `x.f(a)` is already sugar for `f(x, a)`. Constraints checked at
-  instantiation ([§5](#5-constraints-checked-at-instantiation)). Current
-  limitation: in tychoc0 a generic call nested inside a *declaration's*
-  initializer isn't instantiation-typed — use the direct call forms; the case
-  fails closed (a compile error, never a miscompile).
+  instantiation ([§5](#5-constraints-checked-at-instantiation)). A generic
+  call's result may be fed into another generic — nested (`f(g(x))`) or through a
+  bound variable — and a generic may take a function-typed parameter
+  (`fn($T) -> $T`), so higher-order helpers like `map`/`filter` are expressible.
 - **Generic structs (construction)** (both compilers).
   `struct Box($T)` / `struct Pair($A, $B)` are templates; each construction
   *infers* the type arguments from the field values (`Box(5)` → `Box__int`,
