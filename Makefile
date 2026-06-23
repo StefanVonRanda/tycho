@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity corelib corelib-examples fetch site ffi ci hooks clean
 
 all: tychoc
 
@@ -204,6 +204,15 @@ typeparity: tychoc
 # otherwise invisible -- this closed 12 of them. Deterministic, no seeds. In CI.
 parforparity: tychoc
 	@python3 fuzz/run_parforparity.py
+
+# composite/newtype ==,!= accept/reject parity: tychoc and tychoc0 must agree on
+# whether equality over arrays/options/structs/tuples/maps/newtypes type-checks.
+# tychoc0's structural-eq codegen keyed off the LEFT operand only, so every
+# composite mismatch (`[int] == [string]`, `xs == 7`, ...) over-accepted -- 330
+# of these, invisible to the OUTPUT-only fixpoint differential. Deterministic,
+# no seeds (4 newtype-erasure pairs skipped by design). In CI.
+eqparity: tychoc
+	@python3 fuzz/run_eqparity.py
 
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/

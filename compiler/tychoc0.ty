@@ -4068,6 +4068,16 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
             if (op == "==" or op == "!=") and (is_enum(dc, ctx, lt) or is_struct(dc, ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt) or is_map(lt)):
+                # BOTH operands must have the same (erased) type: the structural eq
+                # codegen below uses `lt` for both, so a mismatched right operand
+                # would be type-punned (read as `lt`). This branch keys off the LEFT
+                # type only, so without this check `[int] == [string]` etc. all
+                # over-accept -- the gap the eq-parity lane caught. Mirrors tychoc's
+                # `lt != rt` reject (src/tychoc.c ~4035). A scalar-left mismatch is
+                # already caught by the `lt != frt` check further down.
+                rty := type_of(r, names, types, dc, ctx)
+                if lt != rty:
+                    die_at(dc, _el, "cannot compare " + lt + " with " + rty)
                 eqx := eq_field(dc, ctx, lt, gen_expr(l, names, types, dc, ctx), gen_expr(r, names, types, dc, ctx))
                 if op == "!=":
                     return "(!(" + eqx + "))"
