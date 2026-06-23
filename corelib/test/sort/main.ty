@@ -16,7 +16,7 @@ fn main():
     print("desc=" + jn(sort.argsort_desc(keys)) + "\n")    # desc=0,2,1,3
     print("orig=" + jn(keys) + "\n")                       # orig=30,10,20,10 (input untouched)
     names := ["carol", "alice", "bob", "alice"]
-    print("strs=" + jn(sort.argsort_str(names)) + "\n")    # strs=1,3,2,0
+    print("strs=" + jn(sort.argsort(names)) + "\n")        # strs=1,3,2,0 (generic argsort over strings)
     # parallel-array use: order words by count descending
     words := ["the", "fox", "jumps"]
     counts := [3, 7, 1]
@@ -29,4 +29,5 @@ fn main():
     xs := [10, 60, 45, 90]
     bk := sort.by_key(xs, fn(x: int) -> int: (x - 50) * (x - 50))
     print("bykey=" + jn(bk) + "\n")                        # bykey=45,60,10,90 (10/90 tie on key 1600: stable keeps 10 first)
-    print("edge=" + str(len(sort.argsort([]))) + str(len(sort.argsort([5]))) + "\n")   # edge=01
+    empty := []int                                         # generic argsort needs a typed empty (can't infer $T from bare [])
+    print("edge=" + str(len(sort.argsort(empty))) + str(len(sort.argsort([5]))) + "\n")   # edge=01

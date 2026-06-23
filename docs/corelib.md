@@ -77,10 +77,11 @@ corelib limitation.
   are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
 - **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
   `map`, `filter`, `reduce`, `count`, `any`. (Predicates return an int used as a bool.)
-- **`sort`** — `argsort(keys)` / `argsort_desc(keys)` (`[int]`) / `argsort_str(keys)`:
-  return the index permutation that orders the keys — the no-generics way to sort
-  anything (keep data in parallel arrays, argsort one, walk all through the permutation).
-  All stable. Plus `by_key(xs, key)`: sort `[int]` by a derived key fn/closure.
+- **`sort`** — `argsort(keys)` / `argsort_desc(keys)`: return the index permutation that
+  orders the keys — generic over any comparable key type (int/float/string/char). The way
+  to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
+  array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
+  derived int key (a fn/closure).
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in tycho, so the
   state is an explicit int threaded via `mut`: `st := rand.seed(42)`,
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
