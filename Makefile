@@ -10,7 +10,7 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity corelib corelib-examples fetch site ffi ci hooks clean
 
 all: tychoc
 
@@ -196,6 +196,14 @@ fuzz-leak: tychoc
 # grammar-boundary divergence in fuzz-reject. Deterministic, no seeds. In `make ci`.
 typeparity: tychoc
 	@python3 fuzz/run_typeparity.py
+
+# parallel-for GATE accept/reject parity: tychoc and tychoc0 must agree on whether
+# a `parallel for` body is legal (no early exit / captured-var mutation / non-
+# reduction outer update / non-int range). The fixpoint differential is output-
+# only and the reject harness gates tychoc alone, so a tychoc0 fail-open here is
+# otherwise invisible -- this closed 12 of them. Deterministic, no seeds. In CI.
+parforparity: tychoc
+	@python3 fuzz/run_parforparity.py
 
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/

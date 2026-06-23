@@ -7742,6 +7742,478 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: mut [string], accop: mut [strin
                     sk = sk + 1
         i = i + 1
 
+# --- parallel-for body GATES (parity with tychoc's pf_scan_stmt + the
+# resolve_parfor read-count post-check) -----------------------------------------
+# A chunk proc is spawned N ways, so its body may NOT early-exit (return / break
+# applying to the parfor / or_return), may NOT mutate or mut-pass a CAPTURED
+# (outer) variable, and may update a captured scalar ONLY as a consistent +/*
+# reduction whose accumulator is read nowhere else. `locals` = names bound INSIDE
+# the chunk (loop var, decls, match/select/for binds); a name in the outer env
+# (`names`) but not in `locals` is a capture. tychoc0 resolve errors are message-
+# only -- the wording need not match tychoc, only the accept/reject verdict (the
+# fuzz/run_parforparity.py lane locks that parity).
+
+fn find_str(xs: [string], s: string) -> int:
+    i := 0
+    for i < len(xs):
+        if xs[i] == s:
+            return i
+        i = i + 1
+    return 0 - 1
+
+# base identifier of a place (v / v[i] / v.f / v[i].f); "" if not a plain place
+fn place_root(e: Expr) -> string:
+    match e:
+        EVar(n, _el):
+            return n
+        EField(b, f, _el):
+            return place_root(b)
+        EIndex(b, ix, _el):
+            return place_root(b)
+        EInt(t, _el):
+            return ""
+        EBool(t, _el):
+            return ""
+        EChar(t, _el):
+            return ""
+        EFloat(t, _el):
+            return ""
+        EStr(t, _el):
+            return ""
+        EBin(o, l, r, _el):
+            return ""
+        ECall(cn, a, _el):
+            return ""
+        EArrLit(es, _el):
+            return ""
+        EArrEmpty(t, _el):
+            return ""
+        EMapEmpty(k, v, _el):
+            return ""
+        EMapLit(ks, vs, _el):
+            return ""
+        ETuple(es, _el):
+            return ""
+        ESlice(b, lo, hi, _el):
+            return ""
+        EAddr(x, _el):
+            return ""
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return ""
+        ECallV(callee, cargs, _el):
+            return ""
+        ESpawn(sid, snm, sa, _el):
+            return ""
+
+fn count_reads_expr(e: Expr, nm: string) -> int:
+    match e:
+        EVar(n, _el):
+            if n == nm:
+                return 1
+            return 0
+        EBin(o, l, r, _el):
+            return count_reads_expr(l, nm) + count_reads_expr(r, nm)
+        ECall(cn, a, _el):
+            c := 0
+            j := 0
+            for j < len(a):
+                c = c + count_reads_expr(a[j], nm)
+                j = j + 1
+            return c
+        EField(b, f, _el):
+            return count_reads_expr(b, nm)
+        EIndex(b, ix, _el):
+            return count_reads_expr(b, nm) + count_reads_expr(ix, nm)
+        EArrLit(es, _el):
+            c := 0
+            j := 0
+            for j < len(es):
+                c = c + count_reads_expr(es[j], nm)
+                j = j + 1
+            return c
+        EMapLit(ks, vs, _el):
+            c := 0
+            j := 0
+            for j < len(ks):
+                c = c + count_reads_expr(ks[j], nm) + count_reads_expr(vs[j], nm)
+                j = j + 1
+            return c
+        ETuple(es, _el):
+            c := 0
+            j := 0
+            for j < len(es):
+                c = c + count_reads_expr(es[j], nm)
+                j = j + 1
+            return c
+        ESlice(b, lo, hi, _el):
+            return count_reads_expr(b, nm) + count_reads_expr(lo, nm) + count_reads_expr(hi, nm)
+        EAddr(x, _el):
+            return count_reads_expr(x, nm)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return count_reads_expr(body, nm)
+        ECallV(callee, cargs, _el):
+            c := count_reads_expr(callee, nm)
+            j := 0
+            for j < len(cargs):
+                c = c + count_reads_expr(cargs[j], nm)
+                j = j + 1
+            return c
+        ESpawn(sid, snm, sa, _el):
+            c := 0
+            j := 0
+            for j < len(sa):
+                c = c + count_reads_expr(sa[j], nm)
+                j = j + 1
+            return c
+        EInt(t, _el):
+            return 0
+        EBool(t, _el):
+            return 0
+        EChar(t, _el):
+            return 0
+        EFloat(t, _el):
+            return 0
+        EStr(t, _el):
+            return 0
+        EArrEmpty(t, _el):
+            return 0
+        EMapEmpty(k, v, _el):
+            return 0
+
+fn count_reads_body(stmts: [Stmt], nm: string) -> int:
+    c := 0
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SDecl(n, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SAssign(n, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SFieldAssign(lv, r, _sl):
+                c = c + count_reads_expr(lv, nm) + count_reads_expr(r, nm)
+            SPrint(e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SReturn(e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SReturnVoid:
+                c = c
+            SIf(cnd, t, el, _sl):
+                c = c + count_reads_expr(cnd, nm) + count_reads_body(t, nm) + count_reads_body(el, nm)
+            SWhile(cnd, b, _sl):
+                c = c + count_reads_expr(cnd, nm) + count_reads_body(b, nm)
+            SForRange(v, a, b, st, body, _sl):
+                c = c + count_reads_expr(a, nm) + count_reads_expr(b, nm) + count_reads_expr(st, nm) + count_reads_body(body, nm)
+            SExpr(e, _sl):
+                c = c + count_reads_expr(e, nm)
+            STypedDecl(n, ty, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SOrReturn(n, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SDestructure(ns, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SMultiAssign(ns, e, _sl):
+                c = c + count_reads_expr(e, nm)
+            SMatch(subj, vars, binds, bodies, _sl):
+                c = c + count_reads_expr(subj, nm)
+                k := 0
+                for k < len(bodies):
+                    c = c + count_reads_body(bodies[k], nm)
+                    k = k + 1
+            SBreak:
+                c = c
+            SContinue:
+                c = c
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
+                k := 0
+                for k < len(svars):
+                    if svars[k] == "recv":
+                        c = c + count_reads_expr(schans[k], nm)
+                    c = c + count_reads_body(sbodies[k], nm)
+                    k = k + 1
+            SParFor(v, a, b, body, pid, _sl):
+                c = c + count_reads_expr(a, nm) + count_reads_expr(b, nm) + count_reads_body(body, nm)
+        i = i + 1
+    return c
+
+# "+"/"*" if e is `n + rest` / `n * rest` with rest not reading n; "" otherwise.
+fn reduction_op(e: Expr, n: string) -> string:
+    match e:
+        EBin(o, l, r, _el):
+            if (o == "+" or o == "*") and is_evar(l, n) and count_reads_expr(r, n) == 0:
+                return o
+            return ""
+        EVar(vn, _el):
+            return ""
+        EInt(t, _el):
+            return ""
+        EBool(t, _el):
+            return ""
+        EChar(t, _el):
+            return ""
+        EFloat(t, _el):
+            return ""
+        EStr(t, _el):
+            return ""
+        ECall(cn, a, _el):
+            return ""
+        EField(b, f, _el):
+            return ""
+        EIndex(b, ix, _el):
+            return ""
+        EArrLit(es, _el):
+            return ""
+        EArrEmpty(t, _el):
+            return ""
+        EMapEmpty(k, v, _el):
+            return ""
+        EMapLit(ks, vs, _el):
+            return ""
+        ETuple(es, _el):
+            return ""
+        ESlice(b, lo, hi, _el):
+            return ""
+        EAddr(x, _el):
+            return ""
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return ""
+        ECallV(callee, cargs, _el):
+            return ""
+        ESpawn(sid, snm, sa, _el):
+            return ""
+
+# true if e is provably a non-int range bound (a captured float/etc. or a non-int
+# literal); for exprs whose type isn't known at lift time we assume int (the
+# resolver still type-checks the generated chunk loop).
+fn pf_bound_nonint(e: Expr, names: [string], types: [string]) -> bool:
+    match e:
+        EFloat(t, _el):
+            return true
+        EStr(t, _el):
+            return true
+        EChar(t, _el):
+            return true
+        EBool(t, _el):
+            return true
+        EVar(n, _el):
+            if has_str(names, n):
+                return base_ty(var_type(names, types, n)) != "int"
+            return false
+        EInt(t, _el):
+            return false
+        EBin(o, l, r, _el):
+            return false
+        ECall(cn, a, _el):
+            return false
+        EField(b, f, _el):
+            return false
+        EIndex(b, ix, _el):
+            return false
+        EArrLit(es, _el):
+            return false
+        EArrEmpty(t, _el):
+            return false
+        EMapEmpty(k, v, _el):
+            return false
+        EMapLit(ks, vs, _el):
+            return false
+        ETuple(es, _el):
+            return false
+        ESlice(b, lo, hi, _el):
+            return false
+        EAddr(x, _el):
+            return false
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return false
+        ECallV(callee, cargs, _el):
+            return false
+        ESpawn(sid, snm, sa, _el):
+            return false
+
+# reject a captured `&v` (mut-pass) or push/pop(capturedAggregate, ...) anywhere
+# in an expression; recurse into every sub-expression.
+fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
+    match e:
+        EAddr(x, _el):
+            r := place_root(x)
+            if r != "" and has_str(names, r) and not has_str(locals, r):
+                die("parallel for cannot pass a captured variable as mut")
+            pf_gate_expr(x, locals, names)
+        ECall(cn, a, _el):
+            if (cn == "push" or cn == "pop") and len(a) >= 1:
+                r := place_root(a[0])
+                if r != "" and has_str(names, r) and not has_str(locals, r):
+                    die("parallel for cannot mutate captured variable in place")
+            j := 0
+            for j < len(a):
+                pf_gate_expr(a[j], locals, names)
+                j = j + 1
+        EBin(o, l, r, _el):
+            pf_gate_expr(l, locals, names)
+            pf_gate_expr(r, locals, names)
+        EField(b, f, _el):
+            pf_gate_expr(b, locals, names)
+        EIndex(b, ix, _el):
+            pf_gate_expr(b, locals, names)
+            pf_gate_expr(ix, locals, names)
+        EArrLit(es, _el):
+            j := 0
+            for j < len(es):
+                pf_gate_expr(es[j], locals, names)
+                j = j + 1
+        EMapLit(ks, vs, _el):
+            j := 0
+            for j < len(ks):
+                pf_gate_expr(ks[j], locals, names)
+                pf_gate_expr(vs[j], locals, names)
+                j = j + 1
+        ETuple(es, _el):
+            j := 0
+            for j < len(es):
+                pf_gate_expr(es[j], locals, names)
+                j = j + 1
+        ESlice(b, lo, hi, _el):
+            pf_gate_expr(b, locals, names)
+            pf_gate_expr(lo, locals, names)
+            pf_gate_expr(hi, locals, names)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            ll := locals
+            j := 0
+            for j < len(ps):
+                push(ll, ps[j])
+                j = j + 1
+            pf_gate_expr(body, ll, names)
+        ECallV(callee, cargs, _el):
+            pf_gate_expr(callee, locals, names)
+            j := 0
+            for j < len(cargs):
+                pf_gate_expr(cargs[j], locals, names)
+                j = j + 1
+        ESpawn(sid, snm, sa, _el):
+            j := 0
+            for j < len(sa):
+                pf_gate_expr(sa[j], locals, names)
+                j = j + 1
+        EVar(n, _el):
+            return
+        EInt(t, _el):
+            return
+        EBool(t, _el):
+            return
+        EChar(t, _el):
+            return
+        EFloat(t, _el):
+            return
+        EStr(t, _el):
+            return
+        EArrEmpty(t, _el):
+            return
+        EMapEmpty(k, v, _el):
+            return
+
+fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: mut [string], accop: mut [string], accnt: mut [int], loopdepth: int):
+    locals := locals0     # block-scoped local copy; caller's set is unaffected
+    i := 0
+    for i < len(stmts):
+        match stmts[i]:
+            SReturn(e, _sl):
+                die("return cannot cross a parallel for")
+            SReturnVoid:
+                die("return cannot cross a parallel for")
+            SBreak:
+                if loopdepth == 0:
+                    die("break cannot apply to a parallel for (chunks cannot stop each other)")
+            SContinue:
+                i = i
+            SOrReturn(n, e, _sl):
+                die("or_return cannot cross a parallel for (no early exit from a chunk)")
+            SDecl(n, e, _sl):
+                pf_gate_expr(e, locals, names)
+                push(locals, n)
+            STypedDecl(n, ty, e, _sl):
+                pf_gate_expr(e, locals, names)
+                push(locals, n)
+            SDestructure(ns, e, _sl):
+                pf_gate_expr(e, locals, names)
+                k := 0
+                for k < len(ns):
+                    push(locals, ns[k])
+                    k = k + 1
+            SAssign(n, e, _sl):
+                if has_str(locals, n):
+                    pf_gate_expr(e, locals, names)
+                else:
+                    rop := reduction_op(e, n)
+                    if rop == "":
+                        die("parallel for may update an outer variable only as a reduction (n = n + e or n = n * e)")
+                    ai := find_str(accn, n)
+                    if ai >= 0:
+                        if accop[ai] != rop:
+                            die("parallel for accumulator must use one reduction op consistently")
+                        accnt[ai] = accnt[ai] + 1
+                    else:
+                        push(accn, n)
+                        push(accop, rop)
+                        push(accnt, 1)
+                    pf_gate_expr(e, locals, names)
+            SMultiAssign(ns, e, _sl):
+                k := 0
+                for k < len(ns):
+                    if not has_str(locals, ns[k]):
+                        die("parallel for cannot assign to captured variable")
+                    k = k + 1
+                pf_gate_expr(e, locals, names)
+            SFieldAssign(lv, r, _sl):
+                root := place_root(lv)
+                if root != "" and has_str(names, root) and not has_str(locals, root):
+                    die("parallel for cannot mutate captured variable in place")
+                pf_gate_expr(lv, locals, names)
+                pf_gate_expr(r, locals, names)
+            SPrint(e, _sl):
+                pf_gate_expr(e, locals, names)
+            SExpr(e, _sl):
+                pf_gate_expr(e, locals, names)
+            SIf(cnd, t, el, _sl):
+                pf_gate_expr(cnd, locals, names)
+                pf_gate_body(t, locals, names, &accn, &accop, &accnt, loopdepth)
+                pf_gate_body(el, locals, names, &accn, &accop, &accnt, loopdepth)
+            SWhile(cnd, b, _sl):
+                pf_gate_expr(cnd, locals, names)
+                pf_gate_body(b, locals, names, &accn, &accop, &accnt, loopdepth + 1)
+            SForRange(v, a, b, st, body, _sl):
+                pf_gate_expr(a, locals, names)
+                pf_gate_expr(b, locals, names)
+                pf_gate_expr(st, locals, names)
+                fl := locals
+                push(fl, v)
+                pf_gate_body(body, fl, names, &accn, &accop, &accnt, loopdepth + 1)
+            SMatch(subj, vars, binds, bodies, _sl):
+                pf_gate_expr(subj, locals, names)
+                k := 0
+                for k < len(bodies):
+                    ml := locals
+                    bj := 0
+                    for bj < len(binds[k]):
+                        push(ml, binds[k][bj])
+                        bj = bj + 1
+                    pf_gate_body(bodies[k], ml, names, &accn, &accop, &accnt, loopdepth)
+                    k = k + 1
+            SSelect(uid, svars, schans, sbinds, sbodies, _sl):
+                k := 0
+                for k < len(svars):
+                    if svars[k] == "recv":
+                        pf_gate_expr(schans[k], locals, names)
+                    sl := locals
+                    if svars[k] == "recv" and sbinds[k] != "":
+                        push(sl, sbinds[k])
+                    pf_gate_body(sbodies[k], sl, names, &accn, &accop, &accnt, loopdepth)
+                    k = k + 1
+            SParFor(v, a, b, body, pid, _sl):
+                # nested parallel for: its OWN lift gates its body; here only the
+                # bound exprs are evaluated in the enclosing chunk's scope.
+                pf_gate_expr(a, locals, names)
+                pf_gate_expr(b, locals, names)
+        i = i + 1
+
 # "fn(a,b->r)" -> fills `parts` with the param types, returns the return type.
 # Depth-aware over nested ([{ so a nested fn-type's own , and -> don't split.
 fn fnty_split(ft: string, parts: mut [string]) -> string:
@@ -8518,6 +8990,22 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             # CC-3: lift the body to a chunk proc __par<pid>(__plo, __phi,
             # captures...) -> partial(s); register its spawn site (the driver
             # emits the trampoline) and the ParInfo the site codegen reads.
+            # GATE the body first (parity with tychoc's pf_scan_stmt): reject an
+            # early exit, a captured-variable mutation/mut-pass, or a non-reduction
+            # outer update -- a chunk that does any of these silently miscompiles.
+            gloc := []string
+            push(gloc, v)
+            gacc := []string
+            gaccop := []string
+            gaccnt := []int
+            pf_gate_body(body, gloc, names, &gacc, &gaccop, &gaccnt, 0)
+            if pf_bound_nonint(a, names, types) or pf_bound_nonint(b, names, types):
+                die("parallel for needs an int range")
+            gci := 0
+            for gci < len(gacc):
+                if count_reads_body(body, gacc[gci]) != gaccnt[gci]:
+                    die("parallel for reduction accumulator may only be updated, not read")
+                gci = gci + 1
             na := lift_expr(a, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             nbb := lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
             raw := []string
