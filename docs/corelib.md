@@ -67,19 +67,16 @@ corelib limitation.
   drop out), `is_abs`, `split_path(p) -> (dir, base)` (the inverse of `join`), and
   `clean` (lexical normalize: collapse `//`, drop `.`, resolve `..` but never above
   the root or past a leading `..`). `last_slash(s)` is the shared scan helper.
-- **`arrays`** — `[int]` utilities: `contains`, `index_of` (−1 if absent), `count`, `sum`,
-  `product`, `imin`, `imax`, `reverse`, `is_sorted`, `sort` (ascending), `take(xs, n)`,
-  `drop(xs, n)`, `concat(a, b)`, `fill(n, v)`, `dedup` (consecutive — sort first for a full
-  dedup). All return a new array — value semantics, the input is never mutated. (`push`/
-  `pop`/`len`/`range` are builtins.)
-- **`arrays_str`** — the same over `[string]` (no overloading in tycho, so per-type variants
-  are sibling packages): `contains`, `index_of`, `count`, `join(xs, sep)`, `smin`, `smax`
-  (lexicographic), `reverse`, `is_sorted`, `sort`.
-- **`arrays_float`** — the same over `[float]`: `contains`, `index_of`, `count`, `sum`,
-  `fmin`, `fmax`, `reverse`, `is_sorted`, `sort`. (Equality/`contains` use exact float `==`.)
-- **`iter`** — higher-order over `[int]`, each taking a `fn`/closure: `map`, `filter`,
-  `reduce`, `count`, `any`.
-- **`iter_str`**, **`iter_float`** — the same five over `[string]` / `[float]`.
+- **`arrays`** — generic utilities over any element type `[T]`: `contains`, `index_of`
+  (−1 if absent), `count`, `reverse`, `take(xs, n)`, `drop(xs, n)`, `concat(a, b)`,
+  `fill(n, v)`, `dedup` (consecutive — sort first for a full dedup); `sort` (ascending),
+  `is_sorted`, `min`, `max` (`where comparable` — int/char/float/string); `sum`, `product`
+  (`where numeric` — int/float); `join(xs, sep)` (`where` the element converts to a string).
+  All return a new array — value semantics, the input is never mutated. `min`/`max`/`sum`/
+  `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
+  are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
+- **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
+  `map`, `filter`, `reduce`, `count`, `any`. (Predicates return an int used as a bool.)
 - **`sort`** — `argsort(keys)` / `argsort_desc(keys)` (`[int]`) / `argsort_str(keys)`:
   return the index permutation that orders the keys — the no-generics way to sort
   anything (keep data in parallel arrays, argsort one, walk all through the permutation).

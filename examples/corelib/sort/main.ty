@@ -3,7 +3,7 @@
 # returned index permutation. Here we sort people by age.
 package main
 import "core:sort"
-import "core:arrays_str"
+import "core:arrays"
 
 fn main():
     names := ["charlie", "alice", "bob"]
@@ -13,7 +13,7 @@ fn main():
     by_age := []string
     for i in range(len(order)):
         push(by_age, names[order[i]])
-    print("by age (asc) = " + arrays_str.join(by_age, ", ") + "\n")   # alice, bob, charlie
+    print("by age (asc) = " + arrays.join(by_age, ", ") + "\n")   # alice, bob, charlie
 
     oldest := sort.argsort_desc(ages)
     print("oldest       = " + names[oldest[0]] + "\n")                # charlie

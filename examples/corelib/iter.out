@@ -1,5 +1,5 @@
-map dbl, [4]  = 10
-count even    = 2
-filter even n = 2
-reduce sum    = 15
-reduce prod   = 120
+map dbl     = 2,4,6,8,10
+count even  = 2
+filter even = 2,4
+reduce sum  = 15
+str map     = hi!,yo!

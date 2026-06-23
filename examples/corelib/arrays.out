@@ -1,7 +1,8 @@
-sum         = 20
-imax        = 8
-contains 8  = 1
-index_of 8  = 2
-count 3     = 2
-sorted ends = 1..8
+int sum     = 20
+int max/min = 8/1
+int sorted  = 1,3,3,5,8
+int count 3 = 2
 input kept  = 5
+str sorted  = apple,fig,pear
+str max     = pear
+float sum   = 4.5

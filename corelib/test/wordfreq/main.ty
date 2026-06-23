@@ -1,5 +1,5 @@
 # corelib DOGFOOD: a word-frequency report written the way a user would --
-# core:strings tokenizes, a [string: int] map counts, keys() + core:arrays_str
+# core:strings tokenizes, a [string: int] map counts, keys() + core:arrays
 # + core:sort order the report (lexicographic sort first, then a STABLE
 # argsort_desc on counts = count-desc with alphabetical ties). This is the
 # cross-package integration test: if the pieces don't compose, this breaks
@@ -7,7 +7,7 @@
 package main
 import "core:strings"
 import "core:sort"
-import "core:arrays_str"
+import "core:arrays"
 
 fn main():
     text := "The quick brown fox jumps over the lazy dog." + chr(10)
@@ -23,7 +23,7 @@ fn main():
             t := strings.trim(w)
             if len(t) > 0:
                 counts[t] = map_get(counts, t, 0) + 1
-    words := arrays_str.sort(keys(counts))
+    words := arrays.sort(keys(counts))
     nums := []int
     for w in words:
         push(nums, map_get(counts, w, 0))

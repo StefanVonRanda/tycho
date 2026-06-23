@@ -1,9 +1,7 @@
-map=2,10
-map-ref=6
-filter!=2: 1,3,4,5
+map=2,4,6,8,10
+mapcl=11,12,13,14,15
+filter=1,3,5
 sum=15
-prod=120
-wsum=150
-count!=3: 4
-any-neg=true
-any-none=false
+count!=4 any!=2=1
+smap=hi!,!,yo!,! scount=2
+freduce=6.0

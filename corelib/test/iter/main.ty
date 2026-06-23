@@ -1,37 +1,34 @@
-# corelib test: exercises core:iter with both plain lambdas and CAPTURING closures
-# across the package boundary. The C compiler and tychoc0 must agree (corelib/run.sh).
 package main
+# corelib test: the GENERIC core:iter across int / string / float, with plain fns
+# and capturing closures. All three compile paths must agree (corelib/run.sh).
 import "core:iter"
+import "core:arrays"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
 
 fn dbl(x: int) -> int:
     return x + x
 
+fn nonempty(s: string) -> int:
+    if len(s) > 0:
+        return 1
+    return 0
+
 fn main():
     xs := [1, 2, 3, 4, 5]
-
-    # plain lambda
-    doubled := iter.map(xs, fn(x: int) -> int: x * 2)
-    print(f"map={doubled[0]},{doubled[4]}\n")                 # map=2,10
-
-    # a top-level function reference as the argument
-    print(f"map-ref={iter.map(xs, dbl)[2]}\n")                # map-ref=6
-
-    # filter with a capturing closure; nonzero (incl. NEGATIVE) return retains:
-    # x=1 yields -1 and is kept, only x=2 (yields 0) drops
-    thr := 2
-    keep := iter.filter(xs, fn(x: int) -> int: x - thr)
-    print(f"filter!={thr}: {keep[0]},{keep[1]},{keep[2]},{keep[3]}\n")   # filter!=2: 1,3,4,5
-
-    # reduce: sum and product
-    print(f"sum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)}\n")        # sum=15
-    print(f"prod={iter.reduce(xs, 1, fn(a: int, b: int) -> int: a * b)}\n")       # prod=120
-
-    # reduce with a captured weight
-    w := 10
-    print(f"wsum={iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b * w)}\n")   # wsum=150
-
-    # count + any honor the documented nonzero contract: negative returns count too
+    println("map=" + arrays.join(iter.map(xs, dbl), ","))                          # 2,4,6,8,10
+    thr := 10
+    println("mapcl=" + arrays.join(iter.map(xs, fn(x: int) -> int: x + thr), ","))  # capturing closure
+    println("filter=" + arrays.join(iter.filter(xs, fn(x: int) -> int: x % 2), ",")) # odds
+    println("sum=" + str(iter.reduce(xs, 0, fn(a: int, b: int) -> int: a + b)))      # 15
     lim := 3
-    print(f"count!={lim}: {iter.count(xs, fn(x: int) -> int: x - lim)}\n")       # count!=3: 4
-    print(f"any-neg={iter.any(xs, fn(x: int) -> int: 0 - x)}\n")                 # any-neg=true (all negative, all nonzero)
-    print(f"any-none={iter.any(xs, fn(x: int) -> int: x / 100)}\n")              # any-none=false (all yield 0)
+    println("count!=" + str(iter.count(xs, fn(x: int) -> int: x - lim)) + " any!=2=" + str(b2i(iter.any(xs, fn(x: int) -> int: x - 2))))
+    # string instance (map closure + a named predicate)
+    ws := ["hi", "", "yo", ""]
+    println("smap=" + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ",") + " scount=" + str(iter.count(ws, nonempty)))
+    # float instance (reduce)
+    fs := [1.0, 2.0, 3.0]
+    println("freduce=" + str(iter.reduce(fs, 0.0, fn(a: float, b: float) -> float: a + b)))   # 6.0

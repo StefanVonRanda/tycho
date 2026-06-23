@@ -1,3 +1,0 @@
-map shout[1]  = TYCHO
-filter len>=4 = 2
-reduce concat = hitychogorust

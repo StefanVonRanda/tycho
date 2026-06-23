@@ -1,30 +1,24 @@
 package main
-# corelib test: exercises core:arrays; C compiler and tychoc0 must agree (corelib/run.sh).
+# corelib test: the GENERIC core:arrays across int / string / float. The C
+# compiler, tychoc0 --bundle, and standalone tychoc0 must all agree (corelib/run.sh).
+# min/max/sum/product require a non-empty array (they seed from xs[0]).
 import "core:arrays"
 
-fn b2i(b: bool) -> int:                       # str(bool) is not available yet; fold to int
+fn b2i(b: bool) -> int:                       # str(bool) is not available; fold to int
     if b:
         return 1
     return 0
 
 fn main():
     xs := [5, 3, 8, 3, 1]
-    print(f"sum={arrays.sum(xs)} max={arrays.imax(xs)} min={arrays.imin(xs)}\n")     # sum=20 max=8 min=1
-    print(f"idx3={arrays.index_of(xs, 3)} idx9={arrays.index_of(xs, 9)} cnt3={arrays.count(xs, 3)} has8={b2i(arrays.contains(xs, 8))}\n")
-    sorted := arrays.sort(xs)
-    print(f"s0={sorted[0]} s4={sorted[4]} sok={b2i(arrays.is_sorted(sorted))} origok={b2i(arrays.is_sorted(xs))}\n")
-    rev := arrays.reverse(xs)
-    print(f"rev0={rev[0]} rev4={rev[4]}\n")                                          # rev0=1 rev4=5
-    e := []int                                                                       # documented empty sentinels: 0
-    print(f"esum={arrays.sum(e)} emax={arrays.imax(e)} emin={arrays.imin(e)}\n")     # esum=0 emax=0 emin=0
-    # ---- extensions: product / take / drop / concat / fill / dedup ----
-    ys := [1, 2, 3, 4]
-    print(f"product={arrays.product(ys)} fillsum={arrays.sum(arrays.fill(3, 7))}\n")  # product=24 fillsum=21
-    tk := arrays.take(ys, 2)
-    dr := arrays.drop(ys, 2)
-    print(f"take={tk[0]},{tk[1]} drop={dr[0]},{dr[1]}\n")                             # take=1,2 drop=3,4
-    cc := arrays.concat([1, 2], [3, 4])
-    print(f"concat_len={len(cc)} concat_sum={arrays.sum(cc)}\n")                      # concat_len=4 concat_sum=10
-    dd := arrays.dedup([1, 1, 2, 2, 2, 3, 1])                                         # consecutive only
-    print(f"dedup_len={len(dd)} dedup_sum={arrays.sum(dd)}\n")                        # dedup_len=4 dedup_sum=7
-    print(f"take0={len(arrays.take(ys, 0))} drop_all={len(arrays.drop(ys, 9))}\n")    # take0=0 drop_all=0
+    println("sum=" + str(arrays.sum(xs)) + " product=" + str(arrays.product([1, 2, 3, 4])) + " max=" + str(arrays.max(xs)) + " min=" + str(arrays.min(xs)))
+    println("idx3=" + str(arrays.index_of(xs, 3)) + " idx9=" + str(arrays.index_of(xs, 9)) + " cnt3=" + str(arrays.count(xs, 3)) + " has8=" + str(b2i(arrays.contains(xs, 8))))
+    println("sort=" + arrays.join(arrays.sort(xs), ",") + " sok=" + str(b2i(arrays.is_sorted(arrays.sort(xs)))) + " origok=" + str(b2i(arrays.is_sorted(xs))))
+    println("rev=" + arrays.join(arrays.reverse(xs), ",") + " take=" + arrays.join(arrays.take(xs, 2), ",") + " drop=" + arrays.join(arrays.drop(xs, 3), ","))
+    println("concat=" + arrays.join(arrays.concat([1, 2], [3, 4]), ",") + " fill=" + arrays.join(arrays.fill(3, 7), ",") + " dedup=" + arrays.join(arrays.dedup([1, 1, 2, 2, 2, 3, 1]), ","))
+    # strings: comparable + has_str (NOT numeric)
+    ss := ["pear", "apple", "fig", "apple"]
+    println("s_sort=" + arrays.join(arrays.sort(ss), ",") + " s_min=" + arrays.min(ss) + " s_max=" + arrays.max(ss) + " s_has=" + str(b2i(arrays.contains(ss, "fig"))) + " s_dedup=" + arrays.join(arrays.dedup(arrays.sort(ss)), ","))
+    # floats: numeric + comparable + has_str
+    fs := [1.5, 0.5, 2.5]
+    println("f_sum=" + str(arrays.sum(fs)) + " f_min=" + str(arrays.min(fs)) + " f_max=" + str(arrays.max(fs)) + " f_sort=" + arrays.join(arrays.sort(fs), ","))

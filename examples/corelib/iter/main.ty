@@ -1,8 +1,9 @@
-# Example: core:iter -- higher-order helpers over [int] (map/filter/reduce/...).
-# Predicates return an int (nonzero = keep); map/reduce take a fn or closure.
+# Example: core:iter -- ONE generic set of higher-order helpers over any element
+# type. Each takes a fn or closure; predicates return an int (nonzero = keep).
 # Lambdas are expression-bodied; a multi-line body must be a named fn.
 package main
 import "core:iter"
+import "core:arrays"
 
 fn dbl(x: int) -> int:
     return x * 2
@@ -14,10 +15,11 @@ fn even(x: int) -> int:                  # nonzero -> keep
 
 fn main():
     nums := [1, 2, 3, 4, 5]
-    print("map dbl, [4]  = " + str(iter.map(nums, dbl)[4]) + "\n")        # 10
-    print("count even    = " + str(iter.count(nums, even)) + "\n")        # 2
-    print("filter even n = " + str(len(iter.filter(nums, even))) + "\n")  # 2
-    sum := iter.reduce(nums, 0, fn(a: int, b: int) -> int: a + b)         # inline closure
-    print("reduce sum    = " + str(sum) + "\n")                           # 15
-    prod := iter.reduce(nums, 1, fn(a: int, b: int) -> int: a * b)
-    print("reduce prod   = " + str(prod) + "\n")                          # 120
+    print("map dbl     = " + arrays.join(iter.map(nums, dbl), ",") + "\n")          # 2,4,6,8,10
+    print("count even  = " + str(iter.count(nums, even)) + "\n")                    # 2
+    print("filter even = " + arrays.join(iter.filter(nums, even), ",") + "\n")      # 2,4
+    sum := iter.reduce(nums, 0, fn(a: int, b: int) -> int: a + b)                   # inline closure
+    print("reduce sum  = " + str(sum) + "\n")                                       # 15
+
+    ws := ["hi", "yo"]                                                              # generic over strings too
+    print("str map     = " + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ",") + "\n")   # hi!,yo!
