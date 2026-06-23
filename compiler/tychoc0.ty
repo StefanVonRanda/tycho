@@ -7981,54 +7981,6 @@ fn reduction_op(e: Expr, n: string) -> string:
         ESpawn(sid, snm, sa, _el):
             return ""
 
-# true if e is provably a non-int range bound (a captured float/etc. or a non-int
-# literal); for exprs whose type isn't known at lift time we assume int (the
-# resolver still type-checks the generated chunk loop).
-fn pf_bound_nonint(e: Expr, names: [string], types: [string]) -> bool:
-    match e:
-        EFloat(t, _el):
-            return true
-        EStr(t, _el):
-            return true
-        EChar(t, _el):
-            return true
-        EBool(t, _el):
-            return true
-        EVar(n, _el):
-            if has_str(names, n):
-                return base_ty(var_type(names, types, n)) != "int"
-            return false
-        EInt(t, _el):
-            return false
-        EBin(o, l, r, _el):
-            return false
-        ECall(cn, a, _el):
-            return false
-        EField(b, f, _el):
-            return false
-        EIndex(b, ix, _el):
-            return false
-        EArrLit(es, _el):
-            return false
-        EArrEmpty(t, _el):
-            return false
-        EMapEmpty(k, v, _el):
-            return false
-        EMapLit(ks, vs, _el):
-            return false
-        ETuple(es, _el):
-            return false
-        ESlice(b, lo, hi, _el):
-            return false
-        EAddr(x, _el):
-            return false
-        ELambda(id, ps, pts, ret, body, cn, ct, _el):
-            return false
-        ECallV(callee, cargs, _el):
-            return false
-        ESpawn(sid, snm, sa, _el):
-            return false
-
 # reject a captured `&v` (mut-pass) or push/pop(capturedAggregate, ...) anywhere
 # in an expression; recurse into every sub-expression.
 fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
@@ -8999,7 +8951,11 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             gaccop := []string
             gaccnt := []int
             pf_gate_body(body, gloc, names, &gacc, &gaccop, &gaccnt, 0)
-            if pf_bound_nonint(a, names, types) or pf_bound_nonint(b, names, types):
+            # precise (not heuristic): tychoc0's own type inference has full types
+            # here -- sigs are collected before the lift pass -- so any non-int
+            # bound shape (a float var, `n * 2.0`, a float-returning call) is
+            # caught, matching tychoc's resolve_exp == T_INT check exactly.
+            if base_ty(type_of(a, names, types, dc, ctx)) != "int" or base_ty(type_of(b, names, types, dc, ctx)) != "int":
                 die("parallel for needs an int range")
             gci := 0
             for gci < len(gacc):

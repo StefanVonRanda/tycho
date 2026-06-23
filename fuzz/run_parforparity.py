@@ -118,6 +118,13 @@ fn main():
     parallel for i in range(0, n):
         acc = acc + i
 ''',
+"range_compound_not_int": '''\
+fn main():
+    acc := 0
+    n := 5.0
+    parallel for i in range(0, n + n):
+        acc = acc + i
+''',
 "pass_capture_as_mut": '''\
 fn bump(xs: mut [int]):
     xs[0] = 9
@@ -176,6 +183,14 @@ fn main():
     acc := 0
     parallel for i in range(10):
         acc = acc + (i + base)
+    print(str(acc) + "\\n")
+''',
+"range_compound_int": '''\
+fn main():
+    m := 6
+    acc := 0
+    parallel for i in range(1, m + 2):
+        acc = acc + i
     print(str(acc) + "\\n")
 ''',
 "nested_break": '''\
