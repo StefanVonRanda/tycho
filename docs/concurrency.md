@@ -114,6 +114,13 @@ ladder — a select cannot park on N condition variables, so worst-case wake
 latency is ~1ms, fine for fan-in servers. `break`/`continue` inside an arm bind
 to the *user's* enclosing loop.
 
+A `select` is also allowed inside a `parallel for` body, giving parallel
+work-stealing consumers: the chunk tasks share the captured channels (a channel
+is a scalar handle, passed by value — not deep-copied per chunk), so any chunk
+can take any ready item, and a reduction inside an arm folds at the join like any
+other. An early exit still cannot cross a chunk boundary, so `return` in an arm is
+rejected just as it is anywhere else in a `parallel for` body.
+
 ## Measured
 
 `make bench-conc` runs identical logic with cross-checked checksums in all four

@@ -7631,12 +7631,18 @@ fn pf_body_evars(stmts: [Stmt], out: mut [string]):
                 collect_evars(b, &out)
                 pf_body_evars(body, &out)
             SSelect(uid, svars, schans, sbinds, sbodies, _sl):
-                # A channel select inside a parallel-for chunk is unsupported
-                # (matches the C compiler tychoc): its arms are not gate-scanned
-                # for a crossing reduction/capture, so fail closed here rather
-                # than emit a silently-miscompiled chunk proc. (tychoc0 resolve
-                # errors are message-only -- no reliable source line here.)
-                die("select is not supported inside a parallel for")
+                # A channel select inside a parallel-for chunk: each recv arm's
+                # channel expr is a free var of the body (so it becomes a shared
+                # by-value capture -- a Channel is a scalar handle, never deep-
+                # copied), and each arm body is scanned like a match arm. pf_accs
+                # already descends select arms, so reductions inside an arm fold
+                # at the join just like anywhere else. (matches tychoc.)
+                sk := 0
+                for sk < len(svars):
+                    if svars[sk] == "recv":
+                        collect_evars(schans[sk], &out)
+                    pf_body_evars(sbodies[sk], &out)
+                    sk = sk + 1
         i = i + 1
 
 # Reduction accumulators of a parallel-for body: assignments `n = n OP rest`

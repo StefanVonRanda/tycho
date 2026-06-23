@@ -4322,12 +4322,23 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
         case S_EXPR:
             pf_scan_expr(s->expr);
             return;
-        case S_SELECT:
-            /* A channel `select` inside a parallel-for chunk is unsupported: its
-             * arms are not scanned for a crossing return/break or an illegal
-             * capture mutation, and a chunk doing channel ops is untested. Fail
-             * closed with a clear error rather than silently miscompile. */
-            die_at(s->line, "select is not supported inside a parallel for");
+        case S_SELECT: {
+            /* A channel `select` inside a parallel-for chunk: each arm's channel
+             * expr is scanned in the enclosing scope (so the channel becomes a
+             * by-value capture -- a shared handle, NOT deep-copied, since a
+             * Channel is scalar; multiple chunks legitimately share the queue),
+             * each arm's bind names are loop-local, and each arm body is scanned
+             * like a match arm so the existing gates still fire (return/break
+             * cannot cross, no mut-capture, reductions only). */
+            for (int a = 0; a < s->narms; a++) {
+                if (s->sel_ch && s->sel_ch[a]) pf_scan_expr(s->sel_ch[a]);
+                int save = g_pf_nloc;
+                for (int b = 0; b < s->arms[a].nbinds; b++) pf_add_local(s->arms[a].binds[b]);
+                pf_scan_body(s->arms[a].body, s->arms[a].nbody, loopdepth);
+                g_pf_nloc = save;
+            }
+            return;
+        }
     }
 }
 
@@ -5290,6 +5301,9 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
         c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm) + count_reads_e(s->r_step, nm);
         c += count_reads_b(s->body, s->nbody, nm) + count_reads_b(s->els, s->nels, nm);
         for (int a = 0; a < s->narms; a++) c += count_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
+        /* S_SELECT: per-arm channel exprs (arm bodies are already in s->arms[].body) */
+        if (s->kind == S_SELECT && s->sel_ch)
+            for (int a = 0; a < s->narms; a++) c += count_reads_e(s->sel_ch[a], nm);
     }
     return c;
 }
