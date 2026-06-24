@@ -126,3 +126,23 @@ fn clean(p: string) -> string:
     if len(r) == 0:
         return "."
     return r
+
+# Safely join an UNTRUSTED relative segment `rel` under a trusted `base`.
+# Returns the cleaned joined path when `rel` stays within `base`, or "" when
+# `rel` is absolute or escapes `base` via "..". Use this for any path built
+# from external input (request params, upload names):
+#   safe_join("/srv/data", "user/report.txt") -> "/srv/data/user/report.txt"
+#   safe_join("/srv/data", "../../etc/passwd") -> ""
+#   safe_join("/srv/data", "/etc/passwd")      -> ""
+# Fail-closed: callers MUST treat "" as rejected before using the path. The
+# escape test is base-independent -- clean() leaves a leading ".." exactly
+# when the relative path climbs above its own start.
+fn safe_join(base: string, rel: string) -> string:
+    if is_abs(rel):
+        return ""
+    cr := clean(rel)
+    if cr == "..":
+        return ""
+    if len(cr) >= 3 and cr[0] == 46 and cr[1] == 46 and cr[2] == 47:   # "../"
+        return ""
+    return clean(join(base, rel))

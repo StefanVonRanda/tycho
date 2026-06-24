@@ -79,3 +79,13 @@ fn main():
     c9 := path.clean("///")
     c10 := path.clean("./x")
     print(f"clean ///=[{c9}] ./x=[{c10}]\n")
+
+    # ---- safe_join: confine an untrusted relative path under a base ----
+    sj1 := path.safe_join("/srv/data", "user/report.txt")
+    sj2 := path.safe_join("/srv/data", "../../etc/passwd")
+    sj3 := path.safe_join("/srv/data", "/etc/passwd")
+    print(f"safe_join ok=[{sj1}] dotdot=[{sj2}] abs=[{sj3}]\n")
+    sj4 := path.safe_join("/srv/data", "a/../b.txt")
+    sj5 := path.safe_join("/srv/data", "a/../../x")
+    sj6 := path.safe_join("/srv/data", "./x")
+    print(f"safe_join inner=[{sj4}] escape=[{sj5}] dot=[{sj6}]\n")
