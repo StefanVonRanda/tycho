@@ -8844,9 +8844,27 @@ static void bundle_pkg(const char *dir, int is_entry) {
     pkg_walk_done(key);
 }
 
+/* A library/package name reaches a shell command line (the cc `system()` link
+ * line and the `pkg-config` popen) from `extern "Lib"` in the .ty SOURCE and from
+ * --link/--pkg. If it carried shell metacharacters, compiling an untrusted .ty
+ * (e.g. `extern "x; rm -rf ~"`) would execute arbitrary shell. Restrict every such
+ * name to a conservative cc-token charset and fail closed -- a real library name
+ * never needs anything outside [A-Za-z0-9._+-]. */
+static const char *cc_safe_name(const char *s, const char *what) {
+    if (!s || !*s) { fprintf(stderr, "tychoc: empty %s name\n", what); exit(1); }
+    for (const char *p = s; *p; p++) {
+        char c = *p;
+        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                 (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '+' || c == '-';
+        if (!ok) { fprintf(stderr, "tychoc: illegal character in %s name '%s' (only [A-Za-z0-9._+-] allowed)\n", what, s); exit(1); }
+    }
+    return s;
+}
+
 /* FFI Stage 3: `pkg-config --cflags --libs <name>` -> the cc flags for a system
  * library, or NULL on failure. The result is spliced onto the cc line. */
 static char *pkg_config_flags(const char *name) {
+    cc_safe_name(name, "--pkg");   /* name reaches the shell below; reject metacharacters */
     char *cmd = sfmt("pkg-config --cflags --libs %s 2>/dev/null", name);
     FILE *p = popen(cmd, "r");
     if (!p) return NULL;
@@ -8943,7 +8961,7 @@ int main(int argc, char **argv) {
             extra = sfmt("%s %s", extra, argv[i]);
             if (!argv[i][2] && i + 1 < argc) extra = sfmt("%s %s", extra, argv[++i]);
         }
-        else if (!strcmp(argv[i], "--link") && i + 1 < argc) extra = sfmt("%s -l%s", extra, argv[++i]);
+        else if (!strcmp(argv[i], "--link") && i + 1 < argc) extra = sfmt("%s -l%s", extra, cc_safe_name(argv[++i], "--link"));
         else if (!strcmp(argv[i], "--shim") && i + 1 < argc) shims = sfmt("%s %s", shims, argv[++i]);
         else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
             char *pc = pkg_config_flags(argv[++i]);
@@ -8989,7 +9007,7 @@ int main(int argc, char **argv) {
     }
 
     char *links = sfmt("%s", "");                  /* FFI: -lLib for each `extern "Lib"` */
-    for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, g_links[i]);
+    for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, cc_safe_name(g_links[i], "extern library"));
     /* sources (generated .c + any --shim companions), then -lm + extern libs +
      * the -L/-I/--link/--pkg passthrough (libs trail the objects that need them). */
     /* -O3 is the portable default; --native opts into -march=native (host-CPU only).

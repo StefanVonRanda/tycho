@@ -92,6 +92,17 @@ reject_handle 'fn main():\n    a := [ho(1)]\n    print("x")\n' container
 reject_handle 'fn bad() -> R:\n    return ho(1)\nfn main():\n    return\n' return
 reject_handle 'fn main():\n    d := ho(1)\n    f := fn() -> int: hu(d)\n    print(str(f()))\n' capture
 
+# (7) Shell-injection guard: a library name from `extern "Lib"` (source) or --link
+# (CLI) is spliced onto the cc / pkg-config shell line, so it is charset-checked --
+# compiling an untrusted .ty must fail closed, never run a shell command. Assert
+# rejection AND that the injected `touch <marker>` never fired.
+mark="$T/INJECTED"; rm -f "$mark"
+printf 'extern "m; touch %s" fn z() -> int\nfn main():\n    print(str(z()))\n' "$mark" > "$T/inj.ty"
+if "$TYCHOC" "$T/inj.ty" -o "$T/inj" >/dev/null 2>&1; then echo "FAIL: injection extern compiled"; fail=1; fi
+[ -f "$mark" ] && { echo "FAIL: extern-name injection executed a shell command"; fail=1; }
+if "$TYCHOC" tests/ffi/main.ty --link "m; touch $mark" -L "$T" >/dev/null 2>&1; then echo "FAIL: injection --link compiled"; fail=1; fi
+[ -f "$mark" ] && { echo "FAIL: --link injection executed a shell command"; fail=1; }
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
