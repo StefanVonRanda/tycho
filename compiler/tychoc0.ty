@@ -695,7 +695,7 @@ fn parse_atom_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         name := t.text
         pos = pos + 1
         if name == "fn" and toks[pos].kind == TLParen:   # lambda literal `fn(p: T, ...) [-> R]: expr`
-            return parse_lambda(toks, &pos)
+            return parse_lambda(toks, &pos, nd)
         if name == "soa":                        # soa []Struct : empty SOA literal
             expect(toks, &pos, TLBracket)
             expect(toks, &pos, TRBracket)
@@ -1369,7 +1369,11 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         die("parse: line " + str(toks[pos].line) + ": expected a statement")
         return SReturn(EInt("0", _el), _sl)
 
-fn parse_type(toks: [Token], pos: mut int) -> string:
+fn parse_type_d(toks: [Token], pos: mut int, depth: int) -> string:
+    # H2 (type vector): bound nested-type recursion ([[[[...]]]], tuples,
+    # generics) so a crafted deeply-nested type can't overflow the stack.
+    if depth > 256:
+        die("parse: line " + str(toks[pos].line) + ": type nesting too deep")
     if toks[pos].kind == TDollar:                # generics: `$T` introduces a type parameter
         pos = pos + 1
         if toks[pos].kind != TIdent:
@@ -1380,10 +1384,10 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
     if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
         pos = pos + 1
         parts := []string
-        push(parts, parse_type(toks, &pos))
+        push(parts, parse_type_d(toks, &pos, depth + 1))
         for toks[pos].kind == TComma:
             pos = pos + 1
-            push(parts, parse_type(toks, &pos))
+            push(parts, parse_type_d(toks, &pos, depth + 1))
         expect(toks, &pos, TRParen)
         out := "("
         i := 0
@@ -1395,10 +1399,10 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
         return out + ")"
     if toks[pos].kind == TLBracket:              # [T] array  or  [K: V] map
         pos = pos + 1
-        inner := parse_type(toks, &pos)
+        inner := parse_type_d(toks, &pos, depth + 1)
         if toks[pos].kind == TColon:
             pos = pos + 1
-            v := parse_type(toks, &pos)
+            v := parse_type_d(toks, &pos, depth + 1)
             expect(toks, &pos, TRBracket)
             return "{" + inner + ":" + v + "}"
         expect(toks, &pos, TRBracket)
@@ -1406,7 +1410,7 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
     if toks[pos].kind == TIdent and toks[pos].text == "soa":   # soa [Struct]
         pos = pos + 1
         expect(toks, &pos, TLBracket)
-        st := parse_type(toks, &pos)
+        st := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRBracket)
         return "soa[" + st + "]"
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
@@ -1414,15 +1418,15 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
         expect(toks, &pos, TLParen)
         params := []string
         if toks[pos].kind != TRParen:
-            push(params, parse_type(toks, &pos))
+            push(params, parse_type_d(toks, &pos, depth + 1))
             for toks[pos].kind == TComma:
                 pos = pos + 1
-                push(params, parse_type(toks, &pos))
+                push(params, parse_type_d(toks, &pos, depth + 1))
         expect(toks, &pos, TRParen)
         ret := "void"
         if toks[pos].kind == TArrow:
             pos = pos + 1
-            ret = parse_type(toks, &pos)
+            ret = parse_type_d(toks, &pos, depth + 1)
         out := "fn("
         i := 0
         for i < len(params):
@@ -1450,29 +1454,29 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
         return "ptr"
     elif name == "Channel":                      # Channel(T): a worker param's queue type (CC-4)
         expect(toks, &pos, TLParen)
-        cht := parse_type(toks, &pos)
+        cht := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
         return "Channel(" + cht + ")"
     elif name == "Option":
         expect(toks, &pos, TLParen)
-        t := parse_type(toks, &pos)
+        t := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
         return "Option(" + t + ")"
     elif name == "Result":
         expect(toks, &pos, TLParen)
-        t := parse_type(toks, &pos)
+        t := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TComma)
-        e := parse_type(toks, &pos)
+        e := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
         return "Result(" + t + "," + e + ")"
     else:
         if toks[pos].kind == TLParen:            # generics: `Box(int)` generic-struct instance in type position
             pos = pos + 1
             targs := []string
-            push(targs, parse_type(toks, &pos))
+            push(targs, parse_type_d(toks, &pos, depth + 1))
             for toks[pos].kind == TComma:
                 pos = pos + 1
-                push(targs, parse_type(toks, &pos))
+                push(targs, parse_type_d(toks, &pos, depth + 1))
             expect(toks, &pos, TRParen)
             out := name + "("
             j := 0
@@ -1483,6 +1487,10 @@ fn parse_type(toks: [Token], pos: mut int) -> string:
                 j = j + 1
             return out + ")"
         return name                              # a struct or enum type name
+
+# Public entry point: starts a fresh type-nesting depth context (H2).
+fn parse_type(toks: [Token], pos: mut int) -> string:
+    return parse_type_d(toks, &pos, 0)
 
 fn parse_param(toks: [Token], pos: mut int) -> Param:
     if toks[pos].kind != TIdent:
@@ -1691,7 +1699,7 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
 # return). The leading `fn` and the opening `(` have already been consumed-checked
 # by the caller (parse_atom). id is a placeholder (0); the lift pass assigns it.
-fn parse_lambda(toks: [Token], pos: mut int) -> Expr:
+fn parse_lambda(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     expect(toks, &pos, TLParen)
     params := []string
@@ -1721,7 +1729,7 @@ fn parse_lambda(toks: [Token], pos: mut int) -> Expr:
         pos = pos + 1
         ret = parse_type(toks, &pos)
     expect(toks, &pos, TColon)
-    bexpr := parse_expr(toks, &pos)
+    bexpr := parse_expr_d(toks, &pos, pc)   # thread depth so nested inline lambdas can't overflow the stack (H2)
     return ELambda(0, params, ptypes, ret, bexpr, []string, []string, _el)   # body is the single expr; lift wraps it in a Func
 
 fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
