@@ -4368,6 +4368,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             else:                # arithmetic + - * /
                 if not ((lt == "int" and frt == "int") or (lt == "float" and frt == "float") or ((op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or lt == "int") and (frt == "char" or frt == "int")) or (lt == frt and (rlt == "int" or rlt == "float")) or (lt == "float" and frt == "int" and is_int_lit(r)) or (lt == "int" and frt == "float" and is_int_lit(l))):
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
+            # integer division/modulo guard: -fwrapv wraps signed overflow, but x/0,
+            # x%0 and LONG_MIN/-1 still trap (SIGFPE). Route int `/` and `%` (incl. an
+            # int newtype, rlt=="int") through the runtime guard, which aborts cleanly
+            # with a tycho: message. Float `/` is IEEE (x/0.0 = inf), left as a raw op.
+            if (op == "/" or op == "%") and rlt == "int":
+                gfn := "hi_idiv"
+                if op == "%":
+                    gfn = "hi_imod"
+                return gfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
             cdi := find(name, ".")
@@ -7121,6 +7130,12 @@ fn preamble() -> string:
     out = out + "static char* hs(Arena* ar, long n) { char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
     out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
     out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"tycho: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
+    # Integer division/modulo guard: -fwrapv wraps signed overflow, but x/0, x%0 and
+    # LONG_MIN/-1 still trap (SIGFPE). Abort cleanly with the same tycho: messages as
+    # runtime/tycho_rt.c (tycho_idiv/tycho_imod). LONG_MIN literal avoids a limits.h
+    # dependency; LONG_MIN % -1 is mathematically 0, returned directly (no trap).
+    out = out + "static long hi_idiv(long a, long b) { if (b == 0) { fprintf(stderr, \"tycho: division by zero\\n\"); exit(1); } if (a == (-9223372036854775807L - 1L) && b == -1) { fprintf(stderr, \"tycho: division overflow\\n\"); exit(1); } return a / b; }\n"
+    out = out + "static long hi_imod(long a, long b) { if (b == 0) { fprintf(stderr, \"tycho: modulo by zero\\n\"); exit(1); } if (a == (-9223372036854775807L - 1L) && b == -1) return 0; return a % b; }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
     out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"

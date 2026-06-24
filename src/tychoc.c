@@ -6565,6 +6565,14 @@ static char *gen_expr(Expr *e, const char *arena) {
             /* ordering on strings is lexicographic via strcmp */
             if (is_cmp(e->op) && base_of(e->lhs->type) == T_STRING)   /* string or a string newtype */
                 return sfmt("(tycho_str_cmp(%s, %s) %s 0)", l, r, op_str(e->op));
+            /* integer division/modulo guard: -fwrapv (the int-overflow contract)
+             * makes signed overflow wrap, but division is the one arithmetic op it
+             * does NOT make total -- x/0, x%0, and LONG_MIN/-1 still trap (SIGFPE).
+             * Route int `/` and `%` (incl. an int newtype) through the runtime guard,
+             * which aborts cleanly with a tycho: message. Float `/` is IEEE
+             * (x/0.0 = inf), so it stays a raw C operator. */
+            if ((e->op == TK_SLASH || e->op == TK_PERCENT) && base_of(e->type) == T_INT)
+                return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }
     }
@@ -7069,9 +7077,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *key = key_rt(arrx->type, gen_expr(s->target->rhs, scope));
                     char *rhs = gen_expr(s->expr->rhs, scope);
                     indent(o, ind);
-                    fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = *_mp%d %s %s; }\n",
-                            c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
-                            id, id, op_str(s->expr->op), rhs);
+                    /* int `/=`/`%=` route the read-modify-write through the same
+                     * division guard as a plain int `/`/`%` (x/0, x%0, LONG_MIN/-1
+                     * trap otherwise); other ops stay a plain C operator. */
+                    if ((s->expr->op == TK_SLASH || s->expr->op == TK_PERCENT) && base_of(vt) == T_INT)
+                        fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = %s(*_mp%d, %s); }\n",
+                                c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
+                                id, s->expr->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", id, rhs);
+                    else
+                        fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = *_mp%d %s %s; }\n",
+                                c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
+                                id, id, op_str(s->expr->op), rhs);
                 } else {
                     char *lv = gen_lvalue(s->target, scope);   /* (*slotptr(owner, &m, k)) */
                     char *v  = gen_expr(s->expr, mowner);

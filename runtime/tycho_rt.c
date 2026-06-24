@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <limits.h>    /* LONG_MIN for the integer-division overflow guard */
 #include <math.h>
 #include <dirent.h>
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
@@ -85,6 +86,24 @@ typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; } Arena;
 
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
+
+/* Integer division/modulo guard. The int-overflow contract
+ * (docs/notes/integer-overflow.md) defines signed overflow as two's-complement
+ * wrapping via -fwrapv -- but division is the one arithmetic op -fwrapv does NOT
+ * make total: `x / 0` and `x % 0` are undefined (SIGFPE on x86), and LONG_MIN/-1
+ * overflows the quotient (also a trap). Abort cleanly with a tycho: message, like
+ * the bounds checks. LONG_MIN % -1 is mathematically 0, so modulo returns it
+ * directly instead of trapping. Int `/`/`%` route through these (codegen). */
+static long tycho_idiv(long a, long b) {
+    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); exit(1); }
+    if (a == LONG_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); exit(1); }
+    return a / b;
+}
+static long tycho_imod(long a, long b) {
+    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
+    if (a == LONG_MIN && b == -1) return 0;
+    return a % b;
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */

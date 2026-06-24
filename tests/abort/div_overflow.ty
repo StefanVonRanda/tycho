@@ -1,0 +1,7 @@
+# INT_MIN / -1 overflows the quotient; must abort cleanly, not trap (SIGFPE).
+# -fwrapv defines +/-/* overflow as wrapping but does NOT cover division.
+fn main():
+    z := []int
+    push(z, 1)
+    lo := (0 - 9223372036854775807) - z[0]   # LONG_MIN, via subtraction (no shift)
+    print(str(lo / (0 - z[0])))              # lo / -1
