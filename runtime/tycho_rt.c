@@ -565,6 +565,13 @@ static long tycho_ncpu(void) {
  * "behind" it, so printf/strcmp/strstr stay unaffected). 8-byte arena alignment
  * keeps the header word aligned. */
 static char *tycho_str_alloc(Arena *a, long n) {
+    /* guard a negative/corrupted length: (size_t)(8 + n + 1) would otherwise
+     * wrap to a huge request. Lengths are 64-bit, so a positive value can't
+     * overflow the size_t computation on a 64-bit host. */
+    if (n < 0) {
+        fprintf(stderr, "tycho: string length %ld out of range\n", n);
+        exit(1);
+    }
     char *base = (char *)arena_alloc(a, (size_t)(8 + n + 1));
     *(long *)base = n;
     char *data = base + 8;
