@@ -1369,7 +1369,18 @@ static int enum_instantiate(int tmpl, Type *binds) {
     return id;
 }
 
+/* parse_type recurses on every `[T]` / `(T,...)` / `[K:V]` / `Option(T)` / `fn(...)`
+ * nesting level, so a pathologically nested type annotation (`[[[...]]]int`,
+ * `Option(Option(...))`) overflows the C stack. Guard it on the same depth budget
+ * as expressions so it fails closed instead of SIGSEGV. */
+static Type parse_type_inner(Parser *ps);
 static Type parse_type(Parser *ps) {
+    if (++ps->depth > TYCHO_MAX_PARSE_DEPTH) die_at(cur(ps)->line, "type nesting too deep");
+    Type t = parse_type_inner(ps);
+    ps->depth--;
+    return t;
+}
+static Type parse_type_inner(Parser *ps) {
     Tok *t = cur(ps);
     if (t->kind == TK_DOLLAR) {          /* generics: `$T` introduces a type parameter into scope */
         ps->p++;
@@ -3289,7 +3300,20 @@ static void pend_ground(const char *name, Type t, int line) {
     g_pend[pi].done = 1;
 }
 
+/* A deep left-leaning chain (`1+1+...`) parses iteratively (shallow parser stack,
+ * so the parse_unary depth cap never fires) but builds a tree as deep as the chain
+ * is long, which resolve_expr then recurses through -- guard it so a pathological
+ * tree fails closed here instead of overflowing the C stack (SIGSEGV). */
+#define TYCHO_MAX_TREE_DEPTH 2000
+static int g_resolve_depth = 0;
+static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
+    if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
+    Type t = resolve_expr_inner(e);
+    g_resolve_depth--;
+    return t;
+}
+static Type resolve_expr_inner(Expr *e) {
     int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
@@ -7818,8 +7842,19 @@ static Expr **clone_exprs(Expr **a, int n, Type *binds) {
     return out;
 }
 
+/* Generic instantiation clones the template body BEFORE it is resolved, so a deep
+ * expression in a generic body skips the resolve_expr guard. clone_expr recurses
+ * on lhs/rhs/args, so guard it too (NULL handled here so e->line is always valid). */
+static int g_clone_depth = 0;
+static Expr *clone_expr_inner(Expr *e, Type *binds);
 static Expr *clone_expr(Expr *e, Type *binds) {
     if (!e) return NULL;
+    if (++g_clone_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to instantiate (max %d)", TYCHO_MAX_TREE_DEPTH);
+    Expr *c = clone_expr_inner(e, binds);
+    g_clone_depth--;
+    return c;
+}
+static Expr *clone_expr_inner(Expr *e, Type *binds) {
     Expr *c = (Expr *)xmalloc(sizeof(Expr));
     *c = *e;
     c->lhs  = clone_expr(e->lhs, binds);

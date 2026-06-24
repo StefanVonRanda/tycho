@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion ci hooks clean
 
 all: tychoc
 
@@ -165,6 +165,12 @@ site: tychoc
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
 ffi: tychoc
 	@sh tests/ffi/run.sh
+
+# Recursion-cap regression: deeply nested / long input must fail closed (clean
+# nonzero exit) in BOTH compilers instead of overflowing the C stack (SIGSEGV).
+# Covers parens, unary/operator chains, generic bodies, statement + type nesting.
+recursion: tychoc
+	@sh tests/recursion/run.sh
 
 # Stage 4 self-host fixpoint: A=tychoc·tychoc0.ty, B=A·tychoc0.ty, C=B·tychoc0.ty;
 # assert B==C (byte-identical self-emission) and B matches the C compiler.

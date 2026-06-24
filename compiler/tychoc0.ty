@@ -379,6 +379,8 @@ fn lex(src: string) -> [Token]:
                 for i < n and src[i] != 10:
                     i = i + 1
             elif ind > stack[sp - 1]:
+                if sp >= 256:                        # H2: cap block nesting (mirrors tychoc's indent_stack[256]); else parse_block recursion overflows the C stack
+                    lex_err(src, i, "lex: indentation too deep")
                 if sp < len(stack):
                     stack[sp] = ind
                 else:
@@ -875,7 +877,11 @@ fn parse_atom_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 fn parse_postfix_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     e := parse_atom_d(toks, &pos, pc)
+    d := pc.depth                                # each postfix step (.field / [idx] / (call)) wraps `e`, deepening + deep-copying the tree
     for toks[pos].kind == TDot or toks[pos].kind == TLBracket or toks[pos].kind == TLParen:
+        d = d + 1
+        if d > 2000:
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         if toks[pos].kind == TLParen:            # call-on-expression: <expr>(args) -- indirect call on a fn value
             pos = pos + 1
             cargs := []Expr
@@ -920,7 +926,11 @@ fn parse_postfix_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 fn parse_mul_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_postfix_d(toks, &pos, pc)
+    d := pc.depth                                # each chain step deepens the left-spine tree (value-semantics deep-copies `l`)
     for toks[pos].kind == TStar or toks[pos].kind == TSlash or toks[pos].kind == TPercent or toks[pos].kind == TShl or toks[pos].kind == TShr or toks[pos].kind == TAmp:
+        d = d + 1
+        if d > 2000:
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         op := toks[pos].text
         pos = pos + 1
         r := parse_postfix_d(toks, &pos, pc)
@@ -930,7 +940,11 @@ fn parse_mul_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 fn parse_add_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_mul_d(toks, &pos, pc)
+    d := pc.depth                                # each chain step deepens the left-spine tree (value-semantics deep-copies `l`)
     for toks[pos].kind == TPlus or toks[pos].kind == TMinus or toks[pos].kind == TPipe or toks[pos].kind == TCaret:
+        d = d + 1
+        if d > 2000:
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         op := toks[pos].text
         pos = pos + 1
         r := parse_mul_d(toks, &pos, pc)
@@ -951,14 +965,20 @@ fn parse_cmp_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 fn parse_not_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     if toks[pos].kind == TIdent and toks[pos].text == "not":
+        if pc.depth > 256:                       # H2: a `not not not ...` chain recurses parse_not_d -- cap it like parens/unary
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         pos = pos + 1
-        return EBin("not", parse_not_d(toks, &pos, pc), EInt("0", _el), _el)   # logical not; operand must be bool (validated in codegen). rhs is an unused placeholder
+        return EBin("not", parse_not_d(toks, &pos, Pctx(pc.depth + 1)), EInt("0", _el), _el)   # logical not; operand must be bool (validated in codegen). rhs is an unused placeholder
     return parse_cmp_d(toks, &pos, pc)
 
 fn parse_and_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_not_d(toks, &pos, pc)
+    d := pc.depth                                # each `and` step deepens the left-spine tree (value-semantics deep-copies `l`)
     for toks[pos].kind == TIdent and toks[pos].text == "and":
+        d = d + 1
+        if d > 2000:
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         pos = pos + 1
         r := parse_not_d(toks, &pos, pc)
         l = EBin("&&", l, r, _el)
@@ -967,7 +987,11 @@ fn parse_and_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 fn parse_expr_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_and_d(toks, &pos, pc)
+    d := pc.depth                                # each `or` step deepens the left-spine tree (value-semantics deep-copies `l`)
     for toks[pos].kind == TIdent and toks[pos].text == "or":
+        d = d + 1
+        if d > 2000:
+            die("parse: line " + str(toks[pos].line) + ": expression nesting too deep")
         pos = pos + 1
         r := parse_and_d(toks, &pos, pc)
         l = EBin("||", l, r, _el)
