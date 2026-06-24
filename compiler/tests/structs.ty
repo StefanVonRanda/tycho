@@ -9,8 +9,8 @@ struct Rect:
     hi: Point
 
 fn area(r: Rect) -> int:
-    w := r.ty.x - r.lo.x
-    h := r.ty.y - r.lo.y
+    w := r.hi.x - r.lo.x
+    h := r.hi.y - r.lo.y
     return w * h
 
 fn shifted(p: Point, dx: int, dy: int) -> Point:
