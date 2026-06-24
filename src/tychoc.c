@@ -343,6 +343,13 @@ static TokVec lex(const char *src) {
                             die_at(line, "unsupported escape \\%c (use \\n \\t \\\\ \\\")", e);
                         buf[bn++] = *p++;
                     } else {
+                        /* reject raw control bytes in the literal text (tab
+                         * excepted): otherwise they are emitted verbatim into
+                         * the generated C string literal — a raw CR/NUL/etc.
+                         * can corrupt or break out of it. Newline is already
+                         * rejected above; require an escape for the rest. */
+                        if (depth == 0 && (unsigned char)*p < 0x20 && *p != '\t')
+                            die_at(line, "raw control byte in string literal (use an escape such as \\n or \\t)");
                         if (bn + 1 >= (int)sizeof buf) die_at(line, "string too long");
                         buf[bn++] = *p++;
                     }
@@ -1140,7 +1147,8 @@ static ProcVec g_lambda_procs;   /* lifted lambda procs, emitted after the user 
 
 /* --------------------------------------------------------------- parser */
 
-typedef struct { Tok *t; int p; } Parser;
+#define TYCHO_MAX_PARSE_DEPTH 256
+typedef struct { Tok *t; int p; int depth; } Parser;
 
 static Tok *cur(Parser *ps)  { return &ps->t[ps->p]; }
 static Tok *peek(Parser *ps, int k) { return &ps->t[ps->p + k]; }
@@ -1562,7 +1570,7 @@ static Expr *desugar_interp(const char *s, int line) {
              * (die_at also reads g_srcname and g_err_col; lex touches neither on a
              * non-fatal path.) */
             const char *save_src = g_src;
-            TokVec tv = lex(sub); Parser sp = { tv.v, 0 }; Expr *ex = parse_expr(&sp);
+            TokVec tv = lex(sub); Parser sp = { tv.v, 0, 0 }; Expr *ex = parse_expr(&sp);
             g_src = save_src;
             Expr *call = new_expr(E_CALL, line); call->sval = "str";
             call->args = (Expr **)xmalloc(sizeof(Expr *)); call->args[0] = ex; call->nargs = 1;
@@ -1907,7 +1915,20 @@ static Expr *parse_postfix(Parser *ps) {
     return e;
 }
 
+static Expr *parse_unary_inner(Parser *ps);
+/* Bound expression-nesting recursion: every nesting level (parentheses and
+ * unary chains) passes through parse_unary, so guarding here caps total
+ * parser recursion and stops a crafted deeply-nested expression from
+ * overflowing the stack (SIGSEGV). Statement nesting is already bounded by
+ * the lexer's indentation-depth cap. */
 static Expr *parse_unary(Parser *ps) {
+    if (++ps->depth > TYCHO_MAX_PARSE_DEPTH)
+        die_at(cur(ps)->line, "expression nesting too deep");
+    Expr *e = parse_unary_inner(ps);
+    ps->depth--;
+    return e;
+}
+static Expr *parse_unary_inner(Parser *ps) {
     if (at(ps, TK_MINUS)) {                /* unary negation: operand in lhs, rhs NULL */
         Tok *t = cur(ps); ps->p++;
         Expr *e = new_expr(E_BINOP, t->line);
@@ -2881,7 +2902,7 @@ static void check_pkg_private(const char *qualifier, const char *name, int line)
 }
 
 static ProcVec parse_program(Tok *toks) {
-    Parser ps = { toks, 0 };
+    Parser ps = { toks, 0, 0 };
     ProcVec out = {0};
     g_parsed_package = NULL;                     /* reset per file; set if a `package` decl is seen */
     while (!at(&ps, TK_EOF)) {
@@ -4084,6 +4105,12 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "cannot concatenate string with %s", type_name(rt));
                 return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
             }
+            /* reject division / modulo by a literal zero at compile time
+             * (otherwise UB / SIGFPE at runtime). Checks the parsed value so
+             * `x / 0` and `x % 0` are caught regardless of literal spelling. */
+            if ((e->op == TK_SLASH || e->op == TK_PERCENT) &&
+                e->rhs->kind == E_INT && e->rhs->ival == 0)
+                die_at(e->line, "division by zero");
             /* modulo, shifts, and bitwise ops are integer-only (C `%`/`<<`/`&`
              * are ill-typed or undefined on doubles); both operands must be int. */
             if (e->op == TK_PERCENT || e->op == TK_SHL || e->op == TK_SHR ||
