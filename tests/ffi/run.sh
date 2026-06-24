@@ -78,6 +78,20 @@ else
     [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc0 output"; fail=1; }
 fi
 
+# (6) Affine handle bans (FFI R2): BOTH compilers must REJECT each misuse — a
+# handle returned, reassigned, stored in a container, or captured would double-free
+# or dangle. Rejection is at compile time, so the opener/closer need not link.
+hh='handle R:\n    free: hc\nextern fn ho(i: int) -> R\nextern fn hc(h: R) -> int\nextern fn hu(h: R) -> int\n'
+reject_handle() {   # $1 = printf-escaped program body, $2 = label
+    printf '%b' "$hh$1" > "$T/rej.ty"
+    if "$TYCHOC" "$T/rej.ty" --emit-c -o "$T/rej" >/dev/null 2>&1; then echo "FAIL: handle-ban ($2): tychoc accepted it"; fail=1; fi
+    if "$T/h0" < "$T/rej.ty" >/dev/null 2>&1; then echo "FAIL: handle-ban ($2): tychoc0 accepted it"; fail=1; fi
+}
+reject_handle 'fn main():\n    d := ho(1)\n    d = ho(2)\n' reassign
+reject_handle 'fn main():\n    a := [ho(1)]\n    print("x")\n' container
+reject_handle 'fn bad() -> R:\n    return ho(1)\nfn main():\n    return\n' return
+reject_handle 'fn main():\n    d := ho(1)\n    f := fn() -> int: hu(d)\n    print(str(f()))\n' capture
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then

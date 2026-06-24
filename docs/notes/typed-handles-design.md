@@ -5,9 +5,11 @@ declaration). v1 reuses the affine + finalizer machinery that `spawn`/`wait` tas
 already have — which is the proof that the ownership model is sound. Verified:
 tests/ffi handle fixture (refcount resource freed exactly once, borrow-on-pass,
 both compilers + ASan + golden, in `make ci`); make test 221/0; make conc 34/0;
-fixpoint B==C. Note: the affine bans (container/return/reassign/capture) are
-enforced by tychoc (the reference); tychoc0 (bootstrap) accepts them leniently —
-a documented v1 parity gap, not a soundness gap in compiled-by-tychoc code.
+fixpoint B==C. The affine bans (return / reassign / container-or-aggregate /
+capture) are enforced by BOTH compilers — tests/ffi asserts each misuse is
+rejected by tychoc and tychoc0. (tychoc0's `ty_has_handle` short-circuits when no
+`handle` is declared, so self-compilation pays nothing and recursive structs can't
+cycle the check.)
 
 **tychoc done (uncommitted in the working tree):** `handle` keyword + `T_HANDLE_BASE`
 (58368, the free gap above channels) + `g_handles` registry + `parse_handle`;

@@ -2621,6 +2621,43 @@ fn handle_free(dc: Decls, ty: string) -> string:
             return substr(dc.handles[i], eq + 1, len(dc.handles[i]))
         i = i + 1
     return ""
+# FFI R2 affine ban: does `ty` carry a handle (directly, or nested in an array/
+# map/tuple/Option/struct field)? A handle stored in any composite could be
+# aliased into a double-free or escape its destructor -- fail closed. (Result and
+# soa nesting are not deep-checked; tychoc, the reference, rejects those.)
+fn ty_has_handle(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    if len(dc.handles) == 0:                          # no `handle` decl -> nothing can carry one (free for self-compile + all normal code)
+        return false
+    if is_handle(dc, ty):
+        return true
+    # array/map/tuple/Option recurse on the type STRING, which strictly shrinks -> bounded.
+    if is_array(ty):
+        return ty_has_handle(dc, ctx, elem_ty(ty))
+    if is_map(ty):
+        return ty_has_handle(dc, ctx, map_key(ty)) or ty_has_handle(dc, ctx, map_val(ty))
+    if is_option(ty):
+        return ty_has_handle(dc, ctx, option_inner(ty))
+    if is_tuple(ty):
+        parts := tuple_parts(ty)
+        i := 0
+        for i < len(parts):
+            if ty_has_handle(dc, ctx, parts[i]):
+                return true
+            i = i + 1
+        return false
+    if is_struct(dc, ctx, ty):
+        i := 0
+        for i < len(dc.structs):
+            if dc.structs[i].name == ty:
+                j := 0
+                for j < len(dc.structs[i].fields):
+                    ft := dc.structs[i].fields[j].ty
+                    if not is_struct(dc, ctx, ft) and ty_has_handle(dc, ctx, ft):   # recurse non-struct fields ([Res]/(int,Res)/Res); skip nested structs so a recursive struct can't cycle
+                        return true
+                    j = j + 1
+                return false
+        return false
+    return false
 fn is_chan(ty: string) -> bool:                   # Channel(T): the bounded queue handle (CC-4)
     return has_prefix(ty, "Channel(")
 fn chan_inner(ty: string) -> string:              # "Channel(T)" -> "T"
@@ -5925,6 +5962,8 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                     die("'" + name + "' is already declared in this scope")
                 di = di + 1
             ty := type_of(e, names, types, dc, ctx)
+            if ty_has_handle(dc, ctx, ty) and not is_handle(dc, ty):   # FFI R2: a handle nested in a container/aggregate could be aliased into a double-free
+                die_at(dc, _sl, "a handle cannot be stored in a container or aggregate -- it is freed at the end of its scope")
             if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
                 push(types, ty)
@@ -5964,6 +6003,8 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                 push(types, "!")
             return code
         SAssign(name, e, _sl):
+            if is_handle(dc, var_type(names, types, name)):   # FFI R2: rebinding orphans the old handle (freed once, at scope exit)
+                die_at(dc, _sl, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope")
             lhs := gen_expr(EVar(name, _el), names, types, dc, ctx)
             if is_scalar_ty(dc, ctx, type_of(EVar(name, _el), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
                 return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
@@ -6594,6 +6635,15 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
     types := []string
     seed_env(f, &names, &types)
+    # FFI R2 affine bans: a Tycho fn cannot return a handle (free-then-escape = UAF);
+    # a param may be a BARE handle (a borrow) but never a composite carrying one.
+    if ty_has_handle(dc, ctx, f.ret):
+        die("type: fn '" + f.name + "' cannot return a handle -- a handle is freed at the end of its scope and cannot escape it")
+    hpi := 0
+    for hpi < len(f.ptypes):
+        if ty_has_handle(dc, ctx, f.ptypes[hpi]) and not is_handle(dc, f.ptypes[hpi]):
+            die("type: fn '" + f.name + "' parameter '" + f.params[hpi] + "': a handle cannot be nested in a container or aggregate")
+        hpi = hpi + 1
     # Record this func's NON-mut param names so the map accumulator pass skips
     # the in-place put on a by-value map param (it would mutate the caller's
     # shared table). Mirrors the C compiler dropping non-mut params from accums
@@ -8788,6 +8838,8 @@ fn lift_expr(e: Expr, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
                 elif has_str(capnames, fv):
                     fv = fv                          # already captured
                 elif has_str(names, fv):             # an enclosing local -> capture by value (heap: deep-copied at creation)
+                    if is_handle(dc, var_type(names, types, fv)):   # FFI R2: capturing a handle would alias it into the env, outliving its destructor
+                        die("type: a closure cannot capture a handle -- it is freed at the end of its scope")
                     push(capnames, fv)
                     push(captypes, var_type(names, types, fv))
                 # else: a top-level fn / enum / None -> resolves inside the lifted proc, not a capture
