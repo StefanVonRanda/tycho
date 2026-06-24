@@ -1,36 +1,50 @@
-# Dogfooding tycho's FFI on a real C library: SQLite, in-memory.
-# The sx_* symbols come from sqlite_shim.c (--shim); -lsqlite3 (--link/--pkg)
-# provides the sqlite3_* functions the shim calls. Exercises ptr handles
-# (db, stmt), string args (SQL), arena-copied string returns (column text),
-# int returns, is_null, and an extern call in a loop condition.
-extern fn sx_open() -> ptr
-extern fn sx_exec(db: ptr, sql: string) -> int
-extern fn sx_prepare(db: ptr, sql: string) -> ptr
-extern fn sx_step(stmt: ptr) -> int
-extern fn sx_col_int(stmt: ptr, i: int) -> int
-extern fn sx_col_text(stmt: ptr, i: int) -> string
-extern fn sx_finalize(stmt: ptr)
-extern fn sx_close(db: ptr)
+# Dogfooding tycho's FFI on a real C library: SQLite, in-memory -- with NO
+# hand-written shim. Every binding is a direct `extern` to a libsqlite3 symbol:
+#   - sqlite3_open / sqlite3_prepare_v2 are out-param constructors: the handle is
+#     written through a `mut ptr` (FFI R4), so the compiler passes &db / &st for us.
+#   - sqlite3_exec's trailing callback/arg/errmsg are passed as `null`.
+#   - sqlite3_step returns SQLITE_ROW (100) / SQLITE_DONE (101); we compare directly.
+#   - sqlite3_column_text returns a C string valid only until the next step; tycho
+#     arena-copies it on the string return, so the copy outlives the cursor.
+#   - sqlite3_column_int64 returns a clean 64-bit value (sqlite3_column_int returns a
+#     32-bit int, whose widening to tycho's 64-bit int is the one case still better
+#     served by a shim or a future i32 type).
+# Result codes are all non-negative, so reading C `int` returns as tycho's 64-bit
+# int is correct on a mainstream ABI (a C API returning negative ints would still
+# want a `long` shim). Build:  tychoc demo.ty -o demo --pkg sqlite3   (no --shim)
+extern "sqlite3" fn sqlite3_open(path: string, db: mut ptr) -> int
+extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> int
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: mut ptr, tail: ptr) -> int
+extern "sqlite3" fn sqlite3_step(st: ptr) -> int
+extern "sqlite3" fn sqlite3_column_int64(st: ptr, i: int) -> int
+extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
+extern "sqlite3" fn sqlite3_finalize(st: ptr) -> int
+extern "sqlite3" fn sqlite3_close(db: ptr) -> int
 
 fn main():
-    db := sx_open()
-    if is_null(db):
+    db := null
+    if sqlite3_open(":memory:", &db) != 0:
         die("sqlite: open failed")
-    rc := sx_exec(db, "CREATE TABLE t(id INTEGER, name TEXT)")
-    rc = sx_exec(db, "INSERT INTO t VALUES (1,'alice'),(2,'bob'),(3,'carol')")
-    if rc != 0:
+    if sqlite3_exec(db, "CREATE TABLE t(id INTEGER, name TEXT)", null, null, null) != 0:
+        die("sqlite: create failed")
+    if sqlite3_exec(db, "INSERT INTO t VALUES (1,'alice'),(2,'bob'),(3,'carol')", null, null, null) != 0:
         die("sqlite: insert failed")
 
-    # row-by-row: each name is a C string the shim returns and tycho arena-copies
-    st := sx_prepare(db, "SELECT id, name FROM t ORDER BY id")
-    for sx_step(st) == 1:
-        print(f"{sx_col_int(st, 0)}:{sx_col_text(st, 1)}\n")
-    sx_finalize(st)
+    # row-by-row: each name is a C string sqlite owns until the next step()/finalize();
+    # tycho arena-copies it on the string return, so the printed copy is never a UAF.
+    st := null
+    if sqlite3_prepare_v2(db, "SELECT id, name FROM t ORDER BY id", -1, &st, null) != 0:
+        die("sqlite: prepare failed")
+    for sqlite3_step(st) == 100:                 # 100 = SQLITE_ROW
+        print(f"{sqlite3_column_int64(st, 0)}:{sqlite3_column_text(st, 1)}\n")
+    sqlite3_finalize(st)
 
     # an aggregate query
-    agg := sx_prepare(db, "SELECT count(*), sum(id) FROM t")
-    if sx_step(agg) == 1:
-        print(f"count={sx_col_int(agg, 0)} sum={sx_col_int(agg, 1)}\n")
-    sx_finalize(agg)
+    agg := null
+    if sqlite3_prepare_v2(db, "SELECT count(*), sum(id) FROM t", -1, &agg, null) != 0:
+        die("sqlite: prepare agg failed")
+    if sqlite3_step(agg) == 100:
+        print(f"count={sqlite3_column_int64(agg, 0)} sum={sqlite3_column_int64(agg, 1)}\n")
+    sqlite3_finalize(agg)
 
-    sx_close(db)
+    sqlite3_close(db)

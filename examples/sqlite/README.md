@@ -1,24 +1,36 @@
 # SQLite — a real-library FFI dogfood
 
-tycho calling **real SQLite** (in-memory) through its FFI. Demonstrates the whole
-stack on a serious C library:
+tycho calling **real SQLite** (in-memory) through its FFI, with **no hand-written
+shim** — every binding is a direct `extern` to a `libsqlite3` symbol. Demonstrates
+the whole stack on a serious C library:
 
+- **out-parameter constructors (`mut ptr`)** — `sqlite3_open(":memory:", &db)` and
+  `sqlite3_prepare_v2(..., &st, ...)` write their `sqlite3**` / `sqlite3_stmt**`
+  result through a pointer out-param. tycho declares it `mut ptr` and the compiler
+  passes the address for you (FFI R4) — the reason this binding no longer needs a
+  shim.
 - **`ptr` handles** — the `sqlite3*` db and `sqlite3_stmt*` cursor are opaque
   `ptr`s tycho holds and passes back, never dereferences.
+- **`null` for unused C args** — `sqlite3_exec`'s trailing callback/arg/errmsg
+  pointers pass as `null`.
 - **string args** — SQL text passes as a zero-cost `char*`.
-- **arena-copied string returns** — `sx_col_text` returns SQLite's internal text
-  pointer, which is only valid until the next `step()`/`finalize()`. tycho
-  arena-copies it on return, so the value outlives the cursor. `run.sh` builds
-  the program under ASan/UBSan to prove there's no use-after-free.
-- **`--shim`** — SQLite's `sqlite3_open`/`prepare_v2` use `T**` out-params tycho's
-  FFI can't express, so `sqlite_shim.c` adapts them to return-the-handle
-  signatures. This is the Stage-3 companion-file pattern.
+- **arena-copied string returns** — `sqlite3_column_text` returns SQLite's internal
+  text pointer, valid only until the next `step()`/`finalize()`. tycho arena-copies
+  it on return, so the value outlives the cursor. `run.sh` builds the program under
+  ASan/UBSan to prove there's no use-after-free.
+- **integer returns** — `sqlite3_step`'s result code is compared directly to
+  `SQLITE_ROW` (100); row values use `sqlite3_column_int64` for a clean 64-bit read.
 - **`--pkg sqlite3`** — pulls the link flags from `pkg-config`.
+
+The one place a shim would still help: a C function returning a *negative* `int`.
+SQLite's result codes are all non-negative, so reading its 32-bit `int` returns as
+tycho's 64-bit `int` is correct on a mainstream ABI; an API returning negative
+`int`s would still want a `long` shim (or a future `i32` type).
 
 ## Build & run
 
 ```
-tychoc demo.ty -o demo --shim sqlite_shim.c --pkg sqlite3   # or: --link sqlite3
+tychoc demo.ty -o demo --pkg sqlite3      # no --shim; or: --link sqlite3
 ./demo
 ```
 
