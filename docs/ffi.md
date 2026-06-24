@@ -96,6 +96,38 @@ table above — it fails closed rather than emit something that would corrupt
 memory across the boundary. To pass aggregate data, marshal it through scalars,
 strings, and `ptr` handles, or write a small C shim (see [Linking](#linking)).
 
+## Typed handles (safe-by-default resources)
+
+A raw `ptr` is never freed for you. For a C resource with a clear owner and a
+destructor (a `sqlite3*`, a `FILE*`, a zlib stream), declare a **handle** type
+instead — the compiler frees it automatically at the end of the scope that owns
+it, so it cannot leak or be used after close:
+
+```tycho
+handle Db:                                   # Db's C type is void*; freed by its destructor
+    free: sqlite3_close                      # a C symbol (declared as an extern fn below)
+
+extern "sqlite3" fn sqlite3_open(path: string) -> Db       # opener -> an owned Db
+extern "sqlite3" fn sqlite3_exec(db: Db, sql: string) -> int  # borrow: uses it, does not free
+extern "sqlite3" fn sqlite3_close(db: Db) -> int           # the destructor
+
+fn run():
+    db := sqlite3_open("x.db")               # owned here
+    sqlite3_exec(db, "create table t(x)")    # borrow — db stays usable
+    # db is freed here, exactly once: the compiler emits sqlite3_close(db)
+```
+
+- **RAII.** The destructor `free:` runs at the owning variable's scope exit —
+  every exit (block end, early `return`, `break`/`continue`). Freed exactly once.
+- **Borrow on pass.** Passing a handle to a fn/extern passes the `void*`; the
+  callee does not free it. Only the owning scope does.
+- **Affine, fail-closed.** A handle is opaque (no deref) and cannot be copied,
+  stored in a container/struct, captured by a closure or `parallel for`,
+  reassigned, or returned out of its scope — the type checker rejects each so a
+  handle can never be aliased into a double-free or escape its destructor. Only
+  an `extern fn` opener may produce one. (These bans are enforced by the
+  reference compiler.)
+
 ## Lifetime & safety
 
 The whole point is that foreign memory never enters Tycho's owned world:

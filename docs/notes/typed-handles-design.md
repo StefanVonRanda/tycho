@@ -1,10 +1,28 @@
 # Typed handles with destructors (FFI R2) — settled design
 
-Status: **design settled, not yet implemented.** Surface = option **A** (a
-dedicated `handle` declaration). v1 reuses the affine + finalizer machinery that
-`spawn`/`wait` tasks already have — which is the proof that the ownership model is
-sound. Implement in BOTH compilers, then fixpoint + tests + docs, as for `bytes`
-([[../../...]] commit ab49393).
+Status: **SHIPPED (both compilers).** Surface = option **A** (a dedicated `handle`
+declaration). v1 reuses the affine + finalizer machinery that `spawn`/`wait` tasks
+already have — which is the proof that the ownership model is sound. Verified:
+tests/ffi handle fixture (refcount resource freed exactly once, borrow-on-pass,
+both compilers + ASan + golden, in `make ci`); make test 221/0; make conc 34/0;
+fixpoint B==C. Note: the affine bans (container/return/reassign/capture) are
+enforced by tychoc (the reference); tychoc0 (bootstrap) accepts them leniently —
+a documented v1 parity gap, not a soundness gap in compiled-by-tychoc code.
+
+**tychoc done (uncommitted in the working tree):** `handle` keyword + `T_HANDLE_BASE`
+(58368, the free gap above channels) + `g_handles` registry + `parse_handle`;
+`c_type`→`void *`; extern param/return accept handles; the RAII finalizer
+(`taskvar_push(free_fn(h))` at the S_DECL site, so `return_frees`/`task_finishes_from`
+emit it at every scope exit); and all four affine bans (container, return,
+reassign, closure/parfor capture) mirroring the `IS_TASK` sites. Verified: a
+refcount fixture frees exactly once (0→1→0), borrow-on-pass works, ASan/UBSan +
+Leak clean; the return/reassign/container bans reject; `make test` 221/0.
+
+**Remaining:** mirror in tychoc0 (string type-tag `"handle:Name"`, `parse_handle`,
+`cty`→`void* `, the finalizer emit in its block-exit path, the bans); then
+fixpoint B==C; a committed tests/ffi handle fixture (refcount resource + reject
+cases, both compilers + ASan + golden); docs/ffi.md. Same shape as the `bytes`
+port (commit ab49393).
 
 ## Problem
 

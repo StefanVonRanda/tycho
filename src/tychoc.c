@@ -111,7 +111,7 @@ typedef enum {
     TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT, TK_DOLLAR,
@@ -170,6 +170,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "in"))     return TK_IN;
     if (!strcmp(s, "struct")) return TK_STRUCT;
     if (!strcmp(s, "enum"))   return TK_ENUM;
+    if (!strcmp(s, "handle")) return TK_HANDLE;
     if (!strcmp(s, "type"))   return TK_TYPE;
     if (!strcmp(s, "mut"))  return TK_INOUT;
     if (!strcmp(s, "true"))   return TK_TRUE;
@@ -526,6 +527,27 @@ static void task_container_err(void) {
     exit(1);
 }
 
+/* Typed C handles (FFI R2, docs/notes/typed-handles-design.md): `handle Name:
+ * free: free_fn` declares an affine, opaque (void*) type that the compiler frees
+ * by emitting `free_fn(h)` at the owning variable's scope exit -- the same affine
+ * + finalizer model as tasks, with a user-supplied destructor. Sits in the free
+ * range between channels (54272+4096) and typarams (65536). Defined before the
+ * container-intern functions so they can fail closed on a contained handle. */
+#define T_HANDLE_BASE 58368
+#define IS_HANDLE(t) ((t) >= T_HANDLE_BASE && (t) < T_HANDLE_BASE + 256)
+#define HANDLE_ID(t) ((int)((t) - T_HANDLE_BASE))
+typedef struct { const char *name; const char *free_fn; int line; } HandleType;
+static HandleType g_handles[256];
+static int g_nhandles = 0;
+static int handle_find(const char *name) {
+    for (int i = 0; i < g_nhandles; i++) if (!strcmp(g_handles[i].name, name)) return i;
+    return -1;
+}
+static void handle_container_err(void) {
+    fprintf(stderr, "tychoc: a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope\n");
+    exit(1);
+}
+
 /* Channel(T) -- the bounded queue from `ch := channel(T, cap)` (CC-4). The
  * ONE shared object in tycho concurrency: the C representation is `HChan *`
  * and copying the handle word ALIASES it on purpose (it is internally
@@ -546,6 +568,7 @@ static void chan_container_err(void) {
 }
 static Type chan_of(Type inner) {                /* find-or-create Channel(inner) */
     if (IS_TASK(inner)) task_container_err();
+    if (IS_HANDLE(inner)) handle_container_err();
     if (IS_CHAN(inner)) chan_container_err();
     for (int i = 0; i < g_nchantypes; i++)
         if (g_chantypes[i].inner == inner) return T_CHAN_BASE + i;
@@ -578,6 +601,7 @@ static int g_narrtypes = 0, g_arrtypes_cap = 0;
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
 static Type arrc_of(Type elem) {                 /* find-or-create [elem] */
     if (IS_TASK(elem)) task_container_err();
+    if (IS_HANDLE(elem)) handle_container_err();
     if (IS_CHAN(elem)) chan_container_err();
     for (int i = 0; i < g_narrtypes; i++)
         if (g_arrtypes[i].elem == elem) return T_ARRC_BASE + i;
@@ -626,6 +650,7 @@ static int g_nopttypes = 0, g_opttypes_cap = 0;
 #define OPT_ID(t)  ((int)((t) - T_OPT_BASE))
 static Type opt_of(Type inner) {                 /* find-or-create Option(inner) */
     if (IS_TASK(inner)) task_container_err();
+    if (IS_HANDLE(inner)) handle_container_err();
     if (IS_CHAN(inner)) chan_container_err();
     for (int i = 0; i < g_nopttypes; i++)
         if (g_opttypes[i].inner == inner) return T_OPT_BASE + i;
@@ -648,6 +673,7 @@ static int g_nrestypes = 0, g_restypes_cap = 0;
 #define RES_ID(t)  ((int)((t) - T_RES_BASE))
 static Type res_of(Type ok, Type err) {          /* find-or-create Result(ok, err) */
     if (IS_TASK(ok) || IS_TASK(err)) task_container_err();
+    if (IS_HANDLE(ok) || IS_HANDLE(err)) handle_container_err();
     if (IS_CHAN(ok) || IS_CHAN(err)) chan_container_err();
     for (int i = 0; i < g_nrestypes; i++)
         if (g_restypes[i].ok == ok && g_restypes[i].err == err) return T_RES_BASE + i;
@@ -711,6 +737,7 @@ static int g_ntuptypes = 0, g_tuptypes_cap = 0;
 static Type tup_of(Type *elems, int n) {         /* find-or-create (elems...) */
     for (int i = 0; i < n; i++) {
         if (IS_TASK(elems[i])) task_container_err();
+        if (IS_HANDLE(elems[i])) handle_container_err();
         if (IS_CHAN(elems[i])) chan_container_err();
     }
     for (int i = 0; i < g_ntuptypes; i++)
@@ -840,6 +867,7 @@ static Type mapc_of(Type k, Type v) {            /* find-or-create [k: v] */
     if (g_nmaptypes >= 16384) { fprintf(stderr, "tychoc: too many map types\n"); exit(1); }   /* T_FUNC_BASE - T_MAPC_BASE (defined below) */
     TBL_ENSURE(g_maptypes, g_nmaptypes, g_maptypes_cap);
     if (IS_TASK(v)) task_container_err();
+    if (IS_HANDLE(v)) handle_container_err();
     if (IS_CHAN(v)) chan_container_err();
     g_maptypes[g_nmaptypes].key = k; g_maptypes[g_nmaptypes].val = v;
     return T_MAPC_BASE + g_nmaptypes++;
@@ -980,6 +1008,7 @@ static const char *c_type(Type t) {
     if (IS_FUNC(t))   return sfmt("FnC%d ", FUNC_ID(t));   /* a function-pointer typedef */
     if (IS_TASK(t))   return "HTask *";   /* opaque runtime task handle (spawn/wait) */
     if (IS_CHAN(t))   return "HChan *";   /* shared bounded-queue handle (channels) */
+    if (IS_HANDLE(t)) return "void *";    /* typed C handle (FFI R2): opaque void*, freed by its destructor at scope exit */
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
@@ -1004,6 +1033,7 @@ static const char *type_name(Type t) {
     if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
     if (IS_TASK(t))    return sfmt("Task(%s)", type_name(task_inner(t)));
     if (IS_CHAN(t))    return sfmt("Channel(%s)", type_name(chan_inner(t)));
+    if (IS_HANDLE(t))  return g_handles[HANDLE_ID(t)].name;
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
     if (IS_MAPC(t))   return sfmt("[%s: %s]", type_name(map_key(t)), type_name(map_val(t)));
@@ -1512,6 +1542,8 @@ static Type parse_type(Parser *ps) {
         }
         int nid = newtype_find(nm);
         if (nid >= 0) { ps->p++; return NT_TYPE(nid); }
+        int hid = handle_find(nm);
+        if (hid >= 0) { ps->p++; return T_HANDLE_BASE + hid; }
         const char *sg = suggest_type(nm);
         if (sg) die_at(t->line, "unknown type '%s'; did you mean '%s'?", t->text, sg);
         die_at(t->line, "unknown type '%s'", t->text);
@@ -2528,6 +2560,8 @@ static Proc *parse_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
     else pr->ret = T_VOID;
+    if (IS_HANDLE(pr->ret))   /* FFI R2: a handle is freed at its owner's scope exit; returning it (the only way is from an extern opener) would free-then-escape */
+        die_at(pr->line, "a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it");
     pr->generic = (g_ncur_typarams > 0);   /* a `$T` in the signature makes this a template */
     pr->ntyparams = g_ncur_typarams;       /* record the $-params in order, for explicit call-site type args */
     for (int i = 0; i < g_ncur_typarams; i++) pr->typarams[i] = typaram_of(g_cur_typarams[i]);
@@ -2609,7 +2643,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         eat(ps, TK_COLON, "':' after parameter name");
         if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': mut parameters are not allowed across the C boundary", pr->name);
         Type pt = parse_type(ps);
-        if (!ffi_scalar_type(pt) && pt != T_BYTES) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes (no composites across the C boundary)", pr->name, pn->text);
+        if (!ffi_scalar_type(pt) && pt != T_BYTES && !IS_HANDLE(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes or a handle (no composites across the C boundary)", pr->name, pn->text);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
@@ -2621,7 +2655,7 @@ static Proc *parse_extern_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) {
         pr->ret = parse_type(ps); pr->has_ret = 1;
-        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes or omitted", pr->name);
+        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !IS_HANDLE(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, a handle, or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -2634,6 +2668,33 @@ static Proc *parse_extern_fn(Parser *ps) {
  *     ...
  * Registered into g_structs immediately so later declarations can name it
  * as a type (a struct must be defined before it is used as a type). */
+/* handle Name:
+ *     free: c_free_fn
+ * Declares an affine, opaque (void*) C handle whose destructor `c_free_fn` (a C
+ * symbol, normally an `extern fn c_free_fn(h: Name)`) the compiler calls at the
+ * owning variable's scope exit. See docs/notes/typed-handles-design.md. */
+static void parse_handle(Parser *ps) {
+    eat(ps, TK_HANDLE, "'handle'");
+    Tok *nameT = eat(ps, TK_IDENT, "a handle name");
+    const char *nm = pkg_mangle(nameT->text);
+    if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0 || handle_find(nm) >= 0)
+        die_at(nameT->line, "'%s' is already defined", nameT->text);
+    if (g_nhandles >= 256) die_at(nameT->line, "too many handle types (max 256)");
+    eat(ps, TK_COLON, "':' before the handle body");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_INDENT, "an indented 'free: <c_free_fn>' line");
+    Tok *kw = eat(ps, TK_IDENT, "'free'");
+    if (strcmp(kw->text, "free")) die_at(kw->line, "a handle body is exactly 'free: <c_free_fn>'");
+    eat(ps, TK_COLON, "':' after 'free'");
+    Tok *fn = eat(ps, TK_IDENT, "the C destructor function name");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_DEDENT, "dedent");
+    g_handles[g_nhandles].name = nm;
+    g_handles[g_nhandles].free_fn = fn->text;   /* a C symbol; emitted as free_fn(h) at scope exit */
+    g_handles[g_nhandles].line = nameT->line;
+    g_nhandles++;
+}
+
 static void parse_struct(Parser *ps) {
     eat(ps, TK_STRUCT, "'struct'");
     Tok *nameT = eat(ps, TK_IDENT, "a struct name");
@@ -2923,6 +2984,7 @@ static ProcVec parse_program(Tok *toks) {
         }
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
+        if (at(&ps, TK_HANDLE)) { parse_handle(&ps); continue; }
         if (at(&ps, TK_TYPE))   { parse_typedecl(&ps); continue; }
         Proc *pr = parse_fn(&ps);
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)xrealloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
@@ -3275,6 +3337,7 @@ static Type resolve_expr(Expr *e) {
                 Type vt;
                 if (vars_find(ids[i], &vt)) {   /* an enclosing local -> captured BY VALUE (heap: deep-copied in) */
                     if (IS_TASK(vt)) die_at(e->line, "a closure cannot capture a task handle -- wait it first");
+                    if (IS_HANDLE(vt)) die_at(e->line, "a closure cannot capture a handle -- it is freed at the end of its scope");
                     if (IS_CHAN(vt)) die_at(e->line, "a closure cannot capture a channel handle -- take it as a parameter instead");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
                     caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
@@ -4280,6 +4343,7 @@ static void pf_scan_expr(Expr *e) {
         Type vt;
         if (!pf_local(e->sval) && vars_find(e->sval, &vt)) {
             if (IS_TASK(vt)) die_at(e->line, "a parallel for cannot capture a task handle -- wait it first");
+            if (IS_HANDLE(vt)) die_at(e->line, "a parallel for cannot capture a handle -- it is freed at the end of its scope");
             pf_capture(e);
         }
         return;
@@ -4709,6 +4773,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "a task variable cannot be reassigned -- each task is waited exactly once");
             if (IS_CHAN(vt))   /* CC-4: rebinding would orphan the created channel (freed once, at its decl's scope exit) */
                 die_at(s->line, "a channel variable cannot be reassigned");
+            if (IS_HANDLE(vt))   /* FFI R2: rebinding would orphan the old handle (its scope-exit free targets one value) */
+                die_at(s->line, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope");
             if (vt == T_PENDING) {   /* B-3: the first assignment grounds a pending decl */
                 Type gt = resolve_expr(s->expr);
                 pend_ground(s->name, gt, s->line);
@@ -6687,6 +6753,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (IS_CHAN(s->decl_type) && s->expr->kind == E_CALL
                 && s->expr->sval && !strcmp(s->expr->sval, "channel"))
                 taskvar_push(sfmt("tycho_chan_free(h_%s)", s->name));   /* CC-4: creator scope owns + frees */
+            if (IS_HANDLE(s->decl_type))   /* FFI R2: RAII — emit the destructor free_fn(h) at this var's scope exit */
+                taskvar_push(sfmt("%s(h_%s)", g_handles[HANDLE_ID(s->decl_type)].free_fn, s->name));
             /* return-slot optimization: a function-top-level heap local that
              * is returned by name is built directly in the caller's arena, so
              * the eventual `return` is a no-op move instead of a deep copy.

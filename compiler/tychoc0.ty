@@ -531,6 +531,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
                               # (safe to map here precisely because Decls is never rebuilt)
     src_lines: [string]       # the source split into lines (bundle-relative), for die_at snippet + caret
     vmap: [string: int]       # variant name -> enum index, built once (sibling of sigmap): O(1) is_variant/variant_enum, was a nested linear scan over all enums x variants (~7% of self-compile)
+    handles: [string]         # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl (for is_handle/cty/finalizer)
 
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-mut param names (map accum guard)
@@ -558,6 +559,7 @@ struct Program:
     funcs: [Func]
     ntnames: [string]
     ntunder: [string]
+    handles: [string]         # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl
 
 # --------------------------------------------------------------- parser ----
 
@@ -1660,6 +1662,14 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
 fn ffi_scalar(ty: string) -> bool:
     return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str" or ty == "ptr"
 
+# An extern's param/return type is allowed if it is a scalar, `bytes`, or a bare
+# name (a `handle` type -- can't consult dc here at parse time, so accept any
+# non-composite identifier; cty resolves it to void* iff it's a real handle).
+fn extern_ok_ty(ty: string) -> bool:
+    if ffi_scalar(ty) or ty == "bytes":
+        return true
+    return find(ty, "[") < 0 and find(ty, "(") < 0 and find(ty, ":") < 0
+
 # extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
 # Name is NOT mangled — a C symbol is global.
 fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
@@ -1678,15 +1688,15 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     ptypes := []string
     if toks[pos].kind != TRParen:
         p := parse_param(toks, &pos)
-        if not ffi_scalar(p.ty) and p.ty != "bytes":
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes")
+        if not extern_ok_ty(p.ty):
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes or a handle")
         push(params, p.name)
         push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
             p2 := parse_param(toks, &pos)
-            if not ffi_scalar(p2.ty) and p2.ty != "bytes":
-                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes")
+            if not extern_ok_ty(p2.ty):
+                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes or a handle")
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
@@ -1694,8 +1704,8 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     if toks[pos].kind == TArrow:
         pos = pos + 1
         ret = parse_type(toks, &pos)
-        if not ffi_scalar(ret) and ret != "bytes":
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string/bytes or omitted")
+        if not extern_ok_ty(ret):
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string/bytes, a handle, or omitted")
     return Func(name, params, ptypes, ret, []Stmt, 1, lib, "")
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
@@ -1733,6 +1743,33 @@ fn parse_lambda(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     expect(toks, &pos, TColon)
     bexpr := parse_expr_d(toks, &pos, pc)   # thread depth so nested inline lambdas can't overflow the stack (H2)
     return ELambda(0, params, ptypes, ret, bexpr, []string, []string, _el)   # body is the single expr; lift wraps it in a Func
+
+# handle Name:
+#     free: c_free_fn
+# FFI R2 typed handle (docs/notes/typed-handles-design.md): an affine void* whose
+# destructor `c_free_fn` runs at the owning var's scope exit. Returns "Name=c_free_fn".
+fn parse_handle(toks: [Token], pos: mut int) -> string:
+    expect_ident(toks, &pos, "handle")
+    if toks[pos].kind != TIdent:
+        die("parse: line " + str(toks[pos].line) + ": expected a handle name")
+    name := toks[pos].text
+    pos = pos + 1
+    expect(toks, &pos, TColon)
+    open_block(toks, &pos)
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    if toks[pos].kind != TIdent or toks[pos].text != "free":
+        die("parse: line " + str(toks[pos].line) + ": a handle body is exactly 'free: <c_free_fn>'")
+    pos = pos + 1
+    expect(toks, &pos, TColon)
+    if toks[pos].kind != TIdent:
+        die("parse: line " + str(toks[pos].line) + ": expected the C destructor function name")
+    freefn := toks[pos].text
+    pos = pos + 1
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    expect(toks, &pos, TDedent)
+    return name + "=" + freefn
 
 fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
     expect_ident(toks, &pos, "struct")
@@ -2289,6 +2326,7 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
     aliasp := []string
     variants := []string
     externs := []string                          # FFI extern fn names (global C symbols, never mangled)
+    handles := []string                          # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl
     curpfx := ""
     sawpkg := false
     for toks[pos].kind != TEof:
@@ -2343,6 +2381,8 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
             push(rfuncs, ef)
             push(fpfx, curpfx)
             push(externs, ef.name)                                      # global C symbol — bare calls to it stay unmangled
+        elif toks[pos].kind == TIdent and toks[pos].text == "handle":   # FFI R2: typed handle decl
+            push(handles, parse_handle(toks, &pos))
         else:
             push(rfuncs, parse_func(toks, &pos))
             push(fpfx, curpfx)
@@ -2383,7 +2423,7 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
             push(ntnames, rntn[ni])
             push(ntunder, rntu[ni])
         ni = ni + 1
-    return Program(structs, enums, funcs, ntnames, ntunder)
+    return Program(structs, enums, funcs, ntnames, ntunder, handles)
 
 # -------------------------------------------------------------- codegen ----
 # Type-directed: each expression's C form follows its inferred type. A type is
@@ -2561,6 +2601,26 @@ fn is_task(ty: string) -> bool:                   # Task(T): the handle from `sp
     return has_prefix(ty, "Task(")
 fn task_inner(ty: string) -> string:              # "Task(T)" -> "T"
     return substr(ty, 5, len(ty) - 1)
+
+# FFI R2 typed handles: a handle type is just its name (like a struct name);
+# dc.handles holds "Name=c_free_fn" entries. is_handle tests membership; handle_free
+# returns the destructor C symbol the finalizer emits at scope exit.
+fn is_handle(dc: Decls, ty: string) -> bool:
+    i := 0
+    for i < len(dc.handles):
+        eq := find(dc.handles[i], "=")
+        if eq >= 0 and substr(dc.handles[i], 0, eq) == ty:
+            return true
+        i = i + 1
+    return false
+fn handle_free(dc: Decls, ty: string) -> string:
+    i := 0
+    for i < len(dc.handles):
+        eq := find(dc.handles[i], "=")
+        if eq >= 0 and substr(dc.handles[i], 0, eq) == ty:
+            return substr(dc.handles[i], eq + 1, len(dc.handles[i]))
+        i = i + 1
+    return ""
 fn is_chan(ty: string) -> bool:                   # Channel(T): the bounded queue handle (CC-4)
     return has_prefix(ty, "Channel(")
 fn chan_inner(ty: string) -> string:              # "Channel(T)" -> "T"
@@ -2768,6 +2828,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
     if ty == "bytes":                            # same length-headered char* buffer as str (distinct type; FFI crosses as (ptr,len))
         return "char* "
     if ty == "ptr":                              # FFI opaque handle
+        return "void* "
+    if is_handle(dc, ty):                        # FFI R2 typed C handle: opaque void*, freed by its destructor at scope exit
         return "void* "
     if is_task(ty):                              # opaque runtime task handle (spawn/wait, CC-1)
         return "HTask* "
@@ -5878,6 +5940,9 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                 if is_task(ty):                   # CC-2: implicit join at this var's scope exit
                     push(names, "!tycho_task_finish(" + un(name) + ")")
                     push(types, "!")
+                if is_handle(dc, ty):             # FFI R2: RAII -- emit the destructor free_fn(h) at this var's scope exit
+                    push(names, "!" + handle_free(dc, ty) + "(" + un(name) + ")")
+                    push(types, "!")
                 if is_chan(ty) and expr_has_call(e):   # CC-4: a CREATED channel (not an alias) frees at its scope exit
                     push(names, "!tycho_chan_free(" + un(name) + ")")
                     push(types, "!")
@@ -5890,6 +5955,9 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             push(types, ty)
             if is_task(ty):                       # CC-2 (see the transient path above)
                 push(names, "!tycho_task_finish(" + un(name) + ")")
+                push(types, "!")
+            if is_handle(dc, ty):                 # FFI R2: RAII destructor at scope exit (see the transient path above)
+                push(names, "!" + handle_free(dc, ty) + "(" + un(name) + ")")
                 push(types, "!")
             if is_chan(ty) and expr_has_call(e):
                 push(names, "!tycho_chan_free(" + un(name) + ")")
@@ -10556,7 +10624,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
     for i < len(sinsts):
         push(allstructs, sinsts[i])
         i = i + 1
-    return Program(topo_structs(allstructs), renums, out, prog.ntnames, prog.ntunder)
+    return Program(topo_structs(allstructs), renums, out, prog.ntnames, prog.ntunder, prog.handles)
 
 # Run the lift over a whole program: returns the program with ELambda nodes
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)
@@ -10581,7 +10649,7 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: mut [LamInfo], spawns:
     for i < len(lifted):
         push(nfuncs, lifted[i])
         i = i + 1
-    return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder)
+    return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder, prog.handles)
 
 # Fail-closed declaration checks (parity with the C compiler's parse-time
 # guards): reject duplicate type names (struct/enum/newtype share one
@@ -10675,7 +10743,7 @@ fn main():
             sigmap0[prog0.funcs[i].name] = i
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
-    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums))
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums), prog0.handles)
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
@@ -10690,7 +10758,7 @@ fn main():
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap[funcs[i].name] = i
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     # generics: expand `$T` templates into concrete instances, then rebuild the
     # sig tables from the monomorphized program (templates dropped, instances added)
@@ -10704,7 +10772,7 @@ fn main():
         if map_get(sigmap, funcs[i].name, -1) < 0:
             sigmap[funcs[i].name] = i
         i = i + 1
-    dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums))
+    dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,

@@ -10,6 +10,18 @@ extern "ffidemo" fn ffi_read(h: ptr) -> int
 extern "ffidemo" fn ffi_bsum(b: bytes) -> int            # bytes param -> (ptr,len), int return
 extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the out-param shim
 
+handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
+    free: ffi_res_close
+extern "ffidemo" fn ffi_res_open(id: int) -> FRes        # opener -> owned handle
+extern "ffidemo" fn ffi_res_use(h: FRes) -> int          # borrow: takes the handle, does not free
+extern "ffidemo" fn ffi_res_close(h: FRes) -> int        # the destructor C symbol
+extern "ffidemo" fn ffi_res_live() -> int                # live refcount (0 iff freed exactly once)
+
+fn use_res():
+    r := ffi_res_open(1)
+    print(f"resuse={ffi_res_use(r)} live_in={ffi_res_live()}\n")   # 7, 1 (borrow keeps it live)
+    # r auto-freed here at scope exit -> ffi_res_close(r)
+
 fn b2i(b: bool) -> int:
     if b:
         return 1
@@ -44,3 +56,7 @@ fn main():
     nul := to_bytes("a" + chr(0) + "b")
     rn := ffi_brev(nul)
     print(f"nulsum={ffi_bsum(nul)} nullen={len(rn)}\n")
+    # Stage R2 — a typed handle freed (exactly once) by its destructor at scope exit
+    print(f"live0={ffi_res_live()}\n")          # 0 before
+    use_res()                                   # opens a handle, uses it, auto-frees at its scope exit
+    print(f"live1={ffi_res_live()}\n")          # 0 again -> destructor ran exactly once

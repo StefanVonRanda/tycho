@@ -49,3 +49,13 @@ void ffi_brev(const unsigned char *p, long n, unsigned char **out, long *outlen)
     *out = r;
     *outlen = n;
 }
+
+/* typed handle (FFI R2): a refcounted "resource". ffi_res_open bumps a live
+ * count and returns an opaque handle; the compiler frees it via ffi_res_close
+ * (the handle's `free:`) at scope exit -- so res_live returns to 0 iff the
+ * destructor ran exactly once. */
+static long g_res_live = 0;
+void *ffi_res_open(long id) { (void)id; g_res_live++; return (void *)1; }
+long ffi_res_close(void *h) { (void)h; g_res_live--; return 0; }
+long ffi_res_use(void *h) { return h ? 7 : -1; }
+long ffi_res_live(void) { return g_res_live; }
