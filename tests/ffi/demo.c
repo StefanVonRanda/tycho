@@ -59,3 +59,8 @@ void *ffi_res_open(long id) { (void)id; g_res_live++; return (void *)1; }
 long ffi_res_close(void *h) { (void)h; g_res_live--; return 0; }
 long ffi_res_use(void *h) { return h ? 7 : -1; }
 long ffi_res_live(void) { return g_res_live; }
+
+/* FFI R3a: nullable string return. A hit returns a string; a miss returns NULL,
+ * which `extern ... -> Option(string)` surfaces as None (where `-> string` would
+ * silently map the NULL to ""). */
+const char *ffi_get(long key) { return key > 0 ? "hit" : 0; }

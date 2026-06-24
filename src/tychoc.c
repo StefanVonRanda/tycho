@@ -2666,7 +2666,11 @@ static Proc *parse_extern_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) {
         pr->ret = parse_type(ps); pr->has_ret = 1;
-        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !IS_HANDLE(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, a handle, or omitted", pr->name);
+        /* FFI R3a: `-> Option(string)` is allowed — a C NULL return surfaces as None
+         * (vs `-> string` which maps NULL to ""), so a nullable C getter need not use
+         * a sentinel. The C symbol still returns char*; the wrapper does the NULL test. */
+        int ret_opt_str = (IS_OPT(pr->ret) && opt_inner(pr->ret) == T_STRING);
+        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !IS_HANDLE(pr->ret) && !ret_opt_str) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, Option(string), a handle, or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -6242,6 +6246,10 @@ static char *gen_call(Expr *e, const char *arena) {
                         decls, id, id, e->sval, args, emitted ? ", " : "", id, id, arena, id, id);
         }
         char *xc = gen_extern_raw(e);
+        /* FFI R3a: `-> Option(string)` — NULL becomes None, a real pointer becomes
+         * Some(arena-copied). (Plain `-> string` below still maps NULL to "".) */
+        if (IS_OPT(cs->ret) && opt_inner(cs->ret) == T_STRING)
+            return sfmt("({ const char *_x = %s; %s_o = {0}; if (_x) { _o.has = 1; _o.val = tycho_str_from_c(%s, _x); } _o; })", xc, c_type(cs->ret), arena);
         if (base_of(cs->ret) == T_STRING)
             return sfmt("tycho_str_from_c(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
         return xc;
@@ -7599,7 +7607,10 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
      * two trailing out-params (unsigned char** out, long* outlen) — the out-param
      * shim convention. */
     int bret = (pr->ret == T_BYTES);
-    fprintf(o, "extern %s%s(", bret ? "void " : c_type(pr->ret), pr->name);
+    /* FFI R3a: an `Option(string)` return is a char* at the C ABI (the wrapper at
+     * the call site turns NULL into None); declare the real C return, not TychoOpt. */
+    int optstr = (IS_OPT(pr->ret) && opt_inner(pr->ret) == T_STRING);
+    fprintf(o, "extern %s%s(", bret ? "void " : optstr ? "char *" : c_type(pr->ret), pr->name);
     int emitted = 0;
     for (int i = 0; i < pr->nparams; i++) {
         if (pr->params[i].type == T_BYTES)

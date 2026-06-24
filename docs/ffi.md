@@ -89,11 +89,19 @@ hex marshaling. Build one with `to_bytes(s)` and read it back with `to_str(b)`;
   function `malloc`s `*out` and sets `*outlen`; Tycho copies the buffer into the
   caller's arena and then `free`s `*out`.** A `NULL` `*out` becomes empty `bytes`.
 
-**Composites are rejected.** Arrays, maps, structs, `Option`/`Result`, and
-tuples have Tycho-internal C representations, not a stable C ABI. The type
+**Nullable string return (`-> Option(string)`).** An `extern fn … -> string`
+maps a C `NULL` return to `""` (see below). When the difference between "absent"
+and "empty" matters, declare the return as `Option(string)` instead: the C symbol
+still returns `char*`, but a `NULL` surfaces as `None` and any other pointer as
+`Some(<arena-copied>)`. This removes the need for sentinel strings on nullable C
+getters. (Only `Option(string)` is supported at the boundary, not arbitrary
+`Option(T)`.)
+
+**Other composites are rejected.** Arrays, maps, structs, other `Option`/`Result`,
+and tuples have Tycho-internal C representations, not a stable C ABI. The type
 checker rejects any `extern fn` whose parameter or return type is outside the
-table above — it fails closed rather than emit something that would corrupt
-memory across the boundary. To pass aggregate data, marshal it through scalars,
+table above (plus the `Option(string)` return form) — it fails closed rather than
+emit something that would corrupt memory across the boundary. To pass aggregate data, marshal it through scalars,
 strings, and `ptr` handles, or write a small C shim (see [Linking](#linking)).
 
 ## Typed handles (safe-by-default resources)

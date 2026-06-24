@@ -9,6 +9,7 @@ extern "ffidemo" fn ffi_open(id: int) -> ptr
 extern "ffidemo" fn ffi_read(h: ptr) -> int
 extern "ffidemo" fn ffi_bsum(b: bytes) -> int            # bytes param -> (ptr,len), int return
 extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the out-param shim
+extern "ffidemo" fn ffi_get(key: int) -> Option(string)  # FFI R3a: nullable string return (C NULL -> None)
 
 handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
     free: ffi_res_close
@@ -21,6 +22,13 @@ fn use_res():
     r := ffi_res_open(1)
     print(f"resuse={ffi_res_use(r)} live_in={ffi_res_live()}\n")   # 7, 1 (borrow keeps it live)
     # r auto-freed here at scope exit -> ffi_res_close(r)
+
+fn opts(o: Option(string)) -> string:        # FFI R3a: render an Option(string) result
+    match o:
+        Some(v):
+            return v
+        None:
+            return "<none>"
 
 fn b2i(b: bool) -> int:
     if b:
@@ -60,3 +68,5 @@ fn main():
     print(f"live0={ffi_res_live()}\n")          # 0 before
     use_res()                                   # opens a handle, uses it, auto-frees at its scope exit
     print(f"live1={ffi_res_live()}\n")          # 0 again -> destructor ran exactly once
+    # Stage R3a — `-> Option(string)`: a C NULL surfaces as None (not "")
+    print(f"get1={opts(ffi_get(1))} get0={opts(ffi_get(0))}\n")   # hit -> Some, miss -> None

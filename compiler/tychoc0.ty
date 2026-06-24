@@ -1728,8 +1728,10 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     if toks[pos].kind == TArrow:
         pos = pos + 1
         ret = parse_type(toks, &pos)
-        if not extern_ok_ty(ret):
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string/bytes, a handle, or omitted")
+        if not extern_ok_ty(ret) and not (is_option(ret) and option_inner(ret) == "str"):
+            # FFI R3a: `-> Option(string)` is allowed (a C NULL becomes None, vs `-> string`
+            # which maps NULL to ""). The C symbol still returns char*; cty/proto emit that.
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string/bytes, Option(string), a handle, or omitted")
     return Func(name, params, ptypes, ret, []Stmt, 1, lib, "")
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
@@ -4589,6 +4591,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 xc := name + "(" + xa + ")"
                 if edecls != "":                      # bytes args need single-eval temps -> wrap the call in a stmt-expr
                     xc = "({ " + edecls + name + "(" + xa + "); })"
+                if is_option(ert) and option_inner(ert) == "str":   # FFI R3a: NULL -> None, else Some(arena-copied string)
+                    return "({ const char* _x = " + xc + "; _x ? hsome(hbox(" + ctx.owner + ", sizeof(char*), (char*[]){ s_from_c(" + ctx.owner + ", _x) })) : hnone(); })"
                 if ert == "str":                      # C-owned return -> copy into the arena (NULL -> "")
                     return "s_from_c(" + ctx.owner + ", ({ const char* _x = " + xc + "; _x ? _x : \"\"; }))"
                 return xc
@@ -6476,6 +6480,8 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
     rc := ret_cty(dc, ctx, f.ret)
     if bret:
         rc = "void "
+    if is_option(f.ret) and option_inner(f.ret) == "str":   # FFI R3a: the C symbol returns char*, not HOption (the call site wraps NULL -> None)
+        rc = "char* "
     out := "extern " + rc + f.name + "("
     emitted := 0
     i := 0
