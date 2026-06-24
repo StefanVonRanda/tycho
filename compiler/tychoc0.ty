@@ -130,6 +130,8 @@ fn scan_token(src: string, n: int, i: int, toks: mut [Token], line: int, linesta
                 if e != 110 and e != 116 and e != 92 and e != 34:
                     lex_err(src, tok0, "lex: unsupported string escape (use \\n \\t \\\\ \\\")")
                 i = i + 1
+            elif src[i] < 32 and src[i] != 9:    # reject raw control bytes (newline/CR/NUL/...); tab excepted
+                lex_err(src, tok0, "lex: raw control byte in string literal (use an escape such as \\n or \\t)")
             i = i + 1
         if i >= n:
             lex_err(src, tok0, "lex: unterminated string")
@@ -4216,6 +4218,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # from a string compare. A newtype resolves to its base for the orderable/
             # numeric tests; and/or/bitwise require the literal bool/int type (tychoc).
             rlt := resolve_nt(dc, ctx, lt)
+            if (op == "/" or op == "%") and is_zero_int_lit(r):   # reject div/mod by a literal zero (UB / SIGFPE at runtime)
+                die_at(dc, _el, "division by zero")
             if op == "&&" or op == "||":          # `and`/`or` are spelled &&/|| in the AST
                 if lt != "bool" or frt != "bool":
                     die_at(dc, _el, "and / or need two bool operands")
@@ -4928,6 +4932,59 @@ fn is_int_lit(e: Expr) -> bool:           # is `e` a literal int -- the only int
         EVar(n, _el):
             return false
         EInt(t, _el):
+            return true
+        EBool(t, _el):
+            return false
+        EChar(t, _el):
+            return false
+        EFloat(f, _el):
+            return false
+        EStr(s, _el):
+            return false
+        EBin(o, l, r, _el):
+            return false
+        ECall(nm, a, _el):
+            return false
+        EField(b, f, _el):
+            return false
+        EIndex(b, i, _el):
+            return false
+        EArrLit(es, _el):
+            return false
+        EArrEmpty(t, _el):
+            return false
+        EMapEmpty(k, v, _el):
+            return false
+        EMapLit(ks, vs, _el):
+            return false
+        ETuple(es, _el):
+            return false
+        ESlice(b, lo, hi, _el):
+            return false
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return false
+        ECallV(callee, cargs, _el):
+            return false
+        EAddr(x, _el):
+            return false
+        ESpawn(sid, snm, sa, _el):
+            return false
+
+# Is `e` an int literal equal to 0? Catches any zero spelling ("0", "00") so
+# `x / 0` / `x % 0` are rejected on the parsed value, not the text. Mirrors
+# tychoc's E_INT ival == 0 check (M6, locked by the type-parity lane).
+fn is_zero_int_lit(e: Expr) -> bool:
+    match e:
+        EVar(n, _el):
+            return false
+        EInt(t, _el):
+            if len(t) == 0:
+                return false
+            k := 0
+            for k < len(t):
+                if t[k] != 48:                # '0'
+                    return false
+                k = k + 1
             return true
         EBool(t, _el):
             return false
