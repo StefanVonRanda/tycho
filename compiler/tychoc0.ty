@@ -1450,6 +1450,8 @@ fn parse_type_d(toks: [Token], pos: mut int, depth: int) -> string:
         return "float"
     elif name == "string":
         return "str"
+    elif name == "bytes":                        # immutable byte buffer: same char* repr as str, crosses FFI as (ptr,len)
+        return "bytes"
     elif name == "ptr":                          # FFI opaque handle -> void*
         return "ptr"
     elif name == "Channel":                      # Channel(T): a worker param's queue type (CC-4)
@@ -1676,15 +1678,15 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     ptypes := []string
     if toks[pos].kind != TRParen:
         p := parse_param(toks, &pos)
-        if not ffi_scalar(p.ty):
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string")
+        if not ffi_scalar(p.ty) and p.ty != "bytes":
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes")
         push(params, p.name)
         push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
             p2 := parse_param(toks, &pos)
-            if not ffi_scalar(p2.ty):
-                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string")
+            if not ffi_scalar(p2.ty) and p2.ty != "bytes":
+                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes")
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
@@ -1692,8 +1694,8 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     if toks[pos].kind == TArrow:
         pos = pos + 1
         ret = parse_type(toks, &pos)
-        if not ffi_scalar(ret):
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string or omitted")
+        if not ffi_scalar(ret) and ret != "bytes":
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': return type must be int/char/float/bool/string/bytes or omitted")
     return Func(name, params, ptypes, ret, []Stmt, 1, lib, "")
 
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
@@ -1907,7 +1909,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -2763,6 +2765,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "double "
     if ty == "str":
         return "char* "
+    if ty == "bytes":                            # same length-headered char* buffer as str (distinct type; FFI crosses as (ptr,len))
+        return "char* "
     if ty == "ptr":                              # FFI opaque handle
         return "void* "
     if is_task(ty):                              # opaque runtime task handle (spawn/wait, CC-1)
@@ -2893,8 +2897,10 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "float"
     if name == "to_int":
         return "int"
-    if name == "to_str":                          # unwrap a string newtype
+    if name == "to_str":                          # unwrap a string newtype, or reinterpret bytes -> str
         return "str"
+    if name == "to_bytes":                        # str -> bytes (same buffer, distinct type)
+        return "bytes"
     if name == "to_bool":                         # unwrap a bool newtype
         return "bool"
     if name == "read_all":
@@ -3869,7 +3875,7 @@ fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the lo
 # is a no-op (map_set/map_del return a NEW map — a common footgun). Mirrors
 # is_pure_builtin in src/tychoc.c.
 fn is_pure_bi(n: string) -> bool:
-    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bool" or n == "is_null" or n == "len"
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bytes" or n == "to_bool" or n == "is_null" or n == "len"
 
 fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e is such a call, else ""
     match e:
@@ -4218,6 +4224,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # str + non-(str/char) falls through to the operand-type check below (rejected, like tychoc)
             if is_cmp(op) and lt == "str" and type_of(r, names, types, dc, ctx) == "str":   # lexicographic string compare; BOTH operands must be strings
                 return "(str_cmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
+            if (op == "==" or op == "!=") and lt == "bytes":   # bytes equality: byte-wise compare (same buffer repr as str). Ordering on bytes is not offered.
+                return "(str_cmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
@@ -4303,7 +4311,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 ra := owner_arena_of(args[0], names, types, dc, ctx)
                 return "Arr_" + mangle(rt) + "_reserve(" + ra + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "len":
-                if type_of(args[0], names, types, dc, ctx) == "str":
+                lent := type_of(args[0], names, types, dc, ctx)
+                if lent == "str" or lent == "bytes":
                     return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
@@ -4323,7 +4332,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
                 return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
-            if name == "to_str" or name == "to_bool" or name == "to_under":   # zero-cost newtype unwrap
+            if name == "to_str" or name == "to_bool" or name == "to_under" or name == "to_bytes":   # zero-cost newtype unwrap / bytes<->str reinterpret (same char* repr)
                 return gen_expr(args[0], names, types, dc, ctx)
             if name == "substr":
                 return "substr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
@@ -4421,15 +4430,34 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_struct(dc, ctx, name):              # struct construction -> compound literal; fields
                 return "(" + ust(name) + "){" + gen_store_args_owner(args, names, types, dc, ctx, ctx.owner) + "}"   # inherit the ambient arena (an array elem -> the array's; a return -> _parent; an enum/box/field-store sets owner 0 first, keeping those immortal)
             if sig_is_extern(dc, name):               # FFI: call the C symbol directly — no arena, no h_ prefix
+                edecls := ""                          # single-eval temps for bytes args
                 xa := ""
+                emitted := 0
+                nb := 0
                 ai := 0
                 for ai < len(args):
-                    if ai > 0:
+                    av := gen_expr(args[ai], names, types, dc, ctx)
+                    if emitted > 0:
                         xa = xa + ", "
-                    xa = xa + gen_expr(args[ai], names, types, dc, ctx)   # tycho str is already char* -> zero-cost arg
+                    if type_of(args[ai], names, types, dc, ctx) == "bytes":   # bytes -> (const unsigned char* ptr, long len)
+                        tv := "_xb" + str(nb)
+                        nb = nb + 1
+                        edecls = edecls + "char* " + tv + " = " + av + "; "
+                        xa = xa + "(const unsigned char*)" + tv + ", ((const long*)" + tv + ")[-1]"
+                    else:
+                        xa = xa + av                  # tycho str is already char* -> zero-cost arg
+                    emitted = emitted + 1
                     ai = ai + 1
+                ert := sig_ret(dc, ctx, name)
+                if ert == "bytes":                    # out-param shim: call, copy the C buffer into an arena bytes, free it
+                    pre := ""
+                    if emitted > 0:
+                        pre = ", "
+                    return "({ " + edecls + "unsigned char* _bo = 0; long _bol = 0; " + name + "(" + xa + pre + "&_bo, &_bol); b_from_c(" + ctx.owner + ", _bo, _bol); })"
                 xc := name + "(" + xa + ")"
-                if sig_ret(dc, ctx, name) == "str":   # C-owned return -> copy into the arena (NULL -> "")
+                if edecls != "":                      # bytes args need single-eval temps -> wrap the call in a stmt-expr
+                    xc = "({ " + edecls + name + "(" + xa + "); })"
+                if ert == "str":                      # C-owned return -> copy into the arena (NULL -> "")
                     return "s_from_c(" + ctx.owner + ", ({ const char* _x = " + xc + "; _x ? _x : \"\"; }))"
                 return xc
             if has_str(names, name) and is_func(var_type(names, types, name)):   # indirect call through a fn value: g.call(g.env, arena, args)
@@ -4532,7 +4560,7 @@ fn var_index(names: [string], name: string) -> int:
 #   - option / result -> re-boxed via hbox/hsome/... (preamble; payload shared,
 #     immortal, so shallow). map/non-heap-struct elements stay shallow memcpy.
 fn elem_deepcopy(dc: Decls, ctx: Ctx, et: string) -> bool:
-    if resolve_nt(dc, ctx, et) == "str":
+    if resolve_nt(dc, ctx, et) == "str" or et == "bytes":   # bytes shares str's heap buffer -> deep-copy on value binding
         return true
     if is_func(et):                                          # a closure element carries an env to re-home on escape
         return true
@@ -6300,15 +6328,31 @@ fn sig_is_extern(dc: Decls, name: string) -> bool:
 
 # FFI: forward-declare the C symbol with its real C ABI — no arena, no h_ prefix.
 fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
-    out := "extern " + ret_cty(dc, ctx, f.ret) + f.name + "("
-    if len(f.params) == 0:
-        out = out + "void"
+    # bytes crosses as (ptr,len): a bytes param -> two C args (const unsigned char*, long);
+    # a bytes return -> a void function with two trailing out-params (out, outlen).
+    bret := f.ret == "bytes"
+    rc := ret_cty(dc, ctx, f.ret)
+    if bret:
+        rc = "void "
+    out := "extern " + rc + f.name + "("
+    emitted := 0
     i := 0
     for i < len(f.params):
-        if i > 0:
+        if emitted > 0:
             out = out + ", "
-        out = out + cty(dc, ctx, f.ptypes[i])
+        if f.ptypes[i] == "bytes":
+            out = out + "const unsigned char*, long"
+        else:
+            out = out + cty(dc, ctx, f.ptypes[i])
+        emitted = emitted + 1
         i = i + 1
+    if bret:
+        if emitted > 0:
+            out = out + ", "
+        out = out + "unsigned char**, long*"
+        emitted = emitted + 1
+    if emitted == 0:
+        out = out + "void"
     return out + ");\n"
 
 # Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
@@ -6722,7 +6766,7 @@ fn gen_tuple_eq(dc: Decls, ctx: Ctx, ty: string) -> string:
     return out + "; }\n"
 
 fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
-    if ty == "str":
+    if ty == "str" or ty == "bytes":
         return "str_cmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
         return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
@@ -6970,6 +7014,8 @@ fn preamble() -> string:
     out = out + "static char* scopy(Arena* ar, const char* s) { long n = ((const long*)s)[-1]; char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     out = out + "static int str_cmp(const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; long n = la < lb ? la : lb; int c = n ? memcmp(a, b, (size_t)n) : 0; if (c != 0) return c < 0 ? -1 : 1; return la < lb ? -1 : (la > lb ? 1 : 0); }\n"
     out = out + "static char* s_from_c(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
+    # FFI: copy a C-owned (ptr,len) byte buffer (extern returning bytes, out-param shim) into an arena bytes, then free it. Length-carried, so interior 0x00 survives.
+    out = out + "static char* b_from_c(Arena* ar, unsigned char* p, long n) { if (n < 0) n = 0; char* r = hs(ar, p ? n : 0); if (p) { if (n > 0) memcpy(r, p, (size_t)n); free(p); } return r; }\n"
     out = out + "static void hi_puts(const char* s) { fwrite(s, 1, (size_t)((const long*)s)[-1], stdout); }\n"
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"

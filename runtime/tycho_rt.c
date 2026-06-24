@@ -715,6 +715,17 @@ char *tycho_str_from_c(Arena *a, const char *s) {
     return r;
 }
 
+/* FFI: copy a C-owned (ptr,len) byte buffer returned by an extern into an arena
+ * `bytes` value (same length-headered repr as string), then free() the C buffer.
+ * Out-param-shim convention: the extern malloc's *out, Tycho copies + frees it.
+ * NULL/empty -> a zero-length bytes. Length-carried, so interior 0x00 is fine. */
+char *tycho_bytes_from_c(Arena *a, unsigned char *p, long n) {
+    if (n < 0) n = 0;
+    char *r = tycho_str_alloc(a, p ? n : 0);
+    if (p) { if (n > 0) memcpy(r, p, (size_t)n); free(p); }
+    return r;
+}
+
 /* Intern a string literal: a malloc'd, length-headered, immortal copy. Each
  * literal occurrence caches the result in a function-local static (see the
  * codegen), so the strlen+copy runs once; the allocation stays reachable for the

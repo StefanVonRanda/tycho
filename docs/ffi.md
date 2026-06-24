@@ -58,7 +58,7 @@ so an `extern` can be declared and called from any package. A bare `extern fn`
 
 ## Type mapping
 
-Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
+Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary:
 
 | Tycho type | C type      | direction | notes |
 |-----------|-------------|-----------|-------|
@@ -67,6 +67,7 @@ Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 | `float`   | `double`    | in/out    | zero-cost |
 | `bool`    | `int`       | in/out    | zero-cost |
 | `string`  | `char *`    | in: zero-cost; out: arena-copied | see below |
+| `bytes`   | `(const unsigned char *, long)` in; out-param shim out | binary buffer, length-carried | see below |
 | `ptr`     | `void *`    | in/out    | opaque handle, never dereferenced |
 | (none)    | `void`      | out only  | return-less extern |
 
@@ -74,6 +75,19 @@ Only scalars, `string`, and the opaque handle `ptr` cross the boundary:
 function taking `const char *` takes a Tycho `string` directly — no wrapper type,
 no conversion at the call site. (Languages whose string is a fat pointer
 `{ptr, len}` are forced into an explicit `c_str()` conversion; Tycho is not.)
+
+**Bytes passing.** `bytes` is an immutable binary buffer that, unlike `string`,
+crosses the boundary length-carried — so it can hold interior `0x00` and needs no
+hex marshaling. Build one with `to_bytes(s)` and read it back with `to_str(b)`;
+`len(b)` and `==` work as for strings.
+
+- *A `bytes` **parameter** lowers to two C arguments* `(const unsigned char *ptr,
+  long len)`. So `extern fn f(b: bytes)` binds to C `void f(const unsigned char *,
+  long)`, and `f(mybytes)` passes the pointer and length. Zero-copy in.
+- *A `bytes` **return** uses an out-param shim.* `extern fn f(...) -> bytes` binds
+  to C `void f(<args>, unsigned char **out, long *outlen)`. **Convention: the C
+  function `malloc`s `*out` and sets `*outlen`; Tycho copies the buffer into the
+  caller's arena and then `free`s `*out`.** A `NULL` `*out` becomes empty `bytes`.
 
 **Composites are rejected.** Arrays, maps, structs, `Option`/`Result`, and
 tuples have Tycho-internal C representations, not a stable C ABI. The type

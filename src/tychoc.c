@@ -115,7 +115,7 @@ typedef enum {
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT, TK_DOLLAR,
-    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR
+    TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES
 } TokKind;
 
 typedef struct {
@@ -180,6 +180,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "string")) return TK_KW_STRING;
     if (!strcmp(s, "float"))  return TK_KW_FLOAT;
     if (!strcmp(s, "ptr"))    return TK_KW_PTR;
+    if (!strcmp(s, "bytes"))  return TK_KW_BYTES;
     return TK_IDENT;
 }
 
@@ -451,6 +452,8 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
        T_OK_PARTIAL, T_ERR_PARTIAL,
        T_CHAR, /* one byte; represented as `long` in C, prints as a char via string append */
        T_PTR, /* FFI opaque handle: void* in C. No deref/arithmetic in tycho — only pass to C, compare to null, is_null */
+       T_BYTES, /* immutable byte buffer: same length-headered char* repr as string (so all string runtime ops
+                 * reuse directly), but a DISTINCT type that crosses FFI as (ptr,len) / out-param, not char*. */
        T_PENDING /* B-3 (bidirectional inference): a bare `xs := []` / `x := None` decl, awaiting its
                   * first grounding use in the same block; never survives resolve */ };
 #define T_STRUCT_BASE   64
@@ -943,7 +946,7 @@ static int type_is_heap(Type t) {
     if (IS_NEWTYPE(t)) return type_is_heap(nt_under(t));   /* same rep as its base */
     if (IS_SOA(t)) return 1;                               /* holds heap field-array pointers */
     if (IS_FUNC(t)) return 1;   /* a closure carries an env that may be heap; copy_into re-homes it (a plain ref has env==0 -> no-op) */
-    if (t == T_STRING || is_map(t) || is_array(t)) return 1;
+    if (t == T_STRING || t == T_BYTES || is_map(t) || is_array(t)) return 1;   /* bytes shares string's heap buffer */
     if (IS_OPT(t)) return type_is_heap(opt_inner(t));   /* heap iff its value is */
     if (IS_RES(t)) return type_is_heap(res_ok(t)) || type_is_heap(res_err(t));
     if (IS_TUP(t)) {   /* heap iff any element is */
@@ -986,6 +989,7 @@ static const char *c_type(Type t) {
         case T_BOOL:         return "int ";
         case T_PTR:          return "void *";
         case T_STRING:       return "char *";
+        case T_BYTES:        return "char *";   /* same length-headered buffer as string */
         case T_ARRAY_INT:    return "TychoArrInt ";
         case T_ARRAY_FLOAT:  return "TychoArrFloat ";
         case T_ARRAY_STRING: return "TychoArrStr ";
@@ -1028,6 +1032,7 @@ static const char *type_name(Type t) {
         case T_BOOL:         return "bool";
         case T_PTR:          return "ptr";
         case T_STRING:       return "string";
+        case T_BYTES:        return "bytes";
         case T_ARRAY_INT:    return "[int]";
         case T_ARRAY_FLOAT:  return "[float]";
         case T_ARRAY_STRING: return "[string]";
@@ -1517,6 +1522,7 @@ static Type parse_type(Parser *ps) {
         case TK_KW_BOOL:   ps->p++; return T_BOOL;
         case TK_KW_STRING: ps->p++; return T_STRING;
         case TK_KW_PTR:    ps->p++; return T_PTR;
+        case TK_KW_BYTES:  ps->p++; return T_BYTES;
         default: die_at(t->line, "expected a type (int, float, bool, string, [int], or a struct)");
     }
     return T_VOID; /* unreachable */
@@ -1668,7 +1674,7 @@ static Expr *parse_primary(Parser *ps) {
              * expected type (checking mode), or dies with a local error. */
             TokKind nk = cur(ps)->kind;
             if (nk != TK_KW_INT && nk != TK_KW_BOOL && nk != TK_KW_STRING && nk != TK_KW_FLOAT
-                && nk != TK_KW_PTR && nk != TK_IDENT && nk != TK_LBRACKET && nk != TK_LPAREN && nk != TK_FN) {
+                && nk != TK_KW_PTR && nk != TK_KW_BYTES && nk != TK_IDENT && nk != TK_LBRACKET && nk != TK_LPAREN && nk != TK_FN) {
                 e->ival = T_VOID;            /* the "untyped" marker */
                 return e;
             }
@@ -2603,7 +2609,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         eat(ps, TK_COLON, "':' after parameter name");
         if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': mut parameters are not allowed across the C boundary", pr->name);
         Type pt = parse_type(ps);
-        if (!ffi_scalar_type(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr (no composites across the C boundary)", pr->name, pn->text);
+        if (!ffi_scalar_type(pt) && pt != T_BYTES) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes (no composites across the C boundary)", pr->name, pn->text);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
@@ -2615,7 +2621,7 @@ static Proc *parse_extern_fn(Parser *ps) {
 
     if (accept(ps, TK_ARROW)) {
         pr->ret = parse_type(ps); pr->has_ret = 1;
-        if (!ffi_scalar_type(pr->ret)) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr or omitted", pr->name);
+        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -3809,12 +3815,19 @@ static Type resolve_expr(Expr *e) {
                     die_at(e->line, "to_int(x) takes a float (truncates toward zero) or an int newtype");
                 return e->type = T_INT;
             }
-            if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype -> string */
+            if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype, OR reinterpret bytes -> string */
                 if (e->nargs != 1) die_at(e->line, "to_str(x) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (!(IS_NEWTYPE(at_) && nt_under(at_) == T_STRING))
-                    die_at(e->line, "to_str(x) takes a string newtype");
+                if (at_ != T_BYTES && !(IS_NEWTYPE(at_) && nt_under(at_) == T_STRING))
+                    die_at(e->line, "to_str(x) takes bytes or a string newtype");
                 return e->type = T_STRING;
+            }
+            if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes: same byte buffer, distinct type (FFI crosses as (ptr,len)) */
+                if (e->nargs != 1) die_at(e->line, "to_bytes(s) takes one argument");
+                Type at_ = base_of(resolve_expr(e->args[0]));
+                if (at_ != T_STRING && at_ != T_BYTES)
+                    die_at(e->line, "to_bytes(x) takes a string");
+                return e->type = T_BYTES;
             }
             if (!strcmp(e->sval, "to_bool")) {   /* unwrap a bool newtype -> bool */
                 if (e->nargs != 1) die_at(e->line, "to_bool(x) takes one argument");
@@ -3834,8 +3847,8 @@ static Type resolve_expr(Expr *e) {
             if (!strcmp(e->sval, "len")) {
                 if (e->nargs != 1) die_at(e->line, "len(...) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (!is_array(at_) && at_ != T_STRING && !is_map(at_) && !IS_SOA(at_))
-                    die_at(e->line, "len(...) takes an array, a string, a map, or a soa");
+                if (!is_array(at_) && at_ != T_STRING && at_ != T_BYTES && !is_map(at_) && !IS_SOA(at_))
+                    die_at(e->line, "len(...) takes an array, a string, bytes, a map, or a soa");
                 return e->type = T_INT;
             }
             /* map builtins ([string: int] or [string: float]). The value type
@@ -5769,7 +5782,7 @@ static int self_rebuild_move(Stmt *s) {
  * Recurses through nesting exactly as the deep copy does. */
 static char *gen_eq(Type t, const char *a, const char *b) {
     if (IS_NEWTYPE(t))       return gen_eq(nt_under(t), a, b);
-    if (t == T_STRING)       return sfmt("(tycho_str_cmp(%s, %s) == 0)", a, b);
+    if (t == T_STRING || t == T_BYTES) return sfmt("(tycho_str_cmp(%s, %s) == 0)", a, b);   /* bytes: byte-wise compare, same buffer repr */
     if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_eq(%s, %s)", a, b);
     if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_eq(%s, %s)", a, b);
     if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_eq(%s, %s)", a, b);
@@ -5837,10 +5850,23 @@ static char *cond_unwrap(char *s) {
  * read-once consumers below (len/print) use it directly, since the C-owned
  * pointer is read immediately and never held. */
 static char *gen_extern_raw(Expr *e) {
-    char *xc = sfmt("%s(", e->sval);
-    for (int i = 0; i < e->nargs; i++)
-        xc = sfmt("%s%s%s", xc, i ? ", " : "", gen_expr(e->args[i], g_cur_scope));
-    return sfmt("%s)", xc);
+    /* A `bytes` argument lowers to two C args (const unsigned char* ptr, long len).
+     * Bind it to a temp first (single-eval: the arg may be a call). When there are
+     * no bytes args, emit the plain `f(args)` unchanged (output-stable FFI). */
+    char *decls = sfmt("%s", ""), *args = sfmt("%s", "");
+    int emitted = 0, nb = 0;
+    for (int i = 0; i < e->nargs; i++) {
+        char *a = gen_expr(e->args[i], g_cur_scope);
+        if (e->args[i]->type == T_BYTES) {
+            char *tv = sfmt("_xb%d", nb++);
+            decls = sfmt("%schar *%s = %s; ", decls, tv, a);
+            args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
+        } else {
+            args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
+        }
+    }
+    char *call = sfmt("%s(%s)", e->sval, args);
+    return decls[0] ? sfmt("({ %s%s; })", decls, call) : call;
 }
 /* Is e a DIRECT call to an extern fn returning string? (not an indirect/fn-value
  * call, enum/struct/newtype ctor.) Such a result, consumed read-once and inline,
@@ -5890,7 +5916,7 @@ static char *gen_call(Expr *e, const char *arena) {
         if (is_extern_str_call(e->args[0]))   /* FFI: read the length of a C-owned string without copying it (read-once borrow) */
             return sfmt("({ const char *_x = %s; _x ? (long)strlen(_x) : 0L; })", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
-        if (e->args[0]->type == T_STRING)
+        if (e->args[0]->type == T_STRING || e->args[0]->type == T_BYTES)   /* bytes: same length-headered buffer */
             return sfmt("tycho_str_len(%s)", a);
         return sfmt("((%s).len)", a);   /* arrays AND maps both have .len */
     }
@@ -6087,7 +6113,7 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under"))   /* zero-cost newtype unwrap */
+    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
         return sfmt("%s(%s)", e->sval, gen_expr(e->args[0], arena));
@@ -6105,6 +6131,26 @@ static char *gen_call(Expr *e, const char *arena) {
          * built in the current scope (tycho str is already a char*, so a string
          * arg passes zero-cost). A string RETURN is C-owned, so copy it into the
          * destination arena (NULL -> "") so tycho never holds a foreign pointer. */
+        if (base_of(cs->ret) == T_BYTES) {
+            /* out-param shim: synthesize (unsigned char** out, long* outlen), call,
+             * then copy the C-owned buffer into an arena `bytes` and free it.
+             * The shim must malloc(*out); tycho_bytes_from_c frees it after copying. */
+            char *decls = sfmt("%s", ""), *args = sfmt("%s", "");
+            int emitted = 0, nb = 0;
+            for (int i = 0; i < e->nargs; i++) {
+                char *a = gen_expr(e->args[i], g_cur_scope);
+                if (e->args[i]->type == T_BYTES) {
+                    char *tv = sfmt("_xb%d", nb++);
+                    decls = sfmt("%schar *%s = %s; ", decls, tv, a);
+                    args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
+                } else {
+                    args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
+                }
+            }
+            int id = g_blk++;
+            return sfmt("({ %sunsigned char *_o%d = 0; long _ol%d = 0; %s(%s%s&_o%d, &_ol%d); tycho_bytes_from_c(%s, _o%d, _ol%d); })",
+                        decls, id, id, e->sval, args, emitted ? ", " : "", id, id, arena, id, id);
+        }
         char *xc = gen_extern_raw(e);
         if (base_of(cs->ret) == T_STRING)
             return sfmt("tycho_str_from_c(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
@@ -7440,10 +7486,21 @@ static void gen_proto(FILE *o, Proc *pr) { gen_signature(o, pr); fprintf(o, ";\n
 /* FFI: forward-declare the C symbol with its real C ABI — no arena, no h_
  * prefix. This is enough to call it; no header #include needed. */
 static void gen_extern_proto(FILE *o, Proc *pr) {
-    fprintf(o, "extern %s%s(", c_type(pr->ret), pr->name);
-    if (pr->nparams == 0) fprintf(o, "void");
-    for (int i = 0; i < pr->nparams; i++)
-        fprintf(o, "%s%s", i ? ", " : "", c_type(pr->params[i].type));
+    /* bytes crosses as (ptr,len): a `bytes` parameter becomes two C args
+     * (const unsigned char*, long); a `bytes` return becomes a void function with
+     * two trailing out-params (unsigned char** out, long* outlen) — the out-param
+     * shim convention. */
+    int bret = (pr->ret == T_BYTES);
+    fprintf(o, "extern %s%s(", bret ? "void " : c_type(pr->ret), pr->name);
+    int emitted = 0;
+    for (int i = 0; i < pr->nparams; i++) {
+        if (pr->params[i].type == T_BYTES)
+            fprintf(o, "%sconst unsigned char *, long", emitted++ ? ", " : "");
+        else
+            fprintf(o, "%s%s", emitted++ ? ", " : "", c_type(pr->params[i].type));
+    }
+    if (bret) fprintf(o, "%sunsigned char **, long *", emitted++ ? ", " : "");
+    if (emitted == 0) fprintf(o, "void");
     fprintf(o, ");\n");
 }
 

@@ -7,6 +7,8 @@ extern "ffidemo" fn ffi_scale(x: float, k: int) -> float
 extern "ffidemo" fn ffi_maybe(s: string) -> string
 extern "ffidemo" fn ffi_open(id: int) -> ptr
 extern "ffidemo" fn ffi_read(h: ptr) -> int
+extern "ffidemo" fn ffi_bsum(b: bytes) -> int            # bytes param -> (ptr,len), int return
+extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the out-param shim
 
 fn b2i(b: bool) -> int:
     if b:
@@ -34,3 +36,11 @@ fn main():
     print("\n")
     el := len(ffi_echo("xyz"))                  # len borrow -> len("[xyz]") = 5
     print(f"echolen={el}\n")
+    # Stage R1 — bytes crossing as (ptr,len), and a bytes return via out-param shim
+    bb := to_bytes("abc")
+    rev := ffi_brev(bb)                          # bytes -> bytes (97,98,99 -> "cba")
+    print(f"bsum={ffi_bsum(bb)} brev={to_str(rev)} brevlen={len(rev)}\n")
+    # interior 0x00 must survive the round-trip (a NUL-terminated API could not)
+    nul := to_bytes("a" + chr(0) + "b")
+    rn := ffi_brev(nul)
+    print(f"nulsum={ffi_bsum(nul)} nullen={len(rn)}\n")
