@@ -70,7 +70,10 @@ for f in tests/conc/abort/*.ty; do
     if ! $TYCHOC "$f" -o "$TMP/ab" >/dev/null 2>&1; then
         note "$name" "tychoc"; fail=$((fail+1)); continue
     fi
-    "$TMP/ab" >/dev/null 2>"$TMP/ab.err"
+    # Bound every abort run by memory + CPU, and pin a low task cap so the
+    # spawn fork-bomb (recursive spawn) hits the bounded-concurrency ceiling fast
+    # instead of exhausting host threads. Harmless to the non-spawn fixtures.
+    ( ulimit -v 1500000; TYCHO_MAX_TASKS=16 timeout 15 "$TMP/ab" ) >/dev/null 2>"$TMP/ab.err"
     if [ $? -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
         note "$name" "expected runtime die '$want'"; fail=$((fail+1))
     else

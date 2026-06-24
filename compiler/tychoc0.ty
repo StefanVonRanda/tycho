@@ -6910,10 +6910,16 @@ fn preamble() -> string:
     out = out + "static void tycho_pool_flush(void) { while (g_pool) { ABlk* b = g_pool; g_pool = b->next; free(b->mem); free(b); } }\n"
     out = out + "typedef struct { pthread_t th; Arena root; void* ret; int done; } HTask;\n"
     out = out + "static HTask* tycho_task_new(void) { HTask* t = malloc(sizeof(HTask)); t->root = arena_new(0); t->ret = 0; t->done = 0; return t; }\n"
-    out = out + "static void tycho_task_join(HTask* t) { if (t->done) { fprintf(stderr, \"tycho: task already waited\\n\"); exit(1); } pthread_join(t->th, 0); t->done = 1; }\n"
+    # Bounded concurrency: cap concurrently-live tasks (started, not yet joined) and fail closed.
+    # A hard ceiling, not a pool -- admitted tasks run immediately, so a task blocking on a channel
+    # for another task never starves. Default 1024; TYCHO_MAX_TASKS overrides. Mirrors runtime/tycho_rt.c.
+    # Declared before task_join/task_finish (which decrement it) so the emitted C has no use-before-decl.
+    out = out + "static _Atomic long g_live_tasks = 0;\n"
+    out = out + "static long tycho_max_tasks(void) { static long m = 0; if (m == 0) { const char* e = getenv(\"TYCHO_MAX_TASKS\"); m = (e && *e && atol(e) >= 1) ? atol(e) : 1024; } return m; }\n"
+    out = out + "static void tycho_task_join(HTask* t) { if (t->done) { fprintf(stderr, \"tycho: task already waited\\n\"); exit(1); } pthread_join(t->th, 0); t->done = 1; atomic_fetch_sub(&g_live_tasks, 1); }\n"
     out = out + "static void tycho_task_free(HTask* t) { arena_free(&t->root); free(t); }\n"
-    out = out + "static void tycho_task_finish(HTask* t) { if (!t->done) { pthread_join(t->th, 0); t->done = 1; } arena_free(&t->root); free(t); }\n"
-    out = out + "static void tycho_task_start(HTask* t, void* (*fn)(void*), void* arg) { if (pthread_create(&t->th, 0, fn, arg) != 0) { fprintf(stderr, \"tycho: spawn failed (cannot create thread)\\n\"); exit(1); } }\n"
+    out = out + "static void tycho_task_finish(HTask* t) { if (!t->done) { pthread_join(t->th, 0); t->done = 1; atomic_fetch_sub(&g_live_tasks, 1); } arena_free(&t->root); free(t); }\n"
+    out = out + "static void tycho_task_start(HTask* t, void* (*fn)(void*), void* arg) { if (atomic_fetch_add(&g_live_tasks, 1) + 1 > tycho_max_tasks()) { atomic_fetch_sub(&g_live_tasks, 1); fprintf(stderr, \"tycho: too many concurrent tasks (max %ld); raise TYCHO_MAX_TASKS to override\\n\", tycho_max_tasks()); exit(1); } if (pthread_create(&t->th, 0, fn, arg) != 0) { atomic_fetch_sub(&g_live_tasks, 1); fprintf(stderr, \"tycho: spawn failed (cannot create thread)\\n\"); exit(1); } }\n"
     # Channels (CC-5): a Vyukov bounded MPMC ring. Each cell has a sequence
     # counter and its OWN arena -- a sender claims a cell with one CAS, deep-
     # copies the payload in with NO lock held (cell-exclusive until the seq

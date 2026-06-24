@@ -283,8 +283,28 @@ static void tycho_pool_flush(void) {
     while (g_block_pool) { HBlock *b = g_block_pool; g_block_pool = b->next; free(b); }
 }
 
+/* Bounded concurrency: `spawn` (and each parallel-for chunk) is a 1:1 OS thread,
+ * so `spawn` in a loop without joining is an unbounded thread fork-bomb that
+ * exhausts the host. Cap the number of CONCURRENTLY-LIVE tasks (started but not
+ * yet joined) and fail closed past it. This is a hard ceiling, not a pool: every
+ * admitted task still gets its own thread and runs immediately, so a task that
+ * blocks on a channel waiting for another task never starves (no queueing). Only
+ * a genuine runaway aborts. Default 1024; TYCHO_MAX_TASKS overrides. */
+static _Atomic long g_live_tasks = 0;
+static long tycho_max_tasks(void) {
+    static long m = 0;   /* benign race: every thread computes the same value */
+    if (m == 0) { const char *e = getenv("TYCHO_MAX_TASKS"); m = (e && *e && atol(e) >= 1) ? atol(e) : 1024; }
+    return m;
+}
+
 static void tycho_task_start(HTask *t, void *(*fn)(void *), void *arg) {
+    if (atomic_fetch_add(&g_live_tasks, 1) + 1 > tycho_max_tasks()) {
+        atomic_fetch_sub(&g_live_tasks, 1);
+        fprintf(stderr, "tycho: too many concurrent tasks (max %ld); raise TYCHO_MAX_TASKS to override\n", tycho_max_tasks());
+        exit(1);
+    }
     if (pthread_create(&t->th, NULL, fn, arg) != 0) {
+        atomic_fetch_sub(&g_live_tasks, 1);
         fprintf(stderr, "tycho: spawn failed (cannot create thread)\n");
         exit(1);
     }
@@ -298,6 +318,7 @@ static void tycho_task_join(HTask *t) {
     if (t->done) { fprintf(stderr, "tycho: task already waited\n"); exit(1); }
     pthread_join(t->th, NULL);
     t->done = 1;
+    atomic_fetch_sub(&g_live_tasks, 1);   /* reaped: free a slot under the spawn cap */
 }
 
 static void tycho_task_free(HTask *t) { arena_free(&t->root); free(t); }
@@ -308,7 +329,7 @@ static void tycho_task_free(HTask *t) { arena_free(&t->root); free(t); }
  * freed root is a no-op (head/bkt/freelist are NULLed), so a waited task --
  * whose tree was reclaimed eagerly at the wait -- just frees its handle. */
 static void tycho_task_finish(HTask *t) {
-    if (!t->done) { pthread_join(t->th, NULL); t->done = 1; }
+    if (!t->done) { pthread_join(t->th, NULL); t->done = 1; atomic_fetch_sub(&g_live_tasks, 1); }   /* reap an un-waited task: free its cap slot */
     arena_free(&t->root);
     free(t);
 }

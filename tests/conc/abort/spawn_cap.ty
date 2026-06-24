@@ -1,0 +1,11 @@
+# Spawn fork-bomb: recursive spawn with no base case is an unbounded binary
+# task tree. The bounded-concurrency cap must fail it closed with a tycho:
+# message, never let it exhaust host threads/memory. (Run under a low
+# TYCHO_MAX_TASKS by the harness so it fires fast.)
+fn boom() -> int:
+    a := spawn boom()
+    b := spawn boom()
+    return wait(a) + wait(b)
+
+fn main():
+    print(str(boom()))
