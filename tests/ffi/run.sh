@@ -103,6 +103,13 @@ if "$TYCHOC" "$T/inj.ty" -o "$T/inj" >/dev/null 2>&1; then echo "FAIL: injection
 if "$TYCHOC" tests/ffi/main.ty --link "m; touch $mark" -L "$T" >/dev/null 2>&1; then echo "FAIL: injection --link compiled"; fail=1; fi
 [ -f "$mark" ] && { echo "FAIL: --link injection executed a shell command"; fail=1; }
 
+# (8) FFI R4 out-param fail-closed: only int/char/float/bool/ptr may be `mut`
+# (a clean T* the C fn fills). `mut string` (a char** with no length header) and
+# other non-trivial out-param shapes must be rejected by BOTH compilers.
+printf 'extern "x" fn f(s: mut string)\nfn main():\n    print("x")\n' > "$T/r4rej.ty"
+if "$TYCHOC" "$T/r4rej.ty" -o "$T/r4rej" >/dev/null 2>&1; then echo "FAIL: mut-string out-param accepted by tychoc"; fail=1; fi
+if "$T/h0" "$T/r4rej.ty" >/dev/null 2>&1; then echo "FAIL: mut-string out-param accepted by tychoc0"; fail=1; fi
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then

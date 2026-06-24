@@ -10,6 +10,8 @@ extern "ffidemo" fn ffi_read(h: ptr) -> int
 extern "ffidemo" fn ffi_bsum(b: bytes) -> int            # bytes param -> (ptr,len), int return
 extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the out-param shim
 extern "ffidemo" fn ffi_get(key: int) -> Option(string)  # FFI R3a: nullable string return (C NULL -> None)
+extern "ffidemo" fn ffi_mk(id: int, out: mut ptr) -> int # FFI R4: out-param constructor (compiler passes &db)
+extern "ffidemo" fn ffi_dbl(a: int, out: mut int)        # FFI R4: scalar out-param
 
 handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
     free: ffi_res_close
@@ -70,3 +72,9 @@ fn main():
     print(f"live1={ffi_res_live()}\n")          # 0 again -> destructor ran exactly once
     # Stage R3a — `-> Option(string)`: a C NULL surfaces as None (not "")
     print(f"get1={opts(ffi_get(1))} get0={opts(ffi_get(0))}\n")   # hit -> Some, miss -> None
+    # Stage R4 — out-param constructors: `ffi_mk(id, &db) -> rc` + a scalar out-param, no shim
+    db := null
+    mrc := ffi_mk(9, &db)                       # rc=0, db <- &slot(9)
+    n := 0
+    ffi_dbl(21, &n)                             # n <- 42
+    print(f"r4 rc={mrc} read={ffi_read(db)} dbl={n}\n")   # rc=0 read=9 dbl=42

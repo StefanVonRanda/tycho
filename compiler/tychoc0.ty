@@ -1694,6 +1694,17 @@ fn extern_ok_ty(ty: string) -> bool:
         return true
     return find(ty, "[") < 0 and find(ty, "(") < 0 and find(ty, ":") < 0
 
+# An extern PARAMETER is allowed if it is a non-mut scalar/bytes/handle (extern_ok_ty),
+# OR a `mut` (out) param `&T` (FFI R4) whose T is int/char/float/bool/ptr -- a clean T*
+# the C fn fills and tycho reads back by value. `&str` (a char** out-param) would hand
+# tycho a raw C pointer with no length header; `&bytes`/`&handle`/`&composite` likewise
+# have no trivial pointer-to-self ABI -- all rejected.
+fn extern_param_ok(ty: string) -> bool:
+    if has_prefix(ty, "&"):
+        b := base_ty(ty)
+        return b == "int" or b == "char" or b == "float" or b == "bool" or b == "ptr"
+    return extern_ok_ty(ty)
+
 # extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
 # Name is NOT mangled — a C symbol is global.
 fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
@@ -1712,15 +1723,15 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     ptypes := []string
     if toks[pos].kind != TRParen:
         p := parse_param(toks, &pos)
-        if not extern_ok_ty(p.ty):
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes or a handle")
+        if not extern_param_ok(p.ty):
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `mut` int/char/float/bool/ptr for an out-param)")
         push(params, p.name)
         push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
             p2 := parse_param(toks, &pos)
-            if not extern_ok_ty(p2.ty):
-                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': parameters must be int/char/float/bool/string/bytes or a handle")
+            if not extern_param_ok(p2.ty):
+                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `mut` int/char/float/bool/ptr for an out-param)")
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)

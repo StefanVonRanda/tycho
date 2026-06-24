@@ -2652,13 +2652,22 @@ static Proc *parse_extern_fn(Parser *ps) {
     while (!at(ps, TK_RPAREN)) {
         Tok *pn = eat(ps, TK_IDENT, "a parameter name");
         eat(ps, TK_COLON, "':' after parameter name");
-        if (accept(ps, TK_INOUT)) die_at(pn->line, "extern fn '%s': mut parameters are not allowed across the C boundary", pr->name);
+        int p_inout = accept(ps, TK_INOUT);   /* FFI R4: `name: mut T` = an out / in-out param — the C fn writes through a T* */
         Type pt = parse_type(ps);
-        if (!ffi_scalar_type(pt) && pt != T_BYTES && !IS_HANDLE(pt)) die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes or a handle (no composites across the C boundary)", pr->name, pn->text);
+        if (p_inout) {
+            /* An out-param's address must be a clean T* the C side fills and tycho reads
+             * back by value: ptr (the `T**` constructor shape) plus the numeric scalars
+             * qualify. string is a length-headered char* (a char** out-param would hand
+             * tycho a raw C pointer with no length header) — banned, as are bytes/handle/
+             * composite, which have no trivial pointer-to-self ABI. */
+            if (!ffi_scalar_type(pt) || pt == T_STRING) die_at(pn->line, "extern fn '%s': a `mut` (out) parameter '%s' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI", pr->name, pn->text);
+        } else if (!ffi_scalar_type(pt) && pt != T_BYTES && !IS_HANDLE(pt)) {
+            die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes or a handle (no composites across the C boundary)", pr->name, pn->text);
+        }
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
-        pr->params[pr->nparams].is_inout = 0;
+        pr->params[pr->nparams].is_inout = p_inout;
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
     }
@@ -7615,6 +7624,8 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
     for (int i = 0; i < pr->nparams; i++) {
         if (pr->params[i].type == T_BYTES)
             fprintf(o, "%sconst unsigned char *, long", emitted++ ? ", " : "");
+        else if (pr->params[i].is_inout)   /* FFI R4: out-param — the C fn takes a pointer to T */
+            fprintf(o, "%s%s*", emitted++ ? ", " : "", c_type(pr->params[i].type));
         else
             fprintf(o, "%s%s", emitted++ ? ", " : "", c_type(pr->params[i].type));
     }
