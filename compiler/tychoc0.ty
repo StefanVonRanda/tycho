@@ -6956,6 +6956,57 @@ fn gen_tuple_hash(dc: Decls, ctx: Ctx, ty: string) -> string:
         i = i + 1
     return out + " return h; }\n"
 
+# Struct/tuple types directly embedded BY VALUE in struct/tuple `ty` (its fields/elements).
+# Those bodies must precede ty's. Enum/array/map/scalar fields are by pointer or emitted in
+# earlier phases, so they are not dependencies.
+fn comp_dep_types(dc: Decls, ctx: Ctx, ty: string) -> [string]:
+    deps := []string
+    b := resolve_nt(dc, ctx, ty)
+    if is_struct(dc, ctx, b):
+        i := 0
+        for i < len(dc.structs):
+            if dc.structs[i].name == b:
+                j := 0
+                for j < len(dc.structs[i].fields):
+                    ft := resolve_nt(dc, ctx, dc.structs[i].fields[j].ty)
+                    if is_struct(dc, ctx, ft) or is_tuple(ft):
+                        push(deps, ft)
+                    j = j + 1
+            i = i + 1
+    elif is_tuple(b):
+        parts := tuple_parts(b)
+        j := 0
+        for j < len(parts):
+            pt := resolve_nt(dc, ctx, parts[j])
+            if is_struct(dc, ctx, pt) or is_tuple(pt):
+                push(deps, pt)
+            j = j + 1
+    return deps
+
+# Emit a struct/tuple body in topological order: its by-value struct/tuple dependencies
+# first (so a struct embedding a tuple -- or a tuple embedding a struct -- sees a complete
+# type). `emitted` carries the dedup set across the whole pass. By-value recursion is
+# forbidden upstream, so the graph is a DAG.
+fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: mut [string]) -> string:
+    b := resolve_nt(dc, ctx, ty)
+    if has_str(emitted, b):
+        return ""
+    push(emitted, b)
+    out := ""
+    deps := comp_dep_types(dc, ctx, b)
+    i := 0
+    for i < len(deps):
+        out = out + emit_comp_body(dc, ctx, deps[i], &emitted)
+        i = i + 1
+    if is_tuple(b):
+        return out + gen_tuple_struct(dc, ctx, b)
+    i = 0
+    for i < len(dc.structs):
+        if dc.structs[i].name == b:
+            out = out + gen_struct(dc.structs[i], dc, ctx)
+        i = i + 1
+    return out
+
 fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str" or ty == "bytes":
         return "str_cmp(" + a + ", " + b + ") == 0"
@@ -11097,18 +11148,22 @@ fn main():
         if is_tuple(ets[i]) and struct_keyused(dc, ctx, ets, ets[i]):
             out = out + "static unsigned long Tup_" + tup_suffix(ets[i]) + "_hash(Tup_" + tup_suffix(ets[i]) + " v);\n"
         i = i + 1
-    i = 0                                        # 4. user struct bodies (source order; array fields
-    for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
-        out = out + gen_struct(prog.structs[i], dc, ctx)
+    # 4 + 5a. struct AND tuple bodies in topological order — a struct may embed a tuple by
+    # value and a tuple may embed a struct, so a single dependency-ordered pass (not two
+    # fixed phases) is needed. emit_comp_body recurses into by-value struct/tuple deps first.
+    emitted_comp := []string
+    i = 0
+    for i < len(prog.structs):
+        out = out + emit_comp_body(dc, ctx, prog.structs[i].name, &emitted_comp)
         i = i + 1
-    i = 0                                        # 5. enum struct bodies (payloads may be value structs)
+    i = 0
+    for i < len(ets):
+        if is_tuple(ets[i]):
+            out = out + emit_comp_body(dc, ctx, ets[i], &emitted_comp)
+        i = i + 1
+    i = 0                                        # 5. enum bodies AFTER structs/tuples (a payload may embed a value struct/tuple, now complete; nothing embeds an enum by value -- it's always a pointer)
     for i < len(prog.enums):
         out = out + gen_enum_decl(prog.enums[i], dc, ctx)
-        i = i + 1
-    i = 0                                        # 5a. tuple struct bodies — AFTER struct/enum bodies, so a
-    for i < len(ets):                            #     tuple that embeds a struct/enum by value sees a complete type
-        if is_tuple(ets[i]):
-            out = out + gen_tuple_struct(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 5a''. closure env structs (one per capturing lambda)
     for i < len(lams):

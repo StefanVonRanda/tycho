@@ -5,3 +5,4 @@ del: len=1 gone=true
 tstruct=hit miss=?
 ttup=true miss=false
 eq=true neq=false
+sff=43 miss=-1
