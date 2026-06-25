@@ -54,7 +54,7 @@ if pkg-config --exists sqlite3 2>/dev/null || echo '#include <sqlite3.h>' | cc -
   # macOS ships libsqlite3 + sqlite3.h but no .pc file — use --link (not --pkg) there.
   if pkg-config --exists sqlite3 2>/dev/null; then TYCHO_SQLITE="--pkg sqlite3"; else TYCHO_SQLITE="--link sqlite3"; fi
   rm -f "$T/ref.out"
-  $TYCHOC "$DB/dbquery.ty" -o "$T/dbh" --shim "$DB/db_shim.c" $TYCHO_SQLITE >/dev/null 2>&1 && printf "  tycho %s\n" "$(best "$T/dbh")" || echo "  tycho build-fail"
+  $TYCHOC "$DB/dbquery.ty" -o "$T/dbh" $TYCHO_SQLITE >/dev/null 2>&1 && printf "  tycho %s\n" "$(best "$T/dbh")" || echo "  tycho build-fail"
   LIBS=$(pkg-config --cflags --libs sqlite3 2>/dev/null || echo -lsqlite3)
   cc -O3 $DB/dbquery.c -o "$T/dbc" $LIBS 2>/dev/null && printf "  C    %s\n" "$(best "$T/dbc")" || echo "  C build-fail"
   ( cd "$DB" && go build -o "$T/dbg" dbquery.go 2>/dev/null ) && printf "  Go   %s\n" "$(best "$T/dbg")" || echo "  Go (cgo) skip/fail"

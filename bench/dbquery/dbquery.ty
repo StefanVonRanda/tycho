@@ -5,57 +5,64 @@
 # them to a checksum, then discards them. That churn is where tycho's per-round
 # arena reclaim meets C's malloc/free and Go's GC. Output = a deterministic
 # checksum (the cross-language correctness check). N/Q below match the C/Go ports.
-extern fn sx_open() -> ptr
-extern fn sx_exec(db: ptr, sql: string) -> int
-extern fn sx_prepare(db: ptr, sql: string) -> ptr
-extern fn sx_bind_int(st: ptr, i: int, v: int)
-extern fn sx_bind_text(st: ptr, i: int, s: string)
-extern fn sx_step(st: ptr) -> int
-extern fn sx_reset(st: ptr)
-extern fn sx_col_int(st: ptr, i: int) -> int
-extern fn sx_col_text(st: ptr, i: int) -> string
-extern fn sx_finalize(st: ptr)
-extern fn sx_close(db: ptr)
+#
+# Bound directly to libsqlite3 with NO hand-written shim: out-param constructors
+# (sqlite3_open/prepare_v2) via `mut ptr` (FFI R4); SQLITE_TRANSIENT = (void*)-1
+# via to_ptr(-1); SQLITE_ROW (100) compared directly; sqlite3_column_int64 for a
+# clean 64-bit read; column_text arena-copied on the string return.
+extern "sqlite3" fn sqlite3_open(path: string, db: mut ptr) -> int
+extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> int
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: mut ptr, tail: ptr) -> int
+extern "sqlite3" fn sqlite3_bind_int64(st: ptr, i: int, v: int) -> int
+extern "sqlite3" fn sqlite3_bind_text(st: ptr, i: int, s: string, n: int, dtor: ptr) -> int
+extern "sqlite3" fn sqlite3_step(st: ptr) -> int
+extern "sqlite3" fn sqlite3_reset(st: ptr) -> int
+extern "sqlite3" fn sqlite3_column_int64(st: ptr, i: int) -> int
+extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
+extern "sqlite3" fn sqlite3_finalize(st: ptr) -> int
+extern "sqlite3" fn sqlite3_close(db: ptr) -> int
 
 fn main():
-    db := sx_open()
-    if is_null(db):
+    db := null
+    if sqlite3_open(":memory:", &db) != 0:
         die("dbquery: open failed")
-    sx_exec(db, "CREATE TABLE events(id INTEGER, cat INTEGER, amt INTEGER, label TEXT)")
+    sqlite3_exec(db, "CREATE TABLE events(id INTEGER, cat INTEGER, amt INTEGER, label TEXT)", null, null, null)
 
     # setup: bulk insert N rows via a single prepared statement, in one transaction
     n := 60000
-    sx_exec(db, "BEGIN")
-    ins := sx_prepare(db, "INSERT INTO events VALUES (?,?,?,?)")
+    sqlite3_exec(db, "BEGIN", null, null, null)
+    ins := null
+    sqlite3_prepare_v2(db, "INSERT INTO events VALUES (?,?,?,?)", -1, &ins, null)
     i := 0
     for i < n:
-        sx_bind_int(ins, 1, i)
-        sx_bind_int(ins, 2, i % 32)
-        sx_bind_int(ins, 3, (i * 2654435761) % 1000)
-        sx_bind_text(ins, 4, "u" + str(i % 1000))
-        sx_step(ins)
-        sx_reset(ins)
+        sqlite3_bind_int64(ins, 1, i)
+        sqlite3_bind_int64(ins, 2, i % 32)
+        sqlite3_bind_int64(ins, 3, (i * 2654435761) % 1000)
+        sqlite3_bind_text(ins, 4, "u" + str(i % 1000), -1, to_ptr(-1))   # SQLITE_TRANSIENT: sqlite copies the text
+        sqlite3_step(ins)
+        sqlite3_reset(ins)
         i = i + 1
-    sx_finalize(ins)
-    sx_exec(db, "COMMIT")
+    sqlite3_finalize(ins)
+    sqlite3_exec(db, "COMMIT", null, null, null)
 
     # measured loop: Q rounds of query -> group -> reduce -> discard
     acc := 0
     qn := 240
     q := 0
     for q < qn:
-        st := sx_prepare(db, "SELECT cat, amt, label FROM events WHERE (id % 240) = " + str(q))
+        st := null
+        sqlite3_prepare_v2(db, "SELECT cat, amt, label FROM events WHERE (id % 240) = " + str(q), -1, &st, null)
         m_sum := []int: int                 # transient per-round grouping tables
         m_cnt := []int: int
         lbllen := 0
-        for sx_step(st) == 1:
-            cat := sx_col_int(st, 0)
-            amt := sx_col_int(st, 1)
-            label := sx_col_text(st, 2)     # C-owned text -> arena-copied on return
+        for sqlite3_step(st) == 100:        # 100 = SQLITE_ROW
+            cat := sqlite3_column_int64(st, 0)
+            amt := sqlite3_column_int64(st, 1)
+            label := sqlite3_column_text(st, 2)   # C-owned text -> arena-copied on return
             lbllen = lbllen + len(label)
             m_sum[cat] = map_get(m_sum, cat, 0) + amt
             m_cnt[cat] = map_get(m_cnt, cat, 0) + 1
-        sx_finalize(st)
+        sqlite3_finalize(st)
         chk := lbllen
         ks := keys(m_sum)
         ki := 0
@@ -66,5 +73,5 @@ fn main():
         acc = acc + chk
         q = q + 1
 
-    sx_close(db)
+    sqlite3_close(db)
     print(str(acc) + "\n")

@@ -40,7 +40,7 @@ printf '%-8s %10s %9s   %s\n' lang peakRSS time checksum
 # Fail-closed: libsqlite3 is present (checked above), so a tycho build failure
 # here is a real failure -- print the compiler error and exit nonzero, never
 # a silent "(build skipped)" followed by "dbquery: ok".
-if ! $TYCHOC "$D/dbquery.ty" -o "$T/dbq_tycho" --shim "$D/db_shim.c" $TYCHO_SQLITE > "$T/tycho_err" 2>&1; then
+if ! $TYCHOC "$D/dbquery.ty" -o "$T/dbq_tycho" $TYCHO_SQLITE > "$T/tycho_err" 2>&1; then
     echo "dbquery: TYCHO BUILD FAILED"; cat "$T/tycho_err"; exit 2
 fi
 runlang tycho "$T/dbq_tycho"
