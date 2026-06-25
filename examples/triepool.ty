@@ -1,0 +1,48 @@
+# The flat node-pool + integer-index idiom for pointer-shaped structures (see
+# docs/notes/value-semantics-limits.md). Instead of a recursive `struct Trie { kids:
+# [int: Trie] }` (which stores children by VALUE and costs ~2.7x C on memory), keep all
+# nodes in one pool array and make children INDICES into it -- an index is pointer-sized,
+# sharing is two indices pointing at one slot, and the arena reclaims the whole pool. No
+# pointers, no free; the cost is that you index a pool instead of following references.
+struct TrieNode:
+    kids: [int: int]               # next-byte -> node INDEX in the pool
+    word: bool
+
+struct Trie:
+    nodes: [TrieNode]              # node 0 is the root
+
+fn insert(t: mut Trie, s: string) -> int:    # returns 1 if a NEW word was completed
+    cur := 0
+    i := 0
+    for i in range(0, len(s)):
+        c := s[i]
+        if not (c in t.nodes[cur].kids):
+            push(t.nodes, TrieNode([]int: int, false))
+            t.nodes[cur].kids[c] = len(t.nodes) - 1
+        cur = t.nodes[cur].kids[c]
+    if t.nodes[cur].word:
+        return 0
+    t.nodes[cur].word = true
+    return 1
+
+fn has(t: Trie, s: string) -> bool:
+    cur := 0
+    i := 0
+    for i in range(0, len(s)):
+        c := s[i]
+        if not (c in t.nodes[cur].kids):
+            return false
+        cur = t.nodes[cur].kids[c]
+    return t.nodes[cur].word
+
+fn main():
+    t := Trie([]TrieNode)
+    push(t.nodes, TrieNode([]int: int, false))      # root
+    words := ["cat", "car", "card", "dog"]
+    new := 0
+    i := 0
+    for i in range(0, len(words)):
+        new = new + insert(&t, words[i])
+    insert(&t, "cat")                                # duplicate: no new word, no new node
+    print("nodes=" + str(len(t.nodes)) + " words=" + str(new) + "\n")
+    print("cat=" + str(has(t, "cat")) + " card=" + str(has(t, "card")) + " ca=" + str(has(t, "ca")) + " cow=" + str(has(t, "cow")) + "\n")
