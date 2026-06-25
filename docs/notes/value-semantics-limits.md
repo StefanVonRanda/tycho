@@ -134,3 +134,7 @@ borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that
 None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on
 the value-semantics path — no `malloc`/`free`, no UAF — for the workloads where that path is
 viable, and tell you honestly when to step off it.
+
+Is the trie/graph cost fundamental to value semantics, or just our implementation? See
+`hylo-mvs-research.md` — the most mature MVS language (Hylo) hits the same wall and answers
+it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.
