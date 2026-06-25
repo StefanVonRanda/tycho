@@ -934,10 +934,10 @@ static int mapkey_intrep(Type k) { return base_of(k) == T_INT || enum_fieldless(
 /* composite map key (Stage 1: a struct, possibly through a newtype). Rides the
  * occupancy scheme like int keys, but stores the struct by value and hashes/compares
  * it deeply (generated tycho_hash_S_ and tycho_eq_S_ functions). */
-static int mapkey_composite(Type k) { return IS_STRUCT(base_of(k)); }
+static int mapkey_composite(Type k) { Type b = base_of(k); return IS_STRUCT(b) || IS_TUP(b); }
 /* a type usable as (a field of) a composite key: every leaf must have a stable deep
- * hash. Scalars + bytes + a fieldless enum + (recursively) a struct of those qualify;
- * arrays/maps/payload-enums/functions/handles do not yet (a later stage). */
+ * hash. Scalars + bytes + (recursively) a struct or tuple of those qualify;
+ * arrays/maps/enums/functions/handles do not yet (a later stage). */
 static int key_hashable(Type t) {
     t = base_of(t);
     if (t == T_INT || t == T_FLOAT || t == T_BOOL || t == T_CHAR || t == T_STRING || t == T_BYTES) return 1;
@@ -946,10 +946,14 @@ static int key_hashable(Type t) {
         for (int i = 0; i < sd->nfields; i++) if (!key_hashable(sd->fields[i].type)) return 0;
         return 1;
     }
+    if (IS_TUP(t)) {
+        for (int i = 0; i < tup_n(t); i++) if (!key_hashable(tup_elem(t, i))) return 0;
+        return 1;
+    }
     return 0;
 }
-/* is struct `want` reachable inside composite key type kt (the key itself, or a
- * struct field of it, recursively)? */
+/* is composite type `want` (a struct or tuple) reachable inside key type kt -- the key
+ * itself, or a struct field / tuple element of it, recursively? */
 static int struct_in_key(Type want, Type kt) {
     kt = base_of(kt);
     if (kt == want) return 1;
@@ -958,11 +962,15 @@ static int struct_in_key(Type want, Type kt) {
         for (int j = 0; j < sd->nfields; j++)
             if (struct_in_key(want, sd->fields[j].type)) return 1;
     }
+    if (IS_TUP(kt)) {
+        for (int j = 0; j < tup_n(kt); j++)
+            if (struct_in_key(want, tup_elem(kt, j))) return 1;
+    }
     return 0;
 }
-/* does any composite-keyed map use struct `st` (as its key, or a nested key field)?
- * Only such structs get a tycho_hash_S_ emitted -- the hash calls tycho_ik_hash /
- * tycho_si_hash, which are only emitted when the program uses maps. */
+/* does any composite-keyed map use composite type `st` (struct or tuple) as its key or
+ * a nested key field/element? Only such types get a tycho_hash_* emitted -- the hash
+ * calls tycho_ik_hash / tycho_si_hash, only emitted when the program uses maps. */
 static int struct_keyused(Type st) {
     for (int i = 0; i < g_nmaptypes; i++)
         if (mapkey_composite(g_maptypes[i].key) && struct_in_key(st, g_maptypes[i].key)) return 1;
@@ -5952,6 +5960,7 @@ static char *gen_hash(Type t, const char *v) {
     if (t == T_FLOAT)  return sfmt("tycho_ik_hash((long)((union { double _d; long _l; }){ ._d = (%s) })._l)", v);
     if (enum_fieldless(t)) return sfmt("tycho_ik_hash((long)((%s)->tag))", v);
     if (IS_STRUCT(t))  return sfmt("tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
+    if (IS_TUP(t))     return sfmt("tycho_hash_T%d(%s)", TUP_ID(t), v);
     return sfmt("tycho_ik_hash((long)(%s))", v);   /* int / bool / char */
 }
 
@@ -8187,6 +8196,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (struct_keyused(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
             fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v);\n", nm, nm);
     }
+    for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple deep-hash prototypes (composite map keys; emitted before bodies so struct/tuple hashes can reference each other) */
+        if (struct_keyused(T_TUP_BASE + i))
+            fprintf(o, "static unsigned long tycho_hash_T%d(TychoTup%d v);\n", i, i);
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
             fprintf(o, "static TychoOpt%d tycho_opt%d_copy(Arena *a, TychoOpt%d v);\n", i, i, i);
@@ -8271,6 +8283,19 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < sd->nfields; j++) {
             char *vf = sfmt("v.f_%s", sd->fields[j].name);
             fprintf(o, "    h = h * 1099511628211UL ^ %s;\n", gen_hash(sd->fields[j].type, vf));
+        }
+        fprintf(o, "    return h;\n}\n\n");
+    }
+    /* (6c) deep-hash body per tuple used as a (nested) composite map key. Tuple == is
+     * inline in gen_eq, but the hash is a function (a stateful FNV fold); element
+     * access is ._0/._1. Same seeded fold as the struct hash. */
+    for (int i = 0; i < g_ntuptypes; i++) {
+        if (!struct_keyused(T_TUP_BASE + i)) continue;
+        fprintf(o, "static unsigned long tycho_hash_T%d(TychoTup%d v) {\n", i, i);
+        fprintf(o, "    unsigned long h = tycho_hash_k0;\n");
+        for (int j = 0; j < tup_n(T_TUP_BASE + i); j++) {
+            char *vf = sfmt("v._%d", j);
+            fprintf(o, "    h = h * 1099511628211UL ^ %s;\n", gen_hash(tup_elem(T_TUP_BASE + i, j), vf));
         }
         fprintf(o, "    return h;\n}\n\n");
     }

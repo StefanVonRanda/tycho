@@ -1,0 +1,39 @@
+# Composite map keys (Stage 2): a tuple as the key type. Stored by value, deep-hashed
+# and deep-compared, occupancy scheme — same machinery as struct keys. Covers a scalar
+# tuple, a tuple whose element is a struct, and a tuple of tuples. (A struct key that
+# *contains* a tuple field hits a separate pre-existing tuple-field limitation and is
+# not exercised here.)
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    # (int, string) key
+    m := [](int, string): int
+    m[(1, "a")] = 10
+    m[(2, "b")] = 20
+    m[(1, "a")] = 11                          # overwrite, not a new entry
+    print("get=" + str(map_get(m, (1, "a"), -1)) + " miss=" + str(map_get(m, (9, "z"), -1)) + "\n")
+    print("in=" + str((2, "b") in m) + " len=" + str(len(m)) + "\n")
+    m[(1, "a")] += 5                          # in-place accumulator on a tuple key
+    ks := keys(m)
+    print("acc=" + str(map_get(m, (1, "a"), 0)) + " k0=(" + str(ks[0].0) + "," + ks[0].1 + ")\n")
+    delete m[(1, "a")]
+    print("del: len=" + str(len(m)) + " gone=" + str(not ((1, "a") in m)) + "\n")
+
+    # tuple whose element is a struct (recursive hash/eq through the struct)
+    a := [](int, Point): string
+    a[(1, Point(2, 3))] = "hit"
+    print("tstruct=" + map_get(a, (1, Point(2, 3)), "?") + " miss=" + map_get(a, (1, Point(9, 9)), "?") + "\n")
+
+    # tuple of tuples + deep ==
+    c := []((int, int), int): bool
+    c[((1, 2), 3)] = true
+    print("ttup=" + str(map_get(c, ((1, 2), 3), false)) + " miss=" + str(map_get(c, ((1, 2), 9), false)) + "\n")
+    d := [](int, string): int
+    d[(7, "k")] = 1
+    e := [](int, string): int
+    e[(7, "k")] = 1
+    print("eq=" + str(d == e))
+    e[(8, "k")] = 2
+    print(" neq=" + str(d == e) + "\n")

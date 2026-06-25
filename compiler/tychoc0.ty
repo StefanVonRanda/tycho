@@ -2615,14 +2615,16 @@ fn map_key(ty: string) -> string:               # "{K:V}" -> "K"
     return "str"
 
 fn mstruct(ty: string) -> string:                # map C struct name
-    return "Map_" + map_key(ty) + "_" + mangle(map_val(ty))
+    return "Map_" + mangle(map_key(ty)) + "_" + mangle(map_val(ty))
 
 fn mfam(ty: string) -> string:                   # map runtime function prefix
-    return "map_" + map_key(ty) + "_" + mangle(map_val(ty))
+    return "map_" + mangle(map_key(ty)) + "_" + mangle(map_val(ty))
 
 fn mtag(k: string) -> string:                    # slotptr family tag: 1-char for the base keys,
-    if k == "int" or k == "str":                 # the full (distinct) name for a newtype key
+    if k == "int" or k == "str":                 # the full (distinct) name for a newtype/struct key
         return substr(k, 0, 1)                   # (1-char tags would collide across newtypes)
+    if is_tuple(k):                              # a tuple type string isn't a valid identifier
+        return mangle(k)
     return k
 
 fn is_cmp(op: string) -> bool:
@@ -4250,8 +4252,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if is_soa(ety):                       # empty soa: zeroed descriptor
                 return "(" + cty(dc, ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
-        EMapEmpty(kty, vty, _el):                      # value type must be mangled to match the family ([int] -> arr_int)
-            return "map_" + kty + "_" + mangle(vty) + "_new()"
+        EMapEmpty(kty, vty, _el):                      # key+value mangled to match the family (a tuple key (int,str) -> tup_int_str)
+            return "map_" + mangle(kty) + "_" + mangle(vty) + "_new()"
         EMapLit(keys, vals, _el):                      # chain of _set onto a fresh map
             mt := type_of(e, names, types, dc, ctx)
             f := mfam(mt)
@@ -6902,12 +6904,13 @@ fn gen_lambda_thunk(li: LamInfo, dc: Decls, ctx: Ctx) -> string:
 
 fn gen_tuple_struct(dc: Decls, ctx: Ctx, ty: string) -> string:
     parts := tuple_parts(ty)
-    out := "typedef struct { "
+    nm := "Tup_" + tup_suffix(ty)             # named tag (forward-declared in the driver) so a map
+    out := "struct " + nm + "_ { "            # struct holding a Tup_X* member can name it incomplete
     i := 0
     for i < len(parts):
         out = out + cty(dc, ctx, parts[i]) + "f" + str(i) + "; "
         i = i + 1
-    return out + "} Tup_" + tup_suffix(ty) + ";\n"
+    return out + "};\n"
 
 fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
     nm := "Tup_" + tup_suffix(ty)
@@ -6940,6 +6943,18 @@ fn gen_tuple_eq(dc: Decls, ctx: Ctx, ty: string) -> string:
         out = out + eq_field(dc, ctx, parts[i], "a.f" + str(i), "b.f" + str(i))
         i = i + 1
     return out + "; }\n"
+
+# Deep-hash body for a tuple used as a (nested) composite map key. Tuple == is a
+# function here (Tup_*_eq), so the hash is too; same seeded FNV fold as gen_struct_hash.
+fn gen_tuple_hash(dc: Decls, ctx: Ctx, ty: string) -> string:
+    nm := "Tup_" + tup_suffix(ty)
+    parts := tuple_parts(ty)
+    out := "static unsigned long " + nm + "_hash(" + nm + " v) { unsigned long h = hash_k0;"
+    i := 0
+    for i < len(parts):
+        out = out + " h = h * 1099511628211UL ^ " + hash_field(dc, ctx, parts[i], "v.f" + str(i)) + ";"
+        i = i + 1
+    return out + " return h; }\n"
 
 fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str" or ty == "bytes":
@@ -7406,7 +7421,8 @@ fn gen_mhash() -> string:                        # keyed SipHash-1-3 (strings) +
 # A composite (struct) map key. Rides the int-key occupancy scheme but stores the
 # struct by value and hashes/compares it deeply.
 fn mapkey_composite(dc: Decls, ctx: Ctx, k: string) -> bool:
-    return is_struct(dc, ctx, resolve_nt(dc, ctx, k))
+    b := resolve_nt(dc, ctx, k)
+    return is_struct(dc, ctx, b) or is_tuple(b)
 
 # A type usable as (a field of) a composite key: every leaf must have a stable deep
 # hash. Scalars + bytes + (recursively) a struct of those qualify; arrays/maps/enums/
@@ -7427,9 +7443,18 @@ fn key_hashable(dc: Decls, ctx: Ctx, ty: string) -> bool:
                 return true
             i = i + 1
         return false
+    if is_tuple(b):
+        parts := tuple_parts(b)
+        j := 0
+        for j < len(parts):
+            if not key_hashable(dc, ctx, parts[j]):
+                return false
+            j = j + 1
+        return true
     return false
 
-# Is struct `want` reachable inside composite key type kt (the key, or a struct field of it)?
+# Is composite type `want` (a struct name or a tuple type string) reachable inside key
+# type kt -- the key, a struct field, or a tuple element of it, recursively?
 fn struct_in_key(dc: Decls, ctx: Ctx, want: string, kt: string) -> bool:
     b := resolve_nt(dc, ctx, kt)
     if b == want:
@@ -7444,6 +7469,14 @@ fn struct_in_key(dc: Decls, ctx: Ctx, want: string, kt: string) -> bool:
                         return true
                     j = j + 1
                 return false
+            i = i + 1
+        return false
+    if is_tuple(b):
+        parts := tuple_parts(b)
+        i := 0
+        for i < len(parts):
+            if struct_in_key(dc, ctx, want, parts[i]):
+                return true
             i = i + 1
         return false
     return false
@@ -7468,6 +7501,8 @@ fn hash_field(dc: Decls, ctx: Ctx, ty: string, v: string) -> string:
         return "ikhash((long)((union { double _d; long _l; }){ ._d = (" + v + ") })._l)"
     if is_struct(dc, ctx, r):
         return ust(r) + "_hash(" + v + ")"
+    if is_tuple(r):
+        return "Tup_" + tup_suffix(r) + "_hash(" + v + ")"
     return "ikhash((long)(" + v + "))"            # int / bool / char
 
 # Deep-hash body for a hashable struct used as a map key. Seeded from hash_k0 (the
@@ -7489,7 +7524,7 @@ fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
-    M := "Map_" + k + "_" + mangle(v)            # named-tag body; typedef forward-declared in the driver (fn([K:V])->R)
+    M := "Map_" + mangle(k) + "_" + mangle(v)            # named-tag body; typedef forward-declared in the driver (fn([K:V])->R)
     if mapkey_composite(dc, ctx, k):             # struct keys: stored by value, deep hash/eq, occupancy array (no null sentinel, like int keys)
         cks := cty(dc, ctx, k)
         ck := substr(cks, 0, len(cks) - 1)
@@ -7508,8 +7543,8 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
-    M := "Map_" + k + "_" + mangle(v)
-    f := "map_" + k + "_" + mangle(v)
+    M := "Map_" + mangle(k) + "_" + mangle(v)
+    f := "map_" + mangle(k) + "_" + mangle(v)
     s := "m" + mtag(k) + "_" + mangle(v)
     ka := "Arr_" + mangle(k)                     # keys() returns [K] (a newtype/enum key stays wrapped)
     kv := "m.ord[i]"                             # the value keys() pushes (walked in insertion order)
@@ -7536,9 +7571,13 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     if mapkey_composite(dc, ctx, k):             # struct keys: occupancy scheme like int keys, but K stored by value, deep-hashed and deep-compared; key deep-copied on put
         cks := cty(dc, ctx, k)
         ck := substr(cks, 0, len(cks) - 1)        # struct C type
-        heq := teq(dc, ctx, k)                    # deep-eq fn name
-        hh := ust(resolve_nt(dc, ctx, k)) + "_hash"   # deep-hash fn name
-        kcopy := cp_field(dc, ctx, k, "ar", "k")  # deep-copy the key into ar (passthrough for scalar-field structs)
+        rk := resolve_nt(dc, ctx, k)
+        heq := teq(dc, ctx, k)                    # deep-eq fn name (struct/enum via teq; tuple below)
+        hh := ust(rk) + "_hash"                   # deep-hash fn name
+        if is_tuple(rk):                          # tuples name their eq/hash by suffix, not ust
+            heq = "Tup_" + tup_suffix(rk) + "_eq"
+            hh = "Tup_" + tup_suffix(rk) + "_hash"
+        kcopy := cp_field(dc, ctx, k, "ar", "k")  # deep-copy the key into ar (passthrough for scalar-field structs/tuples)
         out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(" + ck + ") * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
         out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
         out = out + "static void " + s + "_op(Arena* ar, " + ck + "** ord, long* nord, long* ocap, " + ck + " k) { if (*nord == *ocap) { long nc = *ocap ? *ocap * 2 : 8; " + ck + "* nb = amem(ar, sizeof(" + ck + ") * nc); for (long i = 0; i < *nord; i++) nb[i] = (*ord)[i]; *ord = nb; *ocap = nc; } (*ord)[(*nord)++] = k; }\n"
@@ -7611,15 +7650,16 @@ fn note_arr_types(acc: mut [string], ty: string):
         if not has_str(acc, b):
             push(acc, b)
     elif is_tuple(b):
-        if not has_str(acc, b):
-            push(acc, b)
-        parts := tuple_parts(b)
-        i := 0
-        for i < len(parts):
+        parts := tuple_parts(b)                        # element families FIRST: a tuple that embeds
+        i := 0                                         # another tuple by value needs the inner tuple's
+        for i < len(parts):                            # body before its own (dependency order)
             note_arr_types(&acc, parts[i])
             i = i + 1
+        if not has_str(acc, b):
+            push(acc, b)
     elif is_map(b):
-        note_arr_types(&acc, map_val(b))               # value family FIRST: a map-valued map's
+        note_arr_types(&acc, map_key(b))               # bare composite key (struct/tuple) FIRST: the map struct holds a K* member, so K must be typedef'd before it
+        note_arr_types(&acc, map_val(b))               # value family next: a map-valued map's
         note_arr_types(&acc, "[" + map_key(b) + "]")   # inner map must be typedef'd before the outer
         if not has_str(acc, b):                        # (its struct holds an inner-map pointer member);
             push(acc, b)                               # keys(m) -> [K] array family also emitted
@@ -11006,14 +11046,19 @@ fn main():
         i = i + 1
     i = 0                                        # 1b'. forward-declare composite array/map tags so a fn value whose
     for i < len(ets):                            #      param/ret is [T]/[K:V] (fn([T])->R) can name it incomplete
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
             out = out + "typedef struct Arr_" + mangle(ets[i]) + "_ Arr_" + mangle(ets[i]) + ";\n"
         i = i + 1
     i = 0
     for i < len(ets):
         if is_map(ets[i]):
-            mt := "Map_" + map_key(ets[i]) + "_" + mangle(map_val(ets[i]))
+            mt := mstruct(ets[i])
             out = out + "typedef struct " + mt + "_ " + mt + ";\n"
+        i = i + 1
+    i = 0                                        # 1b''. tuple forward typedefs: a composite-keyed map struct holds a Tup_X* (keys/ord), so Tup_X must be a known (incomplete) type before the map struct bodies
+    for i < len(ets):
+        if is_tuple(ets[i]):
+            out = out + "typedef struct Tup_" + tup_suffix(ets[i]) + "_ Tup_" + tup_suffix(ets[i]) + ";\n"
         i = i + 1
     i = 0                                        # 1c. function-value typedefs FIRST — a container may hold a fn
     has_fnval := false                           #     value (array elem / struct field), so Fn_<suffix> must be
@@ -11024,7 +11069,7 @@ fn main():
         i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
             out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
@@ -11046,6 +11091,11 @@ fn main():
         out = out + "static int " + ust(prog.structs[i].name) + "_eq(" + ust(prog.structs[i].name) + " a, " + ust(prog.structs[i].name) + " b);\n"
         if struct_keyused(dc, ctx, ets, prog.structs[i].name):   # composite map key: forward-declare the deep hash so map slot fns (emitted earlier) can call it
             out = out + "static unsigned long " + ust(prog.structs[i].name) + "_hash(" + ust(prog.structs[i].name) + " v);\n"
+        i = i + 1
+    i = 0                                        # tuple deep-hash protos (keyed tuples): before any hash body, so struct/tuple hashes can reference each other
+    for i < len(ets):
+        if is_tuple(ets[i]) and struct_keyused(dc, ctx, ets, ets[i]):
+            out = out + "static unsigned long Tup_" + tup_suffix(ets[i]) + "_hash(Tup_" + tup_suffix(ets[i]) + " v);\n"
         i = i + 1
     i = 0                                        # 4. user struct bodies (source order; array fields
     for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
@@ -11081,6 +11131,7 @@ fn main():
         if is_tuple(ets[i]):
             tn := "Tup_" + tup_suffix(ets[i])
             out = out + "static " + tn + " " + tn + "_copy(Arena* ar, " + tn + " s);\n"
+            out = out + "static int " + tn + "_eq(" + tn + " a, " + tn + " b);\n"   # composite map fns (emitted before tuple eq bodies) call this
         i = i + 1
     i = 0                                        # 5c. enum copy protos (mutual recursion + array/
     for i < len(prog.enums):                     #     struct/tuple copy may deep-copy enum members)
@@ -11089,7 +11140,7 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_tuple(ets[i]) and not is_map(ets[i]) and not is_soa(ets[i]):
+        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
@@ -11116,6 +11167,8 @@ fn main():
         if is_tuple(ets[i]):
             out = out + gen_tuple_copy(dc, ctx, ets[i])
             out = out + gen_tuple_eq(dc, ctx, ets[i])
+            if struct_keyused(dc, ctx, ets, ets[i]):   # tuple used as a composite map key: deep hash
+                out = out + gen_tuple_hash(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 7. enum constructors + copy + equality
     for i < len(prog.enums):
