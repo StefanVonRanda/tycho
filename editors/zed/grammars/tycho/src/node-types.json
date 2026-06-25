@@ -74,6 +74,10 @@
           "named": true
         },
         {
+          "type": "typaram",
+          "named": true
+        },
+        {
           "type": "type",
           "named": true
         }
@@ -87,6 +91,10 @@
   },
   {
     "type": "!=",
+    "named": false
+  },
+  {
+    "type": "$",
     "named": false
   },
   {
@@ -231,11 +239,11 @@
   },
   {
     "type": "char",
-    "named": false
+    "named": true
   },
   {
     "type": "char",
-    "named": true
+    "named": false
   },
   {
     "type": "chr",
@@ -323,10 +331,6 @@
     "named": false
   },
   {
-    "type": "inout",
-    "named": false
-  },
-  {
     "type": "input",
     "named": false
   },
@@ -356,6 +360,10 @@
   },
   {
     "type": "match",
+    "named": false
+  },
+  {
+    "type": "mut",
     "named": false
   },
   {
@@ -473,6 +481,10 @@
   {
     "type": "true",
     "named": false
+  },
+  {
+    "type": "typaram",
+    "named": true
   },
   {
     "type": "type",

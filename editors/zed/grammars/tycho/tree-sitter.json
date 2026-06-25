@@ -5,7 +5,7 @@
       "camelcase": "Tycho",
       "scope": "source.tycho",
       "path": ".",
-      "file-types": ["hi"]
+      "file-types": ["ty"]
     }
   ],
   "metadata": {

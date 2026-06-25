@@ -9,12 +9,12 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
   types, builtins, literals, identifiers, operators). It registers the language
   and drives highlighting; it does **not** model block nesting (tycho is
   indentation-significant; full structure would need a C external scanner). The
-  generated parser (`src/parser.c`) is committed, so no tree-sitter CLI is needed
-  to build it. **Verified: parses 321/321 valid `.ty` files with zero parse errors.**
-  > **Regen pending:** the `inout` keyword was renamed to `mut` in `grammar.js`,
-  > but the committed `src/` (`parser.c`/`grammar.json`/`node-types.json`) was *not*
-  > regenerated (no tree-sitter CLI in the build env). Run `tree-sitter generate`
-  > in this directory to refresh them before publishing the grammar.
+  generated parser (`src/parser.c`, ABI 15) is committed, so no tree-sitter CLI
+  is needed to build it. **Verified: parses all 462 committed `.ty` files —
+  including `$T` generics — with zero parse errors.** To regenerate after editing
+  `grammar.js`: `npx tree-sitter-cli@0.25 generate --abi 15` in this directory
+  (ABI 15 matches the committed parser; the keyword set tracks the language, e.g.
+  `mut`, and `$T` type parameters lex as a `typaram` token).
 - `languages/tycho/` — Zed language config + `highlights.scm` queries.
 - `extension.toml`, `Cargo.toml`, `src/lib.rs` — the Zed extension; the Rust code
   just launches `tycho-lsp` (passing `TYCHOC`) for diagnostics.

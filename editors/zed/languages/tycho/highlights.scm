@@ -5,6 +5,7 @@
 (keyword) @keyword
 (constant) @constant.builtin
 (type) @type.builtin
+(typaram) @type
 (builtin) @function.builtin
 (string) @string
 (fstring) @string

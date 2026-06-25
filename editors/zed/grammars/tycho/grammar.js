@@ -24,6 +24,7 @@ module.exports = grammar({
         $.string,
         $.char,
         $.number,
+        $.typaram,
         $.identifier,
         $.operator,
         $.punctuation,
@@ -51,6 +52,10 @@ module.exports = grammar({
         "floor", "fabs", "map_get", "map_set", "reserve",
       ),
 
+    // generic type parameter sigil: `$T`, `$K`, … (a lone `$`, e.g. the
+    // explicit-type-arg form `name$(int)`, is handled by `operator` below).
+    typaram: ($) => /\$[A-Za-z_][A-Za-z0-9_]*/,
+
     identifier: ($) => /[A-Za-z_][A-Za-z0-9_]*/,
 
     number: ($) => /[0-9]+(\.[0-9]+)?/,
@@ -67,7 +72,7 @@ module.exports = grammar({
       choice(
         ":=", "->", "==", "!=", "<=", ">=", "<<", ">>",
         "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
-        "+", "-", "*", "/", "%", "<", ">", "=", "&", "|", "^", "~", ".",
+        "+", "-", "*", "/", "%", "<", ">", "=", "&", "|", "^", "~", ".", "$",
       ),
 
     punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":"),
