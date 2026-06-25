@@ -22,10 +22,10 @@ the whole stack on a serious C library:
   `SQLITE_ROW` (100); row values use `sqlite3_column_int64` for a clean 64-bit read.
 - **`--pkg sqlite3`** — pulls the link flags from `pkg-config`.
 
-The one place a shim would still help: a C function returning a *negative* `int`.
-SQLite's result codes are all non-negative, so reading its 32-bit `int` returns as
-tycho's 64-bit `int` is correct on a mainstream ABI; an API returning negative
-`int`s would still want a `long` shim (or a future `i32` type).
+A note on integer widths: SQLite's result codes are all non-negative, so reading its
+32-bit `int` returns as tycho's 64-bit `int` is correct here without ceremony. A C
+function that can return a *negative* `int` needs `to_i32(...)` around the call to
+sign-extend it (still no shim) — see `docs/ffi.md`.
 
 ## Build & run
 

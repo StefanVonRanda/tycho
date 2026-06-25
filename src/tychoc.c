@@ -3145,6 +3145,8 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="args",   .ret=T_ARRAY_STRING, .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="getenv", .ret=T_STRING,       .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="is_null",.ret=T_BOOL,         .params={ T_PTR },                   .nparams=1, .builtin=1 };   /* FFI: opaque-handle NULL test */
+    g_sigs[g_nsigs++] = (Sig){ .name="to_ptr", .ret=T_PTR,          .params={ T_INT },                   .nparams=1, .builtin=1 };   /* FFI: int -> opaque ptr (sentinel pointers like SQLITE_TRANSIENT = (void*)-1) */
+    g_sigs[g_nsigs++] = (Sig){ .name="to_i32", .ret=T_INT,          .params={ T_INT },                   .nparams=1, .builtin=1 };   /* FFI: sign-extend a 32-bit C int return (a negative int read as 64-bit would otherwise be a huge positive) */
     /* float math (libm) -- the irreducible numeric stdlib (min/max are trivial in-language) */
     g_sigs[g_nsigs++] = (Sig){ .name="sqrt",   .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="pow",    .ret=T_FLOAT,        .params={ T_FLOAT, T_FLOAT },        .nparams=2, .builtin=1 };
@@ -3921,6 +3923,18 @@ static Type resolve_expr_inner(Expr *e) {
                 if (at_ != T_BYTES && !(IS_NEWTYPE(at_) && nt_under(at_) == T_STRING))
                     die_at(e->line, "to_str(x) takes bytes or a string newtype");
                 return e->type = T_STRING;
+            }
+            if (!strcmp(e->sval, "to_ptr")) {   /* int -> opaque ptr: a sentinel pointer for C (e.g. SQLITE_TRANSIENT = (void*)-1). tycho never derefs it. */
+                if (e->nargs != 1) die_at(e->line, "to_ptr(n) takes one argument");
+                if (resolve_expr(e->args[0]) != T_INT)
+                    die_at(e->line, "to_ptr(n) takes an int");
+                return e->type = T_PTR;
+            }
+            if (!strcmp(e->sval, "to_i32")) {   /* reinterpret the low 32 bits of an int as a signed C `int`, sign-extended -- for extern fns that return a 32-bit `int` (esp. a negative one). */
+                if (e->nargs != 1) die_at(e->line, "to_i32(n) takes one argument");
+                if (resolve_expr(e->args[0]) != T_INT)
+                    die_at(e->line, "to_i32(n) takes an int");
+                return e->type = T_INT;
             }
             if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes: same byte buffer, distinct type (FFI crosses as (ptr,len)) */
                 if (e->nargs != 1) die_at(e->line, "to_bytes(s) takes one argument");
@@ -6216,6 +6230,10 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
+        return sfmt("((void*)(long)%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_i32"))      /* FFI: sign-extend a 32-bit C int return (low 32 bits are valid; the cast recovers the sign) */
+        return sfmt("((long)(int)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */

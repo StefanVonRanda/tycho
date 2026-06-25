@@ -10,3 +10,4 @@ resuse=7 live_in=1
 live1=0
 get1=hit get0=<none>
 r4 rc=0 read=9 dbl=42
+neg=-7 rawneg_ok=true sentinel=-1

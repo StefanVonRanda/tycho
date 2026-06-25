@@ -71,3 +71,10 @@ const char *ffi_get(long key) { return key > 0 ? "hit" : 0; }
  * passes &local for each `mut` arg, so no hand-written shim is needed. */
 long ffi_mk(long id, void **out) { if (id <= 0) { *out = 0; return -1; } slot = (int)id; *out = &slot; return 0; }
 void ffi_dbl(long a, long *out) { *out = a * 2; }
+
+/* to_i32 / to_ptr coverage. ffi_neg returns a NEGATIVE 32-bit C int -- declared
+ * `-> int` it is read as 64-bit (a huge positive); to_i32 recovers the sign.
+ * ffi_ptrval echoes a pointer's integer value, so to_ptr(-1) (a SQLITE_TRANSIENT
+ * -style sentinel) round-trips. */
+int  ffi_neg(void)        { return -7; }
+long ffi_ptrval(void *p)  { return (long)p; }

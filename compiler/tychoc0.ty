@@ -1983,7 +1983,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -3057,6 +3057,10 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "str"
     if name == "null":                            # FFI opaque ptr literal
         return "ptr"
+    if name == "to_ptr":                          # FFI: int -> opaque ptr sentinel
+        return "ptr"
+    if name == "to_i32":                          # FFI: sign-extend a 32-bit C int return
+        return "int"
     if name == "is_null":                         # FFI: opaque-handle NULL test
         return "bool"
     if name == "die":
@@ -4011,7 +4015,7 @@ fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the lo
 # is a no-op (map_set/map_del return a NEW map — a common footgun). Mirrors
 # is_pure_builtin in src/tychoc.c.
 fn is_pure_bi(n: string) -> bool:
-    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bytes" or n == "to_bool" or n == "is_null" or n == "len"
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bytes" or n == "to_ptr" or n == "to_i32" or n == "to_bool" or n == "is_null" or n == "len"
 
 fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e is such a call, else ""
     match e:
@@ -4477,6 +4481,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
                 return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_ptr":                          # FFI: int -> opaque ptr sentinel (e.g. SQLITE_TRANSIENT = (void*)-1); never deref'd in tycho
+                return "((void*)(long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_i32":                          # FFI: sign-extend a 32-bit C int return (low 32 bits valid; cast recovers the sign)
+                return "((long)(int)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_str" or name == "to_bool" or name == "to_under" or name == "to_bytes":   # zero-cost newtype unwrap / bytes<->str reinterpret (same char* repr)
                 return gen_expr(args[0], names, types, dc, ctx)
             if name == "substr":

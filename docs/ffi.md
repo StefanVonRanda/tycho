@@ -115,6 +115,21 @@ value. Only `int`/`char`/`float`/`bool`/`ptr` may be `mut` — a `mut string` wo
 a `char**` handing Tycho a raw pointer with no length header, and `bytes`/handles/
 composites have no trivial pointer-to-self ABI, so all are rejected (use `--shim`).
 
+**Boundary helpers: `to_ptr` and `to_i32`.** Two builtins cover the rough edges of
+crossing C's scalar conventions, both in-language (no shim):
+
+- **`to_ptr(n: int) -> ptr`** turns an integer into an opaque pointer, for C APIs
+  that use a sentinel pointer constant — e.g. SQLite's `SQLITE_TRANSIENT`, which is
+  `(void*)-1`: `sqlite3_bind_text(st, i, s, -1, to_ptr(-1))`. Tycho never
+  dereferences the pointer, so this is sound.
+- **`to_i32(n: int) -> int`** sign-extends a 32-bit C `int` return. Tycho's `int` is
+  64-bit (C `long`), so an `extern fn … -> int` bound to a C function that really
+  returns 32-bit `int` reads the correct low 32 bits but the wrong upper bits — a
+  returned `-1` shows up as `4294967295`. Wrap the call: `rc := to_i32(c_func())`
+  recovers the sign. (Only needed when the C function can return a *negative* `int`;
+  non-negative codes and any function returning `long`/`int64` are already correct.
+  For a 64-bit row value, prefer the `…_int64` variant of the C call.)
+
 **Other composites are rejected.** Arrays, maps, structs, other `Option`/`Result`,
 and tuples have Tycho-internal C representations, not a stable C ABI. The type
 checker rejects any `extern fn` whose parameter or return type is outside the
