@@ -1,0 +1,98 @@
+# Dijkstra head-to-head: build a sparse random graph as an adjacency LIST OF INDICES
+# (the flat-pool idiom from docs/notes/value-semantics-limits.md), run Dijkstra from
+# node 0 with a hand-built binary min-heap, and fold the reachable distances into a
+# checksum. The graph is the memory under test: tycho's value-semantic `[[Edge]]` vs
+# C's `Edge**` vs Go's `[][]Edge`. A graph by INDICES is value-shaped (no shared
+# pointers), so this is where value semantics should be competitive -- the opposite of
+# the pointer-linked trie. Edges come from a shared LCG so all ports build one graph.
+package main
+
+struct Edge:
+    to: int
+    w: int
+
+fn hswap(h: mut [(int, int)], a: int, b: int):
+    t := h[a]
+    h[a] = h[b]
+    h[b] = t
+
+fn hpush(h: mut [(int, int)], d: int, node: int):
+    push(h, (d, node))
+    i := len(h) - 1
+    for i > 0:
+        p := (i - 1) / 2
+        if h[p].0 <= h[i].0:
+            break
+        hswap(&h, p, i)
+        i = p
+
+fn hpop(h: mut [(int, int)]) -> (int, int):
+    top := h[0]
+    n := len(h) - 1
+    h[0] = h[n]
+    _d := pop(h)
+    i := 0
+    for true:
+        l := 2 * i + 1
+        r := 2 * i + 2
+        small := i
+        if l < len(h) and h[l].0 < h[small].0:
+            small = l
+        if r < len(h) and h[r].0 < h[small].0:
+            small = r
+        if small == i:
+            break
+        hswap(&h, i, small)
+        i = small
+    return top
+
+fn dijkstra(adj: [[Edge]], src: int, n: int) -> [int]:
+    INF := 4000000000000000000
+    dist := []int
+    i := 0
+    for i in range(0, n):
+        push(dist, INF)
+    dist[src] = 0
+    heap := [](int, int)
+    hpush(&heap, 0, src)
+    for len(heap) > 0:
+        cur := hpop(&heap)
+        d := cur.0
+        u := cur.1
+        if d > dist[u]:
+            continue
+        j := 0
+        for j in range(0, len(adj[u])):
+            e := adj[u][j]
+            nd := d + e.w
+            if nd < dist[e.to]:
+                dist[e.to] = nd
+                hpush(&heap, nd, e.to)
+    return dist
+
+fn main():
+    n := 300000
+    deg := 4
+    state := 88172645463325252
+    adj := [][Edge]
+    u := 0
+    for u in range(0, n):
+        push(adj, []Edge)
+    for u in range(0, n):
+        k := 0
+        for k in range(0, deg):
+            state = state * 6364136223846793005 + 1442695040888963407
+            to := (state & 1073741823) % n
+            state = state * 6364136223846793005 + 1442695040888963407
+            w := ((state & 1073741823) % 100) + 1
+            push(adj[u], Edge(to, w))
+    dist := dijkstra(adj, 0, n)
+    INF := 4000000000000000000
+    sum := 0
+    reach := 0
+    i := 0
+    for i in range(0, n):
+        if dist[i] < INF:
+            sum = sum + dist[i]
+            reach = reach + 1
+    print(str(reach) + " " + str(sum) + "\n")
