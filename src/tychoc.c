@@ -1202,7 +1202,7 @@ struct Stmt {
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
 };
 
-typedef struct { char *name; Type type; int is_inout; } Param;
+typedef struct { char *name; Type type; int is_inout; int is_sink; } Param;
 
 typedef struct {
     char   *name;
@@ -1712,6 +1712,7 @@ static Expr *parse_primary(Parser *ps) {
             pr->params[pr->nparams].name = pn->text;
             pr->params[pr->nparams].type = pt;
             pr->params[pr->nparams].is_inout = 0;
+            pr->params[pr->nparams].is_sink = 0;
             pr->nparams++;
             if (!accept(ps, TK_COMMA)) break;
         }
@@ -2615,11 +2616,18 @@ static Proc *parse_fn(Parser *ps) {
         Tok *pn = eat(ps, TK_IDENT, "a parameter name");
         eat(ps, TK_COLON, "':' after parameter name");
         int is_inout = accept(ps, TK_INOUT);   /* `name: mut type` */
+        /* PROTOTYPE: `name: sink type` — an owned, mutable parameter. Contextual
+         * keyword (not reserved). The callee owns the argument and may mutate it
+         * in place; the caller's argument is consumed (adopted if it is a movable
+         * dead local / fresh value, else copied — see arg_into at the call site). */
+        int is_sink = 0;
+        if (!is_inout && at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "sink")) { ps->p++; is_sink = 1; }
         Type pt = parse_type(ps);
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = is_inout;
+        pr->params[pr->nparams].is_sink = is_sink;
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
     }
@@ -2724,6 +2732,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = p_inout;
+        pr->params[pr->nparams].is_sink = 0;   /* extern params are never sink */
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
     }
@@ -3080,6 +3089,7 @@ typedef struct {
     Type        ret;
     Type        params[16];
     int         mut[16];   /* per-param: is it a mut (by-pointer) param? */
+    int         sink[16];  /* per-param: is it a `sink` (owned, mutable) param? (prototype) */
     int         nparams;
     int         builtin;
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
@@ -3435,7 +3445,7 @@ static Type resolve_expr_inner(Expr *e) {
                     if (IS_HANDLE(vt)) die_at(e->line, "a closure cannot capture a handle -- it is freed at the end of its scope");
                     if (IS_CHAN(vt)) die_at(e->line, "a closure cannot capture a channel handle -- take it as a parameter instead");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
-                    caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0;
+                    caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0; caps[ncap].is_sink = 0;
                     ncap++;
                 }   /* else a function/enum/global: resolves inside the lifted proc, not a capture */
             }
@@ -3451,7 +3461,7 @@ static Type resolve_expr_inner(Expr *e) {
             int mark = vars_mark();   /* resolve the body with caps + params (caps shadow the enclosing originals) */
             for (int i = 0; i < pr->nparams; i++) {
                 Type pt = pr->params[i].type;
-                vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt));
+                vars_push(pr->params[i].name, pt, pr->params[i].is_sink || (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)));
             }
             Type saved = g_fn_ret; g_fn_ret = pr->ret;
             g_dup_base = mark;   /* lambda body shares its caps+params scope (same lifted C function) */
@@ -5249,7 +5259,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     if (sig_find(nm)) return;                         /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
     s.name = nm; s.ret = cret; s.nparams = gt->nparams; s.builtin = 0;
-    for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.mut[j] = gt->params[j].is_inout; }
+    for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.mut[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; }
     TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap); g_sigs[g_nsigs++] = s;
     TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
     GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret;
@@ -5304,6 +5314,7 @@ static void resolve_program(ProcVec *prog) {
         for (int j = 0; j < pr->nparams; j++) {
             s.params[j] = pr->params[j].type;
             s.mut[j]  = pr->params[j].is_inout;
+            s.sink[j] = pr->params[j].is_sink;
             /* mut: non-heap types (int/bool/pure struct) and the mutable
              * aggregates [int]/[string]/heap-bearing structs. A heap mut
              * carries its value's owning arena (_ina_<name>), so any
@@ -5339,7 +5350,7 @@ static void resolve_program(ProcVec *prog) {
              * mutate in place. To mutate a borrowed container, copy it first
              * (`local := param`). */
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt))
-                          || pr->params[j].is_inout;
+                          || pr->params[j].is_inout || pr->params[j].is_sink;
             for (int v = 0; v < g_nvars; v++)   /* fail-closed: a duplicate parameter emits a duplicate C param */
                 if (!strcmp(g_vars[v].name, pr->params[j].name))
                     die_at(pr->line, "duplicate parameter '%s'", pr->params[j].name);
@@ -6379,7 +6390,13 @@ static char *gen_call(Expr *e, const char *arena) {
         /* arguments are transients (the callee's return value is independently
          * owned in _parent — never an alias of an arg), so build them in the
          * current scope, not the result arena which may be an outer scope. */
-        char *a = gen_expr(e->args[i], g_cur_scope);
+        /* PROTOTYPE sink: the callee OWNS this argument and may mutate it, so it must
+         * be independent of the caller. arg_into adopts a movable dead local / fresh
+         * value (no copy) and copies an otherwise-live place — exactly move-on-last-use
+         * applied to the call boundary. (A borrowed param below just shares the buffer.) */
+        int sink_arg = cs && i < cs->nparams && cs->sink[i] && type_is_heap(cs->params[i]);
+        char *a = sink_arg ? arg_into(cs->params[i], g_cur_scope, e->args[i])
+                           : gen_expr(e->args[i], g_cur_scope);
         if (cs && i < cs->nparams && cs->mut[i] && type_is_heap(cs->params[i])
             && e->args[i]->kind == E_ADDR) {
             Expr *root = e->args[i]->lhs;
@@ -8083,7 +8100,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         g_nvars = 0;
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
-            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout;
+            int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout || p->params[j].is_sink;
             vars_push(p->params[j].name, pt, mutable);
         }
         g_fn_ret = p->ret; g_dup_base = 0;
