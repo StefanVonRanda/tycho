@@ -21,12 +21,12 @@ fn hex2(b: int) -> string:                     # a byte -> two lowercase hex dig
 
 # Format 16 bytes as the canonical 8-4-4-4-12 string. Shorter input is zero
 # padded; each value is masked to a byte.
-fn format(bytes: [int]) -> string:
+fn format(buf: [int]) -> string:
     out := ""
     for i in range(16):
         b := 0
-        if i < len(bytes):
-            b = bytes[i]
+        if i < len(buf):
+            b = buf[i]
         out = out + hex2(b % 256)
         if i == 3 or i == 5 or i == 7 or i == 9:
             out = out + "-"
@@ -34,12 +34,12 @@ fn format(bytes: [int]) -> string:
 
 # A random version-4 UUID, threading the core:rand state via mut.
 fn v4(st: mut int) -> string:
-    bytes := []int
+    buf := []int
     for i in range(16):
-        push(bytes, rand.below(&st, 256))
-    bytes[6] = 64 + (bytes[6] % 16)            # version 4 in the high nibble (0x4_)
-    bytes[8] = 128 + (bytes[8] % 64)           # variant 10xx in the high bits (0x8_..0xB_)
-    return format(bytes)
+        push(buf, rand.below(&st, 256))
+    buf[6] = 64 + (buf[6] % 16)            # version 4 in the high nibble (0x4_)
+    buf[8] = 128 + (buf[8] % 64)           # variant 10xx in the high bits (0x8_..0xB_)
+    return format(buf)
 
 # The nil UUID (all zeroes).
 fn nil() -> string:

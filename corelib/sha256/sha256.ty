@@ -65,21 +65,21 @@ fn digest(msg: string) -> [int]:
 
     # --- pad: message, 0x80, zeros to 56 mod 64, then 64-bit BIG-endian bit length ---
     n := len(msg)
-    bytes := []int
+    buf := []int
     for i in range(n):
-        push(bytes, msg[i])
-    push(bytes, 128)
-    zeros := (56 - (len(bytes) % 64) + 64) % 64
+        push(buf, msg[i])
+    push(buf, 128)
+    zeros := (56 - (len(buf) % 64) + 64) % 64
     for i in range(zeros):
-        push(bytes, 0)
+        push(buf, 0)
     bitlen := n * 8
     sh := 56
     for i in range(8):
-        push(bytes, (bitlen / pow2(sh)) % 256)
+        push(buf, (bitlen / pow2(sh)) % 256)
         sh = sh - 8
 
     # --- process each 64-byte block ---
-    total := len(bytes)
+    total := len(buf)
     blk := 0
     for blk < total:
         # message schedule W[0..63], big-endian words
@@ -87,7 +87,7 @@ fn digest(msg: string) -> [int]:
         t := 0
         for t < 16:
             base := blk + t * 4
-            word := bytes[base] * 16777216 + bytes[base + 1] * 65536 + bytes[base + 2] * 256 + bytes[base + 3]
+            word := buf[base] * 16777216 + buf[base + 1] * 65536 + buf[base + 2] * 256 + buf[base + 3]
             push(W, word)
             t = t + 1
         t = 16

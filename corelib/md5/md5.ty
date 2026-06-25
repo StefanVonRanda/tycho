@@ -46,17 +46,17 @@ fn digest(msg: string) -> [int]:
 
     # --- pad: message, 0x80, zeros to 56 mod 64, then 64-bit LE bit length ---
     n := len(msg)
-    bytes := []int
+    buf := []int
     for i in range(n):
-        push(bytes, msg[i])
-    push(bytes, 128)
-    zeros := (56 - (len(bytes) % 64) + 64) % 64
+        push(buf, msg[i])
+    push(buf, 128)
+    zeros := (56 - (len(buf) % 64) + 64) % 64
     for i in range(zeros):
-        push(bytes, 0)
+        push(buf, 0)
     bitlen := n * 8
     bl := bitlen
     for i in range(8):
-        push(bytes, bl % 256)
+        push(buf, bl % 256)
         bl = bl / 256
 
     # --- init ---
@@ -66,14 +66,14 @@ fn digest(msg: string) -> [int]:
     d0 := 271733878                        # 0x10325476
 
     # --- process each 64-byte block ---
-    total := len(bytes)
+    total := len(buf)
     blk := 0
     for blk < total:
         M := []int
         w := 0
         for w < 16:
             base := blk + w * 4
-            word := bytes[base] + bytes[base + 1] * 256 + bytes[base + 2] * 65536 + bytes[base + 3] * 16777216
+            word := buf[base] + buf[base + 1] * 256 + buf[base + 2] * 65536 + buf[base + 3] * 16777216
             push(M, word)
             w = w + 1
         A := a0
