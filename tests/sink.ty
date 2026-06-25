@@ -1,0 +1,32 @@
+# `sink` parameter convention: an OWNED, mutable parameter (a borrow is read-only).
+# The call-site argument is consumed -- ADOPTED with no copy when it is a fresh value
+# or a dead local (read once, outside any loop, from any enclosing arena -- the
+# arena-placement relaxation), else COPIED so value semantics hold. Both compilers.
+fn dbl(xs: sink [int]) -> int:
+    xs[0] = xs[0] + 100        # mutate in place -- legal only because xs is `sink`
+    return xs[0]
+
+fn main():
+    a := [1]
+    print("1 a=" + str(dbl(a)) + "\n")                  # dead after -> adopt: 101
+
+    b := [5]
+    x := dbl(b)
+    print("2 b=" + str(b[0]) + " x=" + str(x) + "\n")   # used after -> copy: b=5 x=105
+
+    c := [7]
+    j := 0
+    for j in range(0, 3):
+        dbl(c)                                          # in a loop -> copy each iter
+    print("3 c=" + str(c[0]) + "\n")                    # c=7 (NOT 107/307)
+
+    d := [9]
+    y := dbl(d)
+    f := fn() -> int: d[0]                              # closure reads d AFTER the sink call
+    print("4 d=" + str(f()) + " y=" + str(y) + "\n")    # d=9 (capture forces a copy)
+
+    e := [2]
+    if e[0] > 0:
+        print("5 e=" + str(dbl(e)) + "\n")              # adopt in a branch: 102
+
+    print("6 lit=" + str(dbl([5, 5, 5])) + "\n")        # fresh literal -> adopt: 105

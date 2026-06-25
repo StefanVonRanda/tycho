@@ -1529,6 +1529,9 @@ fn parse_param(toks: [Token], pos: mut int) -> Param:
     if toks[pos].kind == TIdent and toks[pos].text == "mut":
         pos = pos + 1
         return Param(name, "&" + parse_type(toks, &pos))   # mut marker
+    if toks[pos].kind == TIdent and toks[pos].text == "sink":
+        pos = pos + 1
+        return Param(name, "~" + parse_type(toks, &pos))   # sink marker (owned, mutable, by-value)
     return Param(name, parse_type(toks, &pos))
 
 # Generics: collect the names introduced by `$X` in a type string ("$T" -> "T",
@@ -2065,6 +2068,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         return ty                  # a `$T` type parameter is never package-qualified (generics)
     if has_prefix(ty, "&"):
         return "&" + mangle_type(m, substr(ty, 1, len(ty)))
+    if has_prefix(ty, "~"):                           # sink marker — preserve it, mangle the inner type
+        return "~" + mangle_type(m, substr(ty, 1, len(ty)))
     if has_prefix(ty, "soa["):
         return "soa[" + mangle_type(m, substr(ty, 4, len(ty) - 1)) + "]"
     if has_prefix(ty, "["):
@@ -2575,8 +2580,11 @@ fn variant_ptypes_in(dc: Decls, ename: string, vname: string) -> [string]:
 fn is_inout(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 38
 
+fn is_sink(ty: string) -> bool:
+    return len(ty) > 0 and ty[0] == 126          # '~' — a `sink` (owned, mutable, by-value) param
+
 fn base_ty(ty: string) -> string:
-    if is_inout(ty):
+    if is_inout(ty) or is_sink(ty):
         return substr(ty, 1, len(ty))
     return ty
 
@@ -2888,6 +2896,8 @@ fn krt(dc: Decls, ctx: Ctx, mt: string, ke: string) -> string:   # a map key as 
 fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
     if is_newtype(dc, ctx, ty):
         return cty(dc, ctx, resolve_nt(dc, ctx, ty))
+    if is_sink(ty):                              # sink T -> plain T (by value, owned)
+        return cty(dc, ctx, base_ty(ty))
     if is_inout(ty):                              # mut T -> pointer to T's C type
         inner := cty(dc, ctx, base_ty(ty))           # ends with a space
         return substr(inner, 0, len(inner) - 1) + "* "
@@ -4629,11 +4639,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # but is not a known user function is a call to something undefined.
             # (A value-position call is already caught in type_of; this covers
             # the statement position, whose result -- and thus type_of -- is unused.)
-            if map_get(dc.sigmap, name, -1) < 0:
+            csidx := map_get(dc.sigmap, name, -1)
+            if csidx < 0:
                 die_at(dc, ctx.line, "type: unknown function '" + name + "'")
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
-            return un(name) + "(" + ctx.owner + ", " + gen_call_args(args, names, types, dc, ctx) + ")"
+            return un(name) + "(" + ctx.owner + ", " + gen_call_args_sink(args, dc.sigs[csidx].ptypes, names, types, dc, ctx) + ")"
         ESpawn(id, nm, sargs, _el):
             # CC-1 spawn site: copy every argument into the task's private root
             # arena (after this, spawner and task share zero bytes), then start
@@ -5772,6 +5783,50 @@ fn can_move(e: Expr, ty: string, names: [string], types: [string], dc: Decls, ct
         return false
     return owner_arena_of(e, names, types, dc, ctx) == ctx.owner
 
+# can_move for a `sink` argument: the callee CONSUMES the value, so adopting a dead
+# local needs only (1) the buffer to outlive the call -- true for ANY tracked local,
+# whose block/function arena encloses the per-statement call scratch -- and (2) the
+# mutation to be unobserved (read once, outside any loop). That is can_move minus the
+# same-arena requirement. (Escape is still a copy: returning the param re-homes it.)
+fn can_move_into_sink(e: Expr, ty: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
+    nm := evar_name(e)
+    if nm == "":
+        return false
+    if not has_str(ctx.movables, nm):             # read exactly once, not inside a loop
+        return false
+    if var_index(names, nm) < 0:
+        return false
+    rt := resolve_nt(dc, ctx, ty)
+    isheap := is_array(rt) or is_map(rt) or is_tuple(rt) or is_enum(dc, ctx, rt) or (is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt))
+    if not isheap:
+        return false
+    if has_str(ctx.vparams, nm) or is_inout(var_type(names, types, nm)):   # never a param (caller-owned)
+        return false
+    return true                                   # NO arena match -- the relaxation
+
+# Argument to a `sink` parameter: adopt a dead local (from any enclosing arena) or a
+# fresh value with no copy; otherwise deep-copy via gen_rhs so the callee's owned
+# mutation can never reach back into a still-live caller value.
+fn gen_sink_arg(e: Expr, ty: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    if can_move_into_sink(e, ty, names, types, dc, ctx):
+        return gen_expr(e, names, types, dc, ctx)
+    return gen_rhs(e, names, types, dc, ctx)
+
+# Like gen_call_args, but routes a `sink` parameter's argument through gen_sink_arg
+# (adopt-or-copy). `ptypes` is the callee's parameter type list (from its signature).
+fn gen_call_args_sink(args: [Expr], ptypes: [string], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    out := ""
+    i := 0
+    for i < len(args):
+        if i > 0:
+            out = out + ", "
+        if i < len(ptypes) and is_sink(ptypes[i]):
+            out = out + gen_sink_arg(args[i], base_ty(ptypes[i]), names, types, dc, ctx)
+        else:
+            out = out + gen_expr(args[i], names, types, dc, ctx) + arg_ina(args[i], names, types, dc, ctx)
+        i = i + 1
+    return out
+
 # RHS of a whole-value binding: deep-copy an array read from a place so the new
 # binding is independent (Tycho value semantics). Fresh arrays (literals, call
 # results) already own their buffer; scalars/strings need no copy.
@@ -6495,7 +6550,10 @@ fn seed_env(f: Func, names: mut [string], types: mut [string]):
     i := 0
     for i < len(f.params):
         push(names, f.params[i])
-        push(types, f.ptypes[i])
+        if is_sink(f.ptypes[i]):                  # sink: the body sees a plain, mutable, by-value value
+            push(types, base_ty(f.ptypes[i]))
+        else:
+            push(types, f.ptypes[i])
         i = i + 1
 
 fn gen_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
@@ -6729,7 +6787,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     vparams := []string
     pi := 0
     for pi < len(f.params):
-        if not is_inout(f.ptypes[pi]):
+        if not is_inout(f.ptypes[pi]) and not is_sink(f.ptypes[pi]):   # sink params are OWNED + mutable, not borrowed
             push(vparams, f.params[pi])
         pi = pi + 1
     # String self-append accumulators (locals only — a param has no SDecl, so no

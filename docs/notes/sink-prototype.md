@@ -1,9 +1,11 @@
-# Prototype: the explicit `sink` parameter convention (tychoc only)
+# The explicit `sink` parameter convention (experimental, both compilers)
 
-This is a working **prototype** in the C reference compiler (`tychoc`) of the `sink`
-(owned, consuming) parameter convention identified in `hylo-mvs-research.md`. It is *not*
-mirrored in `tychoc0` and not in the test harness — it exists to learn what `sink` can
-and cannot do in Tycho's arena model. The findings refine the research note.
+A working implementation of the `sink` (owned, consuming) parameter convention identified
+in `hylo-mvs-research.md`, in **both** compilers (`tychoc` and the self-hosted `tychoc0`),
+with a shared harness test (`tests/sink.ty`, both compilers byte-identical). Still labelled
+experimental — direct calls are fully supported and sound; one peripheral combination
+(UFCS) is not yet wired in tychoc0 (see Limitations). It exists to learn what `sink` can and
+cannot do in Tycho's arena model; the findings refine the research note.
 
 ## What was built
 
@@ -88,8 +90,17 @@ semantics actually require independence.
   param to `_parent`. That is the arena's hard limit (a value outliving its scope must be
   copied to a longer-lived arena) — the same boundary `bench/trie` hits from the storage
   side. `sink` removes the *call-site* copy, not the *escape* copy.
-- **`tychoc0` mirror** + harness tests before it is a language feature rather than an
-  experiment.
+- **UFCS parity**: a `sink` method called as `recv.method()` is desugared to a sink-aware
+  direct call by tychoc (sound — verified), but **tychoc0 rejects it** ("no such field"),
+  because its UFCS matcher doesn't strip the `~` marker when matching the receiver to the
+  first parameter. The two compilers therefore diverge on UFCS-of-`sink` (accept vs reject)
+  — but **neither corrupts**: tychoc copies/adopts correctly, tychoc0 fails closed. Direct
+  calls (the harness test and the common case) are sound and byte-identical on both. Wiring
+  tychoc0's UFCS path requires both the matcher fix *and* routing the receiver through the
+  adopt-or-copy (else the borrow-then-mutate would corrupt), so it is left for follow-up.
+
+`tychoc0` is now mirrored: `sink` is in both compilers with a shared golden
+(`tests/sink.ty`), so it is no longer a single-compiler experiment.
 
 ## Verdict
 
