@@ -1,5 +1,15 @@
 # Generics gap-fixes plan (Stage 3)
 
+> **STATUS: SHIPPED — both gaps closed in commit `05bd7f1` (2026-06-23),
+> "feat(generics): composition + higher-order generics (both compilers)".**
+> This note is the *design record*, not open work. Gap 1's Option-A branch
+> lives at `compiler/tychoc0.ty` (the `type_of` ECall arm — infer bindings via
+> `match_typaram_str`, substitute the concrete return). Gap 2 added the
+> `fn(...)` arms to `match_type`/`subst_type`/`has_typaram` plus the FnC
+> typedef skip-guard in `src/tychoc.c`. Regression fixtures:
+> `tests/generic_compose.ty`, `tests/generic_hof.ty` (both pass under
+> `make test`). Line numbers below are pre-ship and have since drifted.
+
 Implementation plan for the two documented generics gaps remaining after
 Stage-2 body cloning (`docs/notes/generics-stage2-body-cloning.md`). No code is
 changed by this note. Every claim cites `path:line`.
