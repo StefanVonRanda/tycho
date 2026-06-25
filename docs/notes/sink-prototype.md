@@ -90,17 +90,24 @@ semantics actually require independence.
   param to `_parent`. That is the arena's hard limit (a value outliving its scope must be
   copied to a longer-lived arena) — the same boundary `bench/trie` hits from the storage
   side. `sink` removes the *call-site* copy, not the *escape* copy.
-- **UFCS parity**: a `sink` method called as `recv.method()` is desugared to a sink-aware
-  direct call by tychoc (sound — verified), but **tychoc0 rejects it** ("no such field"),
-  because its UFCS matcher doesn't strip the `~` marker when matching the receiver to the
-  first parameter. The two compilers therefore diverge on UFCS-of-`sink` (accept vs reject)
-  — but **neither corrupts**: tychoc copies/adopts correctly, tychoc0 fails closed. Direct
-  calls (the harness test and the common case) are sound and byte-identical on both. Wiring
-  tychoc0's UFCS path requires both the matcher fix *and* routing the receiver through the
-  adopt-or-copy (else the borrow-then-mutate would corrupt), so it is left for follow-up.
+`tychoc0` is mirrored: `sink` is in both compilers with a shared golden (`tests/sink.ty`,
+including UFCS), so it is no longer a single-compiler experiment.
 
-`tychoc0` is now mirrored: `sink` is in both compilers with a shared golden
-(`tests/sink.ty`), so it is no longer a single-compiler experiment.
+**UFCS of `sink` now works on both compilers** (`recv.method()` with a `sink` receiver).
+Closing the tychoc0 side took three parts, the third being a latent bug the first two
+exposed:
+
+1. the UFCS matcher (`recv_matches`) strips the `~` marker so a `sink` first parameter
+   matches the receiver type (`mut` is deliberately *not* relaxed — a `mut` receiver would
+   need `&`, which the desugar doesn't insert);
+2. the UFCS call routes its arguments through `gen_call_args_sink` (adopt-or-copy);
+3. a **move-on-last-use bug** the first two surfaced: `recv.method()` parses as a
+   dotted-name `ECall("recv.method", [])` — receiver *in the name*, empty args — so
+   `compute_movables`'s `rd_expr` never counted the receiver's read, wrongly marking it
+   movable and **adopting (corrupting) a still-live receiver**. `rd_expr`'s `ECall` case
+   now counts the dotted prefix. This was latent before `sink` because borrows don't move;
+   `sink`'s adopt is the first construct that consumes a UFCS receiver. (Verified
+   value-semantics-correct: `g.dbl()` then reading `g` copies; a dead receiver adopts.)
 
 ## Verdict
 

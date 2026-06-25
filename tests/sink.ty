@@ -30,3 +30,10 @@ fn main():
         print("5 e=" + str(dbl(e)) + "\n")              # adopt in a branch: 102
 
     print("6 lit=" + str(dbl([5, 5, 5])) + "\n")        # fresh literal -> adopt: 105
+
+    g := [20]
+    rg := g.dbl()                                       # UFCS sink receiver; g used after -> copy
+    print("7 ufcs=" + str(rg) + " g=" + str(g[0]) + "\n")   # ufcs=120 g=20 (receiver unchanged)
+
+    h := [30]
+    print("8 ufcs_adopt=" + str(h.dbl()) + "\n")        # UFCS receiver dead after -> adopt: 130

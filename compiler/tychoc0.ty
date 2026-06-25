@@ -3235,6 +3235,13 @@ fn pkg_prefix_of(name: string) -> string:
         return substr(name, 0, us + 2)
     return ""
 
+# A UFCS receiver matches a method's first parameter if the types are equal, or that
+# parameter is `sink` (the receiver is consumed -- gen_call_args_sink adopts-or-copies it
+# at the call). `mut` is NOT relaxed here: a mut receiver would need `&`, which the UFCS
+# desugar does not insert, so a mut first param must stay unmatched.
+fn recv_matches(ptype: string, bt: string) -> bool:
+    return ptype == bt or (is_sink(ptype) and base_ty(ptype) == bt)
+
 fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr) -> string:
     fname := efield_fname(callee)
     if fname == "":
@@ -3246,7 +3253,7 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
         return ""
     si := map_get(dc.sigmap, fname, -1)
     if si >= 0 and len(dc.sigs[si].ptypes) >= 1:
-        if dc.sigs[si].ptypes[0] == bt:
+        if recv_matches(dc.sigs[si].ptypes[0], bt):
             return fname
         gbn := []string
         gbt := []string
@@ -3256,12 +3263,12 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
     if us >= 0:
         qn := substr(bt, 0, us + 2) + fname
         sj := map_get(dc.sigmap, qn, -1)
-        if sj >= 0 and len(dc.sigs[sj].ptypes) >= 1 and dc.sigs[sj].ptypes[0] == bt:
+        if sj >= 0 and len(dc.sigs[sj].ptypes) >= 1 and recv_matches(dc.sigs[sj].ptypes[0], bt):
             return qn
     if ctx.curpkg != "":                          # same-package method on a receiver whose TYPE carries no
         cn := ctx.curpkg + fname                  # package prefix (a scalar/builtin): try <curpkg>__method
         sk := map_get(dc.sigmap, cn, -1)
-        if sk >= 0 and len(dc.sigs[sk].ptypes) >= 1 and dc.sigs[sk].ptypes[0] == bt:
+        if sk >= 0 and len(dc.sigs[sk].ptypes) >= 1 and recv_matches(dc.sigs[sk].ptypes[0], bt):
             return cn
     return ""
 
@@ -4332,7 +4339,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 for ci < len(cargs):
                     push(allargs, cargs[ci])
                     ci = ci + 1
-                return un(mn) + "(" + ctx.owner + ", " + gen_call_args(allargs, names, types, dc, ctx) + ")"
+                msi := map_get(dc.sigmap, mn, -1)     # sink-aware args: a `sink` receiver/param adopts-or-copies
+                return un(mn) + "(" + ctx.owner + ", " + gen_call_args_sink(allargs, dc.sigs[msi].ptypes, names, types, dc, ctx) + ")"
             ct := cty(dc, ctx, type_of(callee, names, types, dc, ctx))
             code := "({ " + ct + "_f = " + gen_expr(callee, names, types, dc, ctx) + "; _f.call(_f.env, " + ctx.owner
             if len(cargs) > 0:
@@ -5610,6 +5618,9 @@ fn rd_expr(reads: mut [string], loopreads: mut [string], e: Expr, inloop: bool):
             rd_expr(&reads, &loopreads, l, inloop)
             rd_expr(&reads, &loopreads, r, inloop)
         ECall(nm, args, _el):
+            di := find(nm, ".")                       # `recv.method()` parses as a dotted-name ECall with the
+            if di > 0:                                # receiver IN THE NAME and empty args -- count the receiver's
+                rd_expr(&reads, &loopreads, EVar(substr(nm, 0, di), _el), inloop)   # read (a package prefix like json.parse is harmless: not a local)
             j := 0
             for j < len(args):
                 rd_expr(&reads, &loopreads, args[j], inloop)
