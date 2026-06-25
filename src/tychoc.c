@@ -8436,7 +8436,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 i, i, kt, gen_eq(keyt, "m->ord[i]", "k"));
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-                "    TychoMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+                "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
                 "    m.cap = c; m.len = 0; m.used = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
                 "    m.keys = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
                 "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
@@ -8455,7 +8455,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %sk, %sv) {\n"
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
                 "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
                 "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
@@ -8495,7 +8495,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,   /* in-place value projection: find-or-insert, return &slot value */
                 "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %sk) {\n"
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
                 "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
                 "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
@@ -8508,7 +8508,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (mapkey_intrep(g_maptypes[i].key)) {   /* int(-rep) keys incl. enum tags: occupancy-array scheme (mirror TychoMapII; 0 is a real key) */
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-                "    TychoMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+                "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
                 "    m.cap = c; m.len = 0; m.used = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
                 "    m.keys = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
                 "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
@@ -8527,7 +8527,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, long k, %sv) {\n"
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
                 "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
                 "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
@@ -8574,7 +8574,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
                 "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, long k) {\n"
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
                 "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
                 "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
@@ -8586,7 +8586,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-            "    TychoMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+            "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
             "    m.cap = c; m.len = 0; m.used = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; }\n"
             "    m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));\n"
             "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
@@ -8604,7 +8604,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o,
             "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, const char *k, %sv) {\n"
             "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
             "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
             "        for (long i = 0; i < m->cap; i++) if (tycho_map_live(m->keys[i])) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++; }\n"
             "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
@@ -8647,7 +8647,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
             "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, const char *k) {\n"
             "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
             "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
             "        for (long i = 0; i < m->cap; i++) if (tycho_map_live(m->keys[i])) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++; }\n"
             "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"

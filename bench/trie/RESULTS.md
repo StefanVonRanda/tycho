@@ -15,9 +15,12 @@ peak RSS via `bench/peakrss`. All three emit checksum `229005 117013`.
 
 | lang  | peak RSS | wall   | per node | child storage                |
 |-------|---------:|-------:|---------:|------------------------------|
-| tycho | 127.4 MB | ~89 ms | ~583 B   | child **structs by value**   |
+| tycho | 103.3 MB | ~82 ms | ~450 B   | child **structs by value**   |
 | C     |  37.8 MB | ~41 ms | ~173 B   | child **pointers** (8 B)     |
 | Go    |  33.8 MB | ~63 ms | ~148 B   | `map[byte]*Node` (pointers)  |
+
+(tycho was 127 MB before the composite-map initial-capacity tuning below; the
+value-vs-pointer gap that remains is structural, not tunable.)
 
 ## Reading it honestly — this is a workload tycho loses
 
@@ -45,11 +48,26 @@ compact tycho trie with a flat node pool and integer-index children — but that
 the manual memory management the model exists to avoid, so it isn't the idiomatic
 comparison and isn't what's measured here.
 
+## Tuning the composite-map initial capacity (8 → 4)
+
+The capacity-8 start over-allocated for trie nodes that hold 1–2 children, so the
+composite-map initial capacity was lowered to **4** (both compilers). That took the trie
+from **127 MB → 103 MB** (−19%) with **no change to `bench/json`** (37 MB either way —
+json's map values are 8 B pointers, so its abandoned intermediate arrays are cheap; the
+trie's are 80 B structs).
+
+We also measured capacity **2**, and it was *worse* — back up to ~127 MB. The reason is
+specific to the arena and worth recording: a smaller initial capacity forces more
+**rehashing**, and the arena cannot reclaim the abandoned intermediate backing arrays
+until scope exit, so they accumulate. Capacity 4 is the sweet spot here: it holds the
+common 2-child node **without rehashing** while halving the empty-slot waste of cap-8.
+The optimum trades empty-slot waste (large cap) against abandoned-rehash-array waste
+(small cap) — an arena-specific balance a malloc/GC allocator doesn't face.
+
 ## Notes / honest limits
 
-- The capacity-8 start is a contributor (not the whole story) and is a future tuning lever
-  — a smaller initial composite-map capacity would cut the empty-slot waste at the cost of
-  more rehashing on denser maps. The value-vs-pointer storage is fundamental to value
-  semantics and would remain.
+- Even at cap-4, tycho is ~2.7× C here. The remaining gap is **value-vs-pointer storage**,
+  which is fundamental to value semantics, not a tuning knob. For pointer-shaped / shared
+  structures, see `docs/notes/value-semantics-limits.md` for the recommended idioms.
 - Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run
   `sh bench/trie/run.sh` to reproduce. Not wired into `make ci` (Go is optional).
