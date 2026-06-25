@@ -4152,12 +4152,12 @@ static Type resolve_expr_inner(Expr *e) {
                 g_place = 0;
                 if (!is_array(arrt))
                     die_at(e->line, "reserve's first argument must be an array");
-                /* fail closed: only [int]/[float]/[string] have a runtime reserve
-                 * (every element type has push, but reserve is a capacity hint we
-                 * only provide for the scalar arrays) — reject the rest with a
-                 * clear diagnostic instead of emitting an undefined C symbol. */
-                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_FLOAT && arrt != T_ARRAY_STRING)
-                    die_at(e->line, "reserve only supports [int], [float], and [string] arrays");
+                /* reserve is a capacity hint: the scalar arrays have a runtime
+                 * tycho_arr_{int,float,str}_reserve; composite-element arrays get a
+                 * generated tycho_arr_C%d_reserve (emitted with the family). SOA and
+                 * other non-array element kinds have no reserve — fail closed. */
+                if (arrt != T_ARRAY_INT && arrt != T_ARRAY_FLOAT && arrt != T_ARRAY_STRING && !IS_ARRC(arrt))
+                    die_at(e->line, "reserve only supports arrays of scalars, structs, tuples, or nested arrays");
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot reserve through this expression");
                 if (!vars_can_mutate(root->sval))
@@ -8335,6 +8335,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_arrtypes[i].elem);
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, long);\n", i, i);
         fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
+        fprintf(o, "static void tycho_arr_C%d_reserve(Arena*, TychoArrC%d*, long);\n", i, i);
         fprintf(o, "static void tycho_arr_C%d_grow(Arena*, %s**, long*, long);\n", i, ct);
         fprintf(o, "static %stycho_arr_C%d_pop(Arena*, TychoArrC%d*);\n", ct, i, i);
         fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, long);\n", ct, i, i);
@@ -8435,6 +8436,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
+        fprintf(o,   /* capacity hint (reserve): grow the spine to n if larger; elements' heap lives on via nd (shallow spine copy, like push's regrow) */
+            "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, long n) {\n"
+            "    if (n <= xs->cap) return;\n"
+            "    %s*nd = (%s*)arena_alloc(a, (size_t)n * sizeof(%s));\n"
+            "    for (long i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
+            "    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"
+            "    xs->data = nd; xs->cap = n;\n}\n", i, i, ct, ct, ct, ct);
         fprintf(o,   /* push-loop fusion grow hook: regrow the spine (shallow copy); elements were already deep-copied into `a` at each fused store */
             "static void tycho_arr_C%d_grow(Arena *a, %s**data, long *cap, long len) {\n"
             "    long nc = *cap ? *cap * 2 : 4;\n"
