@@ -1,0 +1,42 @@
+# trie head-to-head: insert N deterministic words into a prefix tree and report
+# (node count, word count) as the cross-language checksum. Each node owns a small
+# int->child map, so the whole trie is the memory under test: tycho's implicit arena
+# vs C's per-node malloc vs Go's GC. Words come from a shared LCG so all three ports
+# build the identical trie. tycho uses native `[int: Trie]` maps (no hand-written C).
+package main
+
+struct Trie:
+    kids: [int: Trie]
+    word: bool
+
+# descend, creating nodes; returns 1 if this insertion completed a NEW word.
+# `nn` (node count) is threaded by mut and bumped whenever a child node is created.
+fn insert(t: mut Trie, s: string, i: int, nn: mut int) -> int:
+    if i >= len(s):
+        if t.word:
+            return 0
+        t.word = true
+        return 1
+    c := s[i]
+    if not (c in t.kids):
+        t.kids[c] = Trie([]int: Trie, false)
+        nn = nn + 1
+    return insert(&t.kids[c], s, i + 1, &nn)
+
+fn main():
+    n := 150000
+    state := 88172645463325252
+    root := Trie([]int: Trie, false)
+    nn := 1                                       # the root node
+    nwords := 0
+    w := 0
+    for w in range(0, n):
+        state = state * 6364136223846793005 + 1442695040888963407
+        wlen := 3 + ((state & 1073741823) % 5)    # length 3..7
+        s := ""
+        j := 0
+        for j in range(0, wlen):
+            state = state * 6364136223846793005 + 1442695040888963407
+            s = s + chr(97 + ((state & 1073741823) % 26))   # 'a'..'z'
+        nwords = nwords + insert(&root, s, 0, &nn)
+    print(str(nn) + " " + str(nwords) + "\n")
