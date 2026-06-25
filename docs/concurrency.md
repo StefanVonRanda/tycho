@@ -9,6 +9,13 @@ the language. (Erlang gets the same guarantee from per-process heaps and message
 copying; Swift's Sendable/region machinery exists to patch first-class aliasing,
 which Tycho does not have.)
 
+This guarantee is over **pure Tycho values** — the world the compiler owns. It
+stops at the FFI boundary: a task calling C that mutates process-global or
+`static` C state races just as it would in C, invisibly to the compiler. Isolate
+that state per thread (thread-local storage, as the `core:crypto` shim does) or
+serialize the calls. The full analysis is in
+[`notes/ffi-threading-design-review.md`](notes/ffi-threading-design-review.md).
+
 The model has four constructs:
 
 - **`spawn` / `wait`** — structured tasks with by-value capture and automatic join.

@@ -1,5 +1,12 @@
 # Large held set — per-object overhead + GC-scan cost
 
+**Headline: tycho holds a 2,000,000-string live set in 65 MB with zero GC work —
+lower memory than hand-written C (78 MB) and ~2× lower than Go's default
+(120 MB), while beating Go on wall time (137 vs 202 ms).** The arena carries no
+per-object header and no GC metadata, so when peak is bound by object *count* it
+wins outright — and unlike Go it never faces a memory-vs-CPU tradeoff (details
+in §1 below). That is the result to lead with; the nuance is in the breakdown.
+
 Two angles in one workload: hold a **large live set** (2,000,000 small heap strings,
 retained for the whole run) and **churn** transient arrays alongside it. Same
 checksum across languages.

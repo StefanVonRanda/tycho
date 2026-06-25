@@ -33,8 +33,10 @@ Python-looking syntax; static types, value semantics, and explicit returns;
 arena memory underneath. The same idea carries the
 concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
 ordinary copy-in/copy-out call convention run on threads — race-free by
-construction, no locks or lifetime rules in the language (see
-[Concurrency](#concurrency-spawn-parallel-for-channels)). Types are inferred
+construction *for pure Tycho values*, no locks or lifetime rules in the
+language (see [Concurrency](#concurrency-spawn-parallel-for-channels)). The
+guarantee is over the values the compiler owns; crossing into C via the FFI
+re-enters C's threading rules (see [FFI](#ffi-calling-c)). Types are inferred
 bidirectionally (Pierce–Turner local inference): locals
 from their initializers, literals/lambdas/bare empties from their destination
 — with every type ground at its own line (see
@@ -1006,6 +1008,15 @@ private arena per call — is already a sound thread boundary, so concurrency
 is that same convention run on another thread. After the copy-in, a task
 shares zero bytes with its spawner: race freedom falls out of value
 semantics, with no `Sendable`, no lifetimes, no locks in the language.
+
+**Scope of the guarantee.** "Race-free by construction" holds for *pure Tycho
+values* — the world the compiler owns and deep-copies. It does **not** extend
+across the FFI: if a task calls a C function that touches process-global or
+`static` C state (many crypto/DB libraries do), Tycho cannot see that sharing,
+and two tasks calling it race exactly as they would in C. Isolate such state
+per thread (e.g. thread-local storage, the pattern the `core:crypto` shim
+uses), or serialize the calls. See [FFI](#ffi-calling-c) and
+`docs/notes/ffi-threading-design-review.md`.
 
 ```
 fn count(path: string) -> int: ...

@@ -1,10 +1,19 @@
 # Generics Stage-2: non-trivial generic-function bodies
 
-> Status: **plan for review — nothing implemented.** This document is for the
-> maintainer to approve or amend. Every claim about current behaviour was
-> verified by reading the cited `path:line` and/or by running the compiler on a
-> reproduction; the reproductions are quoted verbatim. Where a claim is an
-> assumption it is flagged as such.
+> **STATUS: RESOLVED — all three patterns ship in both compilers.** Stage-2
+> body cloning landed `tychoc`'s per-instance clone (closing #1 fresh
+> collection and #2 typaram-typed local), and commit `05bd7f1` (2026-06-23)
+> closed #3 nested generic call in both compilers (see
+> [`generics-gap-fixes-plan.md`](generics-gap-fixes-plan.md), STATUS: SHIPPED).
+> The divergence table below is the **historical pre-fix record**, not current
+> behaviour. Current regression fixtures — all passing under `make test` /
+> fixpoint (`tychoc` == `tychoc0`, byte-identical C): `tests/generic_build.ty`
+> (#1), `tests/generic_typed_local.ty` (#2), `tests/generic_nested.ty` (#3),
+> plus `tests/generic_compose.ty`, `tests/generic_hof.ty`. Re-verified
+> 2026-06-25: all five build and match their goldens on `tychoc`.
+>
+> This document is kept as the **design record** of how the asymmetry was found
+> and reasoned about. Do not file new work or xfail tests against it.
 
 ## Summary & recommendation
 
