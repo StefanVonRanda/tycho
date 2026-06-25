@@ -52,10 +52,10 @@ domain of the workload:
   value*, not by reference, so every edge costs a whole node rather than an 8-byte pointer,
   and there is no sharing. This is a **standing cost, fundamental to mutable value
   semantics** — the most mature MVS language (Hylo) hits the identical wall
-  (`docs/notes/hylo-mvs-research.md`), not a tycho implementation shortfall.
+  (`docs/internals/hylo-mvs-research.md`), not a tycho implementation shortfall.
 - **The bridge** — express the same graph as an **adjacency list of integer indices**
   (`dijkstra/`: **41 vs 31.5 MB, ~1.3× C**, ≈ Go). Indices are value-shaped, so the graph
-  drops from ~2.7× to ~1.3× C. This is the idiom `docs/notes/value-semantics-limits.md`
+  drops from ~2.7× to ~1.3× C. This is the idiom `docs/internals/value-semantics-limits.md`
   prescribes for pointer-shaped data, measured on a real algorithm.
 
 So the honest rule: value semantics + arenas match C on value-shaped data and pay a real

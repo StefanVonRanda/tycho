@@ -5,7 +5,7 @@
 #   - delete then re-insert moves the key to the END.
 # Locks the hash-flooding-hardening invariant (insertion order makes a random
 # hash seed output-invisible). Exercised for string and int keys + a composite
-# value type. See docs/notes/map-hash-dos-plan.md.
+# value type. See docs/internals/map-hash-dos-plan.md.
 
 struct P:
     x: int

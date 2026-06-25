@@ -11,7 +11,7 @@
 > `make test`). Line numbers below are pre-ship and have since drifted.
 
 Implementation plan for the two documented generics gaps remaining after
-Stage-2 body cloning (`docs/notes/generics-stage2-body-cloning.md`). No code is
+Stage-2 body cloning (`docs/internals/generics-stage2-body-cloning.md`). No code is
 changed by this note. Every claim cites `path:line`.
 
 The two gaps:

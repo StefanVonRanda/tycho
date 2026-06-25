@@ -14,7 +14,7 @@ stops at the FFI boundary: a task calling C that mutates process-global or
 `static` C state races just as it would in C, invisibly to the compiler. Isolate
 that state per thread (thread-local storage, as the `core:crypto` shim does) or
 serialize the calls. The full analysis is in
-[`notes/ffi-threading-design-review.md`](notes/ffi-threading-design-review.md).
+[`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md).
 
 The model has four constructs:
 

@@ -151,8 +151,8 @@ the ordinary "cannot add string and int" error, attributed to the call site that
 asked for `T = string`.
 
 This keeps the rule simple. It has a known cost — an error inside a deep generic
-helper points at the instantiation, not always the line a user expected — which
-[§5](#5-constraints-checked-at-instantiation) addresses with optional explicit constraints:
+helper points at the instantiation, not always the line a user expected — which the
+`where` clause below addresses with optional explicit constraints:
 
 ```
 # a `where` clause turns an instantiation-time body error

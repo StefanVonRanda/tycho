@@ -1,4 +1,5 @@
 # Where value semantics + implicit arenas lose — and what to do instead
+> Status: evergreen analysis (current — reflects shipped behaviour).
 
 Tycho's model — value semantics with no pointers, memory managed by implicit arenas — is
 not free. It is a deliberate trade: you give up manual control (and some workloads) to get

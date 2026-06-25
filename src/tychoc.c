@@ -527,7 +527,7 @@ static void task_container_err(void) {
     exit(1);
 }
 
-/* Typed C handles (FFI R2, docs/notes/typed-handles-design.md): `handle Name:
+/* Typed C handles (FFI R2, docs/internals/typed-handles-design.md): `handle Name:
  * free: free_fn` declares an affine, opaque (void*) type that the compiler frees
  * by emitting `free_fn(h)` at the owning variable's scope exit -- the same affine
  * + finalizer model as tasks, with a user-supplied destructor. Sits in the free
@@ -2784,7 +2784,7 @@ static Proc *parse_extern_fn(Parser *ps) {
  *     free: c_free_fn
  * Declares an affine, opaque (void*) C handle whose destructor `c_free_fn` (a C
  * symbol, normally an `extern fn c_free_fn(h: Name)`) the compiler calls at the
- * owning variable's scope exit. See docs/notes/typed-handles-design.md. */
+ * owning variable's scope exit. See docs/internals/typed-handles-design.md. */
 static void parse_handle(Parser *ps) {
     eat(ps, TK_HANDLE, "'handle'");
     Tok *nameT = eat(ps, TK_IDENT, "a handle name");
@@ -9448,7 +9448,7 @@ int main(int argc, char **argv) {
     /* -O3 is the portable default; --native opts into -march=native (host-CPU only).
      * -fwrapv: signed integer overflow is DEFINED as two's-complement wrapping
      * (not C UB), so the optimizer can never miscompile overflowing arithmetic.
-     * This is the language's integer-overflow contract; see docs/notes. */
+     * This is the language's integer-overflow contract; see docs/internals. */
     const char *march = native ? " -march=native" : "";
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */

@@ -29,17 +29,19 @@ standalone corelib-aware compiler with no bundling step required.
 
 ## How corelib is shaped
 
-corelib is **concrete free functions over concrete types**. Tycho has no generics, so array
-utilities come as one package per element type (for example `[int]`, `[string]`, and
-`[float]` each get their own sibling package). The functions are also callable method-style
-through UFCS, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
+corelib is **generic free functions over a type parameter `$T`**, with `where` constraints
+(`comparable(T)`, `numeric(T)`, `has_str(T)`) selecting which element types each function
+accepts. Tycho monomorphizes generics, so array and iterator utilities are single generic
+packages over any element type `[$T]` (`core:arrays`, `core:iter`) rather than one package
+per element type. The functions are also callable method-style through UFCS, so
+`index_of(xs, v)` and `xs.index_of(v)` are the same call.
 
 Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
 its siblings, and take a first-class `fn`/closure argument. Lambdas in Tycho are
 expression-bodied; pass a named function where you need a multi-line body.
 
-This concrete, per-type shape is a consequence of the language's minimalism rather than a
-corelib limitation.
+This generic, single-package shape keeps the surface small: one `core:arrays` covers every
+element type instead of a family of per-type siblings.
 
 ## Packages
 

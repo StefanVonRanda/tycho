@@ -88,7 +88,7 @@ typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelis
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
 
 /* Integer division/modulo guard. The int-overflow contract
- * (docs/notes/integer-overflow.md) defines signed overflow as two's-complement
+ * (docs/internals/integer-overflow.md) defines signed overflow as two's-complement
  * wrapping via -fwrapv -- but division is the one arithmetic op -fwrapv does NOT
  * make total: `x / 0` and `x % 0` are undefined (SIGFPE on x86), and LONG_MIN/-1
  * overflows the quotient (also a trap). Abort cleanly with a tycho: message, like

@@ -1779,7 +1779,7 @@ fn parse_lambda(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 
 # handle Name:
 #     free: c_free_fn
-# FFI R2 typed handle (docs/notes/typed-handles-design.md): an affine void* whose
+# FFI R2 typed handle (docs/internals/typed-handles-design.md): an affine void* whose
 # destructor `c_free_fn` runs at the owning var's scope exit. Returns "Name=c_free_fn".
 fn parse_handle(toks: [Token], pos: mut int) -> string:
     expect_ident(toks, &pos, "handle")

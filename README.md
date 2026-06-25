@@ -175,7 +175,7 @@ checks all still run.
 | [docs/concurrency.md](docs/concurrency.md) | spawn/wait, parallel for, channels, select — design, implementation map, measured results |
 | [docs/generics.md](docs/generics.md) | `$T` generics, monomorphized over the existing container machinery — functions, structs, enums (incl. recursive, e.g. `Tree($T)`), structured + map patterns, `where` constraints, and explicit type args (all shipped, both compilers) |
 | [docs/packages.md](docs/packages.md) | multi-file packages: `import`, qualified names, the corelib hook |
-| [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/opaque `ptr`, linking, shims |
+| [docs/ffi.md](docs/ffi.md) | calling C: `extern fn` over scalars/strings/`bytes`/opaque `ptr`/typed `handle`s, nullable `-> Option(string)` returns, linking, shims |
 | [docs/corelib.md](docs/corelib.md) | the standard library (`import "core:..."`) and its three-way gating |
 | [docs/map-values.md](docs/map-values.md) | maps with arbitrary value types (`[string: Point]`, `[int: [int]]`) without generics, and the heap-value lifetimes |
 | [docs/map-mutation.md](docs/map-mutation.md) | `m[k]` as a place: in-place map-value mutation (`push(m[k], v)`, `m[k] += 1`) and why it stays sound |
@@ -187,6 +187,16 @@ hands-on, project-driven introduction for programmers coming from Python,
 JavaScript, or Ruby; [docs/learning-platform.html](docs/learning-platform.html)
 is the same material as a self-contained interactive tutorial (open it in a
 browser).
+
+**Where to start, by goal.** *Learning the language* → the learning guide, then
+this README's language reference below. *Understanding the design* →
+`docs/thesis.md` and the `docs/*.md` references above. *Compiler internals* →
+`docs/internals/` (design records for shipped features — historical truth, e.g.
+how generics monomorphization or the hash-flood mitigation landed). *Proposed,
+not-yet-shipped work* → `docs/rfc/` (design discussions and prototypes; **nothing
+in `docs/rfc/` is a guarantee about what the compiler does today**). The rule:
+if a doc is under `docs/` or `docs/internals/`, it describes shipped behaviour;
+if it is under `docs/rfc/`, it is a conversation about the future.
 
 ## Self-hosting
 
@@ -332,7 +342,8 @@ new bytes built in the caller's arena (`tests/inout_string.ty`).
 `int` (64-bit), `float` (64-bit IEEE double), `bool`, `string`, `char` (one
 byte — `'x'` literals with `\n \t \r \0 \\ \'` escapes; `char ± int → char`;
 `string + char` appends in place without allocating, so `s = s + ('0' + d)` is a
-zero-alloc byte append), arrays
+zero-alloc byte append), `bytes` (an immutable binary buffer — interior NUL
+bytes survive, unlike `string`; `to_bytes`/`to_str` bridge the two), arrays
 (`[int]`, `[float]`, `[string]`, `[Struct]`, `[[T]]`), maps
 (`[string: V]` / `[int: V]` for any value type `V`, newtype keys too), `Option(T)` (a value or nothing — the
 no-`null` story), `Result(T, E)` (`Ok(value)` or `Err(error)` — the
@@ -362,7 +373,7 @@ struct Rect:
     hi: Point
 
 fn area(r: Rect) -> int:
-    return (r.ty.x - r.lo.x) * (r.ty.y - r.lo.y)
+    return (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
 
 fn main():
     a := Point(1, 2)        # positional construction, fields in order
@@ -898,7 +909,8 @@ so it is just a code pointer — zero-cost and immortal) or a **closure** (see
 below). This is what lets you write generic-feeling helpers over concrete
 function arguments (`map`/`filter`/`reduce`-style) without generics. Builtins
 (`len`, `push`, …) and functions with `mut` parameters can't be taken as
-values, and a function value can't be stored in a struct field or array.
+values, but a function value *is* a first-class value — storable in a struct
+field, array, map value, or tuple (see below).
 
 ### Closures (lambdas)
 
@@ -1016,7 +1028,7 @@ across the FFI: if a task calls a C function that touches process-global or
 and two tasks calling it race exactly as they would in C. Isolate such state
 per thread (e.g. thread-local storage, the pattern the `core:crypto` shim
 uses), or serialize the calls. See [FFI](#ffi-calling-c) and
-`docs/notes/ffi-threading-design-review.md`.
+`docs/rfc/ffi-threading-design-review.md`.
 
 ```
 fn count(path: string) -> int: ...
@@ -1108,11 +1120,15 @@ extern "m" fn cos(x: float) -> float           # links -lm
 extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, tycho string out
 ```
 
-The boundary covers scalars, `string`, and the opaque foreign-handle type `ptr`
-(a `void*` tycho never dereferences; `null` literal, `is_null(p)`). A C-returned
-string is **copied into the caller's arena** at the call site, so tycho never
-holds a pointer into C-owned memory. Composites and `mut` across the boundary
-are rejected (fail closed). Linking ergonomics on the `tychoc` line: `--link`,
+The boundary covers scalars, `string`, `bytes` (binary buffers with interior
+NULs), the opaque foreign-handle type `ptr` (a `void*` tycho never dereferences;
+`null` literal, `is_null(p)`), and typed `handle` resources — a `handle Name:
+free: c_fn` declares a `void*` whose C destructor runs automatically at scope
+exit (RAII), so a foreign resource cannot leak or be used after close. A
+C-returned string is **copied into the caller's arena** at the call site (and
+`-> Option(string)` carries a nullable C return), so tycho never holds a pointer
+into C-owned memory. `mut` scalar/string out-parameters cross too; only composite
+aggregates (arrays/maps/structs) are rejected (fail closed). Linking ergonomics on the `tychoc` line: `--link`,
 `--pkg` (pkg-config), `--shim` (companion `.c`). A real binding lives at
 `examples/sqlite/` (in-memory SQLite); design and full rules in
 [docs/ffi.md](docs/ffi.md).
@@ -1147,6 +1163,7 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `str(x)` | `int -> string` / `float -> string` / `bool -> string` | Value to string (a float prints with up to 15 significant digits, always with a `.`; a `bool` prints `true`/`false`). |
 | `to_float(n)` | `int -> float` | Widen an int to a float. |
 | `to_int(x)` | `float -> int` | Truncate a float toward zero. |
+| `to_bytes(s)` / `to_str(b)` | `string -> bytes` / `bytes -> string` | Bridge between `string` and `bytes` (same byte buffer; `bytes` may carry interior NULs). |
 | `len(x)` | `string -> int` / `[T] -> int` / `[string: int] -> int` | Byte length of a string, element count of an array, or entry count of a map. |
 | `substr(s, a, b)` | `(string, int, int) -> string` | Substring `[a, b)`; a fresh copy. Out-of-range bounds are clamped (no error). |
 | `find(s, sub)` | `(string, string) -> int` | Byte index of the first occurrence of `sub`, or `-1` if absent. |
@@ -1159,6 +1176,7 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `reserve(arr, n)` | `([T], int) -> void` | Capacity hint: preallocate room for `n` elements (`[int]`/`[float]`/`[string]`; a map place `m[k]` works too — count-then-fill builds size each list once). A hint, not a length: contents and `len` are unchanged, pushing past `n` still grows. A capacity that can't be allocated aborts at runtime. |
 | `getenv(name)` | `string -> string` | The environment variable's value, or `""` if unset. |
 | `wait(t)` | `Task(T) -> T` | Join a spawned task; the result deep-copies into the waiting scope and the task's arena tree frees. Exactly once per task (a second wait dies loudly); see [Concurrency](#concurrency-spawn-parallel-for-channels). |
+| `ncpu()` | `-> int` | The `parallel for` fan-out width (online CPU count; overridable with `TYCHO_THREADS`). Also the worker count for `parallel for x in ch:`. |
 | `channel(T, cap)` | `-> Channel(T)` | Create a bounded lock-free queue (capacity rounds up to a power of two). Only legal as a declaration's direct RHS — the creating scope frees it. |
 | `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` into the channel; blocks when full; dies if the channel is closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive, deep-copied out; `None` means closed **and** drained. |
@@ -1243,6 +1261,16 @@ None of this appears in Tycho source.
 
 ### Known limitations (proof-of-concept)
 
+- **No shared mutable references** — value semantics makes every binding an
+  independent deep copy; there are no pointers or references, and recursive
+  struct types are rejected. So you cannot build shared-mutable **graphs**,
+  **doubly-linked lists**, or **observer patterns** the way a pointer language
+  does. The Tycho idiom is a **flat node pool**: hold all nodes in one `[Node]`
+  array and link them by *integer index*, not by reference (optionally a
+  generational index for use-after-free detection). The whole structure is then
+  one value with one arena lifetime — see
+  [docs/arrays-structs.md](docs/arrays-structs.md) §2 and the learning guide's
+  "Graphs and Linked Structures".
 - **Generic constraints are a fixed, compiler-known set** — generic *functions*,
   *structs*, and *enums* (all including recursive types, e.g. `enum Tree($T)`)
   take `$T` and are monomorphized, but the only constraints are the built-in
@@ -1260,8 +1288,8 @@ compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
                    array_fns, structs, strings, words, wordcount, records,
-                   mut, memo, collect, context, generics_tour, optimize, json,
-                   raytrace, grep, invindex (.ty) — 21 programs (generics_tour.ty
+                   inout, memo, collect, context, generics_tour, optimize, json,
+                   raytrace, grep, invindex, triepool (.ty) — 22 programs (generics_tour.ty
                    tours `$T` functions/structs/enums, incl. a recursive
                    `Tree($T)`; json.ty is a full recursive-descent JSON parser +
                    serializer; raytrace.ty a float-math PPM renderer; grep.ty a

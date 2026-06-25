@@ -1,6 +1,6 @@
 # `parallel for x in ch:` — bounded channel-drain fan-out (design)
 
-Status: DESIGN (implementation in progress). Adds the one genuinely-ergonomic
+Status: SHIPPED 2026-06-25 (commit b2dcb3e), both compilers. Adds the one genuinely-ergonomic
 gap in the concurrency surface: bounded fan-out of an *unknown-length* stream of
 work, with K=ncpu workers and channel-capacity backpressure.
 

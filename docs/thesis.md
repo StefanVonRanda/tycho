@@ -260,6 +260,6 @@ out, a private arena per call — is already a sound thread boundary, so
 `spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
 on threads: race-free by construction, with no Sendable/lifetime/lock machinery
 in the language. Measured: `parallel for` at C-pthreads parity on a
-compute-bound reduction; lock-free channels 2.6x faster than a hand-written C
-mutex ring while still paying the value-semantic copies C doesn't
+compute-bound reduction; a lock-free-channel pipeline nearly 9x faster than a
+hand-written C mutex ring (73 ms vs 654 ms) while still paying the value-semantic copies C doesn't
 ([docs/concurrency.md](concurrency.md), `bench/conc/`).

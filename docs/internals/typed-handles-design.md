@@ -11,20 +11,20 @@ rejected by tychoc and tychoc0. (tychoc0's `ty_has_handle` short-circuits when n
 `handle` is declared, so self-compilation pays nothing and recursive structs can't
 cycle the check.)
 
-**tychoc done (uncommitted in the working tree):** `handle` keyword + `T_HANDLE_BASE`
+**tychoc:** `handle` keyword + `T_HANDLE_BASE`
 (58368, the free gap above channels) + `g_handles` registry + `parse_handle`;
 `c_type`→`void *`; extern param/return accept handles; the RAII finalizer
 (`taskvar_push(free_fn(h))` at the S_DECL site, so `return_frees`/`task_finishes_from`
 emit it at every scope exit); and all four affine bans (container, return,
 reassign, closure/parfor capture) mirroring the `IS_TASK` sites. Verified: a
 refcount fixture frees exactly once (0→1→0), borrow-on-pass works, ASan/UBSan +
-Leak clean; the return/reassign/container bans reject; `make test` 221/0.
+Leak clean; the return/reassign/container bans reject.
 
-**Remaining:** mirror in tychoc0 (string type-tag `"handle:Name"`, `parse_handle`,
-`cty`→`void* `, the finalizer emit in its block-exit path, the bans); then
-fixpoint B==C; a committed tests/ffi handle fixture (refcount resource + reject
-cases, both compilers + ASan + golden); docs/ffi.md. Same shape as the `bytes`
-port (commit ab49393).
+**tychoc0** mirrors it (string type-tag `"handle:Name"`, `parse_handle`,
+`cty`→`void* `, the finalizer emit in its block-exit path, the bans); fixpoint
+B==C holds; a committed tests/ffi handle fixture (refcount resource + reject
+cases, both compilers + ASan + golden) and docs/ffi.md landed. Same shape as the
+`bytes` port (commit ab49393).
 
 ## Problem
 

@@ -1,5 +1,5 @@
 # Dijkstra head-to-head: build a sparse random graph as an adjacency LIST OF INDICES
-# (the flat-pool idiom from docs/notes/value-semantics-limits.md), run Dijkstra from
+# (the flat-pool idiom from docs/internals/value-semantics-limits.md), run Dijkstra from
 # node 0 with a hand-built binary min-heap, and fold the reachable distances into a
 # checksum. The graph is the memory under test: tycho's value-semantic `[[Edge]]` vs
 # C's `Edge**` vs Go's `[][]Edge`. A graph by INDICES is value-shaped (no shared

@@ -68,6 +68,6 @@ The optimum trades empty-slot waste (large cap) against abandoned-rehash-array w
 
 - Even at cap-4, tycho is ~2.7× C here. The remaining gap is **value-vs-pointer storage**,
   which is fundamental to value semantics, not a tuning knob. For pointer-shaped / shared
-  structures, see `docs/notes/value-semantics-limits.md` for the recommended idioms.
+  structures, see `docs/internals/value-semantics-limits.md` for the recommended idioms.
 - Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run
   `sh bench/trie/run.sh` to reproduce. Not wired into `make ci` (Go is optional).

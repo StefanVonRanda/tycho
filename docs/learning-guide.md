@@ -21,18 +21,19 @@ Tycho is an experimental, open proof-of-concept. It's small on purpose — usual
 9. [Maps](#9-maps)
 10. [Option and Result](#10-option-and-result)
 11. [Enums and Pattern Matching](#11-enums-and-pattern-matching)
-12. [Tuples and Multiple Return Values](#12-tuples-and-multiple-return-values)
-13. [Type Inference](#13-type-inference)
-14. [Value Semantics: The Mental Model](#14-value-semantics-the-mental-model)
-15. [Closures and Higher-Order Functions](#15-closures-and-higher-order-functions)
-16. [Methods (UFCS)](#16-methods-ufcs)
-17. [Concurrency](#17-concurrency)
-18. [Packages and the Standard Library](#18-packages-and-the-standard-library)
-19. [Calling C (FFI)](#19-calling-c-ffi)
-20. [Project: Inverted-Index Search Engine](#20-project-inverted-index-search-engine)
-21. [Project: JSON Parser](#21-project-json-parser)
-22. [Project: Ray Tracer](#22-project-ray-tracer)
-23. [Cheat Sheet](#23-cheat-sheet)
+12. [Graphs and Linked Structures](#12-graphs-and-linked-structures)
+13. [Tuples and Multiple Return Values](#13-tuples-and-multiple-return-values)
+14. [Type Inference](#14-type-inference)
+15. [Value Semantics: The Mental Model](#15-value-semantics-the-mental-model)
+16. [Closures and Higher-Order Functions](#16-closures-and-higher-order-functions)
+17. [Methods (UFCS)](#17-methods-ufcs)
+18. [Concurrency](#18-concurrency)
+19. [Packages and the Standard Library](#19-packages-and-the-standard-library)
+20. [Calling C (FFI)](#20-calling-c-ffi)
+21. [Project: Inverted-Index Search Engine](#21-project-inverted-index-search-engine)
+22. [Project: JSON Parser](#22-project-json-parser)
+23. [Project: Ray Tracer](#23-project-ray-tracer)
+24. [Cheat Sheet](#24-cheat-sheet)
 
 ---
 
@@ -62,7 +63,7 @@ Three things make Tycho different from the languages you know:
 
 The key insight, and the one idea to hold onto for the whole guide: **every value is independently owned**. When you assign `b = a`, `b` gets its own deep copy. Two variables never share storage. This is "value semantics," and it's what lets the compiler manage memory for you automatically — each scope gets an arena (a memory pool), and when the scope ends, the whole arena is freed at once. You never write `free()`, never count references, and never annotate lifetimes.
 
-Don't worry if that's abstract right now. You'll *see* it in every section, and section 14 returns to it once you have enough code under your belt for it to click.
+Don't worry if that's abstract right now. You'll *see* it in every section, and section 15 returns to it once you have enough code under your belt for it to click.
 
 ---
 
@@ -758,7 +759,42 @@ Enums are value-semantic too: copying an enum value deep-copies the whole tree.
 
 ---
 
-## 12. Tuples and Multiple Return Values
+## 12. Graphs and Linked Structures
+
+In Python or JavaScript you build a linked list or a graph by making objects point at each other — `node.next = other`, `a.neighbors.append(b)`. Two variables end up referring to the *same* object, and a change made through one is visible through the other. Tycho does not work that way.
+
+Tycho has **value semantics**: assignment deep-copies, two variables never share storage, and there are **no references, no pointers, and no recursive struct types** (a `struct` cannot contain itself). So you *cannot* build shared-mutable graphs, doubly-linked lists, or observer patterns the way you would in those languages — there is no way for two nodes to hold a handle on one shared, mutable third node.
+
+### The flat node pool
+
+The Tycho way is the **flat node pool**: keep every node in one array, and have nodes refer to each other by their **integer index** into that array instead of by reference. An index is just an `int`, so "two nodes pointing at the same node" becomes "two ints with the same value" — no sharing, no aliasing. The whole structure is then a single value with a single lifetime, which is a perfect fit for Tycho's arenas.
+
+Here is a tiny singly-linked list — each node stores its value and the index of the next node, with `-1` meaning "no node":
+
+```
+struct Node:
+    val: int
+    next: int                 # index of the next node, -1 = end
+
+fn main():
+    pool := []Node            # the whole list lives in one array
+    push(pool, Node(10, 1))   # node 0 -> points at node 1
+    push(pool, Node(20, 2))   # node 1 -> points at node 2
+    push(pool, Node(30, -1))  # node 2 -> end of list
+
+    cur := 0                  # walk by index, not by reference
+    for cur != -1:
+        print(str(pool[cur].val) + "\n")
+        cur = pool[cur].next  # prints 10, 20, 30
+```
+
+A graph is the same idea with several indices per node — a `[[Edge]]` adjacency list, exactly how `bench/dijkstra/dijkstra.ty` builds its graph, or a map of byte to child index, how `examples/triepool.ty` builds a trie. You index a pool instead of following pointers, and the arena reclaims the whole pool at once.
+
+**Safety tip:** if you recycle slots in a pool, a stale index can silently point at a node that was replaced. The fix is a *generational index* — pair each index with a generation counter and bump the counter when a slot is reused, so a stale index fails a check instead of reading the wrong node. See `docs/arrays-structs.md` (§2, "No recursive types") for the full treatment.
+
+---
+
+## 13. Tuples and Multiple Return Values
 
 ```
 fn divmod(a: int, b: int) -> (int, int):
@@ -776,7 +812,7 @@ fn main():
 
 ---
 
-## 13. Type Inference
+## 14. Type Inference
 
 Tycho infers types — you don't annotate everything:
 
@@ -801,7 +837,7 @@ Function signatures are always explicit — they're the module interface.
 
 ---
 
-## 14. Value Semantics: The Mental Model
+## 15. Value Semantics: The Mental Model
 
 This is the most important concept in Tycho. Internalize these three rules and everything else follows:
 
@@ -856,7 +892,7 @@ The loop runs a million iterations in **constant memory** because each iteration
 
 ---
 
-## 15. Closures and Higher-Order Functions
+## 16. Closures and Higher-Order Functions
 
 ### Named functions as values
 
@@ -938,7 +974,7 @@ fn main():
 
 ---
 
-## 16. Methods (UFCS)
+## 17. Methods (UFCS)
 
 `x.foo(a, b)` is sugar for `foo(x, a, b)` — Uniform Function Call Syntax. Any function whose first parameter matches `x`'s type can be called this way. No classes, no `self`:
 
@@ -965,7 +1001,7 @@ Calls chain: `a.vadd(b).vlen()` = `vlen(vadd(a, b))`.
 
 ---
 
-## 17. Concurrency
+## 18. Concurrency
 
 Tycho's concurrency model is **race-free by construction**. Every value that crosses a thread boundary is deep-copied. No locks, no lifetimes, no `Send`/`Sync` bounds.
 
@@ -1032,7 +1068,7 @@ Channels are bounded lock-free queues. `send` blocks when full, `recv` blocks wh
 
 ---
 
-## 18. Packages and the Standard Library
+## 19. Packages and the Standard Library
 
 Tycho has packages: a directory of `.ty` files sharing one namespace.
 
@@ -1055,20 +1091,21 @@ fn main():
 
 | Package | What it provides |
 |---|---|
-| `core:math` | `abs`, `imin`, `imax`, `clamp`, `sign`, `gcd`, `ipow` |
-| `core:strings` | `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`, `repeat`, `trim`, `parse_int`, `lines`, `replace` |
-| `core:arrays` | `[int]` utilities: `contains`, `index_of`, `count`, `sum`, `reverse`, `sort` |
-| `core:arrays_str` | `[string]` utilities: `contains`, `index_of`, `join`, `sort` |
-| `core:arrays_float` | `[float]` utilities |
-| `core:iter` | Higher-order over `[int]`: `map`, `filter`, `reduce`, `count`, `any` |
-| `core:iter_str` | Higher-order over `[string]` |
-| `core:iter_float` | Higher-order over `[float]` |
-| `core:sort` | `argsort`, `argsort_desc`, `argsort_str`, `by_key` |
-| `core:rand` | `seed`, `next`, `below`, `shuffle` (xorshift32, state threaded via mut) |
+| `core:math` | `min`, `max`, `clamp`, `sign` (generic over comparable/numeric types), `abs`, `gcd`, `ipow` (integer) |
+| `core:fmath` | float helpers: `pi`, `e`, `round`, `trunc`, `lerp`, `approx_eq` |
+| `core:strings` | `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`, `repeat`, `trim`, `parse_int`, `lines`, `replace`, `split_once`, `pad_left`/`pad_right`, `reverse`, `capitalize` |
+| `core:char` | byte/char classification: `is_digit`, `is_alpha`, `is_alnum`, `is_space`, `digit_val`, `hex_val` |
+| `core:arrays` | one **generic** package over any `[$T]`: `contains`, `index_of`, `count`, `reverse`, `take`, `drop`, `concat`, `fill`, `dedup`, `sort`, `is_sorted`, `min`, `max`, `sum`, `product`, `join` |
+| `core:iter` | generic higher-order over any `[$T]`, each taking a `fn`/closure: `map`, `filter`, `reduce`, `count`, `any` |
+| `core:sort` | `argsort`, `argsort_desc` (index permutation over any comparable key), `by_key` |
+| `core:rand` | `seed`, `next`, `below`, `shuffle` (xorshift32, state threaded via `mut`) |
+| `core:path` | POSIX path string math: `base`, `dir`, `ext`, `stem`, `join`, `clean` |
+
+`core:arrays` and `core:iter` are **single generic packages** over `[$T]` — Tycho monomorphizes generics, so there are no per-element-type siblings (no `arrays_str`, `iter_float`, and so on); one package covers every element type.
 
 ---
 
-## 19. Calling C (FFI)
+## 20. Calling C (FFI)
 
 `extern fn` declares a C function Tycho can call:
 
@@ -1081,11 +1118,11 @@ fn main():
     print(str(cos(0.0)) + "\n")             # 1.0
 ```
 
-The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Tycho's arena), and the opaque `ptr` type for foreign handles. Composites and `mut` are rejected for safety.
+The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Tycho's arena), first-class `bytes` (length-carried binary buffers, so interior `0x00` survives), the opaque `ptr` type for foreign handles, typed `handle` resources (freed automatically when they go out of scope — RAII), and `mut` out-parameters (for the common C pattern of writing the real result through a pointer, like `sqlite3_open`). A `-> Option(string)` return tells a `NULL` C string apart from an empty one. Only composite aggregates — arrays, maps, and structs — are rejected; marshal those across as scalars, strings, or `ptr` handles, or write a small C shim. See `docs/ffi.md` for the full set of rules.
 
 ---
 
-## 20. Project: Inverted-Index Search Engine
+## 21. Project: Inverted-Index Search Engine
 
 This is a real text search engine — index documents, query them with boolean AND, count term frequencies. Adapted from `examples/invindex.ty`.
 
@@ -1206,7 +1243,7 @@ fn main():
 
 ---
 
-## 21. Project: JSON Parser
+## 22. Project: JSON Parser
 
 A full recursive-descent JSON parser + serializer in ~200 lines. This is `examples/json.ty`, adapted for learning.
 
@@ -1418,7 +1455,7 @@ fn main():
 
 ---
 
-## 22. Project: Ray Tracer
+## 23. Project: Ray Tracer
 
 A tiny diffuse ray tracer rendering spheres to a PPM image. Exercises float math, nested structs, arrays of structs, and the O(n) in-place string accumulator.
 
@@ -1553,7 +1590,7 @@ Open `out.ppm` in any image viewer.
 
 ---
 
-## 23. Cheat Sheet
+## 24. Cheat Sheet
 
 ### Declarations
 

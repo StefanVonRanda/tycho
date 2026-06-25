@@ -1,7 +1,7 @@
 # The explicit `sink` parameter convention (experimental, both compilers)
 
 A working implementation of the `sink` (owned, consuming) parameter convention identified
-in `hylo-mvs-research.md`, in **both** compilers (`tychoc` and the self-hosted `tychoc0`),
+in `../internals/hylo-mvs-research.md`, in **both** compilers (`tychoc` and the self-hosted `tychoc0`),
 with a shared harness test (`tests/sink.ty`, both compilers byte-identical). Still labelled
 experimental — direct calls are fully supported and sound; one peripheral combination
 (UFCS) is not yet wired in tychoc0 (see Limitations). It exists to learn what `sink` can and
