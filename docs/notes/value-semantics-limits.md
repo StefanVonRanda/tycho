@@ -72,6 +72,14 @@ node without compacting. For graphs, the same pattern (`[Node]` + `[[int]]` adja
 index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on
 shared pointers.
 
+This is measured, not asserted: `bench/dijkstra` runs single-source shortest paths on a
+300k-node graph stored as an **adjacency list of indices** (`[[Edge]]`), and tycho lands at
+**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*, the opposite of the trie's 2.7×.
+Expressed the value-semantic way (indices, not pointers), the graph is value-shaped — the
+edge arrays are flat in every language — so the residual gap is just a 24-byte array
+descriptor per node, not the pointer-vs-struct blowup. The idiom is the difference between
+~2.7× and ~1.3×.
+
 Measured on the same 150k-word workload, the flat-pool trie above lands at **69 MB** — down
 from 103 MB for the by-value recursive version (−33%), correct on both compilers. It does
 *not* reach C's 38 MB, because each node still owns an `[int: int]` child map and that
