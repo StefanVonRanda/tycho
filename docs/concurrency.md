@@ -67,6 +67,28 @@ statement.
 
 On the compute-bound reduction this matches C-pthreads here: 37 ms vs C's 36 ms, same peak RSS.
 
+### Bounded fan-out over a channel
+
+`parallel for x in ch:` drains a channel with `K = ncpu()` workers, each pulling
+items until the channel is closed **and** drained:
+
+```
+jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
+pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
+parallel for j in jobs:             # K = ncpu() workers share the one queue
+    results = results + work(j)     # ordinary reduction, folded at the join
+```
+
+This is the bounded-fan-out idiom — N items not known up front, at most `cap`
+buffered, work spread across `ncpu()` workers — without sizing a `range`
+yourself. Each item is taken by exactly one worker (the MPMC queue), so integer
+reductions are deterministic. The producer must `close(ch)` when done or the
+workers park waiting for more. It desugars to a `parallel for` over `range(0,
+ncpu())` whose body is `for true: select { recv(ch, x): … ; closed: break }`, so
+the same fail-closed gates apply and the source must name a variable. `ncpu()`
+(the fan-out width, overridable with `TYCHO_THREADS`) is also callable directly.
+Worked example: `tests/conc/workers.ty`.
+
 ## Channels — the one shared object
 
 ```

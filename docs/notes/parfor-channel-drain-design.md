@@ -91,3 +91,47 @@ make test → make fixpoint, all green before next)
    path emission identical. Add `tests/conc/parfor_chan.ty` (fails until 3).
 3. Resolve + codegen drain-mode (both compilers).
 4. Docs: `docs/concurrency.md` "Bounded fan-out" section pointing at the example.
+
+## Implementation progress
+
+- **DONE — example + design** (committed `936565b`): `tests/conc/workers.ty` golden,
+  this note, generics-plan STATUS header.
+- **DONE — tychoc (C reference), uncommitted in working tree, all gates green**
+  (`make fixpoint` B==C byte-identical; `make conc` 35/0; channel-drain fixture
+  328350/100 under native+ASan/UBSan/LSan; array-foreach `parfor.ty` output
+  identical → no regression):
+  - `ncpu()` builtin: niladic `T_INT`, emits `((long)tycho_ncpu())`
+    (`src/tychoc.c` Sig reg after `now`, emit after `now`).
+  - `int foreach` flag on `Stmt`; parser global `g_parallel_ctx` set in the
+    `TK_PARALLEL` branch and consumed at `TK_FOR` entry (so a nested sequential
+    foreach in a parfor body is unaffected).
+  - Parser parallel+foreach: require the source be an identifier, emit a deferred
+    `S_FORRANGE` (`foreach=1`, `name`=var, `r_start`=source ident, `body`=raw).
+  - `resolve_parfor` top: type-branch the source — `IS_CHAN` → drain form
+    (`parallel for __pw in range(0,ncpu()): for true: select{recv(src,x):BODY;
+    closed:break}`); array/string → the existing index form; else die.
+- **DONE — tychoc0 (self-hosted) + landed.** All gates green: `make test` 230/0,
+  `make conc` 36/0 (incl. the tychoc0 parity differential on `parfor_chan.ty`),
+  `make fixpoint` B==C byte-identical. The tychoc0 mirror, as planned:
+  1. `ncpu` builtin: add to the builtin-name lists (`:1989`, `:4037`), `type_of`
+     niladic int (near `now` `:3058`), emit `((long)tycho_ncpu())` (near `now`
+     `:4545`).
+  2. Parser parallel+foreach (`:1203`-`:1220`): instead of the array desugar,
+     require an identifier source and emit a **deferred** `SParFor` marked by a
+     sentinel par-id (e.g. `pid = -2`; normal parse uses `-1`) carrying
+     `start`=source ident, `body`=raw. No `_fc` pending temp (channels can't be
+     aliased into one; the ident is re-eval-free).
+  3. Rewrite at the lift pass (the analog of `resolve_parfor` — the pass that
+     builds `ParInfo`/assigns par-id, with `names/types/dc/ctx` for `type_of`):
+     when a `SParFor` has the sentinel pid, `type_of(source)` → `is_chan` builds
+     the drain `SParFor` (loopvar `__pw`, `0..ECall("ncpu")`, body =
+     `[SWhile(EBool true,[SSelect(... recv(src,x):body ; closed:[SBreak])])]`);
+     else the index `SParFor` (`0..ECall("len",[src])`, body prefixed with
+     `SDecl(x, EIndex(src,_fe))`). Intermediate passes (mangle `:2306`, mono
+     `:10903`) pass the sentinel node through structurally — only the lift site
+     interprets it.
+  4. Add `tests/conc/parfor_chan.ty` (+ `.out` = `328350\n100\n`); `make conc`
+     must pass incl. the tychoc0 parity differential; `make fixpoint` B==C;
+     `make test`.
+  5. Docs: `docs/concurrency.md` "Bounded fan-out" subsection citing
+     `tests/conc/workers.ty`, the sugar, and `ncpu()`.

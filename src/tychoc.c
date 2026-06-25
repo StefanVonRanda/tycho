@@ -1199,6 +1199,7 @@ struct Stmt {
     MatchArm *arms; int narms;           /* S_MATCH / S_SELECT (variant = "recv"/"default"/"closed") */
     Expr   **sel_ch;                     /* S_SELECT: per-arm channel expr (NULL for default/closed) */
     int      parallel;                   /* S_FORRANGE: `parallel for` (CC-3) */
+    int      foreach;                    /* S_FORRANGE parallel: deferred `parallel for x in EXPR` (name=var, r_start=src ident, body=raw); resolve_parfor type-branches array vs channel */
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
 };
 
@@ -2162,6 +2163,11 @@ static Stmt *parse_if(Parser *ps, int line) {
 static Stmt *g_pending[64];
 static int g_npending = 0;
 static int g_forin_uid = 0;
+/* set for exactly the `for` directly under a `parallel` keyword, so its foreach
+ * form is deferred (type-directed in resolve_parfor) instead of array-desugared;
+ * the TK_FOR handler consumes it immediately so a nested sequential foreach in
+ * the parfor body is unaffected. */
+static int g_parallel_ctx = 0;
 
 /* the binary operators that have a compound-assignment form `x OP= e`. Detected
  * as the operator token followed by `=` (no dedicated token needed). */
@@ -2400,7 +2406,8 @@ static Stmt *parse_stmt(Parser *ps) {
     if (t->kind == TK_PARALLEL) {        /* parallel for ...: chunked fan-out + reduction merge (CC-3) */
         ps->p++;
         if (!at(ps, TK_FOR)) die_at(t->line, "expected 'for' after 'parallel'");
-        Stmt *s = parse_stmt(ps);        /* parses the for (range form, or foreach desugared to range) */
+        g_parallel_ctx = 1;              /* the TK_FOR handler consumes this for the directly-following for */
+        Stmt *s = parse_stmt(ps);        /* parses the for (range form, or foreach: deferred for type-directed lowering) */
         if (s->kind != S_FORRANGE)
             die_at(t->line, "parallel supports 'for x in range(...)' and 'for x in collection' loops only");
         s->parallel = 1;
@@ -2408,6 +2415,7 @@ static Stmt *parse_stmt(Parser *ps) {
     }
     if (t->kind == TK_FOR) {
         ps->p++;
+        int par_here = g_parallel_ctx; g_parallel_ctx = 0;   /* only THIS for is parallel; nested fors below are not */
         /* counting form `for i in range(...)` or foreach `for x in COLL:` */
         if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_IN) {
             Tok *var = eat(ps, TK_IDENT, "a loop variable");
@@ -2445,6 +2453,21 @@ static Stmt *parse_stmt(Parser *ps) {
             eat(ps, TK_COLON, "':' before the block");
             eat(ps, TK_NEWLINE, "newline");
             int nbody = 0; Stmt **ubody = parse_block(ps, &nbody);
+            if (par_here) {
+                /* `parallel for x in EXPR`: defer the array-vs-channel choice to
+                 * resolve_parfor (types are needed and unknown here). EXPR must
+                 * name a variable — both an array and a channel source are scalar
+                 * handles, so no eval-once temp is required and a channel cannot be
+                 * aliased into a temp. Node carries: name=loop var, r_start=source
+                 * ident, body=raw body, foreach=1; parallel=1 is set by the caller. */
+                if (coll->kind != E_IDENT)
+                    die_at(t->line, "parallel for over a collection or channel must name a variable (bind it first)");
+                Stmt *fe = new_stmt(S_FORRANGE, t->line);
+                fe->foreach = 1; fe->name = var->text;
+                fe->r_start = coll; fe->r_stop = NULL; fe->r_step = NULL;
+                fe->body = ubody; fe->nbody = nbody;
+                return fe;
+            }
             int uid = g_forin_uid++;
             char *cn = sfmt("_fc%d", uid), *iv = sfmt("_fi%d", uid);
             Stmt *tmp = new_stmt(S_DECL, t->line);   /* _fcN := COLL (the prelude) */
@@ -3199,6 +3222,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="read_all",.ret=T_STRING,      .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="clock",  .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* monotonic nanoseconds */
     g_sigs[g_nsigs++] = (Sig){ .name="now",    .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* wall-clock UNIX seconds */
+    g_sigs[g_nsigs++] = (Sig){ .name="ncpu",   .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* worker count = parallel-for fan-out width */
     g_sigs[g_nsigs++] = (Sig){ .name="chr",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="die",    .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="str",    .ret=T_STRING,       .params={ T_INT },                   .nparams=1, .builtin=1 };
@@ -4591,6 +4615,60 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
 }
 
 static void resolve_parfor(Stmt *s) {
+    if (s->foreach) {
+        /* `parallel for x in EXPR` (EXPR an identifier, deferred by the parser):
+         * type-branch the source into one of two existing forms, then fall
+         * through to the normal parfor machinery unchanged. */
+        Type src = resolve_exp(s->r_start, T_VOID);
+        Expr *coll = s->r_start;          /* the source identifier */
+        char *var  = s->name;             /* the user loop variable x */
+        Stmt **rb  = s->body; int rn = s->nbody;
+        s->foreach = 0;
+        if (IS_CHAN(src)) {
+            /* K = ncpu() workers, each draining until closed:
+             *   parallel for __pw in range(0, ncpu()):
+             *       for true: select { recv(coll, x): BODY ; closed: break } */
+            Expr *z = new_expr(E_INT, s->line); z->ival = 0;
+            Expr *nc = new_expr(E_CALL, s->line); nc->sval = "ncpu"; nc->pkg = "";
+            s->name = "__pw"; s->r_start = z; s->r_stop = nc; s->r_step = NULL;
+            Stmt *sel = new_stmt(S_SELECT, s->line);
+            sel->arms = (MatchArm *)xmalloc(2 * sizeof(MatchArm));
+            sel->sel_ch = (Expr **)xmalloc(2 * sizeof(Expr *));
+            memset(sel->arms, 0, 2 * sizeof(MatchArm));
+            sel->narms = 2;
+            sel->arms[0].variant = "recv"; sel->arms[0].nbinds = 1;
+            sel->arms[0].binds[0] = var;
+            sel->arms[0].body = rb; sel->arms[0].nbody = rn; sel->arms[0].line = s->line;
+            sel->sel_ch[0] = coll;
+            Stmt *brk = new_stmt(S_BREAK, s->line);
+            Stmt **cb = (Stmt **)xmalloc(sizeof(Stmt *)); cb[0] = brk;
+            sel->arms[1].variant = "closed"; sel->arms[1].nbinds = 0;
+            sel->arms[1].body = cb; sel->arms[1].nbody = 1; sel->arms[1].line = s->line;
+            sel->sel_ch[1] = NULL;
+            Stmt *whl = new_stmt(S_WHILE, s->line);
+            Expr *tru = new_expr(E_BOOL, s->line); tru->ival = 1;
+            whl->expr = tru;
+            whl->body = (Stmt **)xmalloc(sizeof(Stmt *)); whl->body[0] = sel; whl->nbody = 1;
+            s->body = (Stmt **)xmalloc(sizeof(Stmt *)); s->body[0] = whl; s->nbody = 1;
+        } else if (is_array(src) || src == T_STRING) {
+            /* parallel for __feN in range(0, len(coll)): x := coll[__feN] ; BODY */
+            char *iv = sfmt("__fe%d", g_forin_uid++);
+            Expr *z = new_expr(E_INT, s->line); z->ival = 0;
+            Expr *lc = new_expr(E_CALL, s->line); lc->sval = "len"; lc->pkg = "";
+            lc->args = (Expr **)xmalloc(sizeof(Expr *)); lc->args[0] = coll; lc->nargs = 1;
+            s->name = iv; s->r_start = z; s->r_stop = lc; s->r_step = NULL;
+            Expr *iref = new_expr(E_IDENT, s->line); iref->sval = iv; iref->pkg = "";
+            Expr *c2 = new_expr(E_IDENT, s->line); c2->sval = coll->sval; c2->pkg = coll->pkg;
+            Expr *idx = new_expr(E_INDEX, s->line); idx->lhs = c2; idx->rhs = iref;
+            Stmt *elem = new_stmt(S_DECL, s->line); elem->name = var; elem->expr = idx;
+            Stmt **nb = (Stmt **)xmalloc((size_t)(rn + 1) * sizeof(Stmt *));
+            nb[0] = elem;
+            for (int k = 0; k < rn; k++) nb[k + 1] = rb[k];
+            s->body = nb; s->nbody = rn + 1;
+        } else {
+            die_at(s->line, "parallel for expects an array, string, or channel");
+        }
+    }
     if (s->r_step) die_at(s->line, "parallel for does not support a range step");
     if (resolve_exp(s->r_start, T_INT) != T_INT || resolve_exp(s->r_stop, T_INT) != T_INT)
         die_at(s->line, "parallel for needs an int range");
@@ -6310,6 +6388,7 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "clock")) return "tycho_clock()";   /* monotonic ns; no arena (scalar) */
     if (!strcmp(e->sval, "now"))   return "tycho_now()";     /* wall-clock seconds */
+    if (!strcmp(e->sval, "ncpu"))  return "((long)tycho_ncpu())";   /* parallel-for fan-out width */
     if (!strcmp(e->sval, "read_file")) {
         return sfmt("tycho_read_file(%s, %s)", arena, gen_expr(e->args[0], arena));
     }

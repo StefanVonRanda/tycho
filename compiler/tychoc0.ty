@@ -1200,24 +1200,17 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
                 expect(toks, &pos, TColon)
                 pbody := parse_block(toks, &pos)
                 return SParFor(pvar, pstart, pstop, pbody, 0 - 1, _sl)
-            # foreach form: `parallel for x in COLL:` -> prelude `_fc := COLL`
-            # (via `pending`) + a parallel range loop, mirroring parse_foreach
+            # foreach form: `parallel for x in EXPR:` — defer the array-vs-channel
+            # choice to the lift pass (types are needed and unknown here). EXPR must
+            # name a variable; the lift pass type-branches it (sentinel par-id -2).
+            # No `_fc` temp: a channel cannot be aliased into one, and an identifier
+            # source is re-eval-free.
             pcoll := parse_expr(toks, &pos)
             expect(toks, &pos, TColon)
             pubody := parse_block(toks, &pos)
-            puid := str(pos)
-            pcn := "_fc" + puid
-            piv := "_fi" + puid
-            plargs := []Expr
-            push(plargs, EVar(pcn, _el))
-            pfbody := []Stmt
-            push(pfbody, SDecl(pvar, EIndex(EVar(pcn, _el), EVar(piv, _el), _el), _sl))
-            pk := 0
-            for pk < len(pubody):
-                push(pfbody, pubody[pk])
-                pk = pk + 1
-            push(pending, SDecl(pcn, pcoll, _sl))
-            return SParFor(piv, EInt("0", _el), ECall("len", plargs, _el), pfbody, 0 - 1, _sl)
+            if evar_name(pcoll) == "":
+                die("parse: line " + str(t.line) + ": parallel for over a collection or channel must name a variable")
+            return SParFor(pvar, pcoll, EInt("0", _el), pubody, 0 - 2, _sl)
         die("parse: line " + str(t.line) + ": parallel supports 'for x in range(...)' and 'for x in collection' loops")
         return SBreak
     elif t.kind == TIdent and t.text == "for":
@@ -1986,7 +1979,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -3056,6 +3049,8 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     if name == "clock":                           # monotonic nanoseconds
         return "int"
     if name == "now":                             # wall-clock UNIX seconds
+        return "int"
+    if name == "ncpu":                            # parallel-for fan-out width
         return "int"
     if name == "read_file":
         return "str"
@@ -4544,6 +4539,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "hi_clock()"
             if name == "now":                     # wall-clock seconds
                 return "hi_now()"
+            if name == "ncpu":                    # parallel-for fan-out width (runtime fn used by gen_parfor)
+                return "((long)tycho_ncpu())"
             if name == "read_file":
                 return "hi_read_file(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "write_file":              # (path, contents) -> bool; no arena (no alloc)
@@ -9730,6 +9727,51 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
         SContinue:
             return s
         SParFor(v, a, b, body, pid0, _sl):
+            if pid0 == 0 - 2:
+                # deferred `parallel for x in EXPR` (the parser couldn't see the
+                # type): type-branch the source identifier now (types are present
+                # here) and re-lift the concrete form — channel drain or array index.
+                psrc := type_of(a, names, types, dc, ctx)
+                if is_chan(psrc):
+                    # K=ncpu() workers draining until closed:
+                    #   parallel for __pw in range(0, ncpu()):
+                    #       for true: select { recv(a, x): BODY ; closed: break }
+                    svs := []string
+                    push(svs, "recv")
+                    push(svs, "closed")
+                    schs := []Expr
+                    push(schs, a)
+                    push(schs, EInt("0", _sl))
+                    sbs := []string
+                    push(sbs, v)
+                    push(sbs, "")
+                    cbrk := []Stmt
+                    push(cbrk, SBreak)
+                    sbods := [][Stmt]
+                    push(sbods, body)
+                    push(sbods, cbrk)
+                    seluid := "pfc" + str(len(pars)) + "_" + str(_sl)
+                    whbody := []Stmt
+                    push(whbody, SSelect(seluid, svs, schs, sbs, sbods, _sl))
+                    dbody := []Stmt
+                    push(dbody, SWhile(EBool("1", _sl), whbody, _sl))
+                    nca := []Expr
+                    realc := SParFor("__pw", EInt("0", _sl), ECall("ncpu", nca, _sl), dbody, 0 - 1, _sl)
+                    return lift_stmt(realc, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret)
+                if not (is_array(psrc) or psrc == "str"):
+                    die("parallel for expects an array, string, or channel")
+                # array/string: parallel for __fe in range(0, len(a)): x := a[__fe] ; BODY
+                fiv := "__fe" + str(len(pars)) + "_" + str(_sl)
+                ibody := []Stmt
+                push(ibody, SDecl(v, EIndex(a, EVar(fiv, _sl), _sl), _sl))
+                ik := 0
+                for ik < len(body):
+                    push(ibody, body[ik])
+                    ik = ik + 1
+                lna := []Expr
+                push(lna, a)
+                reala := SParFor(fiv, EInt("0", _sl), ECall("len", lna, _sl), ibody, 0 - 1, _sl)
+                return lift_stmt(reala, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret)
             # CC-3: lift the body to a chunk proc __par<pid>(__plo, __phi,
             # captures...) -> partial(s); register its spawn site (the driver
             # emits the trampoline) and the ParInfo the site codegen reads.
