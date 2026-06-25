@@ -254,43 +254,19 @@ fn as_num(j: Json) -> int:                     # JNum payload, else 0
     match j:
         JNum(x):
             return x
-        JNull:
-            return 0
-        JBool(b):
-            return 0
-        JStr(s):
-            return 0
-        JArr(xs):
-            return 0
-        JObj(ks, vs):
+        _:
             return 0
 
 fn as_str(j: Json) -> string:                  # JStr payload, else ""
     match j:
         JStr(s):
             return s
-        JNull:
-            return ""
-        JBool(b):
-            return ""
-        JNum(x):
-            return ""
-        JArr(xs):
-            return ""
-        JObj(ks, vs):
+        _:
             return ""
 
 fn as_bool(j: Json) -> bool:                   # JBool payload, else false
     match j:
         JBool(b):
             return b
-        JNull:
-            return false
-        JNum(x):
-            return false
-        JStr(s):
-            return false
-        JArr(xs):
-            return false
-        JObj(ks, vs):
+        _:
             return false

@@ -2369,6 +2369,8 @@ static Stmt *parse_stmt(Parser *ps) {
                 check_pkg_private(vqual, vname, vn->line);
                 arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
             }
+            else if (!strcmp(vname, "_"))   /* `_` wildcard: a catch-all arm, never mangled */
+                arm->variant = (char *)vname;
             else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
                 arm->variant = (char *)vname;
             else
@@ -4919,13 +4921,24 @@ static void resolve_stmt(Stmt *s, Type ret) {
         }
         case S_MATCH: {
             Type st = resolve_expr(s->expr);
+            /* a `_` wildcard is a catch-all: it must be the last arm, binds nothing,
+             * and makes the match exhaustive without listing the remaining variants. */
+            int wild = 0;
+            for (int i = 0; i < s->narms; i++)
+                if (!strcmp(s->arms[i].variant, "_")) {
+                    if (i != s->narms - 1) die_at(s->arms[i].line, "a `_` wildcard must be the last match arm");
+                    if (s->arms[i].nbinds != 0) die_at(s->arms[i].line, "a `_` wildcard binds nothing");
+                    wild = 1;
+                }
             if (IS_OPT(st)) {
                 Type inner = opt_inner(st);
                 int some = 0, none = 0;
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     int m = vars_mark();
-                    if (!strcmp(arm->variant, "Some")) {
+                    if (!strcmp(arm->variant, "_")) {
+                        /* catch-all: no binding */
+                    } else if (!strcmp(arm->variant, "Some")) {
                         if (some) die_at(arm->line, "duplicate Some arm");
                         if (arm->nbinds != 1) die_at(arm->line, "Some(x) binds exactly one value");
                         vars_push(arm->binds[0], inner, 1); some = 1;
@@ -4934,19 +4947,21 @@ static void resolve_stmt(Stmt *s, Type ret) {
                         if (arm->nbinds != 0) die_at(arm->line, "None binds nothing");
                         none = 1;
                     } else {
-                        die_at(arm->line, "an Option's arms are Some(x) and None, not '%s'", arm->variant);
+                        die_at(arm->line, "an Option's arms are Some(x), None, and _, not '%s'", arm->variant);
                     }
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!some || !none) die_at(s->line, "match on an Option must cover both Some and None");
+                if (!wild && (!some || !none)) die_at(s->line, "match on an Option must cover both Some and None");
             } else if (IS_RES(st)) {
                 Type okt = res_ok(st), errt = res_err(st);
                 int ok = 0, err = 0;
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     int m = vars_mark();
-                    if (!strcmp(arm->variant, "Ok")) {
+                    if (!strcmp(arm->variant, "_")) {
+                        /* catch-all: no binding */
+                    } else if (!strcmp(arm->variant, "Ok")) {
                         if (ok) die_at(arm->line, "duplicate Ok arm");
                         if (arm->nbinds != 1) die_at(arm->line, "Ok(x) binds exactly one value");
                         vars_push(arm->binds[0], okt, 1); ok = 1;
@@ -4955,17 +4970,21 @@ static void resolve_stmt(Stmt *s, Type ret) {
                         if (arm->nbinds != 1) die_at(arm->line, "Err(e) binds exactly one value");
                         vars_push(arm->binds[0], errt, 1); err = 1;
                     } else {
-                        die_at(arm->line, "a Result's arms are Ok(x) and Err(e), not '%s'", arm->variant);
+                        die_at(arm->line, "a Result's arms are Ok(x), Err(e), and _, not '%s'", arm->variant);
                     }
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                if (!ok || !err) die_at(s->line, "match on a Result must cover both Ok and Err");
+                if (!wild && (!ok || !err)) die_at(s->line, "match on a Result must cover both Ok and Err");
             } else if (IS_ENUM(st)) {
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 int *covered = (int *)calloc((size_t)ed->nvariants, sizeof(int));
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
+                    if (!strcmp(arm->variant, "_")) {   /* catch-all: no variant, no binding */
+                        resolve_block(arm->body, arm->nbody, ret);
+                        continue;
+                    }
                     int vi = -1;
                     for (int v = 0; v < ed->nvariants; v++)
                         if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
@@ -4980,10 +4999,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
                 }
-                for (int v = 0; v < ed->nvariants; v++)
-                    if (!covered[v])
-                        die_at(s->line, "non-exhaustive match: missing variant %s of %s",
-                               ed->variants[v].name, ed->name);
+                if (!wild)
+                    for (int v = 0; v < ed->nvariants; v++)
+                        if (!covered[v])
+                            die_at(s->line, "non-exhaustive match: missing variant %s of %s",
+                                   ed->variants[v].name, ed->name);
                 free(covered);
             } else {
                 die_at(s->line, "match expects an Option, Result, or enum value, got %s", type_name(st));
@@ -7436,57 +7456,69 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             Type st = s->expr->type;
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "%s_m%d = %s;\n", c_type(st), mid, scrut);
+            /* a `_` wildcard arm (resolver guarantees it is last) fills whichever
+             * explicit branch is absent. */
+            MatchArm *wildarm = NULL;
+            for (int i = 0; i < s->narms; i++)
+                if (!strcmp(s->arms[i].variant, "_")) wildarm = &s->arms[i];
             if (IS_OPT(st)) {
                 Type inner = opt_inner(st);
                 MatchArm *some = NULL, *none = NULL;
                 for (int i = 0; i < s->narms; i++)
                     if (!strcmp(s->arms[i].variant, "Some")) some = &s->arms[i];
-                    else none = &s->arms[i];
+                    else if (!strcmp(s->arms[i].variant, "None")) none = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.has) {\n", mid);
-                indent(o, ind + 2);
-                int sborrow = type_is_heap(inner)
-                    && !block_mutates(some->body, some->nbody, some->binds[0]);
-                fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
-                        sborrow ? sfmt("_m%d.val", mid)
-                                : copy_into(inner, scope, sfmt("_m%d.val", mid)));
-                int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : scope);
-                gen_block(o, some->body, some->nbody, ind + 2, scope, ret);
-                cv_restore(m);
+                if (some) {
+                    indent(o, ind + 2);
+                    int sborrow = type_is_heap(inner)
+                        && !block_mutates(some->body, some->nbody, some->binds[0]);
+                    fprintf(o, "%sh_%s = %s;\n", c_type(inner), some->binds[0],
+                            sborrow ? sfmt("_m%d.val", mid)
+                                    : copy_into(inner, scope, sfmt("_m%d.val", mid)));
+                    int m = cv_mark(); cv_push(some->binds[0], sborrow ? NULL : scope);
+                    gen_block(o, some->body, some->nbody, ind + 2, scope, ret);
+                    cv_restore(m);
+                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "} else {\n");
-                gen_block(o, none->body, none->nbody, ind + 2, scope, ret);
+                gen_block(o, none ? none->body : wildarm->body, none ? none->nbody : wildarm->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else if (IS_RES(st)) {   /* Ok(x) -> .okv / Err(e) -> .errv, tag is .ok */
                 Type okt = res_ok(st), errt = res_err(st);
                 MatchArm *okarm = NULL, *errarm = NULL;
                 for (int i = 0; i < s->narms; i++)
                     if (!strcmp(s->arms[i].variant, "Ok")) okarm = &s->arms[i];
-                    else errarm = &s->arms[i];
+                    else if (!strcmp(s->arms[i].variant, "Err")) errarm = &s->arms[i];
                 indent(o, ind + 1); fprintf(o, "if (_m%d.ok) {\n", mid);
-                indent(o, ind + 2);
-                int okborrow = type_is_heap(okt)
-                    && !block_mutates(okarm->body, okarm->nbody, okarm->binds[0]);
-                fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
-                        okborrow ? sfmt("_m%d.okv", mid)
-                                 : copy_into(okt, scope, sfmt("_m%d.okv", mid)));
-                int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : scope);
-                gen_block(o, okarm->body, okarm->nbody, ind + 2, scope, ret);
-                cv_restore(m);
+                if (okarm) {
+                    indent(o, ind + 2);
+                    int okborrow = type_is_heap(okt)
+                        && !block_mutates(okarm->body, okarm->nbody, okarm->binds[0]);
+                    fprintf(o, "%sh_%s = %s;\n", c_type(okt), okarm->binds[0],
+                            okborrow ? sfmt("_m%d.okv", mid)
+                                     : copy_into(okt, scope, sfmt("_m%d.okv", mid)));
+                    int m = cv_mark(); cv_push(okarm->binds[0], okborrow ? NULL : scope);
+                    gen_block(o, okarm->body, okarm->nbody, ind + 2, scope, ret);
+                    cv_restore(m);
+                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "} else {\n");
-                indent(o, ind + 2);
-                int errborrow = type_is_heap(errt)
-                    && !block_mutates(errarm->body, errarm->nbody, errarm->binds[0]);
-                fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
-                        errborrow ? sfmt("_m%d.errv", mid)
-                                  : copy_into(errt, scope, sfmt("_m%d.errv", mid)));
-                int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : scope);
-                gen_block(o, errarm->body, errarm->nbody, ind + 2, scope, ret);
-                cv_restore(m2);
+                if (errarm) {
+                    indent(o, ind + 2);
+                    int errborrow = type_is_heap(errt)
+                        && !block_mutates(errarm->body, errarm->nbody, errarm->binds[0]);
+                    fprintf(o, "%sh_%s = %s;\n", c_type(errt), errarm->binds[0],
+                            errborrow ? sfmt("_m%d.errv", mid)
+                                      : copy_into(errt, scope, sfmt("_m%d.errv", mid)));
+                    int m2 = cv_mark(); cv_push(errarm->binds[0], errborrow ? NULL : scope);
+                    gen_block(o, errarm->body, errarm->nbody, ind + 2, scope, ret);
+                    cv_restore(m2);
+                } else gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
                 indent(o, ind + 1); fprintf(o, "}\n");
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 const char *en = ed->name;
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
+                    if (!strcmp(arm->variant, "_")) continue;   /* the catch-all is the trailing else, below */
                     int vi = 0;
                     for (int v = 0; v < ed->nvariants; v++)
                         if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
@@ -7525,8 +7557,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * because it cannot see the tag dispatch is exhaustive), and any
                  * future non-exhaustive match aborts cleanly instead of silently
                  * falling through. */
-                indent(o, ind + 1);
-                fprintf(o, "else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n");
+                if (wildarm) {   /* `_` catch-all: covers every unlisted variant */
+                    indent(o, ind + 1); fprintf(o, "else {\n");
+                    gen_block(o, wildarm->body, wildarm->nbody, ind + 2, scope, ret);
+                    indent(o, ind + 1); fprintf(o, "}\n");
+                } else {
+                    indent(o, ind + 1);
+                    fprintf(o, "else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n");
+                }
             }
             indent(o, ind); fprintf(o, "}\n");
             break;

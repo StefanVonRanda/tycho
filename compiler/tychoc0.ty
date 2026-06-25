@@ -2232,8 +2232,8 @@ fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
 fn mangle_arm(m: Mctx, v: string) -> string:
     if find(v, ".") >= 0:
         return mangle_dotted(m, v)
-    if v == "Some" or v == "None" or v == "Ok" or v == "Err":
-        return v
+    if v == "_" or v == "Some" or v == "None" or v == "Ok" or v == "Err":
+        return v                                  # `_` wildcard + Option/Result arms are never package symbols
     return m.prefix + v
 
 fn mangle_variants(m: Mctx, vs: [string]) -> [string]:
@@ -6349,13 +6349,19 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             if is_option(sty) or is_result(sty):
                 return hd + gen_match_optres(dc, ctx, sty, scu, variants, allbinds, bodies, names, types) + "    }\n"
             out := hd
+            wild := -1                            # index of a `_` catch-all arm (tychoc guarantees it last)
+            emitted := 0
             i := 0
             for i < len(variants):
                 vname := variants[i]
+                if vname == "_":
+                    wild = i
+                    i = i + 1
+                    continue
                 binds := allbinds[i]
                 pts := variant_ptypes_in(dc, sty, vname)   # generics: bind from the scrutinee's instance (shared variant names)
                 kw := " else if ("
-                if i == 0:
+                if emitted == 0:
                     kw = "    if ("
                 out = out + kw + scu + "->tag == " + str(variant_tag(dc, ctx, vname)) + ") {\n"
                 bn := names                       # arm bindings are scoped to the arm
@@ -6367,12 +6373,19 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                     push(bt, pts[j])
                     j = j + 1
                 out = out + gen_block(bodies[i], bn, bt, dc, ctx) + "    }"
+                emitted = emitted + 1
                 i = i + 1
-            # Exhaustiveness is enforced by tychoc, which gates user programs, so
-            # this else is unreachable -- but emit a trap so the generated C
-            # provably returns on every path (no -Wreturn-type) and any future
-            # non-exhaustive match aborts cleanly instead of falling through.
-            out = out + " else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }"
+            if wild >= 0:                         # `_` catch-all: every unlisted variant
+                opener := " else {\n"
+                if emitted == 0:
+                    opener = "    {\n"
+                out = out + opener + gen_block(bodies[wild], names, types, dc, ctx) + "    }"
+            else:
+                # Exhaustiveness is enforced by tychoc, which gates user programs, so
+                # this else is unreachable -- but emit a trap so the generated C
+                # provably returns on every path (no -Wreturn-type) and any future
+                # non-exhaustive match aborts cleanly instead of falling through.
+                out = out + " else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }"
             return out + "\n    }\n"
         SParFor(v, a, b, body, pid, _sl):
             # CC-3: K = tycho_ncpu() chunk tasks of the lifted __par chunk proc,
@@ -6675,12 +6688,13 @@ fn sacc_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string
                         else:
                             push(bt, result_err(sty))
                 else:
-                    pts := variant_ptypes(dc, ctx, variants[j])
-                    k := 0
-                    for k < len(binds):
-                        push(bn, binds[k])
-                        push(bt, pts[k])
-                        k = k + 1
+                    if len(binds) > 0:            # `_` / no-payload arms have no bindings; skip the lookup (which rejects `_`)
+                        pts := variant_ptypes(dc, ctx, variants[j])
+                        k := 0
+                        for k < len(binds):
+                            push(bn, binds[k])
+                            push(bt, pts[k])
+                            k = k + 1
                 sacc_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
         SParFor(v, a, b, body, pid, _sl):
@@ -6764,6 +6778,13 @@ fn gen_match_optres(dc: Decls, ctx: Ctx, sty: string, scu: string, variants: [st
     for i < len(variants):
         vname := variants[i]
         binds := allbinds[i]
+        if vname == "_":                          # `_` catch-all: no tag test, no binding; tychoc guarantees it is last
+            opener := " else {\n"
+            if i == 0:
+                opener = "    {\n"
+            out = out + opener + gen_block(bodies[i], names, types, dc, ctx) + "    }"
+            i = i + 1
+            continue
         tag := 0
         if vname == "Some" or vname == "Ok":
             tag = 1
@@ -7907,12 +7928,13 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
                         else:
                             push(bt, result_err(sty))
                 else:
-                    pts := variant_ptypes(dc, ctx, variants[j])
-                    k := 0
-                    for k < len(binds):
-                        push(bn, binds[k])
-                        push(bt, pts[k])
-                        k = k + 1
+                    if len(binds) > 0:            # `_` / no-payload arms have no bindings; skip the lookup (which rejects `_`)
+                        pts := variant_ptypes(dc, ctx, variants[j])
+                        k := 0
+                        for k < len(binds):
+                            push(bn, binds[k])
+                            push(bt, pts[k])
+                            k = k + 1
                 collect_block(&acc, bodies[j], bn, bt, dc, ctx)
                 j = j + 1
         SParFor(v, a, b, body, pid, _sl):              # the chunk proc (and its partial type) is a lifted Func,

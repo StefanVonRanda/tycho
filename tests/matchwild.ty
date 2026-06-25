@@ -1,0 +1,42 @@
+# `_` wildcard match arm: a catch-all covering every unlisted variant (enum), or the
+# unlisted Some/None / Ok/Err (Option/Result). Must be the last arm and bind nothing;
+# it makes the match exhaustive without listing the rest.
+enum J:
+    JNull
+    JNum(int)
+    JStr(string)
+    JArr([int])
+
+fn classify(x: J) -> string:
+    match x:
+        JArr(xs):
+            return "arr:" + str(len(xs))
+        JNum(v):
+            return "num:" + str(v)
+        _:                       # covers JNull and JStr
+            return "other"
+
+fn opt_or(o: Option(int)) -> int:
+    match o:
+        Some(v):
+            return v
+        _:                       # covers None
+            return -1
+
+fn first_listed(o: Option(int)) -> int:
+    match o:
+        None:
+            return 0
+        _:                       # covers Some, discarding its payload
+            return 1
+
+fn res_any(r: Result(int, string)) -> string:
+    match r:
+        _:                       # catch-all only — covers both Ok and Err
+            return "any"
+
+fn main():
+    print(classify(JArr([1, 2, 3])) + " " + classify(JNum(7)) + " " + classify(JNull) + " " + classify(JStr("x")) + "\n")
+    print(str(opt_or(Some(42))) + " " + str(opt_or(None)) + "\n")
+    print(str(first_listed(Some(9))) + " " + str(first_listed(None)) + "\n")
+    print(res_any(Ok(1)) + " " + res_any(Err("e")) + "\n")

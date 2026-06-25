@@ -741,7 +741,18 @@ fn main():
     print(str(eval(expr)) + "\n")    # 20
 ```
 
-Every `match` must be **exhaustive** — every variant needs an arm. The compiler won't let you forget a case.
+Every `match` must be **exhaustive** — every variant needs an arm. The compiler won't let you forget a case. A trailing **`_` wildcard** arm is the catch-all: it covers every variant you didn't list (and the unlisted `Some`/`None` or `Ok`/`Err`), so you only spell out the cases you care about:
+
+```
+fn describe(e: Expr) -> string:
+    match e:
+        Num(v):
+            return "literal " + str(v)
+        _:                       # Add and Mul both land here
+            return "operation"
+```
+
+The `_` must be the last arm and binds nothing.
 
 Enums are value-semantic too: copying an enum value deep-copies the whole tree.
 
