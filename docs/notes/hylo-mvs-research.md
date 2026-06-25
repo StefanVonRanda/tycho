@@ -107,12 +107,16 @@ internals — none are quick wins:
    guaranteed, visible, compiler-checked move. Arena-compatible, no refcounting, attacks
    real copy costs (passing a large value you're done with into a collection/constructor).
    Best effort-to-value ratio. Pairs with method bundles for ergonomics. **Update —
-   prototyped in tychoc (`sink-prototype.md`): it works and is sound, and it adds
-   owned-mutable params + zero-copy handoff of *fresh* values, but the arena bounds the
-   copy-elision to fresh values — a named variable still copies, because adopting an
-   outer-arena value into a mutating callee is only a no-op when the arenas coincide. The
-   full payoff needs arena-placement analysis, so `sink` is more a clarity convention than
-   a performance one until that is built. This refines the "best effort-to-value" claim.**
+   prototyped in tychoc (`sink-prototype.md`): sound and arena-compatible. It adds
+   owned-mutable params and elides the call-site copy for fresh values AND dead named
+   variables. The arena-placement step (flagged below as the real work) landed as a small
+   relaxation of move-on-last-use — drop the same-arena match for a *consuming* call, gated
+   by read-once-outside-loops, since the callee only needs the buffer to outlive the call
+   (any enclosing local's does) and the mutation to be unobserved. Verified against an
+   adversarial soundness battery (loop, closure-capture-after-sink, use-after) + make test
+   227/0 + fixpoint. Remaining: a use-after-`sink` consume diagnostic, and a tychoc0 mirror;
+   *escape* (returning the param) is still a copy — the arena's hard limit. So `sink` is a
+   real copy-eliminating convention here, narrower than Hylo's only at escape.**
 2. **Evaluate `remote-parts`-style limited references** for graph/cyclic structures — the
    only path to ergonomic shared structures within MVS, but it taxes serialization and
    value-semantics reasoning. Prototype and measure before committing; it is a thesis-level

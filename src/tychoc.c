@@ -5697,6 +5697,26 @@ static int can_move_from(Expr *rhs, const char *owner) {
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
 }
 
+/* --- sink-argument adopt (deep-copy elision into a `sink` parameter) -----
+ * A `sink` parameter is consumed by the callee, which OWNS and may mutate it.
+ * A named local can be ADOPTED (handed off without a copy) under move-on-last-use's
+ * conditions EXCEPT the same-arena requirement. Unlike `b := a` — where `b` takes
+ * over the buffer and the buffer must therefore live in b's arena — a sink CALL only
+ * needs (1) the buffer to outlive the call and (2) the in-place mutation to be
+ * unobserved. (1) holds for ANY tracked local: locals live in a block/function arena
+ * that strictly encloses the per-statement argument scratch (`_t`) the call's args are
+ * built in, so the local's buffer always outlives the call. (2) holds when the source
+ * is read exactly once outside any loop, so this one read is its last on every path
+ * (the same gate as move-on-last-use, minus the arena match). Escape is still a copy:
+ * returning the sink param re-homes it to _parent like any value. */
+static int can_move_into_sink(Expr *rhs) {
+    if (rhs->kind != E_IDENT || !type_is_heap(rhs->type)) return 0;
+    if (is_param(rhs->sval)) return 0;          /* a param borrows the caller's buffer — never adopt */
+    if (g_loop_depth != 0) return 0;            /* one textual read must be one dynamic read */
+    if (!cv_arena(rhs->sval)) return 0;         /* a tracked local: its arena encloses the call scope */
+    return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
+}
+
 /* --- match-arm payload borrow (deep-copy elision) -----------------------
  * Binding a heap enum payload field (`Add(l, r)` over an Expr) normally
  * deep-copies that field's whole subtree into the arm's arena, so the
@@ -5961,6 +5981,16 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
         if (!self_move && !can_move_from(arg, arena))
             v = copy_into(t, arena, v);
     }
+    return v;
+}
+
+/* arg_into for a `sink` parameter: a fresh value (non-place) is already owned in
+ * `arena`; a place is adopted when can_move_into_sink holds (a dead local in ANY
+ * enclosing arena — the arena-placement relaxation), else copied. */
+static char *sink_arg_into(Type t, const char *arena, Expr *arg) {
+    char *v = gen_expr(arg, arena);
+    if (type_is_heap(t) && is_place(arg) && !can_move_into_sink(arg))
+        v = copy_into(t, arena, v);
     return v;
 }
 
@@ -6395,7 +6425,7 @@ static char *gen_call(Expr *e, const char *arena) {
          * value (no copy) and copies an otherwise-live place — exactly move-on-last-use
          * applied to the call boundary. (A borrowed param below just shares the buffer.) */
         int sink_arg = cs && i < cs->nparams && cs->sink[i] && type_is_heap(cs->params[i]);
-        char *a = sink_arg ? arg_into(cs->params[i], g_cur_scope, e->args[i])
+        char *a = sink_arg ? sink_arg_into(cs->params[i], g_cur_scope, e->args[i])
                            : gen_expr(e->args[i], g_cur_scope);
         if (cs && i < cs->nparams && cs->mut[i] && type_is_heap(cs->params[i])
             && e->args[i]->kind == E_ADDR) {

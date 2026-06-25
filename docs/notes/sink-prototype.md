@@ -40,44 +40,63 @@ that **adopts** a movable value with no copy and **copies** an otherwise-live on
 - No regression: `make test` 227/0, fixpoint B==C green (the machinery is inert for every
   program that doesn't use `sink`).
 
-## The honest finding: the arena bounds `sink`'s benefit to fresh values
+## The arena-placement analysis: dead named variables adopt too
 
-The elision fires for a **fresh value** (literal, call result) because it is already built
-in the call's transient scope, so handing it off is a same-arena move. It does **not**
-fire for a **named variable**, even one that is dead after the call: `scale2(a)` copies
-`a`. The reason is structural, not a missing optimization —
+The first cut copied every *named* variable, even one dead after the call, because it
+reused `can_move_from`, whose same-arena requirement a named variable can't meet (it lives
+in an outer arena, not the call's transient scratch). The fix turned out to be a
+*relaxation*, not a re-placement: for a `sink` call the same-arena requirement is
+unnecessary.
 
-> `arg_into` adopts only when `can_move_from` holds, and that requires the source's arena
-> to equal the call's scope. A named variable lives in an outer / longer-lived arena, so
-> adopting it would hand a buffer from one arena to a callee that mutates it; the move is
-> only sound (and only a no-op) when the arenas coincide.
+A `sink` callee CONSUMES the argument — it mutates the buffer during the call and does not
+keep it (escape is a separate copy, below). So adopting a named local is sound when:
 
-So in Tycho's arena model `sink` delivers:
+1. **the buffer outlives the call** — true for ANY tracked local, because a local lives in
+   a block/function arena that strictly encloses the per-statement scratch (`_t`) the
+   arguments are built in; and
+2. **the mutation is unobserved** — true when the source is read exactly once and outside
+   any loop, so this read is its last on every path.
 
-1. **owned, mutable parameters** — new capability; a borrow cannot be mutated, so today
-   you must copy first. `sink` removes that copy for the build-and-hand-off pattern.
-2. **zero-copy handoff of fresh values** into a mutating callee.
+That is `can_move_from`'s gate minus the arena match. `can_move_into_sink` implements
+exactly that, and a `sink` array argument now adopts a dead local from any enclosing arena:
 
-…but **not** the general "move an existing variable into a callee without a copy" that
-`sink` gives in Hylo's move-semantics model, because there lifetime is tracked
-independently of lexical scope, whereas here lifetime *is* the arena. This is the same
-boundary `bench/trie` and `value-semantics-limits.md` hit from the storage side, now seen
-from the copy-elimination side.
+    a := [1, 2, 3]
+    scale2(a)        // emitted: h_scale2(&_t, h_a)  — NO copy; a is dead, adopted + mutated
+
+The copies that remain are the genuinely necessary ones, verified by an adversarial
+battery (all value-semantics-correct, ASan/UBSan-clean):
+
+| case | behaviour | why |
+|---|---|---|
+| `dbl(a)`, `a` dead after | **adopt** (no copy) | last use, not in a loop |
+| `dbl(b)` then read `b` | copy | `b` observed after → must stay independent |
+| `dbl(c)` inside a `for` | copy each iteration | one textual read, many dynamic reads |
+| `dbl(d)` then a closure captures `d` | copy | the capture counts as a later read |
+| fresh `dbl([5,5,5])` | adopt | already owned in the call scope |
+
+So `sink` now elides the copy for **fresh values and dead named variables** — the
+build-and-hand-off and transform-and-discard patterns — and copies only when value
+semantics actually require independence.
 
 ## What a production `sink` would still need
 
-- **Arena-placement analysis** so a dead named variable can be adopted: place such a
-  variable in (or re-home it once to) an arena compatible with the sink call, so the
-  handoff is a same-arena move. This is the real work, and the real payoff.
-- **A consume diagnostic** for predictability (Hylo errors on use-after-`sink`); the
-  prototype silently copies instead, which is sound but not the compiler-checked guarantee.
+- **A consume diagnostic** for predictability — Hylo *errors* on use-after-`sink`, forcing
+  an explicit copy; this prototype silently copies instead (sound, but not the
+  compiler-checked guarantee). A diagnostic would make the elision predictable not
+  best-effort.
+- **Escape is still a copy**: returning / storing-into-a-returned-value re-homes the sink
+  param to `_parent`. That is the arena's hard limit (a value outliving its scope must be
+  copied to a longer-lived arena) — the same boundary `bench/trie` hits from the storage
+  side. `sink` removes the *call-site* copy, not the *escape* copy.
 - **`tychoc0` mirror** + harness tests before it is a language feature rather than an
   experiment.
 
 ## Verdict
 
-`sink` is sound and arena-compatible, and it adds a genuine capability (owned-mutable
-params + fresh-value handoff). But the prototype shows its copy-elimination payoff is
-**narrower** in an arena language than the research note implied: bounded to fresh values
-unless arena-placement analysis is added. Worth pursuing only alongside that analysis —
-otherwise it is a clarity/ownership convention more than a performance one.
+`sink` is sound, arena-compatible, and now elides the copy for both fresh values and dead
+named variables (verified against an adversarial soundness battery; `make test` 227/0,
+fixpoint B==C). The arena-placement step was the real payoff, and it landed as a small,
+auditable *relaxation* of move-on-last-use (drop the arena match for a consuming call)
+rather than a new analysis pass. What is left is ergonomics (a consume diagnostic) and
+parity (`tychoc0`), not soundness — `sink` is a real, if still experimental,
+copy-eliminating convention.
