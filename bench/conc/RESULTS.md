@@ -1,10 +1,11 @@
 # Concurrency head-to-head: tycho vs C vs Go vs Rust
 
-`make bench-conc`. Two workloads, identical logic and checksum in every
+`make bench-conc`. Three workloads, identical logic and checksum in every
 language, each binary picking K = online cores itself. Fair-bench rule: every
 language at its standard optimized build (tycho -O3 via tychoc, C `-O3
--pthread`, `go build`, `rustc -O`). Measured via bench/peakrss (peak RSS +
-wall). 2026-06-11, AMD Ryzen 7 7735HS, 16 hw threads, Linux.
+-pthread`, `go build` (Go 1.26.2), `rustc -O`). Measured via bench/peakrss
+(peak RSS + wall). AMD Ryzen 7 7735HS, 16 hw threads, Linux (parreduce/pipeline
+2026-06-11; pool 2026-06-25).
 
 ## parreduce — compute-bound parallel reduction
 
@@ -84,9 +85,53 @@ tycho holds ~2.8 MB — bounded by design (cap x payload via per-cell arenas),
 every arm is open-but-empty (worst-case wake latency ~50us; a select cannot
 park on N condvars). See `tests/conc/select.ty`.
 
+## pool — worker pool vs Go's channel pool
+
+1 producer -> `channel(int, 256)` -> K = online-cores workers, 10^6 integer
+jobs, each worker running the same 50-step MINSTD kernel
+(`x = x*48271 % (2^31-1)`); checksum = sum of the kernel over all jobs
+(order-independent). The contrast with `pipeline` is the **worker side**: tycho
+spawns no consumers by hand — the whole pool is one line, `parallel for j in
+jobs:`, which fans out K workers that share the queue and drain it until closed.
+Go is the classic `for j := range jobs` pool behind a `WaitGroup`; C is a
+textbook mutex+condvar bounded ring; Rust shares one `Receiver` behind an
+`Arc<Mutex<>>` (std has no MPMC channel). Median of 3 runs (±5 ms):
+
+| lang | peak RSS | wall | checksum | worker side |
+|------|---------:|-----:|---------:|-------------|
+| tycho | 2.7 MB |  150 ms | 1073744035926657 | `parallel for j in jobs:` — runtime fans out K, lock-free Vyukov queue |
+| C    | 1.5 MB | 1975 ms | 1073744035926657 | hand-rolled mutex+condvar ring, signal per item |
+| Go   | 2.3 MB |  157 ms | 1073744035926657 | `for j := range jobs` + `WaitGroup`, runtime channel |
+| Rust | 2.1 MB |  395 ms | 1073744035926657 | `Arc<Mutex<Receiver>>` (std mpsc), lock serializes recv |
+
+Honest reading:
+
+1. **Against Go — the comparison this benchmark is for — tycho is at parity,
+   ~5% faster here** (150 vs 157 ms) at comparable memory (2.7 vs 2.3 MB), and
+   the tycho side is a single `parallel for j in jobs:` against Go's
+   hand-written worker loop + `WaitGroup`. Both ride a tuned runtime channel
+   (tycho's lock-free Vyukov MPMC, Go's runtime chan); the new sugar adds no
+   measurable cost over the channel itself.
+2. **C is ~13x slower — and that is the honest cost of a naive channel, not a
+   tycho win.** The textbook mutex+condvar ring signals a condvar on every
+   send and every recv, so K workers + the producer thrash one lock and storm
+   the futex 2x10^6 times. A hand-tuned lock-free C ring (exactly what tycho's
+   runtime *is*) would compete — the point is tycho ships that ring, so the
+   one-liner gets it for free. Same pattern as `pipeline` (C's mutex ring at
+   654 ms there).
+3. **Rust's `Arc<Mutex<Receiver>>` (~2.6x) pays for std lacking an MPMC
+   channel**: every worker locks the shared receiver to take a job, serializing
+   the hand-off. `crossbeam`'s channel would close most of the gap; this is the
+   std-only idiom.
+
+The kernel is real per-item CPU work (5x10^7 MINSTD steps total), so this
+measures pool coordination *plus* compute, not pure hand-off — which is why the
+lock-contention tail (C, Rust) shows up so starkly while tycho and Go, both
+lock-free on the hot path, track each other.
+
 ## Caveats
 
-- Single-machine, single-run numbers; rerun on your hardware
+- Single-machine numbers (pool is a 3-run median); rerun on your hardware
   (`make bench-conc` checks the cross-language checksum every run).
 - Message-passing is a throughput-per-message benchmark; at this payload
   size (6-11 bytes) per-message overhead dominates. Larger payloads shrink

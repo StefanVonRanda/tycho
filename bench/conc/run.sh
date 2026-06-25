@@ -8,6 +8,11 @@
 #              string payloads (tycho channels deep-copy every payload twice
 #              -- value semantics; C passes pointers, Go shares under GC,
 #              Rust moves ownership)
+#   pool       1 producer -> bounded channel(cap 256) -> K=cores workers, 1e6
+#              int jobs each running a 50-step MINSTD kernel. tycho uses the
+#              `parallel for x in ch:` sugar (no hand-spawned workers); Go is
+#              the classic `for j := range jobs` WaitGroup pool; C is a
+#              mutex+condvar ring; Rust shares one Receiver behind a Mutex
 #
 # Fair-bench rule: each language at its standard optimized build (tycho -O3
 # via tychoc, C -O3, go build, rustc -O). Each binary picks K = online cores
@@ -54,4 +59,5 @@ bench() {                                    # <name>
 printf '  %-6s %10s %10s   %s\n' lang peakRSS time checksum
 bench parreduce
 bench pipeline
+bench pool
 [ $FAIL -eq 0 ] && echo "conc bench: ok (checksums agree)" || { echo "conc bench: CHECKSUM FAILURE"; exit 1; }

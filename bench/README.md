@@ -98,8 +98,10 @@ Not cleanly benchmarkable, and why (honest negative space):
   measures them head-to-head — `parallel for` lands at exact C-pthreads
   parity on the compute-bound reduction, and the lock-free channels beat a
   hand-written C mutex ring 2.6x while still paying the per-message deep
-  copies (the remaining gap to Go is its userspace scheduler). See
-  `conc/RESULTS.md`.
+  copies. On the `pool` workload — a bounded-channel worker pool written as
+  one line, `parallel for x in ch:` — tycho is at Go parity (~5% faster, 150
+  vs 157 ms) against Go's hand-written `range`-over-channel + `WaitGroup`
+  pool, both lock-free on the hot path. See `conc/RESULTS.md`.
 
 See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's
 `RESULTS.md` for the per-workload analysis.
