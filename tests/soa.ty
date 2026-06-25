@@ -3,8 +3,8 @@
 # records. Core ops: empty literal `soa []Struct`, push, len, field read
 # `a[i].f`, field write `a[i].f = v`. Bounds-checked like the AoS arrays.
 # Deterministic, so the differential harness asserts native and ASan/UBSan
-# builds agree byte-for-byte. (Whole-element gather `p := a[i]`, ==, slices, and
-# pass/return-by-value are deferred to later increments.)
+# builds agree byte-for-byte. Whole-element gather (`p := a[i]`), ==, slices, and
+# pass/return-by-value are all supported (exercised below).
 
 struct Particle:
     x: int

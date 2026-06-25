@@ -1364,11 +1364,11 @@ ch.<span class="fn">send</span>(<span class="str">"hello"</span>)            <sp
 <h2>Corelib Packages</h2>
 <div class="table-wrap"><table>
 <tr><th>Package</th><th>What it provides</th></tr>
-<tr><td><code>core:math</code></td><td><code>abs</code>, <code>imin</code>, <code>imax</code>, <code>clamp</code>, <code>gcd</code>, <code>ipow</code></td></tr>
+<tr><td><code>core:math</code></td><td><code>min</code>, <code>max</code>, <code>clamp</code>, <code>sign</code> (generic), plus int <code>abs</code>, <code>gcd</code>, <code>ipow</code></td></tr>
 <tr><td><code>core:strings</code></td><td><code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>trim</code>, <code>replace</code></td></tr>
-<tr><td><code>core:arrays</code></td><td><code>[int]</code> utilities: <code>contains</code>, <code>sum</code>, <code>sort</code>, <code>reverse</code></td></tr>
+<tr><td><code>core:arrays</code></td><td>generic over any <code>[$T]</code>: <code>contains</code>, <code>sum</code>, <code>sort</code>, <code>reverse</code></td></tr>
 <tr><td><code>core:iter</code></td><td>Higher-order: <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>any</code></td></tr>
-<tr><td><code>core:sort</code></td><td><code>argsort</code>, <code>argsort_str</code>, <code>by_key</code></td></tr>
+<tr><td><code>core:sort</code></td><td><code>argsort</code>, <code>argsort_desc</code>, <code>by_key</code></td></tr>
 <tr><td><code>core:rand</code></td><td><code>seed</code>, <code>next</code>, <code>below</code>, <code>shuffle</code> (xorshift32)</td></tr>
 </table></div>
 
