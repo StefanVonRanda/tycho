@@ -28,6 +28,9 @@ where shown.
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
 | **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 77.9, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
+| **json-tree** | a tagged value tree held across a fold | 37 MB vs C 35, Go 28.5 | ≈ C — **value-shaped** data, zero manual mgmt | `json/` |
+| **trie** | pointer-linked recursive nodes (each owns a child map) | 103 MB vs C 38, Go 34 | **~2.7× C — the standing loss**: children stored by value, not by pointer | `trie/` |
+| **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
 
 ## Axis 2 — latency (GC-pause predictability)
 
@@ -35,6 +38,29 @@ where shown.
 |----------|------------------|--------|---------|-----|
 | **latency** | steady churn, pause behavior | tycho/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
 | **gcscan** | GC scan cost under a large live set | tycho/C never scan; Go cheap at default GOGC, but `GOGC=10` matches tycho's RAM only at 2.5× wall | Go faces a memory-vs-CPU tradeoff tycho/C don't | `bench-gcscan` |
+
+## The shape dimension — value-shaped vs pointer-shaped data
+
+The clearest predictor of whether tycho matches C is the **shape** of the data, not the
+domain of the workload:
+
+- **Value-shaped** (owned in one place, not shared) — a JSON value tree (`json/`: 37 vs
+  35 MB), a SQLite result set (`dbquery/`), a flat array pipeline. tycho lands **≈ C**,
+  writing none of the memory management. The model at its best.
+- **Pointer-shaped** (a node referenced/shared through pointers) — a trie whose nodes each
+  own a child map (`trie/`: **103 vs 38 MB, ~2.7× C**). Value semantics store children *by
+  value*, not by reference, so every edge costs a whole node rather than an 8-byte pointer,
+  and there is no sharing. This is a **standing cost, fundamental to mutable value
+  semantics** — the most mature MVS language (Hylo) hits the identical wall
+  (`docs/notes/hylo-mvs-research.md`), not a tycho implementation shortfall.
+- **The bridge** — express the same graph as an **adjacency list of integer indices**
+  (`dijkstra/`: **41 vs 31.5 MB, ~1.3× C**, ≈ Go). Indices are value-shaped, so the graph
+  drops from ~2.7× to ~1.3× C. This is the idiom `docs/notes/value-semantics-limits.md`
+  prescribes for pointer-shaped data, measured on a real algorithm.
+
+So the honest rule: value semantics + arenas match C on value-shaped data and pay a real
+premium on pointer-linked structures — and the index idiom is how you turn the latter into
+the former when the premium matters.
 
 ## The honest envelope
 
@@ -50,9 +76,13 @@ where shown.
   - eviction of **heap-bearing** records (`window`): 47 MB → 4.2 MB, ~14× C →
     ~1.3× C (**MM-9**, per-element overwrite recycle + segregated free-list).
     Fixed-size records already tied.
-- **Loses:** no remaining clean defeat on these workloads. Hold-and-grow peak
-  (`invindex`, `arr_pipeline`) is ~1.3–2× C and needs sizing/`reserve`, like every
-  language — a cost, not a defeat.
+- **Loses:** **pointer-linked data structures** are a genuine standing cost — a trie of
+  nodes that each own a child map is ~2.7× C (`trie/`), because value semantics store
+  children by value, not by pointer. It is fundamental to the model (Hylo hits the same
+  wall), and *mitigated* — not erased — by the index idiom (`dijkstra/`: ~1.3× C).
+  Hold-and-grow peak (`invindex`, `arr_pipeline`) is ~1.3–2× C and needs sizing/`reserve`,
+  like every language. Neither is a *correctness* defeat — both are honest memory costs of
+  the model, stated as plainly as the wins.
 
 Not cleanly benchmarkable, and why (honest negative space):
 - **Cache locality of pointer-chasing** (a long linked-list traversal). It isn't a
