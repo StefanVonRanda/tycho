@@ -941,12 +941,31 @@ static int mapkey_composite(Type k) { return IS_STRUCT(base_of(k)); }
 static int key_hashable(Type t) {
     t = base_of(t);
     if (t == T_INT || t == T_FLOAT || t == T_BOOL || t == T_CHAR || t == T_STRING || t == T_BYTES) return 1;
-    if (enum_fieldless(t)) return 1;
     if (IS_STRUCT(t)) {
         StructDef *sd = &g_structs[STRUCT_ID(t)];
         for (int i = 0; i < sd->nfields; i++) if (!key_hashable(sd->fields[i].type)) return 0;
         return 1;
     }
+    return 0;
+}
+/* is struct `want` reachable inside composite key type kt (the key itself, or a
+ * struct field of it, recursively)? */
+static int struct_in_key(Type want, Type kt) {
+    kt = base_of(kt);
+    if (kt == want) return 1;
+    if (IS_STRUCT(kt)) {
+        StructDef *sd = &g_structs[STRUCT_ID(kt)];
+        for (int j = 0; j < sd->nfields; j++)
+            if (struct_in_key(want, sd->fields[j].type)) return 1;
+    }
+    return 0;
+}
+/* does any composite-keyed map use struct `st` (as its key, or a nested key field)?
+ * Only such structs get a tycho_hash_S_ emitted -- the hash calls tycho_ik_hash /
+ * tycho_si_hash, which are only emitted when the program uses maps. */
+static int struct_keyused(Type st) {
+    for (int i = 0; i < g_nmaptypes; i++)
+        if (mapkey_composite(g_maptypes[i].key) && struct_in_key(st, g_maptypes[i].key)) return 1;
     return 0;
 }
 /* a map key expression as the runtime stores it: a fieldless-enum key passes its TAG */
@@ -8165,7 +8184,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (type_is_heap(STRUCT_TYPE(i)))
             fprintf(o, "static S_%s tycho_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
-        if (key_hashable(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
+        if (struct_keyused(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
             fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v);\n", nm, nm);
     }
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
@@ -8245,7 +8264,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * matters (the multiply runs before the xor). */
     for (int i = 0; i < g_nstructs; i++) {
         if (g_structs[i].generic) continue;
-        if (!key_hashable(STRUCT_TYPE(i))) continue;
+        if (!struct_keyused(STRUCT_TYPE(i))) continue;
         StructDef *sd = &g_structs[i];
         fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v) {\n", sd->name, sd->name);
         fprintf(o, "    unsigned long h = tycho_hash_k0;\n");

@@ -1,0 +1,7 @@
+get=11 miss=-1
+in=true len=2
+order=(1,2)(3,4)
+del: len=1 gone=true
+alice=5 keyname=alice
+eq=true neq=false
+edge=diag emiss=?

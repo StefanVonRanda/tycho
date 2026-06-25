@@ -567,8 +567,10 @@ All the map operations (`m[k] = v` / `map_get` / `k in m` / `delete m[k]` /
 `keys` / `len`, `==` deep value equality, the in-place accumulator, `mut`) work
 the same regardless of key or value type; `map_get`'s default and the stored
 value take the map's value type, and the key takes its key type. A key may also
-be a newtype over `string`/`int` or a fieldless enum; *not yet:* struct or tuple
-keys.
+be a newtype over `string`/`int`, a fieldless enum, or a **struct** of hashable
+fields (`[Point: int]`, `[Person: V]`, nested structs too) — stored by value and
+compared/hashed deeply, so `m[Point(1, 2)]` is the same entry every time; *not
+yet:* tuple keys, or struct keys with array/map fields.
 
 ### Option and `match`
 

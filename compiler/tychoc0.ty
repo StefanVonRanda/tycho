@@ -7403,14 +7403,97 @@ fn gen_mhash() -> string:                        # keyed SipHash-1-3 (strings) +
     out = out + "static inline void ord_del_i(long* ord, long* nord, long k) { for (long i = 0; i < *nord; i++) if (ord[i] == k) { for (long j = i + 1; j < *nord; j++) ord[j-1] = ord[j]; (*nord)--; return; } }\n"
     return out
 
+# A composite (struct) map key. Rides the int-key occupancy scheme but stores the
+# struct by value and hashes/compares it deeply.
+fn mapkey_composite(dc: Decls, ctx: Ctx, k: string) -> bool:
+    return is_struct(dc, ctx, resolve_nt(dc, ctx, k))
+
+# A type usable as (a field of) a composite key: every leaf must have a stable deep
+# hash. Scalars + bytes + (recursively) a struct of those qualify; arrays/maps/enums/
+# tuples/functions do not yet (a later stage). Must match tychoc's key_hashable exactly.
+fn key_hashable(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    b := resolve_nt(dc, ctx, ty)
+    if b == "int" or b == "float" or b == "bool" or b == "char" or b == "str" or b == "bytes":
+        return true
+    if is_struct(dc, ctx, b):
+        i := 0
+        for i < len(dc.structs):
+            if dc.structs[i].name == b:
+                j := 0
+                for j < len(dc.structs[i].fields):
+                    if not key_hashable(dc, ctx, dc.structs[i].fields[j].ty):
+                        return false
+                    j = j + 1
+                return true
+            i = i + 1
+        return false
+    return false
+
+# Is struct `want` reachable inside composite key type kt (the key, or a struct field of it)?
+fn struct_in_key(dc: Decls, ctx: Ctx, want: string, kt: string) -> bool:
+    b := resolve_nt(dc, ctx, kt)
+    if b == want:
+        return true
+    if is_struct(dc, ctx, b):
+        i := 0
+        for i < len(dc.structs):
+            if dc.structs[i].name == b:
+                j := 0
+                for j < len(dc.structs[i].fields):
+                    if struct_in_key(dc, ctx, want, dc.structs[i].fields[j].ty):
+                        return true
+                    j = j + 1
+                return false
+            i = i + 1
+        return false
+    return false
+
+# Does any composite-keyed map (in the emitted type list) use struct `sname` as its
+# key or a nested key field? Only such structs get a _hash emitted -- the hash calls
+# ikhash/mhash, which exist only when the program uses maps. Must match tychoc.
+fn struct_keyused(dc: Decls, ctx: Ctx, ets: [string], sname: string) -> bool:
+    i := 0
+    for i < len(ets):
+        if is_map(ets[i]) and mapkey_composite(dc, ctx, map_key(ets[i])) and struct_in_key(dc, ctx, sname, map_key(ets[i])):
+            return true
+        i = i + 1
+    return false
+
+# Deep hash of a field value `v` of type ty (mirrors eq_field + tychoc's gen_hash).
+fn hash_field(dc: Decls, ctx: Ctx, ty: string, v: string) -> string:
+    r := resolve_nt(dc, ctx, ty)
+    if r == "str" or r == "bytes":
+        return "mhash(" + v + ")"
+    if r == "float":
+        return "ikhash((long)((union { double _d; long _l; }){ ._d = (" + v + ") })._l)"
+    if is_struct(dc, ctx, r):
+        return ust(r) + "_hash(" + v + ")"
+    return "ikhash((long)(" + v + "))"            # int / bool / char
+
+# Deep-hash body for a hashable struct used as a map key. Seeded from hash_k0 (the
+# per-process hash-flood seed), FNV-folds field hashes; field order matters so a
+# struct and its field-swapped twin hash differently. Pairs with <nm>_eq.
+fn gen_struct_hash(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
+    nm := ust(sd.name)
+    out := "static unsigned long " + nm + "_hash(" + nm + " v) { unsigned long h = hash_k0;"
+    j := 0
+    for j < len(sd.fields):
+        out = out + " h = h * 1099511628211UL ^ " + hash_field(dc, ctx, sd.fields[j].ty, "v." + uf(sd.fields[j].name)) + ";"
+        j = j + 1
+    return out + " return h; }\n"
+
 fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     k := map_key(ty)
-    if resolve_nt(dc, ctx, k) != "int" and resolve_nt(dc, ctx, k) != "str" and not enum_fieldless(dc, ctx, k):
-        die_at(dc, ctx.line, "type: map keys must be string, int (directly or through a newtype), or a fieldless enum")   # fail-closed: a payload enum / struct / float key fell through to the string-key layout and emitted broken C
+    if resolve_nt(dc, ctx, k) != "int" and resolve_nt(dc, ctx, k) != "str" and not enum_fieldless(dc, ctx, k) and not (mapkey_composite(dc, ctx, k) and key_hashable(dc, ctx, k)):
+        die_at(dc, ctx.line, "type: map keys must be string, int (directly or through a newtype), a fieldless enum, or a struct of hashable fields")   # fail-closed: a payload enum / float / non-hashable-field key fell through and would emit broken C
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)
     M := "Map_" + k + "_" + mangle(v)            # named-tag body; typedef forward-declared in the driver (fn([K:V])->R)
+    if mapkey_composite(dc, ctx, k):             # struct keys: stored by value, deep hash/eq, occupancy array (no null sentinel, like int keys)
+        cks := cty(dc, ctx, k)
+        ck := substr(cks, 0, len(cks) - 1)
+        return "struct " + M + "_ { " + ck + "* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; " + ck + "* ord; long nord; long ocap; };\n"
     if resolve_nt(dc, ctx, k) == "int" or enum_fieldless(dc, ctx, k):   # int(-rep) keys incl. enum tags: a value array + occupancy bytes (0 is a real key)
         return "struct " + M + "_ { long* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; long* ord; long nord; long ocap; };\n"
     return "struct " + M + "_ { char** keys; " + cv + "* vals; long len; long cap; char** ord; long nord; long ocap; };\n"
@@ -7450,6 +7533,26 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     vcmp := " || !(" + eq_field(dc, ctx, v, "b.vals[t]", "a.vals[i]") + ")"   # heap value: deep equality
     if v == "int" or v == "float" or v == "char":
         vcmp = " || b.vals[t] != a.vals[i]"      # scalar: byte-identical to before
+    if mapkey_composite(dc, ctx, k):             # struct keys: occupancy scheme like int keys, but K stored by value, deep-hashed and deep-compared; key deep-copied on put
+        cks := cty(dc, ctx, k)
+        ck := substr(cks, 0, len(cks) - 1)        # struct C type
+        heq := teq(dc, ctx, k)                    # deep-eq fn name
+        hh := ust(resolve_nt(dc, ctx, k)) + "_hash"   # deep-hash fn name
+        kcopy := cp_field(dc, ctx, k, "ar", "k")  # deep-copy the key into ar (passthrough for scalar-field structs)
+        out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(" + ck + ") * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
+        out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
+        out = out + "static void " + s + "_op(Arena* ar, " + ck + "** ord, long* nord, long* ocap, " + ck + " k) { if (*nord == *ocap) { long nc = *ocap ? *ocap * 2 : 8; " + ck + "* nb = amem(ar, sizeof(" + ck + ") * nc); for (long i = 0; i < *nord; i++) nb[i] = (*ord)[i]; *ord = nb; *ocap = nc; } (*ord)[(*nord)++] = k; }\n"
+        out = out + "static long " + s + "_slot(" + M + " m, " + ck + " k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(" + hh + "(k) & mask); while (m.occ[i] != 0) { if (" + heq + "(m.keys[i], k)) return i; i = (long)((i + 1) & mask); } return i; }\n"
+        out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, " + ck + " k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = " + kcopy + "; m->len++; " + s + "_op(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); } m->vals[t] = " + vcopy + "; }\n"
+        out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, " + ck + " k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 8; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = " + kcopy + "; m->len++; " + s + "_op(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
+        out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.nord; i++) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
+        out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, " + ck + " k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
+        out = out + "static " + cv + " " + f + "_get(" + M + " m, " + ck + " k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.occ[t] ? m.vals[t] : def; }\n"
+        out = out + "static int " + f + "_has(" + M + " m, " + ck + " k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.occ[t] != 0; }\n"
+        out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, " + ck + " k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.nord; i++) if (!" + heq + "(m.ord[i], k)) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
+        out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.nord; i++) " + ka + "_push(ar, &r, " + cp_field(dc, ctx, k, "ar", "m.ord[i]") + "); return r; }\n"
+        out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.occ[i]) { long t = " + s + "_slot(b, a.keys[i]); if (b.occ[t] == 0" + vcmp + ") return 0; } return 1; }\n"
+        return out
     if resolve_nt(dc, ctx, k) == "int" or enum_fieldless(dc, ctx, k):
         out := pre + "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(long) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
         out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
@@ -10941,6 +11044,8 @@ fn main():
     i = 0
     for i < len(prog.structs):
         out = out + "static int " + ust(prog.structs[i].name) + "_eq(" + ust(prog.structs[i].name) + " a, " + ust(prog.structs[i].name) + " b);\n"
+        if struct_keyused(dc, ctx, ets, prog.structs[i].name):   # composite map key: forward-declare the deep hash so map slot fns (emitted earlier) can call it
+            out = out + "static unsigned long " + ust(prog.structs[i].name) + "_hash(" + ust(prog.structs[i].name) + " v);\n"
         i = i + 1
     i = 0                                        # 4. user struct bodies (source order; array fields
     for i < len(prog.structs):                   #    use the now-complete Arr_T struct)
@@ -11027,6 +11132,8 @@ fn main():
     i = 0                                        # 8. struct equality + deep-copy fns
     for i < len(prog.structs):
         out = out + gen_struct_eq(dc, ctx, prog.structs[i])
+        if struct_keyused(dc, ctx, ets, prog.structs[i].name):   # composite map key: deep hash, paired with _eq, emitted before any map that uses it
+            out = out + gen_struct_hash(dc, ctx, prog.structs[i])
         if struct_is_heap(dc, ctx, prog.structs[i].name):
             out = out + gen_struct_copy(dc, ctx, prog.structs[i])
         i = i + 1
