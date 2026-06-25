@@ -5499,10 +5499,17 @@ static int is_inout_param(const char *name) {
  * documents but no longer enforces (params are tracked as same-arena _scope
  * locals, which otherwise look movable). Reset per proc. */
 static const char *g_param[16];
+static int g_param_sink[16];   /* parallel: is g_param[i] a `sink` (owned) parameter? */
 static int g_nparam = 0;
 static int is_param(const char *name) {
     for (int i = 0; i < g_nparam; i++)
         if (!strcmp(g_param[i], name)) return 1;
+    return 0;
+}
+/* is `name` a `sink` parameter — an OWNED value (like a local), consumable once? */
+static int is_sink_param(const char *name) {
+    for (int i = 0; i < g_nparam; i++)
+        if (!strcmp(g_param[i], name)) return g_param_sink[i];
     return 0;
 }
 
@@ -5989,8 +5996,17 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
  * enclosing arena — the arena-placement relaxation), else copied. */
 static char *sink_arg_into(Type t, const char *arena, Expr *arg) {
     char *v = gen_expr(arg, arena);
-    if (type_is_heap(t) && is_place(arg) && !can_move_into_sink(arg))
+    if (type_is_heap(t) && is_place(arg) && !can_move_into_sink(arg)) {
+        /* consume diagnostic: a bare local handed to a `sink` parameter but used
+         * again (or inside a loop) cannot be moved into it. Rather than silently
+         * copy, require the move-vs-copy to be visible (Hylo-style): the user
+         * passes a copy they keep, or makes this the variable's last use. A field/
+         * index/param argument still copies (you cannot move a part out of a value). */
+        if (arg->kind == E_IDENT && (!is_param(arg->sval) || is_sink_param(arg->sval)))
+            die_at(arg->line, "'%s' is consumed by a `sink` parameter but used again (or inside a loop); "
+                              "pass a copy you keep (`y := %s`) or make this its last use", arg->sval, arg->sval);
         v = copy_into(t, arena, v);
+    }
     return v;
 }
 
@@ -7854,6 +7870,7 @@ static void gen_proc(FILE *o, Proc *pr) {
         }
     /* register ALL params so can_move_from never hands off a param's buffer */
     g_nparam = 0;
+    for (int i = 0; i < pr->nparams && i < 16; i++) g_param_sink[i] = pr->params[i].is_sink;
     for (int i = 0; i < pr->nparams; i++)
         g_param[g_nparam++] = pr->params[i].name;
     /* a reassigned param must land in this proc's scope to outlive any

@@ -80,16 +80,33 @@ So `sink` now elides the copy for **fresh values and dead named variables** — 
 build-and-hand-off and transform-and-discard patterns — and copies only when value
 semantics actually require independence.
 
-## What a production `sink` would still need
+## Consume diagnostic — done (both compilers)
 
-- **A consume diagnostic** for predictability — Hylo *errors* on use-after-`sink`, forcing
-  an explicit copy; this prototype silently copies instead (sound, but not the
-  compiler-checked guarantee). A diagnostic would make the elision predictable not
-  best-effort.
+`sink` no longer silently copies a reused value: passing an **owned** variable (a local or a
+`sink` parameter) to a `sink` parameter and then using it again — or passing it inside a loop
+— is now a **compile error** in both compilers, so the move is a checked guarantee rather than
+a best-effort optimization. You keep a value by handing the sink an explicit copy:
+
+```
+b := [5]
+keep := b            // explicit copy; b is read again below, so this copies
+x := dbl(keep)       // keep is dead -> adopted; b untouched
+print(b[0])          // 5
+```
+
+The rule excludes **borrowed/mut parameters** (they can never move, so they always copy — an
+error would offer no escape) and field/index arguments (you can't move a part out of a value).
+A `sink` parameter *is* owned, so reusing one after handing it on errors like a local would.
+Reject golden: `tests/reject/sink_use_after.ty` (both compilers reject); the escape hatch is
+exercised in `tests/sink.ty`.
+
+## Remaining
+
 - **Escape is still a copy**: returning / storing-into-a-returned-value re-homes the sink
   param to `_parent`. That is the arena's hard limit (a value outliving its scope must be
   copied to a longer-lived arena) — the same boundary `bench/trie` hits from the storage
-  side. `sink` removes the *call-site* copy, not the *escape* copy.
+  side. `sink` removes the *call-site* copy, not the *escape* copy. This is fundamental to
+  the arena model, not a missing feature.
 `tychoc0` is mirrored: `sink` is in both compilers with a shared golden (`tests/sink.ty`,
 including UFCS), so it is no longer a single-compiler experiment.
 
@@ -111,10 +128,12 @@ exposed:
 
 ## Verdict
 
-`sink` is sound, arena-compatible, and now elides the copy for both fresh values and dead
-named variables (verified against an adversarial soundness battery; `make test` 227/0,
-fixpoint B==C). The arena-placement step was the real payoff, and it landed as a small,
-auditable *relaxation* of move-on-last-use (drop the arena match for a consuming call)
-rather than a new analysis pass. What is left is ergonomics (a consume diagnostic) and
-parity (`tychoc0`), not soundness — `sink` is a real, if still experimental,
-copy-eliminating convention.
+`sink` is sound, arena-compatible, in **both compilers** (direct and UFCS calls), and
+harness-tested (`make test` 229/0, fixpoint B==C). It elides the call-site copy for fresh
+values and dead named variables, and the move is now a **compiler-checked guarantee** —
+use-after-`sink` is an error, not a silent copy. The arena-placement step (adopt a dead
+local from any arena) was the real payoff and landed as a small relaxation of
+move-on-last-use, not a new pass. The only thing the arena model fundamentally can't give
+`sink` is escape elision (a returned value must be copied to a longer-lived arena). Within
+that limit, `sink` is a real, predictable copy-eliminating convention — graduated from
+experiment to feature.

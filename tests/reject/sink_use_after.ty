@@ -1,0 +1,11 @@
+# A variable handed to a `sink` parameter and then used again cannot be moved into it.
+# The consume diagnostic rejects this (the user passes an explicit copy to keep the value),
+# so `sink` is a checked move, not a silent copy. Both compilers must reject.
+fn dbl(xs: sink [int]) -> int:
+    xs[0] = xs[0] + 1
+    return xs[0]
+
+fn main():
+    b := [5]
+    r := dbl(b)                          # b is consumed here ...
+    print(str(b[0]) + " " + str(r))      # ... but used again -> error

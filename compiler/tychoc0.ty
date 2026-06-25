@@ -5821,6 +5821,16 @@ fn can_move_into_sink(e: Expr, ty: string, names: [string], types: [string], dc:
 fn gen_sink_arg(e: Expr, ty: string, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     if can_move_into_sink(e, ty, names, types, dc, ctx):
         return gen_expr(e, names, types, dc, ctx)
+    # consume diagnostic: a bare OWNED variable (a local or a sink param) handed to a
+    # sink parameter but used again (or inside a loop) cannot be moved into it. Require
+    # an explicit copy so move-vs-copy is visible (Hylo-style), rather than silently
+    # copying. Borrowed/mut params (which can never move) and field/index args still copy.
+    nm := evar_name(e)
+    if nm != "" and var_index(names, nm) >= 0:
+        rt := resolve_nt(dc, ctx, ty)
+        isheap := is_array(rt) or is_map(rt) or is_tuple(rt) or is_enum(dc, ctx, rt) or (is_struct(dc, ctx, rt) and struct_is_heap(dc, ctx, rt))
+        if isheap and not has_str(ctx.vparams, nm) and not is_inout(var_type(names, types, nm)):
+            die_at(dc, ctx.line, "'" + nm + "' is consumed by a `sink` parameter but used again (or inside a loop); pass a copy you keep (`y := " + nm + "`) or make this its last use")
     return gen_rhs(e, names, types, dc, ctx)
 
 # Like gen_call_args, but routes a `sink` parameter's argument through gen_sink_arg

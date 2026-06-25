@@ -1,39 +1,27 @@
-# `sink` parameter convention: an OWNED, mutable parameter (a borrow is read-only).
-# The call-site argument is consumed -- ADOPTED with no copy when it is a fresh value
-# or a dead local (read once, outside any loop, from any enclosing arena -- the
-# arena-placement relaxation), else COPIED so value semantics hold. Both compilers.
+# `sink` parameter convention: an OWNED, mutable parameter (a borrow is read-only). The
+# call-site argument is CONSUMED -- ADOPTED with no copy for a fresh value or a dead local
+# (read once, outside any loop, from any enclosing arena). The move is a compiler-checked
+# guarantee: passing a variable you then reuse is an error (tests/reject/sink_use_after.ty),
+# so you copy explicitly to keep it. Both compilers, byte-identical.
 fn dbl(xs: sink [int]) -> int:
     xs[0] = xs[0] + 100        # mutate in place -- legal only because xs is `sink`
     return xs[0]
 
 fn main():
     a := [1]
-    print("1 a=" + str(dbl(a)) + "\n")                  # dead after -> adopt: 101
+    print("1 a=" + str(dbl(a)) + "\n")               # dead after -> adopt: 101
 
-    b := [5]
-    x := dbl(b)
-    print("2 b=" + str(b[0]) + " x=" + str(x) + "\n")   # used after -> copy: b=5 x=105
+    b := [5]                                         # to keep b, hand the sink a copy:
+    keep := b                                        # `keep := b` copies (b is read again below)
+    x := dbl(keep)                                   # keep is dead -> adopt; b untouched
+    print("2 b=" + str(b[0]) + " x=" + str(x) + "\n")   # b=5 x=105
 
-    c := [7]
-    j := 0
-    for j in range(0, 3):
-        dbl(c)                                          # in a loop -> copy each iter
-    print("3 c=" + str(c[0]) + "\n")                    # c=7 (NOT 107/307)
-
-    d := [9]
-    y := dbl(d)
-    f := fn() -> int: d[0]                              # closure reads d AFTER the sink call
-    print("4 d=" + str(f()) + " y=" + str(y) + "\n")    # d=9 (capture forces a copy)
+    print("3 lit=" + str(dbl([5, 5, 5])) + "\n")     # fresh literal -> adopt: 105
 
     e := [2]
-    if e[0] > 0:
-        print("5 e=" + str(dbl(e)) + "\n")              # adopt in a branch: 102
-
-    print("6 lit=" + str(dbl([5, 5, 5])) + "\n")        # fresh literal -> adopt: 105
-
-    g := [20]
-    rg := g.dbl()                                       # UFCS sink receiver; g used after -> copy
-    print("7 ufcs=" + str(rg) + " g=" + str(g[0]) + "\n")   # ufcs=120 g=20 (receiver unchanged)
+    on := true
+    if on:
+        print("4 e=" + str(dbl(e)) + "\n")           # e read once (in the branch) -> adopt: 102
 
     h := [30]
-    print("8 ufcs_adopt=" + str(h.dbl()) + "\n")        # UFCS receiver dead after -> adopt: 130
+    print("5 ufcs=" + str(h.dbl()) + "\n")           # UFCS receiver dead -> adopt: 130
