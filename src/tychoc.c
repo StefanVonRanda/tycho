@@ -931,6 +931,24 @@ static Type map_val(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].val : (
 static Type map_key(Type t) { return IS_MAPC(t) ? g_maptypes[MAPC_ID(t)].key : (t == T_MAP_II || t == T_MAP_IF) ? T_INT : T_STRING; }
 /* does this map key ride the int-key (occupancy/long) storage scheme? */
 static int mapkey_intrep(Type k) { return base_of(k) == T_INT || enum_fieldless(k); }
+/* composite map key (Stage 1: a struct, possibly through a newtype). Rides the
+ * occupancy scheme like int keys, but stores the struct by value and hashes/compares
+ * it deeply (generated tycho_hash_S_ and tycho_eq_S_ functions). */
+static int mapkey_composite(Type k) { return IS_STRUCT(base_of(k)); }
+/* a type usable as (a field of) a composite key: every leaf must have a stable deep
+ * hash. Scalars + bytes + a fieldless enum + (recursively) a struct of those qualify;
+ * arrays/maps/payload-enums/functions/handles do not yet (a later stage). */
+static int key_hashable(Type t) {
+    t = base_of(t);
+    if (t == T_INT || t == T_FLOAT || t == T_BOOL || t == T_CHAR || t == T_STRING || t == T_BYTES) return 1;
+    if (enum_fieldless(t)) return 1;
+    if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int i = 0; i < sd->nfields; i++) if (!key_hashable(sd->fields[i].type)) return 0;
+        return 1;
+    }
+    return 0;
+}
 /* a map key expression as the runtime stores it: a fieldless-enum key passes its TAG */
 static char *key_rt(Type mt, char *kexpr) {
     return IS_ENUM(map_key(mt)) ? sfmt("((%s)->tag)", kexpr) : kexpr;
@@ -956,6 +974,13 @@ static Type map_of(Type k, Type v) {
         /* fieldless-enum key: stored and hashed as its TAG (a long), riding the
          * int-key occupancy scheme; keys() rebuilds [E] from the per-variant
          * singleton table (immortal, share-safe). */
+        Type mt = mapc_of(k, v);
+        arr_of(k);
+        return mt;
+    }
+    if (mapkey_composite(k) && key_hashable(k)) {
+        /* struct key (Stage 1): stored by value, deep-hashed/compared, occupancy scheme;
+         * keys() returns [K]. mapc_of interns on (k,v); the runtime is emitted per pair. */
         Type mt = mapc_of(k, v);
         arr_of(k);
         return mt;
@@ -5897,6 +5922,20 @@ static int self_rebuild_move(Stmt *s) {
  * *value* — the mirror of copy_into. int/bool compare directly; strings by
  * byte; arrays element-wise; structs field-wise via a generated tycho_eq_S_X.
  * Recurses through nesting exactly as the deep copy does. */
+/* deep hash of a value `v` of type t, for composite map keys. Mirrors gen_eq's
+ * structure; folds field hashes (the struct body does the fold). int/bool/char ->
+ * the seeded SplitMix64 int hash; string/bytes -> keyed SipHash; float -> hash its
+ * bit pattern; a fieldless enum -> its tag; a nested struct -> its own hash. Equal
+ * values (by deep ==) always hash equal. */
+static char *gen_hash(Type t, const char *v) {
+    t = base_of(t);
+    if (t == T_STRING || t == T_BYTES) return sfmt("tycho_si_hash(%s)", v);
+    if (t == T_FLOAT)  return sfmt("tycho_ik_hash((long)((union { double _d; long _l; }){ ._d = (%s) })._l)", v);
+    if (enum_fieldless(t)) return sfmt("tycho_ik_hash((long)((%s)->tag))", v);
+    if (IS_STRUCT(t))  return sfmt("tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
+    return sfmt("tycho_ik_hash((long)(%s))", v);   /* int / bool / char */
+}
+
 static char *gen_eq(Type t, const char *a, const char *b) {
     if (IS_NEWTYPE(t))       return gen_eq(nt_under(t), a, b);
     if (t == T_STRING || t == T_BYTES) return sfmt("(tycho_str_cmp(%s, %s) == 0)", a, b);   /* bytes: byte-wise compare, same buffer repr */
@@ -8033,7 +8072,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "struct TychoArrC%d_ { %s*data; long len; long cap; };\n",
                 i, c_type(g_arrtypes[i].elem));
     for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] */
-        if (mapkey_intrep(g_maptypes[i].key))       /* int(-rep) keys incl. enum tags: occupancy array (0 is a real key) */
+        if (mapkey_composite(g_maptypes[i].key))    /* struct keys: stored by value, deep hash/eq, occupancy array */
+            fprintf(o, "struct TychoMapC%d_ { %s*keys; %s*vals; unsigned char *occ; long len; long cap; long used; %s*ord; long nord; long ocap; };\n",
+                    i, c_type(g_maptypes[i].key), c_type(g_maptypes[i].val), c_type(g_maptypes[i].key));
+        else if (mapkey_intrep(g_maptypes[i].key))  /* int(-rep) keys incl. enum tags: occupancy array (0 is a real key) */
             fprintf(o, "struct TychoMapC%d_ { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; long *ord; long nord; long ocap; };\n",
                     i, c_type(g_maptypes[i].val));
         else
@@ -8123,6 +8165,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (type_is_heap(STRUCT_TYPE(i)))
             fprintf(o, "static S_%s tycho_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
+        if (key_hashable(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
+            fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v);\n", nm, nm);
     }
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
@@ -8195,6 +8239,22 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, ";\n}\n\n");
     }
+    /* (6b) deep-hash body per hashable struct (composite map keys). Folds field
+     * hashes FNV-style, seeded from tycho_hash_k0 so the per-process seed defends
+     * against hash-flooding and equal-by-== values always hash equal. Field order
+     * matters (the multiply runs before the xor). */
+    for (int i = 0; i < g_nstructs; i++) {
+        if (g_structs[i].generic) continue;
+        if (!key_hashable(STRUCT_TYPE(i))) continue;
+        StructDef *sd = &g_structs[i];
+        fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v) {\n", sd->name, sd->name);
+        fprintf(o, "    unsigned long h = tycho_hash_k0;\n");
+        for (int j = 0; j < sd->nfields; j++) {
+            char *vf = sfmt("v.f_%s", sd->fields[j].name);
+            fprintf(o, "    h = h * 1099511628211UL ^ %s;\n", gen_hash(sd->fields[j].type, vf));
+        }
+        fprintf(o, "    return h;\n}\n\n");
+    }
     /* (7) composite-array op bodies (typedef already emitted in step 2). Each
      * deep-copies its elements through the same seam as the [string] array. */
     for (int i = 0; i < g_narrtypes; i++) {
@@ -8261,6 +8321,89 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
         const char *ct = c_type(g_maptypes[i].val);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
+        if (mapkey_composite(g_maptypes[i].key)) {   /* struct keys: occupancy scheme like int keys, but K stored by value, deep-hashed (tycho_hash_S_*) and deep-compared (tycho_eq_S_*); key deep-copied into the map arena on put */
+            Type keyt = g_maptypes[i].key;
+            const char *kt = c_type(keyt);
+            Type kat = arr_of(keyt);            /* keys() returns [K] */
+            fprintf(o,   /* K-typed insertion-order list (no null sentinel; del scans by deep ==) */
+                "static void tycho_mapc%d_ordpush(Arena *a, TychoMapC%d *m, %sk) {\n"
+                "    if (m->nord == m->ocap) { long nc = m->ocap ? m->ocap * 2 : 8; %s*nb = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); for (long i = 0; i < m->nord; i++) nb[i] = m->ord[i]; m->ord = nb; m->ocap = nc; }\n"
+                "    m->ord[m->nord++] = k;\n}\n", i, i, kt, kt, kt, kt);
+            fprintf(o,
+                "static void tycho_mapc%d_orddel(TychoMapC%d *m, %sk) {\n"
+                "    for (long i = 0; i < m->nord; i++) if (%s) { for (long j = i + 1; j < m->nord; j++) m->ord[j - 1] = m->ord[j]; m->nord--; return; }\n}\n",
+                i, i, kt, gen_eq(keyt, "m->ord[i]", "k"));
+            fprintf(o,
+                "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
+                "    TychoMapC%d m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
+                "    m.cap = c; m.len = 0; m.used = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
+                "    m.keys = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
+                "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
+                "    m.occ = (unsigned char *)arena_alloc(a, (size_t)c);\n"
+                "    for (long i = 0; i < c; i++) m.occ[i] = 0; return m;\n}\n", i, i, i, kt, kt, ct, ct);
+            fprintf(o,
+                "static long tycho_mapc%d_find(TychoMapC%d m, %sk) {\n"
+                "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(%s & mask);\n"
+                "    while (m.occ[i] != 0) { if (m.occ[i] == 1 && %s) return i; i = (long)((i + 1) & mask); }\n"
+                "    return -1;\n}\n", i, i, kt, gen_hash(keyt, "k"), gen_eq(keyt, "m.keys[i]", "k"));
+            fprintf(o,
+                "static long tycho_mapc%d_slot(TychoMapC%d m, %sk) {\n"
+                "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(%s & mask), tomb = -1;\n"
+                "    while (m.occ[i] != 0) { if (m.occ[i] == 2) { if (tomb < 0) tomb = i; } else if (%s) return i; i = (long)((i + 1) & mask); }\n"
+                "    return tomb >= 0 ? tomb : i;\n}\n", i, i, kt, gen_hash(keyt, "k"), gen_eq(keyt, "m.keys[i]", "k"));
+            fprintf(o,
+                "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %sk, %sv) {\n"
+                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
+                "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
+                "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
+                "        *m = n;\n    }\n"
+                "    long s = tycho_mapc%d_slot(*m, k);\n"
+                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_mapc%d_ordpush(a, m, m->keys[s]); }\n"
+                "    m->vals[s] = %s;\n}\n", i, i, kt, ct, i, i, i, i, copy_into(keyt, "a", "k"), i, vcopy);
+            fprintf(o,
+                "static void tycho_mapc%d_del(TychoMapC%d *m, %sk) {\n"
+                "    long s = tycho_mapc%d_find(*m, k); if (s < 0) return; tycho_mapc%d_orddel(m, k); m->occ[s] = 2; m->len--;\n}\n", i, i, kt, i, i);
+            fprintf(o,
+                "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
+                "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
+                "    for (long j = 0; j < src.nord; j++) { long s = tycho_mapc%d_find(src, src.ord[j]); tycho_mapc%d_put(a, &r, src.ord[j], src.vals[s]); }\n"
+                "    return r;\n}\n", i, i, i, i, i, i, i);
+            fprintf(o,
+                "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, %sk, %sv) {\n"
+                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, kt, ct, i, i, i);
+            fprintf(o,
+                "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, %sk) {\n"
+                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, kt, i, i, i);
+            fprintf(o,
+                "static %stycho_mapc%d_get(TychoMapC%d m, %sk, %sdflt) {\n"
+                "    long s = tycho_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, kt, ct, i);
+            fprintf(o,
+                "static int tycho_mapc%d_has(TychoMapC%d m, %sk) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, kt, i);
+            fprintf(o,
+                "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
+                "    %sr = tycho_arr_%s_with_cap(a, m.nord);\n"
+                "    for (long j = 0; j < m.nord; j++) tycho_arr_%s_push(a, &r, m.ord[j]);\n"
+                "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
+            fprintf(o,
+                "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
+                "    if (x.len != y.len) return 0;\n"
+                "    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) { long s = tycho_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
+                "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
+            fprintf(o,   /* in-place value projection: find-or-insert, return &slot value */
+                "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %sk) {\n"
+                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
+                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);\n"
+                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
+                "        for (long i = 0; i < m->cap; i++) if (m->occ[i] == 1) { long s = tycho_mapc%d_slot(n, m->keys[i]); n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }\n"
+                "        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;\n"
+                "        *m = n;\n    }\n"
+                "    long s = tycho_mapc%d_slot(*m, k);\n"
+                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_mapc%d_ordpush(a, m, m->keys[s]); m->vals[s] = (%s){0}; }\n"
+                "    return &m->vals[s];\n}\n\n", ct, i, i, kt, i, i, i, i, copy_into(keyt, "a", "k"), i, ct);
+            continue;
+        }
         if (mapkey_intrep(g_maptypes[i].key)) {   /* int(-rep) keys incl. enum tags: occupancy-array scheme (mirror TychoMapII; 0 is a real key) */
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
