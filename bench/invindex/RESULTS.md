@@ -97,7 +97,7 @@ scale, so the side array carried the lists and the map carried only an int slot.
 `#2` makes the map value a mutable place, so the index becomes exactly what it is —
 `idx: [string: [int]]`, one posting appended with `push(idx[term], d)` (O(1)
 amortized, no copy). Same LCG corpus and a single shared oracle
-(`vocab=8000 checksum=540001838890`); `invindex_map.{hi,c,go}` all print it. Peak
+(`vocab=8000 checksum=540001838890`); `invindex_map.{ty,c,go}` all print it. Peak
 RSS (`bench/peakrss.c`), best-of-three, `-O2` / `go build`:
 
 As with the side-array form, two architectures — **growth** (`push(idx[term], d)`

@@ -34,12 +34,12 @@ echo "===== winagg (tycho/C/Rust/Go) ====="
 W=bench/winagg
 printf "  tycho %s\n  C    %s\n  Rust %s\n  Go   %s\n" "$(tycho $W/winagg.ty)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)"
 
-echo "===== invindex side-array  (growth: .{hi,c,go} | count-fill: _exact.{hi,c}) ====="
+echo "===== invindex side-array  (growth: .{ty,c,go} | count-fill: _exact.{ty,c}) ====="
 I=bench/invindex
 printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex.ty)" "$(cc3 $I/invindex.c)" "$(go3 $I/invindex.go)"
 printf "  count-fill tycho %s  C %s\n" "$(tycho $I/invindex_exact.ty)" "$(cc3 $I/invindex_exact.c)"
 
-echo "===== invindex map  (growth: _map.{hi,c,go} | count-fill: _map_exact.{hi,c,go}) ====="
+echo "===== invindex map  (growth: _map.{ty,c,go} | count-fill: _map_exact.{ty,c,go}) ====="
 printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map.ty)" "$(cc3 $I/invindex_map.c)" "$(go3 $I/invindex_map.go)"
 printf "  count-fill tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map_exact.ty)" "$(cc3 $I/invindex_map_exact.c)" "$(go3 $I/invindex_map_exact.go)"
 

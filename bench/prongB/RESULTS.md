@@ -339,7 +339,7 @@ result. This is the shape `examples/optimize.ty` runs, and it stresses
 *reclamation of a transient rewrite result*: Tycho resets the loop scratch in
 O(1); a refcounting system decrements every node of the dropped result.
 
-`maptree.{hi,c,rs,go}`, `maptree.kk`. Same byte-identical output (26214400):
+`maptree.{ty,c,rs,go}`, `maptree.kk`. Same byte-identical output (26214400):
 
 | language               | peak RSS | wall time | (was, pre-tuning) |
 | ---------------------- | -------: | --------: | ----------------: |
@@ -371,7 +371,7 @@ The first two workloads are tree-shaped (pointer-structured). This one is a
 **flat-array pipeline**: build one `[N]int` (N = 100 000), then 200 times build
 a fresh mapped array of N ints, sum it, and discard — checksumming. Pure
 allocate-and-discard of *contiguous* data, no pointer structure.
-`arr_pipeline.{hi,c,rs,go}`, `arrpipeline.kk`. Byte-identical output (411c91a9):
+`arr_pipeline.{ty,c,rs,go}`, `arrpipeline.kk`. Byte-identical output (411c91a9):
 
 | language               | peak RSS | wall time |
 | ---------------------- | -------: | --------: |
@@ -403,7 +403,7 @@ never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
 
 Build M = 4000 strings, each K = 256 digit-chars, by concatenation; hash each
 (sum of byte codes); checksum. Stresses string *building* and per-character
-work. `string_pipe.{hi,c,rs,go}`, `stringpipe.kk`. Byte-identical (67f39fca):
+work. `string_pipe.{ty,c,rs,go}`, `stringpipe.kk`. Byte-identical (67f39fca):
 
 | language                    | peak RSS | wall time |
 | --------------------------- | -------: | --------: |
@@ -442,7 +442,7 @@ parser. A generator emits one ~4.4 MB document (an array of 50 000 records, each
 with nested arrays and a sub-object); each language then parses it K=30 times
 into a value-semantic `Json` tree, walks every node into a checksum, and
 discards the tree — the same hand-written algorithm and the same byte-identical
-checksum (262547666730) in all five. `json_parse.{hi,c,rs,go}`, `jsonparse.kk`,
+checksum (262547666730) in all five. `json_parse.{ty,c,rs,go}`, `jsonparse.kk`,
 generator `json_gen.ty`. Best-of-3; the four C-family parsers read the doc on
 stdin, Koka (UTF-8 strings, no stdin slurp) reads it as a file-path arg.
 
@@ -507,7 +507,7 @@ arena's defining weakness — so the comparison isn't only flattering cases. The
 drove the fix that removes the weakness.
 
 A long-lived value is **reassigned each step**: `a = step(a)` for m = 2000 steps
-over an n = 100 000 int array (`iter_transform.{hi,c,rs,go}`, `itertransform.kk`,
+over an n = 100 000 int array (`iter_transform.{ty,c,rs,go}`, `itertransform.kk`,
 all print the same checksum `104306`). Only the *latest* array is ever live.
 
 | language                | peak RSS | wall time |
