@@ -8281,6 +8281,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (struct_keyused(T_ARRC_BASE + i))   /* composite map key: deep hash */
             fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
     }
+    for (int i = 0; i < g_nmaptypes; i++) {         /* (4) composite-map copy/eq prototypes: a struct/array/tuple FIELD of composite-map type calls these in its copy/eq body, which is emitted before the map family itself (7a') -- without the proto the struct copier sees an implicit declaration */
+        if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
+        fprintf(o, "static TychoMapC%d tycho_mapc%d_copy(Arena*, TychoMapC%d);\n", i, i, i);
+        fprintf(o, "static int tycho_mapc%d_eq(TychoMapC%d, TychoMapC%d);\n", i, i, i);
+    }
     fputs("\n", o);
     /* (5) deep-copy body per heap-bearing struct: re-home every heap field into
      * arena `a`. Non-heap fields are copied by the initial `r = v`. */

@@ -4329,6 +4329,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 code = code + ", " + gen_call_args(cargs, names, types, dc, ctx)
             return code + "); })"
         EAddr(inner, _el):                             # &(*p) == p, so passing a mut param onward works
+            if is_map_index(inner, names, types, dc, ctx):   # &m[k]: take the slot POINTER (gen_place -> (*slotptr(..))), not &(by-value map_get) which is not an lvalue
+                return "&" + gen_place(inner, names, types, dc, ctx)
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r, _el):
             lt := type_of(l, names, types, dc, ctx)
