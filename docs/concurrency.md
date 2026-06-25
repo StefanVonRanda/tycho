@@ -153,10 +153,19 @@ reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 |---|---:|---:|---:|---:|
 | parreduce (4×10⁸ int reduce) | 37 ms / 1.6 MB | 36 ms / 1.6 MB | 62 ms | 43 ms |
 | pipeline (10⁶ strings, 1→4 consumers) | 73 ms / 2.8 MB | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
+| pool (10⁶ jobs, `parallel for x in ch:`) | 150 ms / 2.7 MB | 1975 ms (mutex ring) | 157 ms / 2.3 MB | 395 ms |
 
 `parallel for` is at C parity (within a millisecond, same peak RSS). The lock-free channels are competitive with
 Go, and faster than the other reference implementations in this benchmark, while paying two
 deep copies per message that the others do not.
+
+On the **pool** workload — a bounded-channel worker pool written as the single
+line `parallel for x in ch:` — tycho is at **Go parity, ~5% faster** (150 vs
+157 ms) against Go's hand-written `for j := range jobs` + `WaitGroup` pool, both
+lock-free on the hot path. The C and Rust figures are the honest cost of a naive
+mutex channel and of std lacking an MPMC channel, respectively (see RESULTS.md);
+they are not a tycho win — the win is that the one-liner gets the tuned Vyukov
+queue for free.
 
 ## Limits (deliberate)
 
