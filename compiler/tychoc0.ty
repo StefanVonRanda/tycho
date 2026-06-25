@@ -2623,7 +2623,7 @@ fn mfam(ty: string) -> string:                   # map runtime function prefix
 fn mtag(k: string) -> string:                    # slotptr family tag: 1-char for the base keys,
     if k == "int" or k == "str":                 # the full (distinct) name for a newtype/struct key
         return substr(k, 0, 1)                   # (1-char tags would collide across newtypes)
-    if is_tuple(k):                              # a tuple type string isn't a valid identifier
+    if is_tuple(k) or is_array(k):               # a tuple/array type string isn't a valid identifier
         return mangle(k)
     return k
 
@@ -6956,6 +6956,12 @@ fn gen_tuple_hash(dc: Decls, ctx: Ctx, ty: string) -> string:
         i = i + 1
     return out + " return h; }\n"
 
+# Order-sensitive deep hash for an array used as a (nested) composite map key. Folds
+# element hashes left-to-right (the multiply runs before the xor), seeded from hash_k0.
+fn gen_arr_hash(dc: Decls, ctx: Ctx, et: string) -> string:
+    nm := "Arr_" + mangle(et)
+    return "static unsigned long " + nm + "_hash(" + nm + " x) { unsigned long h = hash_k0; for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ " + hash_field(dc, ctx, et, "x.data[i]") + "; return h; }\n"
+
 # Struct/tuple types directly embedded BY VALUE in struct/tuple `ty` (its fields/elements).
 # Those bodies must precede ty's. Enum/array/map/scalar fields are by pointer or emitted in
 # earlier phases, so they are not dependencies.
@@ -7473,7 +7479,7 @@ fn gen_mhash() -> string:                        # keyed SipHash-1-3 (strings) +
 # struct by value and hashes/compares it deeply.
 fn mapkey_composite(dc: Decls, ctx: Ctx, k: string) -> bool:
     b := resolve_nt(dc, ctx, k)
-    return is_struct(dc, ctx, b) or is_tuple(b)
+    return is_struct(dc, ctx, b) or is_tuple(b) or is_array(b)
 
 # A type usable as (a field of) a composite key: every leaf must have a stable deep
 # hash. Scalars + bytes + (recursively) a struct of those qualify; arrays/maps/enums/
@@ -7502,6 +7508,8 @@ fn key_hashable(dc: Decls, ctx: Ctx, ty: string) -> bool:
                 return false
             j = j + 1
         return true
+    if is_array(b):
+        return key_hashable(dc, ctx, elem_ty(b))   # an array key hashes element-wise (order-sensitive)
     return false
 
 # Is composite type `want` (a struct name or a tuple type string) reachable inside key
@@ -7530,6 +7538,8 @@ fn struct_in_key(dc: Decls, ctx: Ctx, want: string, kt: string) -> bool:
                 return true
             i = i + 1
         return false
+    if is_array(b):
+        return struct_in_key(dc, ctx, want, elem_ty(b))
     return false
 
 # Does any composite-keyed map (in the emitted type list) use struct `sname` as its
@@ -7554,6 +7564,8 @@ fn hash_field(dc: Decls, ctx: Ctx, ty: string, v: string) -> string:
         return ust(r) + "_hash(" + v + ")"
     if is_tuple(r):
         return "Tup_" + tup_suffix(r) + "_hash(" + v + ")"
+    if is_array(r):
+        return "Arr_" + mangle(elem_ty(r)) + "_hash(" + v + ")"
     return "ikhash((long)(" + v + "))"            # int / bool / char
 
 # Deep-hash body for a hashable struct used as a map key. Seeded from hash_k0 (the
@@ -7628,6 +7640,9 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
         if is_tuple(rk):                          # tuples name their eq/hash by suffix, not ust
             heq = "Tup_" + tup_suffix(rk) + "_eq"
             hh = "Tup_" + tup_suffix(rk) + "_hash"
+        if is_array(rk):                          # arrays name their eq/hash by mangled element
+            heq = "Arr_" + mangle(elem_ty(rk)) + "_eq"
+            hh = "Arr_" + mangle(elem_ty(rk)) + "_hash"
         kcopy := cp_field(dc, ctx, k, "ar", "k")  # deep-copy the key into ar (passthrough for scalar-field structs/tuples)
         out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(" + ck + ") * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
         out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
@@ -11148,6 +11163,11 @@ fn main():
         if is_tuple(ets[i]) and struct_keyused(dc, ctx, ets, ets[i]):
             out = out + "static unsigned long Tup_" + tup_suffix(ets[i]) + "_hash(Tup_" + tup_suffix(ets[i]) + " v);\n"
         i = i + 1
+    i = 0                                        # array deep-hash protos (arrays used as keys): before any hash body
+    for i < len(ets):
+        if not is_map(ets[i]) and not is_soa(ets[i]) and struct_keyused(dc, ctx, ets, "[" + ets[i] + "]"):
+            out = out + "static unsigned long Arr_" + mangle(ets[i]) + "_hash(Arr_" + mangle(ets[i]) + " x);\n"
+        i = i + 1
     # 4 + 5a. struct AND tuple bodies in topological order — a struct may embed a tuple by
     # value and a tuple may embed a struct, so a single dependency-ordered pass (not two
     # fixed phases) is needed. emit_comp_body recurses into by-value struct/tuple deps first.
@@ -11211,6 +11231,11 @@ fn main():
         i = i + 1
     if has_map:
         out = out + gen_mhash()
+    i = 0                                        # array deep-hash bodies (keyed arrays): AFTER gen_mhash (they call ikhash/mhash) but the protos are early so map fns can call them
+    for i < len(ets):
+        if not is_map(ets[i]) and not is_soa(ets[i]) and struct_keyused(dc, ctx, ets, "[" + ets[i] + "]"):
+            out = out + gen_arr_hash(dc, ctx, ets[i])
+        i = i + 1
     i = 0
     for i < len(ets):
         if is_map(ets[i]):

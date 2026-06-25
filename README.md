@@ -569,8 +569,9 @@ the same regardless of key or value type; `map_get`'s default and the stored
 value take the map's value type, and the key takes its key type. A key may also
 be a newtype over `string`/`int`, a fieldless enum, a **struct**, or a **tuple** of
 hashable fields (`[Point: int]`, `[Person: V]`, `[(int, string): V]`, nested structs
-and tuples too) — stored by value and compared/hashed deeply, so `m[Point(1, 2)]` and
-`m[(1, "a")]` name the same entry every time; *not yet:* keys with array/map fields.
+and tuples too) — or an **array** (`[[int]: V]`, hashed order-sensitively). All are
+stored by value and compared/hashed deeply, so `m[Point(1, 2)]`, `m[(1, "a")]`, and
+`m[[1, 2, 3]]` name the same entry every time; *not yet:* a map as the key.
 
 ### Option and `match`
 

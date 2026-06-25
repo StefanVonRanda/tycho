@@ -1,0 +1,37 @@
+# Composite map keys (Stage 3a): an array as the key type. Stored by value, hashed
+# ORDER-SENSITIVELY (element-wise fold) and deep-compared, occupancy scheme. Covers an
+# int array, a string array, a composite-element array ([Point]), order-sensitivity,
+# in-place accumulation, deep ==, and keys() returning [[T]].
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    # int-array key — order matters ([1,2,3] != [3,2,1])
+    m := [][int]: string
+    m[[1, 2, 3]] = "abc"
+    m[[3, 2, 1]] = "cba"
+    print("get=" + map_get(m, [1, 2, 3], "?") + " rev=" + map_get(m, [3, 2, 1], "?") + " miss=" + map_get(m, [1, 2], "?") + "\n")
+    print("in=" + str([1, 2, 3] in m) + " len=" + str(len(m)) + "\n")
+    ks := keys(m)
+    print("k0len=" + str(len(ks[0])) + " k0=(" + str(ks[0][0]) + "," + str(ks[0][1]) + "," + str(ks[0][2]) + ")\n")
+    delete m[[1, 2, 3]]
+    print("del: len=" + str(len(m)) + " gone=" + str(not ([1, 2, 3] in m)) + "\n")
+
+    # string-array key + in-place accumulator
+    tally := [][string]: int
+    tally[["a", "b"]] = 1
+    tally[["a", "b"]] += 9
+    print("sa=" + str(map_get(tally, ["a", "b"], -1)) + " miss=" + str(map_get(tally, ["b", "a"], -1)) + "\n")
+
+    # composite-element array key ([Point]) + deep ==
+    p := [][Point]: int
+    p[[Point(1, 2), Point(3, 4)]] = 99
+    print("pa=" + str(map_get(p, [Point(1, 2), Point(3, 4)], -1)) + " miss=" + str(map_get(p, [Point(1, 2)], -1)) + "\n")
+    a := [][int]: int
+    a[[5, 6]] = 1
+    b := [][int]: int
+    b[[5, 6]] = 1
+    print("eq=" + str(a == b))
+    b[[7]] = 2
+    print(" neq=" + str(a == b) + "\n")

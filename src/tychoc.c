@@ -934,10 +934,10 @@ static int mapkey_intrep(Type k) { return base_of(k) == T_INT || enum_fieldless(
 /* composite map key (Stage 1: a struct, possibly through a newtype). Rides the
  * occupancy scheme like int keys, but stores the struct by value and hashes/compares
  * it deeply (generated tycho_hash_S_ and tycho_eq_S_ functions). */
-static int mapkey_composite(Type k) { Type b = base_of(k); return IS_STRUCT(b) || IS_TUP(b); }
+static int mapkey_composite(Type k) { Type b = base_of(k); return IS_STRUCT(b) || IS_TUP(b) || is_array(b); }
 /* a type usable as (a field of) a composite key: every leaf must have a stable deep
- * hash. Scalars + bytes + (recursively) a struct or tuple of those qualify;
- * arrays/maps/enums/functions/handles do not yet (a later stage). */
+ * hash. Scalars + bytes + (recursively) a struct/tuple/array of those qualify;
+ * maps/enums/functions/handles do not yet (a later stage). */
 static int key_hashable(Type t) {
     t = base_of(t);
     if (t == T_INT || t == T_FLOAT || t == T_BOOL || t == T_CHAR || t == T_STRING || t == T_BYTES) return 1;
@@ -950,10 +950,11 @@ static int key_hashable(Type t) {
         for (int i = 0; i < tup_n(t); i++) if (!key_hashable(tup_elem(t, i))) return 0;
         return 1;
     }
+    if (is_array(t)) return key_hashable(arr_elem(t));   /* an array key hashes element-wise (order-sensitive) */
     return 0;
 }
-/* is composite type `want` (a struct or tuple) reachable inside key type kt -- the key
- * itself, or a struct field / tuple element of it, recursively? */
+/* is composite type `want` (struct/tuple/array) reachable inside key type kt -- the key
+ * itself, or a struct field / tuple element / array element of it, recursively? */
 static int struct_in_key(Type want, Type kt) {
     kt = base_of(kt);
     if (kt == want) return 1;
@@ -966,6 +967,7 @@ static int struct_in_key(Type want, Type kt) {
         for (int j = 0; j < tup_n(kt); j++)
             if (struct_in_key(want, tup_elem(kt, j))) return 1;
     }
+    if (is_array(kt)) return struct_in_key(want, arr_elem(kt));
     return 0;
 }
 /* does any composite-keyed map use composite type `st` (struct or tuple) as its key or
@@ -5961,6 +5963,10 @@ static char *gen_hash(Type t, const char *v) {
     if (enum_fieldless(t)) return sfmt("tycho_ik_hash((long)((%s)->tag))", v);
     if (IS_STRUCT(t))  return sfmt("tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
     if (IS_TUP(t))     return sfmt("tycho_hash_T%d(%s)", TUP_ID(t), v);
+    if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_hash(%s)", v);
+    if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_hash(%s)", v);
+    if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_hash(%s)", v);
+    if (IS_ARRC(t))    return sfmt("tycho_arr_C%d_hash(%s)", ARRC_ID(t), v);   /* composite-element array: generated, order-sensitive */
     return sfmt("tycho_ik_hash((long)(%s))", v);   /* int / bool / char */
 }
 
@@ -8234,6 +8240,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, long, %s);\n", i, i, ct);
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
         fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
+        if (struct_keyused(T_ARRC_BASE + i))   /* composite map key: deep hash */
+            fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
     }
     fputs("\n", o);
     /* (5) deep-copy body per heap-bearing struct: re-home every heap field into
@@ -8355,6 +8363,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (x.len != y.len) return 0;\n"
             "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
+        if (struct_keyused(T_ARRC_BASE + i))   /* composite-element array used as a (nested) map key: order-sensitive deep hash */
+            fprintf(o,
+                "static unsigned long tycho_arr_C%d_hash(TychoArrC%d x) {\n"
+                "    unsigned long h = tycho_hash_k0;\n"
+                "    for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ %s;\n"
+                "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
     }
     /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
      * TychoMapSI (open addressing, NULL/tombstone, FNV string keys), with the VALUE

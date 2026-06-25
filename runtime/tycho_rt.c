@@ -1748,6 +1748,24 @@ static unsigned long tycho_ik_hash(long k) {        /* seeded SplitMix64 finaliz
     x = (x ^ (x >> 27)) * 0x94d049bb133111ebUL;
     return x ^ (x >> 31);
 }
+/* Deep hash of a scalar array, for composite map keys. Order-SENSITIVE (the multiply
+ * runs before the xor), seeded from the per-process key, folding each element's hash
+ * so equal-by-== arrays hash equal. Composite-element arrays get a generated hash. */
+unsigned long tycho_arr_int_hash(TychoArrInt x) {
+    unsigned long h = tycho_hash_k0;
+    for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_ik_hash(x.data[i]);
+    return h;
+}
+unsigned long tycho_arr_float_hash(TychoArrFloat x) {
+    unsigned long h = tycho_hash_k0;
+    for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_ik_hash((long)((union { double _d; long _l; }){ ._d = x.data[i] })._l);
+    return h;
+}
+unsigned long tycho_arr_str_hash(TychoArrStr x) {
+    unsigned long h = tycho_hash_k0;
+    for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_si_hash(x.data[i]);
+    return h;
+}
 
 typedef struct { long *keys; long   *vals; unsigned char *occ; long len, cap, used; long *ord; long nord; long ocap; } TychoMapII;
 typedef struct { long *keys; double *vals; unsigned char *occ; long len, cap, used; long *ord; long nord; long ocap; } TychoMapIF;
