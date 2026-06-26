@@ -508,6 +508,7 @@ struct StructDef:
     name: string
     fields: [Field]
     typeparams: [string]      # generics: `struct Box($T)` -> ["T"]; empty for a normal struct
+    inst_args: [string]       # generics: a struct INSTANCE's concrete type args (typeparam order); [] for templates/normal. Mirrors EnumDef.inst_args -- lets a sole nested-generic field recover its typaram (recover_struct_binds).
 
 struct Variant:
     name: string
@@ -1880,7 +1881,7 @@ fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
         for j < len(fields):
             fields[j] = Field(fields[j].name, subst_bare_typaram(fields[j].ty, typeparams))
             j = j + 1
-    return StructDef(name, fields, typeparams)
+    return StructDef(name, fields, typeparams, []string)
 
 fn parse_match(toks: [Token], pos: mut int) -> Stmt:
     _sl := tloc(toks[pos])
@@ -2358,7 +2359,7 @@ fn mangle_struct(m: Mctx, sd: StructDef) -> StructDef:
     for i < len(sd.fields):
         push(fs, Field(sd.fields[i].name, mangle_type(m, sd.fields[i].ty)))
         i = i + 1
-    return StructDef(m.prefix + sd.name, fs, sd.typeparams)
+    return StructDef(m.prefix + sd.name, fs, sd.typeparams, sd.inst_args)
 
 fn mangle_enum(m: Mctx, ed: EnumDef) -> EnumDef:
     vs := []Variant
@@ -10514,6 +10515,7 @@ fn subst_field_type(ty: string, bnames: [string], btypes: [string]) -> string:
 # return its mangled name. Mangle matches tychoc (header typeparam order).
 fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: mut [StructDef]) -> string:
     nm := t.name
+    iargs := []string
     i := 0
     for i < len(t.typeparams):
         ct := ""
@@ -10522,6 +10524,7 @@ fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: 
             if bnames[k] == t.typeparams[i]:
                 ct = btypes[k]
             k = k + 1
+        push(iargs, ct)                          # record the concrete type arg in typeparam order (for recover_struct_binds)
         nm = nm + "__" + gen_inst_mangle(ct)
         i = i + 1
     e := 0
@@ -10534,7 +10537,7 @@ fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: 
     for i < len(t.fields):
         push(fs, Field(t.fields[i].name, subst_field_type(t.fields[i].ty, bnames, btypes)))
         i = i + 1
-    push(sinsts, StructDef(nm, fs, []string))
+    push(sinsts, StructDef(nm, fs, []string, iargs))
     return nm
 
 fn find_generic_enum(enums: [EnumDef], name: string) -> int:
@@ -10606,6 +10609,43 @@ fn recover_enum_binds(pat: string, concrete: string, enums: [EnumDef], einsts: [
                 mb = match_typaram_str(pargs[i], einsts[e].inst_args[i], &bnames, &btypes)
                 i = i + 1
             mb = mb
+            return true
+        e = e + 1
+    return false
+
+# The callee name of a direct ECall (e.g. a mono'd generic-struct instance constructor
+# `Box__int(..)`), else "". type_of returns the bare base name "Box" for a struct
+# constructor, but the mono'd arg already names its instance, so recover keys off this.
+fn call_callee(e: Expr) -> string:
+    match e:
+        ECall(nm, _a, _el):
+            return nm
+        _:
+            return ""
+
+# Recover a generic-struct field's typaram from a nested-instance arg, mirroring
+# recover_enum_binds: a field `inner: Box($T)` constructed with a `Box(..)` arg sees the
+# arg's type as the mangled instance name `Box__int` (not `Box(int)`), which doesn't
+# structurally match `Box($T)`. Find that instance in sinsts and bind $T from its recorded
+# inst_args. Only needed when the typaram has no other (bare/container) binding source.
+fn recover_struct_binds(pat: string, concrete: string, structs: [StructDef], sinsts: [StructDef], bnames: mut [string], btypes: mut [string]) -> bool:
+    pp := find(pat, "(")
+    if pp <= 0 or pat[len(pat) - 1] != 41:       # ')'
+        return false
+    gi := find_generic_struct(structs, substr(pat, 0, pp))
+    if gi < 0:
+        return false
+    pargs := split_type_args(substr(pat, pp + 1, len(pat) - 1))
+    tps := structs[gi].typeparams
+    if len(pargs) != len(tps):
+        return false
+    e := 0
+    for e < len(sinsts):
+        if sinsts[e].name == concrete and len(sinsts[e].inst_args) == len(tps):
+            i := 0
+            for i < len(tps):
+                match_typaram_str(pargs[i], sinsts[e].inst_args[i], &bnames, &btypes)
+                i = i + 1
             return true
         e = e + 1
     return false
@@ -10865,7 +10905,8 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                 for k < len(margs):
                     ft := dc.structs[gsi].fields[k].ty
                     ct := type_of(a[k], names, types, dc, ctx)    # type the ORIGINAL arg a[k], NOT the mono'd margs[k]: a nested generic constructor in margs names its instance (e.g. Box__int), not yet in dc -> type_of would fail. (Same reason the generic-function case above uses a[k].)
-                    match_typaram_str(ft, ct, &bnames, &btypes)   # unify the field PATTERN against the arg's concrete type; recurses into [$V] / {string:$V} / fn(...) (was a bare `ft[0]=='$'` check that bound only a bare `$V` field), so a typaram nested in a container field binds too -- otherwise instantiate_struct substitutes nothing and `$V` leaks ("unknown type '$V'")
+                    if not match_typaram_str(ft, ct, &bnames, &btypes):   # unify the field PATTERN against the arg's concrete type; recurses into [$V] / {string:$V} / fn(...) so a typaram nested in a container field binds too. On a structural miss (a sole nested-generic field "Box($T)" vs a "Box" arg, since type_of gives the bare base name), recover $T from the mono'd arg's instance name (margs[k] = `Box__int(..)`) via its recorded inst_args (mirrors the enum path).
+                        recover_struct_binds(ft, call_callee(margs[k]), dc.structs, sinsts, &bnames, &btypes)
                     k = k + 1
                 newnm := instantiate_struct(dc.structs[gsi], bnames, btypes, &sinsts)
                 return ECall(newnm, margs, el)
@@ -11066,7 +11107,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
             for j < len(prog.structs[i].fields):
                 push(rf, Field(prog.structs[i].fields[j].name, resolve_gtype(prog.structs[i].fields[j].ty, dc.structs, dc.enums, &sinsts, &einsts)))
                 j = j + 1
-            push(rconcrete, StructDef(prog.structs[i].name, rf, []string))
+            push(rconcrete, StructDef(prog.structs[i].name, rf, []string, prog.structs[i].inst_args))
         i = i + 1
     renums := []EnumDef                           # drop generic enum templates; resolve concrete payload types
     i = 0
@@ -11097,7 +11138,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
             for fj < len(sinsts[sdone].fields):
                 push(rf2, Field(sinsts[sdone].fields[fj].name, resolve_gtype(sinsts[sdone].fields[fj].ty, dc.structs, dc.enums, &sinsts, &einsts)))
                 fj = fj + 1
-            sinsts[sdone] = StructDef(sinsts[sdone].name, rf2, []string)
+            sinsts[sdone] = StructDef(sinsts[sdone].name, rf2, []string, sinsts[sdone].inst_args)
             sdone = sdone + 1
         for edone < len(einsts):
             rvs2 := []Variant

@@ -1,0 +1,21 @@
+# A generic struct binding its type param SOLELY from a nested-generic field
+# (`W($T): inner: Box($T)`, no bare/container source). tychoc0's constructor inference
+# couldn't bind $T: type_of of a struct constructor gives the bare base name "Box" (not the
+# instance "Box__int"), so match_typaram_str("Box($T)", "Box") failed and $T leaked. Fixed:
+# recover $T from the MONO'd arg's instance name (margs[k] = `Box__int(..)`) via the
+# instance's recorded inst_args (StructDef.inst_args + recover_struct_binds), mirroring the
+# enum path's recover_enum_binds. tychoc accepts this form (Box applied to W's full param
+# list). (The partial-mention form `W($A,$B): x: Box($A)` is deliberately rejected by tychoc;
+# tychoc0 doesn't front-end-validate it -- same by-design permissiveness as other type rules.)
+struct Box($T):
+    v: $T
+
+struct W($T):
+    inner: Box($T)
+    n: int
+
+fn main():
+    w := W(Box(7), 3)
+    print(str(w.inner.v + w.n) + "\n")          # 10
+    s := W(Box("hi"), 0)
+    print(s.inner.v + "!\n")                     # hi!
