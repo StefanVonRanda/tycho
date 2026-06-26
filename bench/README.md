@@ -31,6 +31,7 @@ where shown.
 | **json-tree** | a tagged value tree held across a fold | 37 MB vs C 35, Go 28.5 | ≈ C — **value-shaped** data, zero manual mgmt | `json/` |
 | **trie** | pointer-linked recursive nodes (each owns a child map) | 103 MB vs C 38, Go 34 | **~2.7× C — the standing loss**: children stored by value, not by pointer | `trie/` |
 | **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
+| **lru** | fixed-cap cache, delete-heavy `[int:int]` map churn | 57 MB vs C 11.5, Go 21.5 | ~5× C — drove two map fixes: O(n)→O(1) delete (slot-linked order) + same-cap-purge buffer recycle (was 222 MB before the recycle); memory now tracks the live set, not delete volume | `lru/` |
 
 ## Axis 2 — latency (GC-pause predictability)
 
