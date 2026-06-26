@@ -1370,6 +1370,13 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
                     push(pflds, "")
                     push(pidxs, parse_expr(toks, &pos))
                     expect(toks, &pos, TRBracket)
+            nst := len(pkinds)               # reject index-assign THROUGH a tuple element (`t.0[k] = v`): mirrors tychoc, which forbids indexing a tuple-element place. A tuple index is a `.N` field (numeric — struct field names can't start with a digit).
+            if nst > 0 and pkinds[nst - 1] == 1:
+                tj := 0
+                for tj < nst - 1:
+                    if pkinds[tj] == 0 and len(pflds[tj]) > 0 and is_digit(pflds[tj][0]):
+                        die("parse: line " + str(toks[pos].line) + ": can only index-assign an array or map variable or field")
+                    tj = tj + 1
             iscomp := is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq
             lv := EVar(name, _el)
             ci := 0
