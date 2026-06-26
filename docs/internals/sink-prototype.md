@@ -1,10 +1,9 @@
-# The explicit `sink` parameter convention (experimental, both compilers)
+# The explicit `sink` parameter convention (shipped, both compilers)
 
-A working implementation of the `sink` (owned, consuming) parameter convention identified
-in `../internals/hylo-mvs-research.md`, in **both** compilers (`tychoc` and the self-hosted `tychoc0`),
-with a shared harness test (`tests/sink.ty`, both compilers byte-identical). Still labelled
-experimental — direct calls are fully supported and sound; one peripheral combination
-(UFCS) is not yet wired in tychoc0 (see Limitations). It exists to learn what `sink` can and
+The `sink` (owned, consuming) parameter convention identified
+in `hylo-mvs-research.md`, shipped in **both** compilers (`tychoc` and the self-hosted `tychoc0`),
+with a shared harness test (`tests/sink.ty`, both compilers byte-identical). Direct **and**
+UFCS calls are fully supported and sound (see Verdict). It captures what `sink` can and
 cannot do in Tycho's arena model; the findings refine the research note.
 
 ## What was built

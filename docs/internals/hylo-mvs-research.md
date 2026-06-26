@@ -108,14 +108,14 @@ internals — none are quick wins:
    guaranteed, visible, compiler-checked move. Arena-compatible, no refcounting, attacks
    real copy costs (passing a large value you're done with into a collection/constructor).
    Best effort-to-value ratio. Pairs with method bundles for ergonomics. **Update —
-   prototyped in tychoc (`../rfc/sink-prototype.md`): sound and arena-compatible. It adds
+   prototyped in tychoc (`sink-prototype.md`): sound and arena-compatible. It adds
    owned-mutable params and elides the call-site copy for fresh values AND dead named
    variables. The arena-placement step (flagged below as the real work) landed as a small
    relaxation of move-on-last-use — drop the same-arena match for a *consuming* call, gated
    by read-once-outside-loops, since the callee only needs the buffer to outlive the call
    (any enclosing local's does) and the mutation to be unobserved. Verified against an
    adversarial soundness battery (loop, closure-capture-after-sink, use-after) + make test
-   227/0 + fixpoint. Remaining: a use-after-`sink` diagnostic, and tychoc0 UFCS wiring (the rest of the tychoc0 mirror shipped — see ../rfc/sink-prototype.md);
+   227/0 + fixpoint. Shipped in full on both compilers — direct and UFCS calls, the use-after-`sink` diagnostic, and the tychoc0 mirror (see sink-prototype.md);
    *escape* (returning the param) is still a copy — the arena's hard limit. So `sink` is a
    real copy-eliminating convention here, narrower than Hylo's only at escape.**
 2. **Evaluate `remote-parts`-style limited references** for graph/cyclic structures — the
