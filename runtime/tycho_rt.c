@@ -1474,12 +1474,6 @@ void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, long v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_si_slot(*m, k);
@@ -1507,12 +1501,6 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_si_slot(*m, k);
@@ -1531,9 +1519,27 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
 void tycho_map_si_del(TychoMapSI *m, const char *k) {
     long s = tycho_map_si_find(*m, k);
     if (s < 0) return;
-    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
-    m->keys[s] = TYCHO_MAP_TOMB;
-    m->len--;
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);   /* drop the deleted slot from the order list */
+    m->len--; m->used--;          /* backward-shift keeps the table tombstone-free, so used == live count */
+    unsigned long mask = (unsigned long)m->cap - 1;
+    long i = s, j = s;
+    for (;;) {
+        m->keys[i] = NULL;                                     /* i is the gap */
+        for (;;) {
+            j = (long)((j + 1) & mask);
+            if (m->keys[j] == NULL) return;                    /* gap closed at an empty slot */
+            long h = (long)(tycho_si_hash(m->keys[j]) & mask); /* home slot of the entry at j */
+            if (i <= j) { if (i < h && h <= j) continue; }     /* h cyclically in (i,j]: entry must stay */
+            else        { if (i < h || h <= j) continue; }
+            break;                                             /* entry at j can slide back into the gap */
+        }
+        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j];
+        long pp = m->prv[j], nn = m->nxt[j];                   /* relink: i takes j's place in the order list */
+        m->nxt[i] = nn; m->prv[i] = pp;
+        if (pp >= 0) m->nxt[pp] = i; else m->head = i;
+        if (nn >= 0) m->prv[nn] = i; else m->tail = i;
+        i = j;
+    }
 }
 
 /* deep copy (value semantics): independent tables + copied key bytes. Drops any
@@ -1642,12 +1648,6 @@ void tycho_map_sf_put(Arena *a, TychoMapSF *m, const char *k, double v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_sf_slot(*m, k);
@@ -1671,12 +1671,6 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_sf_slot(*m, k);
@@ -1693,9 +1687,27 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
 void tycho_map_sf_del(TychoMapSF *m, const char *k) {
     long s = tycho_map_sf_find(*m, k);
     if (s < 0) return;
-    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
-    m->keys[s] = TYCHO_MAP_TOMB;
-    m->len--;
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);   /* drop the deleted slot from the order list */
+    m->len--; m->used--;          /* backward-shift keeps the table tombstone-free, so used == live count */
+    unsigned long mask = (unsigned long)m->cap - 1;
+    long i = s, j = s;
+    for (;;) {
+        m->keys[i] = NULL;                                     /* i is the gap */
+        for (;;) {
+            j = (long)((j + 1) & mask);
+            if (m->keys[j] == NULL) return;                    /* gap closed at an empty slot */
+            long h = (long)(tycho_si_hash(m->keys[j]) & mask); /* home slot of the entry at j */
+            if (i <= j) { if (i < h && h <= j) continue; }     /* h cyclically in (i,j]: entry must stay */
+            else        { if (i < h || h <= j) continue; }
+            break;                                             /* entry at j can slide back into the gap */
+        }
+        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j];
+        long pp = m->prv[j], nn = m->nxt[j];                   /* relink: i takes j's place in the order list */
+        m->nxt[i] = nn; m->prv[i] = pp;
+        if (pp >= 0) m->nxt[pp] = i; else m->head = i;
+        if (nn >= 0) m->prv[nn] = i; else m->tail = i;
+        i = j;
+    }
 }
 
 TychoMapSF tycho_map_sf_copy(Arena *a, TychoMapSF src) {
@@ -1819,13 +1831,6 @@ void tycho_map_ii_put(Arena *a, TychoMapII *m, long k, long v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap tombstone purge: hand the old table back so the next purge reuses it (delete-churn stops leaking generations); skip on growth so the freelist isn't clogged with stale sizes */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->occ,  (size_t)m->cap);
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_ii_slot(*m, k);
@@ -1842,13 +1847,6 @@ long *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, long k) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap tombstone purge: hand the old table back so the next purge reuses it (delete-churn stops leaking generations); skip on growth so the freelist isn't clogged with stale sizes */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->occ,  (size_t)m->cap);
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_ii_slot(*m, k);
@@ -1858,8 +1856,27 @@ long *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, long k) {
 void tycho_map_ii_del(TychoMapII *m, long k) {
     long s = tycho_map_ii_find(*m, k);
     if (s < 0) return;
-    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
-    m->occ[s] = 2; m->len--;
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);   /* drop the deleted slot from the order list */
+    m->len--; m->used--;          /* backward-shift keeps the table tombstone-free, so used == live count */
+    unsigned long mask = (unsigned long)m->cap - 1;
+    long i = s, j = s;
+    for (;;) {
+        m->occ[i] = 0;                                         /* i is the gap */
+        for (;;) {
+            j = (long)((j + 1) & mask);
+            if (m->occ[j] == 0) return;                        /* gap closed at an empty slot */
+            long h = (long)(tycho_ik_hash(m->keys[j]) & mask); /* home slot of the entry at j */
+            if (i <= j) { if (i < h && h <= j) continue; }     /* h cyclically in (i,j]: entry must stay */
+            else        { if (i < h || h <= j) continue; }
+            break;                                             /* entry at j can slide back into the gap */
+        }
+        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j]; m->occ[i] = 1;
+        long pp = m->prv[j], nn = m->nxt[j];                   /* relink: i takes j's place in the order list */
+        m->nxt[i] = nn; m->prv[i] = pp;
+        if (pp >= 0) m->nxt[pp] = i; else m->head = i;
+        if (nn >= 0) m->prv[nn] = i; else m->tail = i;
+        i = j;
+    }
 }
 TychoMapII tycho_map_ii_copy(Arena *a, TychoMapII src) {
     TychoMapII r = tycho_map_ii_with_cap(a, src.len ? src.len * 2 : 0);
@@ -1933,13 +1950,6 @@ void tycho_map_if_put(Arena *a, TychoMapIF *m, long k, double v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
-            arena_recycle(a, m->occ,  (size_t)m->cap);
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_if_slot(*m, k);
@@ -1956,13 +1966,6 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, long k) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
-        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
-            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
-            arena_recycle(a, m->occ,  (size_t)m->cap);
-            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
-            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
-        }
         *m = n;
     }
     long s = tycho_map_if_slot(*m, k);
@@ -1972,8 +1975,27 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, long k) {
 void tycho_map_if_del(TychoMapIF *m, long k) {
     long s = tycho_map_if_find(*m, k);
     if (s < 0) return;
-    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
-    m->occ[s] = 2; m->len--;
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);   /* drop the deleted slot from the order list */
+    m->len--; m->used--;          /* backward-shift keeps the table tombstone-free, so used == live count */
+    unsigned long mask = (unsigned long)m->cap - 1;
+    long i = s, j = s;
+    for (;;) {
+        m->occ[i] = 0;                                         /* i is the gap */
+        for (;;) {
+            j = (long)((j + 1) & mask);
+            if (m->occ[j] == 0) return;                        /* gap closed at an empty slot */
+            long h = (long)(tycho_ik_hash(m->keys[j]) & mask); /* home slot of the entry at j */
+            if (i <= j) { if (i < h && h <= j) continue; }     /* h cyclically in (i,j]: entry must stay */
+            else        { if (i < h || h <= j) continue; }
+            break;                                             /* entry at j can slide back into the gap */
+        }
+        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j]; m->occ[i] = 1;
+        long pp = m->prv[j], nn = m->nxt[j];                   /* relink: i takes j's place in the order list */
+        m->nxt[i] = nn; m->prv[i] = pp;
+        if (pp >= 0) m->nxt[pp] = i; else m->head = i;
+        if (nn >= 0) m->prv[nn] = i; else m->tail = i;
+        i = j;
+    }
 }
 TychoMapIF tycho_map_if_copy(Arena *a, TychoMapIF src) {
     TychoMapIF r = tycho_map_if_with_cap(a, src.len ? src.len * 2 : 0);
