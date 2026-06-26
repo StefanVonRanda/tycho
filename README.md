@@ -786,6 +786,13 @@ stored and hashed as its tag — deterministic, never pointer-dependent — and
 round-trip through `match` (`tests/enum_key.ty`). An enum with a payload
 variant is rejected as a key: equal tags would not mean equal values.
 
+A **struct, tuple, or array** keys a map too (`[Point: int]`, `[(int,int): V]`,
+`[[int]: V]`): the key is stored inline and hashed deeply over its fields (a
+generated `tycho_hash_<K>` beside the existing deep `==`/copy), so equal values
+are equal keys — `tests/mapstructkey.ty`, `tests/maptuplekey.ty`,
+`tests/maparraykey.ty`. Any key type whose leaves are all hashable works; a key
+carrying a non-hashable leaf (a function value, a handle) is rejected.
+
 ### Type inference (bidirectional)
 
 Locals infer forward from their initializer (`x := e`). In the other

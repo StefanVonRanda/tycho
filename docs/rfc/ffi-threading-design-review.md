@@ -1,7 +1,22 @@
 # FFI & Threading — design review and improvement plan
 
-Status: design notes for the maintainer. Not implemented. Read-only review,
-citations to `path:line`. Nothing here changes code.
+Status: original read-only review (citations to `path:line`); **most
+recommendations have since shipped** — re-verify against the compilers before
+treating any item below as open.
+
+- **FFI — shipped:** R1 `bytes` (`tests/bytes*`), R2 typed `handle`s with
+  destructors, R3 nullable `-> Option(string)`, R4 `mut` out-parameter
+  constructors (`src/tychoc.c:2742`, `examples/sqlite/demo.ty`).
+- **FFI — deliberate non-goals:** R5 variadics / callbacks-into-Tycho; the
+  auto-shim for *non-scalar* out-params is rejected by ABI design, not pending.
+- **Threading — shipped:** R1 docs-honesty pass; the unbounded-spawn vector is
+  closed by a spawn **cap** (ceiling, default 1024 / `TYCHO_MAX_TASKS`) plus
+  `parallel for x in ch:` bounded fan-out (`ncpu()` workers) — covering R2's and
+  R3's safety goal without the full work-stealing pool R2 literally described.
+- **Threading — open / deliberate:** R4 per-task failure isolation (panic still
+  `exit(1)`s the process) remains a documented fail-stop stance, not built.
+
+The review below is preserved as the original analysis.
 
 This document responds to two pieces of feedback:
 

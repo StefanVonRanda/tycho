@@ -1,12 +1,16 @@
 # Composite map keys (`[Struct: V]`, `[(T,…): V]`) — design
 
-Status: design settled 2026-06-25; implementation staged.
+Status: **shipped, both compilers**, 2026-06-25 — struct / tuple / array keys
+(alongside the prior newtype and fieldless-enum keys). Verified green:
+`tests/mapstructkey.ty`, `maptuplekey.ty`, `maparraykey.ty`, `enum_key.ty`,
+`newtype_key.ty`; reject tests `tests/reject/enum_key_payload.ty`,
+`newtype_key_mix.ty`. This file is the design record, not open work.
 
 ## Goal
 
 Let a map key be a **struct or tuple** (recursively, over hashable fields), closing
-the README:570 gap. Today keys are `int` / `string` / a newtype over those / a
-fieldless enum. Composite *values* are already fully supported; this adds the same
+the README map-key gap. Before this, keys were `int` / `string` / a newtype over those /
+a fieldless enum. Composite *values* were already fully supported; this added the same
 generality on the key side.
 
 ## Approach — generalize the int-key occupancy scheme
