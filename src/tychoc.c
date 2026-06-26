@@ -2269,19 +2269,28 @@ static Stmt *parse_stmt(Parser *ps) {
      * named `delete` elsewhere is unaffected. */
     if (t->kind == TK_IDENT && !strcmp(t->text, "delete") && peek(ps, 1)->kind == TK_IDENT) {
         ps->p++;                                  /* eat 'delete' */
-        Tok *mt = cur(ps); ps->p++;               /* the map variable */
-        eat(ps, TK_LBRACKET, "`[` after the map in `delete m[k]`");
-        Expr *key = parse_expr(ps);
-        eat(ps, TK_RBRACKET, "`]` to close `delete m[k]`");
-        Stmt *s = new_stmt(S_ASSIGN, t->line);
-        s->name = mt->text;
-        Expr *mref = new_expr(E_IDENT, t->line); mref->sval = mt->text; mref->pkg = g_cur_pkg_prefix;
-        Expr *call = new_expr(E_CALL, t->line);
+        /* the map element to remove: a full place expression `PLACE[key]` (the map may be
+         * a bare variable, a struct field, or a nested index/tuple element), parsed as one
+         * postfix expr so `delete c.idx[k]` works, not just `delete m[k]`. */
+        Expr *e = parse_postfix(ps);
+        if (e->kind != E_INDEX) die_at(t->line, "`delete` removes a map element: `delete m[k]`");
+        Expr *mref = e->lhs;                      /* the map place */
+        Expr *key  = e->rhs;                      /* the key */
+        Expr *call = new_expr(E_CALL, t->line);   /* PLACE = map_del(PLACE, key) */
         call->sval = "map_del"; call->pkg = g_cur_pkg_prefix;
         call->args = (Expr **)xmalloc(2 * sizeof(Expr *));
         call->args[0] = mref; call->args[1] = key; call->nargs = 2;
-        s->expr = call;
-        return s;
+        if (mref->kind == E_IDENT) {              /* bare variable: S_ASSIGN (keeps the in-place map_del rewrite) */
+            Stmt *s = new_stmt(S_ASSIGN, t->line);
+            s->name = mref->sval; s->expr = call;
+            return s;
+        }
+        if (mref->kind == E_FIELD || mref->kind == E_INDEX || mref->kind == E_TUPIDX) {
+            Stmt *s = new_stmt(mref->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line);
+            s->target = mref; s->expr = call;     /* assign the new map back to the place */
+            return s;
+        }
+        die_at(t->line, "cannot `delete` from this expression");
     }
 
     if (t->kind == TK_RETURN) {

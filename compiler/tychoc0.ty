@@ -1105,14 +1105,42 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e, _sl)
-    elif t.kind == TIdent and t.text == "delete" and toks[pos + 1].kind == TIdent:   # `delete m[k]` -> m = map_del(m, k)
+    elif t.kind == TIdent and t.text == "delete" and toks[pos + 1].kind == TIdent:   # `delete PLACE[k]` -> PLACE = map_del(PLACE, k)
         pos = pos + 1
         name := toks[pos].text
         pos = pos + 1
-        expect(toks, &pos, TLBracket)
-        key := parse_expr(toks, &pos)
-        expect(toks, &pos, TRBracket)
-        return SAssign(name, ECall("map_del", [EVar(name, _el), key], _el), _sl)
+        dkinds := []int                       # the place steps after the head ident: 0 = field, 1 = index
+        dflds := []string
+        didxs := []Expr
+        for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+            if toks[pos].kind == TDot:
+                pos = pos + 1
+                push(dkinds, 0)
+                push(dflds, toks[pos].text)
+                push(didxs, EInt("0", _el))
+                pos = pos + 1
+            else:
+                pos = pos + 1
+                push(dkinds, 1)
+                push(dflds, "")
+                push(didxs, parse_expr(toks, &pos))
+                expect(toks, &pos, TRBracket)
+        nstep := len(dkinds)
+        if nstep == 0 or dkinds[nstep - 1] != 1:
+            die("parse: line " + str(t.line) + ": delete removes a map element: delete m[k]")
+        key := didxs[nstep - 1]               # the last [..] is the key; the map place is everything before it
+        lv := EVar(name, _el)
+        j := 0
+        for j < nstep - 1:
+            if dkinds[j] == 0:
+                lv = EField(lv, dflds[j], _el)
+            else:
+                lv = EIndex(lv, didxs[j], _el)
+            j = j + 1
+        call := ECall("map_del", [lv, key], _el)
+        if nstep == 1:                        # bare `delete m[k]` -> SAssign (keeps tychoc's in-place rewrite path)
+            return SAssign(name, call, _sl)
+        return SFieldAssign(lv, call, _sl)
     elif t.kind == TIdent and t.text == "println":   # desugar: print(x + "\n")
         pos = pos + 1
         expect(toks, &pos, TLParen)
