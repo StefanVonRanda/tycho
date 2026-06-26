@@ -6014,7 +6014,11 @@ static char *copy_into(Type t, const char *arena, char *val) {
             if (IS_ARRC(t))
                 return sfmt("tycho_arr_C%d_copy(%s, %s)", ARRC_ID(t), arena, val);
             if (IS_FUNC(t))   /* a fn value: re-home its captured env into `arena` (a plain ref has env==0 -> no-op) */
-                return sfmt("({ FnC%d _t = (%s); if (_t.env) _t.env = _t.copyenv(%s, _t.env); _t; })", FUNC_ID(t), val, arena);
+                /* temp is `_fcp`, NOT `_t`: `arena` may be a block arena named `_t`
+                 * (e.g. retrieving a closure-valued map entry inside a print block),
+                 * and a `_t` temp here would shadow it so copyenv(&_t,...) passes the
+                 * FnC* instead of the Arena*. */
+                return sfmt("({ FnC%d _fcp = (%s); if (_fcp.env) _fcp.env = _fcp.copyenv(%s, _fcp.env); _fcp; })", FUNC_ID(t), val, arena);
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("tycho_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
             if (IS_SOA(t))   /* deep-copy each field buffer into `arena` */

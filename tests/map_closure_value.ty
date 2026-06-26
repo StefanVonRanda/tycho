@@ -1,0 +1,13 @@
+# A map valued by a closure type (`[string: fn(float)->float]`) — a builtin/dispatch
+# table. tychoc miscompiled this: the closure-env re-home snippet (valcopy's FUNC
+# case) named its temp `_t`, which shadowed the surrounding block arena `_t` when the
+# entry was retrieved inside a print block, so copyenv(&_t,...) passed the FnC* where
+# it wanted the Arena* (incompatible-pointer C error). tychoc0 already handled it.
+# Fixed by renaming the temp to `_fcp`. Covers a scalar closure and a captured-env one.
+fn main():
+    b := []string: fn(float) -> float
+    b["double"] = fn(x: float) -> float: x * 2.0
+    b["neg"] = fn(x: float) -> float: 0.0 - x
+    base := 100.0
+    b["addbase"] = fn(x: float) -> float: x + base
+    print(str(b["double"](21.0)) + " " + str(b["neg"](5.0)) + " " + str(b["addbase"](1.0)) + "\n")
