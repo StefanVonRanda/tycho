@@ -11416,6 +11416,13 @@ fn main():
         if not is_map(ets[i]) and not is_soa(ets[i]) and struct_keyused(dc, ctx, ets, "[" + ets[i] + "]"):
             out = out + gen_arr_hash(dc, ctx, ets[i])
         i = i + 1
+    i = 0                                        # map _copy/_eq FORWARD DECLS: an outer map's put/copy deep-copies its inner-map VALUES via the inner map's _copy/_eq, but map families are emitted in ets order, not dependency order (e.g. an array branch pushes a map element before recursing into its value map), so a container map can precede its value map. Forward-declare so emission order never matters (mirrors the array/struct copy protos).
+    for i < len(ets):
+        if is_map(ets[i]):
+            mm := mstruct(ets[i])
+            out = out + "static " + mm + " " + mangle(ets[i]) + "_copy(Arena* ar, " + mm + " m);\n"
+            out = out + "static int " + mangle(ets[i]) + "_eq(" + mm + " a, " + mm + " b);\n"
+        i = i + 1
     i = 0
     for i < len(ets):
         if is_map(ets[i]):
