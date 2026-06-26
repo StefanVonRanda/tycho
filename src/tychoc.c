@@ -4104,7 +4104,7 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = T_BOOL;
             }
             /* map_del is pure (returns a new map); the m = map_del(m, k)
-             * self-rebind is rewritten to an in-place tombstone delete. */
+             * self-rebind is rewritten to an in-place backward-shift delete. */
             if (!strcmp(e->sval, "map_del")) {
                 if (e->nargs != 2) die_at(e->line, "map_del(m, key) takes two arguments");
                 Type mt = resolve_expr(e->args[0]);
@@ -5958,7 +5958,7 @@ static int is_self_mapset(Stmt *s) {
         && !strcmp(s->expr->args[0]->sval, s->name);
 }
 /* `m = map_del(m, k)` — the delete twin of is_self_mapset; rewritten to an
- * in-place tombstone delete on m's unique table instead of a pure deep-copy. */
+ * in-place backward-shift delete on m's unique table instead of a pure deep-copy. */
 static int is_self_mapdel(Stmt *s) {
     return s->kind == S_ASSIGN
         && s->expr->kind == E_CALL
@@ -6299,7 +6299,7 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("%s(%s, %s)", map_rt(e->args[0]->type, "has"), m, k);
     }
     /* map_del pure: deep-copy + delete into `arena`; the accumulator pass
-     * rewrites a self-rebind to an in-place tombstone delete separately. */
+     * rewrites a self-rebind to an in-place backward-shift delete separately. */
     if (!strcmp(e->sval, "map_del")) {
         char *m = gen_expr(e->args[0], arena);
         char *k = key_rt(e->type, gen_expr(e->args[1], arena));
@@ -7274,7 +7274,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 fprintf(o, "%s(%s, %s, %s, %s);\n", map_rt(s->expr->type, "put"), mo, mp, k, v);
                 break;
             }
-            /* in-place map delete: `m = map_del(m, k)` tombstones in place. No
+            /* in-place map delete: `m = map_del(m, k)` backward-shifts in place. No
              * allocation, so no arena arg; the pointer is the mut pointer for
              * a mut map, else the address of the local descriptor. */
             if (is_accum(s->name) && is_self_mapdel(s)) {
@@ -8574,7 +8574,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
     }
     /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
-     * TychoMapSI (open addressing, NULL/tombstone, FNV string keys), with the VALUE
+     * TychoMapSI (open addressing, NULL-empty slots + backward-shift delete, keyed
+     * SipHash string keys), with the VALUE
      * generalized to any type: put deep-copies the value into the map's arena via
      * copy_into, exactly like a composite-array element. Emitted after struct/array
      * bodies so a struct/array value type's copy fn is already available. */

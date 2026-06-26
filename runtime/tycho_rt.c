@@ -1318,18 +1318,20 @@ TychoArrStr tycho_args(Arena *a) {
 /* ----------------------------------------------------------- Map(string,int)
  * A TychoMapSI is a value (5 words, passed/copied by value like TychoArr*). Its
  * backing tables live in an arena. Open addressing, linear probe, power-of-two
- * capacity. keys[i]==NULL means empty; keys[i]==TYCHO_MAP_TOMB is a deleted slot
- * (a tombstone) kept so a probe chain that ran through it is not broken. A
- * 0-cap map is the empty literal; the first insert allocates. `len` counts live
- * entries; `used` counts live + tombstone slots and drives rehash, so a
- * delete-heavy map cannot fill with tombstones and stall probing.
+ * capacity. keys[i]==NULL means empty. Delete is linear-probe BACKWARD-SHIFT
+ * (later probe-chain entries slide back into the gap), so the table stays
+ * tombstone-free and `used == len` — both count live entries and rehash grows on
+ * load only. (The TYCHO_MAP_TOMB sentinel and the tombstone branches in
+ * _slot/_find below are now vestigial: delete shifts instead of tombstoning, so a
+ * tombstone is never created.) A 0-cap map is the empty literal; the first insert
+ * allocates.
  *
  * Value semantics, same as the arrays: `m2 = map_set(m, k, v)` returns a NEW
  * map (deep copy + insert) so `m` is unchanged; the compiler rewrites the
  * uniquely-owned accumulator shape `m = map_set(m, ...)` to map_put in place
  * (cf. the in-place string append) so a build-up loop is amortized O(1) per
  * insert instead of O(n) deep-copy each step. `m = map_del(m, k)` is rewritten
- * the same way to an in-place tombstone delete. Key bytes are copied into the
+ * the same way to an in-place backward-shift delete. Key bytes are copied into the
  * owning arena exactly as [string] elements are (the lifetime seam nests). */
 typedef struct { char **keys; long *vals; long len; long cap; long used; long *nxt; long *prv; long head; long tail; } TychoMapSI;
 
@@ -1460,10 +1462,8 @@ static long tycho_map_si_slot(TychoMapSI m, const char *k) {
     return tomb >= 0 ? tomb : i;
 }
 
-/* in-place insert into a uniquely-owned map; rehashes past 1/2 load (counting
- * tombstones), growing only when live entries pass the threshold — a rehash at
- * the same size purges tombstones. Key bytes copied into arena a so a pushed
- * loop-scratch key does not dangle. */
+/* in-place insert into a uniquely-owned map; rehashes (grows) past 1/2 load. Key
+ * bytes copied into arena a so a pushed loop-scratch key does not dangle. */
 void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, long v) {
     if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
@@ -1514,8 +1514,10 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
     return &m->vals[s];
 }
 
-/* in-place delete from a uniquely-owned map: tombstone the slot if the key is
- * live. `used` is unchanged (the slot is still occupied); a later put purges it. */
+/* in-place backward-shift delete from a uniquely-owned map (no-op if absent):
+ * unlink the key's slot from the order list, NULL it, then slide any later
+ * probe-chain entries back into the gap so the table stays tombstone-free
+ * (used == len). */
 void tycho_map_si_del(TychoMapSI *m, const char *k) {
     long s = tycho_map_si_find(*m, k);
     if (s < 0) return;
@@ -1574,7 +1576,7 @@ int tycho_map_si_has(TychoMapSI m, const char *k) {
     return tycho_map_si_find(m, k) >= 0;
 }
 
-/* the live keys as a [string], in table order. Key bytes are copied into a so
+/* the live keys as a [string], in insertion order. Key bytes are copied into a so
  * the result owns them (value semantics; cf. tycho_arr_str_copy). This is how a
  * map is iterated: keys(m) then index the array. */
 TychoArrStr tycho_map_si_keys(Arena *a, TychoMapSI m) {
@@ -1596,8 +1598,8 @@ int tycho_map_si_eq(TychoMapSI x, TychoMapSI y) {
 
 /* ----------------------------------------------------------- Map(string,float)
  * Exactly TychoMapSI with `double` values (string keys, float values) — the
- * same open-addressing / tombstone table, sharing tycho_map_live, tycho_si_hash,
- * and the tombstone sentinel. Only the value word's type differs. */
+ * same open-addressing table, sharing tycho_map_live, tycho_si_hash, and its
+ * (now-vestigial) tombstone sentinel. Only the value word's type differs. */
 typedef struct { char **keys; double *vals; long len; long cap; long used; long *nxt; long *prv; long head; long tail; } TychoMapSF;
 
 TychoMapSF tycho_map_sf_with_cap(Arena *a, long cap) {
@@ -1758,9 +1760,9 @@ int tycho_map_sf_eq(TychoMapSF x, TychoMapSF y) {
  * Int-keyed maps (TychoMapII: int->int, TychoMapIF: int->float). Same open-
  * addressing table as the string-keyed maps, but the key is a `long` value, so
  * there is no NULL/sentinel free in the key array (0 is a real key): an `occ`
- * byte per slot tracks 0=empty / 1=live / 2=tombstone instead. Keys are plain
- * values (no arena copy). tycho_ik_hash mixes the bits so sequential int keys do
- * not cluster. */
+ * byte per slot tracks 0=empty / 1=live instead (delete backward-shifts, so the
+ * vestigial 2=tombstone is never set). Keys are plain values (no arena copy).
+ * tycho_ik_hash mixes the bits so sequential int keys do not cluster. */
 static unsigned long tycho_ik_hash(long k) {        /* seeded SplitMix64 finalizer */
     unsigned long x = ((unsigned long)k ^ tycho_ik_seed) + 0x9e3779b97f4a7c15UL;
     x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9UL;
