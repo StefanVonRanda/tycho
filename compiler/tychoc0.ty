@@ -10864,9 +10864,8 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                 k := 0
                 for k < len(margs):
                     ft := dc.structs[gsi].fields[k].ty
-                    if len(ft) > 0 and ft[0] == 36:
-                        push(bnames, substr(ft, 1, len(ft)))
-                        push(btypes, type_of(margs[k], names, types, dc, ctx))
+                    ct := type_of(a[k], names, types, dc, ctx)    # type the ORIGINAL arg a[k], NOT the mono'd margs[k]: a nested generic constructor in margs names its instance (e.g. Box__int), not yet in dc -> type_of would fail. (Same reason the generic-function case above uses a[k].)
+                    match_typaram_str(ft, ct, &bnames, &btypes)   # unify the field PATTERN against the arg's concrete type; recurses into [$V] / {string:$V} / fn(...) (was a bare `ft[0]=='$'` check that bound only a bare `$V` field), so a typaram nested in a container field binds too -- otherwise instantiate_struct substitutes nothing and `$V` leaks ("unknown type '$V'")
                     k = k + 1
                 newnm := instantiate_struct(dc.structs[gsi], bnames, btypes, &sinsts)
                 return ECall(newnm, margs, el)
