@@ -44,7 +44,7 @@ struct Point:
     x: int
     y: int
 
-p := Point{ x: 1, y: 2 }
+p := Point(1, 2)           # positional construction, fields in declaration order
 p.x                        # field read
 p.y = 5                    # field write (in place)
 

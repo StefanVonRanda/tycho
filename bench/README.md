@@ -22,12 +22,12 @@ where shown.
 | **array-pipeline** | bulk transform | 6 MB vs C 3 | ~2× C mem (slack, closes to ≤C with `reserve`); time **1.25× C** after push-loop fusion | `bench-prongB` |
 | **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
 | **json-parse (real)** | recursive-descent parse-and-discard | 67 MB vs C 58 | **fastest of all 5**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
-| **iter-transform** | loop-carried reassign (was the arena's worst case) | 3 MB vs C 2 | **3.5 GB → 3 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
+| **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
-| **winagg** | per-window churn-and-discard | ~par C, beats Go | win on bulk-free teardown | `winagg/` |
+| **winagg** | per-window churn-and-discard | 7 MB vs C 5 (~1.4×), beats Go | hold-cost on per-key lists; win on bulk-free teardown | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
-| **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 77.9, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
+| **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 78.1, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
 | **json-tree** | a tagged value tree held across a fold | 37 MB vs C 35, Go 28.5 | ≈ C — **value-shaped** data, zero manual mgmt | `json/` |
 | **trie** | pointer-linked recursive nodes (each owns a child map) | 119 MB vs C 38, Go 34 | **~3.2× C — the standing loss**: children stored by value, not by pointer (up from 103 MB / ~2.7×: each map now carries an O(1)-delete order list, +16 B/slot the trie's many tiny maps pay without ever deleting) | `trie/` |
 | **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
@@ -112,8 +112,8 @@ Not cleanly benchmarkable, and why (honest negative space):
   `parallel for`, and channels shipped (both compilers), and `conc/`
   measures them head-to-head — `parallel for` lands at exact C-pthreads
   parity on the compute-bound reduction, and the lock-free channels beat a
-  hand-written C mutex ring 2.6x while still paying the per-message deep
-  copies. On the `pool` workload — a bounded-channel worker pool written as
+  hand-written C mutex ring ~9× (73 vs 654 ms) while still paying the per-message
+  deep copies. On the `pool` workload — a bounded-channel worker pool written as
   one line, `parallel for x in ch:` — tycho is at Go parity (~5% faster, 150
   vs 157 ms) against Go's hand-written `range`-over-channel + `WaitGroup`
   pool, both lock-free on the hot path. See `conc/RESULTS.md`.

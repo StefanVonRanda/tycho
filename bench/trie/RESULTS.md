@@ -24,8 +24,8 @@ value-vs-pointer gap that remains is structural, not tunable.)
 
 ## Reading it honestly — this is a workload tycho loses
 
-Unlike the JSON tree (where tycho ≈ C on memory), the trie costs tycho **~3.4× C and
-~3.8× Go**. This is not the arena; it is **value semantics meeting a pointer-shaped
+Unlike the JSON tree (where tycho ≈ C on memory), the trie costs tycho **~3.2× C and
+~3.5× Go**. This is not the arena; it is **value semantics meeting a pointer-shaped
 structure**, and it is worth stating plainly:
 
 - **Children are stored by value, not by reference.** `[int: Trie]` holds whole `Trie`

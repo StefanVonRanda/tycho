@@ -544,7 +544,7 @@ for i in range(len(ks)):
 ```
 
 `keys(m)` returns the live keys as a `[string]` (or `[int]` for an int-keyed
-map) in unspecified order; iterate it with `for k in keys(m):` (or index it) to
+map) in insertion order (the order keys were first inserted); iterate it with `for k in keys(m):` (or index it) to
 walk the map — `k in m` tests membership, it does not iterate. `delete m[k]`
 removes a key (a no-op if absent). See [`examples/wordcount.ty`](examples/wordcount.ty).
 
@@ -759,7 +759,7 @@ fn area(w: Meters, h: Meters) -> Meters:
 fn main():
     w := Meters(3.0)        # wrap a float into a Meters
     a := area(w, Meters(4.0))
-    print(str(a))           # 12 -- str sees the underlying float
+    print(str(a))           # 12.0 -- str sees the underlying float
     # area(3.0, 4.0)        -> error: a float is not a Meters
     # w + Seconds(1.0)      -> error: can't mix two newtypes
 ```
@@ -1183,7 +1183,7 @@ Fixtures in `tests/pkg/`; details in [docs/packages.md](docs/packages.md).
 | `map_get(m, k, d)` | `([string: int], string, int) -> int` | Value for key `k`, or default `d` if absent. The one surviving map *function* — everything else is operator/keyword syntax. |
 | `k in m` | membership `-> bool` | Whether key `k` is present. |
 | `delete m[k]` | statement | Remove key `k` (a no-op if absent). |
-| `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type (unspecified order); iterate it to walk the map. |
+| `keys(m)` | `map -> [string]` / `[int]` | The live keys as an array of the map's key type, in insertion order; iterate it to walk the map. |
 | `reserve(arr, n)` | `([T], int) -> void` | Capacity hint: preallocate room for `n` elements (`[int]`/`[float]`/`[string]`; a map place `m[k]` works too — count-then-fill builds size each list once). A hint, not a length: contents and `len` are unchanged, pushing past `n` still grows. A capacity that can't be allocated aborts at runtime. |
 | `getenv(name)` | `string -> string` | The environment variable's value, or `""` if unset. |
 | `wait(t)` | `Task(T) -> T` | Join a spawned task; the result deep-copies into the waiting scope and the task's arena tree frees. Exactly once per task (a second wait dies loudly); see [Concurrency](#concurrency-spawn-parallel-for-channels). |

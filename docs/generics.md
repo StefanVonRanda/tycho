@@ -30,8 +30,16 @@ fn first(xs: [$T]) -> Option(T):
     return None
 
 fn main():
-    print(str(first([3, 1, 2])) + "\n")        # T = int    -> Some(3)
-    print(first(["a", "b"]) + "\n")             # T = string -> Some("a")
+    match first([3, 1, 2]):                     # T = int
+        Some(x):
+            print(str(x) + "\n")                # 3
+        None:
+            print("empty\n")
+    match first(["a", "b"]):                    # T = string
+        Some(s):
+            print(s + "\n")                     # a
+        None:
+            print("empty\n")
 ```
 
 ```

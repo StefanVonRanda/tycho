@@ -39,7 +39,7 @@ Runner unit bug fixed first — see prongB doc.)
 
 ## #2 — per-object overhead: tycho is the most compact
 
-tycho holds 2M small strings in **64.8 MB** — below C (77.9 MB) and well below Go
+tycho holds 2M small strings in **64.8 MB** — below C (78.1 MB) and well below Go
 (119.8 MB). Arena bump-allocation carries **no per-object header** (C's `malloc`
 adds ~16 B each → ~32 MB of pure overhead here) and **no GC metadata / headroom**
 (Go's runtime). When peak is bound by object *count* rather than bytes, the arena's

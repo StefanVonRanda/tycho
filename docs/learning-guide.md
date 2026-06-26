@@ -478,14 +478,14 @@ struct Rect:
     hi: Point
 
 fn area(r: Rect) -> int:
-    return (r.ty.x - r.lo.x) * (r.ty.y - r.lo.y)
+    return (r.hi.x - r.lo.x) * (r.hi.y - r.lo.y)
 
 fn main():
     # positional construction (fields in declaration order)
     a := Point(1, 2)
     r := Rect(a, Point(4, 6))
 
-    print(str(area(r)) + "\n")       # 9
+    print(str(area(r)) + "\n")       # 12
 
     # value semantics: copies are independent
     b := a               # b is a deep copy
@@ -1110,11 +1110,11 @@ fn main():
 `extern fn` declares a C function Tycho can call:
 
 ```
-extern fn getpid() -> int
+extern fn random() -> int                  # libc random(): long random(void)
 extern "m" fn cos(x: float) -> float       # links -lm
 
 fn main():
-    print(str(getpid()) + "\n")
+    print(str(random() >= 0) + "\n")        # true
     print(str(cos(0.0)) + "\n")             # 1.0
 ```
 

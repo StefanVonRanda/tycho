@@ -68,8 +68,8 @@ axes separately, because they support different-strength claims.
 - **invindex (build-and-hold):** arena's worst case — ~1.7× C memory on naive growth
   (the held index can't be bulk-freed mid-build), closing to ~1.07× C with a `reserve`
   count-fill pass.
-- **winagg (churn / transient):** arena's best case — peak stays flat at one window
-  (~par C, beats Go), and the O(1)-per-window bulk-free teardown keeps time in the C–Go
+- **winagg (churn / transient):** peak stays flat at one window
+  (7 MB vs C 5, ~1.4×; beats Go), and the O(1)-per-window bulk-free teardown keeps time in the C–Go
   band, ahead of default-hasher Rust and Go.
 
 Neither is "tycho wins everywhere." Together they map the boundary honestly: the
