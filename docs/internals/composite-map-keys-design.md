@@ -6,6 +6,15 @@ Status: **shipped, both compilers**, 2026-06-25 — struct / tuple / array keys
 `newtype_key.ty`; reject tests `tests/reject/enum_key_payload.ty`,
 `newtype_key_mix.ty`. This file is the design record, not open work.
 
+> **Order-store superseded 2026-06-26 (semantics unchanged).** The `ord`
+> insertion-order list described below (a flat `KT*` array with `tycho_ord_push_*`/
+> `tycho_ord_del_*`, del matching by `tycho_eq`) was replaced — in the composite
+> `tycho_mapc%d` families too — by an **intrusive doubly-linked list over the table
+> slots** (`nxt`/`prv` + `head`/`tail`, shared `tycho_ord_link`/`tycho_ord_unlink`),
+> so `delete` is an O(1) slot unlink instead of an O(n) shift-remove. `keys()` output
+> is byte-identical (insertion order preserved). See
+> [map-hash-dos-plan.md](map-hash-dos-plan.md) and commit `f9bfc34`.
+
 ## Goal
 
 Let a map key be a **struct or tuple** (recursively, over hashable fields), closing

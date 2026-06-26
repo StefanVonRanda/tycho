@@ -81,6 +81,18 @@ edge arrays are flat in every language — so the residual gap is just a 24-byte
 descriptor per node, not the pointer-vs-struct blowup. The idiom is the difference between
 ~2.7× and ~1.3×.
 
+`bench/lru` is a second index-pool case: a fixed-capacity LRU cache as a `[Node]` pool
+(`prev`/`next` are `int` indices) plus an `[int: int]` map, the tail slot recycled on
+eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped. It lands at
+**~5× C memory / ~5× wall, ahead of Go**, after two map-runtime costs it surfaced and that
+were then fixed: (1) `delete m[k]` was **O(map size)** because the insertion-ordered `keys()`
+vector was a flat array compacted on every delete — now an O(1) unlink on an intrusive
+slot-linked list (`nxt`/`prv` over the table slots); (2) delete-churn held ~4× more memory
+because same-cap tombstone-purge rehashes leaked table generations into the arena — now
+bounded by handing the purged table back (`arena_recycle`). The residual ~5× is the map's
+open-addressing backing (load-factor slack + the order list), the same header-cost family as
+the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
+
 Measured on the same 150k-word workload, the flat-pool trie above lands at **69 MB** — down
 from 103 MB for the by-value recursive version (−33%), correct on both compilers. It does
 *not* reach C's 38 MB, because each node still owns an `[int: int]` child map and that

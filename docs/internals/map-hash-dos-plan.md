@@ -10,6 +10,21 @@
 > Internal working note (not part of the public docs surface). Source: a 2026
 > podcast review surfaced this; verified against the code. Design validated on one
 > map family, then reverted — this plan is the dedicated implementation pass.
+>
+> **REPRESENTATION SUPERSEDED 2026-06-26 (semantics unchanged).** Section 3 below
+> describes the insertion-order store as a flat `ord` key-array with **shift-remove**
+> on delete. That shipped and is correct, but the shift-remove is **O(n) per delete**,
+> which `bench/lru` (a delete-heavy LRU) turned into an O(n·deletes) cliff. The flat
+> `ord`/`nord`/`ocap` was therefore replaced by an **intrusive doubly-linked list over
+> the table slots** — `nxt[s]`/`prv[s]` + `head`/`tail`, one key-agnostic
+> `tycho_ord_link`/`tycho_ord_unlink` pair, rebuilt on rehash by walking the old list —
+> making delete an **O(1) unlink** while emitting byte-identical insertion-order
+> `keys()` (so the hash-flooding determinism guarantee here is unchanged). A follow-up
+> bounds delete-churn rehash memory by recycling the purged table (`arena_recycle` on a
+> same-cap rehash). Both land in the four fixed families and the composite
+> `tycho_mapc%d` families (the memory recycle is fixed-families-only so far). Commits
+> `f9bfc34` (delete) and `16ea725` (memory); see `bench/lru/RESULTS.md`. The flat-`ord`
+> text below is retained as the original hash-DoS implementation record.
 
 ## 1. The finding (verified, current)
 
