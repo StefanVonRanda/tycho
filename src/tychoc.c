@@ -8611,7 +8611,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
                 "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
                 "        *m = n;\n    }\n"
                 "    long s = tycho_mapc%d_slot(*m, k);\n"
                 "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
@@ -8632,7 +8632,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
                 "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-                "    for (long s = src.head; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
+                "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
                 "    return r;\n}\n", i, i, i, i, i, i);
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, %sk, %sv) {\n"
@@ -8648,7 +8648,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
                 "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                "    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
+                "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
                 "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
             fprintf(o,
                 "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
@@ -8660,7 +8660,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
                 "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
                 "        *m = n;\n    }\n"
                 "    long s = tycho_mapc%d_slot(*m, k);\n"
                 "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
@@ -8693,7 +8693,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
                 "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
                 "        *m = n;\n    }\n"
                 "    long s = tycho_mapc%d_slot(*m, k);\n"
                 "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
@@ -8713,7 +8713,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
                 "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-                "    for (long s = src.head; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
+                "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
                 "    return r;\n}\n", i, i, i, i, i, i);
             fprintf(o,
                 "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, long k, %sv) {\n"
@@ -8735,7 +8735,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 fprintf(o,
                     "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
                     "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                    "    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, %s);\n"
+                    "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, %s);\n"
                     "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat), kv);
             }
             fprintf(o,
@@ -8748,7 +8748,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
                 "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
                 "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
                 "        *m = n;\n    }\n"
                 "    long s = tycho_mapc%d_slot(*m, k);\n"
                 "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
@@ -8779,7 +8779,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
             "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
             "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-            "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+            "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
             "        *m = n;\n    }\n"
             "    long s = tycho_mapc%d_slot(*m, k);\n"
             "    if (!tycho_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = tycho_str_copy(a, k); m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
@@ -8799,7 +8799,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
             "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-            "    for (long s = src.head; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
+            "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
             "    return r;\n}\n", i, i, i, i, i, i);
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, const char *k, %sv) {\n"
@@ -8817,7 +8817,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o,
                 "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
                 "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                "    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
+                "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
                 "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
         }
         fprintf(o,
@@ -8830,7 +8830,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
             "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
             "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-            "        for (long o = m->head; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
+            "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
             "        *m = n;\n    }\n"
             "    long s = tycho_mapc%d_slot(*m, k);\n"
             "    if (!tycho_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = tycho_str_copy(a, k); m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
