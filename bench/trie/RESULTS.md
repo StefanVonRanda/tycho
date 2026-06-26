@@ -15,7 +15,7 @@ peak RSS via `bench/peakrss`. All three emit checksum `229005 117013`.
 
 | lang  | peak RSS | wall   | per node | child storage                |
 |-------|---------:|-------:|---------:|------------------------------|
-| tycho | 103.3 MB | ~82 ms | ~450 B   | child **structs by value**   |
+| tycho | 119.2 MB | ~98 ms | ~520 B   | child **structs by value**   |
 | C     |  37.8 MB | ~41 ms | ~173 B   | child **pointers** (8 B)     |
 | Go    |  33.8 MB | ~63 ms | ~148 B   | `map[byte]*Node` (pointers)  |
 
@@ -56,6 +56,12 @@ from **127 MB → 103 MB** (−19%) with **no change to `bench/json`** (37 MB ei
 json's map values are 8 B pointers, so its abandoned intermediate arrays are cheap; the
 trie's are 80 B structs).
 
+A later, unrelated change raised the baseline to **119 MB**: every map gained an intrusive
+insertion-order list (`nxt`/`prv` per slot, the O(1)-delete machinery — see `bench/lru`),
+adding ~16 B per slot. The trie holds millions of tiny maps and never deletes, so it pays
+that cost with no benefit — an honest consequence of making map delete O(1) and
+churn-bounded for the workloads that *do* delete.
+
 We also measured capacity **2**, and it was *worse* — back up to ~127 MB. The reason is
 specific to the arena and worth recording: a smaller initial capacity forces more
 **rehashing**, and the arena cannot reclaim the abandoned intermediate backing arrays
@@ -66,7 +72,7 @@ The optimum trades empty-slot waste (large cap) against abandoned-rehash-array w
 
 ## Notes / honest limits
 
-- Even at cap-4, tycho is ~2.7× C here. The remaining gap is **value-vs-pointer storage**,
+- Even at cap-4, tycho is ~3.2× C here. The remaining gap is **value-vs-pointer storage**,
   which is fundamental to value semantics, not a tuning knob. For pointer-shaped / shared
   structures, see `docs/internals/value-semantics-limits.md` for the recommended idioms.
 - Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run

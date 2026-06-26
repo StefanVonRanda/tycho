@@ -29,7 +29,7 @@ where shown.
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
 | **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 77.9, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
 | **json-tree** | a tagged value tree held across a fold | 37 MB vs C 35, Go 28.5 | ≈ C — **value-shaped** data, zero manual mgmt | `json/` |
-| **trie** | pointer-linked recursive nodes (each owns a child map) | 103 MB vs C 38, Go 34 | **~2.7× C — the standing loss**: children stored by value, not by pointer | `trie/` |
+| **trie** | pointer-linked recursive nodes (each owns a child map) | 119 MB vs C 38, Go 34 | **~3.2× C — the standing loss**: children stored by value, not by pointer (up from 103 MB / ~2.7×: each map now carries an O(1)-delete order list, +16 B/slot the trie's many tiny maps pay without ever deleting) | `trie/` |
 | **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
 | **lru** | fixed-cap cache, delete-heavy `[int:int]` map churn | 40 MB vs C 11, Go 21 | ~4× C — drove two map fixes: O(n)→O(1) delete (slot-linked order) + tombstone-free backward-shift deletion (no purge-rehash churn; was 222 MB before); memory tracks the live set, not delete volume | `lru/` |
 | **interp** | tree-walking interpreter, recursive-enum AST (5.6M nodes) | 252 MB vs C 512, Go 540 | **~0.5× C — beats C and Go**: the arena has no per-node malloc header (C) or GC metadata (Go) on a recursive value-shape with no per-node maps — the trie's inverse | `interp/` |
@@ -50,26 +50,39 @@ domain of the workload:
   35 MB), a SQLite result set (`dbquery/`), a flat array pipeline. tycho lands **≈ C**,
   writing none of the memory management. The model at its best.
 - **Pointer-shaped** (a node referenced/shared through pointers) — a trie whose nodes each
-  own a child map (`trie/`: **103 vs 38 MB, ~2.7× C**). Value semantics store children *by
+  own a child map (`trie/`: **119 vs 38 MB, ~3.2× C**). Value semantics store children *by
   value*, not by reference, so every edge costs a whole node rather than an 8-byte pointer,
   and there is no sharing. This is a **standing cost, fundamental to mutable value
   semantics** — the most mature MVS language (Hylo) hits the identical wall
   (`docs/internals/hylo-mvs-research.md`), not a tycho implementation shortfall.
 - **The bridge** — express the same graph as an **adjacency list of integer indices**
   (`dijkstra/`: **41 vs 31.5 MB, ~1.3× C**, ≈ Go). Indices are value-shaped, so the graph
-  drops from ~2.7× to ~1.3× C. This is the idiom `docs/internals/value-semantics-limits.md`
+  drops from ~3.2× to ~1.3× C. This is the idiom `docs/internals/value-semantics-limits.md`
   prescribes for pointer-shaped data, measured on a real algorithm.
+- **Recursive but cheap-per-node** — a tree-walking interpreter's AST (`interp/`: **252 vs
+  C 512, Go 540 MB, ~0.5× C — the lowest of the three**). This is *also* a large recursive
+  owned tree, like the trie — but each node is a plain enum cell, not a node that owns a
+  map. With no per-node side table, the arena's structural advantage is pure win: no
+  per-node `malloc` header (C ~16 B/node over ~8.6M nodes) and no GC metadata (Go). So the
+  trie's cost is not "recursion" or "pointers" — it is the **per-node map**; strip that and
+  a recursive value-shape is where the arena is *strongest*.
 
-So the honest rule: value semantics + arenas match C on value-shaped data and pay a real
-premium on pointer-linked structures — and the index idiom is how you turn the latter into
-the former when the premium matters.
+So the honest rule, sharpened by the trie/interp pair: the cost is **per-node side tables**
+(a map/soa owned by every node), not recursion or pointers per se. A recursive tree of
+plain cells (`interp`) *beats* C; the same tree with a map at every node (`trie`) is
+~3.2× C; the index idiom (`dijkstra`) turns a pointer graph back into flat value-shaped
+data when the premium matters. Value semantics + arenas match-or-beat C on value-shaped
+data and pay a real premium only where each node carries its own heap side table.
 
 ## The honest envelope
 
 - **Wins / C-class:** transient churn, deep recursion, fixed-size retention, a real
   parser, a real SQLite workload, and pause-free latency — often *beating* hand-
   written C on time (trees, json-parse) because reclamation is one O(1) arena reset
-  instead of N frees.
+  instead of N frees. The strongest single result is a **recursive structure with no
+  per-node side table**: a tree-walking interpreter's AST (`interp/`) is **~0.5× C and
+  ~0.47× Go memory** — the arena carries no per-node `malloc` header or GC metadata over
+  millions of nodes (the inverse of the trie's per-node-map loss).
 - **Recovered:** the two cases that were once clean defeats, both fixed by static
   FBIP reuse derived from value semantics (Koka's Perceus result without runtime
   refcounts), in **both** compilers:
@@ -79,7 +92,7 @@ the former when the premium matters.
     ~1.3× C (**MM-9**, per-element overwrite recycle + segregated free-list).
     Fixed-size records already tied.
 - **Loses:** **pointer-linked data structures** are a genuine standing cost — a trie of
-  nodes that each own a child map is ~2.7× C (`trie/`), because value semantics store
+  nodes that each own a child map is ~3.2× C (`trie/`), because value semantics store
   children by value, not by pointer. It is fundamental to the model (Hylo hits the same
   wall), and *mitigated* — not erased — by the index idiom (`dijkstra/`: ~1.3× C).
   Hold-and-grow peak (`invindex`, `arr_pipeline`) is ~1.3–2× C and needs sizing/`reserve`,

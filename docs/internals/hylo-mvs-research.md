@@ -86,7 +86,7 @@ refcount machinery and its atomics-on-shared-values tax. Not a fit.
 
 This is the honest headline. Hylo's static tracking is about **copy cost**, not **storage
 shape**. A Hylo trie is still `Dictionary<UInt8, TrieNode>` storing child nodes *by value*
-— it hits the same per-node, value-inline cost we measured (`bench/trie`: ~2.7× C). MVS
+— it hits the same per-node, value-inline cost we measured (`bench/trie`: ~3.2× C). MVS
 forbids the shared mutable node that a C/Go trie or graph is built from, so Hylo faces the
 identical wall, and its answers are the same two we already reached:
 

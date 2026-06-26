@@ -33,7 +33,7 @@ is semantics-preserving.)
 ## Verdict — the arena WINS on recursive enums (~0.5× C, ~0.47× Go)
 
 This is the inverse of the trie. There, each node owned an `int -> child` **map**, whose
-header + backing arrays made tycho ~2.7× C. Here each node is a plain recursive cell with
+header + backing arrays made tycho ~3.2× C. Here each node is a plain recursive cell with
 no per-node map — a **value-shaped, arena-friendly** structure — and tycho uses **half the
 memory of C and Go**:
 
@@ -50,7 +50,7 @@ C's raw `malloc`/pointer-chase.
 
 The honest framing: value semantics + implicit arenas are **strongest exactly here** —
 a large, recursive, heap-dense structure with no per-node side tables. It is the same
-model that costs ~2.7× on the trie (per-node maps) paying off when the shape is a clean
+model that costs ~3.2× on the trie (per-node maps) paying off when the shape is a clean
 recursive value: a tree-walking interpreter's AST is the canonical case, and tycho gets
 **C-class-or-better memory with no GC and no manual frees**.
 

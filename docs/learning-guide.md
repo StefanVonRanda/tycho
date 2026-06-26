@@ -553,7 +553,7 @@ fn main():
     delete counts["alan"]                  # remove a key (no-op if absent)
 
     # iterate
-    ks := keys(counts)                     # [string] of keys (unordered)
+    ks := keys(counts)                     # [string] of keys, in insertion order
     for i in range(len(ks)):
         k := ks[i]
         print(k + ": " + str(map_get(counts, k, 0)) + "\n")

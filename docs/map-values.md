@@ -82,10 +82,13 @@ These are for contributors; users need only the surface above.
   interned-and-emitted path independently of them.
 - **tychoc0** (`compiler/tychoc0.ty`): maps are generated per `(k, v)` by
   `gen_map_type` / `gen_map_fns`, so the composite work is the heap-value
-  deep-copy on put/get and value-type mangling, not a new code path. Type
-  declarations are emitted in dependency order (a map's value type before the
-  map), so a map-valued map like `[string: [string: int]]` names its inner type
-  first.
-- **Key schemes**: string keys use a NULL/tombstone sentinel; int keys carry a
-  separate occupancy array, so `0` is a usable key rather than a sentinel.
+  deep-copy on put/get and value-type mangling, not a new code path. A map's
+  `_copy`/`_eq` are **forward-declared** before the fn bodies, so a map-valued map
+  like `[string: [string: int]]` — whose outer `put`/`copy` deep-copy the inner-map
+  values via the inner map's `_copy`/`_eq` — compiles regardless of the (not
+  dependency-ordered) emission order.
+- **Key schemes**: string keys use `NULL` for an empty slot; int keys carry a
+  separate occupancy array, so `0` is a usable key rather than a sentinel. Delete is
+  **tombstone-free** (linear-probe backward-shift), and the live keys are kept in an
+  intrusive insertion-order list so `keys()` is deterministic.
 - **Bool values** fold onto the int runtime rather than getting their own.

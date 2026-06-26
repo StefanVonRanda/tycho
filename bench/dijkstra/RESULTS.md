@@ -24,7 +24,7 @@ reachable — the out-component of this random digraph).
 ## Reading it honestly — the opposite of the trie
 
 This is the result `value-semantics-limits.md` predicts and the trie's companion: tycho is
-**~1.3× C on memory and ~1.2× on wall, ≈ Go** — *competitive*, not the ~2.7× the
+**~1.3× C on memory and ~1.2× on wall, ≈ Go** — *competitive*, not the ~3.2× the
 pointer-linked trie cost. The reason is representational:
 
 - A graph stored as an **adjacency list of integer indices** (the flat-pool idiom we
@@ -38,7 +38,7 @@ pointer-linked trie cost. The reason is representational:
   there is **no `push` doubling waste** here — `reserve` doesn't move the number (we tried).
 
 So the dogfood validates the idiom: rewriting a graph from pointer-linked nodes to
-index-into-pool adjacency moves tycho from ~2.7× C (trie) to ~1.3× C (this) — the model is
+index-into-pool adjacency moves tycho from ~3.2× C (trie) to ~1.3× C (this) — the model is
 competitive on graph algorithms when the graph is expressed the value-semantic way.
 
 ## Notes / honest limits

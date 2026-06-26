@@ -36,9 +36,11 @@ Measured (`bench/trie`, a prefix tree, each node owning an `int -> child` map):
 
 | | tycho | C | Go |
 |---|--:|--:|--:|
-| peak RSS | 103 MB | 38 MB | 34 MB |
+| peak RSS | 119 MB | 38 MB | 34 MB |
 
-~2.7× C, the opposite of the JSON result. (The composite-map initial capacity was already
+~3.2× C, the opposite of the JSON result (up from ~2.7× / 103 MB once each map gained an
+O(1)-delete order list — +16 B/slot that the trie's millions of tiny maps pay with no
+deletes). (The composite-map initial capacity was already
 tuned 8→4 for this — see `bench/trie/RESULTS.md`; the gap below is what remains and is
 structural.)
 
@@ -75,11 +77,11 @@ shared pointers.
 
 This is measured, not asserted: `bench/dijkstra` runs single-source shortest paths on a
 300k-node graph stored as an **adjacency list of indices** (`[[Edge]]`), and tycho lands at
-**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*, the opposite of the trie's 2.7×.
+**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*, the opposite of the trie's 3.2×.
 Expressed the value-semantic way (indices, not pointers), the graph is value-shaped — the
 edge arrays are flat in every language — so the residual gap is just a 24-byte array
 descriptor per node, not the pointer-vs-struct blowup. The idiom is the difference between
-~2.7× and ~1.3×.
+~3.2× and ~1.3×.
 
 `bench/lru` is a second index-pool case: a fixed-capacity LRU cache as a `[Node]` pool
 (`prev`/`next` are `int` indices) plus an `[int: int]` map, the tail slot recycled on
@@ -93,8 +95,11 @@ bounded by handing the purged table back (`arena_recycle`). The residual ~5× is
 open-addressing backing (load-factor slack + the order list), the same header-cost family as
 the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
 
-Measured on the same 150k-word workload, the flat-pool trie above lands at **69 MB** — down
-from 103 MB for the by-value recursive version (−33%), correct on both compilers. It does
+Measured on the same 150k-word workload, the flat-pool trie above lands well below the
+by-value recursive version (now **119 MB**) by pooling the nodes — its last absolute figure
+was ~69 MB, before the per-map order-list change (+16 B/slot) nudged every map up, so both
+are now somewhat higher; the *gap* between them is what matters and is unchanged. Correct on
+both compilers. It does
 *not* reach C's 38 MB, because each node still owns an `[int: int]` child map and that
 header + backing arrays dominate. The most compact tries drop the per-node map entirely for
 **first-child / next-sibling links** (each node is a handful of `int`s: child index, sibling
