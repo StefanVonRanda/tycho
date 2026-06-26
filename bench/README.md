@@ -32,6 +32,7 @@ where shown.
 | **trie** | pointer-linked recursive nodes (each owns a child map) | 103 MB vs C 38, Go 34 | **~2.7× C — the standing loss**: children stored by value, not by pointer | `trie/` |
 | **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
 | **lru** | fixed-cap cache, delete-heavy `[int:int]` map churn | 40 MB vs C 11, Go 21 | ~4× C — drove two map fixes: O(n)→O(1) delete (slot-linked order) + tombstone-free backward-shift deletion (no purge-rehash churn; was 222 MB before); memory tracks the live set, not delete volume | `lru/` |
+| **interp** | tree-walking interpreter, recursive-enum AST (5.6M nodes) | 252 MB vs C 512, Go 540 | **~0.5× C — beats C and Go**: the arena has no per-node malloc header (C) or GC metadata (Go) on a recursive value-shape with no per-node maps — the trie's inverse | `interp/` |
 
 ## Axis 2 — latency (GC-pause predictability)
 

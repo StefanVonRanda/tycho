@@ -1,0 +1,99 @@
+# Tree-walking interpreter dogfood: build a large deterministic expression AST (a
+# RECURSIVE enum), eval it, constant-fold it (a rewrite pass that allocates a new
+# AST), count nodes, and deep-compare original vs folded. Stresses enum-payload
+# arena lifetimes + deep match -- the value-shape with no prior dogfood. Folds
+# results into a checksum. No hand-written C.
+enum Expr:
+    Lit(int)
+    Bin(int, Expr, Expr)            # op: 0=+ 1=- 2=* ; recursive
+    If(Expr, Expr, Expr)            # cond, then, else
+
+fn gen(depth: int, seed: mut int) -> Expr:
+    seed = seed * 6364136223846793005 + 1442695040888963407
+    if depth <= 0 or (seed & 7) == 0:
+        return Lit((seed >> 10) & 63)
+    k := (seed >> 18) & 3
+    l := gen(depth - 1, &seed)
+    r := gen(depth - 1, &seed)
+    if k == 3:
+        c := gen(depth - 1, &seed)
+        return If(l, r, c)
+    return Bin(k, l, r)
+
+fn eval(e: Expr) -> int:
+    match e:
+        Lit(v):
+            return v
+        Bin(op, l, r):
+            a := eval(l)
+            b := eval(r)
+            if op == 0:
+                return a + b
+            if op == 1:
+                return a - b
+            return a * b
+        If(c, t, f):
+            if eval(c) != 0:
+                return eval(t)
+            return eval(f)
+
+fn count(e: Expr) -> int:
+    match e:
+        Lit(v):
+            return 1
+        Bin(op, l, r):
+            return 1 + count(l) + count(r)
+        If(c, t, f):
+            return 1 + count(c) + count(t) + count(f)
+
+fn is_lit(e: Expr) -> bool:
+    match e:
+        Lit(v):
+            return true
+        Bin(op, l, r):
+            return false
+        If(c, t, f):
+            return false
+
+fn lit_val(e: Expr) -> int:
+    match e:
+        Lit(v):
+            return v
+        Bin(op, l, r):
+            return 0
+        If(c, t, f):
+            return 0
+
+fn fold(e: Expr) -> Expr:                # constant-folding rewrite -> a NEW AST
+    match e:
+        Lit(v):
+            return Lit(v)
+        Bin(op, l, r):
+            fl := fold(l)
+            fr := fold(r)
+            if is_lit(fl) and is_lit(fr):
+                a := lit_val(fl)
+                b := lit_val(fr)
+                if op == 0:
+                    return Lit(a + b)
+                if op == 1:
+                    return Lit(a - b)
+                return Lit(a * b)
+            return Bin(op, fl, fr)
+        If(c, t, f):
+            return If(fold(c), fold(t), fold(f))
+
+fn eq(a: Expr, b: Expr) -> bool:
+    return a == b
+
+fn main():
+    depth := 20
+    seed := 88172645463325252
+    t := gen(depth, &seed)
+    n := count(t)
+    ev := eval(t)
+    ft := fold(t)
+    fn2 := count(ft)
+    fev := eval(ft)
+    same := eq(t, ft)
+    print(str(n) + " " + str(ev) + " " + str(fn2) + " " + str(fev) + " " + str(same) + "\n")
