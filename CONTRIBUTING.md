@@ -58,9 +58,30 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
    O(n) idiom into O(n²) — `make bench` / `bench/` guard against that. When in
    doubt, read [docs/memory-model.md](docs/memory-model.md).
 
+## Where feature work is useful
+
+The language is **feature-complete for its proof-of-concept thesis** — value
+semantics, implicit arenas, concurrency, generics, closures, UFCS, FFI, and the
+`sink` consuming convention all ship in both compilers. The useful feature work
+now is **ergonomics polish, not new pillars**:
+
+- **User-defined projections** — yielding subscripts that generalize the built-in
+  `&m[k]` (zero-copy views into part of a value). This is the one
+  limited-reference idea that fits the arena + deep-copy-thread-boundary model;
+  see [docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md).
+  Low priority, scope it if a real need appears.
+- **Small rough edges** real use turns up — clearer diagnostics (e.g. a
+  keyword-used-as-variable message), FFI read-once-borrow docs, corelib gaps.
+
 Also out of scope **by decision** (please don't propose them): a
-ternary/conditional expression and a package manager. Generics, on the other
-hand, *are* supported — `$T`, see [docs/generics.md](docs/generics.md).
+ternary/conditional expression, a package manager, user-defined traits /
+type-classes, Swift-style reference-counted copy-on-write, and **shared-mutable /
+`remote-parts`-style references** for graphs — resolved against the model; store
+graph-shaped data as an index pool (see
+[docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md) and
+[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)).
+Generics, on the other hand, *are* supported — `$T`, see
+[docs/generics.md](docs/generics.md).
 
 ## Code style
 

@@ -1,5 +1,10 @@
 # Research: what Hylo (mutable value semantics) can teach Tycho
-> Status: research record (historical); informs shipped value-semantics idioms.
+> Status: **concluded — no open questions.** Historical research record, retained
+> because shipped docs cite it for grounding (the public `bench/README.md`,
+> `value-semantics-limits.md`, `sink-prototype.md`). Both directions it opened are
+> settled: the copy-cost side shipped as `sink` (`sink-prototype.md`), and the
+> storage-shape / limited-references side was decided against
+> (`../rfc/limited-references-spike.md`). Nothing here is open work.
 
 Hylo (formerly Val) is the closest prior art to Tycho: a systems language built on
 **mutable value semantics (MVS)** — mutation is allowed, but mutable *references* can

@@ -8,7 +8,11 @@ binary.
 > implicit arenas + value semantics, no GC and no manual `free` — not a
 > production language. It self-hosts, is fuzzed and benchmarked, and builds with
 > just `cc` + `make`; but there are **no stability guarantees** and the language
-> may still change. **Experiments and feedback are very welcome** — see
+> may still change. It is **feature-complete for that proof-of-concept** — the
+> pillars (value semantics, implicit arenas, concurrency, generics, closures,
+> UFCS, FFI, `sink`) all ship in both compilers — so new work now is **ergonomics
+> polish and bug reports, not new pillars** ([CONTRIBUTING](CONTRIBUTING.md) says
+> where). **Experiments and feedback are very welcome** — see
 > [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and open
 > an issue. (Honest scope and limits are in
 > [Known limitations](#known-limitations-proof-of-concept).)
