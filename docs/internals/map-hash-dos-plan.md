@@ -19,12 +19,16 @@
 > the table slots** — `nxt[s]`/`prv[s]` + `head`/`tail`, one key-agnostic
 > `tycho_ord_link`/`tycho_ord_unlink` pair, rebuilt on rehash by walking the old list —
 > making delete an **O(1) unlink** while emitting byte-identical insertion-order
-> `keys()` (so the hash-flooding determinism guarantee here is unchanged). A follow-up
-> bounds delete-churn rehash memory by recycling the purged table (`arena_recycle` on a
-> same-cap rehash). Both land in the four fixed families and the composite
-> `tycho_mapc%d` families (the memory recycle is fixed-families-only so far). Commits
-> `f9bfc34` (delete) and `16ea725` (memory); see `bench/lru/RESULTS.md`. The flat-`ord`
-> text below is retained as the original hash-DoS implementation record.
+> `keys()` (so the hash-flooding determinism guarantee here is unchanged). Delete itself
+> also changed from a **tombstone** (`occ=2` / `TYCHO_MAP_TOMB`) to **linear-probe
+> backward-shift** (pull later entries back into the gap, relinking the slot order-list on
+> each move): with no tombstones, `used == live`, so the table never rehashes-to-purge and
+> a delete-heavy workload (`bench/lru`) no longer accumulates abandoned rehash generations
+> in the arena (222 MB → 40 MB). All of this lands in the four fixed families **and** the
+> composite `tycho_mapc%d` families. Commits `f9bfc34` (O(1) delete), `16ea725` (interim
+> recycle, since superseded + removed), and the backward-shift change; see
+> `bench/lru/RESULTS.md`. The flat-`ord` text below is retained as the original hash-DoS
+> implementation record.
 
 ## 1. The finding (verified, current)
 

@@ -11,9 +11,12 @@ Status: **shipped, both compilers**, 2026-06-25 — struct / tuple / array keys
 > `tycho_ord_del_*`, del matching by `tycho_eq`) was replaced — in the composite
 > `tycho_mapc%d` families too — by an **intrusive doubly-linked list over the table
 > slots** (`nxt`/`prv` + `head`/`tail`, shared `tycho_ord_link`/`tycho_ord_unlink`),
-> so `delete` is an O(1) slot unlink instead of an O(n) shift-remove. `keys()` output
+> so the order-list update on `delete` is an O(1) unlink instead of an O(n) shift-remove.
+> The hash table itself also moved from **tombstone** deletion (`occ=2` / TOMB) to
+> **linear-probe backward-shift** (these composite families included), so a delete-heavy
+> map no longer rehashes-to-purge and stops accumulating arena generations. `keys()` output
 > is byte-identical (insertion order preserved). See
-> [map-hash-dos-plan.md](map-hash-dos-plan.md) and commit `f9bfc34`.
+> [map-hash-dos-plan.md](map-hash-dos-plan.md), `bench/lru/RESULTS.md`, and commit `f9bfc34`.
 
 ## Goal
 
