@@ -1,0 +1,29 @@
+# A generic-struct INSTANCE type used in positions where tychoc0 left it as the
+# application form `Box(int)` instead of resolving it to the instance `Box__int`,
+# all of which tychoc handled:
+#   #1 a channel element type (`channel(Box(int), 1)`)
+#   #2 a generic function's return type (`fn wrap(x: $T) -> Box($T)`)
+#   #3 a nested generic construction (`Box(Box(5))`), whose bare `$T` field bound to
+#      the base name "Box" (type_of of a struct constructor returns only the base name)
+#      instead of the instance, -> "unknown type 'Box'".
+# Fixed with resolve_ginst (a name-only application->instance resolver) as a fallback in
+# cty and field_type, plus preferring the mono'd arg's instance name (call_callee, checked
+# against dc + sinsts) over type_of's bare base name in the generic-struct constructor
+# inference.
+struct Box($T):
+    v: $T
+
+fn wrap(x: $T) -> Box($T):
+    return Box(x)
+
+fn main():
+    b := Box(Box(5))                         # #3 nested construction
+    print(str(b.v.v) + "\n")                 # 5
+    print(str(wrap(99).v) + "\n")            # #2 generic fn returning a generic struct -> 99
+    ch := channel(Box(int), 1)               # #1 generic struct as a channel element type
+    send(ch, Box(7))
+    match recv(ch):
+        Some(c):
+            print(str(c.v) + "\n")           # 7
+        None:
+            print("none\n")

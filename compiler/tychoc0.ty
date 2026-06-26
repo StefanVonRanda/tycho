@@ -2970,6 +2970,9 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "void "
     if is_struct(dc, ctx, ty):                        # struct type: its own typedef
         return ust(ty) + " "
+    rg := resolve_ginst(ty, dc, ctx)                  # fallback: a generic-struct application ("Box(int)") that some type position didn't run through resolve_gtype (channel element, generic-fn call result) -> resolve to its already-created instance name and emit that
+    if rg != ty:
+        return cty(dc, ctx, rg)
     die_at(dc, ctx.line, "type: unknown type '" + ty + "'")   # fail-closed: an unknown bare name would emit a dangling S_<name>
     return ust(ty) + " "
 
@@ -3021,6 +3024,9 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 if dc.structs[gsi].fields[fj].name == fld:
                     return subst_field_type(dc.structs[gsi].fields[fj].ty, dc.structs[gsi].typeparams, gargs)
                 fj = fj + 1
+    rg := resolve_ginst(sname, dc, ctx)               # the generic TEMPLATE is gone by gen time, so the template-subst above misses -> resolve the application to its instance (which IS in dc) and look its field up there
+    if rg != sname:
+        return field_type(dc, ctx, rg, fld)
     die_at(dc, ctx.line, "type: '" + sname + "' is not a struct (field ." + fld + ")")
     return "int"
 
@@ -10124,6 +10130,32 @@ fn inst_name(base: string, ptypes: [string]) -> string:
         i = i + 1
     return nm
 
+# Name-only resolution of a generic-struct APPLICATION type (`Box(int)`) to its instance
+# name (`Box__int`), matching instantiate_struct. Unlike resolve_gtype it instantiates
+# nothing (read-only, no sinsts) -- the instance already exists from construction; this just
+# NAMES it. cty uses it as a fallback for type positions resolve_gtype's call sites don't
+# reach (a channel's element type, a generic-fn call result). Recurses into [..]/{..} + args.
+fn resolve_ginst(ty: string, dc: Decls, ctx: Ctx) -> string:
+    n := len(ty)
+    if n == 0:
+        return ty
+    if is_array(ty):
+        return "[" + resolve_ginst(elem_ty(ty), dc, ctx) + "]"
+    if is_map(ty):
+        return "{" + map_key(ty) + ":" + resolve_ginst(map_val(ty), dc, ctx) + "}"
+    pp := find(ty, "(")
+    if pp > 0 and ty[n - 1] == 41:
+        args := split_type_args(substr(ty, pp + 1, n - 1))
+        rargs := []string
+        j := 0
+        for j < len(args):
+            push(rargs, resolve_ginst(args[j], dc, ctx))
+            j = j + 1
+        cand := inst_name(substr(ty, 0, pp), rargs)    # candidate instance name ("Box__int"). The generic TEMPLATE is gone from dc by emission time, so accept this only if the INSTANCE actually exists (created by construction).
+        if cand != ty and is_struct(dc, ctx, cand):
+            return cand
+    return ty
+
 # Index of the first top-level ':' (depth 0 w.r.t. {}/[]/()), or -1. Splits a
 # map type's "{K:V}" inner into key and value.
 fn find_top_colon(s: string) -> int:
@@ -10905,8 +10937,18 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
                 for k < len(margs):
                     ft := dc.structs[gsi].fields[k].ty
                     ct := type_of(a[k], names, types, dc, ctx)    # type the ORIGINAL arg a[k], NOT the mono'd margs[k]: a nested generic constructor in margs names its instance (e.g. Box__int), not yet in dc -> type_of would fail. (Same reason the generic-function case above uses a[k].)
-                    if not match_typaram_str(ft, ct, &bnames, &btypes):   # unify the field PATTERN against the arg's concrete type; recurses into [$V] / {string:$V} / fn(...) so a typaram nested in a container field binds too. On a structural miss (a sole nested-generic field "Box($T)" vs a "Box" arg, since type_of gives the bare base name), recover $T from the mono'd arg's instance name (margs[k] = `Box__int(..)`) via its recorded inst_args (mirrors the enum path).
-                        recover_struct_binds(ft, call_callee(margs[k]), dc.structs, sinsts, &bnames, &btypes)
+                    cn := call_callee(margs[k])                   # if the mono'd arg is a generic-struct INSTANCE constructor (`Box__int(..)`), its instance name IS the concrete type. type_of of a generic constructor returns only the bare base name "Box", which binds a BARE `$T` field WRONG (`Box(Box(5))` -> T="Box" -> "unknown type 'Box'"); prefer the instance name.
+                    cnok := cn != "" and is_struct(dc, ctx, cn)
+                    if cn != "" and not cnok:                     # mid-mono the instance lives in sinsts, not yet in dc.structs
+                        csi := 0
+                        for csi < len(sinsts):
+                            if sinsts[csi].name == cn:
+                                cnok = true
+                            csi = csi + 1
+                    if cnok:
+                        ct = cn
+                    if not match_typaram_str(ft, ct, &bnames, &btypes):   # unify the field PATTERN against the concrete type; recurses into [$V] / {string:$V} / fn(...). On a structural miss (a sole nested-generic field "Box($T)" vs a "Box__int" arg), recover $T from the instance's recorded inst_args (mirrors the enum path).
+                        recover_struct_binds(ft, cn, dc.structs, sinsts, &bnames, &btypes)
                     k = k + 1
                 newnm := instantiate_struct(dc.structs[gsi], bnames, btypes, &sinsts)
                 return ECall(newnm, margs, el)
