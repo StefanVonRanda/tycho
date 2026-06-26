@@ -118,12 +118,21 @@ internals — none are quick wins:
    227/0 + fixpoint. Shipped in full on both compilers — direct and UFCS calls, the use-after-`sink` diagnostic, and the tychoc0 mirror (see sink-prototype.md);
    *escape* (returning the param) is still a copy — the arena's hard limit. So `sink` is a
    real copy-eliminating convention here, narrower than Hylo's only at escape.**
-2. **Evaluate `remote-parts`-style limited references** for graph/cyclic structures — the
-   only path to ergonomic shared structures within MVS, but it taxes serialization and
-   value-semantics reasoning. Prototype and measure before committing; it is a thesis-level
-   decision, not a feature.
-3. **User-defined projections (yielding subscripts)** — generalize our built-in `&m[k]`.
-   Nice-to-have, lower priority.
+2. **`remote-parts`-style limited references** for graph/cyclic structures — **RESOLVED as a
+   decision, not built** (`../rfc/limited-references-spike.md`, 2026-06-26). Grounded in
+   Hylo's primary sources: Hylo's references are *second-class* (param modes — Tycho already
+   has them) and *projections* are scoped/transient (Tycho has `&m[k]`); only **stored
+   projections / remote parts** could store a graph edge by reference, and a value holding one
+   is itself demoted to non-escaping second-class. That is incompatible with Tycho's two
+   load-bearing invariants — implicit scope arenas (no escape analysis) and **deep-copy as the
+   thread boundary** (a stored reference has no sound deep-copy across `spawn`) — and is
+   unproven even in Hylo (its maintainer: "not obvious how one can build such an optimizer …
+   too hard"). Conclusion: limited references do **not** unlock graphs-by-reference; the
+   index-pool stays the answer (the same fallback Hylo makes).
+3. **User-defined projections (yielding subscripts)** — generalize our built-in `&m[k]`. The
+   spike confirms this is the *only* arena- and thread-compatible slice of the
+   limited-reference space (scoped, non-escaping, no RC), but it is ergonomics over the index
+   idiom, not a storage fix. Nice-to-have, lower priority.
 
 Explicitly **rejected**: Swift/JOT-style refcounted copy-on-write. It would undo the
 arena + lock-free design that is the point of the project.
