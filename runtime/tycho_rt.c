@@ -1331,45 +1331,32 @@ TychoArrStr tycho_args(Arena *a) {
  * insert instead of O(n) deep-copy each step. `m = map_del(m, k)` is rewritten
  * the same way to an in-place tombstone delete. Key bytes are copied into the
  * owning arena exactly as [string] elements are (the lifetime seam nests). */
-typedef struct { char **keys; long *vals; long len; long cap; long used; char **ord; long nord; long ocap; } TychoMapSI;
+typedef struct { char **keys; long *vals; long len; long cap; long used; long *nxt; long *prv; long head; long tail; } TychoMapSI;
 
 /* the tombstone sentinel: a unique non-NULL char* that is never a real key. */
 static char tycho_map_tomb_;
 #define TYCHO_MAP_TOMB (&tycho_map_tomb_)
 static int tycho_map_live(const char *p) { return p != NULL && p != TYCHO_MAP_TOMB; }
 
-/* Insertion-order vectors (`ord`): every map keeps its live keys in the order
- * they were first inserted, so keys()/`for k in m` iterate deterministically in
- * insertion order — independent of bucket layout or hash seed. This is what lets
- * Phase 2 use a random per-process hash seed without changing observable output
- * (fixpoint cA==cB and parity stay byte-identical). Helpers append on a new key
- * and shift-remove on delete (preserving order). Strings store the arena-stable
- * copied key pointer (remove by pointer identity); ints store the key value. */
-static void tycho_ord_push_s(Arena *a, char ***ord, long *nord, long *ocap, char *k) {
-    if (*nord == *ocap) {
-        long nc = *ocap ? *ocap * 2 : 8;
-        char **nb = (char **)arena_alloc(a, (size_t)nc * sizeof(char *));
-        for (long i = 0; i < *nord; i++) nb[i] = (*ord)[i];
-        *ord = nb; *ocap = nc;
-    }
-    (*ord)[(*nord)++] = k;
+/* Insertion-order list (`nxt`/`prv`/`head`/`tail`): every map keeps its live keys
+ * in the order they were first inserted, so keys()/`for k in m` iterate
+ * deterministically in insertion order — independent of bucket layout or hash
+ * seed. This is what lets a random per-process hash seed not change observable
+ * output (fixpoint cA==cB and parity stay byte-identical). The order is an
+ * intrusive doubly-linked list over the table SLOTS: nxt[s]/prv[s] index sibling
+ * slots (-1 = end) and head/tail are slot indices, so insert is an O(1) append
+ * and delete is an O(1) unlink — a delete-heavy map (e.g. an LRU) stays O(1) per
+ * op instead of O(n) array-compaction. The list is rebuilt on rehash (slot
+ * indices change) by walking the old list in order. It is slot-indexed, so one
+ * pair of helpers serves every key type. */
+static void tycho_ord_link(long *nxt, long *prv, long *head, long *tail, long s) {   /* append slot s to the tail */
+    prv[s] = *tail; nxt[s] = -1;
+    if (*tail >= 0) nxt[*tail] = s; else *head = s;
+    *tail = s;
 }
-static void tycho_ord_del_s(char **ord, long *nord, const char *k) {   /* remove by pointer identity, keep order */
-    for (long i = 0; i < *nord; i++)
-        if (ord[i] == k) { for (long j = i + 1; j < *nord; j++) ord[j - 1] = ord[j]; (*nord)--; return; }
-}
-static void tycho_ord_push_i(Arena *a, long **ord, long *nord, long *ocap, long k) {
-    if (*nord == *ocap) {
-        long nc = *ocap ? *ocap * 2 : 8;
-        long *nb = (long *)arena_alloc(a, (size_t)nc * sizeof(long));
-        for (long i = 0; i < *nord; i++) nb[i] = (*ord)[i];
-        *ord = nb; *ocap = nc;
-    }
-    (*ord)[(*nord)++] = k;
-}
-static void tycho_ord_del_i(long *ord, long *nord, long k) {           /* remove by value, keep order */
-    for (long i = 0; i < *nord; i++)
-        if (ord[i] == k) { for (long j = i + 1; j < *nord; j++) ord[j - 1] = ord[j]; (*nord)--; return; }
+static void tycho_ord_unlink(long *nxt, long *prv, long *head, long *tail, long s) { /* remove slot s, keep order */
+    if (prv[s] >= 0) nxt[prv[s]] = nxt[s]; else *head = nxt[s];
+    if (nxt[s] >= 0) prv[nxt[s]] = prv[s]; else *tail = prv[s];
 }
 
 /* ---- hash seed (hash-flooding hardening) ----------------------------------
@@ -1436,10 +1423,12 @@ TychoMapSI tycho_map_si_with_cap(Arena *a, long cap) {
     long c = 8; while (c < cap) c *= 2;
     if (cap == 0) c = 0;
     m.cap = c; m.len = 0; m.used = 0;
-    m.ord = NULL; m.nord = 0; m.ocap = 0;
+    m.nxt = NULL; m.prv = NULL; m.head = -1; m.tail = -1;
     if (c == 0) { m.keys = NULL; m.vals = NULL; return m; }
     m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));
     m.vals = (long *) arena_alloc(a, (size_t)c * sizeof(long));
+    m.nxt  = (long *) arena_alloc(a, (size_t)c * sizeof(long));
+    m.prv  = (long *) arena_alloc(a, (size_t)c * sizeof(long));
     for (long i = 0; i < c; i++) m.keys[i] = NULL;
     return m;
 }
@@ -1480,12 +1469,11 @@ void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, long v) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
                                               : (m->cap ? m->cap : 8);
         TychoMapSI n = tycho_map_si_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (tycho_map_live(m->keys[i])) {
-                long s = tycho_map_si_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
-            }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_si_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_si_slot(*m, k);
@@ -1493,7 +1481,7 @@ void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, long v) {
         if (m->keys[s] == NULL) m->used++;     /* fresh slot; reusing a tombstone keeps used */
         m->keys[s] = tycho_str_copy(a, k);
         m->len++;
-        tycho_ord_push_s(a, &m->ord, &m->nord, &m->ocap, m->keys[s]);
+        tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s);
     }
     m->vals[s] = v;
 }
@@ -1508,12 +1496,11 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
                                               : (m->cap ? m->cap : 8);
         TychoMapSI n = tycho_map_si_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (tycho_map_live(m->keys[i])) {
-                long s = tycho_map_si_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
-            }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_si_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_si_slot(*m, k);
@@ -1521,7 +1508,7 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
         if (m->keys[s] == NULL) m->used++;
         m->keys[s] = tycho_str_copy(a, k);
         m->len++;
-        tycho_ord_push_s(a, &m->ord, &m->nord, &m->ocap, m->keys[s]);
+        tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s);
         m->vals[s] = 0L;
     }
     return &m->vals[s];
@@ -1532,7 +1519,7 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
 void tycho_map_si_del(TychoMapSI *m, const char *k) {
     long s = tycho_map_si_find(*m, k);
     if (s < 0) return;
-    tycho_ord_del_s(m->ord, &m->nord, m->keys[s]);
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
     m->keys[s] = TYCHO_MAP_TOMB;
     m->len--;
 }
@@ -1541,10 +1528,8 @@ void tycho_map_si_del(TychoMapSI *m, const char *k) {
  * tombstones (only live entries are reinserted), so the copy is compact. */
 TychoMapSI tycho_map_si_copy(Arena *a, TychoMapSI src) {
     TychoMapSI r = tycho_map_si_with_cap(a, src.len ? src.len * 2 : 0);
-    for (long j = 0; j < src.nord; j++) {       /* insertion order: copy preserves it */
-        long s = tycho_map_si_find(src, src.ord[j]);
-        tycho_map_si_put(a, &r, src.ord[j], src.vals[s]);
-    }
+    for (long s = src.head; s >= 0; s = src.nxt[s])   /* insertion order: copy preserves it */
+        tycho_map_si_put(a, &r, src.keys[s], src.vals[s]);
     return r;
 }
 
@@ -1575,8 +1560,8 @@ int tycho_map_si_has(TychoMapSI m, const char *k) {
  * the result owns them (value semantics; cf. tycho_arr_str_copy). This is how a
  * map is iterated: keys(m) then index the array. */
 TychoArrStr tycho_map_si_keys(Arena *a, TychoMapSI m) {
-    TychoArrStr r = tycho_arr_str_with_cap(a, m.nord);
-    for (long j = 0; j < m.nord; j++) tycho_arr_str_push(a, &r, m.ord[j]);
+    TychoArrStr r = tycho_arr_str_with_cap(a, m.len);
+    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_str_push(a, &r, m.keys[s]);
     return r;
 }
 
@@ -1595,17 +1580,19 @@ int tycho_map_si_eq(TychoMapSI x, TychoMapSI y) {
  * Exactly TychoMapSI with `double` values (string keys, float values) — the
  * same open-addressing / tombstone table, sharing tycho_map_live, tycho_si_hash,
  * and the tombstone sentinel. Only the value word's type differs. */
-typedef struct { char **keys; double *vals; long len; long cap; long used; char **ord; long nord; long ocap; } TychoMapSF;
+typedef struct { char **keys; double *vals; long len; long cap; long used; long *nxt; long *prv; long head; long tail; } TychoMapSF;
 
 TychoMapSF tycho_map_sf_with_cap(Arena *a, long cap) {
     TychoMapSF m;
     long c = 8; while (c < cap) c *= 2;
     if (cap == 0) c = 0;
     m.cap = c; m.len = 0; m.used = 0;
-    m.ord = NULL; m.nord = 0; m.ocap = 0;
+    m.nxt = NULL; m.prv = NULL; m.head = -1; m.tail = -1;
     if (c == 0) { m.keys = NULL; m.vals = NULL; return m; }
     m.keys = (char **) arena_alloc(a, (size_t)c * sizeof(char *));
     m.vals = (double *)arena_alloc(a, (size_t)c * sizeof(double));
+    m.nxt  = (long *)  arena_alloc(a, (size_t)c * sizeof(long));
+    m.prv  = (long *)  arena_alloc(a, (size_t)c * sizeof(long));
     for (long i = 0; i < c; i++) m.keys[i] = NULL;
     return m;
 }
@@ -1638,12 +1625,11 @@ void tycho_map_sf_put(Arena *a, TychoMapSF *m, const char *k, double v) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
                                               : (m->cap ? m->cap : 8);
         TychoMapSF n = tycho_map_sf_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (tycho_map_live(m->keys[i])) {
-                long s = tycho_map_sf_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
-            }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_sf_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_sf_slot(*m, k);
@@ -1651,7 +1637,7 @@ void tycho_map_sf_put(Arena *a, TychoMapSF *m, const char *k, double v) {
         if (m->keys[s] == NULL) m->used++;
         m->keys[s] = tycho_str_copy(a, k);
         m->len++;
-        tycho_ord_push_s(a, &m->ord, &m->nord, &m->ocap, m->keys[s]);
+        tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s);
     }
     m->vals[s] = v;
 }
@@ -1662,12 +1648,11 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8)
                                               : (m->cap ? m->cap : 8);
         TychoMapSF n = tycho_map_sf_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (tycho_map_live(m->keys[i])) {
-                long s = tycho_map_sf_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.len++; n.used++;
-            }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_sf_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_sf_slot(*m, k);
@@ -1675,7 +1660,7 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
         if (m->keys[s] == NULL) m->used++;
         m->keys[s] = tycho_str_copy(a, k);
         m->len++;
-        tycho_ord_push_s(a, &m->ord, &m->nord, &m->ocap, m->keys[s]);
+        tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s);
         m->vals[s] = 0.0;
     }
     return &m->vals[s];
@@ -1684,17 +1669,15 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
 void tycho_map_sf_del(TychoMapSF *m, const char *k) {
     long s = tycho_map_sf_find(*m, k);
     if (s < 0) return;
-    tycho_ord_del_s(m->ord, &m->nord, m->keys[s]);
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
     m->keys[s] = TYCHO_MAP_TOMB;
     m->len--;
 }
 
 TychoMapSF tycho_map_sf_copy(Arena *a, TychoMapSF src) {
     TychoMapSF r = tycho_map_sf_with_cap(a, src.len ? src.len * 2 : 0);
-    for (long j = 0; j < src.nord; j++) {       /* insertion order: copy preserves it */
-        long s = tycho_map_sf_find(src, src.ord[j]);
-        tycho_map_sf_put(a, &r, src.ord[j], src.vals[s]);
-    }
+    for (long s = src.head; s >= 0; s = src.nxt[s])   /* insertion order: copy preserves it */
+        tycho_map_sf_put(a, &r, src.keys[s], src.vals[s]);
     return r;
 }
 
@@ -1720,8 +1703,8 @@ int tycho_map_sf_has(TychoMapSF m, const char *k) {
 }
 
 TychoArrStr tycho_map_sf_keys(Arena *a, TychoMapSF m) {
-    TychoArrStr r = tycho_arr_str_with_cap(a, m.nord);
-    for (long j = 0; j < m.nord; j++) tycho_arr_str_push(a, &r, m.ord[j]);
+    TychoArrStr r = tycho_arr_str_with_cap(a, m.len);
+    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_str_push(a, &r, m.keys[s]);
     return r;
 }
 
@@ -1767,17 +1750,19 @@ unsigned long tycho_arr_str_hash(TychoArrStr x) {
     return h;
 }
 
-typedef struct { long *keys; long   *vals; unsigned char *occ; long len, cap, used; long *ord; long nord; long ocap; } TychoMapII;
-typedef struct { long *keys; double *vals; unsigned char *occ; long len, cap, used; long *ord; long nord; long ocap; } TychoMapIF;
+typedef struct { long *keys; long   *vals; unsigned char *occ; long len, cap, used; long *nxt; long *prv; long head; long tail; } TychoMapII;
+typedef struct { long *keys; double *vals; unsigned char *occ; long len, cap, used; long *nxt; long *prv; long head; long tail; } TychoMapIF;
 
 TychoMapII tycho_map_ii_with_cap(Arena *a, long cap) {
     TychoMapII m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;
     m.cap = c; m.len = 0; m.used = 0;
-    m.ord = NULL; m.nord = 0; m.ocap = 0;
+    m.nxt = NULL; m.prv = NULL; m.head = -1; m.tail = -1;
     if (c == 0) { m.keys = NULL; m.vals = NULL; m.occ = NULL; return m; }
     m.keys = (long *)arena_alloc(a, (size_t)c * sizeof(long));
     m.vals = (long *)arena_alloc(a, (size_t)c * sizeof(long));
     m.occ  = (unsigned char *)arena_alloc(a, (size_t)c);
+    m.nxt  = (long *)arena_alloc(a, (size_t)c * sizeof(long));
+    m.prv  = (long *)arena_alloc(a, (size_t)c * sizeof(long));
     for (long i = 0; i < c; i++) m.occ[i] = 0;
     return m;
 }
@@ -1805,14 +1790,15 @@ void tycho_map_ii_put(Arena *a, TychoMapII *m, long k, long v) {
     if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
         TychoMapII n = tycho_map_ii_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (m->occ[i] == 1) { long s = tycho_map_ii_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_ii_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_ii_slot(*m, k);
-    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_push_i(a, &m->ord, &m->nord, &m->ocap, k); }
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }
     m->vals[s] = v;
 }
 /* find-or-insert k, return &slot value (#2). See tycho_map_si_slotptr; zero is 0. */
@@ -1820,25 +1806,26 @@ long *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, long k) {
     if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
         TychoMapII n = tycho_map_ii_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (m->occ[i] == 1) { long s = tycho_map_ii_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_ii_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_ii_slot(*m, k);
-    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_push_i(a, &m->ord, &m->nord, &m->ocap, k); m->vals[s] = 0L; }
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = 0L; }
     return &m->vals[s];
 }
 void tycho_map_ii_del(TychoMapII *m, long k) {
     long s = tycho_map_ii_find(*m, k);
     if (s < 0) return;
-    tycho_ord_del_i(m->ord, &m->nord, k);
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
     m->occ[s] = 2; m->len--;
 }
 TychoMapII tycho_map_ii_copy(Arena *a, TychoMapII src) {
     TychoMapII r = tycho_map_ii_with_cap(a, src.len ? src.len * 2 : 0);
-    for (long j = 0; j < src.nord; j++) { long s = tycho_map_ii_find(src, src.ord[j]); tycho_map_ii_put(a, &r, src.ord[j], src.vals[s]); }
+    for (long s = src.head; s >= 0; s = src.nxt[s]) tycho_map_ii_put(a, &r, src.keys[s], src.vals[s]);
     return r;
 }
 TychoMapII tycho_map_ii_set(Arena *a, TychoMapII m, long k, long v) {
@@ -1852,8 +1839,8 @@ long tycho_map_ii_get(TychoMapII m, long k, long dflt) {
 }
 int tycho_map_ii_has(TychoMapII m, long k) { return tycho_map_ii_find(m, k) >= 0; }
 TychoArrInt tycho_map_ii_keys(Arena *a, TychoMapII m) {
-    TychoArrInt r = tycho_arr_int_with_cap(a, m.nord);
-    for (long j = 0; j < m.nord; j++) tycho_arr_int_push(a, &r, m.ord[j]);
+    TychoArrInt r = tycho_arr_int_with_cap(a, m.len);
+    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_int_push(a, &r, m.keys[s]);
     return r;
 }
 int tycho_map_ii_eq(TychoMapII x, TychoMapII y) {
@@ -1869,11 +1856,13 @@ int tycho_map_ii_eq(TychoMapII x, TychoMapII y) {
 TychoMapIF tycho_map_if_with_cap(Arena *a, long cap) {
     TychoMapIF m; long c = 8; while (c < cap) c *= 2; if (cap == 0) c = 0;
     m.cap = c; m.len = 0; m.used = 0;
-    m.ord = NULL; m.nord = 0; m.ocap = 0;
+    m.nxt = NULL; m.prv = NULL; m.head = -1; m.tail = -1;
     if (c == 0) { m.keys = NULL; m.vals = NULL; m.occ = NULL; return m; }
     m.keys = (long *)  arena_alloc(a, (size_t)c * sizeof(long));
     m.vals = (double *)arena_alloc(a, (size_t)c * sizeof(double));
     m.occ  = (unsigned char *)arena_alloc(a, (size_t)c);
+    m.nxt  = (long *)arena_alloc(a, (size_t)c * sizeof(long));
+    m.prv  = (long *)arena_alloc(a, (size_t)c * sizeof(long));
     for (long i = 0; i < c; i++) m.occ[i] = 0;
     return m;
 }
@@ -1901,14 +1890,15 @@ void tycho_map_if_put(Arena *a, TychoMapIF *m, long k, double v) {
     if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
         TychoMapIF n = tycho_map_if_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (m->occ[i] == 1) { long s = tycho_map_if_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_if_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_if_slot(*m, k);
-    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_push_i(a, &m->ord, &m->nord, &m->ocap, k); }
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }
     m->vals[s] = v;
 }
 /* find-or-insert k, return &slot value (#2). See tycho_map_si_slotptr; zero is 0.0. */
@@ -1916,25 +1906,26 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, long k) {
     if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {
         long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 8) : (m->cap ? m->cap : 8);
         TychoMapIF n = tycho_map_if_with_cap(a, nc);
-        for (long i = 0; i < m->cap; i++)
-            if (m->occ[i] == 1) { long s = tycho_map_if_slot(n, m->keys[i]);
-                n.keys[s] = m->keys[i]; n.vals[s] = m->vals[i]; n.occ[s] = 1; n.len++; n.used++; }
-        n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap;   /* carry insertion order across rehash */
+        for (long o = m->head; o >= 0; o = m->nxt[o]) {   /* walk the old list in insertion order */
+            long s = tycho_map_if_slot(n, m->keys[o]);
+            n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
+            tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
         *m = n;
     }
     long s = tycho_map_if_slot(*m, k);
-    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_push_i(a, &m->ord, &m->nord, &m->ocap, k); m->vals[s] = 0.0; }
+    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = 0.0; }
     return &m->vals[s];
 }
 void tycho_map_if_del(TychoMapIF *m, long k) {
     long s = tycho_map_if_find(*m, k);
     if (s < 0) return;
-    tycho_ord_del_i(m->ord, &m->nord, k);
+    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s);
     m->occ[s] = 2; m->len--;
 }
 TychoMapIF tycho_map_if_copy(Arena *a, TychoMapIF src) {
     TychoMapIF r = tycho_map_if_with_cap(a, src.len ? src.len * 2 : 0);
-    for (long j = 0; j < src.nord; j++) { long s = tycho_map_if_find(src, src.ord[j]); tycho_map_if_put(a, &r, src.ord[j], src.vals[s]); }
+    for (long s = src.head; s >= 0; s = src.nxt[s]) tycho_map_if_put(a, &r, src.keys[s], src.vals[s]);
     return r;
 }
 TychoMapIF tycho_map_if_set(Arena *a, TychoMapIF m, long k, double v) {
@@ -1948,8 +1939,8 @@ double tycho_map_if_get(TychoMapIF m, long k, double dflt) {
 }
 int tycho_map_if_has(TychoMapIF m, long k) { return tycho_map_if_find(m, k) >= 0; }
 TychoArrInt tycho_map_if_keys(Arena *a, TychoMapIF m) {
-    TychoArrInt r = tycho_arr_int_with_cap(a, m.nord);
-    for (long j = 0; j < m.nord; j++) tycho_arr_int_push(a, &r, m.ord[j]);
+    TychoArrInt r = tycho_arr_int_with_cap(a, m.len);
+    for (long s = m.head; s >= 0; s = m.nxt[s]) tycho_arr_int_push(a, &r, m.keys[s]);
     return r;
 }
 int tycho_map_if_eq(TychoMapIF x, TychoMapIF y) {
