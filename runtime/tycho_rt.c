@@ -1474,6 +1474,12 @@ void tycho_map_si_put(Arena *a, TychoMapSI *m, const char *k, long v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
+        }
         *m = n;
     }
     long s = tycho_map_si_slot(*m, k);
@@ -1500,6 +1506,12 @@ long *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
             long s = tycho_map_si_slot(n, m->keys[o]);
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
         }
         *m = n;
     }
@@ -1630,6 +1642,12 @@ void tycho_map_sf_put(Arena *a, TychoMapSF *m, const char *k, double v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
+        }
         *m = n;
     }
     long s = tycho_map_sf_slot(*m, k);
@@ -1652,6 +1670,12 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
             long s = tycho_map_sf_slot(n, m->keys[o]);
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(char *));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
         }
         *m = n;
     }
@@ -1795,6 +1819,13 @@ void tycho_map_ii_put(Arena *a, TychoMapII *m, long k, long v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap tombstone purge: hand the old table back so the next purge reuses it (delete-churn stops leaking generations); skip on growth so the freelist isn't clogged with stale sizes */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->occ,  (size_t)m->cap);
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
+        }
         *m = n;
     }
     long s = tycho_map_ii_slot(*m, k);
@@ -1810,6 +1841,13 @@ long *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, long k) {
             long s = tycho_map_ii_slot(n, m->keys[o]);
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap tombstone purge: hand the old table back so the next purge reuses it (delete-churn stops leaking generations); skip on growth so the freelist isn't clogged with stale sizes */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->occ,  (size_t)m->cap);
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
         }
         *m = n;
     }
@@ -1895,6 +1933,13 @@ void tycho_map_if_put(Arena *a, TychoMapIF *m, long k, double v) {
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
         }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
+            arena_recycle(a, m->occ,  (size_t)m->cap);
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
+        }
         *m = n;
     }
     long s = tycho_map_if_slot(*m, k);
@@ -1910,6 +1955,13 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, long k) {
             long s = tycho_map_if_slot(n, m->keys[o]);
             n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++;
             tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s);
+        }
+        if (m->cap && nc == m->cap && arena_owns(a, m->keys)) {   /* same-cap purge: recycle the old table so churn does not leak generations */
+            arena_recycle(a, m->keys, (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->vals, (size_t)m->cap * sizeof(double));
+            arena_recycle(a, m->occ,  (size_t)m->cap);
+            arena_recycle(a, m->nxt,  (size_t)m->cap * sizeof(long));
+            arena_recycle(a, m->prv,  (size_t)m->cap * sizeof(long));
         }
         *m = n;
     }
