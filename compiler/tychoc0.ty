@@ -2868,8 +2868,8 @@ fn mangle(ty: string) -> string:
         return "res_" + mangle(result_ok(ty)) + "_" + mangle(result_err(ty))
     if is_tuple(ty):
         return "tup_" + tup_suffix(ty)
-    if is_map(ty):
-        return "map_" + map_key(ty) + "_" + map_val(ty)
+    if is_map(ty):                               # recurse on key/value: scalar/string are no-ops, a composite value (`[int:[int]]` -> map_int_arr_int) mangles to a valid identifier (matches the map struct's name)
+        return "map_" + mangle(map_key(ty)) + "_" + mangle(map_val(ty))
     if is_soa(ty):
         return "soa_" + soa_struct(ty)
     if is_func(ty):
@@ -11285,7 +11285,7 @@ fn main():
         i = i + 1
     i = 0                                        # 1b'. forward-declare composite array/map tags so a fn value whose
     for i < len(ets):                            #      param/ret is [T]/[K:V] (fn([T])->R) can name it incomplete
-        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
+        if not is_soa(ets[i]):   # array-of-X forward typedef for every element kind incl. MAPS (array-of-map) and tuples; a harmless extra family if that element type is never actually arrayed
             out = out + "typedef struct Arr_" + mangle(ets[i]) + "_ Arr_" + mangle(ets[i]) + ";\n"
         i = i + 1
     i = 0
@@ -11308,7 +11308,7 @@ fn main():
         i = i + 1
     i = 0                                        # 2. array STRUCT bodies (element types
     for i < len(ets):                            #    only appear as pointers here, so fwd decls suffice)
-        if not is_map(ets[i]) and not is_soa(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
+        if not is_soa(ets[i]):   # array-of-X struct body for every element kind incl. MAPS; the element appears only as a pointer here, so its forward typedef suffices
             out = out + gen_arr_type(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 2c. soa typedefs + helper fwd decls (before struct
@@ -11413,6 +11413,11 @@ fn main():
     for i < len(ets):
         if is_map(ets[i]):
             out = out + gen_map_fns(dc, ctx, ets[i])
+        i = i + 1
+    i = 0                                        # array-of-map FUNCTIONS: after gen_map_fns so Arr_<map>_from/_copy/_eq can call map_*_copy/_eq (their struct + fwd decls were emitted with the other array families above)
+    for i < len(ets):
+        if is_map(ets[i]):
+            out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     out = out + gen_strlib()
     i = 0                                        # 6b. tuple copy + equality (may call array fns above)
