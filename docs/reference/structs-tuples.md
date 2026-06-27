@@ -73,3 +73,9 @@ like everything else, so two are independent. Destructuring comes in two forms â
 declares fresh locals, `a, b = f()` assigns into existing variables. A tuple element is also a
 writable place: `t.0 = v` updates it in place, and value semantics is preserved â€” a copy taken
 beforehand is unaffected.
+
+---
+
+*Design background:* why deep-copied aggregates stay sound, and why a struct that would
+contain itself by value is rejected (use indirection through an array), is in
+[the aggregates design note](../arrays-structs.md).

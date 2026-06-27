@@ -90,3 +90,9 @@ never outlive or alias the buffer it came from — without any borrow checker. S
 every array type and compose (`xs[1:5][1:3]`). The one rule: you cannot pass a slice of `xs`
 and a `mut` of `xs` to the same call, since the `mut` could reallocate the viewed buffer.
 Strings use [`substr(s, a, b)`](builtins.md) (a copy), not slice syntax.
+
+---
+
+*Design background:* why value-semantic aggregates stay sound — copied deeply, projected
+in place, never aliased — with no borrow checker or whole-program alias analysis, is in
+[the aggregates design note](../arrays-structs.md).

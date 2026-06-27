@@ -71,7 +71,7 @@ threaded through calls — exactly like a `mut` array.
 Beyond `string` and `int`, a key may be any of:
 
 - a **newtype** over `string` or `int` (`[UserId: int]`) — the map carries the declared key
-  type, so a raw base value is rejected; `keys()` returns the wrapped `[UserId]`;
+  type, so a raw base value is rejected; `keys()` returns the wrapped `[UserId]`.
 - a **fieldless enum** (`[Color: int]`) — stored and hashed by its tag, deterministic and
   never pointer-dependent; `keys()` rebuilds the wrapped variants. (An enum with a payload
   variant is rejected: equal tags would not imply equal values.)
