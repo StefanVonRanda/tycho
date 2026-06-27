@@ -6,7 +6,7 @@
 > are reference + historical design records; see the index at the bottom).
 >
 > Everything here is checked against the compilers/gates, not asserted from memory.
-> Last synced: 2026-06-27.
+> Last synced: 2026-06-28.
 
 ## What this is
 
@@ -29,6 +29,10 @@ honest accounting of where the model wins and loses is `docs/internals/value-sem
 `C = B·tychoc0.ty`; assert `B == C` byte-identical (tychoc0 reproduces its own emission) and
 `B` matches the reference. `make fixpoint`. tychoc0 is a *subset* compiler — the breadth gap
 vs `tychoc` is tracked by the parity gates below, and as of this sync is broad + clean.
+The former newtype-erasure limitation is **closed**: tychoc0 now tracks newtype identity
+through its checker (still erased to the base in the emitted C — zero cost — but the identity
+is enforced at every type boundary), so it distinguishes `Ids` from `[int]`, two distinct
+newtypes, and a newtype from its base, exactly as tychoc does.
 
 ## The verification surface (gate map)
 
@@ -53,8 +57,8 @@ vs `tychoc` is tracked by the parity gates below, and as of this sync is broad +
 Local-only CI (no hosted CI by policy): `make ci`, or the `make hooks` pre-push gate (test + fixpoint).
 Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `make test`.
 
-**Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-27 — all 16
-steps (test 248 · fuzz 500/500 · fuzz-reject 435 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
+**Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-28 — all 16
+steps (test 248 · fuzz 500/500 · fuzz-reject 436 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
 eqparity 504 · unaryparity 29 · tools-check · bench-guard · recursion). The fast gates
 (`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release flushed
 out two tychoc0 fail-opens they missed — a `mut` argument accepted without `&` (the `fuzz-reject`
