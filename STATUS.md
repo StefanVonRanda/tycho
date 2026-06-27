@@ -59,7 +59,7 @@ Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `ma
 
 **Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-28 — all 16
 steps (test 248 · fuzz 500/500 · fuzz-reject 436 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
-eqparity 504 · unaryparity 29 · tools-check · bench-guard · recursion). The fast gates
+eqparity 512 (0 skipped) · unaryparity 30 (0 skipped) · tools-check · bench-guard · recursion). The fast gates
 (`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release flushed
 out two tychoc0 fail-opens they missed — a `mut` argument accepted without `&` (the `fuzz-reject`
 lane) and a `tychofmt` float-literal drift, `.25e3` → `.25 e3` (the `tools-check` lane) — both fixed
