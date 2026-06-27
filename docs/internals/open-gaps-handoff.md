@@ -164,11 +164,14 @@ an active hole in shipped tooling. Still worth closing given the project's safet
 
 ---
 
-## Feature accept/reject diff — 2 gaps CLOSED 2026-06-27
+## Feature accept/reject diff campaign — 3 gaps CLOSED 2026-06-27
 
-A systematic tychoc-vs-tychoc0 differential over ~60 feature probes (classifying each as
-match / both-reject / tychoc0-missing / fail-open / miscompile) surfaced two gaps the
-output-only fixpoint can't see:
+A systematic tychoc-vs-tychoc0 differential (each probe classified as match / both-reject /
+tychoc0-missing / fail-open / miscompile) catches accept/reject divergences the output-only
+fixpoint is blind to. Run in three rounds (~94 probes total); **all 3 gaps it found are now
+fixed**, and round 3 came back clean.
+
+**Round 1 (~42 single-feature probes) — 2 gaps:**
 
 - **Early bare `return` in `main()` — tychoc0 MISCOMPILE.** tychoc0 inlined main's body into
   `int main()`, so an early `return` (anywhere but the last line) emitted `return;` into an
@@ -180,9 +183,33 @@ output-only fixpoint can't see:
   Fix (`str` codegen ~4558): reject any non-int (after str/float/bool) with tychoc's exact
   message; only int / newtype-of-int reaches `i2s`. Test `tests/reject/str_char.ty`.
 
-Both verified MATCH; `make test` 244/0, `make fixpoint` (B==C + differential), `make corelib`
-3-way, `make fuzz-quick` 80/80 — all green. The harness lives at `scratchpad/featdiff.py`;
-re-running it after each language change is a cheap way to catch new accept/reject divergence.
+**Round 2 (~23 combination probes) — 1 gap:**
+
+- **Composite-keyed map LITERALS — tychoc0 FAIL-OPEN (fixed by EXTENDING tychoc).** `[Red: 1]`
+  (fieldless enum), `[K(1): 10]` (struct), `[(1,2): 100]` (tuple) were rejected by tychoc
+  (`map keys must be string or int`) but accepted by tychoc0 — yet the same key kinds already
+  worked on BOTH via a declared map + assignment (`m := []Col: int; m[Red] = 1`). Only the
+  literal path diverged. Direction chosen: extend tychoc (real capability, machinery exists),
+  not restrict tychoc0. Fix (`src/tychoc.c` map-literal typecheck ~3611): drop the redundant
+  `kt != STRING && kt != INT` guard so `map_of` is the single key validator on both the
+  declared and literal paths (it already routes composite keys to `mapc_of`, returns T_VOID
+  only for float/bool/non-hashable). Literal codegen already used the same family fns. Test
+  `tests/map_literal_composite_key.ty`. Commit `7d54add`.
+
+**Round 3 (~30 deeper combination + safety-edge probes) — 0 gaps.** Nested data (map-of-array,
+struct-with-map-field, 3D arrays), newtype-over-{array,struct,map-key}, soa pop/len/field-mutate,
+concurrency (parreduce-product, channel-of-heap-struct, two-recv select, spawn-returns-array),
+abort edges (div-zero, nested OOB, pop-empty, substr-OOB all abort consistently), string ops,
+generic+closure combos (closures-in-array, returned closures, `or_return` on Result) — all MATCH.
+
+Gates at each landing: `make test` (→245/0), `make fixpoint` (B==C + differential), `make corelib`
+3-way, `make eqparity` (504/504 for the map-key change), `make fuzz-quick` 80/80.
+
+**Reusable harnesses** (in the session scratchpad): `featdiff.py` (round 1), `featdiff3.py`
+(round 2), `featdiff4.py` (round 3). Re-run after any language change to catch new accept/reject
+drift — cheap, and the highest-yield finds are feature COMBINATIONS and safety edges, not single
+shapes. Lesson reaffirmed: when a fail-open is found, decide DIRECTION (tighten tychoc0 to match
+the reference, or extend tychoc to make the capability real) — both are valid, it's a design call.
 
 ---
 
