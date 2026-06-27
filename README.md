@@ -347,9 +347,11 @@ place with geometric capacity, like an array's `push`, so the loop is O(n)
 time and O(n) memory. This is sound because value semantics already
 guarantees `acc` is uniquely owned at that point — a `b := acc` elsewhere
 took its own deep copy, so growing `acc` in place is invisible to everyone
-else. Measured: accumulating an n-char string went from ~836 MB at n=40 000
-(quadratic) to a flat ~3 MB (linear). Like the others, it changes nothing in
-the source — `acc = acc + e` is still just value-semantic concatenation.
+else. Measured: accumulating an n-char string went from ~828 MB at n=40 000
+(quadratic) to flat, under 4 MB (linear) — full table in
+[the thesis](docs/thesis.md#4b-accumulation-retention--in-place-append). Like the
+others, it changes nothing in the source — `acc = acc + e` is still just
+value-semantic concatenation.
 
 None of this appears in Tycho source.
 
