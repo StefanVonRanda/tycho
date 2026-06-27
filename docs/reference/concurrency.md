@@ -5,11 +5,12 @@ call — is already a sound thread boundary. So concurrency is that same convent
 thread: after the copy-in, a task shares zero bytes with its spawner, and race freedom falls out
 of value semantics. There is no `Sendable`, no lifetimes, and no locks in the language.
 
-**Scope of the guarantee.** "Race-free by construction" holds for *pure Tycho values* — the
-world the compiler owns and deep-copies. It does **not** extend across the [FFI](ffi.md): if a
-task calls a C function that touches process-global or `static` C state, Tycho cannot see that
-sharing, and two tasks racing on it race exactly as they would in C. Isolate such state per
-thread, or serialize the calls.
+## Scope of the guarantee
+
+"Race-free by construction" holds for *pure Tycho values* — the world the compiler owns and
+deep-copies. It does **not** extend across the [FFI](ffi.md): if a task calls a C function that
+touches process-global or `static` C state, Tycho cannot see that sharing, and two tasks racing
+on it race exactly as they would in C. Isolate such state per thread, or serialize the calls.
 
 ## `spawn` and `wait`
 
