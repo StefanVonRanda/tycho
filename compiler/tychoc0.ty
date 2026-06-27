@@ -7954,6 +7954,69 @@ fn check_call_inout(dc: Decls, ctx: Ctx, nm: string, args: [Expr], el: int):
             die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is mut; pass it as '&variable'")
         k = k + 1
 
+# The variant names of enum `ename` (the bare name "E" or a generic instance
+# "Tree__int"; falls back to the generic base "Tree" of an application form).
+# Empty if `ename` is not a known enum.
+fn enum_variant_names(dc: Decls, ename: string) -> [string]:
+    out := []string
+    base := ename
+    pp := find(ename, "(")
+    if pp > 0:
+        base = substr(ename, 0, pp)
+    i := 0
+    for i < len(dc.enums):
+        if dc.enums[i].name == ename or dc.enums[i].name == base:
+            j := 0
+            for j < len(dc.enums[i].variants):
+                push(out, dc.enums[i].variants[j].name)
+                j = j + 1
+            return out
+        i = i + 1
+    return out
+
+# Compile-time `match` validation (parity with tychoc): every arm must name a real
+# variant of the scrutinee, and every variant must be covered unless a `_` wildcard
+# is present. tychoc0 used to accept a non-exhaustive match -- safe at RUNTIME (the
+# emitted C aborts with "tycho: non-exhaustive match"), but a COMPILE error in tychoc,
+# so an uncovered case shipped instead of being caught. `sty` should be resolve_ginst'd.
+fn check_match(dc: Decls, ctx: Ctx, sty: string, vars: [string], el: int):
+    wild := has_str(vars, "_")
+    if is_option(sty):
+        j := 0
+        for j < len(vars):
+            v := vars[j]
+            if v != "Some" and v != "None" and v != "_":
+                die_at(dc, el, "an Option's arms are Some(x), None, and _, not '" + v + "'")
+            j = j + 1
+        if not wild and (not has_str(vars, "Some") or not has_str(vars, "None")):
+            die_at(dc, el, "non-exhaustive match on Option: arms must cover Some and None (or add `_`)")
+        return
+    if is_result(sty):
+        j := 0
+        for j < len(vars):
+            v := vars[j]
+            if v != "Ok" and v != "Err" and v != "_":
+                die_at(dc, el, "a Result's arms are Ok(x), Err(e), and _, not '" + v + "'")
+            j = j + 1
+        if not wild and (not has_str(vars, "Ok") or not has_str(vars, "Err")):
+            die_at(dc, el, "non-exhaustive match on Result: arms must cover Ok and Err (or add `_`)")
+        return
+    vn := enum_variant_names(dc, sty)
+    if len(vn) == 0:
+        return                                        # not a known enum: nothing to check
+    j := 0
+    for j < len(vars):
+        v := vars[j]
+        if v != "_" and not has_str(vn, v):
+            die_at(dc, el, "'" + v + "' is not a variant of " + sty)
+        j = j + 1
+    if not wild:
+        k := 0
+        for k < len(vn):
+            if not has_str(vars, vn[k]):
+                die_at(dc, el, "non-exhaustive match: missing variant " + vn[k] + " of " + sty)
+            k = k + 1
+
 fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
         EArrLit(elems, _el):
@@ -8112,6 +8175,7 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
         SMatch(subj, variants, allbinds, bodies, _sl):
             collect_expr(&acc, subj, names, types, dc, ctx)
             sty := type_of(subj, names, types, dc, ctx)
+            check_match(dc, ctx, resolve_ginst(sty, dc, ctx), variants, _sl)   # reject non-exhaustive / bad-arm-name matches at compile time (parity with tychoc)
             j := 0
             for j < len(bodies):
                 bn := names                       # bind arm payloads so type_of resolves them
