@@ -49,6 +49,39 @@ fn is_aln(c: int) -> bool:
 fn is_two_op(s: string) -> bool:
     return s == "->" or s == ":=" or s == "==" or s == "!=" or s == "<=" or s == ">=" or s == "<<" or s == ">>" or s == "+=" or s == "-=" or s == "*=" or s == "/=" or s == "%=" or s == "&=" or s == "|=" or s == "^="
 
+# Consume an optional float exponent `[eE][+-]?digits` starting at `i`; returns the
+# new index, or `i` unchanged if there is no valid exponent. Used so `1e10`, `1.5e-3`,
+# and `.25e3` lex as ONE float token (the lexer used to stop before the `e`, splitting
+# `.25e3` into `.25` + the identifier `e3` -- a formatter semantic-drift bug).
+fn scan_exp(src: string, n: int, i: int) -> int:
+    if i < n and (src[i] == 101 or src[i] == 69):     # e / E
+        j := i + 1
+        if j < n and (src[j] == 43 or src[j] == 45):  # + / -
+            j = j + 1
+        if j < n and is_dig(src[j]):                  # an exponent needs at least one digit
+            j = j + 1
+            for j < n and is_dig(src[j]):
+                j = j + 1
+            return j
+    return i
+
+# Does the last CODE token (skipping trivia) produce a value? After one, a `.` is
+# field/tuple access (`t.0`); otherwise `.5` is a leading-dot float. This is the same
+# previous-token disambiguation the compiler's lexer uses.
+fn prev_is_value(toks: [Tok]) -> bool:
+    j := len(toks) - 1
+    for j >= 0:
+        k := toks[j].kind
+        if k == KWS or k == KNL or k == KComment:
+            j = j - 1
+        else:
+            if k == KIdent or k == KInt or k == KFloat or k == KStr or k == KFStr or k == KChar:
+                return true
+            if k == KOp and (toks[j].text == ")" or toks[j].text == "]"):
+                return true
+            return false
+    return false
+
 fn lex(src: string) -> [Tok]:
     toks := []Tok
     n := len(src)
@@ -129,13 +162,27 @@ fn lex(src: string) -> [Tok]:
         elif is_dig(c):                               # number (int or float)
             for i < n and is_dig(src[i]):
                 i = i + 1
-            if i < n and src[i] == 46 and i + 1 < n and is_dig(src[i + 1]):
+            isflt := false
+            if i < n and src[i] == 46 and i + 1 < n and is_dig(src[i + 1]):   # fractional part
+                isflt = true
                 i = i + 1
                 for i < n and is_dig(src[i]):
                     i = i + 1
+            ei := scan_exp(src, n, i)                  # exponent: 1e10, 1.5e-3, 25e3 are floats
+            if ei != i:
+                isflt = true
+                i = ei
+            if isflt:
                 push(toks, Tok(KFloat, substr(src, start, i), sl, sc))
             else:
                 push(toks, Tok(KInt, substr(src, start, i), sl, sc))
+            col = col + (i - start)
+        elif c == 46 and i + 1 < n and is_dig(src[i + 1]) and not prev_is_value(toks):   # leading-dot float .5 / .25e3 (NOT t.0 field access)
+            i = i + 1                                 # the '.'
+            for i < n and is_dig(src[i]):
+                i = i + 1
+            i = scan_exp(src, n, i)                    # optional exponent
+            push(toks, Tok(KFloat, substr(src, start, i), sl, sc))
             col = col + (i - start)
         elif is_alp(c):                               # identifier / keyword
             for i < n and is_aln(src[i]):
