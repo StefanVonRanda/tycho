@@ -7931,6 +7931,29 @@ fn note_arr_types(acc: mut [string], ty: string):
 # (array literals / empty arrays that no annotation would reveal).
 # The body walkers thread the var env (names/types), mirroring gen, so that
 # type_of resolves variables inside tuple/array literals (e.g. t := (a, b)).
+# Is `e` an `&place` argument (the only valid form for a `mut`/inout parameter)?
+fn is_eaddr(e: Expr) -> bool:
+    match e:
+        EAddr(x, _el):
+            return true
+        _:
+            return false
+
+# A `mut` (inout) parameter must be passed `&variable`; tychoc rejects a bare
+# argument there, but tychoc0 used to accept it and emit C that passes the value
+# where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
+# every user call: collect_elem_types walks every body, so this is universal.
+fn check_call_inout(dc: Decls, ctx: Ctx, nm: string, args: [Expr], el: int):
+    si := map_get(dc.sigmap, nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
+    if si < 0:
+        return
+    pp := dc.sigs[si].ptypes
+    k := 0
+    for k < len(args) and k < len(pp):
+        if is_inout(pp[k]) and not is_eaddr(args[k]):
+            die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is mut; pass it as '&variable'")
+        k = k + 1
+
 fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
         EArrLit(elems, _el):
@@ -7960,6 +7983,7 @@ fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
         ECall(nm, args, _el):
+            check_call_inout(dc, ctx, nm, args, _el)   # reject a `mut` arg not passed as `&variable` (fail-closed, matches tychoc)
             j := 0
             for j < len(args):
                 collect_expr(&acc, args[j], names, types, dc, ctx)

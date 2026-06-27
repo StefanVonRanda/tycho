@@ -1,0 +1,12 @@
+# A `mut` (inout) parameter must be passed as `&variable`. Passing a bare argument
+# -- here the mut param `n` forwarded to another mut param without `&` -- is rejected
+# by both compilers. tychoc0 used to accept it and emit C that passes the int value
+# where an int* is expected (won't compile): a fuzz-reject fail-open (seed 466).
+fn g(n: mut int):
+    n = n + 1
+fn f(n: mut int):
+    g(n)
+fn main():
+    x := 0
+    f(&x)
+    print(str(x))
