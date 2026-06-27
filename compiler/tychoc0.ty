@@ -8013,6 +8013,16 @@ fn collect_block(acc: mut [string], stmts: [Stmt], names: [string], types: [stri
 fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e, _sl):
+            # reject a bare untyped `x := Ok(v)` / `x := Err(v)`: the constructor fixes only
+            # ONE of Result's two type params, and (unlike None, which a later use can ground)
+            # the other is never inferred -- tychoc requires the annotation. Without this,
+            # type_of returns a partial `Result(T,)` that a later `match` then mis-handles.
+            # collect_elem_types walks EVERY function body unconditionally, so it catches the
+            # simple/generic-free/lambda-free case that lift and mono both skip. STypedDecl,
+            # `return Ok(..)`, and `Ok(..)` as an argument are a different node / supply E.
+            okerr := call_callee(e)
+            if okerr == "Ok" or okerr == "Err":
+                die("type: cannot infer the Result type of " + okerr + "(...) -- annotate it (x : Result(T, E) = " + okerr + "(...))")
             collect_expr(&acc, e, names, types, dc, ctx)
             ty := type_of(e, names, types, dc, ctx)
             push(names, n)
