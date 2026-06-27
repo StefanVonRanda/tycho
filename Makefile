@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion ci hooks clean
 
 all: tychoc
 
@@ -184,6 +184,13 @@ fixpoint: tychoc
 N ?= 500
 fuzz: tychoc
 	@python3 fuzz/run.py $(N)
+
+# Quick fuzz: a small differential+ASan sweep for the inner dev loop, so a
+# compiler change can be smoke-tested in ~1-2 min instead of the full ~30 min.
+# Full coverage stays `make fuzz` (N=500). Override the count: make fuzz-quick QN=120.
+QN ?= 60
+fuzz-quick: tychoc
+	@python3 fuzz/run.py $(QN)
 
 # Robustness lane: feed MALFORMED input to BOTH compilers (built under
 # ASan+UBSan) and assert each FAILS CLOSED -- never crashes, and any input it

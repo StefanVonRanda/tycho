@@ -28,10 +28,15 @@ is off — leaks aren't soundness bugs; this targets *correctness*.
 ## Run it
 
 ```
-make fuzz            # 500 seeds (default)
+make fuzz            # 500 seeds (default) — full sweep, ~30 min under ASan
+make fuzz-quick      # 60 seeds (~1-2 min) — inner dev-loop smoke test
+make fuzz-quick QN=120  # a slightly deeper quick sweep
 make fuzz N=5000     # more
 python3 fuzz/run.py 1000 2000   # 1000 seeds starting at seed 2000
 ```
+
+Use `make fuzz-quick` while iterating on a compiler change for fast feedback;
+run the full `make fuzz` before committing.
 
 Deterministic: a finding's `seed_<n>.ty` reproduces with `python3 fuzz/gen.py <n>`.
 
