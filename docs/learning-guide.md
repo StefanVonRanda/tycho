@@ -6,6 +6,11 @@ Tycho is an experimental, open proof-of-concept. It's small on purpose — usual
 
 **Who this is for:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You may have heard "stack vs heap" but never managed memory yourself. This guide meets you there and walks you into a systems language one concept at a time. Read it top to bottom: each section builds on the last, and the projects at the end pull everything together.
 
+> This is the *tutorial* — a narrative path through the language. For the
+> authoritative, by-topic description of every construct, see the
+> [language reference](reference/index.md); for why the language is shaped this
+> way, [the thesis](thesis.md).
+
 ---
 
 ## Table of Contents

@@ -3,8 +3,8 @@
 A Tycho map `[K: V]` may hold *any* value type: `[string: string]`,
 `[string: Point]`, `[int: [int]]`, even a nested map `[string: [string: int]]`.
 This note explains how that works under value semantics and implicit arenas,
-and why it needs no user `$T` generics. The user-facing surface is in the
-README's [Maps](../README.md#maps-string-v-int-v) section; in-place mutation of a
+and why it needs no user `$T` generics. The user-facing surface is the
+[Maps reference](reference/maps.md); in-place mutation of a
 value (`push(m[k], v)`, `m[k] += 1`) has its own note,
 [map-mutation.md](map-mutation.md).
 
@@ -68,8 +68,8 @@ All operations work uniformly regardless of `V`:
 value take `V`; the key takes `K`. The only restriction is on the **key**:
 `string`, `int`, a newtype over one of those, or a fieldless enum — no other key
 type (see the README's
-[newtypes](../README.md#distinct-newtypes-type) and
-[Maps](../README.md#maps-string-v-int-v) sections).
+[newtypes](reference/types.md#distinct-newtypes-type) and
+[Maps](reference/maps.md) sections).
 
 ## Implementation notes
 

@@ -15,8 +15,8 @@ Three properties define the model:
 - **There is no separate compilation.** The compiler follows the import graph,
   merges everything reachable into one program, and emits a single `.c`.
 
-The README's [Packages section](../README.md#packages) is the short version; this
-is the full reference.
+The [Packages reference](reference/packages.md) is the short version; this
+is the full design note.
 
 ## Surface syntax
 

@@ -3,8 +3,8 @@
 Once a map can hold any value type ([map-values.md](map-values.md)), the next
 question is how to *grow* one of those values without copying it. This note
 covers `m[k]` — indexing a map both as a write target and as a read — and why it
-stays sound with no borrow checker. The user-facing map surface is in the
-README's [Maps](../README.md#maps-string-v-int-v) section.
+stays sound with no borrow checker. The user-facing map surface is the
+[Maps reference](reference/maps.md).
 
 ## Why in-place mutation
 

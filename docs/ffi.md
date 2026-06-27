@@ -8,8 +8,8 @@ the Tycho side: no foreign pointer ever leaks into Tycho's owned world.
 
 The FFI is an *unsafe* boundary — you can still pass a bad handle to C and crash
 inside C. The design's job is to keep the **Tycho side** sound and to make the
-unsafe surface explicit, which is what the `extern` keyword marks. The README's
-[FFI section](../README.md#ffi-calling-c) is the short version; this page is the
+unsafe surface explicit, which is what the `extern` keyword marks. The
+[FFI reference](reference/ffi.md) is the short version; this page is the
 full rule set. A complete binding lives in
 [`examples/sqlite/`](../examples/sqlite/) — in-memory SQLite driven through both
 compilers.
