@@ -37,7 +37,7 @@ vs `tychoc` is tracked by the parity gates below, and as of this sync is broad +
 | Gate | Proves |
 |---|---|
 | `make tychoc` | the reference compiler builds. |
-| `make test` | **245** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
+| `make test` | **246** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
 | `make fixpoint` | self-host `B==C` + single files + packages + standalone driver + tychoc0 self-split. |
 | `make corelib` | every corelib package + examples + the site dogfood: C-compiler vs tychoc0, goldens match (3-way). |
 | `make conc` | spawn / parallel-for / channels under ASan+TSan + tychoc0 parity. |
@@ -52,6 +52,14 @@ vs `tychoc` is tracked by the parity gates below, and as of this sync is broad +
 
 Local-only CI (no hosted CI by policy): `make ci`, or the `make hooks` pre-push gate (test + fixpoint).
 Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `make test`.
+
+**Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-27 — all 16
+steps (test 246 · fuzz 500/500 · fuzz-reject 435 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
+eqparity 504 · unaryparity 29 · tools-check · bench-guard · recursion). The fast gates
+(`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release flushed
+out two tychoc0 fail-opens they missed — a `mut` argument accepted without `&` (the `fuzz-reject`
+lane) and a `tychofmt` float-literal drift, `.25e3` → `.25 e3` (the `tools-check` lane) — both fixed
+(commits `dd973f0`, `2c11c4e`). Lesson: run the full `make ci` before any release.
 
 ## Shipped (capabilities)
 
@@ -94,8 +102,20 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
 
 ## Doc index (status-tagged)
 
-- `docs/` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `corelib`, `perf`, `thesis`) — **reference**, current.
-- `docs/internals/value-semantics-limits.md` — **reference** (evergreen honest-cost analysis).
-- `docs/internals/changelog-2026-06.md` — **changelog**: the June-2026 dogfood/gap-closing campaign (what was wrong / how fixed / how verified) + the reusable differential-probing method. Historical record, not open work.
+The reader-facing docs were re-architected (2026-06-27) to a **single source of truth**: the
+language reference used to be duplicated across the README, `docs/*.md`, and the learning guide;
+now there is one canonical reference and the rest point to it. Every example in the reference
+compiles on both compilers; no dead file-or-anchor links across the tree.
+
+**Public, reader-facing:**
+- `README.md` — **front door** (~460 lines, down from ~1400): pitch, quickstart, build/CI, self-hosting + benchmarks, honest limits, FAQ, and a navigation map. *Not* the reference.
+- `docs/reference/` — **the canonical language reference**, one topic per page: `index`, `basics`, `types`, `arrays-slices`, `structs-tuples`, `maps`, `enums-options`, `functions`, `generics`, `concurrency`, `ffi`, `packages`, `builtins`. The source of truth for behaviour. Voice: motivated-then-mechanical; each page footers to its design note (reference owns the *what*, the note owns the *why*).
+- `docs/thesis.md` — **the argument** (value-semantics → implicit arenas, honest wins/losses, machine-transparent benchmarks). The centerpiece for evaluators.
+- `docs/learning-guide.md` + `docs/learning-platform.html` — **the tutorial** (narrative; links into the reference).
+- `docs/*.md` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `arrays-structs`, `map-values`, `map-mutation`, `perf`, `corelib`) — **design notes**: the *why* behind each subsystem, deduped against the reference.
+
+**Internal, for working on the project (kept as working tools, not part of the editorial pass):**
+- `STATUS.md` (this file) + `docs/internals/value-semantics-limits.md` — **reference**, current.
+- `docs/internals/changelog-2026-06.md` — **changelog** of the June-2026 dogfood/gap-closing campaign + the reusable differential-probing method. Historical, not open work.
 - `docs/internals/{generics-gap-fixes-plan,generics-stage2-body-cloning,composite-map-keys-design,parfor-channel-drain-design,sink-prototype,typed-handles-design,map-hash-dos-plan,integer-overflow,hylo-mvs-research}.md` — **design records** for shipped (or, for stage2-body-cloning, *declined*) work. Not open tasks.
 - `docs/rfc/{ffi-threading-design-review,limited-references-spike}.md` — **decided** (limited-references: resolved as a decision, not adopted).
