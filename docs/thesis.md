@@ -1,9 +1,9 @@
 # The Tycho thesis: value semantics makes implicit arenas work
 
 This document explains the core idea behind Tycho — the *why*. The
-[README](../README.md) is the reference overview;
-[arrays-structs.md](arrays-structs.md) works through the design under pressure.
-This document makes the argument the implementation backs up with running,
+[language reference](reference/index.md) describes *what* the language does;
+the [aggregates design note](arrays-structs.md) works this argument through under
+pressure. This document makes the case the implementation backs up with running,
 measured code.
 
 Tycho is an experimental, small, ahead-of-time language: Python-looking syntax,
