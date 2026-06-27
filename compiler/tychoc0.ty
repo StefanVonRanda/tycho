@@ -4556,6 +4556,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if at == "bool":
                     return "b2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                if resolve_nt(dc, ctx, at) != "int":   # only int (incl. newtype-of-int) -> i2s; reject char/ptr/enum/etc. so tychoc0 fails closed like tychoc (str(char) was silently printing the byte value)
+                    die_at(dc, ctx.line, "str(x) takes an int, a bool, a float, or a string")
                 return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "sqrt" or name == "floor" or name == "fabs":
                 return name + "(" + gen_expr(args[0], names, types, dc, ctx) + ")"
@@ -6908,8 +6910,12 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     movables := compute_movables(f.body)          # locals read once, not in a loop -> move-on-last-use
     fctx := Ctx(vparams, saccums, f.ret, "&_scope", 0, []int, movables, 0, []string, []string, []string, 0, pkg_prefix_of(f.name))
     if f.name == "main":
-        # root arena + a child scope; the scope parents every top-level call.
-        return "int main(int argc, char **argv) {\n    mhash_seed_init();\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    Arena _scope = arena_child(&_root);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n    arena_free(&_root);\n    return 0;\n}\n"
+        # Emit the user body as a VOID function (h_main) plus a thin `int main`
+        # wrapper that calls it -- mirrors tychoc. An early bare `return` in the body
+        # then lowers to `return;` inside a void function (valid C); inlining the body
+        # into `int main` made it `return;` in an int-returning function (cc error).
+        mb := "static void " + un(f.name) + "(Arena* _parent) {\n    Arena _scope = arena_child(_parent);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n}\n"
+        return mb + "int main(int argc, char **argv) {\n    mhash_seed_init();\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    " + un(f.name) + "(&_root);\n    arena_free(&_root);\n    return 0;\n}\n"
     # open a child scope from the caller's arena; void funcs free it on fall-through
     # (every `return` frees it via the return-slot in gen_stmt).
     tail := ""

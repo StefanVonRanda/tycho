@@ -164,6 +164,28 @@ an active hole in shipped tooling. Still worth closing given the project's safet
 
 ---
 
+## Feature accept/reject diff — 2 gaps CLOSED 2026-06-27
+
+A systematic tychoc-vs-tychoc0 differential over ~60 feature probes (classifying each as
+match / both-reject / tychoc0-missing / fail-open / miscompile) surfaced two gaps the
+output-only fixpoint can't see:
+
+- **Early bare `return` in `main()` — tychoc0 MISCOMPILE.** tychoc0 inlined main's body into
+  `int main()`, so an early `return` (anywhere but the last line) emitted `return;` into an
+  int-returning function → cc error `'return' with no value`. A whole class of valid programs
+  couldn't self-host. Fix (`gen_func` ~6910): emit the body as `static void h_main(Arena*)`
+  + a thin `int main` wrapper that calls it, mirroring tychoc. Test `tests/early_return_main.ty`.
+- **`str(char)` — tychoc0 FAIL-OPEN.** `str()` fell through to `i2s` for a char arg (and
+  `char +/- int` stays a char), silently printing the byte value where tychoc rejects it.
+  Fix (`str` codegen ~4558): reject any non-int (after str/float/bool) with tychoc's exact
+  message; only int / newtype-of-int reaches `i2s`. Test `tests/reject/str_char.ty`.
+
+Both verified MATCH; `make test` 244/0, `make fixpoint` (B==C + differential), `make corelib`
+3-way, `make fuzz-quick` 80/80 — all green. The harness lives at `scratchpad/featdiff.py`;
+re-running it after each language change is a cheap way to catch new accept/reject divergence.
+
+---
+
 ## Verified-solid this round (no bug)
 
 Fundamentals are clean (byte-identical, correct): substr/split/find/string-index, signed

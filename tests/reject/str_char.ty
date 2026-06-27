@@ -1,0 +1,7 @@
+# str() takes an int, a bool, a float, or a string -- NOT a char. A char reaches
+# str() either directly or as the result of `char +/- int` (which stays a char).
+# Both compilers must reject; tychoc0 used to fall through to i2s and silently
+# print the byte's numeric value (a fail-open vs tychoc).
+fn main():
+    c := 'A'
+    println(str(c + 1))
