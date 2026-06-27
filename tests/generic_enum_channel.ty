@@ -1,0 +1,65 @@
+# Generic-enum INSTANCE types in channel / Task / fn-return positions
+# (GAP 2). A generic-enum application `Box(int)` as a channel element, Task
+# result, or nested payload must resolve to its monomorphized instance so the
+# deep-copy across the thread boundary (cp_field) selects the real copier --
+# not a fail-open shallow copy that aliases the freed channel cell -- and so a
+# `match` on the received value binds its payload from the right instance.
+
+enum Box($T):
+    Has($T)
+    Empty
+
+fn mk(n: int) -> Box(string):           # generic-enum fn return, heap payload
+    return Has("v" + str(n))
+
+fn main():
+    # 1. scalar-payload enum through a channel
+    c1 := channel(Box(int), 1)
+    send(c1, Has(7))
+    match recv(c1):
+        Some(b):
+            match b:
+                Has(v):
+                    println("c1 " + str(v))
+                Empty:
+                    println("c1 empty")
+        None:
+            println("c1 none")
+
+    # 2. heap-payload (string) enum through a channel: real deep-copy test
+    c2 := channel(Box(string), 1)
+    send(c2, Has("hello"))
+    match recv(c2):
+        Some(b):
+            match b:
+                Has(v):
+                    println("c2 " + v)
+                Empty:
+                    println("c2 empty")
+        None:
+            println("c2 none")
+
+    # 3. nested generic enum Box(Box(int)) through a channel
+    c3 := channel(Box(Box(int)), 1)
+    send(c3, Has(Has(9)))
+    match recv(c3):
+        Some(outer):
+            match outer:
+                Has(inner):
+                    match inner:
+                        Has(v):
+                            println("c3 " + str(v))
+                        Empty:
+                            println("c3 ie")
+                Empty:
+                    println("c3 oe")
+        None:
+            println("c3 none")
+
+    # 4. generic enum carried by a Task (spawn/wait)
+    t := spawn mk(3)
+    match wait(t):
+        Has(v):
+            println("task " + v)
+        Empty:
+            println("task empty")

@@ -96,24 +96,35 @@ an active hole in shipped tooling. Still worth closing given the project's safet
 
 ---
 
-## GAP 2 — generic ENUM instance types not resolved (systemic) — tychoc0-only
+## GAP 2 — generic ENUM instance types not resolved (systemic) — CLOSED 2026-06-27
 
-The struct version of this was fully fixed (`861486f`: `resolve_ginst` + binding-inference
-instance-name preference). The **enum parallel** is NOT fixed and is deliberately left
-FAIL-CLOSED:
-- `channel(Opt(int))` and a generic-enum fn-return fail on tychoc0 (`unknown type 'Opt(int)'`);
-  tychoc handles them.
-- A 1-line extension of `resolve_ginst` (`... or is_enum(dc,ctx,cand)`) FIXES the fn-return
-  case but turns the channel case from a clean compile-error into a **fail-OPEN runtime
-  miscompile** (`non-exhaustive match`): the unresolved `Opt(int)` element type breaks the
-  channel DEEP-COPY's copier selection -> corrupted tag. So it was **reverted** (never ship
-  fail-open).
-- The gap is SYSTEMIC: many consumers see the unresolved type (cty, field_type, channel
-  deep-copy, match-via-`variant_tag`), unlike the tidy 2-mechanism struct story.
-- **Proper fix:** resolve the channel ELEMENT type at the SOURCE (where the channel/`recv`
-  type is formed — `type_of` channel arm ~`3456`, `Channel(...)`/`chan_inner`), or a
-  systemic mono-pass resolution — NOT whack-a-mole per consumer. Verify the deep-copy +
-  match both use the resolved instance.
+> **CLOSED.** The fix the handoff feared ("fail-open shallow copy") was avoided by
+> healing the two consumers that actually matter rather than whack-a-mole at every
+> source. Three changes in `compiler/tychoc0.ty`:
+> 1. `resolve_ginst` (10166): also accept enum instances (`... or is_enum(dc,ctx,cand)`).
+> 2. `cp_field` (4838): resolve the type INTERNALLY (`resolve_ginst(resolve_nt(...))`)
+>    so the deep-copy dispatch (`is_enum`/`is_struct`) selects the real copier — the
+>    unresolved app `Box(int)` was the thing that fell through to a fail-open shallow
+>    `return src` (aliased the freed channel cell → corrupted tag). Fixing cp_field is
+>    exactly why #1 is now SAFE where the bare 1-liner was not.
+> 3. `SMatch` (6467): resolve the scrutinee type so `variant_ptypes_in` finds the
+>    instance's payload types — an unresolved `Box(Box(int))` missed and fell back to
+>    the wrong enum's `$T` → a `long` binding (nested-enum miscompile).
+>
+> Verified MATCH (tychoc vs tychoc0): generic-enum channel scalar AND heap/string
+> payload (the real deep-copy test), nested `Box(Box(int))` through a channel, generic
+> enum via Task (spawn/wait), fn-return, and generic-STRUCT channel with a heap field
+> (a latent shallow-copy bug this also fixes). Regression test: `tests/generic_enum_channel.ty`
+> (+ golden). Gates: `make test` 240/0, `make fixpoint` (B==C + differential),
+> `make corelib` 3-way, `make fuzz-quick` 60/60 — all green.
+>
+> **Separate gap found in passing (NOT Gap 2, still open):** `select recv(c, x): match x`
+> fails on tychoc0 for ANY enum (generic OR plain non-generic) with `type: unknown
+> variable 'x'` — the select recv-binding isn't registered before its arm body's match
+> is generated. Pre-existing (reproduced against the pre-change tychoc0). The generic-struct
+> select-recv-bind (`x.field`) works; it's specifically select-recv-bind + `match` on the
+> binding. Repro: a `channel(Col,_)` / `enum Col: Red(int) Blue` with a `select: recv(c1,v1):
+> match v1: ...` arm.
 
 ---
 

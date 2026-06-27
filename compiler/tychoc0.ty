@@ -4835,7 +4835,7 @@ fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> s
 # full type dispatch, used to copy enum payload fields (which may be any type).
 # Scalars / non-heap structs pass through; everything heap routes to its _copy.
 fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
-    rt := resolve_nt(dc, ctx, ty)
+    rt := resolve_ginst(resolve_nt(dc, ctx, ty), dc, ctx)   # resolve a generic application (Box(int)) to its instance (Box__int) so is_enum/is_struct dispatch picks the real deep-copier; an unresolved app falls through to a fail-open shallow copy (aliases a freed channel cell)
     if rt == "str":
         return "scopy(" + ar + ", " + src + ")"
     if is_func(rt):                                  # a fn value: re-home its env into `ar`
@@ -6464,7 +6464,11 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
         SMatch(subj, variants, allbinds, bodies, _sl):  # tag-dispatch over an enum value
-            sty := type_of(subj, names, types, dc, ctx)
+            # resolve a generic-enum application (Box(Box(int))) to its instance
+            # (Box__Box__int) so variant_ptypes_in finds the right instance's payload
+            # types; an unresolved app misses and falls back to the wrong enum's $T
+            # (-> long binding). (Option/Result have no instance, so they pass through.)
+            sty := resolve_ginst(type_of(subj, names, types, dc, ctx), dc, ctx)
             # evaluate the subject ONCE into a brace-scoped temp: a side-effecting
             # subject (match pop(s):) must not run once per arm test (tychoc: _m<id>)
             sv := gen_expr(subj, names, types, dc, ctx)
@@ -10163,7 +10167,7 @@ fn resolve_ginst(ty: string, dc: Decls, ctx: Ctx) -> string:
             push(rargs, resolve_ginst(args[j], dc, ctx))
             j = j + 1
         cand := inst_name(substr(ty, 0, pp), rargs)    # candidate instance name ("Box__int"). The generic TEMPLATE is gone from dc by emission time, so accept this only if the INSTANCE actually exists (created by construction).
-        if cand != ty and is_struct(dc, ctx, cand):
+        if cand != ty and (is_struct(dc, ctx, cand) or is_enum(dc, ctx, cand)):   # enums too: a generic-enum channel element / fn-return application (Box(int)) must resolve to its instance so cp_field's deep-copy dispatch (is_enum) selects the right copier, not a fail-open shallow copy
             return cand
     return ty
 
