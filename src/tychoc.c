@@ -3609,10 +3609,13 @@ static Type resolve_expr_inner(Expr *e) {
                  * or all float (the value type picks [string: int]/[string: float]). */
                 Type vt = resolve_expr(e->args[1]);
                 Type kt = resolve_expr(e->args[0]);
-                if (kt != T_STRING && kt != T_INT)
-                    die_at(e->line, "map keys must be string or int");
+                /* map_of is the single key/value validator (mirrors the declared
+                 * [K: V] type path): it routes a composite key (struct/tuple/array/
+                 * fieldless-enum/newtype) to mapc_of and returns T_VOID only for a
+                 * genuinely invalid key (float/bool/non-hashable). So a composite-keyed
+                 * literal `[K(1): 10, Red: 1]` is accepted, matching declared maps. */
                 if (map_of(kt, vt) == T_VOID)
-                    die_at(e->line, "int-keyed maps support only int or float values");
+                    die_at(e->line, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array; int-keyed maps support only int/float values");
                 for (int i = 0; i < e->nargs; i += 2) {
                     if (resolve_expr(e->args[i]) != kt)
                         die_at(e->line, "map keys must all have the same type");

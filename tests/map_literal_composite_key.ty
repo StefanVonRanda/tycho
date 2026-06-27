@@ -1,0 +1,22 @@
+# Composite-keyed map LITERALS: `[K: V, ...]` with a fieldless-enum, struct, or
+# tuple key. The composite-key feature already worked via a declared map +
+# assignment; tychoc's map-literal validator was the only path still restricted
+# to string/int keys (tychoc0 already accepted them -- a parity divergence). Now
+# map_of is the single key validator on both the declared and literal paths.
+
+enum Col:
+    Red
+    Blue
+
+struct K:
+    a: int
+
+fn main():
+    e := [Red: 1, Blue: 2]                 # fieldless-enum keys
+    println(str(e[Red] + e[Blue]))         # 3
+
+    s := [K(1): 10, K(2): 20]              # struct keys (deep-hashed)
+    println(str(s[K(1)] + s[K(2)]))        # 30
+
+    t := [(1, 2): 100, (3, 4): 200]        # tuple keys
+    println(str(t[(1, 2)] + t[(3, 4)]))    # 300
