@@ -4424,8 +4424,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if resolve_nt(dc, ctx, lt) != "int" and resolve_nt(dc, ctx, lt) != "float":
                     die_at(dc, _el, "unary - needs an int or a float")
                 return "(0 - " + gen_expr(l, names, types, dc, ctx) + ")"   # emit the (0 - E) directly (byte-identical to the old EBin desugar) WITHOUT re-entering the binary newtype-identity check, which would reject `0 - newtype` -- `-newtype` is valid, the user's `0 - newtype` is not, and tychoc0 can't tell them apart once desugared
-            if op == "u~":                        # unary bitwise NOT: operand MUST be exactly int (tychoc rejects even a newtype-int it can see; tychoc0 erases so ~newtype-int still accepts -- the eq/unary lanes skip that)
-                if lt != "int":
+            if op == "u~":                        # unary bitwise NOT: operand MUST be EXACTLY int -- not a float/char, and not a newtype-over-int (tychoc rejects `~Slot`; now that tychoc0 tracks newtype identity it rejects it too, so the unary-parity lane no longer skips it)
+                if resolve_nt(dc, ctx, lt) != "int" or nt_skin_of(l, names, types, dc, ctx) != "":
                     die_at(dc, _el, "unary ~ needs an int")
                 return "((0 - " + gen_expr(l, names, types, dc, ctx) + ") - 1)"   # same ((0 - E) - 1) emit, direct (see u- above)
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)

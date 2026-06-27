@@ -86,9 +86,10 @@ OPERANDS = [
 OPS = ["==", "!="]
 
 def skip_pair(l, r):
-    # documented newtype-erasure divergence: same erased base, different nominal,
-    # at least one a newtype -> tychoc0 cannot tell them apart by design.
-    return (l[3] or r[3]) and l[2] == r[2] and l[1] != r[1]
+    # No skips: tychoc0 now tracks newtype identity, so newtype-vs-base and
+    # newtype-vs-newtype `==` reject exactly as tychoc does. (Was: same erased base,
+    # different nominal, >=1 newtype -- the erasure divergence, now closed.)
+    return False
 
 def program(lvar, op, rvar):
     return PRELUDE + "    c := %s %s %s\n" % (lvar, op, rvar)
@@ -186,8 +187,8 @@ def main():
             print("\nfindings saved in fuzz/findings/eqparity_*.ty")
             sys.exit(1)
         print("eq-parity: %d/%d composite/newtype ==,!= cases AGREE "
-              "(accept/reject + emitted C; %d newtype-erasure pairs skipped) -- tychoc == tychoc0"
-              % (total, total, skipped))
+              "(accept/reject + emitted C; newtype identity enforced, 0 skipped) -- tychoc == tychoc0"
+              % (total, total))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

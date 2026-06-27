@@ -82,9 +82,10 @@ def expect(op, operand):
     return "accept" if operand[1] == "bool" else "reject"          # not
 
 def skip_case(op, operand):
-    # ~<newtype-over-int>: tychoc0 erases to int and accepts (~int is legal),
-    # tychoc rejects the newtype. Unavoidable by design -> skip.
-    return op == "~" and operand[3] and operand[2] == "int"
+    # No skips: tychoc0 now tracks newtype identity, so `~<newtype-over-int>` is
+    # rejected (a newtype is not EXACTLY int) exactly as tychoc rejects it. (Was an
+    # unavoidable erasure divergence, now closed.)
+    return False
 
 def program(op, var):
     return PRELUDE + "    c := %s\n" % expr(op, var)
@@ -177,8 +178,8 @@ def main():
             print("\nfindings saved in fuzz/findings/unaryparity_*.ty")
             sys.exit(1)
         print("unary-parity: %d/%d unary-operator cases AGREE "
-              "(accept/reject + emitted C; %d newtype-erasure skipped) -- tychoc == tychoc0"
-              % (total, total, skipped))
+              "(accept/reject + emitted C; newtype identity enforced, 0 skipped) -- tychoc == tychoc0"
+              % (total, total))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
