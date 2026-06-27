@@ -4295,7 +4295,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # Write targets / push / reserve route through gen_place -> the slot
                 # lvalue instead, so reaching gen_expr here is always a read.
                 return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
-            return gen_expr(base, names, types, dc, ctx) + ".data[" + gen_expr(idx, names, types, dc, ctx) + "]"
+            # array read a[i]: bounds-checked (hi_bchk) to match tychoc/runtime. The
+            # descriptor is copied into _a so `base` is evaluated ONCE (a side-effecting
+            # base like m[k] must not run twice). Nested a[i][j] -> nested blocks, each
+            # with its own _a (block-scoped shadowing is fine).
+            return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.data[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", _a.len)]; })"
         EArrLit(elems, _el):
             et := type_of(elems[0], names, types, dc, ctx)
             eo := "0"                              # deep-copied element temporaries
@@ -4384,7 +4388,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 code = code + ", " + gen_call_args(cargs, names, types, dc, ctx)
             return code + "); })"
         EAddr(inner, _el):                             # &(*p) == p, so passing a mut param onward works
-            if is_map_index(inner, names, types, dc, ctx):   # &m[k]: take the slot POINTER (gen_place -> (*slotptr(..))), not &(by-value map_get) which is not an lvalue
+            if is_place(inner):   # &place: take the real storage lvalue via gen_place, which recurses the field/index spine (map slot ptr, checked array element, struct field). gen_expr lowers m[k]/a[i] to non-assignable reads (map_get / checked stmt-expr), so &gen_expr would be address-of-rvalue and either fail to compile or alias a copy.
                 return "&" + gen_place(inner, names, types, dc, ctx)
             return "&" + gen_expr(inner, names, types, dc, ctx)
         EBin(op, l, r, _el):
@@ -4924,7 +4928,10 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
                 return gen_map_slotptr(b, i, bt, names, types, dc, ctx)
             if is_soa(bt):                          # soa element place: handled via field access (soa[i].f); bare soa[i] target is not a thing
                 return gen_expr(lv, names, types, dc, ctx)
-            return gen_place(b, names, types, dc, ctx) + ".data[" + gen_expr(i, names, types, dc, ctx) + "]"
+            # array element lvalue a[i]: bounds-checked (hi_bchk) like tychoc's _ptr.
+            # A pointer stmt-expr keeps the result assignable; &(place) takes the base
+            # address ONCE so a side-effecting place (e.g. m[k] slotptr) runs once.
+            return "(*({ " + cty(dc, ctx, bt) + "* _a = &(" + gen_place(b, names, types, dc, ctx) + "); &_a->data[hi_bchk(" + gen_expr(i, names, types, dc, ctx) + ", _a->len)]; }))"
         EField(b, f, _el):
             sf := soa_field_access(dc, ctx, b, f, names, types)   # soa[i].f -> (soa).fN[i], a real lvalue
             if sf != "":
@@ -6280,7 +6287,7 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             # pointers; _o != slot rules out recycling the freshly-stored buffer.
             if is_str_arr_index(lv, names, types, dc, ctx):
                 oa := owner_arena_of(lv, names, types, dc, ctx)
-                slot := gen_expr(lv, names, types, dc, ctx)
+                slot := gen_place(lv, names, types, dc, ctx)   # array element lvalue (checked stmt-expr); gen_expr now lowers a[i] to a non-assignable read
                 nv := gen_rhs(rhs, names, types, dc, with_owner(dc, ctx, oa))
                 return "    { char* _o = " + slot + "; " + slot + " = " + nv + "; if (_o && _o != " + slot + " && arena_owns(" + oa + ", _o - 8)) arena_recycle(" + oa + ", _o - 8, (size_t)(((const long*)_o)[-1] + 16) & ~(size_t)7); }\n"
             sfo := "0"
@@ -7392,6 +7399,10 @@ fn preamble() -> string:
     out = out + "static char* hs(Arena* ar, long n) { char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
     out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
     out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"tycho: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
+    # Array index bounds check: returns i when in range, else aborts with the same
+    # message as runtime/tycho_rt.c (tycho_arr_*_get) and tychoc. Used by both the
+    # read stmt-expr and the write pointer stmt-expr so a[i] is checked everywhere.
+    out = out + "static long hi_bchk(long i, long n) { if (i < 0 || i >= n) { fprintf(stderr, \"tycho: index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return i; }\n"
     # Integer division/modulo guard: -fwrapv wraps signed overflow, but x/0, x%0 and
     # LONG_MIN/-1 still trap (SIGFPE). Abort cleanly with the same tycho: messages as
     # runtime/tycho_rt.c (tycho_idiv/tycho_imod). LONG_MIN literal avoids a limits.h
@@ -7415,7 +7426,7 @@ fn preamble() -> string:
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
-    out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = b - a; char* r = hs(ar, n); memcpy(r, s + a, (size_t)n); return r; }\n"
+    out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = ((const long*)s)[-1]; if (a < 0) a = 0; if (b > n) b = n; if (b < a) b = a; long m = b - a; char* r = hs(ar, m); memcpy(r, s + a, (size_t)m); return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { long ls = ((const long*)s)[-1], lsub = ((const long*)sub)[-1]; if (lsub == 0) return 0; for (long i = 0; i + lsub <= ls; i++) if (memcmp(s + i, sub, (size_t)lsub) == 0) return i; return -1; }\n"
     out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"

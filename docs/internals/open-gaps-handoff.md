@@ -19,7 +19,23 @@
 
 ---
 
-## GAP 1 — tychoc0 lacks ARRAY + substr bounds checks (memory safety) — HIGH VALUE
+## GAP 1 — tychoc0 lacks ARRAY + substr bounds checks (memory safety) — CLOSED 2026-06-27
+
+> **CLOSED.** Added `hi_bchk(i,n)` preamble helper; array read `a[i]` lowers to an
+> eval-once checked stmt-expr (`({T _a=base; _a.data[hi_bchk(i,_a.len)];})`), array
+> write/place to a checked pointer stmt-expr (`(*({T* _a=&(place); &_a->data[hi_bchk(
+> i,_a->len)];}))`, base address taken once so a side-effecting place like `m[k][j]`
+> runs once). `substr` now clamps `[a,b]` to `[0,len]` matching `tycho_rt.c:806`.
+> Side effect: `a[i]` via gen_expr is now an rvalue, so `&place` (EAddr) routes
+> through gen_place for ANY place (`is_place` check, subsumes the old map-index
+> special case), and the MM-9 str-array-set path (SFieldAssign) switched from
+> gen_expr to gen_place. Verified: 9/9 OOB/clamp differential probes MATCH tychoc;
+> ASan/UBSan clean in-bounds; `make test` 239/0, `make fixpoint` (B==C + differential
+> incl. projections.ty), `make corelib` 3-way all green. NOTE found in passing:
+> tychoc itself miscompiles `&a[i]` for a SCALAR-int element (emits malformed
+> `tycho_arr_C-1020_ptr`) — a separate latent *tychoc* bug, not Gap 1.
+
+<details><summary>Original gap notes (for history)</summary>
 
 **Symptom (differential, tychoc vs tychoc0):**
 - `a[5]` on a len-3 array: tychoc aborts (`tycho: index 5 out of bounds (len 3)`);
@@ -75,6 +91,8 @@ ASan. Also re-run the bounds-probe batch (see "Probing method").
 **Severity note:** tychoc (the primary/reference compiler) IS fully safe; tychoc0 is the
 self-hosted bootstrap and its own code never OOBs, so this is defense-in-depth / parity, not
 an active hole in shipped tooling. Still worth closing given the project's safety emphasis.
+
+</details>
 
 ---
 
