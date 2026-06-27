@@ -37,7 +37,7 @@ vs `tychoc` is tracked by the parity gates below, and as of this sync is broad +
 | Gate | Proves |
 |---|---|
 | `make tychoc` | the reference compiler builds. |
-| `make test` | **246** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
+| `make test` | **247** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
 | `make fixpoint` | self-host `B==C` + single files + packages + standalone driver + tychoc0 self-split. |
 | `make corelib` | every corelib package + examples + the site dogfood: C-compiler vs tychoc0, goldens match (3-way). |
 | `make conc` | spawn / parallel-for / channels under ASan+TSan + tychoc0 parity. |
@@ -54,7 +54,7 @@ Local-only CI (no hosted CI by policy): `make ci`, or the `make hooks` pre-push 
 Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `make test`.
 
 **Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-27 — all 16
-steps (test 246 · fuzz 500/500 · fuzz-reject 435 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
+steps (test 247 · fuzz 500/500 · fuzz-reject 435 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
 eqparity 504 · unaryparity 29 · tools-check · bench-guard · recursion). The fast gates
 (`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release flushed
 out two tychoc0 fail-opens they missed — a `mut` argument accepted without `&` (the `fuzz-reject`
