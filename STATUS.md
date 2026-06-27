@@ -96,6 +96,6 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
 
 - `docs/` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `corelib`, `perf`, `thesis`) — **reference**, current.
 - `docs/internals/value-semantics-limits.md` — **reference** (evergreen honest-cost analysis).
-- `docs/internals/open-gaps-handoff.md` — **historical**: a working-TODO doc whose gaps are now all CLOSED (kept as a record; safe to retire).
+- `docs/internals/changelog-2026-06.md` — **changelog**: the June-2026 dogfood/gap-closing campaign (what was wrong / how fixed / how verified) + the reusable differential-probing method. Historical record, not open work.
 - `docs/internals/{generics-gap-fixes-plan,generics-stage2-body-cloning,composite-map-keys-design,parfor-channel-drain-design,sink-prototype,typed-handles-design,map-hash-dos-plan,integer-overflow,hylo-mvs-research}.md` — **design records** for shipped (or, for stage2-body-cloning, *declined*) work. Not open tasks.
 - `docs/rfc/{ffi-threading-design-review,limited-references-spike}.md` — **decided** (limited-references: resolved as a decision, not adopted).

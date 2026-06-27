@@ -1,21 +1,17 @@
-# Open gaps — session handoff (2026-06-27)
+# Changelog — tychoc0 dogfood & gap-closing campaign (June 2026)
 
-> Working/TODO doc, NOT reference documentation. Captures known-open tychoc0 gaps
-> found by the integration-dogfood probing campaign, with enough detail to resume
-> each fix in a fresh session. Delete once the gaps are closed.
-
-## Current state (baseline)
-
-- `main` @ `861486f`, clean working tree, fully pushed. `origin/main` is the **only**
-  remote branch.
-- `security-hardening` (245 unique commits — the Zig impl + `SECURITY_REVIEW.md`) was
-  deleted from the remote but **archived locally** as tag `archive/security-hardening`.
-  Re-push: `git push origin archive/security-hardening:refs/heads/security-hardening`.
-- All gates green: `make test` (185), `make fixpoint`, `make corelib` (3-way), `make fuzz`,
-  ASan/UBSan.
-- The dogfood already fixed **5 real compiler bugs** this session (map×closures `1e546a3`;
-  generic-struct: container-field `c702dd1`, nested-provenance/W `ca8ea45`, instance-type
-  cluster `861486f`). The gaps below are what remains.
+> **Historical record**, not a TODO and not current-state reference. Every entry below is
+> CLOSED. For the CURRENT project state — architecture, the gate map, shipped capabilities,
+> decided non-goals, and what's actually open — see [`STATUS.md`](../../STATUS.md) at the repo
+> root. This file is kept for its "what was wrong / how it was fixed / how it was verified"
+> detail, which is useful if a related area ever regresses.
+>
+> **Campaign outcome:** the integration-dogfood campaign hardened the self-hosted `tychoc0`
+> to parity with the reference `tychoc`. It fixed the gaps below, plus an earlier cluster
+> (map×closures `1e546a3`; generic-struct container-field `c702dd1`, nested-provenance
+> `ca8ea45`, instance-type cluster `861486f`), and ran a 3-round feature accept/reject diff
+> (~94 probes) whose final round came back clean. All gates green throughout (`make ci`). The
+> reusable differential-probing method is documented at the bottom — the durable takeaway.
 
 ---
 
