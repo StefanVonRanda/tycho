@@ -327,33 +327,16 @@ for i in range(1, 6):
   temporaries (e.g. `print(str(i) + " ")`) keep loop memory bounded —
   a million such iterations run in constant memory.
 
-**Return-slot optimization (move, not copy).** Returning a value normally
-means allocating it in the caller's arena. When the returned value is a
-local built up in the function (the common `r := []int; … ; return r`
-pattern), the compiler proves it escapes and allocates it in the caller's
-arena *from the start* — so the `return` is a move, not an O(n) deep copy.
-This composes across call frames: a value returned up several levels is
-built once, in the final consumer's arena, with zero copies along the way.
-It is invisible — same source, same value semantics, same bounded memory (a
-value returned into a caller's loop is still reclaimed by that loop's
-scratch reset). The analysis only promotes function-top-level locals, so a
-loop-scratch local is never lifted to a longer lifetime.
-
-**In-place append (build a string in a loop, cheaply).** The accumulator
-pattern `acc = acc + e` repeated in a loop is the textbook O(n²) trap —
-naively each step copies the whole accumulator. Tycho compiles a *self-append*
-(`acc` on the left of `+`, reassigned to `acc`) to grow `acc`'s buffer in
-place with geometric capacity, like an array's `push`, so the loop is O(n)
-time and O(n) memory. This is sound because value semantics already
-guarantees `acc` is uniquely owned at that point — a `b := acc` elsewhere
-took its own deep copy, so growing `acc` in place is invisible to everyone
-else. Measured: accumulating an n-char string went from ~828 MB at n=40 000
-(quadratic) to flat, under 4 MB (linear) — full table in
-[the thesis](docs/thesis.md#4b-accumulation-retention--in-place-append). Like the
-others, it changes nothing in the source — `acc = acc + e` is still just
-value-semantic concatenation.
-
-None of this appears in Tycho source.
+Two optimizations keep this cheap without making the model visible. A **return-slot
+move**: a value built locally and returned is allocated in the caller's arena from the
+start, so the `return` is a move, not an O(n) copy — and it composes across frames (a
+value returned up several levels is built once, in the final consumer's arena). And
+**in-place append**: a self-append `acc = acc + e` in a loop grows `acc`'s buffer in place,
+turning the textbook O(n²) accumulator into O(n) (measured at n=40 000: ~828 MB → under
+4 MB). Both are sound *because* value semantics already proves the value is uniquely owned
+at that point — no analysis, no annotation. The full argument, with the numbers and the
+honest account of where the model *loses*, is [the thesis](docs/thesis.md). None of it
+appears in Tycho source.
 
 ### Known limitations (proof-of-concept)
 
