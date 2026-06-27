@@ -1,9 +1,9 @@
 # An aggregate newtype stays distinct from its underlying type: a bare
 # [int] is not an Ids, even though Ids = [int]. Must be a type error.
-# NOTE: tychoc rejects this; tychoc0 does NOT (it stores zero-cost newtypes as
-# their underlying type, so newtype identity is erased at declaration -- a
-# documented less-strict limitation, with tychoc as the validating oracle).
-# Skip-listed in tests/run.sh's tychoc0 reject check.
+# BOTH compilers reject this: tychoc0 now tracks newtype identity through its
+# checker (the underlying type is still erased to base in the emitted C -- zero
+# cost -- but identity is enforced at type boundaries), so it distinguishes an
+# Ids from a bare [int] exactly as tychoc does.
 type Ids = [int]
 
 fn total(xs: Ids) -> int:

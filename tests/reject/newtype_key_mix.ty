@@ -1,8 +1,6 @@
 # A newtype-keyed map rejects a raw base-typed key: "ana" is not a UserId.
-# NOTE: tychoc rejects this; tychoc0 does NOT (it stores zero-cost newtypes as
-# their underlying type, so newtype identity is erased at declaration -- a
-# documented less-strict limitation, with tychoc as the validating oracle).
-# Skip-listed in tests/run.sh's tychoc0 reject check.
+# BOTH compilers reject this: tychoc0 now tracks newtype identity through its
+# checker, so a newtype-keyed map rejects a raw base-typed key just as tychoc does.
 type UserId = string
 
 fn main():

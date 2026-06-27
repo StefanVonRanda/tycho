@@ -3379,8 +3379,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if is_soa(bt):
                 return soa_struct(bt)             # soa element -> the struct
             if is_map(bt):                        # m[k] place -> the value type (#2)
-                return map_val(bt)
-            return substr(bt, 1, len(bt) - 1)     # else array element type
+                return resolve_nt(dc, ctx, map_val(bt))
+            return resolve_nt(dc, ctx, substr(bt, 1, len(bt) - 1))   # else array element type (resolved like a var read, so a [Newtype] element is consistently its base in queries; identity is recovered separately via nt_skin_of off the container's stored type)
         EArrLit(elems, _el):
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
         EArrEmpty(ety, _el):
@@ -3505,6 +3505,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     gk = gk + 1
                 if gok:
                     return resolve_nt(dc, ctx, subst_field_type(dc.sigs[gsi].ret, gbn, gbt))
+            if is_newtype(dc, ctx, name):             # Nt(v) constructor: KEEP the newtype identity unresolved, so a decl `r := Nt(v)` stores "Nt" and the value can be distinguished from its base. A var read (the EVar case above) and cty still resolve to the base, so codegen is unchanged.
+                return name
             return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
 
 fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
@@ -4421,11 +4423,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if op == "u-":                        # unary minus: base must be int/float (numeric newtype ok, like tychoc's base_of)
                 if resolve_nt(dc, ctx, lt) != "int" and resolve_nt(dc, ctx, lt) != "float":
                     die_at(dc, _el, "unary - needs an int or a float")
-                return gen_expr(EBin("-", EInt("0", _el), l, _el), names, types, dc, ctx)   # same (0 - E) emit as the old desugar -> byte-identical
+                return "(0 - " + gen_expr(l, names, types, dc, ctx) + ")"   # emit the (0 - E) directly (byte-identical to the old EBin desugar) WITHOUT re-entering the binary newtype-identity check, which would reject `0 - newtype` -- `-newtype` is valid, the user's `0 - newtype` is not, and tychoc0 can't tell them apart once desugared
             if op == "u~":                        # unary bitwise NOT: operand MUST be exactly int (tychoc rejects even a newtype-int it can see; tychoc0 erases so ~newtype-int still accepts -- the eq/unary lanes skip that)
                 if lt != "int":
                     die_at(dc, _el, "unary ~ needs an int")
-                return gen_expr(EBin("-", EBin("-", EInt("0", _el), l, _el), EInt("1", _el), _el), names, types, dc, ctx)   # same ((0 - E) - 1) emit
+                return "((0 - " + gen_expr(l, names, types, dc, ctx) + ") - 1)"   # same ((0 - E) - 1) emit, direct (see u- above)
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
@@ -4446,7 +4448,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                         return call + ")"
                     return "sc(" + ctx.owner + ", " + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
                 # str + non-(str/char) falls through to the operand-type check below (rejected, like tychoc)
-            if is_cmp(op) and lt == "str" and type_of(r, names, types, dc, ctx) == "str":   # lexicographic string compare; BOTH operands must be strings
+            if is_cmp(op) and resolve_nt(dc, ctx, lt) == "str" and resolve_nt(dc, ctx, type_of(r, names, types, dc, ctx)) == "str":   # lexicographic string compare (incl. string newtypes, which resolve to str); BOTH operands must resolve to str, AND carry the same newtype identity
+                if nt_skin_of(l, names, types, dc, ctx) != nt_skin_of(r, names, types, dc, ctx):
+                    die_at(dc, _el, "cannot compare " + lt + " with " + type_of(r, names, types, dc, ctx))
                 return "(str_cmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
             if (op == "==" or op == "!=") and lt == "bytes":   # bytes equality: byte-wise compare (same buffer repr as str). Ordering on bytes is not offered.
                 return "(str_cmp(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ") " + op + " 0)"
@@ -4475,23 +4479,35 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # Conditions stay INLINE -- tychoc0 mistypes a `:=` local bound to a bool
             # from a string compare. A newtype resolves to its base for the orderable/
             # numeric tests; and/or/bitwise require the literal bool/int type (tychoc).
+            # Operand validity splits into BASE-validity (on the resolved base type)
+            # and newtype IDENTITY (the unresolved skin): mixing two newtypes, or a
+            # newtype with its base, is rejected even though the bases match -- the
+            # parity gap tychoc catches and the C compiler can't (the emitted C has
+            # the base type). For non-newtype operands sl==sr=="" and rlt==lt, so every
+            # original condition holds unchanged. Literal adaptation is base-only.
             rlt := resolve_nt(dc, ctx, lt)
+            frlt := resolve_nt(dc, ctx, frt)
+            sl := nt_skin_of(l, names, types, dc, ctx)
+            sr := nt_skin_of(r, names, types, dc, ctx)
             if (op == "/" or op == "%") and is_zero_int_lit(r):   # reject div/mod by a literal zero (UB / SIGFPE at runtime)
                 die_at(dc, _el, "division by zero")
-            if op == "&&" or op == "||":          # `and`/`or` are spelled &&/|| in the AST
-                if lt != "bool" or frt != "bool":
+            if op == "&&" or op == "||":          # `and`/`or` are spelled &&/|| in the AST; literal bool only (no newtype)
+                if rlt != "bool" or frlt != "bool" or sl != "" or sr != "":
                     die_at(dc, _el, "and / or need two bool operands")
             elif op == "==" or op == "!=":
-                if lt != frt:
+                if rlt != frlt or sl != sr:
                     die_at(dc, _el, "cannot compare " + lt + " with " + frt)
             elif op == "%" or op == "<<" or op == ">>" or op == "&" or op == "|" or op == "^":
-                if lt != "int" or frt != "int":
+                if rlt != "int" or frlt != "int" or sl != "" or sr != "":
                     die_at(dc, _el, "modulo / shift / bitwise operators require two ints")
-            elif is_cmp(op):     # ordering: same type with an orderable base; an int LITERAL adapts to a float operand
-                if not ((lt == "float" and frt == "int" and is_int_lit(r)) or (lt == "int" and frt == "float" and is_int_lit(l)) or (lt == frt and (rlt == "int" or rlt == "float" or rlt == "char"))):
+            elif is_cmp(op):     # ordering: same newtype identity + an orderable base; an int LITERAL adapts to a float operand (both non-newtype)
+                lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
+                if not (lit_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float" or rlt == "char"))):
                     die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
             else:                # arithmetic + - * /
-                if not ((lt == "int" and frt == "int") or (lt == "float" and frt == "float") or ((op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or lt == "int") and (frt == "char" or frt == "int")) or (lt == frt and (rlt == "int" or rlt == "float")) or (lt == "float" and frt == "int" and is_int_lit(r)) or (lt == "int" and frt == "float" and is_int_lit(l))):
+                lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
+                char_ok := (op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or rlt == "int") and (frt == "char" or frlt == "int")
+                if not (lit_ok or char_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float"))):
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
             # integer division/modulo guard: -fwrapv wraps signed overflow, but x/0,
             # x%0 and LONG_MIN/-1 still trap (SIGFPE). Route int `/` and `%` (incl. an
@@ -7931,6 +7947,113 @@ fn note_arr_types(acc: mut [string], ty: string):
 # (array literals / empty arrays that no annotation would reveal).
 # The body walkers thread the var env (names/types), mirroring gen, so that
 # type_of resolves variables inside tuple/array literals (e.g. t := (a, b)).
+# --- Newtype identity (parity with tychoc) ----------------------------------
+# tychoc0 erases newtypes to their base in the emitted C (zero-cost) and resolves
+# them in type_of at every var read, so the C compiler -- which does tychoc0's type
+# checking -- can't see a newtype mismatch (`Ids` vs raw `[int]`, two distinct
+# newtypes mixed, a newtype where its base is wanted). These checks recover the
+# identity from the UNRESOLVED sources (var_type / field_type / sig.ret) and reject
+# the mismatch up front, exactly as tychoc does. Strictness only: every program this
+# rejects is correct at the base level.
+
+# The newtype NAME `t` carries, or "" if `t` is not a newtype.
+fn nt_or_empty(dc: Decls, ctx: Ctx, t: string) -> string:
+    if is_newtype(dc, ctx, t):
+        return t
+    return ""
+
+# The newtype an expression's VALUE carries ("" = none). Mirrors the newtype-
+# producing leaves of type_of but without resolving, so identity survives. Must be
+# complete over the forms that can yield a newtype, else a valid newtype value reads
+# as "" and a correct program is wrongly rejected.
+fn nt_skin_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    match e:
+        EVar(nm, _el):
+            if not has_str(names, nm):                     # a bare enum variant / non-local (not a newtype-typed local) -- var_type would die
+                return ""
+            return nt_or_empty(dc, ctx, base_ty(var_type(names, types, nm)))
+        ECall(nm, args, _el):
+            if is_newtype(dc, ctx, nm):
+                return nm                                  # Nt(v) constructor
+            si := map_get(dc.sigmap, nm, -1)
+            if si >= 0:
+                return nt_or_empty(dc, ctx, dc.sigs[si].ret)   # a fn returning a newtype
+            return ""
+        EField(b, f, _el):
+            bt := type_of(b, names, types, dc, ctx)        # struct shape (newtype-over-struct already resolved)
+            if is_struct(dc, ctx, bt):
+                return nt_or_empty(dc, ctx, field_type(dc, ctx, bt, f))
+            return ""
+        EIndex(b, _idx, _el):
+            bt := type_of(b, names, types, dc, ctx)
+            if is_map(bt):
+                return nt_or_empty(dc, ctx, map_val(bt))
+            if is_array(bt):
+                return nt_or_empty(dc, ctx, elem_ty(bt))
+            return ""
+        EBin(op, l, r, _el):
+            ls := nt_skin_of(l, names, types, dc, ctx)     # M+M -> M; base op base -> ""
+            rs := nt_skin_of(r, names, types, dc, ctx)
+            if ls == rs:
+                return ls
+            return ""
+        EAddr(inner, _el):
+            return nt_skin_of(inner, names, types, dc, ctx)
+        _:
+            return ""
+
+# Reject if `e`'s newtype identity does not match the `expected` type. Generic
+# (typaram-bearing) expected types are exempt -- typaram binding handles those.
+fn nt_check(dc: Decls, ctx: Ctx, expected: string, e: Expr, names: [string], types: [string], where: string, el: int):
+    if ty_is_generic(expected):
+        return
+    es := nt_or_empty(dc, ctx, base_ty(expected))
+    ask := nt_skin_of(e, names, types, dc, ctx)
+    if es != ask:
+        got := ask
+        if got == "":
+            got = "a plain " + resolve_nt(dc, ctx, base_ty(expected)) + " value"
+        die_at(dc, el, where + " expects " + base_ty(expected) + ", got " + got + " (newtype identity differs)")
+
+# Compare the newtype identity carried by two expressions (a place vs the value
+# stored into it). Rejects e.g. `ids_field = raw_int_array`.
+fn nt_check_e(dc: Decls, ctx: Ctx, le: Expr, re: Expr, names: [string], types: [string], where: string, el: int):
+    ls := nt_skin_of(le, names, types, dc, ctx)
+    rs := nt_skin_of(re, names, types, dc, ctx)
+    if ls != rs:
+        lo := ls
+        if lo == "":
+            lo = "a non-newtype value"
+        ro := rs
+        if ro == "":
+            ro = "a non-newtype value"
+        die_at(dc, el, where + " expects " + lo + ", got " + ro)
+
+# A place assignment `lv = rhs`: the stored value must match the place's newtype, and
+# a map index `m[k] = v` additionally requires k to match the map's key type.
+fn check_place_assign(dc: Decls, ctx: Ctx, lv: Expr, rhs: Expr, names: [string], types: [string], el: int):
+    nt_check_e(dc, ctx, lv, rhs, names, types, "assignment", el)
+    match lv:
+        EIndex(b, k, _il):
+            bt := type_of(b, names, types, dc, ctx)
+            if is_map(bt):
+                nt_check(dc, ctx, map_key(bt), k, names, types, "map key", el)
+        _:
+            return
+
+# A struct constructor `S(args...)`: each argument must match the field's declared type
+# (newtype-wise). Generic field types are exempt (handled by nt_check / typaram binding).
+fn check_struct_ctor(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string], types: [string], el: int):
+    i := 0
+    for i < len(dc.structs):
+        if dc.structs[i].name == nm:
+            k := 0
+            for k < len(args) and k < len(dc.structs[i].fields):
+                nt_check(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types, "field '" + dc.structs[i].fields[k].name + "'", el)
+                k = k + 1
+            return
+        i = i + 1
+
 # Is `e` an `&place` argument (the only valid form for a `mut`/inout parameter)?
 fn is_eaddr(e: Expr) -> bool:
     match e:
@@ -7943,7 +8066,7 @@ fn is_eaddr(e: Expr) -> bool:
 # argument there, but tychoc0 used to accept it and emit C that passes the value
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
 # every user call: collect_elem_types walks every body, so this is universal.
-fn check_call_inout(dc: Decls, ctx: Ctx, nm: string, args: [Expr], el: int):
+fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string], types: [string], el: int):
     si := map_get(dc.sigmap, nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
     if si < 0:
         return
@@ -7952,6 +8075,8 @@ fn check_call_inout(dc: Decls, ctx: Ctx, nm: string, args: [Expr], el: int):
     for k < len(args) and k < len(pp):
         if is_inout(pp[k]) and not is_eaddr(args[k]):
             die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is mut; pass it as '&variable'")
+        elif not is_inout(pp[k]) and not is_sink(pp[k]):
+            nt_check(dc, ctx, pp[k], args[k], names, types, "argument " + str(k + 1) + " of '" + nm + "'", el)
         k = k + 1
 
 # The variant names of enum `ename` (the bare name "E" or a generic instance
@@ -8046,7 +8171,9 @@ fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
         ECall(nm, args, _el):
-            check_call_inout(dc, ctx, nm, args, _el)   # reject a `mut` arg not passed as `&variable` (fail-closed, matches tychoc)
+            check_call_args(dc, ctx, nm, args, names, types, _el)   # reject `mut` arg not `&variable` + newtype-identity arg mismatch (matches tychoc)
+            if is_struct(dc, ctx, nm):                  # struct constructor: each field init must match the field's newtype
+                check_struct_ctor(dc, ctx, nm, args, names, types, _el)
             j := 0
             for j < len(args):
                 collect_expr(&acc, args[j], names, types, dc, ctx)
@@ -8116,13 +8243,17 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
             push(types, ty)
         SAssign(n, e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
+            if has_str(names, n):                       # newtype identity: RHS must match the variable's type
+                nt_check(dc, ctx, var_type(names, types, n), e, names, types, "assignment to '" + n + "'", _sl)
         SFieldAssign(lv, rhs, _sl):
             collect_expr(&acc, lv, names, types, dc, ctx)
             collect_expr(&acc, rhs, names, types, dc, ctx)
+            check_place_assign(dc, ctx, lv, rhs, names, types, _sl)   # newtype identity of the stored value + a map key
         SPrint(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
         SReturn(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
+            nt_check(dc, ctx, ctx.rettype, e, names, types, "return value", _sl)   # newtype identity vs the declared return type
         SReturnVoid:
             j := 0
         SBreak:
@@ -8134,6 +8265,7 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
         STypedDecl(n, t, e, _sl):
             note_arr_types(&acc, t)
             collect_expr(&acc, e, names, types, dc, ctx)
+            nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
             push(names, n)
             push(types, t)
         SOrReturn(n, e, _sl):
@@ -8247,7 +8379,8 @@ fn collect_elem_types(prog: Program, dc: Decls, ctx: Ctx) -> [string]:
             push(en, f.params[k])
             push(et, f.ptypes[k])
             k = k + 1
-        collect_block(&acc, f.body, en, et, dc, ctx)   # composite types from literals
+        cf := Ctx(ctx.vparams, ctx.saccums, f.ret, ctx.owner, ctx.depth, ctx.bbases, ctx.movables, ctx.loopdepth, ctx.fusearr, ctx.fusesuf, ctx.fusety, ctx.line, ctx.curpkg)   # set rettype so SReturn's newtype check sees the declared return type
+        collect_block(&acc, f.body, en, et, dc, cf)   # composite types from literals
         i = i + 1
     i = 0
     for i < len(prog.structs):

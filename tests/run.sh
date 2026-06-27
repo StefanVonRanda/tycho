@@ -135,12 +135,11 @@ done
 # BOTH compilers must reject these (the reject path is now differential too --
 # the malformed-input fuzzer found tychoc0 had been fail-opening on many of these
 # where tychoc rejects). Build tychoc0 once for the tychoc0-side assertion.
-# SKIP-LIST: newtype distinctness -- tychoc0 stores zero-cost newtypes as their
-# underlying type (identity erased at declaration), so it cannot distinguish a
-# UserId from str; a documented less-strict limitation, with tychoc as the
-# validating oracle. See tests/reject/newtype_{agg,key}_mix.ty.
+# (newtype distinctness used to be skip-listed here -- tychoc0 erased newtype
+# identity. As of the newtype-identity parity work, tychoc0 tracks identity through
+# the checker and rejects the mismatches too, so the skip-list is empty.)
 "$TYCHOC" compiler/tychoc0.ty -o "$TMP/h0" >/dev/null 2>&1 || { echo "could not build tychoc0 for reject checks"; exit 2; }
-H0_REJECT_SKIP=" newtype_agg_mix newtype_key_mix "
+H0_REJECT_SKIP=" "
 for hi in tests/reject/*.ty; do
     [ -e "$hi" ] || continue
     base="$(basename "$hi" .ty)"
