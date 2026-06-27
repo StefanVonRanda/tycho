@@ -1,0 +1,77 @@
+# select recv-binding + `match` on the bound value, for enums. The recv binding
+# (`recv(c, x)`) must be registered before its arm body is walked, in EVERY pass
+# that types the body -- the mono pass, the string-accumulator pass (sacc_stmt),
+# and codegen. A `match x` arm subjects type_of to the binding; without it the
+# pass dies `unknown variable 'x'`. Covers a plain enum, a generic enum, and a
+# string accumulator grown inside the arm.
+
+enum Col:
+    Red(int)
+    Blue
+
+enum Box($T):
+    Has($T)
+    Empty
+
+enum Msg:
+    Word(string)
+    Stop
+
+fn main():
+    # plain enum: select recv + match
+    c1 := channel(Col, 2)
+    send(c1, Red(11))
+    send(c1, Red(31))
+    close(c1)
+    total := 0
+    d1 := false
+    for not d1:
+        select:
+            recv(c1, v):
+                match v:
+                    Red(n):
+                        total = total + n
+                    Blue:
+                        total = total
+            closed:
+                d1 = true
+    println("plain " + str(total))
+
+    # generic enum: select recv + match
+    c2 := channel(Box(int), 2)
+    send(c2, Has(5))
+    send(c2, Has(9))
+    close(c2)
+    gt := 0
+    d2 := false
+    for not d2:
+        select:
+            recv(c2, b):
+                match b:
+                    Has(n):
+                        gt = gt + n
+                    Empty:
+                        gt = gt
+            closed:
+                d2 = true
+    println("generic " + str(gt))
+
+    # string accumulator grown inside a select arm (the sacc pass's reason to exist)
+    c3 := channel(Msg, 3)
+    send(c3, Word("a"))
+    send(c3, Word("b"))
+    send(c3, Word("c"))
+    close(c3)
+    s := ""
+    d3 := false
+    for not d3:
+        select:
+            recv(c3, m):
+                match m:
+                    Word(w):
+                        s = s + w
+                    Stop:
+                        d3 = true
+            closed:
+                d3 = true
+    println("acc " + s)

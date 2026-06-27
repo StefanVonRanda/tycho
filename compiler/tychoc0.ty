@@ -6854,7 +6854,12 @@ fn sacc_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string
         SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             j := 0                                # recurse arm bodies so an OUTER-local string accumulator
             for j < len(sbodies):                 # appended inside a select arm grows in place (matches tychoc's
-                sacc_block(&acc, sbodies[j], names, types, dc, ctx)   # collect_accums, which walks select arms)
+                bn := names                       # register the recv binding (type = channel element) so a
+                bt := types                       # `match x` in the arm body types -- mirrors collect_stmt's SSelect
+                if j < len(svars) and svars[j] == "recv":
+                    push(bn, sbinds[j])
+                    push(bt, chan_inner(type_of(schans[j], names, types, dc, ctx)))
+                sacc_block(&acc, sbodies[j], bn, bt, dc, ctx)   # collect_accums, which walks select arms
                 j = j + 1
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
@@ -11126,10 +11131,20 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
         SContinue:
             return s
         SSelect(uid, kinds, chans, bnds, bodies, ln):
+            # register each `recv(ch, x)` arm's binding (type = the channel element)
+            # before walking the arm body, so a `match x` (or any decl referencing x)
+            # in the body types instead of dying `unknown variable` -- same need as
+            # SMatch above, on the select path.
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
+                bn := names
+                bt := types
+                if i < len(kinds) and kinds[i] == "recv" and i < len(bnds) and bnds[i] != "":
+                    cit := resolve_ginst(chan_inner(type_of(chans[i], names, types, dc, ctx)), dc, ctx)
+                    push(bn, bnds[i])
+                    push(bt, cit)
+                push(nb, mono_block(bodies[i], bn, bt, gens, &insts, &sinsts, &einsts, dc, ctx))
                 i = i + 1
             return SSelect(uid, kinds, mono_exprs(chans, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), bnds, nb, ln)
         SParFor(v, a, b, body, pid, fl):

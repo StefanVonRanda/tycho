@@ -118,13 +118,15 @@ an active hole in shipped tooling. Still worth closing given the project's safet
 > (+ golden). Gates: `make test` 240/0, `make fixpoint` (B==C + differential),
 > `make corelib` 3-way, `make fuzz-quick` 60/60 — all green.
 >
-> **Separate gap found in passing (NOT Gap 2, still open):** `select recv(c, x): match x`
-> fails on tychoc0 for ANY enum (generic OR plain non-generic) with `type: unknown
-> variable 'x'` — the select recv-binding isn't registered before its arm body's match
-> is generated. Pre-existing (reproduced against the pre-change tychoc0). The generic-struct
-> select-recv-bind (`x.field`) works; it's specifically select-recv-bind + `match` on the
-> binding. Repro: a `channel(Col,_)` / `enum Col: Red(int) Blue` with a `select: recv(c1,v1):
-> match v1: ...` arm.
+> **Separate gap found in passing (NOT Gap 2) — CLOSED 2026-06-27:** `select recv(c, x):
+> match x` failed on tychoc0 for ANY enum with `type: unknown variable 'x'` — the select
+> recv-binding wasn't registered before its arm body was walked by the passes that type
+> it. `collect_stmt`'s SSelect already registered it; `sacc_stmt`'s SSelect (the
+> string-accumulator pass, the original failure point) and `mono_stmt`'s SSelect (exposed
+> when Gap 3 added `type_of(subj)` to mono's SMatch) did not. Fix: both now register the
+> recv binding (type = channel element) before walking the arm body, mirroring
+> `collect_stmt`. Verified MATCH: plain enum, generic enum, and a string accumulator grown
+> inside a select arm. Regression test `tests/select_enum_match.ty`.
 
 ---
 
