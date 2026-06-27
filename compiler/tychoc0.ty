@@ -2604,6 +2604,27 @@ fn variant_ptypes_in(dc: Decls, ename: string, vname: string) -> [string]:
     die("type: unknown variant")
     return []string
 
+# Payload types a match arm `vname` binds over a scrutinee of type `sty`: handles
+# Option/Result/wildcard directly, user enums via the instance's variants. `sty`
+# should be resolve_ginst'd. Used by the mono pass to register arm bindings before
+# walking the arm body (codegen does the same in SMatch); without it a foreach in a
+# generic-enum arm (`Node(kids): for k in kids`) desugars to `_fc := kids`, whose
+# mono types the rhs -> `unknown variable 'kids'`.
+fn match_arm_ptypes(dc: Decls, ctx: Ctx, sty: string, vname: string) -> [string]:
+    if vname == "_":
+        return []string
+    if is_option(sty):
+        if vname == "Some":
+            return [option_inner(sty)]
+        return []string
+    if is_result(sty):
+        if vname == "Ok":
+            return [result_ok(sty)]
+        if vname == "Err":
+            return [result_err(sty)]
+        return []string
+    return variant_ptypes_in(dc, sty, vname)
+
 # A mut parameter's type is marked with a leading '&'. The base type drives
 # all type logic; the marker only affects C codegen (pointer + deref).
 fn is_inout(ty: string) -> bool:
@@ -10637,6 +10658,25 @@ fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut 
 # args, so a recursive enum constructor whose payloads are all self-references
 # (no bare $T to pin T), like `Node(Tree($T), Tree($T))`, still infers T.
 fn recover_enum_binds(pat: string, concrete: string, enums: [EnumDef], einsts: [EnumDef], bnames: mut [string], btypes: mut [string]) -> bool:
+    # Descend through container wrappers first: a recursive generic enum whose
+    # payload holds the enum inside a container (`Node([Tree($T)])`, `[Tree($T)]`
+    # vs `[Tree__int]`) gives match_typaram_str nothing to bind (the inner
+    # application "Tree($T)" can't structurally match its mangled instance
+    # "Tree__int"), so recover $T from the element's provenance. (Gap 3.)
+    pn := len(pat)
+    cn := len(concrete)
+    if pn > 1 and cn > 1 and pat[0] == 91 and concrete[0] == 91 and pat[pn - 1] == 93 and concrete[cn - 1] == 93:   # "[E]" array
+        return recover_enum_binds(substr(pat, 1, pn - 1), substr(concrete, 1, cn - 1), enums, einsts, &bnames, &btypes)
+    if pn > 1 and cn > 1 and pat[0] == 123 and concrete[0] == 123 and pat[pn - 1] == 125 and concrete[cn - 1] == 125:   # "{K:V}" map: the self-ref can ride either side
+        pin := substr(pat, 1, pn - 1)
+        cin := substr(concrete, 1, cn - 1)
+        pcol := find_top_colon(pin)
+        ccol := find_top_colon(cin)
+        if pcol >= 0 and ccol >= 0:
+            if recover_enum_binds(substr(pin, pcol + 1, len(pin)), substr(cin, ccol + 1, len(cin)), enums, einsts, &bnames, &btypes):
+                return true
+            return recover_enum_binds(substr(pin, 0, pcol), substr(cin, 0, ccol), enums, einsts, &bnames, &btypes)
+        return false
     pp := find(pat, "(")
     if pp <= 0 or pat[len(pat) - 1] != 41:       # ')'
         return false
@@ -11057,10 +11097,28 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
         SMultiAssign(nms, e, ln):
             return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SMatch(subj, vars, binds, bodies, ln):
+            # register each arm's payload bindings (kids in `Node(kids)`) before
+            # walking the arm body, so a binding referenced by a mono'd decl (a
+            # foreach's `_fc := kids`) types instead of dying `unknown variable`.
+            # Rough types are fine here (mono uses placeholders; final codegen
+            # recomputes from the instance-bearing dc).
+            msty := resolve_ginst(type_of(subj, names, types, dc, ctx), dc, ctx)
             nb := [][Stmt]
             i := 0
             for i < len(bodies):
-                push(nb, mono_block(bodies[i], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
+                bn := names
+                bt := types
+                if i < len(vars):
+                    pts := match_arm_ptypes(dc, ctx, msty, vars[i])
+                    j := 0
+                    for j < len(binds[i]):
+                        push(bn, binds[i][j])
+                        if j < len(pts):
+                            push(bt, pts[j])
+                        else:
+                            push(bt, "int")
+                        j = j + 1
+                push(nb, mono_block(bodies[i], bn, bt, gens, &insts, &sinsts, &einsts, dc, ctx))
                 i = i + 1
             return SMatch(mono_expr(subj, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), vars, binds, nb, ln)
         SBreak:

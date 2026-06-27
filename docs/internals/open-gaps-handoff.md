@@ -128,13 +128,37 @@ an active hole in shipped tooling. Still worth closing given the project's safet
 
 ---
 
-## GAP 3 — recursive generic ENUM with array payload (SHARED, both compilers)
+## GAP 3 — recursive generic ENUM with array payload (SHARED) — CLOSED 2026-06-27
 
-`enum Tree($T): Leaf($T) Node([Tree($T)])` constructed `Node([Leaf(10), Leaf(20)])` fails on
-BOTH compilers (tychoc: cc error `unknown type name 'E_Tree'`; tychoc0: `unknown type '$T'`).
-This is a LANGUAGE-level gap, not a tychoc0 parity issue — needs a fix in tychoc (the
-reference) first, then tychoc0. The recursive generic STRUCT equivalent (`LL($T): tail:
-[LL($T)]`) works, so it's specific to the enum-with-array-payload monomorphization.
+> **CLOSED.** `enum Tree($T): Leaf($T) Node([Tree($T)])` constructed `Node([Leaf(10),
+> Leaf(20)])` now compiles + runs identically on both compilers. Three distinct bugs:
+>
+> **tychoc (`src/tychoc.c:8278`):** the enum forward-decl loop skipped generic templates
+> (`if generic continue`), but a recursive generic enum with an array payload interns a
+> DEAD template array composite `TychoArrC<n> { E_Tree **data; }` (element = the
+> uninstantiated template cell) that still gets emitted → cc `unknown type name 'E_Tree'`.
+> Fix: forward-typedef generic enum templates too (the struct tag loop above already
+> does this for `S_<name>`); the body/payload/copy loops still skip generics, so the
+> template stays an incomplete pointer-only type.
+>
+> **tychoc0, two bugs:**
+> 1. `recover_enum_binds` (~10639): binding inference for `Node([Tree($T)])` matched the
+>    payload pattern `[Tree($T)]` against arg type `[Tree__int]`, but neither
+>    `match_typaram_str` (parened app vs bare instance) nor `recover_enum_binds` (rejects
+>    a `[...]` pattern) could bind `$T` → `unknown type '$T'`. Fix: descend through
+>    array/map wrappers before the enum-app provenance recovery.
+> 2. `mono_stmt`'s SMatch (~11078) walked each arm body WITHOUT registering the arm's
+>    payload bindings, so a foreach in a generic-enum arm (`Node(kids): for k in kids`)
+>    — which desugars to `_fc := kids`, and mono types that rhs — hit `unknown variable
+>    'kids'`. Fix: register each arm's bindings (new `match_arm_ptypes` helper, handles
+>    Option/Result/wildcard/user-enum) before `mono_block`, mirroring codegen's SMatch.
+>
+> Verified MATCH (tychoc vs tychoc0): int fold (42) and string fold (abcd) over a nested
+> `Tree`, plus foreach in a generic-enum match arm. Regression test
+> `tests/generic_enum_array.ty` (+ golden). Gates: `make test` 241/0, `make fixpoint`
+> (B==C + differential), `make corelib` 3-way, `make fuzz-quick` 80/80 — all green.
+> Note: the tychoc.c forward-typedef fix is reference-only — tychoc0 doesn't emit the
+> dead template composite, so no mirror was needed (verified: its emitted C compiles).
 
 ---
 

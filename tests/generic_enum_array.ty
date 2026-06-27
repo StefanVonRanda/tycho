@@ -1,0 +1,36 @@
+# GAP 3: a recursive generic enum whose payload is an ARRAY of itself
+# (`Node([Tree($T)])`), constructed and folded with a foreach in the match arm.
+# Exercised three bugs: (tychoc) the dead template array composite named the
+# uninstantiated cell `E_Tree` with no forward typedef; (tychoc0) the construction
+# couldn't bind $T through the `[Tree($T)]` payload, and a foreach in a generic-enum
+# match arm desugared to `_fc := kids` whose mono typing hit `unknown variable`.
+
+enum Tree($T):
+    Leaf($T)
+    Node([Tree($T)])
+
+fn sumt(t: Tree(int)) -> int:
+    match t:
+        Leaf(v):
+            return v
+        Node(kids):
+            s := 0
+            for k in kids:
+                s = s + sumt(k)
+            return s
+
+fn flat(t: Tree(string)) -> string:
+    match t:
+        Leaf(v):
+            return v
+        Node(kids):
+            s := ""
+            for k in kids:
+                s = s + flat(k)
+            return s
+
+fn main():
+    ti := Node([Leaf(10), Leaf(20), Node([Leaf(5), Leaf(7)])])
+    println(str(sumt(ti)))                                 # 42
+    ts := Node([Leaf("a"), Node([Leaf("b"), Leaf("c")]), Leaf("d")])
+    println(flat(ts))                                      # abcd

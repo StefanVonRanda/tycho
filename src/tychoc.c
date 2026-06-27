@@ -8276,7 +8276,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
      * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
     for (int i = 0; i < g_nenums; i++) {            /* forward-declare cells; a value is E_<name>* */
-        if (g_enums[i].generic) continue;   /* generics: a `$T` template emits no C; its instances do */
+        /* Templates included (mirrors the struct tag loop above): a recursive generic
+         * enum with an array payload (`enum Tree($T): Node([Tree($T)])`) interns a dead
+         * template array composite `TychoArrC<n> { E_Tree **data; }` that names the
+         * template cell as an incomplete POINTER. Without this forward typedef cc errors
+         * `unknown type name 'E_Tree'`. The body/payload/copy/eq loops below still skip
+         * generics, so the template stays an incomplete type — never completed, never
+         * instantiated (only its E_Tree__int instances are). */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
     }
     for (int i = 0; i < g_narrtypes; i++)           /* forward-declare composite-array/map tags so a fn value */
