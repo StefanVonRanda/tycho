@@ -12,7 +12,7 @@
 
 Tycho is an experimental, AOT-compiled, statically-typed systems language whose thesis is a
 **value-semantics + implicit-arena** memory model: no pointers, no `malloc`/`free`, no GC,
-no use-after-free, and value equality that just works. Proof-of-concept, Apache-2.0. The
+no use-after-free, and value equality that just works. Proof-of-concept, MIT-licensed. The
 honest accounting of where the model wins and loses is `docs/internals/value-semantics-limits.md`.
 
 ## Architecture

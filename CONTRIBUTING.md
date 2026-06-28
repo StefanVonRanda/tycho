@@ -100,4 +100,4 @@ Open a pull request against `main`. Confirm `make ci` is green locally and say s
 in the PR. Small, well-scoped PRs with a test are the easiest to accept.
 
 By contributing, you agree your contributions are licensed under the project's
-[Apache License 2.0](LICENSE).
+[MIT License](LICENSE).

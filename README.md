@@ -469,8 +469,7 @@ libraries are linked explicitly through your own build via the FFI.
 
 ## License
 
-Tycho is licensed under the **[Apache License 2.0](LICENSE)** (see
-[`NOTICE`](NOTICE) for the copyright). It is experimental, proof-of-concept
-software provided "as is", without warranty — security notes are in
-[SECURITY.md](SECURITY.md), and how to build, test, contribute, or report a bug
-is in [CONTRIBUTING.md](CONTRIBUTING.md).
+Tycho is licensed under the **[MIT License](LICENSE)**. It is experimental,
+proof-of-concept software provided "as is", without warranty — security notes
+are in [SECURITY.md](SECURITY.md), and how to build, test, contribute, or report
+a bug is in [CONTRIBUTING.md](CONTRIBUTING.md).
