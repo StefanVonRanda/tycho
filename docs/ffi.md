@@ -196,6 +196,22 @@ The whole point is that foreign memory never enters Tycho's owned world:
 - **No struct-by-value and no callbacks into Tycho** — a Tycho function value is a
   fat pointer that is not C-ABI, so it cannot cross out.
 
+## Threads
+
+The "race-free by construction" guarantee is over Tycho values and **stops at
+the FFI**: a C function touching process-global or `static` state is invisible
+to the compiler, so two tasks racing on it race exactly as they would in C.
+Isolate such state per thread (thread-local storage, as the `core:crypto` shim
+does) or serialize the calls. The full analysis is in
+[`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md), and
+the concurrency guarantee's scope is in
+[the concurrency reference](reference/concurrency.md#scope-of-the-guarantee).
+
+Handles are affine (see [Typed handles](#typed-handles-safe-by-default-resources)):
+they cannot be captured by a closure or `parallel for`, or otherwise cross a
+task boundary, so a foreign resource cannot become shared-mutable across threads
+by accident. Scalar arguments pass into spawned tasks by value as usual.
+
 ## Linking
 
 The C reference compiler (`tychoc`) links the program for you:

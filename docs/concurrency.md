@@ -16,6 +16,11 @@ that state per thread (thread-local storage, as the `core:crypto` shim does) or
 serialize the calls. The full analysis is in
 [`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md).
 
+The model does **not** remove **deadlock or livelock**: a `recv` with no live
+sender and no `close` parks forever, undetected (see
+[Limits](#limits-deliberate)). Data races and use-after-free fall out of value
+semantics; deadlock does not.
+
 The model has four constructs:
 
 - **`spawn` / `wait`** — structured tasks with by-value capture and automatic join.

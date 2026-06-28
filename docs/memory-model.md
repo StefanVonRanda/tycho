@@ -116,7 +116,8 @@ Together these close the arena's two known weak spots (loop-carried reassignment
 and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
 (reference counting) on these allocation-churn workloads. (The model's honest loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~3× C in
-RAM; that residue is covered in the thesis and the value-semantics-limits note.)
+RAM; that residue is covered in [the thesis](thesis.md) and the
+[value-semantics limits note](internals/value-semantics-limits.md).)
 
 ## Verification
 

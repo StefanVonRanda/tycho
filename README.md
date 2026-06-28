@@ -350,6 +350,15 @@ appears in Tycho source.
   one value with one arena lifetime — see
   [docs/arrays-structs.md](docs/arrays-structs.md) §2 and the learning guide's
   "Graphs and Linked Structures".
+- **Operational costs of the model, measured** — because value semantics stores
+  children by value, pointer-shaped structures cost more than their pointer
+  representation: a by-value recursive trie is **~3.2× C's memory**, a
+  fixed-capacity LRU ~5× (no sharing). The flat-pool idiom above brings the
+  graph analog to ~1.3× C. Arenas reclaim at *scope exit*, not incrementally,
+  so a long-lived scope holds transients until it returns — scope them in an
+  inner function. The full measured loss column, with the idiom and decision
+  guide for each case, is in
+  [docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md).
 - **Generic constraints are a fixed, compiler-known set** — generic *functions*,
   *structs*, and *enums* (all including recursive types, e.g. `enum Tree($T)`)
   take `$T` and are monomorphized, but the only constraints are the built-in

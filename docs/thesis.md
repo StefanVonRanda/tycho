@@ -173,7 +173,13 @@ of it:
   cycle* is traversed correctly today using **indices instead of references** —
   CSR adjacency arrays plus a `visited[]` array. (BFS over a literal 3-cycle
   works; this is also how cache-efficient graph code is written anyway.) Value
-  semantics forbids *pointer* cycles, not *modeled* cycles.
+  semantics forbids *pointer* cycles, not *modeled* cycles. *Measured*: a
+  by-value recursive trie costs **~3.2× C's memory** (children stored inline,
+  not shared by pointer); the same algorithm as a flat `[Node]` pool linked by
+  integer indices lands at **~1.3× C** on a 300k-node graph (`bench/trie`,
+  `bench/dijkstra`) — the idiom, not a model change, is the gap. The full
+  measured loss column with the idiom for each case is in
+  [the value-semantics limits note](internals/value-semantics-limits.md).
 
 - The real, narrow wall is **shared mutable state threaded through function
   calls** — canonically a memoization table that recursive calls must all

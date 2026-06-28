@@ -86,8 +86,9 @@ element type instead of a family of per-type siblings.
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
   array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
   derived int key (a fn/closure).
-- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in tycho, so the
-  state is an explicit int threaded via `mut`: `st := rand.seed(42)`,
+- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
+  state is an explicit int threaded via `mut` (the `&` marks the `mut` call site,
+  [Basics](reference/basics.md#procedures)): `st := rand.seed(42)`,
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
   (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
   signed 64-bit int, so the generator is UB-free by construction.

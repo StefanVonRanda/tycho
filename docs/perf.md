@@ -56,24 +56,26 @@ arena," and the later sections as the current compiler.
 
 ## What the self-compile number does (and does not) measure
 
-The ~20 ms figure is `tychoc0`'s *transpile* step alone: reading `tychoc0.ty`
+The ~31 ms figure is `tychoc0`'s *transpile* step alone: reading `tychoc0.ty`
 and emitting C. That step is genuinely fast, but it is **not** the time to
 build the compiler. A full `make bootstrap` / `make fixpoint` takes about a
 minute of wall clock, and almost all of that belongs to the *host* C compiler,
-not to Tycho. A representative breakdown on one machine (`cc -O2`; `tychoc0.ty`
-= ~10,000 lines → emitted C):
+not to Tycho. A representative breakdown on the primary machine (`cc -O2`;
+`tychoc0.ty` ≈ 11.9k lines → emitted C):
 
 | step | wall |
 |------|------|
-| tychoc0 transpiles `tychoc0.ty` → C | ~0.15 s |
+| tychoc0 transpiles `tychoc0.ty` → C | ~0.03 s |
 | `cc -O2` compiles that emitted C (once per self-host stage; ×3 in fixpoint) | ~10.7 s each |
 | `make bootstrap` end-to-end | ~58 s |
 
 So "tycho compiles itself in milliseconds" is true of the **tycho→C pass**; the
-`cc` back-end owns the bootstrap wall clock (roughly 100:1). It is not
-"instant" end to end. (The ~20 ms figure was measured on an earlier, smaller
-`tychoc0.ty`; the source is ~10,000 lines now and on a different machine, so
-re-measure for a current, machine-specific number.)
+`cc` back-end owns the bootstrap wall clock (hundreds to one). It is not
+"instant" end to end. Absolute transpile ms are machine- and source-size-specific
+(`tychoc0.ty` has grown since these were first measured, and the profiler-box
+trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands at
+~20 ms on a different machine); the **~2.4× ratio vs the C compiler is the stable
+claim**, reproducing across both. Re-measure locally for a current absolute number.
 
 ## (1) Compiler speed — compiling an earlier tychoc0.ty to C
 
@@ -360,9 +362,10 @@ covering it. Every array element type fuses.
 
 ## The self-compile gap: status
 
-**Current gap: tychoc0 self-compile ≈ 2.4× the C compiler** (on one machine, B
-31 ms vs `tychoc` 13 ms compiling `tychoc0.ty`; absolute numbers vary widely by
-machine — compare the *ratio*). The cheap wins are exhausted: the algorithmic
+**Current gap: tychoc0 self-compile ≈ 2.4× the C compiler** (on the primary
+machine, B 31 ms vs `tychoc` 13 ms compiling `tychoc0.ty`; the profiler-box
+trace in [Where the remaining time goes](#where-the-remaining-time-goes) lands at
+~20 ms — same ratio, different machine, so compare the *ratio*, not the absolute ms). The cheap wins are exhausted: the algorithmic
 O(n²)s are gone (`scan_token` strlen, `compute_movables`), the linear scans are
 O(1) maps (`sig_ret`/`dc.sigmap`), and the per-scope `Ctx` deep-copy was removed
 (the `Decls` split). Two further logic micro-opts were tried and reverted as
@@ -384,7 +387,8 @@ value-semantic self-hosted one is likely not reachable incrementally.
 **The C compiler `src/tychoc.c` stays the default, production compiler.**
 `tychoc0` is the self-hosting proof — the byte-identical self-build
 (`make fixpoint`) is the definitive dogfood of the value-semantic plus arena
-model on a real ~9.3k-line-of-C compiler — and the counterpart in the
+model on a real, allocation-heavy self-hosted compiler (~11.9k lines of Tycho)
+— and the counterpart in the
 differential oracle. It is not retired and
 is not on the correctness-critical path for production. By project convention,
 retiring the C compiler would require `tychoc0` to *outperform* it, not merely

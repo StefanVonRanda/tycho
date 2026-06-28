@@ -110,10 +110,11 @@ self-hosted compiler (`tychoc0`).
 
 `tychoc0` can compile a package directly — `tychoc0 path/main.ty` walks the
 directory and follows its imports through the same filesystem builtins — or read a
-pre-bundled, post-order source stream on stdin, which the C compiler produces with `tychoc --bundle <entry>`: it emits imports first, with
-the entry package's header rewritten to `package main`. `tychoc0` then applies the
-same package mangling in a post-parse pass — dormant unless a `package`
-declaration was seen, so a single-file compile stays identical.
+pre-bundled, post-order source stream on stdin. The C compiler produces that
+stream with `tychoc --bundle <entry>`: it emits imports first, with the entry
+package's header rewritten to `package main`. `tychoc0` then applies the same
+package mangling in a post-parse pass — dormant unless a `package` declaration
+was seen, so a single-file compile stays identical.
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
 `tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`, and

@@ -138,7 +138,8 @@ fn main():
    for arenas, and a well-trodden data-oriented pattern. The cost is
    ergonomic: you write `nodes[i].next_idx` instead of `node.next`, and
    you need a sentinel or optional for "no node." A generational-handle
-   scheme keeps it safe: make handles **generational** (index + a generation
+   scheme (a pattern you build, not a language built-in) keeps it safe:
+   make handles **generational** (index + a generation
    counter; a stale handle fails its generation check instead of silently
    reading a recycled slot). One extra word per handle buys use-after-free
    *detection* for the index-as-pointer pattern, with no pointer type.
