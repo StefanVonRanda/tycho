@@ -159,8 +159,8 @@ guarantee.
 
 A model is defined as much by what it *can't* do. Three patterns threaten the
 model. Two are sealed by the optimizations above. The third is narrower than it
-first looks, and is reachable — but it has a residue that is not a bug, it is
-the thesis.
+first looks, and is reachable — but it has a residue that is not a bug but the
+thesis itself.
 
 **The return copy tax** and **accumulation retention** are handled in §4a and
 §4b respectively.
@@ -189,9 +189,9 @@ of it:
   frames. The owning arena is threaded as a hidden parameter, so an allocating
   mutation lands where the value lives and survives the call.
 
-  *Measured*: memoized `fib(40)` = 102334155 in **0.001s**; the naive
-  exponential `fib(40)` computes the same answer in **0.60s**. The `mut` memo
-  makes it O(n) — proof the array is truly shared, not copied per call.
+  *Measured*: the naive exponential `fib(40)` computes 102334155 in **0.60s**;
+  the memoized version returns the same answer in **under a millisecond** — O(n)
+  vs O(2ⁿ). That collapse is proof the array is truly shared, not copied per call.
 
 **The residue is the boundary, not a defect.** What remains genuinely
 impossible is *pointer-identity aliasing of two named variables in one scope* —
@@ -226,12 +226,11 @@ disappear* — and the domain is large and real.
 The figures above are measured on the committed compiler. To reproduce:
 
 ```
-make                                  # build ./tychoc
-# return-slot (build a baseline compiler from an earlier commit to compare):
-git show 9d3367f:src/tychoc.c > /tmp/b.c   # last commit before return-slot
-# ...build it against a regenerated embed header, then A/B the same .ty
-examples/accumulate_big.ty            # in-place append, large N
-examples/memo.ty                      # mut memoized fib(40)
+make                                    # build ./tychoc
+./tychoc examples/accumulate_big.ty     # in-place append, large N
+./tychoc examples/memo.ty               # mut memoized fib(40)
+# (the return-slot A/B -- this compiler vs a pre-return-slot baseline built from an
+#  earlier commit against a regenerated embed header -- is scripted in bench/*/RESULTS.md)
 ```
 
 Peak RSS was read from `/proc/<pid>/status` `VmHWM`; the optimized append
@@ -247,9 +246,10 @@ Three further validations back the thesis, written up separately.
 its codegen runs on this same implicit-arena model
 ([docs/memory-model.md](memory-model.md)). Soundness is checked by that
 byte-identical self-build and sanitizers. That makes the model eat its own dog
-food on a real, allocation-heavy, deeply-recursive program. A differential
-fuzzer cross-checks the two compilers under AddressSanitizer to keep them in
-agreement.
+food on a real, allocation-heavy, deeply-recursive program. A differential fuzzer
+and accept/reject parity lanes cross-check the two compilers under AddressSanitizer,
+holding them to identical compile decisions with **no divergence skips** — the
+language `tychoc0` accepts is no longer a strict subset of the reference's.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
@@ -260,6 +260,7 @@ out, a private arena per call — is already a sound thread boundary, so
 `spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
 on threads: race-free by construction, with no Sendable/lifetime/lock machinery
 in the language. Measured: `parallel for` at C-pthreads parity on a
-compute-bound reduction; a lock-free-channel pipeline nearly 9x faster than a
-hand-written C mutex ring (73 ms vs 654 ms) while still paying the value-semantic copies C doesn't
-([docs/concurrency.md](concurrency.md), `bench/conc/`).
+compute-bound reduction; and a lock-free-channel pipeline that runs ~9× faster than a
+hand-written C *mutex-ring* baseline (73 ms vs 654 ms) — a design-expressiveness result
+(lock-free vs mutex), not a throughput claim over optimal C, and still paying the
+value-semantic copies C doesn't ([docs/concurrency.md](concurrency.md), `bench/conc/`).

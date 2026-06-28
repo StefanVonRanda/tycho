@@ -65,11 +65,11 @@ For both key kinds — `[string: V]` and `[int: V]` — the value `V` may be:
 All operations work uniformly regardless of `V`:
 `m[k] = v` / `map_get` / `k in m` / `delete m[k]` / `keys` / `len`, deep value
 `==`, the in-place accumulator, and `mut`. `map_get`'s default and the stored
-value take `V`; the key takes `K`. The only restriction is on the **key**:
-`string`, `int`, a newtype over one of those, or a fieldless enum — no other key
-type (see the README's
+value take `V`; the key takes `K`. The key `K` is `string`, `int`, a newtype over
+either, a fieldless enum, or any **hashable composite** (struct/tuple/array, hashed
+deeply over its fields); only a map itself is not yet usable as a key (see the
 [newtypes](reference/types.md#distinct-newtypes-type) and
-[Maps](reference/maps.md) sections).
+[Maps](reference/maps.md) reference pages).
 
 ## Implementation notes
 

@@ -179,7 +179,7 @@ compiler already runs for its built-in parametric types:
 - `[T]` — growable array, any element type T (incl. structs, strings).
 - `Option(T)` / `Result(T, E)` — optional / fallible, since there is no `null`
   and no exceptions.
-- `[K: V]` — hash map, comparable keys only.
+- `[K: V]` — hash map; keys are `string`, `int`, a newtype over either, a fieldless enum, or any hashable composite (struct/tuple/array).
 
 ```
 fn first(xs: [$T]) -> Option(T):        # generic function

@@ -89,7 +89,9 @@ it somewhere, it deep-copies into an owning array, so value semantics still hold
 never outlive or alias the buffer it came from — without any borrow checker. Slices work on
 every array type and compose (`xs[1:5][1:3]`). The one rule: you cannot pass a slice of `xs`
 and a `mut` of `xs` to the same call, since the `mut` could reallocate the viewed buffer.
-Strings use [`substr(s, a, b)`](builtins.md) (a copy), not slice syntax.
+A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — but unlike
+an array view it **always copies** into a fresh substring (there is no zero-copy string view);
+[`substr(s, a, b)`](builtins.md) is the equivalent function form.
 
 ---
 

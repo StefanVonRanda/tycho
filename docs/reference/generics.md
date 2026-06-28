@@ -43,8 +43,8 @@ enum Tree($T):
 ```
 
 Construct an instance by supplying values; the type argument is inferred from them — `Box(7)` is
-a `Box(int)`, `Has(7)` (in a `Has($T)` enum) a `Box(int)`. A payload-less variant that cannot fix
-the parameter from a value takes an **explicit type argument**: `Empty$(int)`.
+a `Box(int)`, and `Leaf(7)` a `Tree(int)`. A payload-less variant that cannot fix the parameter
+from a value takes an **explicit type argument**: `Empty$(int)`.
 
 Generic enums are monomorphized exactly like generic structs, including **recursive payloads that
 name the enum itself** — both directly (`Node(Tree($T), $T, Tree($T))`) and through a container

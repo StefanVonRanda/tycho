@@ -7,7 +7,7 @@ in Tycho, a map is a value — assigning one deep-copies it, two maps compare en
 
 ```
 counts := ["ada": 1, "alan": 2]   # a [string: int], typed from the literal
-empty := []string: int            # an empty map (element types required)
+empty := []string: int            # an empty map (key and value types required)
 
 counts["grace"] = 5               # add or overwrite
 "ada" in counts                   # membership test -> bool

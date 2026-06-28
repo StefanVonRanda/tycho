@@ -35,8 +35,9 @@ own output.
 
 ## Summary
 
-The self-hosted `tychoc0` compiles its own source in **~20 ms** — about 3.1×
-faster than its starting baseline — and emits the same implicit-arena C the
+The self-hosted `tychoc0` compiles its own source in **~31 ms — about 2.4× the C
+reference compiler's 13 ms** (on one machine; absolute numbers vary widely by
+machine, so the ratio is the claim) — and emits the same implicit-arena C the
 reference compiler does. With that codegen, `tychoc0` beats `tychoc` on both
 memory and time on 3 of 4 workloads in the cross-language benchmark suite
 (`bench/prongB/`, [RESULTS.md](../bench/prongB/RESULTS.md)) and leads the suite
@@ -49,8 +50,8 @@ arena model bought, not how the current compiler behaves. Today `tychoc0`'s
 emitted C uses the same implicit-arena model as the C compiler (see
 [docs/memory-model.md](memory-model.md)), so the "arena vs naive" gap those
 sections document is closed. Concretely, the `accumulate_big` row below (naive:
-257 ms / 598 MB) is now **~0 ms / ~1.6 MB** — identical to the arena version;
-the O(n²) blowup and the leak are gone. Read sections (1)–(2) as "naive vs
+257 ms / 598 MB) is now **~0 ms / ~1.6 MB** — flat and bounded; the O(n²) blowup
+and the leak are gone. Read sections (1)–(2) as "naive vs
 arena," and the later sections as the current compiler.
 
 ## What the self-compile number does (and does not) measure

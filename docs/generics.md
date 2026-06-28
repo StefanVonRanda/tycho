@@ -84,8 +84,7 @@ letters, to read distinctly from concrete types.
 ## 3. Inference: argument-directed structural matching
 
 Tycho's generic inference has no unification variables and no constraint
-solver. Generic inference
-keeps that promise: it is a one-directional **structural match** of each
+solver: it is a one-directional **structural match** of each
 concrete argument type against its parameter's type *pattern*, binding the
 `$`-parameters as it goes. There is no two-way unification and no global
 constraint set — only "walk the pattern and the concrete type in lockstep, and

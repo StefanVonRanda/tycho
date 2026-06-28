@@ -654,7 +654,7 @@ fn main():
             print("not found\n")
 ```
 
-The `match` is **exhaustive** — you must handle both `Some` and `None`. This is the compiler ensuring you don't forget the null check.
+`match` inspects which variant a value is and runs that arm (its full treatment is in §11). Here it is **exhaustive** — you must handle both `Some` and `None`, the compiler ensuring you don't forget the null check.
 
 ### Result(T, E) — no exceptions
 
@@ -1738,10 +1738,10 @@ math.gcd(12, 8)   s.argsort(xs)
 
 ## Where to Go Next
 
-- **Read the examples:** `examples/` has 20 programs, from trivial to substantial.
+- **Read the examples:** `examples/` has 22 programs, from trivial to substantial.
 - **Read the tests:** `tests/*.ty` covers every language feature with focused examples.
 - **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and where it doesn't.
-- **Read the source:** The self-hosted compiler `compiler/tychoc0.ty` is ~10,000 lines of Tycho written in Tycho — a real program that exercises every feature.
+- **Read the source:** The self-hosted compiler `compiler/tychoc0.ty` is ~12,000 lines of Tycho written in Tycho — a real program that exercises every feature.
 - **Run the benchmarks:** `make bench` to see the performance properties for yourself.
 - **Try the fuzzer:** `make fuzz` to see how the two compilers are checked against each other.
 

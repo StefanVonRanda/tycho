@@ -114,11 +114,13 @@ reference counts anywhere.
 
 Together these close the arena's two known weak spots (loop-carried reassignment
 and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
-(reference counting) across the cross-language suite.
+(reference counting) on these allocation-churn workloads. (The model's honest loss
+is elsewhere — pointer-shaped, structurally-shared data like tries runs ~3× C in
+RAM; that residue is covered in the thesis and the value-semantics-limits note.)
 
 ## Verification
 
-The memory model is checked by three mechanisms that, between them, catch the
+The memory model is checked by four mechanisms that, between them, catch the
 ways an over-aggressive move or recycle could go wrong:
 
 - **Byte-identical self-build.** `make fixpoint` confirms the self-hosted compiler
