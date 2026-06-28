@@ -194,7 +194,7 @@ checks all still run.
 ## Self-hosting
 
 Besides the C reference compiler (`src/tychoc.c`), Tycho has a second compiler
-**written in Tycho itself**: `compiler/tychoc0.ty`. It compiles a subset of the
+**written in Tycho itself**: `compiler/tychoc0.ty`. It began as a subset of the
 language large enough to compile its own source, and it **self-hosts** — `make
 fixpoint` builds it three ways (the C compiler builds it, then that build
 rebuilds it, then that rebuild rebuilds it again) and asserts the last two
