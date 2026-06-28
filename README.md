@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/tycho-logo-dark.svg">
+    <img src="branding/tycho-logo.svg" alt="Tycho" width="128">
+  </picture>
+</p>
+
 # Tycho
 
 A tiny AOT-compiled, statically typed systems language. The compiler is
