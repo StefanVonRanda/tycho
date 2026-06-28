@@ -15,6 +15,11 @@ cc??????.s
 # The compiled Tycho compiler (built by `make`)
 /tychoc
 
+# The self-hosted compiler binary + its emitted C, when built at the repo root
+# (e.g. `tychoc compiler/tychoc0.ty -o ./tychoc0`) — build artifacts, never source
+/tychoc0
+/tychoc0.c
+
 # The compiled `tycho` daily-driver CLI + its intermediate C (built by `make tycho`)
 /tycho
 /tycho.c
