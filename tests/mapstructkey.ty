@@ -20,12 +20,12 @@ fn main():
     m[Point(1, 2)] = 10
     m[Point(3, 4)] = 20
     m[Point(1, 2)] = 11                       # overwrite, not a new entry
-    print("get=" + str(map_get(m, Point(1, 2), -1)) + " miss=" + str(map_get(m, Point(9, 9), -1)) + "\n")
-    print("in=" + str(Point(3, 4) in m) + " len=" + str(len(m)) + "\n")
+    println("get=" + str(map_get(m, Point(1, 2), -1)) + " miss=" + str(map_get(m, Point(9, 9), -1)))
+    println("in=" + str(Point(3, 4) in m) + " len=" + str(len(m)))
     ks := keys(m)
-    print("order=(" + str(ks[0].x) + "," + str(ks[0].y) + ")(" + str(ks[1].x) + "," + str(ks[1].y) + ")\n")
+    println("order=(" + str(ks[0].x) + "," + str(ks[0].y) + ")(" + str(ks[1].x) + "," + str(ks[1].y) + ")")
     delete m[Point(1, 2)]
-    print("del: len=" + str(len(m)) + " gone=" + str(not (Point(1, 2) in m)) + "\n")
+    println("del: len=" + str(len(m)) + " gone=" + str(not (Point(1, 2) in m)))
 
     # heap (string) field key: deep-copied in, source mutation doesn't leak
     tally := []Person: int
@@ -33,7 +33,7 @@ fn main():
     tally[p] = 1
     tally[p] += 4                             # in-place accumulator
     p.name = "X"
-    print("alice=" + str(map_get(tally, Person("alice", 30), 0)) + " keyname=" + keys(tally)[0].name + "\n")
+    println("alice=" + str(map_get(tally, Person("alice", 30), 0)) + " keyname=" + keys(tally)[0].name)
 
     # deep == (entry-wise, order-independent)
     a := []Person: int
@@ -42,9 +42,9 @@ fn main():
     b[Person("k", 1)] = 7
     print("eq=" + str(a == b))
     b[Person("k", 1)] = 8
-    print(" neq=" + str(a == b) + "\n")
+    println(" neq=" + str(a == b))
 
     # nested-struct key (Edge has Point fields -> recursive hash/eq)
     g := []Edge: string
     g[Edge(Point(0, 0), Point(1, 1))] = "diag"
-    print("edge=" + map_get(g, Edge(Point(0, 0), Point(1, 1)), "?") + " emiss=" + map_get(g, Edge(Point(0, 0), Point(2, 2)), "?") + "\n")
+    println("edge=" + map_get(g, Edge(Point(0, 0), Point(1, 1)), "?") + " emiss=" + map_get(g, Edge(Point(0, 0), Point(2, 2)), "?"))

@@ -14,12 +14,12 @@ struct P:
 fn dump_s(m: [string: int]):
     for k in keys(m):
         print(k + " ")
-    print("\n")
+    println("")
 
 fn dump_i(m: [int: int]):
     for k in keys(m):
         print(str(k) + " ")
-    print("\n")
+    println("")
 
 fn main():
     # string keys: insert b, a, zzz, m
@@ -55,4 +55,4 @@ fn main():
     cm["mmm"] = P(5, 6)
     for k in keys(cm):
         print(k + " ")
-    print("\n")                    # q a mmm
+    println("")                    # q a mmm

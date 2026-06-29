@@ -145,41 +145,41 @@ fn status(g: Game) -> string:
 # deterministic scripted demo (the golden): exercises flood fill, flagging, a
 # loss (stepping on a mine), and a win (clearing all safe cells).
 fn run_demo():
-    print("=== game A: 9x9, 10 mines, seed 42 ===\n\n")
+    println("=== game A: 9x9, 10 mines, seed 42 ===\n")
     g := new_game(9, 9, 10, 42)
-    print("initial (all hidden):\n")
+    println("initial (all hidden):")
     print(render(g, false, false))
-    print("\n")
+    println("")
     # reveal the first empty (count-0) cell -> triggers the flood fill
     for i in range(0, g.w * g.h):
         if g.mine[i] == 0 and g.cnt[i] == 0:
             play_reveal(&g, i % g.w, i / g.w)
             break
-    print("after flood-fill from the first empty cell:\n")
+    println("after flood-fill from the first empty cell:")
     print(render(g, false, false))
-    print("\n")
+    println("")
     toggle_flag(&g, 0, 0)
-    print("flagged (0,0):\n")
+    println("flagged (0,0):")
     print(render(g, false, false))
-    print("\n")
+    println("")
     # step on the first UNFLAGGED mine -> loss (a flagged mine is protected from
     # reveal, so we must pick one we didn't flag); show the whole board
     for i in range(0, g.w * g.h):
         if g.mine[i] == 1 and g.flag[i] == 0:
             play_reveal(&g, i % g.w, i / g.w)
             break
-    print("stepped on the first mine -> board revealed:\n")
+    println("stepped on the first mine -> board revealed:")
     print(render(g, false, true))
     if g.state == 2:
-        print("result: LOSS\n")
-    print("\n=== game B: 5x5, 3 mines, seed 7 (clear all safe cells) ===\n\n")
+        println("result: LOSS")
+    println("\n=== game B: 5x5, 3 mines, seed 7 (clear all safe cells) ===\n")
     gb := new_game(5, 5, 3, 7)
     for i in range(0, gb.w * gb.h):
         if gb.mine[i] == 0:
             play_reveal(&gb, i % gb.w, i / gb.w)
     print(render(gb, false, false))
     if gb.state == 1:
-        print("result: WIN\n")
+        println("result: WIN")
 
 fn run_play():
     mine_raw_on()
@@ -213,11 +213,11 @@ fn run_play():
             toggle_flag(&g, g.cx, g.cy)
     mine_raw_off()
     if g.state == 1:
-        print("you win!\n")
+        println("you win!")
     elif g.state == 2:
-        print("boom -- game over\n")
+        println("boom -- game over")
     else:
-        print("bye\n")
+        println("bye")
 
 fn main():
     a := args()

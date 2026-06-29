@@ -6,4 +6,4 @@ type UserId = string
 fn main():
     m : [UserId: int] = []
     m["ana"] = 1
-    print(str(len(m)) + "\n")
+    println(str(len(m)))

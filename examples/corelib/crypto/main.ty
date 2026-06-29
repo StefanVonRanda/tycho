@@ -15,19 +15,19 @@ fn yesno(b: bool) -> string:
 
 fn main():
     # a digest (the message is passed as hex)
-    print("sha256('abc')    = " + crypto.sha256(hex.encode("abc")) + "\n")
+    println("sha256('abc')    = " + crypto.sha256(hex.encode("abc")))
 
     # a secret key lives in an opaque handle, not a Tycho string
     key := crypto.key_random(32)
-    print("key bytes        = " + str(crypto.key_len(key)) + "\n")
+    println("key bytes        = " + str(crypto.key_len(key)))
 
     # authenticated encryption round-trip (ChaCha20-Poly1305)
     nonce := crypto.random_hex(12)                       # MUST be unique per message
     aad := hex.encode("hdr-v1")
     box := crypto.aead_encrypt(key, nonce, hex.encode("attack at dawn"), aad)
     plain := crypto.aead_decrypt(key, nonce, box, aad)
-    print("decrypt verified = " + yesno(plain != "!err") + "\n")
-    print("recovered text   = " + hex.decode(plain) + "\n")
+    println("decrypt verified = " + yesno(plain != "!err"))
+    println("recovered text   = " + hex.decode(plain))
     crypto.key_free(key)
 
     # Ed25519 sign / verify (the signing key is a handle; public key + sig are hex)
@@ -36,7 +36,7 @@ fn main():
     msg := hex.encode("ship it")
     sig := crypto.ed25519_sign(signer, msg)
     crypto.key_free(signer)
-    print("signature valid  = " + yesno(crypto.ed25519_verify(pub, msg, sig)) + "\n")
+    println("signature valid  = " + yesno(crypto.ed25519_verify(pub, msg, sig)))
 
     # X25519: two parties independently derive the same shared secret
     a := crypto.x25519_key_random()
@@ -47,7 +47,7 @@ fn main():
     b_shared := crypto.x25519_shared(b, a_pub)
     a_hex := crypto.key_export_hex(a_shared)
     b_hex := crypto.key_export_hex(b_shared)
-    print("key agreement    = " + yesno(a_hex == b_hex) + "\n")
+    println("key agreement    = " + yesno(a_hex == b_hex))
     crypto.key_free(a)
     crypto.key_free(b)
     crypto.key_free(a_shared)

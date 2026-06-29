@@ -56,7 +56,7 @@ fn main():
     for i < 5:
         push(ps, Particle(i, i * 10, 1, 2))
         i = i + 1
-    print("len=" + str(len(ps)) + "\n")          # 5
+    println("len=" + str(len(ps)))          # 5
 
     # field-wise update across all elements (the cache-win access pattern):
     # advance each particle by its velocity, twice.
@@ -79,44 +79,44 @@ fn main():
         i = i + 1
     # x: each started i, +1 twice -> i+2; sum over i=0..4 = 10 + 5*2 = 20
     # y: each started i*10, +2 twice -> i*10+4; sum = 100 + 5*4 = 120
-    print("sumx=" + str(sx) + " sumy=" + str(sy) + "\n")   # 20 120
+    println("sumx=" + str(sx) + " sumy=" + str(sy))   # 20 120
 
     # a direct field write to one element
     ps[2].x = 999
-    print("ps2x=" + str(ps[2].x) + " ps0x=" + str(ps[0].x) + "\n")   # 999 2
+    println("ps2x=" + str(ps[2].x) + " ps0x=" + str(ps[0].x))   # 999 2
 
     # whole-element gather: p := ps[i] is an independent struct copy; mutating
     # it must not touch the soa.
     p := ps[0]
     p.x = 0 - 7
-    print("gather: p.x=" + str(p.x) + " ps0.x=" + str(ps[0].x) + "\n")   # -7 2
+    println("gather: p.x=" + str(p.x) + " ps0.x=" + str(ps[0].x))   # -7 2
 
     # pass a soa by value (read-only) to a function
-    print("total_vx=" + str(total_vx(ps)) + "\n")                       # 5*1 = 5
+    println("total_vx=" + str(total_vx(ps)))                       # 5*1 = 5
 
     # build and return a soa from a function; read it back
     q := make_soa(4)
-    print("q.len=" + str(len(q)) + " q2.x=" + str(q[2].x) + " q2.y=" + str(q[2].y) + "\n")  # 4 2 4
+    println("q.len=" + str(len(q)) + " q2.x=" + str(q[2].x) + " q2.y=" + str(q[2].y))  # 4 2 4
 
     # structural equality: same length + every field equal elementwise
     r := make_soa(4)
-    print("eq q==r: " + yn(q == r) + " q!=mk3: " + yn(q != make_soa(3)) + "\n")   # T T
+    println("eq q==r: " + yn(q == r) + " q!=mk3: " + yn(q != make_soa(3)))   # T T
 
     # slice: a sub-range view, copied on bind so it is independent of the source
     sl := q[1:3]
-    print("slice len=" + str(len(sl)) + " sl0.x=" + str(sl[0].x) + " sl1.y=" + str(sl[1].y) + "\n")  # 2 1 4
+    println("slice len=" + str(len(sl)) + " sl0.x=" + str(sl[0].x) + " sl1.y=" + str(sl[1].y))  # 2 1 4
     sl[0].x = 0 - 1
-    print("slice indep: sl0.x=" + str(sl[0].x) + " q1.x=" + str(q[1].x) + "\n")   # -1 1
+    println("slice indep: sl0.x=" + str(sl[0].x) + " q1.x=" + str(q[1].x))   # -1 1
 
     # read-only soa param: doubled_x copies then mutates the copy; the caller's
     # soa is untouched (sound zero-copy borrow + copy-on-`:=`).
     base := make_soa(3)
     dbl := doubled_x(base)
-    print("borrow base1.x=" + str(base[1].x) + " dbl1.x=" + str(dbl[1].x) + "\n")   # 1 2
+    println("borrow base1.x=" + str(base[1].x) + " dbl1.x=" + str(dbl[1].x))   # 1 2
 
     # nesting: a soa as a struct field; copying the struct deep-copies the soa,
     # so the two structs' soas are independent (value semantics through nesting).
     bag := Bag(make_soa(2), 7)
     bag2 := bag
     bag2.items[0].x = 0 - 9
-    print("nest bag0.x=" + str(bag.items[0].x) + " bag2_0.x=" + str(bag2.items[0].x) + " label=" + str(bag.label) + "\n")  # 0 -9 7
+    println("nest bag0.x=" + str(bag.items[0].x) + " bag2_0.x=" + str(bag2.items[0].x) + " label=" + str(bag.label))  # 0 -9 7

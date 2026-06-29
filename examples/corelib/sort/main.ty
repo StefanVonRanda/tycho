@@ -13,7 +13,7 @@ fn main():
     by_age := []string
     for i in range(len(order)):
         push(by_age, names[order[i]])
-    print("by age (asc) = " + arrays.join(by_age, ", ") + "\n")   # alice, bob, charlie
+    println("by age (asc) = " + arrays.join(by_age, ", "))   # alice, bob, charlie
 
     oldest := sort.argsort_desc(ages)
-    print("oldest       = " + names[oldest[0]] + "\n")                # charlie
+    println("oldest       = " + names[oldest[0]])                # charlie

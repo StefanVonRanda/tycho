@@ -20,10 +20,10 @@ fn main():
     r := http.get(dead)
     okv := b2i(http.ok(r))
     nullv := b2i(is_null(r))
-    print(f"ok={okv} null={nullv} status={http.status(r)}\n")   # ok=0 null=1 status=0
-    print("body=[" + http.body(r) + "]\n")                      # body=[]
+    println(f"ok={okv} null={nullv} status={http.status(r)}")   # ok=0 null=1 status=0
+    println("body=[" + http.body(r) + "]")                      # body=[]
     http.release(r)                                             # safe on a null handle
 
     gb := http.get_body(dead)
     gs := http.get_status(dead)
-    print(f"get_body=[{gb}] get_status={gs}\n")                 # get_body=[] get_status=0
+    println(f"get_body=[{gb}] get_status={gs}")                 # get_body=[] get_status=0

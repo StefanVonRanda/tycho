@@ -8,16 +8,16 @@ fn main():
     # accumulator referenced in a LATER piece -> must fall back (NOT "AB.AB.")
     s := "AB"
     s = s + "." + s
-    print(s + "\n")               # AB.AB
+    println(s)               # AB.AB
 
     # accumulator-only chain -> fall back
     t := "Q"
     t = t + t + t
-    print(t + "\n")               # QQQ
+    println(t)               # QQQ
 
     # safe multi-piece (no self-reference) in a loop -> in-place, O(n)
     u := ""
     j := 0
     for j in range(0, 3):
         u = u + "<" + str(j) + ">"
-    print(u + "\n")               # <0><1><2>
+    println(u)               # <0><1><2>

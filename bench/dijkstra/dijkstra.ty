@@ -95,4 +95,4 @@ fn main():
         if dist[i] < INF:
             sum = sum + dist[i]
             reach = reach + 1
-    print(str(reach) + " " + str(sum) + "\n")
+    println(str(reach) + " " + str(sum))

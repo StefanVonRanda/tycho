@@ -30,5 +30,5 @@ fn main():
     ord := sort.argsort_desc(nums)
     for i in range(len(ord)):
         if nums[ord[i]] > 1:
-            print(words[ord[i]] + " " + str(nums[ord[i]]) + "\n")
-    print(f"unique={len(words)}\n")
+            println(words[ord[i]] + " " + str(nums[ord[i]]))
+    println(f"unique={len(words)}")

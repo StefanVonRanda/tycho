@@ -22,21 +22,21 @@ fn main():
     xs := [10, 20, 30]
     push(xs, 40)
     push(xs, 50)
-    print("len = " + str(len(xs)) + "\n")
+    println("len = " + str(len(xs)))
 
     s := 0
     for i in range(len(xs)):
         s = s + xs[i]
-    print("sum = " + str(s) + "\n")
+    println("sum = " + str(s))
 
     xs[0] = 99
-    print("xs[0] = " + str(xs[0]) + "\n")
+    println("xs[0] = " + str(xs[0]))
 
     ys := xs                       # independent copy
     push(ys, 7)
-    print("len xs = " + str(len(xs)) + ", len ys = " + str(len(ys)) + "\n")
+    println("len xs = " + str(len(xs)) + ", len ys = " + str(len(ys)))
 
     sq := make_squares(5)
-    print("squares sum = " + str(sum(sq)) + "\n")
+    println("squares sum = " + str(sum(sq)))
     d := doubled(sq)
-    print("doubled[2] = " + str(d[2]) + ", original[2] = " + str(sq[2]) + "\n")
+    println("doubled[2] = " + str(d[2]) + ", original[2] = " + str(sq[2]))

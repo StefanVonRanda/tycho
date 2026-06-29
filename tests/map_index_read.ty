@@ -8,19 +8,19 @@ fn main():
     words := ["a", "b", "a", "a", "c", "b"]
     for i in range(len(words)):
         cnt[words[i]] = cnt[words[i]] + 1          # the counter idiom (read sugar)
-    print("a=" + str(cnt["a"]) + " b=" + str(cnt["b"]) + " c=" + str(cnt["c"]) + "\n")
+    println("a=" + str(cnt["a"]) + " b=" + str(cnt["b"]) + " c=" + str(cnt["c"]))
     miss := cnt["zzz"]                              # pure read of a missing key -> 0
-    print("miss=" + str(miss) + " distinct=" + str(len(cnt)) + "\n")   # zzz NOT inserted
+    println("miss=" + str(miss) + " distinct=" + str(len(cnt)))   # zzz NOT inserted
     f := []string: float
     f["x"] = 2.5
-    print("f=" + str(f["x"]) + "/" + str(f["y"]) + "\n")
+    println("f=" + str(f["x"]) + "/" + str(f["y"]))
     s := []int: string
     s[1] = "hi"
-    print("s=[" + s[1] + "][" + s[2] + "]\n")
+    println("s=[" + s[1] + "][" + s[2] + "]")
     b := []string: bool
     b["t"] = true
-    print("b=" + str(b["t"]) + "/" + str(b["f"]) + "\n")
+    println("b=" + str(b["t"]) + "/" + str(b["f"]))
     acc := []string: int
     acc["k"] += 10                                  # compound op= is a mutation -> inserts
     acc["k"] += 5
-    print("acc=" + str(acc["k"]) + " acclen=" + str(len(acc)) + "\n")
+    println("acc=" + str(acc["k"]) + " acclen=" + str(len(acc)))

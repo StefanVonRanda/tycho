@@ -17,18 +17,18 @@ fn main():
     a := 3
     b := 7
     if a < b and b < 10:
-        print("and-ok\n")
+        println("and-ok")
     if a > b or b == 7:
-        print("or-ok\n")
+        println("or-ok")
     if not (a == b):
-        print("not-ok\n")
+        println("not-ok")
     if not a > b:           # parses as (not (a>b)) -> not false -> true
-        print("not-prec-ok\n")
+        println("not-prec-ok")
     # short-circuit: && must not evaluate the right side when left is false
     if side("L", false) and side("R", true):
-        print("unreachable\n")
-    print("\n")
+        println("unreachable")
+    println("")
     if side("L2", true) or side("R2", false):
-        print("or-short-ok\n")
+        println("or-short-ok")
     # elif chain
-    print(grade(95) + grade(85) + grade(72) + grade(40) + "\n")
+    println(grade(95) + grade(85) + grade(72) + grade(40))

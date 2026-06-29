@@ -6,4 +6,4 @@ fn main():
     for i in range(5000000):
         s := str(i) + "!"
         last = len(s)
-    print(str(last) + "\n")
+    println(str(last))

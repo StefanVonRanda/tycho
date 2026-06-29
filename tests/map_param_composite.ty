@@ -27,15 +27,15 @@ fn main():
     push(idx["a"], 10)
     push(idx["a"], 5)
     push(idx["b"], 1)
-    print(str(sum_list(idx, "a")) + "," + str(sum_list(idx, "b")) + "," + str(sum_list(idx, "z")) + "\n")  # 15,1,0
+    println(str(sum_list(idx, "a")) + "," + str(sum_list(idx, "b")) + "," + str(sum_list(idx, "z")))  # 15,1,0
 
     pts := []int: P
     pts[7].x = 3
     pts[7].y = 4
-    print(str(pt_x(pts, 7)) + "," + str(pt_x(pts, 9)) + "\n")  # 3,0
+    println(str(pt_x(pts, 7)) + "," + str(pt_x(pts, 9)))  # 3,0
 
     # value semantics: grow() adds "zzz" to its own copy; the caller's idx is untouched
     g := grow(idx)
-    print(str(g) + "," + str(len(keys(idx))) + "\n")  # 3,2   (idx still has only a,b)
+    println(str(g) + "," + str(len(keys(idx))))  # 3,2   (idx still has only a,b)
 
-    print(str(sum_list(idx, "a")) + "\n")  # 15 (caller's idx unchanged by grow)
+    println(str(sum_list(idx, "a")))  # 15 (caller's idx unchanged by grow)

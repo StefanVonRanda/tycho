@@ -46,21 +46,21 @@ fn show(r: Result(int, string)) -> string:
             return "err:" + e
 
 fn main():
-    print(show(add_two("1", "2")) + "\n")    # ok:3
-    print(show(add_two("1", "9")) + "\n")    # err: second arg propagates
-    print(show(add_two("7", "2")) + "\n")    # err: first arg propagates
+    println(show(add_two("1", "2")))    # ok:3
+    println(show(add_two("1", "9")))    # err: second arg propagates
+    println(show(add_two("7", "2")))    # err: first arg propagates
 
     match doubled_head([5, 6, 7]):
         Ok(ys):
-            print("doubled=" + str(ys[0]) + "," + str(ys[1]) + "\n")
+            println("doubled=" + str(ys[0]) + "," + str(ys[1]))
         Err(e):
-            print("err:" + e + "\n")
+            println("err:" + e)
     match doubled_head([5]):
         Ok(ys):
-            print("len=" + str(len(ys)) + "\n")
+            println("len=" + str(len(ys)))
         Err(e):
-            print("short_err=" + e + "\n")
+            println("short_err=" + e)
 
-    print(show(pick(true, "2")) + "\n")      # ok:20
-    print(show(pick(true, "x")) + "\n")      # err propagates out of the if
-    print(show(pick(false, "x")) + "\n")     # ok:0
+    println(show(pick(true, "2")))      # ok:20
+    println(show(pick(true, "x")))      # err propagates out of the if
+    println(show(pick(false, "x")))     # ok:0

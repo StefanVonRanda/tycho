@@ -10,19 +10,19 @@ fn main():
     e := "a(b)c"         # parens mid-string
     q := "x\"y"          # an escaped quote, then more text
     if c == 110:                     # whole-condition int equality (was double-paren)
-        print("1\n")
+        println("1")
     if a == ")(":                    # equality whose RHS literal holds parens
-        print("2\n")
+        println("2")
     if b == "()":
-        print("3\n")
+        println("3")
     if e == "a(b)c":
-        print("4\n")
+        println("4")
     if q == "x\"y":                  # literal with an escaped quote
-        print("5\n")
+        println("5")
     if c == 110 and a == ")(":       # compound: && keeps operand-grouping parens
-        print("6\n")
+        println("6")
     if a == ")(" or c == 0:
-        print("7\n")
+        println("7")
     for c == 110:                    # while-condition equality
         c = 0
-    print("done\n")
+    println("done")

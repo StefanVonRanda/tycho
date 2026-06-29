@@ -52,7 +52,7 @@ mutates it in place. The loop is **O(n) total**, the same in-place trick as stri
 
 ```
 for k in keys(counts):
-    print(k + " = " + str(counts[k]) + "\n")
+    println(k + " = " + str(counts[k]))
 ```
 
 ## Values are deep, maps are values

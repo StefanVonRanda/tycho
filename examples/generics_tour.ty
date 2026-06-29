@@ -37,15 +37,15 @@ fn tree_sum(t: Tree(int)) -> int:
 
 fn main():
     # the SAME generic code, two different element types:
-    print("last int:    " + str(last([3, 1, 4, 1, 5])) + "\n")        # 5
-    print("last string: " + last(["a", "b", "c"]) + "\n")             # c
-    print("max int:     " + str(max_of([3, 9, 2, 7])) + "\n")         # 9
-    print("max string:  " + max_of(["pear", "apple", "fig"]) + "\n")  # pear
+    println("last int:    " + str(last([3, 1, 4, 1, 5])))        # 5
+    println("last string: " + last(["a", "b", "c"]))             # c
+    println("max int:     " + str(max_of([3, 9, 2, 7])))         # 9
+    println("max string:  " + max_of(["pear", "apple", "fig"]))  # pear
 
     # a generic struct holds two independent type parameters
     p := Pair(42, "answer")                                           # Pair(int, string)
-    print("pair: " + str(p.first) + " / " + p.second + "\n")
+    println("pair: " + str(p.first) + " / " + p.second)
 
     # a recursive generic enum, built and summed
     t := Node(5, Node(1, Leaf(2), Leaf(3)), Leaf(4))                  # Tree(int)
-    print("tree sum: " + str(tree_sum(t)) + "\n")                     # 15
+    println("tree sum: " + str(tree_sum(t)))                     # 15

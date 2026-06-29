@@ -2,9 +2,9 @@
 # array-slice forms s[a:], s[:b], s[:]. Self-hosting (tychoc0 supports it).
 fn main():
     s := "hello, world"
-    print(s[0:5] + "|" + s[7:] + "|" + s[:5] + "|" + s[:] + "\n")   # hello|world|hello|hello, world
+    println(s[0:5] + "|" + s[7:] + "|" + s[:5] + "|" + s[:])   # hello|world|hello|hello, world
     # slices of a computed string + nesting
     t := s[7:12]                                  # "world"
-    print(t[0:3] + " len=" + str(len(t[1:])) + "\n")   # wor len=4
+    println(t[0:3] + " len=" + str(len(t[1:])))   # wor len=4
     # empty slice
-    print("[" + s[3:3] + "]\n")                   # []
+    println("[" + s[3:3] + "]")                   # []

@@ -10,4 +10,4 @@ fn main():
         push(a, Some(i + 1))
         push(a, None)
         last = len(a)
-    print(str(last) + "\n")
+    println(str(last))

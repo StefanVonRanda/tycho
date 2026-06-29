@@ -28,4 +28,4 @@ fn main():
     total := 0
     for i in range(len(ks)):
         total = total + map_get(c, ks[i], 0)
-    print("buckets=" + str(len(c)) + " total=" + str(total) + "\n")
+    println("buckets=" + str(len(c)) + " total=" + str(total))

@@ -14,8 +14,8 @@ fn main():
     st := rand.seed(42)
     u1 := uuid.v4(&st)
     u2 := uuid.v4(&st)
-    print("u1 = " + u1 + "\n")
-    print("u2 = " + u2 + "\n")
+    println("u1 = " + u1)
+    println("u2 = " + u2)
 
     # structural checks on a generated v4
     valid := b2i(uuid.is_valid(u1))
@@ -23,25 +23,25 @@ fn main():
     vc := u1[19]                                 # the variant nibble char
     variant_ok := b2i(vc == 56 or vc == 57 or vc == 97 or vc == 98)   # 8 9 a b
     differ := b2i(u1 != u2)
-    print(f"valid={valid} version={ver} variant_ok={variant_ok} differ={differ}\n")
+    println(f"valid={valid} version={ver} variant_ok={variant_ok} differ={differ}")
 
     # nil UUID
     z := uuid.nil()
-    print("nil = " + z + "\n")
-    print(f"nil_valid={b2i(uuid.is_valid(z))} nil_version={uuid.version(z)}\n")
+    println("nil = " + z)
+    println(f"nil_valid={b2i(uuid.is_valid(z))} nil_version={uuid.version(z)}")
 
     # parse / format round-trip (canonical -> bytes -> canonical)
     pb := uuid.parse(u1)
     rt := uuid.format(pb)
-    print(f"parse_len={len(pb)} rt_ok={b2i(rt == u1)}\n")
+    println(f"parse_len={len(pb)} rt_ok={b2i(rt == u1)}")
 
     # parse is lenient on separators; format always re-inserts them
     nohyphen := "550e8400e29b41d4a716446655440000"
     pn := uuid.parse(nohyphen)
-    print("reformat = " + uuid.format(pn) + "\n")   # 550e8400-e29b-41d4-a716-446655440000
+    println("reformat = " + uuid.format(pn))   # 550e8400-e29b-41d4-a716-446655440000
 
     # invalid inputs
     bad := uuid.parse("xyz")
     bv := b2i(uuid.is_valid("not-a-uuid"))
     bver := uuid.version("nope")
-    print(f"bad_len={len(bad)} bad_valid={bv} bad_ver={bver}\n")
+    println(f"bad_len={len(bad)} bad_valid={bv} bad_ver={bver}")

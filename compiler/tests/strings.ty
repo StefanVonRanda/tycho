@@ -2,13 +2,13 @@ fn sq(n: int) -> int:
     return n * n
 
 fn main():
-    print("squares:\n")
-    print("sq(2) = " + str(sq(2)) + "\n")
-    print("sq(3) = " + str(sq(3)) + "\n")
+    println("squares:")
+    println("sq(2) = " + str(sq(2)))
+    println("sq(3) = " + str(sq(3)))
     x := 7
-    print("x = " + str(x) + ", x*x = " + str(x * x) + "\n")
+    println("x = " + str(x) + ", x*x = " + str(x * x))
     if x > 5:
-        print("big\n")
+        println("big")
     else:
-        print("small\n")
-    print("done\n")
+        println("small")
+    println("done")

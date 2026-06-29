@@ -11,4 +11,4 @@ fn total(xs: Ids) -> int:
 
 fn main():
     raw := [1, 2, 3]
-    print(str(total(raw)) + "\n")
+    println(str(total(raw)))

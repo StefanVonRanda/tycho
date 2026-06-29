@@ -24,37 +24,37 @@ fn show(r: Result(int, string)) -> string:
             return "err:" + e
 
 fn main():
-    print(show(checked_div(10, 2)) + "\n")    # ok:5
-    print(show(checked_div(10, 0)) + "\n")    # err:divide by zero
+    println(show(checked_div(10, 2)))    # ok:5
+    println(show(checked_div(10, 0)))    # err:divide by zero
 
     # heap Ok payload, bound and read inside the match arm
     match make_range(4):
         Ok(xs):
-            print("range_len=" + str(len(xs)) + " last=" + str(xs[3]) + "\n")
+            println("range_len=" + str(len(xs)) + " last=" + str(xs[3]))
         Err(e):
-            print("err:" + e + "\n")
+            println("err:" + e)
     match make_range(-1):
         Ok(xs):
-            print("len=" + str(len(xs)) + "\n")
+            println("len=" + str(len(xs)))
         Err(e):
-            print("neg_err=" + e + "\n")
+            println("neg_err=" + e)
 
     # value semantics: b is an independent deep copy of a (heap payload)
     a := make_range(3)
     b := a
     match a:
         Ok(xs):
-            print("a_len=" + str(len(xs)) + "\n")
+            println("a_len=" + str(len(xs)))
         Err(e):
-            print(e + "\n")
+            println(e)
     match b:
         Ok(xs):
-            print("b_len=" + str(len(xs)) + "\n")
+            println("b_len=" + str(len(xs)))
         Err(e):
-            print(e + "\n")
+            println(e)
 
     # an annotated decl fixes the partial type of a bare Ok/Err
     c : Result(int, string) = Err("annotated")
-    print(show(c) + "\n")                      # err:annotated
+    println(show(c))                      # err:annotated
     d : Result(int, string) = Ok(42)
-    print(show(d) + "\n")                      # ok:42
+    println(show(d))                      # ok:42

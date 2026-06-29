@@ -16,6 +16,6 @@ fn main():
 		s := classify(i)
 		if s == "pos":
 			total = total + i
-		print(classify(i) + "\n")
+		println(classify(i))
 	
-	print("total=" + str(total) + "\n")
+	println("total=" + str(total))

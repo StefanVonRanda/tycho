@@ -38,6 +38,6 @@ fn build_snap(n: int) -> int:
 
 fn main():
     t := build(5)
-    print("size=" + str(size(t)) + "\n")        # 6 leaves
-    print("sum=" + str(sumv(t)) + "\n")          # 0+1+2+3+4+5 = 15
-    print("snap_frozen=" + str(build_snap(5)) + "\n")   # 4, not 6
+    println("size=" + str(size(t)))        # 6 leaves
+    println("sum=" + str(sumv(t)))          # 0+1+2+3+4+5 = 15
+    println("snap_frozen=" + str(build_snap(5)))   # 4, not 6

@@ -10,4 +10,4 @@ fn main():
         push(g, [i, i, i, i, i])
         push(g, [i * 2, i * 3])
         last = len(g) + len(g[0]) + len(g[1])
-    print(str(last) + "\n")
+    println(str(last))

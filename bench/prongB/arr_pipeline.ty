@@ -21,4 +21,4 @@ fn main():
             s = s + ys[i]
         ck := checksum + s
         checksum = ck - (ck / k) * k
-    print(str(checksum) + "\n")
+    println(str(checksum))

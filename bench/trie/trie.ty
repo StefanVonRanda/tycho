@@ -39,4 +39,4 @@ fn main():
             state = state * 6364136223846793005 + 1442695040888963407
             s = s + chr(97 + ((state & 1073741823) % 26))   # 'a'..'z'
         nwords = nwords + insert(&root, s, 0, &nn)
-    print(str(nn) + " " + str(nwords) + "\n")
+    println(str(nn) + " " + str(nwords))

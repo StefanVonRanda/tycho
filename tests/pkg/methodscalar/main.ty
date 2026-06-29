@@ -3,5 +3,5 @@ package main
 import "mathx"
 
 fn main():
-    print(str(mathx.use_int(5)) + "\n")
-    print(mathx.use_str("hi") + "\n")
+    println(str(mathx.use_int(5)))
+    println(mathx.use_str("hi"))

@@ -16,7 +16,7 @@ fn main():
     snap := ctx
     step(&ctx, "phase-1", 10)
     step(&ctx, "phase-2", 20)
-    print("label: " + ctx.label + "\n")
-    print("snapshot label (isolated): " + snap.label + "\n")
-    print("log entries: " + str(len(ctx.log)) + "\n")
-    print("snapshot entries (isolated): " + str(len(snap.log)) + "\n")
+    println("label: " + ctx.label)
+    println("snapshot label (isolated): " + snap.label)
+    println("log entries: " + str(len(ctx.log)))
+    println("snapshot entries (isolated): " + str(len(snap.log)))

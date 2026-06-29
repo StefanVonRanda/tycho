@@ -14,4 +14,4 @@ fn main():
         a := []int
         fill(&a, 200)
         last = len(a)
-    print(str(last) + "\n")
+    println(str(last))

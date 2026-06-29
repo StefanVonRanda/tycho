@@ -13,14 +13,14 @@ fn avg(xs: [int]) -> float:
 
 fn main():
     pi := 3.14159
-    print("pi=" + str(pi) + " 2pi=" + str(pi * 2.0) + "\n")
-    print("truediv=" + str(7.0 / 2.0) + "\n")          # 3.5
-    print("intdiv=" + str(7 / 2) + "\n")               # 1
-    print("neg=" + str(-pi) + "\n")
-    print("whole=" + str(4.0) + "\n")                  # 4.0 not 4
+    println("pi=" + str(pi) + " 2pi=" + str(pi * 2.0))
+    println("truediv=" + str(7.0 / 2.0))          # 3.5
+    println("intdiv=" + str(7 / 2))               # 1
+    println("neg=" + str(-pi))
+    println("whole=" + str(4.0))                  # 4.0 not 4
     if 1.5 < 2.5 and not (1.0 > 2.0):
-        print("cmp-ok\n")
+        println("cmp-ok")
     v := Vec(3.0, 4.0)
-    print("mag2=" + str(mag2(v)) + "\n")               # 25.0
-    print("avg=" + str(avg([1, 2, 3, 4])) + "\n")      # 2.5
-    print("trunc=" + str(to_int(3.9)) + "\n")          # 3
+    println("mag2=" + str(mag2(v)))               # 25.0
+    println("avg=" + str(avg([1, 2, 3, 4])))      # 2.5
+    println("trunc=" + str(to_int(3.9)))          # 3

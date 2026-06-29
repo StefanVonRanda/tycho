@@ -31,4 +31,4 @@ fn main():
             for li in range(len(lst)):
                 checksum = checksum + lst[li]
         # m (and ks/lst) go out of scope here -> the arena frees the whole window in bulk
-    print("windows=" + str(nw) + " checksum=" + str(checksum) + "\n")
+    println("windows=" + str(nw) + " checksum=" + str(checksum))

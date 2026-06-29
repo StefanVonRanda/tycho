@@ -5,17 +5,17 @@ fn main():
     xs := [10, 20, 30]
     push(xs, 40)
     push(xs, 50)
-    print("len = " + str(len(xs)) + "\n")
+    println("len = " + str(len(xs)))
 
     sum := 0
     for i in range(len(xs)):
         sum = sum + xs[i]
-    print("sum = " + str(sum) + "\n")
+    println("sum = " + str(sum))
 
     xs[0] = 99
-    print("xs[0] = " + str(xs[0]) + "\n")
+    println("xs[0] = " + str(xs[0]))
 
     # value semantics: ys is an independent copy
     ys := xs
     push(ys, 7)
-    print("len xs = " + str(len(xs)) + ", len ys = " + str(len(ys)) + "\n")
+    println("len xs = " + str(len(xs)) + ", len ys = " + str(len(ys)))

@@ -20,14 +20,14 @@ fn main():
     a := Point(1, 2)
     b := Point(4, 6)
     r := Rect(a, b)
-    print("area = " + str(area(r)) + "\n")
+    println("area = " + str(area(r)))
 
     c := shifted(a, 10, 20)
-    print("shifted = (" + str(c.x) + ", " + str(c.y) + ")\n")
+    println("shifted = (" + str(c.x) + ", " + str(c.y) + ")")
 
     d := a
     d.x = 99
-    print("a.x = " + str(a.x) + ", d.x = " + str(d.x) + "\n")
+    println("a.x = " + str(a.x) + ", d.x = " + str(d.x))
 
     r.lo.x = 100
-    print("r.lo.x = " + str(r.lo.x) + ", a.x still " + str(a.x) + "\n")
+    println("r.lo.x = " + str(r.lo.x) + ", a.x still " + str(a.x))

@@ -28,12 +28,12 @@ fn bump(e: Env, k: string) -> Env:
 
 fn main():
     ids := Ids([1, 2, 3])
-    print(str(total(ids)) + "\n")
+    println(str(total(ids)))
     dup := ids
     if dup == ids:
-        print("ids eq\n")
+        println("ids eq")
     e := bump(bump(Env([]), "a"), "a")
-    print(str(map_get(to_under(e), "a", 0)) + "\n")
+    println(str(map_get(to_under(e), "a", 0)))
     p := Pos(Pt(7, 9))
     q := to_under(p)
-    print(str(q.x + q.y) + "\n")
+    println(str(q.x + q.y))

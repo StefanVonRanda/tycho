@@ -78,7 +78,7 @@ fn render(body: string) -> string:         # block-level Markdown subset -> HTML
 fn main():
     a := args()
     if len(a) < 3:
-        print("usage: site <pages-dir> <N>\n")
+        println("usage: site <pages-dir> <N>")
     else:
         dir := a[1]
         n := atoi(a[2])
@@ -91,4 +91,4 @@ fn main():
                 fnv = (fnv ^ html[j]) % 4294967296
                 fnv = (fnv * 16777619) % 4294967296
             total = total + len(html)
-        print("pages=" + str(n) + " bytes=" + str(total) + " fnv=" + str(fnv) + "\n")
+        println("pages=" + str(n) + " bytes=" + str(total) + " fnv=" + str(fnv))

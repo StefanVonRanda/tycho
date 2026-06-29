@@ -12,37 +12,37 @@ fn main():
     n -= 2
     n *= 3
     n /= 2
-    print("n=" + str(n) + "\n")          # ((10+5-2)*3)/2 = 19
+    println("n=" + str(n))          # ((10+5-2)*3)/2 = 19
 
     m := 12
     m %= 5
-    print("m=" + str(m) + "\n")          # 2
+    println("m=" + str(m))          # 2
 
     b := 12
     b &= 10                              # 8
     b |= 1                               # 9
     b ^= 3                               # 10
-    print("b=" + str(b) + "\n")          # 10
+    println("b=" + str(b))          # 10
 
     sh := 1
     sh <<= 4                             # 16
     sh >>= 1                             # 8
-    print("sh=" + str(sh) + "\n")        # 8
+    println("sh=" + str(sh))        # 8
 
     s := ""
     i := 0
     for i in range(0, 3):
         s += "ab"                        # in-place accumulator
-    print("s=" + s + "\n")               # ababab
+    println("s=" + s)               # ababab
 
     arr := []int
     push(arr, 10)
     push(arr, 20)
     arr[0] += 5                          # array element
     arr[1] *= 2
-    print("arr=" + str(arr[0]) + "," + str(arr[1]) + "\n")   # 15,40
+    println("arr=" + str(arr[0]) + "," + str(arr[1]))   # 15,40
 
     p := P(3, 4)
     p.x += 7                             # struct field
     p.y *= 2
-    print("p=" + str(p.x) + "," + str(p.y) + "\n")           # 10,8
+    println("p=" + str(p.x) + "," + str(p.y))           # 10,8

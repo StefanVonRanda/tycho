@@ -10,4 +10,4 @@ fn main():
         select:
             recv(a, x):
                 return
-    print("unreachable\n")
+    println("unreachable")

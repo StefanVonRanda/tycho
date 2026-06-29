@@ -22,4 +22,4 @@ fn main():
     memo := []int
     for i in range(0, 41):
         push(memo, 0)        # 0 = "not yet computed"
-    print("fib(40) = " + str(fib(40, &memo)) + "\n")   # 102334155
+    println("fib(40) = " + str(fib(40, &memo)))   # 102334155

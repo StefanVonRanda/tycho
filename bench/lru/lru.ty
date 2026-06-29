@@ -103,4 +103,4 @@ fn main():
             state = state * 6364136223846793005 + 1442695040888963407
             val := (state & 1073741823) % 1000000
             put(&pool, &meta, &idx, cap, key, val)
-    print(str(hits) + " " + str(sum) + "\n")
+    println(str(hits) + " " + str(sum))

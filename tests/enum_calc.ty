@@ -18,14 +18,14 @@ fn eval(e: Expr) -> float:
 fn main():
     # (2 + 3) * -(4)  =  -20
     e := Mul(Add(Num(2.0), Num(3.0)), Neg(Num(4.0)))
-    print("result=" + str(eval(e)) + "\n")
+    println("result=" + str(eval(e)))
     # a simple constant
-    print("c=" + str(eval(Num(7.5))) + "\n")
+    println("c=" + str(eval(Num(7.5))))
     # value semantics: deep-copy an Expr, the copy is independent
     a := Add(Num(1.0), Num(2.0))
     b := a
-    print("a=" + str(eval(a)) + " b=" + str(eval(b)) + "\n")
+    println("a=" + str(eval(a)) + " b=" + str(eval(b)))
     # structural equality over the tree
     c := Add(Num(1.0), Num(2.0))
     if a == c:
-        print("trees-equal\n")
+        println("trees-equal")

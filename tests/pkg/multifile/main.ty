@@ -2,4 +2,4 @@ package multifile
 
 fn main():
     b := Box(6, 7)
-    print("area=" + str(area(b)) + "\n")   # 42
+    println("area=" + str(area(b)))   # 42

@@ -6,17 +6,17 @@
 
 fn main():
     mx := 9223372036854775807          # LONG_MAX (2^63 - 1)
-    print(str(mx + 1) + "\n")          # wraps to LONG_MIN = -9223372036854775808
+    println(str(mx + 1))          # wraps to LONG_MIN = -9223372036854775808
 
     mn := -9223372036854775807 - 1     # LONG_MIN (avoid lexing 2^63 as a literal)
-    print(str(mn - 1) + "\n")          # wraps to LONG_MAX =  9223372036854775807
+    println(str(mn - 1))          # wraps to LONG_MAX =  9223372036854775807
 
-    print(str(mx * 2) + "\n")          # (2^63-1)*2 = -2 as signed long
+    println(str(mx * 2))          # (2^63-1)*2 = -2 as signed long
 
     # overflow inside a comparison the optimizer must NOT fold (x+1 > x is
     # false here): with -fwrapv this is well-defined and prints "wrapped".
     x := 9223372036854775807
     if x + 1 < x:
-        print("wrapped\n")
+        println("wrapped")
     else:
-        print("no-wrap\n")
+        println("no-wrap")

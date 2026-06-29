@@ -13,9 +13,9 @@ fn main():
     s := build(5)
     snap := s              # snapshot: must be independent of later appends to s
     s = s + "TAIL"
-    print(s + "\n")        # 0,1,2,3,4,TAIL
-    print(snap + "\n")     # 0,1,2,3,4,   (unchanged)
+    println(s)        # 0,1,2,3,4,TAIL
+    println(snap)     # 0,1,2,3,4,   (unchanged)
     # plain reassign of an accumulator then append again (sidecar resync)
     s = "x"
     s = s + "y" + "z"
-    print(s + "\n")        # xyz
+    println(s)        # xyz

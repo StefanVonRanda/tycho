@@ -5,11 +5,11 @@ import "core:fmath"
 import "core:math"     # min/max/clamp/sign are generic in core:math now (exercised here over float)
 
 fn main():
-    print(f"minmax={math.min(2.5, 1.5)},{math.max(2.5, 1.5)}\n")                # 1.5,2.5 (generic over float)
-    print(f"clamp={math.clamp(5.0, 0.0, 1.0)},{math.clamp(0.0 - 1.0, 0.0, 1.0)}\n")   # 1.0,0.0
-    print(f"sign={math.sign(0.0 - 3.0)},{math.sign(3.0)},{math.sign(0.0)}\n")          # -1,1,0 (sign returns int)
-    print(f"round={fmath.round(2.5)},{fmath.round(0.0 - 2.5)},{fmath.round(2.4)}\n")    # 3.0,-3.0,2.0
-    print(f"trunc={fmath.trunc(2.9)},{fmath.trunc(0.0 - 2.9)}\n")                       # 2.0,-2.0
-    print(f"lerp={fmath.lerp(0.0, 10.0, 0.25)}\n")                                      # 2.5
-    print(f"approx={fmath.approx_eq(0.1, 0.1, 0.0001)},{fmath.approx_eq(0.1, 0.2, 0.0001)}\n")
-    print(f"consts={fmath.pi() > 3.0},{fmath.e() > 2.0}\n")
+    println(f"minmax={math.min(2.5, 1.5)},{math.max(2.5, 1.5)}")                # 1.5,2.5 (generic over float)
+    println(f"clamp={math.clamp(5.0, 0.0, 1.0)},{math.clamp(0.0 - 1.0, 0.0, 1.0)}")   # 1.0,0.0
+    println(f"sign={math.sign(0.0 - 3.0)},{math.sign(3.0)},{math.sign(0.0)}")          # -1,1,0 (sign returns int)
+    println(f"round={fmath.round(2.5)},{fmath.round(0.0 - 2.5)},{fmath.round(2.4)}")    # 3.0,-3.0,2.0
+    println(f"trunc={fmath.trunc(2.9)},{fmath.trunc(0.0 - 2.9)}")                       # 2.0,-2.0
+    println(f"lerp={fmath.lerp(0.0, 10.0, 0.25)}")                                      # 2.5
+    println(f"approx={fmath.approx_eq(0.1, 0.1, 0.0001)},{fmath.approx_eq(0.1, 0.2, 0.0001)}")
+    println(f"consts={fmath.pi() > 3.0},{fmath.e() > 2.0}")

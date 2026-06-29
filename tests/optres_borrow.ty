@@ -19,18 +19,18 @@ fn grow_ok(r: Result([int], string)) -> int:
 
 fn main():
     o := Some([10, 20, 30])
-    print("first=" + str(first_or_zero(o)) + "\n")        # 10
+    println("first=" + str(first_or_zero(o)))        # 10
 
     r : Result([int], string) = Ok([1, 2, 3])
     rsnap := r
-    print("grown=" + str(grow_ok(r)) + "\n")              # 4 (push into a copy)
+    println("grown=" + str(grow_ok(r)))              # 4 (push into a copy)
     match r:
         Ok(xs):
-            print("r_len=" + str(len(xs)) + "\n")          # 3, NOT 4
+            println("r_len=" + str(len(xs)))          # 3, NOT 4
         Err(e):
-            print("err\n")
+            println("err")
     match rsnap:
         Ok(xs):
-            print("snap_len=" + str(len(xs)) + "\n")       # 3
+            println("snap_len=" + str(len(xs)))       # 3
         Err(e):
-            print("err\n")
+            println("err")

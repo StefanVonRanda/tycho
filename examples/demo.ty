@@ -6,7 +6,7 @@ fn countdown(n: int):
     for n > 0:                       # condition form
         print(str(n) + " ")
         n = n - 1
-    print("liftoff\n")
+    println("liftoff")
 
 fn classify(n: int) -> string:
     if n < 0:
@@ -15,16 +15,16 @@ fn classify(n: int) -> string:
         return "non-negative"
 
 fn main():
-    print("counting down from 5:\n")
+    println("counting down from 5:")
     countdown(5)
 
-    print("squares:\n")
+    println("squares:")
     for i in range(1, 6):            # counting form
-        print("  " + str(i) + "^2 = " + str(i * i) + "\n")
+        println("  " + str(i) + "^2 = " + str(i * i))
 
     print("evens 0..10: ")
     for i in range(0, 11, 2):
         print(str(i) + " ")
-    print("\n")
+    println("")
 
-    print("the number -3 is " + classify(-3) + "\n")
+    println("the number -3 is " + classify(-3))

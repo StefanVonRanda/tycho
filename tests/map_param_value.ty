@@ -12,4 +12,4 @@ fn main():
     base := ["k": 1]
     r := bump(base)
     # caller's "k" stays 1; the new "n" never appears in the caller
-    print(str(map_get(base, "k", 0)) + " " + str(r) + " " + str(map_get(base, "n", -1)) + "\n")
+    println(str(map_get(base, "k", 0)) + " " + str(r) + " " + str(map_get(base, "n", -1)))

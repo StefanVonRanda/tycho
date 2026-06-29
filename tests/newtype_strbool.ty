@@ -9,16 +9,16 @@ fn label(id: UserId) -> string:                   # a UserId param stays distinc
 fn main():
     a := UserId("alice")
     b := UserId("bob")
-    print(label(a) + " " + label(b) + "\n")        # user:alice user:bob
-    print(to_str(a) + "\n")                         # alice
+    println(label(a) + " " + label(b))        # user:alice user:bob
+    println(to_str(a))                         # alice
     if a == UserId("alice"):
-        print("a==alice\n")
+        println("a==alice")
     if a < b:                                        # ordering sees through to string
-        print("alice<bob\n")
+        println("alice<bob")
     act := Active(true)
     off := Active(false)
     if to_bool(act):
-        print("act on\n")
+        println("act on")
     if to_bool(off):
-        print("BUG\n")
-    print("\n")
+        println("BUG")
+    println("")

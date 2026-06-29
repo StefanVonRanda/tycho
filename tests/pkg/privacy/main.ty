@@ -5,5 +5,5 @@ import "util"
 # `_scale` internally (same-package access to a leading-underscore name is fine).
 # This program only touches the public API across the package boundary.
 fn main():
-    print("doubled(5)=" + str(util.doubled(5)) + "\n")     # 10
-    print("triple(4)=" + str(util.triple(4)) + "\n")       # 12
+    println("doubled(5)=" + str(util.doubled(5)))     # 10
+    println("triple(4)=" + str(util.triple(4)))       # 12

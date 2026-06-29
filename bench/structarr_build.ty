@@ -15,4 +15,4 @@ fn main():
         push(a, Item("y" + str(i), i))
         push(a, Item("z" + str(i), i))
         last = len(a)
-    print(str(last) + "\n")
+    println(str(last))

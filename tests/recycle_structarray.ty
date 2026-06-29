@@ -32,4 +32,4 @@ fn main():
     qb := 0
     for i in range(len(b)):
         qb = qb + b[i].x
-    print("qa=" + str(qa) + " qb=" + str(qb) + " qc=" + str(qc) + "\n")
+    println("qa=" + str(qa) + " qb=" + str(qb) + " qc=" + str(qc))

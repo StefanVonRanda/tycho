@@ -65,7 +65,7 @@ package main
 import "geom"
 fn main():
     r := geom.add(geom.Point(3, 4), geom.Point(1, 2))
-    print("sum = (" + str(r.x) + "," + str(r.y) + ")\n")   # (4,6)
+    println("sum = (" + str(r.x) + "," + str(r.y) + ")")   # (4,6)
 ```
 
 `./tychoc proj/main.ty` reads the `main` package, follows `import "geom"` to

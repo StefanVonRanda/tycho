@@ -103,7 +103,7 @@ hello Ada
 ```
 fn main():
     for i in range(1, 4):
-        print("line " + str(i) + "\n")
+        println("line " + str(i))
 ```
 
 **Use the standard library.** `corelib/` is tycho's stdlib, imported as
@@ -117,7 +117,7 @@ mysite/main.ty:
     package main
     import "core:strings"
     fn main():
-        print(strings.to_upper("hello") + "\n")     # HELLO
+        println(strings.to_upper("hello"))     # HELLO
 ```
 ```
 $ ./tychoc mysite/main.ty && ./mysite/main

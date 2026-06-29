@@ -14,4 +14,4 @@ fn main():
     memo := []int
     for i in range(46):
         push(memo, 0)
-    print(str(fib(45, &memo)) + "\n")
+    println(str(fib(45, &memo)))

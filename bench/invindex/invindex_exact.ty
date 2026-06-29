@@ -97,4 +97,4 @@ fn main():
     q := []string
     push(q, "t0")
     push(q, "t1")
-    print("vocab=" + str(len(postings)) + " checksum=" + str(sum) + " and01=" + str(query_and(postings, tidx, q)) + "\n")
+    println("vocab=" + str(len(postings)) + " checksum=" + str(sum) + " and01=" + str(query_and(postings, tidx, q)))

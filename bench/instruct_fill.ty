@@ -17,4 +17,4 @@ fn main():
         bag := Bag([]int)
         fill(&bag, 200)
         last = len(bag.items)
-    print(str(last) + "\n")
+    println(str(last))

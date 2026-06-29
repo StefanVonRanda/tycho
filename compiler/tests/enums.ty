@@ -34,7 +34,7 @@ fn show(t: Tok) -> string:
             return ")"
 
 fn main():
-    print(name(Green) + "\n")
-    print(show(Num(42.0)) + " / " + show(Op("+")) + " / " + show(LParen) + "\n")
+    println(name(Green))
+    println(show(Num(42.0)) + " / " + show(Op("+")) + " / " + show(LParen))
     cells := [Cell(Red, "a"), Cell(Blue, "b")]
-    print(name(cells[1].color) + "=" + cells[1].label + "\n")
+    println(name(cells[1].color) + "=" + cells[1].label)

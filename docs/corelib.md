@@ -8,7 +8,7 @@ are usable today.
 import "core:math"
 
 fn main():
-    print(f"gcd={math.gcd(12, 18)}\n")
+    println(f"gcd={math.gcd(12, 18)}")
 ```
 
 ## Quick start

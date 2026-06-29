@@ -5,4 +5,4 @@
 # path -- so this locks the literal-part path specifically.)
 fn main():
     x := 1
-    print(f"oops\ {x}\n")
+    println(f"oops\ {x}")

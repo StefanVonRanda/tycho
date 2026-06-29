@@ -19,14 +19,14 @@ fn main():
     i := 0
     for i in range(0, len(ks)):
         out = out + str(ks[i]) + "=" + str(c.idx[ks[i]]) + " "
-    print(out + "\n")              # 1=10 3=30 2=99
+    println(out)              # 1=10 3=30 2=99
 
     c.tags["a"] = 1                 # a string-keyed field map
     c.tags["b"] = 2
     delete c.tags["a"]
-    print(str("a" in c.tags) + " " + str("b" in c.tags) + " n=" + str(len(c.tags)) + "\n")
+    println(str("a" in c.tags) + " " + str("b" in c.tags) + " n=" + str(len(c.tags)))
 
     m := []int: int                 # the original bare-variable form still works
     m[7] = 70
     delete m[7]
-    print("bare=" + str(len(m)) + "\n")
+    println("bare=" + str(len(m)))

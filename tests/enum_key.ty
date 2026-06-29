@@ -15,19 +15,19 @@ fn main():
     m[Red] = 3
     m[Blue] = 5
     m[Green] = 4
-    print(str(map_get(m, Red, 0) + map_get(m, Green, 0) + map_get(m, Blue, 0)) + "\n")
-    print(str(len(m)) + "\n")
+    println(str(map_get(m, Red, 0) + map_get(m, Green, 0) + map_get(m, Blue, 0)))
+    println(str(len(m)))
     if Red in m:
-        print("has red\n")
+        println("has red")
     ks := keys(m)
     total := 0
     i := 0
     for i < len(ks):
         total = total + map_get(m, ks[i], 0)
         i = i + 1
-    print(str(total) + "\n")
+    println(str(total))
     delete m[Blue]
-    print(str(len(m)) + "\n")
+    println(str(len(m)))
     reds := 0
     ks2 := keys(m)
     j := 0
@@ -40,4 +40,4 @@ fn main():
             Blue:
                 reds = reds + 0
         j = j + 1
-    print(str(reds) + "\n")
+    println(str(reds))

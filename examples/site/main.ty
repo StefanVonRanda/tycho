@@ -139,10 +139,10 @@ fn build(site_dir: string, out_dir: string):
 
     order := sort.argsort(dates)                          # oldest first
 
-    print("site   : " + title + " (" + base + ")\n")
-    print("authors: " + str(len(keys(authors))) + "\n")
-    print("pages  : " + str(len(slugs)) + "\n")
-    print("--- pages by date ---\n")
+    println("site   : " + title + " (" + base + ")")
+    println("authors: " + str(len(keys(authors))))
+    println("pages  : " + str(len(slugs)))
+    println("--- pages by date ---")
     links := ""
     for i in range(len(order)):
         j := order[i]
@@ -151,11 +151,11 @@ fn build(site_dir: string, out_dir: string):
         links = links + "<li><a href=\"" + base + "/" + slugs[j] + ".html\">" + esc_html(titles[j]) + "</a></li>\n"
     index := page_html(title, "Index", "", "<ul>\n" + links + "</ul>\n")
     io.write(path.join(out_dir, "index.html"), index)
-    print("index  : index.html  [" + sha256.hex(index)[0:16] + "]  (" + str(len(slugs)) + " links)\n")
+    println("index  : index.html  [" + sha256.hex(index)[0:16] + "]  (" + str(len(slugs)) + " links)")
 
 fn main():
     a := args()
     if len(a) < 3:
-        print("usage: site <site_dir> <out_dir>\n")
+        println("usage: site <site_dir> <out_dir>")
     else:
         build(a[1], a[2])

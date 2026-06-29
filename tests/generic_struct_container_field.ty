@@ -14,9 +14,9 @@ struct Pair($A, $B):
 
 fn main():
     b := Box([1, 2, 3])
-    print(str(b.a[0] + b.a[2]) + "\n")          # 4
+    println(str(b.a[0] + b.a[2]))          # 4
     p := Pair([10, 20], []string: bool)
     p.m["k"] = true
-    print(str(p.xs[1]) + " " + str(p.m["k"]) + "\n")   # 20 true
+    println(str(p.xs[1]) + " " + str(p.m["k"]))   # 20 true
     s := Box(["hi", "yo"])
-    print(s.a[0] + s.a[1] + "\n")               # hiyo
+    println(s.a[0] + s.a[1])               # hiyo

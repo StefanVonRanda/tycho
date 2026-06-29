@@ -9,9 +9,9 @@ fn b2i(b: bool) -> int:
     return 0
 
 fn main():
-    print("round(3.7)       = " + str(fmath.round(3.7)) + "\n")
-    print("trunc(3.7)       = " + str(fmath.trunc(3.7)) + "\n")
-    print("clamp(99,0,10)   = " + str(math.clamp(99.0, 0.0, 10.0)) + "\n")
-    print("max(2.5, 7.5)    = " + str(math.max(2.5, 7.5)) + "\n")
-    print("lerp(0,10,0.25)  = " + str(fmath.lerp(0.0, 10.0, 0.25)) + "\n")
-    print("approx_eq .1+.2=.3 = " + str(b2i(fmath.approx_eq(0.1 + 0.2, 0.3, 0.0001))) + "\n")
+    println("round(3.7)       = " + str(fmath.round(3.7)))
+    println("trunc(3.7)       = " + str(fmath.trunc(3.7)))
+    println("clamp(99,0,10)   = " + str(math.clamp(99.0, 0.0, 10.0)))
+    println("max(2.5, 7.5)    = " + str(math.max(2.5, 7.5)))
+    println("lerp(0,10,0.25)  = " + str(fmath.lerp(0.0, 10.0, 0.25)))
+    println("approx_eq .1+.2=.3 = " + str(b2i(fmath.approx_eq(0.1 + 0.2, 0.3, 0.0001))))

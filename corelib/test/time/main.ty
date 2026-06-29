@@ -9,14 +9,14 @@ fn main():
     s := 0
     for i in range(1000000):
         s = s + i
-    print(f"sum={s}\n")
-    print(f"elapsed_ns_nonneg={time.elapsed_ns(sw) >= 0}\n")
-    print(f"elapsed_us_nonneg={time.elapsed_us(sw) >= 0}\n")
-    print(f"elapsed_ms_nonneg={time.elapsed_ms(sw) >= 0}\n")
-    print(f"unix_positive={time.unix_secs() > 0}\n")
+    println(f"sum={s}")
+    println(f"elapsed_ns_nonneg={time.elapsed_ns(sw) >= 0}")
+    println(f"elapsed_us_nonneg={time.elapsed_us(sw) >= 0}")
+    println(f"elapsed_ms_nonneg={time.elapsed_ms(sw) >= 0}")
+    println(f"unix_positive={time.unix_secs() > 0}")
     # pure conversions are deterministic
-    print(f"conv={time.ns_to_us(2500)},{time.ns_to_ms(2500000)},{time.ns_to_s(3000000000)}\n")
+    println(f"conv={time.ns_to_us(2500)},{time.ns_to_ms(2500000)},{time.ns_to_s(3000000000)}")
     # monotonic: a later reading is never before an earlier one
     a := time.start()
     b := time.start()
-    print(f"monotonic={b >= a}\n")
+    println(f"monotonic={b >= a}")

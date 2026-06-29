@@ -4,4 +4,4 @@
 # validating, then emitted a C string literal gcc would mangle). The reject-fuzzer
 # surfaced it as an accept/reject divergence (divergence_6). Both lexers now reject.
 fn main():
-    print("oops\ here\n")
+    println("oops\ here")

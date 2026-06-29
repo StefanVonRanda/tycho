@@ -15,4 +15,4 @@ fn main():
     nested := [][int]
     reserve(nested, 10)             # nested-array element
     push(nested, [7, 8, 9])
-    print("a=" + str(len(a)) + " " + str(a[1].x) + " t=" + str(t[0].0) + " n=" + str(nested[0][2]) + "\n")
+    println("a=" + str(len(a)) + " " + str(a[1].x) + " t=" + str(t[0].0) + " n=" + str(nested[0][2]))

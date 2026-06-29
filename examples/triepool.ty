@@ -44,5 +44,5 @@ fn main():
     for i in range(0, len(words)):
         new = new + insert(&t, words[i])
     insert(&t, "cat")                                # duplicate: no new word, no new node
-    print("nodes=" + str(len(t.nodes)) + " words=" + str(new) + "\n")
-    print("cat=" + str(has(t, "cat")) + " card=" + str(has(t, "card")) + " ca=" + str(has(t, "ca")) + " cow=" + str(has(t, "cow")) + "\n")
+    println("nodes=" + str(len(t.nodes)) + " words=" + str(new))
+    println("cat=" + str(has(t, "cat")) + " card=" + str(has(t, "card")) + " ca=" + str(has(t, "ca")) + " cow=" + str(has(t, "cow")))

@@ -34,7 +34,7 @@ fn words(state: mut int, k: int) -> string:
 fn main():
     a := args()
     if len(a) < 3:
-        print("usage: gensite <out-dir> <N>\n")
+        println("usage: gensite <out-dir> <N>")
     else:
         dir := a[1]
         n := atoi(a[2])
@@ -49,4 +49,4 @@ fn main():
                 body = body + "- " + words(&state, 5) + "\n\n"
                 body = body + words(&state, 4) + " a < b & c > d\n\n"
             write_file(dir + "/" + str(f) + ".md", body)
-        print("wrote " + str(n) + " pages\n")
+        println("wrote " + str(n) + " pages")

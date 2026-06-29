@@ -10,14 +10,14 @@ fn main():
     m := []string: int
     m["a"] = 1
     m["b"] = 2
-    print("str " + yn("a" in m) + yn("z" in m) + yn(not "z" in m) + yn("a" in m and "b" in m) + "\n")   # T F T T
+    println("str " + yn("a" in m) + yn("z" in m) + yn(not "z" in m) + yn("a" in m and "b" in m))   # T F T T
 
     n := []int: int
     n[5] = 50
     n[7] = 70
-    print("int " + yn(5 in n) + yn(6 in n) + yn(5 in n or 6 in n) + "\n")                                 # T F T
+    println("int " + yn(5 in n) + yn(6 in n) + yn(5 in n or 6 in n))                                 # T F T
 
     # membership is independent of the value type (composite value here)
     c := []string: [int]
     c["xs"] = [1, 2, 3]
-    print("cmp " + yn("xs" in c) + yn("ys" in c) + "\n")                                                  # T F
+    println("cmp " + yn("xs" in c) + yn("ys" in c))                                                  # T F

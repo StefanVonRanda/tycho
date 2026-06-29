@@ -31,29 +31,29 @@ fn sum_pair(p: (int, int)) -> int:            # a tuple as a parameter
 fn main():
     # destructure into fresh locals
     q, r := divmod(17, 5)
-    print("q=" + str(q) + " r=" + str(r) + "\n")
+    println("q=" + str(q) + " r=" + str(r))
 
     # store the tuple whole, then index it
     t := divmod(20, 6)
-    print("t0=" + str(t.0) + " t1=" + str(t.1) + "\n")
+    println("t0=" + str(t.0) + " t1=" + str(t.1))
 
     # a 3-tuple
     lo, hi, sm := stats([4, 1, 7, 3])
-    print("lo=" + str(lo) + " hi=" + str(hi) + " sum=" + str(sm) + "\n")
+    println("lo=" + str(lo) + " hi=" + str(hi) + " sum=" + str(sm))
 
     # tuple as an argument: from a call, and from a literal
-    print("sum_pair=" + str(sum_pair(divmod(17, 5))) + "\n")
-    print("sum_lit=" + str(sum_pair((10, 20))) + "\n")
+    println("sum_pair=" + str(sum_pair(divmod(17, 5))))
+    println("sum_lit=" + str(sum_pair((10, 20))))
 
     # heap element, destructured
     name, dbl := labelled([5, 6, 7])
-    print(name + " len=" + str(len(dbl)) + " last=" + str(dbl[2]) + "\n")
+    println(name + " len=" + str(len(dbl)) + " last=" + str(dbl[2]))
 
     # value semantics: b is an independent deep copy of a
     a := labelled([1, 2])
     b := a
-    print("a0=" + a.0 + " b1len=" + str(len(b.1)) + "\n")
+    println("a0=" + a.0 + " b1len=" + str(len(b.1)))
 
     # tuple equality (element-wise)
     if divmod(17, 5) == (3, 2):
-        print("eq-ok\n")
+        println("eq-ok")

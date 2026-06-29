@@ -135,4 +135,4 @@ fn main():
         j := parse_value(src, n, &pos)
         acc = acc + walk(j)
         k = k + 1
-    print("checksum=" + str(acc) + "\n")
+    println("checksum=" + str(acc))

@@ -5,12 +5,12 @@ import "core:csv"
 
 fn main():
     rows := csv.parse("name,age\nalice,30\nbob,25")
-    print("row count    = " + str(len(rows)) + "\n")            # 3
-    print("header col 1 = " + csv.get(rows, 0, 1) + "\n")       # age
-    print("row 1 name   = " + csv.get(rows, 1, 0) + "\n")       # alice
-    print("row 2 age    = " + csv.get(rows, 2, 1) + "\n")       # 25
-    print("oob cell     = [" + csv.get(rows, 9, 9) + "]\n")     # [] (bounds-safe)
+    println("row count    = " + str(len(rows)))            # 3
+    println("header col 1 = " + csv.get(rows, 0, 1))       # age
+    println("row 1 name   = " + csv.get(rows, 1, 0))       # alice
+    println("row 2 age    = " + csv.get(rows, 2, 1))       # 25
+    println("oob cell     = [" + csv.get(rows, 9, 9) + "]")     # [] (bounds-safe)
 
     # round-trip: parse(stringify(rows)) == rows
     rt := csv.parse(csv.stringify(rows))
-    print("round-trip   = " + str(len(rt)) + " rows\n")         # 3 rows
+    println("round-trip   = " + str(len(rt)) + " rows")         # 3 rows

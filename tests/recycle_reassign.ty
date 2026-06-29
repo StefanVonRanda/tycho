@@ -38,6 +38,6 @@ fn main():
     for i in range(len(f)):
         fs = fs + to_int(f[i])
 
-    print("s=" + str(s - (s / 1000000007) * 1000000007) + "\n")
-    print("fs=" + str(fs) + "\n")
-    print("alen=" + str(len(a)) + " flen=" + str(len(f)) + "\n")
+    println("s=" + str(s - (s / 1000000007) * 1000000007))
+    println("fs=" + str(fs))
+    println("alen=" + str(len(a)) + " flen=" + str(len(f)))

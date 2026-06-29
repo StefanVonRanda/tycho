@@ -10,9 +10,9 @@ fn b2i(b: bool) -> int:
 
 fn main():
     s := "Hi7!"
-    print("is_alpha('H') = " + str(b2i(char.is_alpha(s[0]))) + "\n")   # 1
-    print("is_digit('7') = " + str(b2i(char.is_digit(s[2]))) + "\n")   # 1
-    print("is_alnum('!') = " + str(b2i(char.is_alnum(s[3]))) + "\n")   # 0
-    print("to_upper('i') = " + chr(char.to_upper(s[1])) + "\n")        # I
-    print("digit_val('7')= " + str(char.digit_val(s[2])) + "\n")       # 7
-    print("hex_val('f')  = " + str(char.hex_val("f"[0])) + "\n")       # 15
+    println("is_alpha('H') = " + str(b2i(char.is_alpha(s[0]))))   # 1
+    println("is_digit('7') = " + str(b2i(char.is_digit(s[2]))))   # 1
+    println("is_alnum('!') = " + str(b2i(char.is_alnum(s[3]))))   # 0
+    println("to_upper('i') = " + chr(char.to_upper(s[1])))        # I
+    println("digit_val('7')= " + str(char.digit_val(s[2])))       # 7
+    println("hex_val('f')  = " + str(char.hex_val("f"[0])))       # 15

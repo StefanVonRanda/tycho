@@ -11,8 +11,8 @@ fn b2i(b: bool) -> int:
 
 fn main():
     re := regex.compile("[0-9]+")
-    print("compiled ok  = " + str(b2i(regex.ok(re))) + "\n")                # 1
-    print("is_match     = " + str(b2i(regex.is_match(re, "abc123"))) + "\n")# 1
-    print("first match  = " + regex.matched(re, "order 42, item 99") + "\n")# 42
-    print("match offset = " + str(regex.find(re, "abc123")) + "\n")         # 3
+    println("compiled ok  = " + str(b2i(regex.ok(re))))                # 1
+    println("is_match     = " + str(b2i(regex.is_match(re, "abc123"))))# 1
+    println("first match  = " + regex.matched(re, "order 42, item 99"))# 42
+    println("match offset = " + str(regex.find(re, "abc123")))         # 3
     regex.release(re)

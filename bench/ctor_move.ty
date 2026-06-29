@@ -21,4 +21,4 @@ fn total(xs: [int]) -> int:
 fn main():
     big := build(8000000)     # ~64 MB of longs (plus geometric-growth slack)
     t := (big, 0)             # big is dead -> MOVED into the tuple, no 2nd buffer
-    print(str(total(t.0)) + "\n")
+    println(str(total(t.0)))

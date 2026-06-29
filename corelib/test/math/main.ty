@@ -5,14 +5,14 @@ package main
 import "core:math"
 
 fn main():
-    print(f"abs={math.abs(0 - 7)},{math.abs(7)},{math.abs(0)}\n")                                # abs=7,7,0
-    print(f"minmax={math.min(3, 9)},{math.max(3, 9)}\n")                                         # minmax=3,9
-    print(f"clamp={math.clamp(15, 0, 10)},{math.clamp(0 - 5, 0, 10)},{math.clamp(5, 0, 10)}\n")  # clamp=10,0,5
-    print(f"sign={math.sign(0 - 4)},{math.sign(4)},{math.sign(0)}\n")                            # sign=-1,1,0
-    print(f"gcd={math.gcd(12, 18)},{math.gcd(17, 5)}\n")                                         # gcd=6,1
-    print(f"ipow={math.ipow(2, 10)},{math.ipow(3, 0)},{math.ipow(5, 3)},{math.ipow(2, 0 - 1)}\n")  # ipow=1024,1,125,0
+    println(f"abs={math.abs(0 - 7)},{math.abs(7)},{math.abs(0)}")                                # abs=7,7,0
+    println(f"minmax={math.min(3, 9)},{math.max(3, 9)}")                                         # minmax=3,9
+    println(f"clamp={math.clamp(15, 0, 10)},{math.clamp(0 - 5, 0, 10)},{math.clamp(5, 0, 10)}")  # clamp=10,0,5
+    println(f"sign={math.sign(0 - 4)},{math.sign(4)},{math.sign(0)}")                            # sign=-1,1,0
+    println(f"gcd={math.gcd(12, 18)},{math.gcd(17, 5)}")                                         # gcd=6,1
+    println(f"ipow={math.ipow(2, 10)},{math.ipow(3, 0)},{math.ipow(5, 3)},{math.ipow(2, 0 - 1)}")  # ipow=1024,1,125,0
     # edge: abs(min int64) returns min int64 itself (documented; no UB negation)
     mn := (0 - 9223372036854775807) - 1
-    print(f"absmin={math.abs(mn)}\n")                                                            # absmin=-9223372036854775808
+    println(f"absmin={math.abs(mn)}")                                                            # absmin=-9223372036854775808
     # edge: largest in-range power of two -- must not overflow internally
-    print(f"pow62={math.ipow(2, 62)}\n")                                                         # pow62=4611686018427387904
+    println(f"pow62={math.ipow(2, 62)}")                                                         # pow62=4611686018427387904

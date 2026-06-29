@@ -239,7 +239,7 @@ fn run_demo():
     push(lines, "foo(2)")
     push(lines, "sqrt(0 - 4)")
     for i in range(0, len(lines)):
-        print(lines[i] + "  =>  " + run_line(lines[i], &env) + "\n")
+        println(lines[i] + "  =>  " + run_line(lines[i], &env))
 
 fn run_repl():
     env := []string: float
@@ -247,7 +247,7 @@ fn run_repl():
         line := input()
         if line == "" or line == "quit":
             return
-        print(run_line(line, &env) + "\n")
+        println(run_line(line, &env))
 
 fn main():
     a := args()

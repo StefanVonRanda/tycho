@@ -5,9 +5,9 @@ import "core:hash"
 
 fn main():
     s := "tycho"
-    print("fnv1a_32     = " + hash.to_hex(hash.fnv1a_32(s)) + "\n")
-    print("crc32        = " + hash.to_hex(hash.crc32(s)) + "\n")
-    print("djb2         = " + str(hash.djb2(s)) + "\n")
-    print("sdbm         = " + str(hash.sdbm(s)) + "\n")
+    println("fnv1a_32     = " + hash.to_hex(hash.fnv1a_32(s)))
+    println("crc32        = " + hash.to_hex(hash.crc32(s)))
+    println("djb2         = " + str(hash.djb2(s)))
+    println("sdbm         = " + str(hash.sdbm(s)))
     # the canonical CRC-32 check value
-    print("crc32 check  = " + hash.to_hex(hash.crc32("123456789")) + "\n")  # cbf43926
+    println("crc32 check  = " + hash.to_hex(hash.crc32("123456789")))  # cbf43926

@@ -31,6 +31,6 @@ fn main():
         for j in range(len(b)):
             cross = cross + a[i] * b[j]
 
-    print("s=" + str(s) + "\n")
-    print("t=" + str(t) + "\n")
-    print("cross=" + str(cross) + "\n")
+    println("s=" + str(s))
+    println("t=" + str(t))
+    println("cross=" + str(cross))

@@ -30,4 +30,4 @@ fn main():
     acc := 0
     for i in range(3000):
         acc = acc + total(t)     # borrowed: O(n)/pass; copied: O(n^2)/pass
-    print(str(acc) + "\n")       # 3000 * 1201 = 3603000
+    println(str(acc))       # 3000 * 1201 = 3603000

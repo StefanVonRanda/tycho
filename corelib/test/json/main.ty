@@ -13,33 +13,33 @@ fn main():
     j := json.parse(src)
 
     # round-trip: parse then serialize -> compact canonical form
-    print("round-trip: " + json.stringify(j) + "\n")
+    println("round-trip: " + json.stringify(j))
 
     # accessors
-    print("kind        = " + json.kind(j) + "\n")
-    print("version     = " + str(json.as_num(json.get(j, "version"))) + "\n")
-    print("name        = " + json.as_str(json.get(j, "name")) + "\n")
-    print("nested.n    = " + str(json.as_num(json.get(json.get(j, "nested"), "n"))) + "\n")
-    print("nested.ok   = " + str(b2i(json.as_bool(json.get(json.get(j, "nested"), "ok")))) + "\n")
-    print("tags.len    = " + str(json.len_of(json.get(j, "tags"))) + "\n")
-    print("tags[1]     = " + json.as_str(json.at(json.get(j, "tags"), 1)) + "\n")
-    print("tags[9]     = " + json.kind(json.at(json.get(j, "tags"), 9)) + "\n")
-    print("empty.len   = " + str(json.len_of(json.get(j, "empty"))) + "\n")
-    print("missing     = " + json.kind(json.get(j, "missing")) + "\n")
-    print("nothing     = " + json.kind(json.get(j, "nothing")) + "\n")
+    println("kind        = " + json.kind(j))
+    println("version     = " + str(json.as_num(json.get(j, "version"))))
+    println("name        = " + json.as_str(json.get(j, "name")))
+    println("nested.n    = " + str(json.as_num(json.get(json.get(j, "nested"), "n"))))
+    println("nested.ok   = " + str(b2i(json.as_bool(json.get(json.get(j, "nested"), "ok")))))
+    println("tags.len    = " + str(json.len_of(json.get(j, "tags"))))
+    println("tags[1]     = " + json.as_str(json.at(json.get(j, "tags"), 1)))
+    println("tags[9]     = " + json.kind(json.at(json.get(j, "tags"), 9)))
+    println("empty.len   = " + str(json.len_of(json.get(j, "empty"))))
+    println("missing     = " + json.kind(json.get(j, "missing")))
+    println("nothing     = " + json.kind(json.get(j, "nothing")))
 
     # object keys preserve insertion order
     ks := json.keys(j)
-    print("keys.len    = " + str(len(ks)) + "\n")
-    print("key0        = " + ks[0] + "\n")
+    println("keys.len    = " + str(len(ks)))
+    println("key0        = " + ks[0])
 
     # escape round-trip: a JSON string with \" \n \t round-trips byte-identical
     esc_src := "\"a\\\"b\\nc\\td\""
-    print("esc rt      = " + json.stringify(json.parse(esc_src)) + "\n")
+    println("esc rt      = " + json.stringify(json.parse(esc_src)))
 
     # build a tree programmatically (cross-package variant construction)
     built := json.JArr([json.JNum(1), json.JStr("x"), json.JBool(true), json.JNull])
-    print("built       = " + json.stringify(built) + "\n")
+    println("built       = " + json.stringify(built))
 
     # truncated input fails closed to null (no out-of-bounds abort)
-    print("truncated   = " + json.kind(json.parse("   ")) + "\n")
+    println("truncated   = " + json.kind(json.parse("   ")))

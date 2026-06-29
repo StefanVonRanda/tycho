@@ -42,7 +42,7 @@ fn main():
         acc = acc + str(i)
         if i == 2:
             saved = acc
-    print("1 acc=" + acc + " saved=" + saved + " (expect acc=1234 saved=12)\n")
+    println("1 acc=" + acc + " saved=" + saved + " (expect acc=1234 saved=12)")
 
     # 2. in-place map accumulator: same, for map_set put-in-place.
     counts := []string: int
@@ -51,14 +51,14 @@ fn main():
         counts["k"] = i
         if i == 2:
             snap = counts
-    print("2 counts=" + str(map_get(counts, "k", 0)) + " snap=" + str(map_get(snap, "k", 0)) + " (expect counts=3 snap=2)\n")
+    println("2 counts=" + str(map_get(counts, "k", 0)) + " snap=" + str(map_get(snap, "k", 0)) + " (expect counts=3 snap=2)")
 
     # 3. construction-arg move: mutating the source array after it was built
     #    into Box must not change the stored value (move only if source dead).
     a := [1, 2, 3]
     t := wrap(a, "t")
     a[0] = 99
-    print("3 t=" + str(t.items[0]) + " a=" + str(a[0]) + " (expect t=1 a=99)\n")
+    println("3 t=" + str(t.items[0]) + " a=" + str(a[0]) + " (expect t=1 a=99)")
 
     # 4. heap-struct value copy: `d := b1` is an independent deep copy; mutating
     #    d's array element and string field must not touch b1.
@@ -66,20 +66,20 @@ fn main():
     d := b1
     d.items[0] = 77
     d.tag = "changed"
-    print("4 b1=" + str(b1.items[0]) + " b1.tag=" + b1.tag + " (expect 5 orig)\n")
+    println("4 b1=" + str(b1.items[0]) + " b1.tag=" + b1.tag + " (expect 5 orig)")
 
     # 5. move-on-last-use guard: e is read AFTER `f := e`, so f must be a copy.
     e := [10, 20]
     f := e
     f[0] = 88
-    print("5 e=" + str(e[0]) + " f=" + str(f[0]) + " (expect e=10 f=88)\n")
+    println("5 e=" + str(e[0]) + " f=" + str(f[0]) + " (expect e=10 f=88)")
 
     # 6. array literal stores its elements: `[inner, inner]` must deep-copy a
     #    heap place element, so mutating the source after doesn't reach the array.
     inner := [1, 2]
     nested := [inner, inner]
     inner[0] = 99
-    print("6 nested[0][0]=" + str(nested[0][0]) + " inner[0]=" + str(inner[0]) + " (expect 1 99)\n")
+    println("6 nested[0][0]=" + str(nested[0][0]) + " inner[0]=" + str(inner[0]) + " (expect 1 99)")
 
     # 7. enum payload: W(a) stores a's array; mutating a after must not reach it.
     a7 := [3, 4]
@@ -89,7 +89,7 @@ fn main():
     match w:
         W(v):
             wv = v[0]
-    print("7 W payload=" + str(wv) + " a7=" + str(a7[0]) + " (expect 3 99)\n")
+    println("7 W payload=" + str(wv) + " a7=" + str(a7[0]) + " (expect 3 99)")
 
     # 8. Result Ok payload: same, through the Ok(...) box.
     a8 := [5, 6]
@@ -101,14 +101,14 @@ fn main():
             rv = v[0]
         Err(e):
             rv = 0 - 1
-    print("8 Ok payload=" + str(rv) + " a8=" + str(a8[0]) + " (expect 5 99)\n")
+    println("8 Ok payload=" + str(rv) + " a8=" + str(a8[0]) + " (expect 5 99)")
 
     # 9. return path: returning a place field must deep-copy, so mutating the
     #    returned value can't reach the source struct.
     bx := Box([7, 8], "r")
     got := first_items(bx)
     got[0] = 99
-    print("9 bx.items[0]=" + str(bx.items[0]) + " got[0]=" + str(got[0]) + " (expect 7 99)\n")
+    println("9 bx.items[0]=" + str(bx.items[0]) + " got[0]=" + str(got[0]) + " (expect 7 99)")
 
     # 10. projection write mutates the element in place; binding an element to a
     #     local then copies it (value semantics) -- the local must be independent.
@@ -117,9 +117,9 @@ fn main():
     boxes[0].items[0] = 50
     snapb := boxes[0]
     snapb.items[0] = 77
-    print("10 boxes=" + str(boxes[0].items[0]) + " snapb=" + str(snapb.items[0]) + " (expect 50 77)\n")
+    println("10 boxes=" + str(boxes[0].items[0]) + " snapb=" + str(snapb.items[0]) + " (expect 50 77)")
 
     # 11. mut: the mutation reaches the caller (the intended direction).
     bxi := Box([9], "i")
     bump_first(&bxi)
-    print("11 bxi=" + str(bxi.items[0]) + " (expect 100)\n")
+    println("11 bxi=" + str(bxi.items[0]) + " (expect 100)")

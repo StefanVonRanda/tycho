@@ -129,23 +129,23 @@ fn main():
     t4 := Add(Num(0), Mul(Num(4), Num(1)))
     e := Add(Add(Add(t1, t2), t3), t4)
 
-    print("before: " + show(e) + "\n")
-    print("before_size=" + str(size(e)) + "\n")
+    println("before: " + show(e))
+    println("before_size=" + str(size(e)))
 
     opt := simplify(e)
 
-    print("after:  " + show(opt) + "\n")
-    print("after_size=" + str(size(opt)) + "\n")
+    println("after:  " + show(opt))
+    println("after_size=" + str(size(opt)))
 
     # value semantics: simplify consumed a copy; the original is untouched
-    print("orig_intact: " + show(e) + "\n")
-    print("orig_size=" + str(size(e)) + "\n")
+    println("orig_intact: " + show(e))
+    println("orig_size=" + str(size(e)))
 
     # idempotence: a second pass changes nothing
     opt2 := simplify(opt)
     if opt == opt2:
-        print("idempotent\n")
+        println("idempotent")
 
     # pure-constant program folds to a single literal
     k := Mul(Add(Num(6), Num(4)), Sub(Num(8), Num(5)))
-    print("const: " + show(k) + " => " + show(simplify(k)) + "\n")
+    println("const: " + show(k) + " => " + show(simplify(k)))

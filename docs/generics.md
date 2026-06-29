@@ -32,14 +32,14 @@ fn first(xs: [$T]) -> Option(T):
 fn main():
     match first([3, 1, 2]):                     # T = int
         Some(x):
-            print(str(x) + "\n")                # 3
+            println(str(x))                # 3
         None:
-            print("empty\n")
+            println("empty")
     match first(["a", "b"]):                    # T = string
         Some(s):
-            print(s + "\n")                     # a
+            println(s)                     # a
         None:
-            print("empty\n")
+            println("empty")
 ```
 
 ```
@@ -51,7 +51,7 @@ struct Pair($A, $B):
 
 fn main():
     p := Pair(7, "hi")                          # infers Pair($A=int, $B=string)
-    print(str(p.first) + " " + p.second + "\n")
+    println(str(p.first) + " " + p.second)
 ```
 
 `first([3, 1, 2])` compiles to a concrete `first` specialized for `[int]` — the

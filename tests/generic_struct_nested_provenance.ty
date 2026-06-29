@@ -16,6 +16,6 @@ struct W($T):
 
 fn main():
     w := W(Box(7), 3)
-    print(str(w.inner.v + w.n) + "\n")          # 10
+    println(str(w.inner.v + w.n))          # 10
     s := W(Box("hi"), 0)
     print(s.inner.v + "!\n")                     # hi!

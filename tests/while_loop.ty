@@ -6,7 +6,7 @@ fn main():
     for i < 10:
         sum = sum + i
         i = i + 1
-    print("sum=" + str(sum) + "\n")          # 45
+    println("sum=" + str(sum))          # 45
 
     a := 0
     pairs := 0
@@ -16,7 +16,7 @@ fn main():
             pairs = pairs + 1
             b = b + 1
         a = a + 1
-    print("pairs=" + str(pairs) + "\n")      # 9
+    println("pairs=" + str(pairs))      # 9
 
     s := "hello"                              # string scan (the lexer pattern)
     j := 0
@@ -25,4 +25,4 @@ fn main():
         if s[j] == 108:                       # 'l'
             ls = ls + 1
         j = j + 1
-    print("Ls=" + str(ls) + "\n")            # 2
+    println("Ls=" + str(ls))            # 2

@@ -12,5 +12,5 @@ fn main():
         cl := fn() -> int: len(v)
         push(v, 1)
         acc = acc + cl()
-    print(str(acc) + "\n")
-    print(str(len(v)) + "\n")
+    println(str(acc))
+    println(str(len(v)))

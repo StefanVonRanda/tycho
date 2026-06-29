@@ -25,4 +25,4 @@ fn main():
     for k in range(0, m):
         e := json.at(j, k)
         acc = acc + json.as_num(json.get(e, "id")) + json.as_num(json.get(e, "cat")) + json.as_num(json.get(e, "amt")) + json.len_of(json.get(e, "name"))
-    print(str(acc) + "\n")
+    println(str(acc))

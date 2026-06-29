@@ -13,5 +13,5 @@ fn repeat(s: string, n: int) -> string:
 
 fn main():
     big := repeat("ab", 25000)
-    print("length: " + str(len(big)) + "\n")    # 50000
-    print("head: " + substr(big, 0, 6) + "\n")  # ababab
+    println("length: " + str(len(big)))    # 50000
+    println("head: " + substr(big, 0, 6))  # ababab

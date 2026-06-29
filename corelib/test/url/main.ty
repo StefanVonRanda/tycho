@@ -10,37 +10,37 @@ fn b2i(b: bool) -> int:
 
 fn main():
     # ---- encode: component-style (%20 for space), uppercase hex ----
-    print("enc space   = " + url.encode("hello world") + "\n")     # hello%20world
-    print("enc form    = " + url.encode_form("hello world") + "\n") # hello+world
-    print("enc reserved= " + url.encode("a+b=c&d") + "\n")          # a%2Bb%3Dc%26d
-    print("enc unres   = " + url.encode("safe-_.~") + "\n")         # safe-_.~ (unchanged)
-    print("enc punct   = " + url.encode("/?#") + "\n")              # %2F%3F%23
+    println("enc space   = " + url.encode("hello world"))     # hello%20world
+    println("enc form    = " + url.encode_form("hello world")) # hello+world
+    println("enc reserved= " + url.encode("a+b=c&d"))          # a%2Bb%3Dc%26d
+    println("enc unres   = " + url.encode("safe-_.~"))         # safe-_.~ (unchanged)
+    println("enc punct   = " + url.encode("/?#"))              # %2F%3F%23
 
     # ---- decode ----
-    print("dec space   = " + url.decode("hello%20world") + "\n")    # hello world
-    print("dec form    = " + url.decode_form("hello+world") + "\n") # hello world
-    print("dec plus    = " + url.decode("a%2Bb") + "\n")            # a+b
-    print("dec formmix = " + url.decode_form("a+b%2Bc") + "\n")     # a b+c
+    println("dec space   = " + url.decode("hello%20world"))    # hello world
+    println("dec form    = " + url.decode_form("hello+world")) # hello world
+    println("dec plus    = " + url.decode("a%2Bb"))            # a+b
+    println("dec formmix = " + url.decode_form("a+b%2Bc"))     # a b+c
 
     # ---- lenient decode: malformed escapes pass through literally ----
-    print("dec badhex  = " + url.decode("%ZZ") + "\n")              # %ZZ
-    print("dec short   = " + url.decode("%2") + "\n")               # %2
+    println("dec badhex  = " + url.decode("%ZZ"))              # %ZZ
+    println("dec short   = " + url.decode("%2"))               # %2
 
     # ---- round-trip ----
     msg := "key=val&x=1 2/3?ok"
     rt := url.decode(url.encode(msg))
-    print(f"rt_ok={b2i(rt == msg)}\n")                              # 1
+    println(f"rt_ok={b2i(rt == msg)}")                              # 1
     fmsg := "a b+c"
     frt := url.decode_form(url.encode_form(fmsg))
-    print(f"form_rt_ok={b2i(frt == fmsg)}\n")                       # 1
+    println(f"form_rt_ok={b2i(frt == fmsg)}")                       # 1
 
     # ---- high (non-NUL) bytes encode as %XX and round-trip ----
     bin := chr(233) + chr(255) + chr(1)
     be := url.encode(bin)
-    print("bin enc     = " + be + "\n")                             # %E9%FF%01
+    println("bin enc     = " + be)                             # %E9%FF%01
     db := url.decode(be)
-    print(f"bin_ok={b2i(url.encode(db) == be)} len={len(db)}\n")    # 1 3
+    println(f"bin_ok={b2i(url.encode(db) == be)} len={len(db)}")    # 1 3
 
     # ---- byte-safe strings (A1): a decoded NUL is preserved ----
     z := url.decode("%00")
-    print(f"decode_00_len={len(z)}\n")                              # 1
+    println(f"decode_00_len={len(z)}")                              # 1

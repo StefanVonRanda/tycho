@@ -10,5 +10,5 @@ fn classify(n: int) -> string:
 
 fn main():
     print(greet("world"))
-    print("the number -3 is " + classify(-3) + "\n")
-    print("the number 7 is " + classify(7) + "\n")
+    println("the number -3 is " + classify(-3))
+    println("the number 7 is " + classify(7))

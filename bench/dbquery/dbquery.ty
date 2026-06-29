@@ -74,4 +74,4 @@ fn main():
         q = q + 1
 
     sqlite3_close(db)
-    print(str(acc) + "\n")
+    println(str(acc))

@@ -5,4 +5,4 @@ import "secretlib"
 # be rejected by the resolver. `secretlib._scale` starts with '_', so this is a
 # privacy violation even though the symbol exists.
 fn main():
-    print(str(secretlib._scale(5, 2)) + "\n")
+    println(str(secretlib._scale(5, 2)))

@@ -8,22 +8,22 @@ fn main():
     counts[5] = 100
     counts[0] = 7 # key 0
     counts[5] = map_get(counts, 5, 0) + 1
-    print("c5=" + str(map_get(counts, 5, 0 - 1)) + "\n")    # 101
-    print("c0=" + str(map_get(counts, 0, 0 - 1)) + "\n")    # 7
-    print("miss=" + str(map_get(counts, 9, 0 - 1)) + "\n")  # -1
+    println("c5=" + str(map_get(counts, 5, 0 - 1)))    # 101
+    println("c0=" + str(map_get(counts, 0, 0 - 1)))    # 7
+    println("miss=" + str(map_get(counts, 9, 0 - 1)))  # -1
     if 0 in counts:
-        print("has0=yes\n")
+        println("has0=yes")
     if not 9 in counts:
-        print("has9=no\n")
-    print("len=" + str(len(counts)) + "\n")        # 2
+        println("has9=no")
+    println("len=" + str(len(counts)))        # 2
 
     # value semantics: a snapshot does not see later mutations
     snap := counts
     counts[5] = 999
-    print("snap5=" + str(map_get(snap, 5, 0)) + " now5=" + str(map_get(counts, 5, 0)) + "\n")  # 101 999
+    println("snap5=" + str(map_get(snap, 5, 0)) + " now5=" + str(map_get(counts, 5, 0)))  # 101 999
 
     delete counts[5]
-    print("afterdel=" + str(len(counts)) + "\n")   # 1
+    println("afterdel=" + str(len(counts)))   # 1
 
     # histogram accumulator + keys() iteration (sum of distinct keys)
     h := []int: int
@@ -36,18 +36,18 @@ fn main():
     i := 0
     for i in range(0, len(data)):
         h[data[i]] = map_get(h, data[i], 0) + 1
-    print("h3=" + str(map_get(h, 3, 0)) + " h7=" + str(map_get(h, 7, 0)) + "\n")   # 3 2
+    println("h3=" + str(map_get(h, 3, 0)) + " h7=" + str(map_get(h, 7, 0)))   # 3 2
     sumk := 0
     for kk in keys(h):
         sumk = sumk + kk
-    print("sumk=" + str(sumk) + "\n")              # 3+7 = 10
+    println("sumk=" + str(sumk))              # 3+7 = 10
 
     # [int: float] values
     fm := []int: float
     fm[1] = 1.5
     fm[2] = 2.5
     fm[1] = map_get(fm, 1, 0.0) + 0.25
-    print("fm1=" + str(fm_round(map_get(fm, 1, 0.0))) + " fm2=" + str(fm_round(map_get(fm, 2, 0.0))) + "\n")   # 175 250
+    println("fm1=" + str(fm_round(map_get(fm, 1, 0.0))) + " fm2=" + str(fm_round(map_get(fm, 2, 0.0))))   # 175 250
 
 fn fm_round(x: float) -> int:        # avoid float-print formatting differences
     return to_int(x * 100.0)

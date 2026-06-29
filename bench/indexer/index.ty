@@ -78,7 +78,7 @@ fn merge(into: mut [string: int], add: [string: int]):
 fn main():
     a := args()                          # a[0] is the program name
     if len(a) < 2:
-        print("usage: index <corpus-dir>\n")
+        println("usage: index <corpus-dir>")
         return
     dir := a[1]
 
@@ -112,4 +112,4 @@ fn main():
         tokens = tokens + c
         csum = csum + len(k) * c
 
-    print("files=" + str(sent) + " tokens=" + str(tokens) + " distinct=" + str(len(m)) + " csum=" + str(csum) + "\n")
+    println("files=" + str(sent) + " tokens=" + str(tokens) + " distinct=" + str(len(m)) + " csum=" + str(csum))

@@ -25,6 +25,6 @@ fn main():
     a := Vec(1, 2)
     b := Vec(3, 4)
     c := a.add(b)                   # method, variable receiver -> add(a, b)
-    print(f"dot={a.dot(b)} c=({c.x},{c.y}) n1={c.norm1()} scx={a.scaled(3).x}\n")
+    println(f"dot={a.dot(b)} c=({c.x},{c.y}) n1={c.norm1()} scx={a.scaled(3).x}")
     n := 21
-    print(f"dbl={n.doubled()}\n")   # int receiver
+    println(f"dbl={n.doubled()}")   # int receiver

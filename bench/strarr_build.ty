@@ -10,4 +10,4 @@ fn main():
         push(a, str(i) + "y")
         push(a, str(i) + "z")
         last = len(a)
-    print(str(last) + "\n")
+    println(str(last))

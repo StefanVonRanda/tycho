@@ -2,14 +2,14 @@ fn sq(n: int) -> int:
     return n * n
 
 fn main():
-    print("squares:\n")
+    println("squares:")
     i := 1
     for i < 6:
-        print("sq(" + str(i) + ") = " + str(sq(i)) + "\n")
+        println("sq(" + str(i) + ") = " + str(sq(i)))
         i = i + 1
     total := 0
     j := 1
     for j < 101:
         total = total + j
         j = j + 1
-    print("sum 1..100 = " + str(total) + "\n")
+    println("sum 1..100 = " + str(total))

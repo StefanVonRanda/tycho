@@ -26,4 +26,4 @@ fn main():
     s := 0
     for i in range(len(a)):
         s = s + a[i]
-    print(str(s - (s / 1000003) * 1000003) + "\n")
+    println(str(s - (s / 1000003) * 1000003))

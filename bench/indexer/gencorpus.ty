@@ -20,7 +20,7 @@ fn word(n: int) -> string:
 fn main():
     a := args()                        # a[0] is the program name
     if len(a) < 2:
-        print("usage: gencorpus <out-dir>\n")
+        println("usage: gencorpus <out-dir>")
         return
     dir := a[1]
 
@@ -43,6 +43,6 @@ fn main():
                 body = body + " "
         path := dir + "/doc" + str(f) + ".txt"
         if not write_file(path, body):
-            print("write failed: " + path + "\n")
+            println("write failed: " + path)
             return
-    print("wrote " + str(n_files) + " files to " + dir + "\n")
+    println("wrote " + str(n_files) + " files to " + dir)

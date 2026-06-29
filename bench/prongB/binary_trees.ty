@@ -30,7 +30,7 @@ fn main():
     maxd := 18
 
     stretch := maxd + 1
-    print("stretch tree of depth " + str(stretch) + " check: " + str(check(make(stretch))) + "\n")
+    println("stretch tree of depth " + str(stretch) + " check: " + str(check(make(stretch))))
 
     longlived := make(maxd)
 
@@ -39,6 +39,6 @@ fn main():
         sum := 0
         for i in range(iters):
             sum = sum + check(make(d))
-        print(str(iters) + " trees of depth " + str(d) + " check: " + str(sum) + "\n")
+        println(str(iters) + " trees of depth " + str(d) + " check: " + str(sum))
 
-    print("long-lived tree of depth " + str(maxd) + " check: " + str(check(longlived)) + "\n")
+    println("long-lived tree of depth " + str(maxd) + " check: " + str(check(longlived)))

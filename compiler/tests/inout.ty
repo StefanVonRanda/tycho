@@ -23,14 +23,14 @@ fn record(s: mut Stats, value: int):
 fn main():
     x := 41
     incr(&x)
-    print("incr: " + str(x) + "\n")                  # 42
+    println("incr: " + str(x))                  # 42
 
     a := 1
     b := 2
     swap(&a, &b)                                      # &a and &b are distinct
-    print("swap: " + str(a) + " " + str(b) + "\n")   # 2 1
+    println("swap: " + str(a) + " " + str(b))   # 2 1
 
     st := Stats(0, 0)
     for i in range(1, 5):
         record(&st, i)                               # mutate the caller's struct
-    print("sum=" + str(st.sum) + " count=" + str(st.count) + "\n")  # sum=10 count=4
+    println("sum=" + str(st.sum) + " count=" + str(st.count))  # sum=10 count=4

@@ -36,7 +36,7 @@ fn main():
     if sqlite3_prepare_v2(db, "SELECT id, name FROM t ORDER BY id", -1, &st, null) != 0:
         die("sqlite: prepare failed")
     for sqlite3_step(st) == 100:                 # 100 = SQLITE_ROW
-        print(f"{sqlite3_column_int64(st, 0)}:{sqlite3_column_text(st, 1)}\n")
+        println(f"{sqlite3_column_int64(st, 0)}:{sqlite3_column_text(st, 1)}")
     sqlite3_finalize(st)
 
     # an aggregate query
@@ -44,7 +44,7 @@ fn main():
     if sqlite3_prepare_v2(db, "SELECT count(*), sum(id) FROM t", -1, &agg, null) != 0:
         die("sqlite: prepare agg failed")
     if sqlite3_step(agg) == 100:
-        print(f"count={sqlite3_column_int64(agg, 0)} sum={sqlite3_column_int64(agg, 1)}\n")
+        println(f"count={sqlite3_column_int64(agg, 0)} sum={sqlite3_column_int64(agg, 1)}")
     sqlite3_finalize(agg)
 
     sqlite3_close(db)

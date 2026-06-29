@@ -6,21 +6,21 @@ fn main():
     path := "/tmp/tycho_write_file_test.dat"
     body := "alpha\nbeta\ngamma\n"
     if write_file(path, body):
-        print("write=ok\n")
+        println("write=ok")
     else:
-        print("write=fail\n")
+        println("write=fail")
 
     back := read_file(path)
     if back == body:
-        print("roundtrip=match\n")
+        println("roundtrip=match")
     else:
-        print("roundtrip=DIFFER\n")
-    print("len=" + str(len(back)) + "\n")           # 17
+        println("roundtrip=DIFFER")
+    println("len=" + str(len(back)))           # 17
 
     if write_file(path, "hi"):                       # overwrite truncates
-        print("after=" + read_file(path) + "\n")     # hi
+        println("after=" + read_file(path))     # hi
 
     if write_file("/no_such_dir_zzz/x", "y"):        # unwritable path -> false
-        print("bad=ok\n")
+        println("bad=ok")
     else:
-        print("bad=handled\n")
+        println("bad=handled")

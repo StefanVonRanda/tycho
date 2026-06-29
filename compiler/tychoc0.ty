@@ -1142,7 +1142,7 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         if nstep == 1:                        # bare `delete m[k]` -> SAssign (keeps tychoc's in-place rewrite path)
             return SAssign(name, call, _sl)
         return SFieldAssign(lv, call, _sl)
-    elif t.kind == TIdent and t.text == "println":   # desugar: print(x + "\n")
+    elif t.kind == TIdent and t.text == "println":   # desugar: println(x)
         pos = pos + 1
         expect(toks, &pos, TLParen)
         e := parse_expr(toks, &pos)

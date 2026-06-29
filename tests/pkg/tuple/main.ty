@@ -14,6 +14,6 @@ fn main():
     r := checked(5)
     match r:
         Ok(q):
-            print(str(p.x) + "," + str(p.y) + "," + str(k) + " ok=" + str(q.x) + "\n")   # 7,8,70 ok=5
+            println(str(p.x) + "," + str(p.y) + "," + str(k) + " ok=" + str(q.x))   # 7,8,70 ok=5
         Err(e):
-            print(e + "\n")
+            println(e)

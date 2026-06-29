@@ -16,17 +16,17 @@ fn make(n: int) -> [float]:
 
 fn main():
     xs := [1.5, 2.5, 3.0]
-    print("len=" + str(len(xs)) + " sum=" + str(total(xs)) + "\n")   # 3, 7.0
+    println("len=" + str(len(xs)) + " sum=" + str(total(xs)))   # 3, 7.0
     xs[0] = 10.0
-    print("set0=" + str(xs[0]) + "\n")                               # 10.0
+    println("set0=" + str(xs[0]))                               # 10.0
     ys := xs                      # value-semantic copy
     push(ys, 99.0)
-    print("xs_len=" + str(len(xs)) + " ys_len=" + str(len(ys)) + "\n")  # 3, 4 (independent)
+    println("xs_len=" + str(len(xs)) + " ys_len=" + str(len(ys)))  # 3, 4 (independent)
     scale(&xs, 2.0)               # mut mutation
-    print("scaled0=" + str(xs[0]) + " scaled_sum=" + str(total(xs)) + "\n")  # 20.0, 31.0
+    println("scaled0=" + str(xs[0]) + " scaled_sum=" + str(total(xs)))  # 20.0, 31.0
     zs := make(4)                 # returned [float]
-    print("made=" + str(zs[0]) + "," + str(zs[1]) + "," + str(zs[3]) + " sum=" + str(total(zs)) + "\n")  # 0,0.5,1.5 sum 3
+    println("made=" + str(zs[0]) + "," + str(zs[1]) + "," + str(zs[3]) + " sum=" + str(total(zs)))  # 0,0.5,1.5 sum 3
     a := [1.0, 2.0]
     b := [1.0, 2.0]
     if a == b:
-        print("eq-ok\n")
+        println("eq-ok")

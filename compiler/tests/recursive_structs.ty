@@ -27,9 +27,9 @@ fn main():
     root := Node(1, []Node)
     push(root.kids, leaf(2))
     push(root.kids, branch)             # pushes a deep copy of branch
-    print("sum=" + str(sum(root)) + "\n")       # 15
-    print("depth=" + str(depth(root)) + "\n")   # 3
-    print("kids=" + str(len(root.kids)) + " gkids=" + str(len(root.kids[1].kids)) + "\n")
+    println("sum=" + str(sum(root)))       # 15
+    println("depth=" + str(depth(root)))   # 3
+    println("kids=" + str(len(root.kids)) + " gkids=" + str(len(root.kids[1].kids)))
     snap := root                        # deep copy
     push(root.kids, leaf(9))
-    print("snap_kids=" + str(len(snap.kids)) + " root_kids=" + str(len(root.kids)) + "\n")
+    println("snap_kids=" + str(len(snap.kids)) + " root_kids=" + str(len(root.kids)))

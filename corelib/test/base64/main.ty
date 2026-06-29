@@ -11,39 +11,39 @@ fn b2i(b: bool) -> int:
 
 fn main():
     # ---- the RFC 4648 test vectors (encode) ----
-    print("enc ''     = [" + base64.encode("") + "]\n")        # []
-    print("enc f      = " + base64.encode("f") + "\n")         # Zg==
-    print("enc fo     = " + base64.encode("fo") + "\n")        # Zm8=
-    print("enc foo    = " + base64.encode("foo") + "\n")       # Zm9v
-    print("enc foob   = " + base64.encode("foob") + "\n")      # Zm9vYg==
-    print("enc fooba  = " + base64.encode("fooba") + "\n")     # Zm9vYmE=
-    print("enc foobar = " + base64.encode("foobar") + "\n")    # Zm9vYmFy
+    println("enc ''     = [" + base64.encode("") + "]")        # []
+    println("enc f      = " + base64.encode("f"))         # Zg==
+    println("enc fo     = " + base64.encode("fo"))        # Zm8=
+    println("enc foo    = " + base64.encode("foo"))       # Zm9v
+    println("enc foob   = " + base64.encode("foob"))      # Zm9vYg==
+    println("enc fooba  = " + base64.encode("fooba"))     # Zm9vYmE=
+    println("enc foobar = " + base64.encode("foobar"))    # Zm9vYmFy
 
     # ---- decode the vectors back (text -> exact) ----
-    print("dec Zg==   = " + base64.decode("Zg==") + "\n")      # f
-    print("dec Zm8=   = " + base64.decode("Zm8=") + "\n")      # fo
-    print("dec foobar = " + base64.decode("Zm9vYmFy") + "\n")  # foobar
+    println("dec Zg==   = " + base64.decode("Zg=="))      # f
+    println("dec Zm8=   = " + base64.decode("Zm8="))      # fo
+    println("dec foobar = " + base64.decode("Zm9vYmFy"))  # foobar
 
     # ---- decode is lenient: newlines in wrapped Base64 are skipped ----
     wrapped := "Zm9v" + "\n" + "YmFy"
-    print("dec wrap   = " + base64.decode(wrapped) + "\n")     # foobar
+    println("dec wrap   = " + base64.decode(wrapped))     # foobar
 
     # ---- text round-trip ----
     msg := "Hello, tycho! 1234567890"
     rt := base64.decode(base64.encode(msg))
-    print(f"text_rt_ok = {b2i(rt == msg)}\n")                  # 1
+    println(f"text_rt_ok = {b2i(rt == msg)}")                  # 1
 
     # ---- non-NUL binary (high bytes 252..255) round-trips exactly ----
     bin := chr(255) + chr(254) + chr(253) + chr(252)
     enc := base64.encode(bin)
     encu := base64.encode_url(bin)
-    print("bin enc    = " + enc + "\n")                        # //79/A==
-    print("bin encurl = " + encu + "\n")                       # __79_A
+    println("bin enc    = " + enc)                        # //79/A==
+    println("bin encurl = " + encu)                       # __79_A
     # decode each form, re-encode to standard, and compare (avoids printing raw bytes)
     d1 := base64.decode(enc)
     d2 := base64.decode(encu)
-    print(f"bin_std_ok = {b2i(base64.encode(d1) == enc)} len={len(d1)}\n")   # 1 len=4
-    print(f"bin_url_ok = {b2i(base64.encode(d2) == enc)} len={len(d2)}\n")   # 1 len=4
+    println(f"bin_std_ok = {b2i(base64.encode(d1) == enc)} len={len(d1)}")   # 1 len=4
+    println(f"bin_url_ok = {b2i(base64.encode(d2) == enc)} len={len(d2)}")   # 1 len=4
 
     # ---- url-safe of a value that hits index 62/63 differs from standard ----
-    print(f"url_differs = {b2i(base64.encode_url(bin) != base64.encode(bin))}\n")  # 1
+    println(f"url_differs = {b2i(base64.encode_url(bin) != base64.encode(bin))}")  # 1

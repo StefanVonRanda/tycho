@@ -20,4 +20,4 @@ fn sum(t: Tree) -> int:
 
 fn main():
     a := Branch([Leaf(1), Leaf(2), Branch([Leaf(3), Leaf(4)])])
-    print("sum=" + str(sum(a)) + "\n")        # 1+2+3+4 = 10
+    println("sum=" + str(sum(a)))        # 1+2+3+4 = 10

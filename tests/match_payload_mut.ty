@@ -21,7 +21,7 @@ fn main():
             chk = ys[0] * 100 + len(ys)
         Empty:
             chk = 0 - 1
-    print("enum got=" + str(got) + " w-intact=" + str(chk) + "\n")   # 54 103
+    println("enum got=" + str(got) + " w-intact=" + str(chk))   # 54 103
 
     o := Some([7, 8])
     og := 0
@@ -37,4 +37,4 @@ fn main():
             oc = ws[0]
         None:
             oc = 0 - 1
-    print("opt og=" + str(og) + " o-intact=" + str(oc) + "\n")        # 99 7
+    println("opt og=" + str(og) + " o-intact=" + str(oc))        # 99 7

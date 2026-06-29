@@ -15,7 +15,7 @@ fn main():
     for i < 5:
         push(ps, P(i, i * 10, i + 100))
         i = i + 1
-    print("len=" + str(len(ps)) + "\n")          # 5
+    println("len=" + str(len(ps)))          # 5
 
     # field writes (scatter)
     ps[2].x = 99
@@ -29,8 +29,8 @@ fn main():
         sx = sx + ps[i].x
         sz = sz + ps[i].z
         i = i + 1
-    print("sumx=" + str(sx) + " sumz=" + str(sz) + "\n")   # 0+1+99+3+4=107 ; 100+101+103+103+104=511
+    println("sumx=" + str(sx) + " sumz=" + str(sz))   # 0+1+99+3+4=107 ; 100+101+103+103+104=511
 
     # whole-element gather
     g := ps[3]
-    print("gather x=" + str(g.x) + " y=" + str(g.y) + " z=" + str(g.z) + "\n")   # 3 30 103
+    println("gather x=" + str(g.x) + " y=" + str(g.y) + " z=" + str(g.z))   # 3 30 103

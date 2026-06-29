@@ -108,9 +108,9 @@ fn index_of(xs: [int], target: int) -> Option(int):
 fn main():
     match index_of([10, 20, 30], 20):
         Some(i):             # i is bound to the value (an int here)
-            print("found at " + str(i) + "\n")
+            println("found at " + str(i))
         None:
-            print("not found\n")
+            println("not found")
 ```
 
 `None` has no type of its own, so it is only allowed where the expected type is already
@@ -141,9 +141,9 @@ fn checked_div(a: int, b: int) -> Result(int, string):
 fn main():
     match checked_div(10, 0):
         Ok(v):
-            print("= " + str(v) + "\n")
+            println("= " + str(v))
         Err(e):
-            print("error: " + e + "\n")
+            println("error: " + e)
 ```
 
 Like `None`, a bare `Ok(v)` or `Err(e)` fixes only one of the two type parameters, so the

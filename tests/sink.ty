@@ -9,19 +9,19 @@ fn dbl(xs: sink [int]) -> int:
 
 fn main():
     a := [1]
-    print("1 a=" + str(dbl(a)) + "\n")               # dead after -> adopt: 101
+    println("1 a=" + str(dbl(a)))               # dead after -> adopt: 101
 
     b := [5]                                         # to keep b, hand the sink a copy:
     keep := b                                        # `keep := b` copies (b is read again below)
     x := dbl(keep)                                   # keep is dead -> adopt; b untouched
-    print("2 b=" + str(b[0]) + " x=" + str(x) + "\n")   # b=5 x=105
+    println("2 b=" + str(b[0]) + " x=" + str(x))   # b=5 x=105
 
-    print("3 lit=" + str(dbl([5, 5, 5])) + "\n")     # fresh literal -> adopt: 105
+    println("3 lit=" + str(dbl([5, 5, 5])))     # fresh literal -> adopt: 105
 
     e := [2]
     on := true
     if on:
-        print("4 e=" + str(dbl(e)) + "\n")           # e read once (in the branch) -> adopt: 102
+        println("4 e=" + str(dbl(e)))           # e read once (in the branch) -> adopt: 102
 
     h := [30]
-    print("5 ufcs=" + str(h.dbl()) + "\n")           # UFCS receiver dead -> adopt: 130
+    println("5 ufcs=" + str(h.dbl()))           # UFCS receiver dead -> adopt: 130

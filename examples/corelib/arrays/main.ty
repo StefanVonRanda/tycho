@@ -7,15 +7,15 @@ import "core:arrays"
 
 fn main():
     xs := [5, 3, 8, 1, 3]
-    print("int sum     = " + str(arrays.sum(xs)) + "\n")                            # 20
-    print("int max/min = " + str(arrays.max(xs)) + "/" + str(arrays.min(xs)) + "\n")  # 8/1
-    print("int sorted  = " + arrays.join(arrays.sort(xs), ",") + "\n")              # 1,3,3,5,8 (join over sort)
-    print("int count 3 = " + str(arrays.count(xs, 3)) + "\n")                       # 2
-    print("input kept  = " + str(xs[0]) + "\n")                                     # 5 (unchanged)
+    println("int sum     = " + str(arrays.sum(xs)))                            # 20
+    println("int max/min = " + str(arrays.max(xs)) + "/" + str(arrays.min(xs)))  # 8/1
+    println("int sorted  = " + arrays.join(arrays.sort(xs), ","))              # 1,3,3,5,8 (join over sort)
+    println("int count 3 = " + str(arrays.count(xs, 3)))                       # 2
+    println("input kept  = " + str(xs[0]))                                     # 5 (unchanged)
 
     ws := ["pear", "apple", "fig"]
-    print("str sorted  = " + arrays.join(arrays.sort(ws), ",") + "\n")              # apple,fig,pear
-    print("str max     = " + arrays.max(ws) + "\n")                                 # pear
+    println("str sorted  = " + arrays.join(arrays.sort(ws), ","))              # apple,fig,pear
+    println("str max     = " + arrays.max(ws))                                 # pear
 
     fs := [1.5, 0.5, 2.5]
-    print("float sum   = " + str(arrays.sum(fs)) + "\n")                            # 4.5
+    println("float sum   = " + str(arrays.sum(fs)))                            # 4.5

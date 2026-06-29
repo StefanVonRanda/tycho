@@ -2,7 +2,7 @@
 fn main():
     src := read_all()                    # the whole of stdin, verbatim
     print(src)
-    print(chr(65) + chr(66) + chr(67) + "\n")              # ABC
+    println(chr(65) + chr(66) + chr(67))              # ABC
     s := "Hi!"
-    print(str(s[0]) + "," + str(s[1]) + "," + str(s[2]) + "\n")   # 72,105,33 (ord)
-    print(chr(s[0]) + chr(s[1]) + chr(s[2]) + "\n")        # Hi! (chr inverts ord)
+    println(str(s[0]) + "," + str(s[1]) + "," + str(s[2]))   # 72,105,33 (ord)
+    println(chr(s[0]) + chr(s[1]) + chr(s[2]))        # Hi! (chr inverts ord)

@@ -25,4 +25,4 @@ fn comb(n: int) -> Tree:
 
 fn main():
     t := comb(4000)
-    print(str(size(t)) + "\n")
+    println(str(size(t)))

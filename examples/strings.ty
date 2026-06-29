@@ -9,12 +9,12 @@ fn first_word(s: string) -> string:
 
 fn main():
     s := "tycho arenas"
-    print("len: " + str(len(s)) + "\n")           # byte length
-    print("s[0] as int: " + str(s[0]) + "\n")     # 't' -> 116, bounds-checked
-    print("first 4: " + substr(s, 0, 4) + "\n")   # "tych"
-    print("find 'arena': " + str(find(s, "arena")) + "\n")
-    print("first word: " + first_word(s) + "\n")
+    println("len: " + str(len(s)))           # byte length
+    println("s[0] as int: " + str(s[0]))     # 't' -> 116, bounds-checked
+    println("first 4: " + substr(s, 0, 4))   # "tych"
+    println("find 'arena': " + str(find(s, "arena")))
+    println("first word: " + first_word(s))
 
     # ordering is lexicographic on strings
     if "apple" < "banana":
-        print("apple < banana\n")
+        println("apple < banana")

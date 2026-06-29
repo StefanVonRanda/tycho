@@ -16,20 +16,20 @@ fn moved() -> int:
     return len(t.0) + len(t.1)
 
 fn main():
-    print("moved_sum=" + str(moved()) + "\n")        # 3000
+    println("moved_sum=" + str(moved()))        # 3000
 
     # source reused after construction -> deep-copied, so independent
     x := build(5)
     t := (x, 7)                 # x read again below -> count>1 -> COPIED
-    print("x0=" + str(x[0]) + " t00=" + str(t.0[0]) + "\n")   # 0, 0
+    println("x0=" + str(x[0]) + " t00=" + str(t.0[0]))   # 0, 0
     x[0] = 777                  # mutate the source
-    print("after x0=" + str(x[0]) + " t00=" + str(t.0[0]) + "\n")  # 777, still 0
+    println("after x0=" + str(x[0]) + " t00=" + str(t.0[0]))  # 777, still 0
 
     # struct-literal construction from a (borrowed) param still deep-copies
     # correctly under the unified path
     s := build(3)
     box := pack(s)
-    print("box_len=" + str(boxlen(box)) + "\n")      # 3
+    println("box_len=" + str(boxlen(box)))      # 3
 
 struct Box:
     data: [int]

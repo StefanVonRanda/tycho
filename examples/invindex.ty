@@ -106,17 +106,17 @@ fn main():
     for d in range(len(corpus)):
         index_doc(&postings, &tidx, corpus[d], d)
 
-    print("docs=" + str(len(corpus)) + " vocab=" + str(len(postings)) + "\n")
+    println("docs=" + str(len(corpus)) + " vocab=" + str(len(postings)))
 
     # boolean-AND query: documents mentioning both "the" and "dog"
     q := []string
     push(q, "the")
     push(q, "dog")
-    print("AND(the, dog) -> [" + join_ints(query_and(postings, tidx, q)) + "]\n")   # 1, 3
+    println("AND(the, dog) -> [" + join_ints(query_and(postings, tidx, q)) + "]")   # 1, 3
 
     # single-term posting: which docs mention "quick"
     pq := term_slot(tidx, "quick")
-    print("quick -> [" + join_ints(postings[pq].docs) + "]\n")                       # 0, 2, 4
+    println("quick -> [" + join_ints(postings[pq].docs) + "]")                       # 0, 2, 4
 
     # term frequency: total occurrences of "the" across the corpus
     pt := term_slot(tidx, "the")
@@ -124,4 +124,4 @@ fn main():
     fi := 0
     for fi in range(len(postings[pt].freqs)):
         tf += postings[pt].freqs[fi]
-    print("freq(the) = " + str(tf) + "\n")                                           # 4
+    println("freq(the) = " + str(tf))                                           # 4

@@ -24,9 +24,9 @@ fn grep_text(name: string, pat: string, text: string, show_name: bool):
         if find(line, pat) >= 0:
             lineno := str(i + 1)
             if show_name:
-                print(name + ":" + lineno + ":" + line + "\n")
+                println(name + ":" + lineno + ":" + line)
             else:
-                print(lineno + ":" + line + "\n")
+                println(lineno + ":" + line)
 
 fn main():
     a := args()

@@ -10,23 +10,23 @@ fn b2i(b: bool) -> int:
 
 fn main():
     # ---- encode (lowercase) ----
-    print("enc ''   = [" + hex.encode("") + "]\n")         # []
-    print("enc A    = " + hex.encode("A") + "\n")          # 41
-    print("enc hi   = " + hex.encode("hi") + "\n")         # 6869
-    print("enc tycho = " + hex.encode("tycho") + "\n")       # 747963686f
+    println("enc ''   = [" + hex.encode("") + "]")         # []
+    println("enc A    = " + hex.encode("A"))          # 41
+    println("enc hi   = " + hex.encode("hi"))         # 6869
+    println("enc tycho = " + hex.encode("tycho"))       # 747963686f
 
     # ---- decode back (text -> exact) ----
-    print("dec      = " + hex.decode("747963686f") + "\n")   # tycho
-    print("dec U/L  = " + hex.decode("4869") + "\n")       # Hi  (0x48 0x69)
+    println("dec      = " + hex.decode("747963686f"))   # tycho
+    println("dec U/L  = " + hex.decode("4869"))       # Hi  (0x48 0x69)
 
     # ---- lenient decode: separators are skipped, case-insensitive ----
-    print("dec sep  = " + hex.decode("74:79:63:68:6f") + "\n")   # tycho
-    print("dec spc  = " + hex.decode("68 69") + "\n")         # hi
+    println("dec sep  = " + hex.decode("74:79:63:68:6f"))   # tycho
+    println("dec spc  = " + hex.decode("68 69"))         # hi
 
     # ---- text round-trip ----
     msg := "Hello, tycho! 1234567890"
     rt := hex.decode(hex.encode(msg))
-    print(f"text_rt_ok = {b2i(rt == msg)}\n")              # 1
+    println(f"text_rt_ok = {b2i(rt == msg)}")              # 1
 
     # ---- is_valid ----
     v1 := b2i(hex.is_valid("deadbeef"))
@@ -34,18 +34,18 @@ fn main():
     v3 := b2i(hex.is_valid("abc"))                          # odd length
     v4 := b2i(hex.is_valid("xyz"))                          # non-hex
     v5 := b2i(hex.is_valid(""))                             # empty is valid
-    print(f"valid dead={v1} DEAD={v2} odd={v3} xyz={v4} empty={v5}\n")
+    println(f"valid dead={v1} DEAD={v2} odd={v3} xyz={v4} empty={v5}")
 
     # ---- non-NUL binary round-trip + upper/lower case ----
     bin := chr(255) + chr(171) + chr(16) + chr(1)
     el := hex.encode(bin)
     eu := hex.encode_upper(bin)
-    print("bin lower = " + el + "\n")                      # ffab1001
-    print("bin UPPER = " + eu + "\n")                      # FFAB1001
+    println("bin lower = " + el)                      # ffab1001
+    println("bin UPPER = " + eu)                      # FFAB1001
     dl := hex.decode(el)
     du := hex.decode(eu)
-    print(f"bin_ok lower={b2i(hex.encode(dl) == el)} upper={b2i(hex.encode(du) == el)} len={len(dl)}\n")  # 1 1 4
+    println(f"bin_ok lower={b2i(hex.encode(dl) == el)} upper={b2i(hex.encode(du) == el)} len={len(dl)}")  # 1 1 4
 
     # ---- byte-safe strings (A1): a decoded NUL is preserved, not dropped ----
     z := hex.decode("00")
-    print(f"decode_00_len = {len(z)}\n")                   # 1 (the NUL byte is kept)
+    println(f"decode_00_len = {len(z)}")                   # 1 (the NUL byte is kept)

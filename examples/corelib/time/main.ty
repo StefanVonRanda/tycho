@@ -14,10 +14,10 @@ fn main():
     #     sw := time.start()
     #     ... work ...
     #     print(str(time.elapsed_ms(sw)) + " ms")
-    print("ns_to_us(1500000)    = " + str(time.ns_to_us(1500000)) + "\n")      # 1500
-    print("ns_to_ms(1500000)    = " + str(time.ns_to_ms(1500000)) + "\n")      # 1
-    print("ns_to_s(2000000000)  = " + str(time.ns_to_s(2000000000)) + "\n")    # 2
+    println("ns_to_us(1500000)    = " + str(time.ns_to_us(1500000)))      # 1500
+    println("ns_to_ms(1500000)    = " + str(time.ns_to_ms(1500000)))      # 1
+    println("ns_to_s(2000000000)  = " + str(time.ns_to_s(2000000000)))    # 2
 
     sw := time.start()
     later := time.start()
-    print("clock advances       = " + str(b2i(later >= sw)) + "\n")            # 1
+    println("clock advances       = " + str(b2i(later >= sw)))            # 1

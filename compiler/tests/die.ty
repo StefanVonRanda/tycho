@@ -17,6 +17,6 @@ fn must_pos(n: int) -> int:
         die("must_pos: non-positive")
 
 fn main():
-    print(str(checked(5)) + "\n")        # 10
-    print(str(checked(0)) + "\n")        # 0
-    print(str(must_pos(7)) + "\n")       # 7
+    println(str(checked(5)))        # 10
+    println(str(checked(0)))        # 0
+    println(str(must_pos(7)))       # 7

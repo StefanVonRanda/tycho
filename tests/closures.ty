@@ -51,71 +51,71 @@ fn make_ops(base: int) -> [fn(int) -> int]:     # a container of closures escape
 fn main():
     # --- no-capture lambdas ---
     sq := fn(x: int) -> int: x * x
-    print(f"sq(7)={apply(sq, 7)}\n")                         # 49
-    print(f"inline={apply(fn(x: int) -> int: x + 1, 41)}\n") # 42
+    println(f"sq(7)={apply(sq, 7)}")                         # 49
+    println(f"inline={apply(fn(x: int) -> int: x + 1, 41)}") # 42
     ys := map_int([1, 2, 3, 4], fn(x: int) -> int: x * 10)
-    print(f"map={ys[0]},{ys[1]},{ys[2]},{ys[3]}\n")          # 10,20,30,40
+    println(f"map={ys[0]},{ys[1]},{ys[2]},{ys[3]}")          # 10,20,30,40
 
     # reassign a fn-typed local, call indirectly
     g := sq
-    print(f"g=sq -> {g(9)}\n")                               # 81
+    println(f"g=sq -> {g(9)}")                               # 81
     g = fn(x: int) -> int: 0 - x
-    print(f"g=neg -> {g(9)}\n")                              # -9
+    println(f"g=neg -> {g(9)}")                              # -9
 
     # --- scalar captures, by value ---
     n := 10
     addn := fn(x: int) -> int: x + n
-    print(f"addn(5)={apply(addn, 5)}\n")                     # 15
+    println(f"addn(5)={apply(addn, 5)}")                     # 15
     n = 1000                                                  # value capture: closure keeps 10
-    print(f"addn(5) after n=1000 -> {apply(addn, 5)}\n")     # 15
+    println(f"addn(5) after n=1000 -> {apply(addn, 5)}")     # 15
 
     a := 3
     b := 4
     poly := fn(x: int) -> int: x * a + b                     # multi-capture
-    print(f"poly(10)={apply(poly, 10)}\n")                   # 34
+    println(f"poly(10)={apply(poly, 10)}")                   # 34
 
     thr := 5
-    print(f"count>5={count_if([1, 6, 9, 4, 7], fn(z: int) -> int: z - thr)}\n")  # 3
+    println(f"count>5={count_if([1, 6, 9, 4, 7], fn(z: int) -> int: z - thr)}")  # 3
 
     # closure created in an inner block, used after it (env in the function arena)
     h := fn(x: int) -> int: x
     if true:
         bonus := 100
         h = fn(x: int) -> int: x + bonus
-    print(f"block-capture={apply(h, 8)}\n")                  # 108
+    println(f"block-capture={apply(h, 8)}")                  # 108
 
     # --- heap captures, deep-copied (value semantics) ---
     s := "ada"
     greet := fn() -> string: "hi " + s
-    print(f"{applyS(greet)}\n")                              # hi ada
+    println(f"{applyS(greet)}")                              # hi ada
 
     arr := [10, 20]
     alen := fn() -> int: len(arr)
     push(arr, 30)                                             # mutate original after capture
-    print(f"alen={apply0(alen)} len(arr)={len(arr)}\n")     # alen=2 len(arr)=3
+    println(f"alen={apply0(alen)} len(arr)={len(arr)}")     # alen=2 len(arr)=3
 
     vals := [1, 2, 3]
     vsum := fn() -> int: vals[0] + vals[1] + vals[2]
     vals[0] = 100                                            # mutate element after capture
-    print(f"vsum={apply0(vsum)}\n")                          # 6 (copy, not 105)
+    println(f"vsum={apply0(vsum)}")                          # 6 (copy, not 105)
 
     p := Pt(7, 8)
     pc := fn() -> int: p.x + p.y                            # struct capture
-    print(f"pc={apply0(pc)}\n")                             # 15
+    println(f"pc={apply0(pc)}")                             # 15
 
     # --- escaping closures (returned from a function) ---
     add5 := make_adder(5)
     add9 := make_adder(9)
-    print(f"escaped: {add5(100)} {add9(100)} {add5(1)}\n")  # 105 109 6 (each kept its own n)
+    println(f"escaped: {add5(100)} {add9(100)} {add5(1)}")  # 105 109 6 (each kept its own n)
     pre := make_prefixer(">> ")                             # heap capture escapes + re-homes
-    print(pre("done") + "\n")                               # >> done
-    print(f"down={apply(make_adder(20), 2)}\n")             # 22 (escaped closure passed straight down)
+    println(pre("done"))                               # >> done
+    println(f"down={apply(make_adder(20), 2)}")             # 22 (escaped closure passed straight down)
 
     # --- fn values in containers + call-on-expression ---
     op := Op("square", sq)                                  # fn in a struct field
-    print(f"{op.label}={op.cb(6)}\n")                       # square=36 (call a fn-typed field)
+    println(f"{op.label}={op.cb(6)}")                       # square=36 (call a fn-typed field)
     ops := [sq, fn(x: int) -> int: x + 1]                   # array of fn values
-    print(f"arr: {ops[0](5)},{ops[1](5)}\n")                # 25,6 (call by index)
+    println(f"arr: {ops[0](5)},{ops[1](5)}")                # 25,6 (call by index)
     esc := make_ops(10)                                     # container of closures escapes
-    print(f"escaped-arr: {esc[0](5)},{esc[1](5)}\n")        # 15,50
-    print(f"chained={make_adder(7)(3)}\n")                  # 10 (f(a)(b))
+    println(f"escaped-arr: {esc[0](5)},{esc[1](5)}")        # 15,50
+    println(f"chained={make_adder(7)(3)}")                  # 10 (f(a)(b))

@@ -26,4 +26,4 @@ fn main():
     sum := 0
     for i in range(400):
         sum = sum + check(make(14))    # transient tree -> int; must reclaim
-    print(str(sum) + "\n")             # 400 * 32767 nodes = 13106800
+    println(str(sum))             # 400 * 32767 nodes = 13106800

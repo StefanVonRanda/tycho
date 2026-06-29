@@ -19,4 +19,4 @@ fn total(xs: [int]) -> int:
 fn main():
     big := build(8000000)     # ~64 MB of longs (plus geometric-growth slack)
     dup := big                # big is dead after -> MOVE, no second buffer
-    print(str(total(dup)) + "\n")
+    println(str(total(dup)))

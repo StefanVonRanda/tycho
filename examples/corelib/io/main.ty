@@ -11,10 +11,10 @@ fn main():
     io.append(path, "third line\n")
 
     lines := io.read_lines(path)
-    print("line count = " + str(len(lines)) + "\n")   # 3
-    print("line 2     = " + lines[1] + "\n")          # second line
+    println("line count = " + str(len(lines)))   # 3
+    println("line 2     = " + lines[1])          # second line
 
     # write_lines is the inverse of read_lines (newline-terminated)
     io.write_lines(path, ["alpha", "beta"])
     back := io.read_lines(path)
-    print("rewritten  = " + str(len(back)) + " lines, first = " + back[0] + "\n")   # 2 lines, alpha
+    println("rewritten  = " + str(len(back)) + " lines, first = " + back[0])   # 2 lines, alpha

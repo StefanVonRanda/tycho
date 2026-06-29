@@ -36,45 +36,45 @@ fn join(xs: [string], sep: string) -> string:
 fn do_fetch(url: string, outfile: string):
     r := http.get(url)
     if http.ok(r) == false:
-        print("fetch: request to " + path.base(url) + " failed (no response)\n")
+        println("fetch: request to " + path.base(url) + " failed (no response)")
         return
     status := http.status(r)
     body := http.body(r)
     http.release(r)
 
     sha := sha256.hex(body)
-    print("source : " + path.base(url) + "\n")
-    print("status : " + str(status) + "\n")
-    print("bytes  : " + str(len(body)) + "\n")
-    print("sha256 : " + sha + "\n")
+    println("source : " + path.base(url))
+    println("status : " + str(status))
+    println("bytes  : " + str(len(body)))
+    println("sha256 : " + sha)
 
     # content summary: JSON if the body looks like it, else plain text
     fc := first_nonspace(body)
     ext := ".txt"
     if fc == 123:                            # '{' -> JSON object
         keys := json.keys(json.parse(body))
-        print("content: json object, " + str(len(keys)) + " keys: " + join(keys, ", ") + "\n")
+        println("content: json object, " + str(len(keys)) + " keys: " + join(keys, ", "))
         ext = ".json"
     elif fc == 91:                           # '[' -> JSON array
-        print("content: json array, " + str(json.len_of(json.parse(body))) + " items\n")
+        println("content: json array, " + str(json.len_of(json.parse(body))) + " items")
         ext = ".json"
     else:
-        print("content: text, " + str(len(body)) + " bytes\n")
+        println("content: text, " + str(len(body)) + " bytes")
 
     # content-addressed cache: the file is named by the first 16 hex of the hash
     cachepath := "/tmp/tycho_fetch_" + sha[0:16] + ext
     if len(outfile) > 0:
         cachepath = outfile
     if io.write(cachepath, body):
-        print("cached : " + path.base(cachepath) + "\n")
+        println("cached : " + path.base(cachepath))
     else:
-        print("cache  : write failed\n")
+        println("cache  : write failed")
 
 fn main():
     a := args()
     if len(a) < 2:
-        print("usage: fetch <url> [outfile]\n")
-        print("  GET a URL (http/https/file), summarize it, and cache the body.\n")
+        println("usage: fetch <url> [outfile]")
+        println("  GET a URL (http/https/file), summarize it, and cache the body.")
     else:
         out := ""
         if len(a) >= 3:

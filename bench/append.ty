@@ -9,4 +9,4 @@ fn build(n: int) -> string:
     return acc
 
 fn main():
-    print(str(len(build(40000))) + "\n")
+    println(str(len(build(40000))))

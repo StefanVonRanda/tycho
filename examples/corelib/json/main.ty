@@ -6,12 +6,12 @@ import "core:json"
 fn main():
     doc := json.parse("{\"name\": \"tycho\", \"stars\": 9, \"tags\": [\"fast\", \"safe\"], \"nested\": {\"ok\": true}}")
 
-    print("name      = " + json.as_str(json.get(doc, "name")) + "\n")               # tycho
-    print("stars     = " + str(json.as_num(json.get(doc, "stars"))) + "\n")         # 9
-    print("tags len  = " + str(json.len_of(json.get(doc, "tags"))) + "\n")          # 2
-    print("tags[0]   = " + json.as_str(json.at(json.get(doc, "tags"), 0)) + "\n")   # fast
-    print("nested.ok kind = " + json.kind(json.get(json.get(doc, "nested"), "ok")) + "\n")  # bool
+    println("name      = " + json.as_str(json.get(doc, "name")))               # tycho
+    println("stars     = " + str(json.as_num(json.get(doc, "stars"))))         # 9
+    println("tags len  = " + str(json.len_of(json.get(doc, "tags"))))          # 2
+    println("tags[0]   = " + json.as_str(json.at(json.get(doc, "tags"), 0)))   # fast
+    println("nested.ok kind = " + json.kind(json.get(json.get(doc, "nested"), "ok")))  # bool
 
     # build a value by hand and serialize it
     built := json.JArr([json.JNum(1), json.JStr("two"), json.JBool(true)])
-    print("built     = " + json.stringify(built) + "\n")                            # [1,"two",true]
+    println("built     = " + json.stringify(built))                            # [1,"two",true]

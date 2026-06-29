@@ -4,9 +4,9 @@ import "core:path"
 
 fn main():
     p := "/usr/local/bin/tycho"
-    print("base         = " + path.base(p) + "\n")                     # tycho
-    print("dir          = " + path.dir(p) + "\n")                      # /usr/local/bin
-    print("ext          = " + path.ext("archive.tar.gz") + "\n")       # .gz
-    print("stem         = " + path.stem("notes.txt") + "\n")           # notes
-    print("join         = " + path.join("/etc", "conf.d") + "\n")      # /etc/conf.d
-    print("clean        = " + path.clean("a/./b/../c") + "\n")         # a/c
+    println("base         = " + path.base(p))                     # tycho
+    println("dir          = " + path.dir(p))                      # /usr/local/bin
+    println("ext          = " + path.ext("archive.tar.gz"))       # .gz
+    println("stem         = " + path.stem("notes.txt"))           # notes
+    println("join         = " + path.join("/etc", "conf.d"))      # /etc/conf.d
+    println("clean        = " + path.clean("a/./b/../c"))         # a/c

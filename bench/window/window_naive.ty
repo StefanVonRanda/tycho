@@ -16,4 +16,4 @@ fn main():
         ring[i % w] = rec                   # store into the window (deep-copied into ring's arena)
         acc = acc + len(ring[i % w])
         i = i + 1
-    print(str(acc) + "\n")
+    println(str(acc))

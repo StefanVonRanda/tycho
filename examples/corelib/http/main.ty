@@ -3,7 +3,7 @@
 #
 #     r := http.get("https://example.com")
 #     if http.ok(r):
-#         print("status " + str(http.status(r)) + "\n")
+#         println("status " + str(http.status(r)))
 #         print(http.body(r))
 #         http.release(r)
 #     # or the one-shot convenience form:
@@ -17,7 +17,7 @@ import "core:http"
 fn main():
     r := http.get("http://127.0.0.1:1/")        # nothing listening -> connection refused
     if http.ok(r):
-        print("status " + str(http.status(r)) + "\n")
+        println("status " + str(http.status(r)))
         http.release(r)
     else:
-        print("request failed (expected: the example runs offline)\n")
+        println("request failed (expected: the example runs offline)")

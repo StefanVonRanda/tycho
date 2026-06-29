@@ -10,7 +10,7 @@ fn add(a: int, b: int) -> int:
     return a + b
 
 fn main():               # entry point: exactly `fn main():`, no return value
-    print(str(add(2, 3)) + "\n")
+    println(str(add(2, 3)))
 ```
 
 A `fn` with no `-> type` returns nothing. Blocks are indentation-based (tabs or spaces — just

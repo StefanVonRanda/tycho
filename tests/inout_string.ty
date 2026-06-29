@@ -18,14 +18,14 @@ fn main():
     msg := "hi"
     shout(&msg)
     shout(&msg)
-    print(msg + "\n")
+    println(msg)
     rename(&msg, "bye")
-    print(msg + "\n")
+    println(msg)
     grow(&msg, 3)
-    print(msg + "\n")
+    println(msg)
     acc := ""
     i := 0
     for i < 4:
         shout(&acc)
         i = i + 1
-    print(acc + "\n")
+    println(acc)

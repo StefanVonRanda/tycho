@@ -50,14 +50,14 @@ fn join_from(a: [string], start: int) -> string:
     return s
 
 fn usage():
-    print("tycho - build/run/check/watch for .ty programs\n")
-    print("usage:\n")
-    print("  tycho run   <file.ty> [args...]   build + run (args forwarded)\n")
-    print("  tycho build <file.ty> [-o out]    build to a binary\n")
-    print("  tycho check <file.ty>             parse/type only, no cc (fast)\n")
-    print("  tycho watch <file.ty>             re-check on change\n")
-    print("  tycho fmt   <file.ty> [-w]        format to stdout (-w: safe in-place write)\n")
-    print("  (TYCHOC/TYCHOFMT override compiler/formatter; defaults 'tychoc'/'tychofmt')\n")
+    println("tycho - build/run/check/watch for .ty programs")
+    println("usage:")
+    println("  tycho run   <file.ty> [args...]   build + run (args forwarded)")
+    println("  tycho build <file.ty> [-o out]    build to a binary")
+    println("  tycho check <file.ty>             parse/type only, no cc (fast)")
+    println("  tycho watch <file.ty>             re-check on change")
+    println("  tycho fmt   <file.ty> [-w]        format to stdout (-w: safe in-place write)")
+    println("  (TYCHOC/TYCHOFMT override compiler/formatter; defaults 'tychoc'/'tychofmt')")
 
 fn cmd_run(a: [string], cc: string):
     file := a[2]
@@ -79,7 +79,7 @@ fn cmd_build(a: [string], cc: string):
             out = a[4]
     if tycho_run(cc + " " + file + " -o " + out + " > /dev/null") != 0:
         die("tycho build: failed: " + file)
-    print("built " + out + "\n")
+    println("built " + out)
 
 fn cmd_check(a: [string], cc: string):
     file := a[2]
@@ -87,7 +87,7 @@ fn cmd_check(a: [string], cc: string):
     # the throwaway C goes to a temp, errors land on stderr (inherited -> shown).
     if tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null") != 0:
         die("tycho check: " + file + " has errors")
-    print("ok: " + file + "\n")
+    println("ok: " + file)
 
 # `tycho fmt <file>` prints the formatted source (safe, works on any file).
 # `tycho fmt -w <file>` rewrites it IN PLACE -- but only after proving the program
@@ -128,17 +128,17 @@ fn cmd_fmt(a: [string], cc: string):
         die("tycho fmt -w: REFUSED -- formatting would change the program; " + file + " left unchanged")
     if tycho_run("mv " + tmp + " " + file) != 0:
         die("tycho fmt -w: failed to replace " + file)
-    print("formatted " + file + "\n")
+    println("formatted " + file)
 
 fn cmd_watch(a: [string], cc: string):
     file := a[2]
-    print("watching " + file + " (Ctrl-C to stop)\n")
+    println("watching " + file + " (Ctrl-C to stop)")
     last := ""
     for true:
         cur := read_file(file)
         if cur != last:
             last = cur
-            print("--- change detected, checking ---\n")
+            println("--- change detected, checking ---")
             tycho_run(cc + " " + file + " --emit-c -o /tmp/.tycho_check > /dev/null")
         tycho_sleep_ms(300)
 
@@ -160,5 +160,5 @@ fn main():
     elif cmd == "fmt":
         cmd_fmt(a, cc)
     else:
-        print("tycho: unknown command '" + cmd + "'\n")
+        println("tycho: unknown command '" + cmd + "'")
         usage()

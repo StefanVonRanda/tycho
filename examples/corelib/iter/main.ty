@@ -15,11 +15,11 @@ fn even(x: int) -> int:                  # nonzero -> keep
 
 fn main():
     nums := [1, 2, 3, 4, 5]
-    print("map dbl     = " + arrays.join(iter.map(nums, dbl), ",") + "\n")          # 2,4,6,8,10
-    print("count even  = " + str(iter.count(nums, even)) + "\n")                    # 2
-    print("filter even = " + arrays.join(iter.filter(nums, even), ",") + "\n")      # 2,4
+    println("map dbl     = " + arrays.join(iter.map(nums, dbl), ","))          # 2,4,6,8,10
+    println("count even  = " + str(iter.count(nums, even)))                    # 2
+    println("filter even = " + arrays.join(iter.filter(nums, even), ","))      # 2,4
     sum := iter.reduce(nums, 0, fn(a: int, b: int) -> int: a + b)                   # inline closure
-    print("reduce sum  = " + str(sum) + "\n")                                       # 15
+    println("reduce sum  = " + str(sum))                                       # 15
 
     ws := ["hi", "yo"]                                                              # generic over strings too
-    print("str map     = " + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ",") + "\n")   # hi!,yo!
+    println("str map     = " + arrays.join(iter.map(ws, fn(s: string) -> string: s + "!"), ","))   # hi!,yo!

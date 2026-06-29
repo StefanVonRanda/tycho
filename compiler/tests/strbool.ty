@@ -11,17 +11,17 @@ fn main():
     x := 5
 
     # comparisons
-    print(str(x > 3) + " " + str(x == 5) + " " + str(x < 0) + "\n")   # true true false
+    println(str(x > 3) + " " + str(x == 5) + " " + str(x < 0))   # true true false
     # and / or / not
-    print(str(x > 0 and x < 10) + " " + str(x > 9 or x == 5) + " " + str(not (x == 5)) + "\n")  # true true false
+    println(str(x > 0 and x < 10) + " " + str(x > 9 or x == 5) + " " + str(not (x == 5)))  # true true false
     # literals
-    print(str(true) + " " + str(false) + "\n")                        # true false
+    println(str(true) + " " + str(false))                        # true false
     # a bool variable, reassigned
     b := true
-    print(str(b) + "\n")                                              # true
+    println(str(b))                                              # true
     b = (x > 100)
-    print(str(b) + "\n")                                              # false
+    println(str(b))                                              # false
     # a bool-returning fn
-    print(str(even(4)) + " " + str(even(7)) + "\n")                   # true false
+    println(str(even(4)) + " " + str(even(7)))                   # true false
     # inside an f-string hole
-    print(f"x even? {even(x)}; positive? {x > 0}\n")                  # x even? false; positive? true
+    println(f"x even? {even(x)}; positive? {x > 0}")                  # x even? false; positive? true

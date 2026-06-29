@@ -28,6 +28,6 @@ fn main():
     s := ""
     for idx in range(len(xs)):
         s = s + str(xs[idx]) + " "
-    print(s + "\n")               # "0 1 4 9 "
-    print("len(squares(7,10))=" + str(len(squares(7, 10))) + "\n")   # 8 elements
-    print("count_down=" + str(count_down(9)) + "\n")           # "3!" -> 2
+    println(s)               # "0 1 4 9 "
+    println("len(squares(7,10))=" + str(len(squares(7, 10))))   # 8 elements
+    println("count_down=" + str(count_down(9)))           # "3!" -> 2

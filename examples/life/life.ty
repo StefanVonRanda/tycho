@@ -88,9 +88,9 @@ fn run_demo():
     set_glider(&cells, w, 0, 0)
     g := Grid(w, h, cells)
     for gen in range(0, 9):
-        print("generation " + str(gen) + "\n")
+        println("generation " + str(gen))
         print(render(g))
-        print("\n")
+        println("")
         g = step(g)
 
 # live: clear the screen each frame, redraw, sleep, advance

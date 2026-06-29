@@ -4,7 +4,7 @@ package main
 import "core:sha256"
 
 fn main():
-    print("sha256(\"\")      =\n  " + sha256.hex("") + "\n")
-    print("sha256(\"tycho\")  =\n  " + sha256.hex("tycho") + "\n")
-    print("sha256(\"tycho!\") =\n  " + sha256.hex("tycho!") + "\n")   # one byte different -> avalanche
-    print("digest bytes     = " + str(len(sha256.digest("tycho"))) + "\n")  # 32
+    println("sha256(\"\")      =\n  " + sha256.hex(""))
+    println("sha256(\"tycho\")  =\n  " + sha256.hex("tycho"))
+    println("sha256(\"tycho!\") =\n  " + sha256.hex("tycho!"))   # one byte different -> avalanche
+    println("digest bytes     = " + str(len(sha256.digest("tycho"))))  # 32

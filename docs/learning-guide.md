@@ -101,7 +101,7 @@ Create `hello.ty`:
 
 ```
 fn main():
-    print("Hello, world!\n")
+    println("Hello, world!")
 ```
 
 Compile and run:
@@ -161,11 +161,11 @@ fn main():
     greeting := "hello " + name   # "hello Ada"
 
     # comparisons produce bool
-    print(str(x == 43) + "\n")    # "true"
-    print(str(x > 40) + "\n")     # "true"
+    println(str(x == 43))    # "true"
+    println(str(x > 40))     # "true"
 
     # convert anything to a string with str()
-    print(str(x) + "\n")          # "43"
+    println(str(x))          # "43"
 ```
 
 ### Built-in types
@@ -207,7 +207,7 @@ fn add(a: int, b: int) -> int:
 
 # a function that returns nothing (no -> type)
 fn say(s: string):
-    print(s + "\n")
+    println(s)
 
 # parameters are copies by default (value semantics)
 fn double(n: int) -> int:
@@ -219,14 +219,14 @@ fn incr(n: mut int):
     n = n + 1
 
 fn main():
-    print(str(add(3, 4)) + "\n")     # 7
+    println(str(add(3, 4)))     # 7
 
     x := 10
     y := double(x)
-    print(str(x) + " " + str(y) + "\n")   # 10 20
+    println(str(x) + " " + str(y))   # 10 20
 
     incr(&x)               # x is now 11 (& marks the shared variable)
-    print(str(x) + "\n")   # 11
+    println(str(x))   # 11
 ```
 
 **Mental model (coming from Python or JavaScript):**
@@ -240,8 +240,8 @@ fn main():
 ```
 name := "Ada"
 age := 36
-print(f"{name} is {age}\n")             # "Ada is 36"
-print(f"2 + 3 = {2 + 3}\n")            # "2 + 3 = 5"
+println(f"{name} is {age}")             # "Ada is 36"
+println(f"2 + 3 = {2 + 3}")            # "2 + 3 = 5"
 ```
 
 Use `f"..."` to interpolate. `{expr}` inserts the value. Plain `"..."` strings are never interpolated.
@@ -287,7 +287,7 @@ for i in range(10, 0, -2):  # i = 10, 8, 6, 4, 2
 # 3. Foreach form (iterate an array or string)
 names := ["Ada", "Grace", "Alan"]
 for name in names:
-    print(name + "\n")
+    println(name)
 
 for byte in "ABC":
     print(str(byte) + " ")    # prints byte values: 65 66 67
@@ -323,25 +323,25 @@ Strings are **immutable byte buffers** — you can't change a character in place
 ```
 fn main():
     s := "hello"
-    print(str(len(s)) + "\n")     # 5
+    println(str(len(s)))     # 5
 
     # byte indexing (read-only)
-    print(str(s[0]) + "\n")       # 104 (byte value of 'h')
+    println(str(s[0]))       # 104 (byte value of 'h')
 
     # concatenation builds a new string
     s2 := s + " world"
-    print(s2 + "\n")              # "hello world"
+    println(s2)              # "hello world"
 
     # substring: substr(s, start, end) — returns a copy
-    print(substr("hello world", 0, 5) + "\n")   # "hello"
+    println(substr("hello world", 0, 5))   # "hello"
 
     # find: returns byte index or -1
-    print(str(find("hello world", "world")) + "\n")   # 6
+    println(str(find("hello world", "world")))   # 6
 
     # split: returns an array
     parts := split("one,two,three", ",")
     for p in parts:
-        print(p + "\n")
+        println(p)
 ```
 
 ### Building strings in a loop
@@ -355,7 +355,7 @@ fn main():
         total = total + str(i)        # this is O(n), not O(n²)
         if i < 5:
             total = total + ", "
-    print(total + "\n")               # "1, 2, 3, 4, 5"
+    println(total)               # "1, 2, 3, 4, 5"
 ```
 
 ### The `char` type
@@ -386,17 +386,17 @@ fn main():
     # operations
     push(xs, 40)                 # append in place: [10, 20, 30, 40]
     last := pop(xs)              # remove + return last: 40
-    print(str(len(xs)) + "\n")   # 3
+    println(str(len(xs)))   # 3
 
     # indexing (bounds-checked)
-    print(str(xs[0]) + "\n")     # 10
+    println(str(xs[0]))     # 10
     xs[0] = 99                   # write
-    print(str(xs[0]) + "\n")     # 99
+    println(str(xs[0]))     # 99
 
     # value semantics: assignment is a deep copy
     ys := xs                     # ys is an independent copy
     ys[0] = 0                    # mutating ys never touches xs
-    print(str(xs[0]) + "\n")     # still 99
+    println(str(xs[0]))     # still 99
 ```
 
 ### Arrays of structs
@@ -410,7 +410,7 @@ fn main():
     ps := [Point(1, 2), Point(3, 4)]
     push(ps, Point(5, 6))
     ps[0].x = 10                    # write through an element
-    print(str(ps[0].x) + "\n")      # 10
+    println(str(ps[0].x))      # 10
 ```
 
 ### Arrays as function parameters
@@ -430,7 +430,7 @@ fn add_one(a: mut [int]):
 
 fn main():
     xs := [1, 2, 3]
-    print(str(sum(xs)) + "\n")      # 6 (no copy)
+    println(str(sum(xs)))      # 6 (no copy)
     add_one(&xs)                    # xs is now [2, 3, 4]
 ```
 
@@ -447,7 +447,7 @@ fn sum(a: [int]) -> int:
 
 fn main():
     xs := [10, 20, 30, 40, 50]
-    print(str(sum(xs[1:4])) + "\n")   # 90 — zero-copy view
+    println(str(sum(xs[1:4])))   # 90 — zero-copy view
     mid := xs[1:4]                    # deep copy: [20, 30, 40]
 ```
 
@@ -464,7 +464,7 @@ fn main():
     sq := make_squares(5)   # [0, 1, 4, 9, 16]
     for v in sq:
         print(str(v) + " ")
-    print("\n")
+    println("")
 ```
 
 ---
@@ -490,7 +490,7 @@ fn main():
     a := Point(1, 2)
     r := Rect(a, Point(4, 6))
 
-    print(str(area(r)) + "\n")       # 12
+    println(str(area(r)))       # 12
 
     # value semantics: copies are independent
     b := a               # b is a deep copy
@@ -532,9 +532,9 @@ fn main():
     snap := ctx                      # snapshot (deep copy)
     step(&ctx, "phase-1", 10)        # mutates ctx
     step(&ctx, "phase-2", 20)        # mutates ctx
-    print("label: " + ctx.label + "\n")                # "phase-2"
-    print("snapshot label: " + snap.label + "\n")      # "start" (isolated)
-    print("log entries: " + str(len(ctx.log)) + "\n")  # 3
+    println("label: " + ctx.label)                # "phase-2"
+    println("snapshot label: " + snap.label)      # "start" (isolated)
+    println("log entries: " + str(len(ctx.log)))  # 3
 ```
 
 ---
@@ -561,10 +561,10 @@ fn main():
     ks := keys(counts)                     # [string] of keys, in insertion order
     for i in range(len(ks)):
         k := ks[i]
-        print(k + ": " + str(map_get(counts, k, 0)) + "\n")
+        println(k + ": " + str(map_get(counts, k, 0)))
 
     # size
-    print(str(len(counts)) + "\n")
+    println(str(len(counts)))
 ```
 
 ### The counter idiom
@@ -594,7 +594,7 @@ fn main():
 
     n := counts["ada"]         # READ -> 2
     miss := counts["nope"]     # READ of a missing key -> 0 (the value type's zero)
-    print(str(n) + " " + str(miss) + " " + str(len(counts)) + "\n")   # 2 0 2
+    println(str(n) + " " + str(miss) + " " + str(len(counts)))   # 2 0 2
 ```
 
 Two things to know about reading `m[k]`:
@@ -628,7 +628,7 @@ fn main():
     counts := []string: int
     tally(&counts, "hello")
     tally(&counts, "hello")
-    print(str(map_get(counts, "hello", 0)) + "\n")   # 2
+    println(str(map_get(counts, "hello", 0)))   # 2
 ```
 
 ---
@@ -649,9 +649,9 @@ fn index_of(xs: [int], target: int) -> Option(int):
 fn main():
     match index_of([10, 20, 30], 20):
         Some(i):
-            print("found at " + str(i) + "\n")    # runs
+            println("found at " + str(i))    # runs
         None:
-            print("not found\n")
+            println("not found")
 ```
 
 `match` inspects which variant a value is and runs that arm (the full story is in §11). Here it's **exhaustive** — you have to handle both `Some` and `None`, so the transpiler won't let you forget the null check.
@@ -669,9 +669,9 @@ fn checked_div(a: int, b: int) -> Result(int, string):
 fn main():
     match checked_div(10, 0):
         Ok(v):
-            print("= " + str(v) + "\n")
+            println("= " + str(v))
         Err(e):
-            print("error: " + e + "\n")    # runs: "error: divide by zero"
+            println("error: " + e)    # runs: "error: divide by zero"
 ```
 
 ### `or_return` — error propagation
@@ -692,9 +692,9 @@ fn add_two(a: string, b: string) -> Result(int, string):
 fn main():
     match add_two("3", "7"):
         Ok(v):
-            print(str(v) + "\n")     # 10
+            println(str(v))     # 10
         Err(e):
-            print("error: " + e + "\n")
+            println("error: " + e)
 ```
 
 ---
@@ -718,8 +718,8 @@ fn area(s: Shape) -> float:
 fn main():
     c := Circle(2.0)
     r := Rect(3.0, 4.0)
-    print(str(area(c)) + "\n")       # ~12.57
-    print(str(area(r)) + "\n")       # 12.0
+    println(str(area(c)))       # ~12.57
+    println(str(area(r)))       # 12.0
 ```
 
 ### Recursive enums (ASTs)
@@ -744,7 +744,7 @@ fn eval(e: Expr) -> int:
 fn main():
     # (2 + 3) * 4 = 20
     expr := Mul(Add(Num(2), Num(3)), Num(4))
-    print(str(eval(expr)) + "\n")    # 20
+    println(str(eval(expr)))    # 20
 ```
 
 Every `match` must be **exhaustive** — every variant needs an arm. The transpiler won't let you forget a case. A trailing **`_` wildcard** arm is the catch-all: it covers every variant you didn't list (and the unlisted `Some`/`None` or `Ok`/`Err`), so you only spell out the cases you care about:
@@ -789,7 +789,7 @@ fn main():
 
     cur := 0                  # walk by index, not by reference
     for cur != -1:
-        print(str(pool[cur].val) + "\n")
+        println(str(pool[cur].val))
         cur = pool[cur].next  # prints 10, 20, 30
 ```
 
@@ -808,11 +808,11 @@ fn divmod(a: int, b: int) -> (int, int):
 
 fn main():
     quot, rem := divmod(17, 5)     # destructuring: quot=3, rem=2
-    print(str(quot) + " " + str(rem) + "\n")
+    println(str(quot) + " " + str(rem))
 
     # tuples are first-class values
     t := divmod(17, 5)
-    print(str(t.0) + " " + str(t.1) + "\n")    # 3 2
+    println(str(t.0) + " " + str(t.1))    # 3 2
 ```
 
 ---
@@ -889,7 +889,7 @@ fn main():
         # each iteration gets a scratch arena that resets afterward
         tmp := str(i) + " "            # allocated in the scratch arena
         total = total + tmp            # total lives in main's arena — survives
-    print(str(len(total)) + "\n")
+    println(str(len(total)))
     # main's arena is freed here
 ```
 
@@ -910,8 +910,8 @@ fn apply(g: fn(int) -> int, x: int) -> int:
 
 fn main():
     f := dbl                           # f : fn(int) -> int
-    print(str(f(5)) + "\n")            # 10 (indirect call)
-    print(str(apply(dbl, 21)) + "\n")  # 42
+    println(str(f(5)))            # 10 (indirect call)
+    println(str(apply(dbl, 21)))  # 42
 ```
 
 ### Lambdas (anonymous functions)
@@ -924,10 +924,10 @@ fn apply(f: fn(int) -> int, x: int) -> int:
 
 fn main():
     # lambda with explicit types
-    print(str(apply(fn(x: int) -> int: x * x, 3)) + "\n")  # 9
+    println(str(apply(fn(x: int) -> int: x * x, 3)))  # 9
 
     # lambda with inferred types (from apply's signature)
-    print(str(apply(fn(x): x * 2, 5)) + "\n")               # 10
+    println(str(apply(fn(x): x * 2, 5)))               # 10
 ```
 
 ### Closures capture by value
@@ -936,7 +936,7 @@ fn main():
 fn main():
     n := 10
     addn := fn(x: int) -> int: x + n     # captures n by deep copy
-    print(str(addn(5)) + "\n")           # 15
+    println(str(addn(5)))           # 15
 ```
 
 The captured variable is **deep-copied** into the closure when created. Mutating the original afterward doesn't affect the closure:
@@ -957,7 +957,7 @@ fn make_adder(n: int) -> fn(int) -> int:
 
 fn main():
     add5 := make_adder(5)
-    print(str(add5(100)) + "\n")    # 105
+    println(str(add5(100)))    # 105
 ```
 
 The captured `n` is automatically re-homed into the caller's arena — no lifetime annotations needed.
@@ -970,11 +970,11 @@ struct Handler:
 
 fn main():
     h := Handler(fn(x: int) -> int: x + 1)
-    print(str(h.cb(5)) + "\n")       # 6
+    println(str(h.cb(5)))       # 6
 
     ops := [fn(x: int) -> int: x * 2, fn(x: int) -> int: x + 10]
-    print(str(ops[0](5)) + "\n")     # 10
-    print(str(ops[1](5)) + "\n")     # 15
+    println(str(ops[0](5)))     # 10
+    println(str(ops[1](5)))     # 15
 ```
 
 ---
@@ -1023,7 +1023,7 @@ fn main():
     t2 := spawn fib(28)       # runs in parallel
     a := wait(t1)             # blocks until done, result deep-copied back
     b := t2.wait()            # alternative syntax
-    print(str(a + b) + "\n")
+    println(str(a + b))
 ```
 
 Tasks are **structured**: a task handle can't be copied, stored, or leaked. It must be waited exactly once. Un-waited tasks are implicitly joined when their scope exits.
@@ -1038,7 +1038,7 @@ fn main():
     total := 0
     parallel for i in range(1000000):
         total += score(i)         # reduction: safe, deterministic
-    print(str(total) + "\n")
+    println(str(total))
 ```
 
 Reduction operators (`+=`, `*=`) are safe because each thread accumulates locally, then the results are folded in order. Any other write to an outer variable is a compile error.
@@ -1066,7 +1066,7 @@ fn main():
     p := spawn producer(ch, 100)
     wait(p)
     close(ch)                         # signal no more sends
-    print(str(wait(c)) + "\n")
+    println(str(wait(c)))
 ```
 
 Channels are bounded lock-free queues. `send` blocks when full, `recv` blocks when empty, and `recv` returns `None` after `close` drains the last item.
@@ -1084,12 +1084,12 @@ import "core:strings"
 import s "core:sort"           # alias
 
 fn main():
-    print(str(math.gcd(12, 18)) + "\n")       # 6
-    print(strings.to_upper("hello") + "\n")   # "HELLO"
+    println(str(math.gcd(12, 18)))       # 6
+    println(strings.to_upper("hello"))   # "HELLO"
     idx := s.argsort([3, 1, 4, 1, 5])
     for i in range(len(idx)):
         print(str(idx[i]) + " ")
-    print("\n")
+    println("")
 ```
 
 ### Corelib packages
@@ -1119,8 +1119,8 @@ extern fn random() -> int                  # libc random(): long random(void)
 extern "m" fn cos(x: float) -> float       # links -lm
 
 fn main():
-    print(str(random() >= 0) + "\n")        # true
-    print(str(cos(0.0)) + "\n")             # 1.0
+    println(str(random() >= 0))        # true
+    println(str(cos(0.0)))             # 1.0
 ```
 
 The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are copied into Tycho's arena), first-class `bytes` (length-carried binary buffers, so interior `0x00` survives), the opaque `ptr` type for foreign handles, typed `handle` resources (freed automatically when they go out of scope — RAII), and `mut` out-parameters (for the common C pattern of writing the real result through a pointer, like `sqlite3_open`). A `-> Option(string)` return tells a `NULL` C string apart from an empty one. Only composite aggregates — arrays, maps, and structs — are rejected; marshal those across as scalars, strings, or `ptr` handles, or write a small C shim. See `docs/ffi.md` for the full set of rules.
@@ -1225,7 +1225,7 @@ fn main():
     for d in range(len(corpus)):
         index_doc(&postings, &tidx, corpus[d], d)
 
-    print("docs=" + str(len(corpus)) + " vocab=" + str(len(postings)) + "\n")
+    println("docs=" + str(len(corpus)) + " vocab=" + str(len(postings)))
 
     # query: documents mentioning both "the" and "dog"
     q := []string
@@ -1444,11 +1444,11 @@ fn main():
     j := parse_value(src, len(src), &pos)
 
     # round-trip through serializer
-    print("round-trip: " + to_json(j) + "\n")
+    println("round-trip: " + to_json(j))
 
     # query the tree
-    print("version = " + str(as_num(get(j, "version"))) + "\n")
-    print("nested.n = " + str(as_num(get(get(j, "nested"), "n"))) + "\n")
+    println("version = " + str(as_num(get(j, "version"))))
+    println("nested.n = " + str(as_num(get(get(j, "nested"), "n"))))
 ```
 
 **What this exercises:**
@@ -1621,7 +1621,7 @@ fn name(a: int, b: int) -> int:
     return a + b
 
 fn void_fn():
-    print("no return\n")
+    println("no return")
 
 fn mutate(x: mut int):
     x = x + 1

@@ -25,4 +25,4 @@ fn main():
     send(ch2, 1)
     send(ch2, 2)
     close(ch2)
-    print(str(a) + " " + str(wait(co2)) + "\n")
+    println(str(a) + " " + str(wait(co2)))

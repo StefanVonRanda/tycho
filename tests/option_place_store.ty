@@ -15,4 +15,4 @@ fn main():
                 total = total + v
             None:
                 total = total + 0
-    print(str(len(xs)) + " " + str(total) + "\n")   # 5 6
+    println(str(len(xs)) + " " + str(total))   # 5 6

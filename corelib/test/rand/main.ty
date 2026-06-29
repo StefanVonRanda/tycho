@@ -8,17 +8,17 @@ fn main():
     a := rand.next(&st)
     b := rand.next(&st)
     c := rand.next(&st)
-    print(f"a={a} b={b} c={c}\n")
+    println(f"a={a} b={b} c={c}")
     # same seed -> same stream (determinism)
     st2 := rand.seed(42)
     a2 := rand.next(&st2)
-    print(f"again={a2}\n")
+    println(f"again={a2}")
     # seed edges: 0 and negatives still yield a valid nonzero state
     z := rand.seed(0)
     n := rand.seed(-7)
     zr := rand.next(&z)
     nr := rand.next(&n)
-    print(f"z={zr} n={nr}\n")
+    println(f"z={zr} n={nr}")
     # below: range respected over many draws; n<=0 fail-closed
     st3 := rand.seed(7)
     mx := 0
@@ -30,7 +30,7 @@ fn main():
         if v < mn:
             mn = v
     bz := rand.below(&st3, 0)
-    print(f"mn={mn} mx={mx} bz={bz}\n")     # mn=0 mx=9 bz=0
+    println(f"mn={mn} mx={mx} bz={bz}")     # mn=0 mx=9 bz=0
     # shuffle: permutation of the input (sum preserved), input unmutated
     st4 := rand.seed(99)
     xs := [1, 2, 3, 4, 5, 6, 7, 8]
@@ -38,4 +38,4 @@ fn main():
     s := 0
     for v in sh:
         s = s + v
-    print(f"sum={s} len={len(sh)} orig0={xs[0]}\n")   # sum=36 len=8 orig0=1
+    println(f"sum={s} len={len(sh)} orig0={xs[0]}")   # sum=36 len=8 orig0=1

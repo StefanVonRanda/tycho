@@ -217,7 +217,7 @@ fn main():
     src := "{\"name\": \"tycho\", \"version\": 7, \"tags\": [\"systems\", \"arena\"], \"nested\": {\"ok\": true, \"n\": -3}, \"empty\": [], \"nothing\": null}"
     pos := 0
     j := parse_value(src, len(src), &pos)
-    print("round-trip: " + to_json(j) + "\n")
-    print("version    = " + str(as_num(get(j, "version"))) + "\n")
-    print("nested.n   = " + str(as_num(get(get(j, "nested"), "n"))) + "\n")
-    print("sum of nums = " + str(count_nums(j)) + "\n")   # 7 + (-3) = 4
+    println("round-trip: " + to_json(j))
+    println("version    = " + str(as_num(get(j, "version"))))
+    println("nested.n   = " + str(as_num(get(get(j, "nested"), "n"))))
+    println("sum of nums = " + str(count_nums(j)))   # 7 + (-3) = 4

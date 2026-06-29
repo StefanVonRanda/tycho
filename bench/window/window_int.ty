@@ -14,4 +14,4 @@ fn main():
         ring[i % w] = i % 100000
         acc = acc + ring[i % w]
         i = i + 1
-    print(str(acc) + "\n")
+    println(str(acc))

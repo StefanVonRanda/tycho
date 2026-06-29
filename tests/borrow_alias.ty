@@ -39,16 +39,16 @@ fn alias_tag(b: Box) -> string:
 fn main():
     b1 := Box([1, 2, 3], "one")
     w := alias_whole(b1)
-    print("alias_whole:  b1.items[0] = " + str(b1.items[0]) + " (expect 1)\n")
+    println("alias_whole:  b1.items[0] = " + str(b1.items[0]) + " (expect 1)")
 
     b2 := Box([1, 2, 3], "two")
     c := alias_chain(b2)
-    print("alias_chain:  b2.items[0] = " + str(b2.items[0]) + " (expect 1)\n")
+    println("alias_chain:  b2.items[0] = " + str(b2.items[0]) + " (expect 1)")
 
     b3 := Box([1, 2, 3], "three")
     a := alias_assign(b3)
-    print("alias_assign: b3.items[1] = " + str(b3.items[1]) + " (expect 2)\n")
+    println("alias_assign: b3.items[1] = " + str(b3.items[1]) + " (expect 2)")
 
     b4 := Box([1, 2, 3], "four")
     t := alias_tag(b4)
-    print("alias_tag:    b4.tag = " + b4.tag + " (expect four)\n")
+    println("alias_tag:    b4.tag = " + b4.tag + " (expect four)")

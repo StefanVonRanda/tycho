@@ -18,12 +18,12 @@ fn wrap(x: $T) -> Box($T):
 
 fn main():
     b := Box(Box(5))                         # #3 nested construction
-    print(str(b.v.v) + "\n")                 # 5
-    print(str(wrap(99).v) + "\n")            # #2 generic fn returning a generic struct -> 99
+    println(str(b.v.v))                 # 5
+    println(str(wrap(99).v))            # #2 generic fn returning a generic struct -> 99
     ch := channel(Box(int), 1)               # #1 generic struct as a channel element type
     send(ch, Box(7))
     match recv(ch):
         Some(c):
-            print(str(c.v) + "\n")           # 7
+            println(str(c.v))           # 7
         None:
-            print("none\n")
+            println("none")

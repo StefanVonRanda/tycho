@@ -14,4 +14,4 @@ fn main():
             push(fs, fn(x: int) -> int: x * (i + 1) + p)
         for i in range(0, n, 1):
             total = (total + fs[i](7)) & 1048575
-    print(str(total) + "\n")
+    println(str(total))

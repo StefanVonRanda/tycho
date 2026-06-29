@@ -19,16 +19,16 @@ fn main():
     dbl := fn(x: int) -> int: x * 2
 
     h := compose(inc, dbl)
-    print("compose(inc,dbl)(5) = " + str(h(5)) + "\n")            # dbl(inc(5)) = 12
+    println("compose(inc,dbl)(5) = " + str(h(5)))            # dbl(inc(5)) = 12
 
     q := twice(inc)
-    print("twice(inc)(5) = " + str(q(5)) + "\n")                  # inc(inc(5)) = 7
+    println("twice(inc)(5) = " + str(q(5)))                  # inc(inc(5)) = 7
 
     f := dbl                                                       # capture a fn-value, call inline
     g := fn(x: int) -> int: f(x) + 1
-    print("inline f(x)+1 at 10 = " + str(g(10)) + "\n")           # dbl(10)+1 = 21
+    println("inline f(x)+1 at 10 = " + str(g(10)))           # dbl(10)+1 = 21
 
-    print("apply(compose(inc,dbl),3) = " + str(apply(compose(inc, dbl), 3)) + "\n")  # 8
+    println("apply(compose(inc,dbl),3) = " + str(apply(compose(inc, dbl), 3)))  # 8
 
     h2 := compose(compose(inc, inc), dbl)                          # nested combinators
-    print("compose(compose(inc,inc),dbl)(5) = " + str(h2(5)) + "\n")   # dbl(inc(inc(5))) = 14
+    println("compose(compose(inc,inc),dbl)(5) = " + str(h2(5)))   # dbl(inc(inc(5))) = 14

@@ -4,7 +4,7 @@
 # path in args()[0] is not portable).
 fn main():
     print("read=" + read_file("tests/iobuiltins.data"))       # io-builtins-ok
-    print("missing=" + str(len(read_file("tests/nope.absent"))) + "\n")   # 0
+    println("missing=" + str(len(read_file("tests/nope.absent"))))   # 0
     d := list_dir("tests/iobuiltins.dir")
-    print("dir_entries=" + str(len(d)) + "\n")                 # 2
-    print("nargs=" + str(len(args())) + "\n")                  # 1 (harness passes none)
+    println("dir_entries=" + str(len(d)))                 # 2
+    println("nargs=" + str(len(args())))                  # 1 (harness passes none)

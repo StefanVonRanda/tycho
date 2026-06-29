@@ -15,6 +15,6 @@ fn main():
     ks := keys(counts)
     for i in range(len(ks)):
         w := ks[i]
-        print(w + ": " + str(map_get(counts, w, 0)) + "\n")
+        println(w + ": " + str(map_get(counts, w, 0)))
 
-    print("distinct words: " + str(len(counts)) + "\n")
+    println("distinct words: " + str(len(counts)))

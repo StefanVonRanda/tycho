@@ -4,9 +4,9 @@ fn countdown(n: int):
     for n > 0:
         print(str(n) + " ")
         n = n - 1
-    print("liftoff\n")
+    println("liftoff")
 
 fn main():
-    print("go:\n")
+    println("go:")
     countdown(3)
-    print("done\n")
+    println("done")

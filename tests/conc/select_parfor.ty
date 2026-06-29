@@ -29,6 +29,6 @@ fn main():
                 sum = sum + x
             recv(b, y):
                 sum = sum + y
-    print(str(sum) + "\n")
+    println(str(sum))
     close(a)
     close(b)

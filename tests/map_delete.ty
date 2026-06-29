@@ -13,19 +13,19 @@ fn main():
     m["b"] = 2
     m["c"] = 3
     delete m["b"]
-    print("del len=" + str(len(m)) + " hasA=" + yn("a" in m) + " hasB=" + yn("b" in m) + " a=" + str(m["a"]) + " c=" + str(m["c"]) + "\n")
+    println("del len=" + str(len(m)) + " hasA=" + yn("a" in m) + " hasB=" + yn("b" in m) + " a=" + str(m["a"]) + " c=" + str(m["c"]))
     delete m["zzz"]                                  # deleting a missing key is a no-op
-    print("missing len=" + str(len(m)) + "\n")
+    println("missing len=" + str(len(m)))
     m["b"] = 20                                      # re-insert a previously deleted key
-    print("reinsert len=" + str(len(m)) + " b=" + str(m["b"]) + "\n")
+    println("reinsert len=" + str(len(m)) + " b=" + str(m["b"]))
     delete m["a"]
     delete m["b"]
     delete m["c"]
-    print("empty len=" + str(len(m)) + " hasC=" + yn("c" in m) + "\n")
+    println("empty len=" + str(len(m)) + " hasC=" + yn("c" in m))
 
     # int key + composite value type
     n := []int: [int]
     n[1] = [10, 11]
     n[2] = [20, 21]
     delete n[1]
-    print("int len=" + str(len(n)) + " has1=" + yn(1 in n) + " has2=" + yn(2 in n) + "\n")
+    println("int len=" + str(len(n)) + " has1=" + yn(1 in n) + " has2=" + yn(2 in n))

@@ -8,8 +8,8 @@ fn b2i(b: bool) -> int:
     return 0
 
 fn main():
-    print("encode       = " + hex.encode("tycho") + "\n")          # 747963686f
-    print("encode_upper = " + hex.encode_upper("hi") + "\n")      # 6869
-    print("decode       = " + hex.decode("747963686f") + "\n")      # tycho
-    print("decode spaced= " + hex.decode("74 79 63 68 6f") + "\n")  # tycho (separators skipped)
-    print("is_valid     = " + str(b2i(hex.is_valid("deadbeef"))) + "\n")    # 1
+    println("encode       = " + hex.encode("tycho"))          # 747963686f
+    println("encode_upper = " + hex.encode_upper("hi"))      # 6869
+    println("decode       = " + hex.decode("747963686f"))      # tycho
+    println("decode spaced= " + hex.decode("74 79 63 68 6f"))  # tycho (separators skipped)
+    println("is_valid     = " + str(b2i(hex.is_valid("deadbeef"))))    # 1

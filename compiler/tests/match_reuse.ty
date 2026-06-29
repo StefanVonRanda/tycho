@@ -36,25 +36,25 @@ fn grow_and_len(x: IntBox) -> int:
 
 fn main():
     t := Pair(Pair(Leaf(1), Leaf(2)), Leaf(3))
-    print("total=" + str(total(t)) + "\n")              # 6
+    println("total=" + str(total(t)))              # 6
     snap := t                                           # deep-copy snapshot
     lt := left(t)                                       # pull out a subtree (copy)
-    print("left_total=" + str(total(lt)) + "\n")        # 3
-    print("total_again=" + str(total(t)) + "\n")        # 6 (t intact)
+    println("left_total=" + str(total(lt)))        # 3
+    println("total_again=" + str(total(t)))        # 6 (t intact)
     if t == snap:
-        print("tree-stable\n")
+        println("tree-stable")
 
     # a mutated array payload must not reach through the scrutinee
     box := Nums([10, 20, 30])
     boxsnap := box
-    print("grown=" + str(grow_and_len(box)) + "\n")     # 4 (pushed into a copy)
+    println("grown=" + str(grow_and_len(box)))     # 4 (pushed into a copy)
     match box:
         Nums(ns):
-            print("box_len=" + str(len(ns)) + "\n")     # 3, NOT 4
+            println("box_len=" + str(len(ns)))     # 3, NOT 4
         Nothing:
-            print("none\n")
+            println("none")
     match boxsnap:
         Nums(ns):
-            print("snap_len=" + str(len(ns)) + "\n")    # 3
+            println("snap_len=" + str(len(ns)))    # 3
         Nothing:
-            print("none\n")
+            println("none")

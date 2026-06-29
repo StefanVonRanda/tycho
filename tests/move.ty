@@ -23,23 +23,23 @@ fn main():
     # `a` is dead after the bind -> MOVE (copy elided)
     a := build(5)
     b := a
-    print("moved=" + str(total(b)) + "\n")              # 0+1+4+9+16 = 30
+    println("moved=" + str(total(b)))              # 0+1+4+9+16 = 30
 
     # `c` is read again -> NOT moved, so `d` is an independent copy
     c := build(4)
     d := c
-    print("kept=" + str(total(c)) + "," + str(total(d)) + "\n")   # 14,14
+    println("kept=" + str(total(c)) + "," + str(total(d)))   # 14,14
 
     # a moved buffer is fully usable -- grow it after the move
     xs := build(3)
     ys := xs
     push(ys, 99)
-    print("grown=" + str(len(ys)) + " last=" + str(ys[3]) + "\n") # 4 99
+    println("grown=" + str(len(ys)) + " last=" + str(ys[3])) # 4 99
 
     # string move and heap-struct move
     s := "a fairly long string value to move"
     t := s
-    print("str_len=" + str(len(t)) + "\n")              # 34
+    println("str_len=" + str(len(t)))              # 34
     bag := Bag("acct", ["x", "y", "z"])
     bag2 := bag
-    print("bag=" + bag2.name + " tags=" + str(len(bag2.tags)) + "\n")  # acct 3
+    println("bag=" + bag2.name + " tags=" + str(len(bag2.tags)))  # acct 3

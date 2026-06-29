@@ -17,7 +17,7 @@ fn main():
     for i < 1000:
         a[0] = "v" + str(i % 10)
         i = i + 1
-    print(b + "\n")           # aaaa  (untouched by any recycle)
-    print(a[0] + "\n")        # v9
-    print(a[1] + "\n")        # mnop
-    print(a[2] + "\n")        # cccc!
+    println(b)           # aaaa  (untouched by any recycle)
+    println(a[0])        # v9
+    println(a[1])        # mnop
+    println(a[2])        # cccc!

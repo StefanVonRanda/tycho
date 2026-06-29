@@ -10,9 +10,9 @@ fn main():
     m[1][6] = 60
     m[2][9] = 90
     delete m[1][5]
-    print(str(m[1][6]) + " " + str(len(m[1])) + " " + str(len(m)) + " has5=" + str(5 in m[1]) + "\n")
+    println(str(m[1][6]) + " " + str(len(m[1])) + " " + str(len(m)) + " has5=" + str(5 in m[1]))
     s := []string: [string:int]
     s["a"]["x"] = 1
     s["a"]["y"] = 2
     ks := keys(s["a"])
-    print(str(len(s)) + " " + str(len(ks)) + " " + str(s["a"]["x"]) + "\n")
+    println(str(len(s)) + " " + str(len(ks)) + " " + str(s["a"]["x"]))

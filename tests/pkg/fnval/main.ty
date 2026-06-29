@@ -14,7 +14,7 @@ fn via_local(x: int) -> int:
     return g(x)                # indirect call through a local var
 
 fn main():
-    print("arg=" + str(apply(base, 41)) + "\n")    # 42  (fn passed as a value within the package)
-    print("local=" + str(via_local(9)) + "\n")     # 10
+    println("arg=" + str(apply(base, 41)))    # 42  (fn passed as a value within the package)
+    println("local=" + str(via_local(9)))     # 10
     h := base
-    print("bound=" + str(h(99)) + "\n")            # 100
+    println("bound=" + str(h(99)))            # 100

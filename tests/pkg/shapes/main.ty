@@ -29,5 +29,5 @@ fn main():
             l = n
         Dot:
             l = -1
-    print("pts=" + str(sumpts(pts)) + " shape=" + str(a) + " area=" + str(geom.area(sh)) + " local=" + str(l) + "\n")
+    println("pts=" + str(sumpts(pts)) + " shape=" + str(a) + " area=" + str(geom.area(sh)) + " local=" + str(l))
     # pts=10 shape=500 area=25 local=9

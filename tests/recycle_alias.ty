@@ -20,4 +20,4 @@ fn main():
     s := 0
     for i in range(len(b)):
         s = s + b[i]        # 4950 iff b's buffer was left intact
-    print(str(s) + "\n")
+    println(str(s))

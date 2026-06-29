@@ -28,4 +28,4 @@ fn main():
     acc := "start"
     for i in range(400):
         acc = describe(check(make(14)))   # heap target; make(14) is a transient arg
-    print(acc + "\n")                      # t32767
+    println(acc)                      # t32767

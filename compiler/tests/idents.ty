@@ -36,4 +36,4 @@ fn main():
         Nn:
             i2s = 0
     rg := register(5, 7)              # construct the keyword-named struct
-    print(str(hs) + "," + str(i2s) + "," + str(len(scopy)) + "," + str(use_reg(rg)) + "\n")   # 3,5,4,12
+    println(str(hs) + "," + str(i2s) + "," + str(len(scopy)) + "," + str(use_reg(rg)))   # 3,5,4,12

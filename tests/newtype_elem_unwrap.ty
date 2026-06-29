@@ -12,4 +12,4 @@ fn main():
     for i < len(ts):
         total = total + len(to_under(ts[i]))
         i = i + 1
-    print(str(total) + "\n")
+    println(str(total))

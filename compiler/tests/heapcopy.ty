@@ -18,13 +18,13 @@ fn main():
     b := a                 # value copy
     b.items[0] = 99        # mutate b's buffer contents
     push(b.items, 4)
-    print("a[0] = " + str(a.items[0]) + "\n")            # 1  (isolated)
-    print("b[0] = " + str(b.items[0]) + "\n")            # 99
-    print("a len = " + str(len(a.items)) + ", b len = " + str(len(b.items)) + "\n")  # 3, 4
+    println("a[0] = " + str(a.items[0]))            # 1  (isolated)
+    println("b[0] = " + str(b.items[0]))            # 99
+    println("a len = " + str(len(a.items)) + ", b len = " + str(len(b.items)))  # 3, 4
 
     t := Team(Person("Ada", 36), ["x", "y"])
     u := t                 # deep copy at every nesting level
     u.lead.age = 99
     push(u.members, "z")
-    print("t.lead.age = " + str(t.lead.age) + ", u.lead.age = " + str(u.lead.age) + "\n")  # 36, 99
-    print("t members = " + str(len(t.members)) + ", u members = " + str(len(u.members)) + "\n")  # 2, 3
+    println("t.lead.age = " + str(t.lead.age) + ", u.lead.age = " + str(u.lead.age))  # 36, 99
+    println("t members = " + str(len(t.members)) + ", u members = " + str(len(u.members)))  # 2, 3

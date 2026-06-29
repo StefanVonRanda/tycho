@@ -20,13 +20,13 @@ fn rebox(n: int) -> Box(int):
 
 fn main():
     b := Box(5)                           # construction (2a)
-    print(str(b.v) + "\n")                # 5
-    print(Box("hi").v + "\n")             # hi
+    println(str(b.v))                # 5
+    println(Box("hi").v)             # hi
     p := Pair(7, "x")
-    print(str(p.fst) + p.snd + "\n")      # 7x
-    print(str(unbox(Box(9))) + "\n")      # type-position param -> 9
-    print(str(unbox(rebox(3))) + "\n")    # type-position return -> 3
+    println(str(p.fst) + p.snd)      # 7x
+    println(str(unbox(Box(9))))      # type-position param -> 9
+    println(str(unbox(rebox(3))))    # type-position return -> 3
     h := Holder(Box(7))                   # type-position field
-    print(str(h.b.v) + "\n")              # 7
+    println(str(h.b.v))              # 7
     t: Box(int) = Box(42)                 # type-position typed decl
-    print(str(t.v) + "\n")                # 42
+    println(str(t.v))                # 42

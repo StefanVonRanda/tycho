@@ -47,4 +47,4 @@ fn main():
         di := 0
         for di in range(len(dl)):
             sum += dl[di]
-    print("vocab=" + str(len(ks)) + " checksum=" + str(sum) + "\n")
+    println("vocab=" + str(len(ks)) + " checksum=" + str(sum))

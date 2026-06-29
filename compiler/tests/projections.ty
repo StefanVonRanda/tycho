@@ -19,27 +19,27 @@ fn main():
     ps := [Point(1, 2), Point(3, 4)]
     ps[0].x = 10
     ps[1].y = 40
-    print("p0=" + str(ps[0].x) + "," + str(ps[0].y) + " p1=" + str(ps[1].x) + "," + str(ps[1].y) + "\n")
+    println("p0=" + str(ps[0].x) + "," + str(ps[0].y) + " p1=" + str(ps[1].x) + "," + str(ps[1].y))
 
     # 2. value semantics: a copy is independent of in-place mutation
     qs := ps
     ps[0].x = 99
-    print("ps0x=" + str(ps[0].x) + " qs0x=" + str(qs[0].x) + "\n")
+    println("ps0x=" + str(ps[0].x) + " qs0x=" + str(qs[0].x))
 
     # 3. heap-field projection: arr[i].name = string
     bs := [Bag("a", ["t1"]), Bag("b", ["t2"])]
     bs[0].name = "alpha"
-    print("name0=" + bs[0].name + "\n")
+    println("name0=" + bs[0].name)
 
     # 4. push through a projected array field: push(arr[i].tags, v)
     push(bs[0].tags, "extra")
-    print("tags0_len=" + str(len(bs[0].tags)) + " last=" + bs[0].tags[1] + "\n")
+    println("tags0_len=" + str(len(bs[0].tags)) + " last=" + bs[0].tags[1])
 
     # 5. nested-array index-set: m[i][j] = v
     grid := [[1, 2, 3], [4, 5, 6]]
     grid[1][2] = 60
-    print("g12=" + str(grid[1][2]) + " g00=" + str(grid[0][0]) + "\n")
+    println("g12=" + str(grid[1][2]) + " g00=" + str(grid[0][0]))
 
     # 6. mut through a projected element: &arr[i].x
     bump(&ps[1].x)
-    print("p1x_after_bump=" + str(ps[1].x) + "\n")
+    println("p1x_after_bump=" + str(ps[1].x))

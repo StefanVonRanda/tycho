@@ -36,7 +36,7 @@ fn dump(rows: [[string]]) -> string:           # rows joined by " ; ", fields by
     return out
 
 fn show(label: string, s: string):
-    print(label + dump(csv.parse(s)) + "\n")
+    println(label + dump(csv.parse(s)))
 
 fn main():
     # ---- every documented input shape ----
@@ -65,25 +65,25 @@ fn main():
 
     # ---- empty input -> zero rows ----
     e := csv.parse("")
-    print(f"emptyinput rows={len(e)}\n")       # 0
+    println(f"emptyinput rows={len(e)}")       # 0
 
     # ---- safe accessor get() ----
     rows := csv.parse("a,b\nc,d")
     g00 := csv.get(rows, 0, 0)
     g11 := csv.get(rows, 1, 1)
     goob := csv.get(rows, 9, 9)
-    print(f"get 0,0={g00} 1,1={g11} oob=[{goob}]\n")   # a d []
+    println(f"get 0,0={g00} 1,1={g11} oob=[{goob}]")   # a d []
 
     # ---- serialize: only fields that need it are quoted ----
     special := [["a,b", "c\"d", "e\nf"], ["plain", "x"]]
     enc := csv.stringify(special)
-    print("stringify = " + vis(enc) + "\n")
+    println("stringify = " + vis(enc))
 
     # ---- round-trip: parse(stringify(rows)) == rows ----
     rt := csv.parse(enc)
     same := b2i(dump(rt) == dump(special))
-    print("roundtrip = " + dump(rt) + "\n")
+    println("roundtrip = " + dump(rt))
     nrows := len(rt)
     nr0 := len(rt[0])
     nr1 := len(rt[1])
-    print(f"rt_ok={same} rows={nrows} r0={nr0} r1={nr1}\n")
+    println(f"rt_ok={same} rows={nrows} r0={nr0} r1={nr1}")

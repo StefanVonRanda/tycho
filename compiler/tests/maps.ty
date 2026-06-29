@@ -27,38 +27,38 @@ fn main():
     words := ["a", "b", "a", "c", "a", "b"]
     for i in range(len(words)):
         counts[words[i]] = map_get(counts, words[i], 0) + 1
-    print("a=" + str(map_get(counts, "a", 0)) + " b=" + str(map_get(counts, "b", 0)) + " c=" + str(map_get(counts, "c", 0)) + "\n")
-    print("distinct=" + str(len(counts)) + " total=" + str(sumvals(counts)) + "\n")
+    println("a=" + str(map_get(counts, "a", 0)) + " b=" + str(map_get(counts, "b", 0)) + " c=" + str(map_get(counts, "c", 0)))
+    println("distinct=" + str(len(counts)) + " total=" + str(sumvals(counts)))
 
     snap := counts
     counts["a"] = 100
-    print("snap_a=" + str(map_get(snap, "a", 0)) + " counts_a=" + str(map_get(counts, "a", 0)) + "\n")
+    println("snap_a=" + str(map_get(snap, "a", 0)) + " counts_a=" + str(map_get(counts, "a", 0)))
 
     less := counts                     # value-semantics copy: deleting from it leaves counts intact
     delete less["a"]
-    print("less_has_a=" + yn("a" in less) + " counts_has_a=" + yn("a" in counts) + "\n")
-    print("less_len=" + str(len(less)) + "\n")
+    println("less_has_a=" + yn("a" in less) + " counts_has_a=" + yn("a" in counts))
+    println("less_len=" + str(len(less)))
 
     delete counts["b"]
-    print("after_del_b_len=" + str(len(counts)) + " has_b=" + yn("b" in counts) + "\n")
+    println("after_del_b_len=" + str(len(counts)) + " has_b=" + yn("b" in counts))
 
     m := []string: int
     bump(&m, "x")
     bump(&m, "x")
     bump(&m, "y")
-    print("mut x=" + str(map_get(m, "x", 0)) + " len=" + str(len(m)) + "\n")
+    println("mut x=" + str(map_get(m, "x", 0)) + " len=" + str(len(m)))
     drop(&m, "x")
-    print("after_drop x_has=" + yn("x" in m) + " len=" + str(len(m)) + "\n")
+    println("after_drop x_has=" + yn("x" in m) + " len=" + str(len(m)))
 
     t := []string: int
     for i in range(50):
         t["k" + str(i)] = i
     for i in range(50):
         delete t["k" + str(i)]
-    print("emptied len=" + str(len(t)) + "\n")
+    println("emptied len=" + str(len(t)))
     for i in range(30):
         t["k" + str(i)] = i * 2
-    print("refilled len=" + str(len(t)) + " k7=" + str(map_get(t, "k7", -1)) + " k49=" + str(map_get(t, "k49", -1)) + "\n")
+    println("refilled len=" + str(len(t)) + " k7=" + str(map_get(t, "k7", -1)) + " k49=" + str(map_get(t, "k49", -1)))
 
     e := []string: int
-    print("empty_keys_len=" + str(len(keys(e))) + "\n")
+    println("empty_keys_len=" + str(len(keys(e))))

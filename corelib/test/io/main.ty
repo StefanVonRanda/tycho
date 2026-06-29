@@ -29,23 +29,23 @@ fn main():
     body := io.read(tmp)
     w2 := io.append(tmp, "again\n")
     ls := io.read_lines(tmp)
-    print(f"write={b2i(w1)} bytes={len(body)} append={b2i(w2)} lines={len(ls)}\n")
-    print("joined=" + jn(ls) + "\n")
+    println(f"write={b2i(w1)} bytes={len(body)} append={b2i(w2)} lines={len(ls)}")
+    println("joined=" + jn(ls))
 
     # write_lines / read_lines round-trip (each line newline-terminated)
     w3 := io.write_lines(tmp, ["a", "b", "c"])
     rl := io.read_lines(tmp)
-    print(f"wl={b2i(w3)} rl={len(rl)} " + jn(rl) + "\n")
+    println(f"wl={b2i(w3)} rl={len(rl)} " + jn(rl))
 
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")
-    print(f"missing=[{miss}] len={len(miss)}\n")
+    println(f"missing=[{miss}] len={len(miss)}")
 
     # exists via list_dir membership (repo-relative paths; string-literal args
     # bound to locals first -- f-string holes can't hold a string literal)
     es := b2i(io.exists("corelib/test/io/main.ty"))
     en := b2i(io.exists("corelib/test/io/nope.xyz"))
-    print(f"exists_self={es} exists_no={en}\n")
+    println(f"exists_self={es} exists_no={en}")
     emk := b2i(io.exists("Makefile"))
     lge := b2i(len(io.list("corelib/test/io")) >= 1)
-    print(f"exists_mk={emk} list_ge1={lge}\n")
+    println(f"exists_mk={emk} list_ge1={lge}")

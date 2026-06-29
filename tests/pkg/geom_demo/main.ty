@@ -12,4 +12,4 @@ fn total(pts: [geom.Point]) -> int:
 fn main():
     r := geom.add(geom.Point(3, 4), geom.Point(1, 2))
     pts := [geom.Point(1, 2), r]
-    print("sum=(" + str(r.x) + "," + str(r.y) + ") total=" + str(total(pts)) + "\n")   # (4,6) total=13
+    println("sum=(" + str(r.x) + "," + str(r.y) + ") total=" + str(total(pts)))   # (4,6) total=13

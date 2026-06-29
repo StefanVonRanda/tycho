@@ -5,7 +5,7 @@ import "core:base64"
 fn main():
     msg := "hello tycho"
     enc := base64.encode(msg)
-    print("encode       = " + enc + "\n")                          # aGVsbG8gdHljaG8=
-    print("decode       = " + base64.decode(enc) + "\n")           # hello tycho
-    print("encode_url   = " + base64.encode_url(msg) + "\n")       # aGVsbG8gdHljaG8 (no padding)
-    print("decode wraps = " + base64.decode("aGVs\nbG8=") + "\n")  # hello (newline skipped)
+    println("encode       = " + enc)                          # aGVsbG8gdHljaG8=
+    println("decode       = " + base64.decode(enc))           # hello tycho
+    println("encode_url   = " + base64.encode_url(msg))       # aGVsbG8gdHljaG8 (no padding)
+    println("decode wraps = " + base64.decode("aGVs\nbG8="))  # hello (newline skipped)

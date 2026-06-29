@@ -8,4 +8,4 @@ fn main():
         total = total + str(i)
         if i < 5:
             total = total + ", "
-    print("counted: " + total + "\n")
+    println("counted: " + total)

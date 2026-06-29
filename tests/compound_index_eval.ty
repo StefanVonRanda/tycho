@@ -17,16 +17,16 @@ fn main():
     push(a, 30)
     c := 0
     a[nextidx(&c)] += 100        # nextidx must run once -> updates a[0], c=1
-    print("a=" + str(a[0]) + "," + str(a[1]) + "," + str(a[2]) + "\n")   # 110,20,30
-    print("c=" + str(c) + "\n")  # 1  (double-eval would give 2 and the wrong slot)
+    println("a=" + str(a[0]) + "," + str(a[1]) + "," + str(a[2]))   # 110,20,30
+    println("c=" + str(c))  # 1  (double-eval would give 2 and the wrong slot)
 
     b := Box([5, 6, 7])
     d := 0
     b.v[nextidx(&d)] *= 10       # field-then-index, call index once -> b.v[0]=50, d=1
-    print("bv=" + str(b.v[0]) + "," + str(b.v[1]) + "," + str(b.v[2]) + " d=" + str(d) + "\n")  # 50,6,7 d=1
+    println("bv=" + str(b.v[0]) + "," + str(b.v[1]) + "," + str(b.v[2]) + " d=" + str(d))  # 50,6,7 d=1
 
     # pure index: unchanged behavior
     xs := [1, 2, 3]
     i := 1
     xs[i] += 100
-    print("xs1=" + str(xs[1]) + "\n")   # 102
+    println("xs1=" + str(xs[1]))   # 102

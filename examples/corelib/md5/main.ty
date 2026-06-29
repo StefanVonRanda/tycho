@@ -4,6 +4,6 @@ package main
 import "core:md5"
 
 fn main():
-    print("md5(\"\")      =\n  " + md5.hex("") + "\n")        # d41d8cd98f00b204e9800998ecf8427e
-    print("md5(\"tycho\")  =\n  " + md5.hex("tycho") + "\n")
-    print("digest bytes  = " + str(len(md5.digest("tycho"))) + "\n")  # 16
+    println("md5(\"\")      =\n  " + md5.hex(""))        # d41d8cd98f00b204e9800998ecf8427e
+    println("md5(\"tycho\")  =\n  " + md5.hex("tycho"))
+    println("digest bytes  = " + str(len(md5.digest("tycho"))))  # 16

@@ -67,10 +67,10 @@ fn build_readmid() -> [int]:            # reads len(b) mid-loop -> must NOT fuse
     return b
 
 fn main():
-    print(str(sum_arr(build_break(10))) + "\n")    # 0+1+2+3+4+999 = 1009
-    print(str(sum_arr(build_cont(10))) + "\n")     # 1+3+5+7+9 = 25
-    print(str(sum_arr(build_ret(10))) + "\n")      # 0+1+2+3 = 6
-    print(str(sum_arr(build_nested())) + "\n")     # 99
-    print(str(build_two()) + "\n")                 # 20
-    print(str(sum_arr(build_while())) + "\n")      # 0+2+4+6+8 = 20
-    print(str(sum_arr(build_readmid())) + "\n")    # 0+1+2+100+3+4 = 110
+    println(str(sum_arr(build_break(10))))    # 0+1+2+3+4+999 = 1009
+    println(str(sum_arr(build_cont(10))))     # 1+3+5+7+9 = 25
+    println(str(sum_arr(build_ret(10))))      # 0+1+2+3 = 6
+    println(str(sum_arr(build_nested())))     # 99
+    println(str(build_two()))                 # 20
+    println(str(sum_arr(build_while())))      # 0+2+4+6+8 = 20
+    println(str(sum_arr(build_readmid())))    # 0+1+2+100+3+4 = 110

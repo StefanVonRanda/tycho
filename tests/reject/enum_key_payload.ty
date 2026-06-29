@@ -7,4 +7,4 @@ enum Shape:
 fn main():
     m : [Shape: int] = []
     m[Dot] = 1
-    print(str(len(m)) + "\n")
+    println(str(len(m)))

@@ -14,7 +14,7 @@ struct Holder:
 
 fn main():
     b := Box(Point(3, 4))
-    print(str(b.v.x) + "," + str(b.v.y) + "\n")    # 3,4
-    print(str(Box(5).v) + "\n")                     # 5 (scalar instance too)
+    println(str(b.v.x) + "," + str(b.v.y))    # 3,4
+    println(str(Box(5).v))                     # 5 (scalar instance too)
     h := Holder(Box(Point(7, 8)))
-    print(str(h.inner.v.y) + "\n")                  # 8
+    println(str(h.inner.v.y))                  # 8

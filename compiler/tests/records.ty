@@ -17,18 +17,18 @@ fn promote(p: Person) -> Person:    # returns a heap struct; promoted into
 
 fn main():
     ada := Person("Ada", 36)
-    print(ada.name + " is " + str(ada.age) + "\n")
+    println(ada.name + " is " + str(ada.age))
 
     # value semantics: the copy is independent (deep)
     older := promote(ada)
-    print("after promote: ada=" + str(ada.age) + " older=" + str(older.age) + "\n")
+    println("after promote: ada=" + str(ada.age) + " older=" + str(older.age))
 
     # nested struct + a [string] field
     t := Team(ada, ["Grace", "Alan"])
-    print("lead: " + t.lead.name + ", members: " + str(len(t.members)) + "\n")
-    print("first member: " + t.members[0] + "\n")
+    println("lead: " + t.lead.name + ", members: " + str(len(t.members)))
+    println("first member: " + t.members[0])
 
     # replacing a nested struct field, inside a block, with a fresh value
     if ada.age > 0:
         t.lead = Person("Grace Hopper", 79)
-    print("new lead: " + t.lead.name + "\n")
+    println("new lead: " + t.lead.name)

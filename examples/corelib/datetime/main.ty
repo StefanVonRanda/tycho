@@ -10,10 +10,10 @@ fn b2i(b: bool) -> int:
 
 fn main():
     dt := datetime.from_unix(1700000000)
-    print("iso          = " + datetime.format_iso(dt) + "\n")              # 2023-11-14T22:13:20
-    print("weekday      = " + datetime.weekday_name(dt.weekday) + "\n")    # Tue
-    print("month        = " + datetime.month_name(dt.month) + "\n")        # Nov
-    print("is_leap 2024 = " + str(b2i(datetime.is_leap(2024))) + "\n")     # 1
-    print("days Feb 2024= " + str(datetime.days_in_month(2024, 2)) + "\n") # 29
+    println("iso          = " + datetime.format_iso(dt))              # 2023-11-14T22:13:20
+    println("weekday      = " + datetime.weekday_name(dt.weekday))    # Tue
+    println("month        = " + datetime.month_name(dt.month))        # Nov
+    println("is_leap 2024 = " + str(b2i(datetime.is_leap(2024))))     # 1
+    println("days Feb 2024= " + str(datetime.days_in_month(2024, 2))) # 29
     # to_unix is the exact inverse of from_unix
-    print("round-trip   = " + str(b2i(datetime.to_unix(dt) == 1700000000)) + "\n")  # 1
+    println("round-trip   = " + str(b2i(datetime.to_unix(dt) == 1700000000)))  # 1

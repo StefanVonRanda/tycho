@@ -34,4 +34,4 @@ fn main():
     sq := 0
     for i in range(len(qq)):
         sq = sq + qq[i]
-    print("sl=" + str(sl) + " sb=" + str(sb) + " scc=" + str(scc) + " sq=" + str(sq) + "\n")
+    println("sl=" + str(sl) + " sb=" + str(sb) + " scc=" + str(scc) + " sq=" + str(sq))

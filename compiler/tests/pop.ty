@@ -16,32 +16,32 @@ fn main():
     # scalar elements
     a := [10, 20, 30]
     i := pop(a)
-    print("int=" + str(i) + " len=" + str(len(a)) + "\n")              # int=30 len=2
+    println("int=" + str(i) + " len=" + str(len(a)))              # int=30 len=2
     fs := [1.5, 2.5]
     f := pop(fs)
-    print("flt=" + str(f) + "\n")                                     # flt=2.5
+    println("flt=" + str(f))                                     # flt=2.5
 
     # string elements (deep-copied out)
     ss := ["alpha", "beta", "gamma"]
     s := pop(ss)
-    print("str=" + s + " len=" + str(len(ss)) + "\n")                 # str=gamma len=2
+    println("str=" + s + " len=" + str(len(ss)))                 # str=gamma len=2
 
     # struct elements
     ps := [P(1, 10), P(2, 20), P(3, 30)]
     p := pop(ps)
-    print("struct=" + str(p.x) + "," + str(p.y) + "\n")               # struct=3,30
+    println("struct=" + str(p.x) + "," + str(p.y))               # struct=3,30
 
     # nested-array elements (composite Arr family)
     m := [[1, 2], [3, 4], [5, 6]]
     row := pop(m)
-    print("row=" + str(row[0]) + "," + str(row[1]) + " len=" + str(len(m)) + "\n")  # row=5,6 len=2
+    println("row=" + str(row[0]) + "," + str(row[1]) + " len=" + str(len(m)))  # row=5,6 len=2
 
     # value semantics: a popped heap value survives later pushes that regrow the buffer
     held := pop(ss)                                                    # held=beta, ss=["alpha"]
     push(ss, "x1")
     push(ss, "x2")
     push(ss, "x3")
-    print("held=" + held + " now=" + str(len(ss)) + "\n")            # held=beta now=4
+    println("held=" + held + " now=" + str(len(ss)))            # held=beta now=4
 
     # pop down then refill (drives the empty/grow boundary)
     b := [7, 8]
@@ -49,4 +49,4 @@ fn main():
     two := pop(b)
     push(b, 99)
     three := pop(b)
-    print("drained=" + str(one) + "," + str(two) + " refill=" + str(three) + "\n")  # drained=8,7 refill=99
+    println("drained=" + str(one) + "," + str(two) + " refill=" + str(three))  # drained=8,7 refill=99

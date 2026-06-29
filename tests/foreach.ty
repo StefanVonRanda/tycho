@@ -18,17 +18,17 @@ fn main():
     s := 0
     for x in xs:
         s = s + x
-    print("sum=" + str(s) + "\n")            # 6
+    println("sum=" + str(s))            # 6
 
     p := 1
     for k in [2, 3, 4]:                       # array literal
         p = p * k
-    print("prod=" + str(p) + "\n")           # 24
+    println("prod=" + str(p))           # 24
 
     t := 0
     for v in nums():                          # function result -> evaluated once
         t = t + v
-    print("tsum=" + str(t) + "\n")           # 60
+    println("tsum=" + str(t))           # 60
 
     words := []string                         # heap (string) elements
     push(words, "a")
@@ -37,12 +37,12 @@ fn main():
     out := ""
     for w in words:
         out = out + w + "."
-    print("joined=" + out + "\n")            # a.bb.ccc.
+    println("joined=" + out)            # a.bb.ccc.
 
     n := 0
     for ch in "hello":                        # iterate a string -> chars
         n = n + 1
-    print("chars=" + str(n) + "\n")          # 5
+    println("chars=" + str(n))          # 5
 
     acc := 0
     for x in xs:                              # break / continue inside foreach
@@ -51,10 +51,10 @@ fn main():
         if x == 3:
             break
         acc = acc + x
-    print("acc=" + str(acc) + "\n")          # 1
+    println("acc=" + str(acc))          # 1
 
     g := 0
     for a in xs:                              # nested foreach
         for b in [10, 20]:
             g = g + 1
-    print("grid=" + str(g) + "\n")           # 6
+    println("grid=" + str(g))           # 6

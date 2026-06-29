@@ -140,9 +140,9 @@ fn render(g: Game) -> string:
 fn run_demo():
     g := new_game(12, 6, 7)
     g.food = g.body[0] + 3             # force the first food into the snake's path
-    print("start:\n")
+    println("start:")
     print(render(g))
-    print("\n")
+    println("")
     moves := []int
     push(moves, 1)                     # right x3 -> eat the food, grow to length 2
     push(moves, 1)
@@ -160,11 +160,11 @@ fn run_demo():
     for i in range(0, len(moves)):
         turn(&g, moves[i])
         step(&g)
-        print("move " + str(i) + " " + dirname(moves[i]) + ":\n")
+        println("move " + str(i) + " " + dirname(moves[i]) + ":")
         print(render(g))
-        print("\n")
+        println("")
         if g.alive == 0:
-            print("game over — final score " + str(g.score) + "\n")
+            println("game over — final score " + str(g.score))
             break
 
 # interactive — raw terminal, redraw each frame, read steering, sleep, advance.
@@ -194,7 +194,7 @@ fn run_play():
         print(clear + render(g) + "WASD to steer, q to quit\n")
         snake_sleep_ms(120)
     snake_raw_off()
-    print("game over — final score: " + str(g.score) + "\n")
+    println("game over — final score: " + str(g.score))
 
 fn main():
     a := args()

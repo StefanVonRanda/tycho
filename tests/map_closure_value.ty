@@ -10,4 +10,4 @@ fn main():
     b["neg"] = fn(x: float) -> float: 0.0 - x
     base := 100.0
     b["addbase"] = fn(x: float) -> float: x + base
-    print(str(b["double"](21.0)) + " " + str(b["neg"](5.0)) + " " + str(b["addbase"](1.0)) + "\n")
+    println(str(b["double"](21.0)) + " " + str(b["neg"](5.0)) + " " + str(b["addbase"](1.0)))

@@ -19,4 +19,4 @@ fn main():
             h = h + s[i]
         ck := checksum + h
         checksum = ck - (ck / p) * p
-    print(str(checksum) + "\n")
+    println(str(checksum))

@@ -15,10 +15,10 @@ fn snd(a: $A, b: $B) -> B:
     return b
 
 fn main():
-    print(str(id(5)) + "\n")              # int instance
-    print(id("hi") + "\n")                # string instance
-    print(str(id(5) + id(6)) + "\n")      # id__int reused (dedup) -> 11
-    print(str(fst(7, "x")) + "\n")        # two type params -> 7
-    print(snd(7, "x") + "\n")             # returns the second -> x
+    println(str(id(5)))              # int instance
+    println(id("hi"))                # string instance
+    println(str(id(5) + id(6)))      # id__int reused (dedup) -> 11
+    println(str(fst(7, "x")))        # two type params -> 7
+    println(snd(7, "x"))             # returns the second -> x
     b := id(Box(9))                       # struct type argument
-    print(str(b.v) + "\n")                # 9
+    println(str(b.v))                # 9

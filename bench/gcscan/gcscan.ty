@@ -27,4 +27,4 @@ fn main():
     for i < len(live):
         lacc = lacc + len(live[i])
         i = i + 1
-    print(str(acc) + " " + str(lacc) + "\n")
+    println(str(acc) + " " + str(lacc))

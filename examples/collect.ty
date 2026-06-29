@@ -12,6 +12,6 @@ fn collect(out: mut [string], n: int):
 fn main():
     acc := []string
     collect(&acc, 5)
-    print("collected " + str(len(acc)) + ":\n")
+    println("collected " + str(len(acc)) + ":")
     for i in range(len(acc)):
-        print(acc[i] + "\n")
+        println(acc[i])

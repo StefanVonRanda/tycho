@@ -389,7 +389,7 @@ fn fmt(toks: [Tok]) -> string:
 fn main():
     a := args()
     if len(a) < 2:
-        print("usage: tychofmt <file.ty>\n")
+        println("usage: tychofmt <file.ty>")
         return
     src := read_file(a[1])
     toks := lex(src)

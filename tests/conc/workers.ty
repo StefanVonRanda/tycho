@@ -25,5 +25,5 @@ fn main():
                 sum = sum + x * x       # reduction, folded at the in-order join
     np := wait(pr)
     close(jobs)
-    print(str(sum) + "\n")              # 328350
-    print(str(np) + "\n")              # 100
+    println(str(sum))              # 328350
+    println(str(np))              # 100

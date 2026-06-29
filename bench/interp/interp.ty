@@ -96,4 +96,4 @@ fn main():
     fn2 := count(ft)
     fev := eval(ft)
     same := eq(t, ft)
-    print(str(n) + " " + str(ev) + " " + str(fn2) + " " + str(fev) + " " + str(same) + "\n")
+    println(str(n) + " " + str(ev) + " " + str(fn2) + " " + str(fev) + " " + str(same))

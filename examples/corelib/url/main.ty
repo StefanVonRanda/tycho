@@ -4,8 +4,8 @@ import "core:url"
 
 fn main():
     s := "a b&c=d"
-    print("encode       = " + url.encode(s) + "\n")           # a%20b%26c%3Dd
-    print("encode_form  = " + url.encode_form(s) + "\n")      # a+b%26c%3Dd
-    print("decode       = " + url.decode("a%20b%26c%3Dd") + "\n")    # a b&c=d
-    print("decode_form  = " + url.decode_form("a+b%26c") + "\n")     # a b&c
-    print("unreserved   = " + url.encode("safe-_.~") + "\n")  # safe-_.~ (unchanged)
+    println("encode       = " + url.encode(s))           # a%20b%26c%3Dd
+    println("encode_form  = " + url.encode_form(s))      # a+b%26c%3Dd
+    println("decode       = " + url.decode("a%20b%26c%3Dd"))    # a b&c=d
+    println("decode_form  = " + url.decode_form("a+b%26c"))     # a b&c
+    println("unreserved   = " + url.encode("safe-_.~"))  # safe-_.~ (unchanged)
