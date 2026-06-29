@@ -21,8 +21,8 @@ The type follows from the literal or an annotation: `["a": 1]` is `[string: int]
 ## `m[k]` is a place
 
 `m[k]` is not just a read — it is a **place** you can write through, and writing to a
-missing key inserts the value type's zero first. So the common accumulator patterns are one
-line each:
+missing key inserts the value type's zero first. So the common accumulator patterns are each
+one line:
 
 ```
 counts[w] += 1                    # count occurrences (zero-initialized on first sight)
@@ -32,7 +32,7 @@ totals[user].balance = 0          # mutate a struct-valued entry's field
 
 Read as an rvalue, `m[k]` returns the value **by copy** and never inserts: a scalar value
 returns the value type's zero for a missing key, a composite value returns a deep copy. When
-you need a non-zero default for a missing key, `map_get(m, k, default)` is the one surviving
+you need a non-zero default for a missing key, `map_get(m, k, default)` is the one remaining
 map *function* — everything else (`m[k]`, `in`, `delete`, `len`, `keys`) is operator or
 keyword syntax:
 

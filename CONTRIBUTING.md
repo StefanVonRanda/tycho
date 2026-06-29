@@ -1,25 +1,26 @@
 # Contributing to Tycho
 
 Thanks for trying Tycho and wanting to help. **Tycho is an experimental
-proof-of-concept** (see the status note in the [README](README.md)) — the most
-valuable contributions right now are **bug reports, repros, and design
-feedback**, more than large features. Don't be shy about filing an issue.
+proof-of-concept** (see the status note in the [README](README.md)), so honestly
+the most useful thing you can send me right now is a **bug report, a repro, or
+some design feedback** — much more than a big feature. Please don't be shy about
+filing an issue.
 
 ## Reporting bugs and giving feedback
 
 - **Found a miscompile, crash, or wrong output?** Open a
-  [bug report](.github/ISSUE_TEMPLATE/bug_report.md) — the single most useful
-  thing is a **small `.ty` program that reproduces it** plus what you expected
+  [bug report](.github/ISSUE_TEMPLATE/bug_report.md). The single most useful
+  thing is a **small `.ty` program that reproduces it**, plus what you expected
   vs. what happened, and your OS.
 - **Have an idea, a rough edge, or a "why does it work this way?"** Open an
   [idea / feedback](.github/ISSUE_TEMPLATE/idea.md) issue. Even "I bounced off
-  X" is useful signal.
-- A miscompile that a fixture in `tests/` would have caught is gold — it tells
-  us where the fuzzer and suite have a blind spot.
+  X" tells me something useful.
+- A miscompile that a fixture in `tests/` would have caught is gold — it shows
+  me where the fuzzer and suite have a blind spot.
 
 ## Building and running
 
-Prerequisites are just a C compiler (`cc`) and `make` — the compiler is a single
+All you need is a C compiler (`cc`) and `make` — the transpiler is a single
 dependency-free C file. See the README's [Getting started](README.md#getting-started).
 
 ```
@@ -29,8 +30,8 @@ make                 # build ./tychoc
 
 ## The local CI gate (run it before a PR)
 
-**Tycho has no cloud CI — by design.** There are no GitHub Actions; the gate is
-`scripts/ci.sh`, run locally:
+**Tycho has no cloud CI — that's on purpose.** There are no GitHub Actions; the
+gate is `scripts/ci.sh`, run locally:
 
 ```
 make ci              # build · test · self-host fixpoint · corelib + examples ·
@@ -44,26 +45,27 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
 
 ## Two rules that will surprise you
 
-1. **Every language feature lands in BOTH compilers, or not at all.** Tycho has a
-   C reference compiler (`src/tychoc.c`) and a self-hosted one written in Tycho
-   (`compiler/tychoc0.ty`). `make fixpoint` asserts the Tycho-built compiler
-   reproduces itself byte-identically **and** matches the C compiler across the
-   whole suite. A feature in only one compiler turns the fixpoint red. This is
-   the parity discipline that keeps the two from drifting — plan for it.
+1. **Every language feature lands in BOTH transpilers, or not at all.** Tycho has
+   a C reference transpiler (`src/tychoc.c`) and a self-hosted one written in
+   Tycho (`compiler/tychoc0.ty`). `make fixpoint` asserts the Tycho-built
+   transpiler reproduces its own emitted C byte-for-byte **and** that the two
+   transpilers produce identical program output across the whole suite. A feature
+   in only one of them turns the fixpoint red. This is the parity discipline that
+   keeps the two from drifting apart — plan for it.
 
 2. **The arena memory model is the whole point.** Value semantics + implicit
    per-scope arenas (no GC, no manual `free`) is the thesis
    ([docs/thesis.md](docs/thesis.md)). Changes that quietly break the in-place
    optimizations (string append, the map accumulator, move-on-last-use) turn an
-   O(n) idiom into O(n²) — `make bench` / `bench/` guard against that. When in
+   O(n) idiom into O(n²), and `make bench` / `bench/` guard against that. When in
    doubt, read [docs/memory-model.md](docs/memory-model.md).
 
 ## Where feature work is useful
 
 The language is **feature-complete for its proof-of-concept thesis** — value
 semantics, implicit arenas, concurrency, generics, closures, UFCS, FFI, and the
-`sink` consuming convention all ship in both compilers. The useful feature work
-now is **ergonomics polish, not new pillars**:
+`sink` consuming convention all ship in both transpilers. So the feature work I
+find useful now is **ergonomics polish, not new pillars**:
 
 - **User-defined projections** — yielding subscripts that generalize the built-in
   `&m[k]` (zero-copy views into part of a value). This is the one
@@ -87,7 +89,7 @@ Generics, on the other hand, *are* supported — `$T`, see
 
 - Match the surrounding code — its comment density, naming, and idioms.
 - C in `src/`/`runtime/` follows the existing C89/C11-ish style; Tycho in
-  `compiler/`/`corelib/` follows the existing Tycho style (run `tycho fmt` /
+  `compiler/`/`corelib/` follows the existing Tycho style (run `tycho fmt` and
   `make tools-check`).
 - One focused change per commit; the commit message says **what was wrong** and
   **how the fix was verified** (which test / fixpoint / fuzz run).
@@ -97,7 +99,7 @@ Generics, on the other hand, *are* supported — `$T`, see
 ## Submitting
 
 Open a pull request against `main`. Confirm `make ci` is green locally and say so
-in the PR. Small, well-scoped PRs with a test are the easiest to accept.
+in the PR. Small, well-scoped PRs with a test are the easiest for me to accept.
 
 By contributing, you agree your contributions are licensed under the project's
 [MIT License](LICENSE).

@@ -1,32 +1,32 @@
 # Maps with arbitrary value types
 
-A Tycho map `[K: V]` may hold *any* value type: `[string: string]`,
+A Tycho map `[K: V]` can hold *any* value type: `[string: string]`,
 `[string: Point]`, `[int: [int]]`, even a nested map `[string: [string: int]]`.
 This note explains how that works under value semantics and implicit arenas,
-and why the map runtime needs no `$T` generics of its own to support any value
-type (monomorphization handles it). The user-facing surface is the
+and why the map runtime doesn't need any `$T` generics of its own to support any
+value type (monomorphization handles it). The user-facing surface is the
 [Maps reference](reference/maps.md); in-place mutation of a
 value (`push(m[k], v)`, `m[k] += 1`) has its own note,
 [map-mutation.md](map-mutation.md).
 
 ## How any value type works without generics
 
-Tycho monomorphizes its containers rather than boxing (and user `$T` generics are
+Tycho monomorphizes its containers instead of boxing (and user `$T` generics are
 themselves erased to concrete code — see [generics.md](generics.md)), so the
-value type cannot be abstracted at runtime. Maps use the same answer arrays use
-for `[Struct]` and `[[T]]`: **monomorphization**. The compiler generates one
+value type can't be abstracted at runtime. Maps use the same answer arrays use
+for `[Struct]` and `[[T]]`: **monomorphization**. The transpiler generates one
 concrete map runtime per `(key, value)` pair the program actually uses, named
 after that pair.
 
 A program using `[string: Point]` and `[int: [int]]` gets exactly two map
-runtimes; one that uses neither pays for neither. There is no boxing, no tag, no
+runtimes; one that uses neither pays for neither. There's no boxing, no tag, no
 dynamic dispatch — a `[string: Point]` stores `Point`s inline, the same layout a
 hand-written map would have.
 
 ## Heap-value lifetimes
 
 The model is value semantics: a map *owns* its entries, and every value that
-crosses the map boundary is deep-copied — the same rule that governs every other
+crosses the map boundary gets deep-copied — the same rule that governs every other
 heap value in the language. For a value type that owns heap bytes (a `string`, a
 struct with a `string` field, an array, another map) there are two copy
 directions:
@@ -51,7 +51,7 @@ use(v)                         # still the old value — v is its own copy
 
 Copying a whole map (`b := m`) deep-copies every value, so the two maps share no
 storage. `==` is deep, entry-wise value equality, independent of insertion
-order. These follow from the copy-in/copy-out discipline; they are not special
+order. These fall out of the copy-in/copy-out discipline; they aren't special
 cases.
 
 ## What it covers
@@ -73,7 +73,7 @@ deeply over its fields); only a map itself is not yet usable as a key (see the
 
 ## Implementation notes
 
-These are for contributors; users need only the surface above.
+These are for contributors; users only need the surface above.
 
 - **tychoc** (`src/tychoc.c`): composite value types are interned in a side table
   (`g_maptypes`, base id `T_MAPC_BASE`) and emitted as one monomorphic runtime

@@ -1,15 +1,15 @@
 # Tycho aggregates: arrays & structs under value semantics
 
 Tycho is an experimental, value-semantic language with implicit hierarchical
-arenas and **no pointer or reference type**. This document explains how
+arenas and **no pointer or reference type**. This document walks through how
 aggregates — arrays and structs, including heap-bearing and nested fields —
-behave under those rules, and why the memory model stays sound without a
+behave under those rules, and why I think the memory model stays sound without a
 borrow checker or whole-program alias analysis.
 
-The central question it answers: *do implicit arenas still hold once the
+The question it answers: *do implicit arenas still hold once the
 language has arrays and structs, given strict value semantics and no pointer
-type?* The answer is **yes**, subject to five invariants and three honest
-costs, both listed below. Two compiler optimizations (return-slot move,
+type?* I believe the answer is **yes**, subject to five invariants and three honest
+costs, both listed below. Two transpiler optimizations (return-slot move,
 in-place append) keep the costs from biting in practice; see
 [thesis.md](thesis.md) §4. Arrays, structs, nested struct fields, structural
 equality, and `mut` all ship as described — see the [README](../README.md)
@@ -58,7 +58,7 @@ labels: [string]           # a struct field that is an array, etc.
 No `null`. "Maybe a value" needs an optional/sum type (see §7); that is a
 companion feature, not part of this spec, but the model assumes it exists.
 
-## 3. The five invariants that make it sound
+## 3. The five invariants that keep it sound
 
 1. **Single-arena ownership.** A value's root and every byte it
    transitively owns are allocated in one arena — the owner slot's arena.
@@ -116,7 +116,7 @@ fn main():
    - *Build-in-destination*: if a local is returned, the compiler
      allocates it in the parent arena from the start → the return needs no copy.
      (The leaf version applies today: a return expression targets the
-     parent arena.) Conservative when a value *may* be returned on some
+     parent arena.) It stays conservative when a value *may* be returned on some
      path; still sound, still local.
    - *Move on last use*: `b := a` / `b = a` where `a` is a
      uniquely-owned local read exactly once (so this is its last use on every
@@ -126,9 +126,9 @@ fn main():
    - *Borrow on read*: a by-value parameter the callee only reads is
      passed as a transient borrow (zero copy) — safe because the borrow
      can't be stored (invariant 4) and the caller is suspended.
-   The important part: in this model escape analysis is an **optimization**.
+   The important part: in this model escape analysis is just an **optimization**.
    In a pointer-having language the same analysis is a **soundness
-   requirement**. This is why value semantics is viable here.
+   requirement**. That's why value semantics is viable here.
 
 2. **No recursive types.** `struct Node: next: Node` is infinite-size and
    illegal — there is no pointer to break the cycle. Trees, lists, and
@@ -144,9 +144,9 @@ fn main():
    reading a recycled slot). One extra word per handle buys use-after-free
    *detection* for the index-as-pointer pattern, with no pointer type.
 
-3. **Idiomatic building must be in place.** The immutable form
+3. **Idiomatic building has to be in place.** The immutable form
    `total = total + str(i)` in a loop leaves dead intermediate buffers in
-   the arena (bounded by scope, but wasteful). The blessed form is
+   the arena (bounded by scope, but wasteful). The form to reach for is
    in-place growth — `push(builder, str(i))` / `mut` — which is
    geometric and tight. "One right way" should make in-place building the
    one way; immutable rebuild stays *correct* but is the slow path.
@@ -167,7 +167,7 @@ fn main():
 | return a reference to a local | classic dangling | **inexpressible** — no reference type exists |
 
 The last row is the key point: the dangling-pointer bug that forces every other
-region system to ship escape analysis *for correctness* is not expressible in
+region system to ship escape analysis *for correctness* simply isn't expressible in
 Tycho, so it cannot occur.
 
 ## 7. Generics — monomorphized over the built-in container machinery
@@ -175,7 +175,7 @@ Tycho, so it cannot occur.
 Tycho has **monomorphized generics**: a `$T` type parameter on a
 function or struct, inferred at the use site and stamped out to concrete code at
 compile time. They reuse the *same* per-concrete-type interning + emission the
-compiler already runs for its built-in parametric types:
+transpiler already runs for its built-in parametric types:
 
 - `[T]` — growable array, any element type T (incl. structs, strings).
 - `Option(T)` / `Result(T, E)` — optional / fallible, since there is no `null`
@@ -220,9 +220,9 @@ One established way to run arenas is to pass each function an implicit arena
 parameter and have the callee allocate into the *caller's* arena, so a
 returned value is already in the right place — **zero-copy returns**. The
 price: a function's throwaway temporaries also live in the caller's arena
-until the caller returns, so reclamation has to be recovered with *visible*
+until the caller returns, so you have to claw reclamation back with *visible*
 tools — named sub-arena blocks and pools. That works, but it puts memory
-back in the programmer's face, the opposite of Tycho's goal.
+back in the programmer's face, the opposite of what I want for Tycho.
 
 Tycho can do better **because it has no pointers**. With value semantics and
 no reference type, a value escapes a function only by being **returned** or
@@ -261,7 +261,7 @@ not the memory model.
 That keeps every lifetime question locally decidable from signatures, which
 is exactly what lets the arenas stay invisible *and* lets the
 signature-directed escape strategy (§8) reclaim memory without copies. Arena
-allocation itself is well-proven; the claim Tycho tests is that removing pointers
+allocation itself is well-proven; what Tycho is testing is whether removing pointers
 turns the visible memory tools and whole-program analyses such systems usually
 need into invisible, local ones — and generics, being monomorphized to concrete
 code first, ride along without re-introducing either.

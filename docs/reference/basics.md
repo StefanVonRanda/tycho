@@ -1,8 +1,7 @@
 # Basics
 
 The procedural core of the language: how you define a procedure, declare and assign
-variables, write expressions, and control flow. Tycho is deliberately small — one way to do
-each thing.
+variables, write expressions, and control flow. Tycho is small — one way to do each thing.
 
 ## Procedures
 
@@ -16,7 +15,7 @@ fn main():               # entry point: exactly `fn main():`, no return value
 
 A `fn` with no `-> type` returns nothing. Blocks are indentation-based (tabs or spaces — just
 don't mix the two within one line's indentation), every block header ends with `:`, and `#`
-starts a comment — Python's layout.
+starts a comment — like Python's layout.
 
 By default a parameter is a **copy** (or, for the heap aggregates, a read-only **borrow**). An
 `mut` parameter is mutated in place: the callee writes back into the caller's variable, marked

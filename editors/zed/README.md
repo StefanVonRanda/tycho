@@ -51,6 +51,6 @@ Open a `.ty` file: tokens are colored and compile errors show inline.
   tycho is indentation-significant.
 - `zed_extension_api`'s trait shape changes across Zed versions. If the WASM build
   fails, bump the version in `Cargo.toml` to match your Zed and adjust
-  `src/lib.rs` accordingly.
+  `src/lib.rs` to suit.
 - If your code imports `core:` packages, set `TYCHO_CORELIB` so the diagnostics
-  compiler can resolve them (see [corelib](../../docs/corelib.md)).
+  transpiler can resolve them (see [corelib](../../docs/corelib.md)).

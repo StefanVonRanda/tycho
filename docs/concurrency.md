@@ -4,14 +4,14 @@ Tycho is value-semantic: every call deep-copies its arguments in, copies its res
 out, and runs against a private arena. That call convention is already a sound
 thread boundary. Concurrency is the same convention run on other threads — after
 the copy-in, a task shares zero bytes with its spawner, so race freedom falls out
-of value semantics. There is no `Sendable`, no lifetime annotation, and no lock in
+of value semantics. There's no `Sendable`, no lifetime annotation, and no lock in
 the language. (Erlang gets the same guarantee from per-process heaps and message
 copying; Swift's Sendable/region machinery exists to patch first-class aliasing,
-which Tycho does not have.)
+which Tycho doesn't have.)
 
-This guarantee is over **pure Tycho values** — the world the compiler owns. It
+This guarantee is over **pure Tycho values** — the world the transpiler owns. It
 stops at the FFI boundary: a task calling C that mutates process-global or
-`static` C state races just as it would in C, invisibly to the compiler. Isolate
+`static` C state races just as it would in C, invisibly to the transpiler. Isolate
 that state per thread (thread-local storage, as the `core:crypto` shim does) or
 serialize the calls. The full analysis is in
 [`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md).
@@ -19,7 +19,7 @@ serialize the calls. The full analysis is in
 The model does **not** remove **deadlock or livelock**: a `recv` with no live
 sender and no `close` parks forever, undetected (see
 [Limits](#limits-deliberate)). Data races and use-after-free fall out of value
-semantics; deadlock does not.
+semantics; deadlock doesn't.
 
 The model has four constructs:
 
@@ -28,11 +28,11 @@ The model has four constructs:
 - **channels** — bounded lock-free queues, the one shared object.
 - **`select`** — multi-channel fan-in.
 
-The cost is stated, not hidden: every value crossing a thread boundary is a deep
+I'm upfront about the cost: every value crossing a thread boundary is a deep
 copy, the same rule as an ordinary call.
 
-Concurrency is implemented in both the C reference compiler (`tychoc`) and the
-self-hosted compiler (`tychoc0`).
+Concurrency works in both the C reference transpiler (`tychoc`) and the
+self-hosted transpiler (`tychoc0`).
 
 ## spawn / wait — structured tasks
 
@@ -45,7 +45,7 @@ total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope;
 `spawn` takes a **direct call** to a named function — the argument list *is* the
 capture list, explicit and by value. The result is `Task(T)`, a type with no
 source syntax, so a handle can only live in a local. Tasks are **affine and
-structured**:
+structured**, meaning:
 
 - Copying or rebinding a handle, reassigning it, storing it in any container or
   closure, discarding a bare `spawn`, or spawning a builtin / extern / `void`
@@ -66,7 +66,7 @@ parallel for i in range(400000000):   # K = ncpu chunk tasks; TYCHO_THREADS over
 ```
 
 Works over a range or a collection. The body lifts into a chunk procedure:
-captures deep-copy into each task (the honest per-chunk cost), and reduction
+captures deep-copy into each task (that's the real per-chunk cost), and reduction
 accumulators — `acc = acc + e` / `acc = acc * e` and the `+=`/`*=` forms, on
 outer `int`/`float` locals, up to four — start from the operator's identity per
 chunk and fold at the in-order join. Integer results are therefore **identical
@@ -77,7 +77,7 @@ parallel-loop level, a `mut` of a capture, and range steps are all compile
 errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
-On the compute-bound reduction this matches C-pthreads here: 37 ms vs C's 36 ms, same peak RSS.
+On the compute-bound reduction this keeps up with C-pthreads here: 37 ms vs C's 36 ms, same peak RSS.
 
 ### Bounded fan-out over a channel
 
@@ -92,7 +92,7 @@ parallel for j in jobs:             # K = ncpu() workers share the one queue
 ```
 
 This is the bounded-fan-out idiom — N items not known up front, at most `cap`
-buffered, work spread across `ncpu()` workers — without sizing a `range`
+buffered, work spread across `ncpu()` workers — without you sizing a `range`
 yourself. Each item is taken by exactly one worker (the MPMC queue), so integer
 reductions are deterministic. The producer must `close(ch)` when done or the
 workers park waiting for more. It desugars to a `parallel for` over `range(0,
@@ -159,7 +159,7 @@ rejected just as it is anywhere else in a `parallel for` body.
 
 `make bench-conc` runs identical logic with cross-checked checksums in all four
 languages (AMD Ryzen 7 7735HS, 16 hardware threads — full details and the honest
-reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
+read in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 
 | workload | tycho | C | Go | Rust |
 |---|---:|---:|---:|---:|
@@ -167,39 +167,41 @@ reading in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
 | pipeline (10⁶ strings, 1→4 consumers) | 73 ms / 2.8 MB | 654 ms (mutex ring) | 91 ms / 7.5 MB | 141 ms |
 | pool (10⁶ jobs, `parallel for x in ch:`) | 150 ms / 2.7 MB | 1975 ms (mutex ring) | 157 ms / 2.3 MB | 395 ms |
 
-`parallel for` is at C parity (within a millisecond, same peak RSS). The lock-free channels are competitive with
-Go, and faster than the other reference implementations in this benchmark, while paying two
-deep copies per message that the others do not.
+`parallel for` is at C parity (within a millisecond, same peak RSS). The lock-free channels hold their own against
+Go, and are faster than the other reference implementations in this benchmark, while paying two
+deep copies per message that the others don't.
 
 On the **pool** workload — a bounded-channel worker pool written as the single
 line `parallel for x in ch:` — tycho is at **Go parity, ~5% faster** (150 vs
 157 ms) against Go's hand-written `for j := range jobs` + `WaitGroup` pool, both
-lock-free on the hot path. The C and Rust figures are the honest cost of a naive
+lock-free on the hot path. The C and Rust figures are just the honest cost of a naive
 mutex channel and of std lacking an MPMC channel, respectively (see RESULTS.md);
-they are not a tycho win — the win is that the one-liner gets the tuned Vyukov
+they aren't a tycho win — the win is that the one-liner gets the tuned Vyukov
 queue for free.
 
 ## Limits (deliberate)
+
+These are on purpose, not gaps I forgot about:
 
 - No `async`/`await` colouring, and no actors — per-task arenas plus channels
   already isolate state.
 - No mutex or atomic in the language, and no work-stealing runtime: a blocked
   waiter is a parked OS thread.
-- Deadlock (a `recv` with no live sender and no `close`) is the user's bug and is
-  not detected. A panic or abort in any task kills the whole process.
+- Deadlock (a `recv` with no live sender and no `close`) is your bug, and I
+  don't detect it. A panic or abort in any task kills the whole process.
 
 ## Verification
 
 `make conc` runs every fixture natively, under AddressSanitizer + LeakSanitizer,
-and under ThreadSanitizer against recorded goldens, and asserts that `tychoc` and
-`tychoc0` produce the same outputs. It is part of `make ci`. The cross-language
+and under ThreadSanitizer against recorded goldens, and checks that `tychoc` and
+`tychoc0` produce the same outputs. It's part of `make ci`. The cross-language
 benchmarks live in `bench/conc/`.
 
 ---
 
 ## Appendix: implementation & lineage
 
-For contributors. The feature exists in both compilers — `src/tychoc.c` and
+For contributors. The feature lives in both transpilers — `src/tychoc.c` and
 `compiler/tychoc0.ty` emit different C dialects with identical semantics — plus
 once in the shared runtime (`runtime/tycho_rt.c`).
 
@@ -215,7 +217,7 @@ syscalls and the check-then-park race costs at most one extra retry rather than 
 lost wakeup. Generated programs `#define _DEFAULT_SOURCE` so `clock_gettime` /
 `sched_yield` / `nanosleep` are visible.
 
-**Compilers.** `tychoc` interns `Task`/`Channel` as type ranges, registers spawn
+**Transpilers.** `tychoc` interns `Task`/`Channel` as type ranges, registers spawn
 sites at resolve (the lambda-lift pattern), and emits one args-struct +
 trampoline per site; per-element-type send/recv wrappers bracket `copy_into`
 around the runtime claim/commit; the implicit-join finalizers ride a codegen

@@ -1,7 +1,7 @@
 # Sampling profiler (`prof_shim.c` + `profile.sh`)
 
-A dependency-free statistical CPU-time profiler for tycho-compiled programs, for
-environments where the usual tools don't work:
+A dependency-free statistical CPU-time profiler for tycho-compiled programs. I
+wrote it for environments where the usual tools don't work:
 
 - **`perf`** needs `kernel.perf_event_paranoid <= 2` (root to lower); blocked in
   many sandboxes/containers (`= 3`, plus a "no new privileges" flag that stops
@@ -11,7 +11,7 @@ environments where the usual tools don't work:
   to *every function call*, so a tiny, branch-predicted, million-times-called
   function (`is_variant`, `count_str_occ`, the bounds-check helpers) is charged
   that overhead and *looks* like 25–33% of runtime — when at `-O2` it's ~0.3%.
-  Chasing that ghost cost real effort (see `docs/perf.md`). **Trust this sampler
+  Chasing that ghost cost me real effort (see `docs/perf.md`). **Trust this sampler
   (or `-O2` wall-clock deltas), not gprof self-times, for hot tiny functions.**
 
 ## How it works
@@ -38,7 +38,7 @@ index, so the same `.ty` profiles differently depending on who built it.
 
 ## What it found
 
-Pointed straight at the real self-compile hotspot that gprof had hidden:
+It pointed straight at the real self-compile hotspot gprof had hidden:
 `scan_token` recomputing `len(src)` (a full `strlen` of the source) once per
 token — O(tokens × length) = O(n²). Threading the already-known length in cut
 the self-hosted self-compile **62 → 33 ms** with no change to bounds-checking.

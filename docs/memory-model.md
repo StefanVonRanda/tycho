@@ -3,19 +3,19 @@
 Tycho's memory model — value semantics over implicit per-scope arenas — is
 described in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and
 the README's [Memory model](../README.md#memory-model) section. This document is
-about the *self-hosted* compiler, `tychoc0`: how it generates code on that same
-model, and the reclamation techniques that let its output match the C reference
-compiler, `tychoc`.
+about the *self-hosted* transpiler, `tychoc0`: how it generates code on that same
+model, and the reclamation tricks that let its output match the C reference
+transpiler, `tychoc`.
 
-`tychoc0` emits the same value-semantic, implicit-arena C that `tychoc` does. There
-is no known memory gap between the two compilers, and they have full feature
+`tychoc0` emits the same value-semantic, implicit-arena C that `tychoc` does. I
+don't know of any memory gap between the two transpilers, and they have full feature
 parity. The sections below describe the model as it stands; a closing appendix
-sketches, for contributors, how the self-hosted code generator was brought onto
+sketches, for contributors, how I brought the self-hosted code generator onto
 the model one type family at a time.
 
-This is an experimental, proof-of-concept compiler. The memory model is the
+This is an experimental, proof-of-concept transpiler. The memory model is the
 central idea it exists to demonstrate, and the cross-language benchmarks below
-are encouraging, but the implementation is young and should be evaluated as such.
+are encouraging, but the implementation is young and should be judged that way.
 
 ## What `tychoc0` emits
 
@@ -45,9 +45,9 @@ The rules:
    `{ T _ret = <built in _parent>; arena_free(&_scope); return _ret; }`.
 
 Data moves between arenas in exactly two directions, both arranged by the
-compiler: **down** as a function argument (a pointer into a parent arena, valid
+transpiler: **down** as a function argument (a pointer into a parent arena, valid
 for the call, no copy) and **up** as a return value (allocated in the caller's
-arena). Assigning to a variable that lives in an outer scope is handled the same
+arena). Assigning to a variable that lives in an outer scope works the same
 way — the value is built in *that variable's* arena, so it can never dangle.
 
 Each `if`/`else` block and each loop iteration gets its own child arena, reset or
@@ -62,7 +62,7 @@ semantics. With no aliasing, no closures over references, and no free pointers
 *syntactically visible*, and its destination is *lexically known at the write
 site*: `outer = e` targets `outer`'s home block, `push(outer, v)` targets
 `outer`'s home, `return e` targets `_parent`, an argument or `mut` targets the
-caller. So the compiler decides where each allocation lives by reading
+caller. So the transpiler decides where each allocation lives by reading
 signatures and scopes — a local routing decision, not a dataflow trace.
 
 ### Why arena migration is sound incrementally
@@ -77,7 +77,7 @@ caller must pass one.
 
 ## Reclamation techniques
 
-Per-scope freeing alone is not enough to match a C compiler or beat a GC; four
+Per-scope freeing alone isn't enough to match hand-written C or beat a GC; four
 further techniques close the gap, and all of them are **static** — there are no
 reference counts anywhere.
 
@@ -98,7 +98,7 @@ reference counts anywhere.
   single object mid-scope, so every dead intermediate would pile up until the
   function returns (peak = total allocation). The fix uses what value semantics
   already proves *statically*: at `a = new`, `a`'s old buffer has exactly one
-  owner and is dead the instant `new` is computed. The compiler hands that buffer
+  owner and is dead the instant `new` is computed. The transpiler hands that buffer
   back to the arena's free-list and the next allocation reuses it — the win
   reference counting (Perceus/FBIP) is built for, with no runtime refcount. The
   load-bearing soundness condition is to recycle only a variable read **at least
@@ -116,7 +116,7 @@ Together these close the arena's two known weak spots (loop-carried reassignment
 and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
 (reference counting) on these allocation-churn workloads. (The model's honest loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~3× C in
-RAM; that residue is covered in [the thesis](thesis.md) and the
+RAM; I cover that residue in [the thesis](thesis.md) and the
 [value-semantics limits note](internals/value-semantics-limits.md).)
 
 ## Verification
@@ -124,16 +124,16 @@ RAM; that residue is covered in [the thesis](thesis.md) and the
 The memory model is checked by four mechanisms that, between them, catch the
 ways an over-aggressive move or recycle could go wrong:
 
-- **Byte-identical self-build.** `make fixpoint` confirms the self-hosted compiler
-  is a fixed point — the compiler compiling itself reproduces itself byte for byte
-  and matches the C compiler's program output. This is the soundness
-  oracle: a move or recycle that aliased would diverge the output.
+- **Byte-identical self-build.** `make fixpoint` confirms the self-hosted transpiler
+  is a fixed point — it transpiles its own source and reproduces its own emitted C
+  byte for byte, and the resulting program matches the C transpiler's output. This
+  is the soundness oracle: a move or recycle that aliased would diverge the output.
 - **Sanitizers.** `make test` runs the self-emitted C under AddressSanitizer,
   UndefinedBehaviorSanitizer, and LeakSanitizer.
 - **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
   actually freed.
-- **Differential fuzzing** compares the two compilers' output across generated
-  programs, with distinct-value regression tests so value-masking cannot hide a
+- **Differential fuzzing** compares the two transpilers' output across generated
+  programs, with distinct-value regression tests so value-masking can't hide a
   corruption the differential alone would miss.
 
 ## Across threads
@@ -152,8 +152,8 @@ zero annotations.
 ## Appendix: what each mechanism buys, type by type
 
 For contributors. Because placing one type on arenas while others stay on
-`malloc` is sound (see *Why arena migration is sound incrementally*), the
-self-hosted code generator can be reasoned about one type family at a time. This
+`malloc` is sound (see *Why arena migration is sound incrementally*), you can
+reason about the self-hosted code generator one type family at a time. This
 appendix records what each mechanism buys for each family. RSS figures are for
 the workload that exercises the named type. Soundness throughout is checked by
 the byte-identical self-build and the sanitizers above.
@@ -162,7 +162,7 @@ the byte-identical self-build and the sanitizers above.
 
 **Strings.** `tychoc0`'s own code generation is one giant string build, so strings
 matter most. The self-append `out = out + x` naively compiles to a fresh leaked
-buffer per step (O(n²)); growing one buffer in place instead takes a
+buffer per step (O(n²)); growing one buffer in place instead brings a
 30 000-iteration build from ~4638 MB / 1937 ms to ~10 MB / 3 ms (~464×), using
 only `malloc`/`realloc`. The threading spine — the irreducible step where every
 function gains `Arena *_parent` and `_scope`, every call threads it, and returns

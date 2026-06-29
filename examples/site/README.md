@@ -1,6 +1,6 @@
 # site — a static-site generator dogfood
 
-A tiny static-site generator, and the second corelib composing dogfood (after
+A tiny static-site generator, and the second corelib-composing dogfood (after
 [`../fetch`](../fetch)). It reads a site directory and writes one HTML page per
 source file plus a date-sorted index, composing **eight** corelib modules with no
 FFI, no external dependencies, and zero manual memory management:
@@ -34,10 +34,10 @@ The Markdown subset is block-level: `# `/`## ` headings, `- ` list items
 $ site <site_dir> <out_dir>
 ```
 
-`make site` (or `sh examples/site/run.sh`) builds the program by all three
-compilers (the C `tychoc`, `tychoc0` via `--bundle`, and standalone `tychoc0`), runs
+`make site` (or `sh examples/site/run.sh`) builds the program three ways
+(the C `tychoc`, `tychoc0` via `--bundle`, and standalone `tychoc0`), runs
 each against this fixture site, and asserts the build report (page list + per-page
 content hashes) byte-identical against `expected.out`. The emitted C is also run
 under ASan/UBSan — a heavy string-building / per-scope-arena workload that
-exercises exactly what the thesis claims. Because it has no external dependency,
-it is part of `make ci`.
+exercises exactly what the thesis claims. Since it has no external dependency,
+it's part of `make ci`.

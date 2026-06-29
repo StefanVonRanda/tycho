@@ -1,9 +1,9 @@
 # Generics
 
 A type parameter is written `$T`. Generic functions, structs, and enums are **monomorphized** —
-the compiler stamps out a concrete copy per type the code actually uses, reusing the same
+the transpiler stamps out a concrete copy per type the code actually uses, reusing the same
 container machinery as everything else, so a generic costs nothing at runtime. There are no type
-classes or trait bounds; the small `where` predicate set is the only constraint mechanism.
+classes or trait bounds; the small `where` predicate set is the only way to constrain a parameter.
 
 ## Generic functions
 
@@ -20,7 +20,7 @@ fn first(xs: [$T]) -> Option(T):
     return None
 ```
 
-A `where` clause constrains the parameter to a fixed, compiler-known predicate set —
+A `where` clause constrains the parameter to a fixed, transpiler-known predicate set —
 `numeric(T)`, `comparable(T)`, `has_str(T)` — so an operation the body relies on is checked at
 the call:
 

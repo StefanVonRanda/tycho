@@ -1,12 +1,12 @@
 # Tycho language reference
 
-This is the authoritative description of the Tycho language — what each construct
-means and how it behaves. It is organized by topic; read it in order for a complete
-tour, or jump to a page for a specific feature.
+This is the reference for the Tycho language — what each construct means and how it
+behaves. It's organized by topic; read it in order for a full tour, or jump to a page
+for a specific feature.
 
 For *why* the language is shaped this way — the value-semantics and implicit-arena
-argument that motivates almost every decision here — see [the thesis](../thesis.md).
-For a gentler, project-driven first pass, start with the
+idea behind almost every decision here — see [the thesis](../thesis.md). For a
+gentler, project-driven first pass, start with the
 [learning guide](../learning-guide.md). This reference assumes you can already read
 a small program.
 
@@ -29,14 +29,14 @@ a small program.
 
 ## Conventions
 
-- **One way to do each thing.** Tycho is deliberately small; where two spellings would
-  do, only one exists. The reference says which.
-- **Everything is a value.** The single idea behind the whole language is that data has
+- **One way to do each thing.** Tycho is kept small; where two spellings would do, only
+  one exists. The reference says which.
+- **Everything is a value.** The one idea behind the whole language is that data has
   *value semantics*: assignment, arguments, and returns copy, and the copy is deep, so
-  two variables never share storage. Each page states how this plays out for its types
-  rather than restating the principle; [the thesis](../thesis.md) explains why it holds
+  two variables never share storage. Each page says how this plays out for its types
+  instead of restating the principle; [the thesis](../thesis.md) explains why it holds
   and what it buys (no GC, no `free`, no data races on owned values).
 - **Examples are real.** Every code sample compiles and runs under both the C reference
-  compiler and the self-hosted compiler — the language has two implementations that must
-  agree (see [Self-hosting](../../README.md#self-hosting)). Output shown in a comment is
-  the actual output.
+  transpiler and the self-hosted transpiler — the language has two implementations that
+  must agree (see [Self-hosting](../../README.md#self-hosting)). Output shown in a
+  comment is the actual output.

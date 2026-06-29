@@ -1,7 +1,7 @@
 # Types
 
 Tycho is statically typed, and every value has a type known at compile time. This page
-covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how the
+covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how
 bidirectional inference lets you leave most annotations off without ever introducing a
 type variable. The compound types — arrays, structs, maps, tuples, enums — each have
 their own page.

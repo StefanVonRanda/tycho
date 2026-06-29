@@ -1,7 +1,7 @@
 # corelib — Tycho's standard library
 
 corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
-`core:` collection root. It is experimental, like the rest of Tycho, but the modules below
+`core:` collection root. It's experimental, like the rest of Tycho, but the modules below
 are usable today.
 
 ```
@@ -14,7 +14,7 @@ fn main():
 ## Quick start
 
 1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
-   The compiler finds `corelib/` next to its own binary by default, so no setup is
+   The transpiler finds `corelib/` next to its own binary by default, so no setup is
    needed in this repo. Set `TYCHO_CORELIB` to a corelib directory to override.
 2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
    (`x.abs()`).
@@ -22,15 +22,15 @@ fn main():
 ## Resolution
 
 `import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
-`<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the compiler binary.
-Non-`core:` imports stay relative to the importing package, unchanged. Both Tycho compilers
+`<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the transpiler binary.
+Non-`core:` imports stay relative to the importing package, unchanged. Both Tycho transpilers
 (`tychoc` and the self-hosted `tychoc0`) resolve `core:` natively, so `tychoc0` is a
-standalone corelib-aware compiler with no bundling step required.
+standalone corelib-aware transpiler with no bundling step required.
 
 ## How corelib is shaped
 
 corelib is **generic free functions over a type parameter `$T`**, with `where` constraints
-(`comparable(T)`, `numeric(T)`, `has_str(T)`) selecting which element types each function
+(`comparable(T)`, `numeric(T)`, `has_str(T)`) picking which element types each function
 accepts. Tycho monomorphizes generics, so array and iterator utilities are single generic
 packages over any element type `[$T]` (`core:arrays`, `core:iter`) rather than one package
 per element type. The functions are also callable method-style through UFCS, so
@@ -205,11 +205,11 @@ element type instead of a family of per-type siblings.
 ## C-shim (FFI-backed) modules
 
 A core module can wrap a C library via FFI. Drop a `<module>/<module>_shim.c` next to
-the `.ty`; the compiler auto-compiles and links it on `import "core:<module>"` (no
+the `.ty`; the transpiler auto-compiles and links it on `import "core:<module>"` (no
 `--shim` needed). The `.ty` declares the shim's functions with `extern fn` (and
 `extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
 POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
-dereferenced or arena-managed — `null` / `is_null`). Both compilers link a module's shim,
+dereferenced or arena-managed — `null` / `is_null`). Both transpilers link a module's shim,
 so `tychoc`, `tychoc0 --bundle`, and standalone `tychoc0` all build C-shim modules.
 
 ### External dependencies (C-shim `deps`)
@@ -234,8 +234,8 @@ A libc-only shim (`core:regex`) needs no `deps`; a library with no `.pc` file ca
 
 ## Testing
 
-`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is compiled three
-ways — by the C compiler, via `tychoc --bundle | tychoc0`, and via **standalone** `tychoc0`
+`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is built three
+ways — by the C transpiler, via `tychoc --bundle | tychoc0`, and via **standalone** `tychoc0`
 (which resolves `core:` itself) — and all three must produce the golden
 `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
 `make ci`.

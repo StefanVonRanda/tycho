@@ -1,12 +1,12 @@
 # SQLite — a real-library FFI dogfood
 
 tycho calling **real SQLite** (in-memory) through its FFI, with **no hand-written
-shim** — every binding is a direct `extern` to a `libsqlite3` symbol. Demonstrates
-the whole stack on a serious C library:
+shim** — every binding is a direct `extern` to a `libsqlite3` symbol. It shows
+the whole stack working against a serious C library:
 
 - **out-parameter constructors (`mut ptr`)** — `sqlite3_open(":memory:", &db)` and
   `sqlite3_prepare_v2(..., &st, ...)` write their `sqlite3**` / `sqlite3_stmt**`
-  result through a pointer out-param. tycho declares it `mut ptr` and the compiler
+  result through a pointer out-param. tycho declares it `mut ptr` and the transpiler
   passes the address for you (FFI R4) — the reason this binding no longer needs a
   shim.
 - **`ptr` handles** — the `sqlite3*` db and `sqlite3_stmt*` cursor are opaque
@@ -49,7 +49,7 @@ count=3 sum=6
 sh run.sh
 ```
 
-Builds `demo.ty` with the C reference compiler **and** the self-hosted tychoc0,
+Builds `demo.ty` with the C reference transpiler **and** the self-hosted tychoc0,
 runs the tychoc0 output under ASan/UBSan, and checks both against `expected.out`.
-Skips cleanly if `libsqlite3` isn't installed (so it's not wired into `make ci`,
-which must stay dependency-free).
+Skips cleanly if `libsqlite3` isn't installed, so it's not wired into `make ci`,
+which has to stay dependency-free.

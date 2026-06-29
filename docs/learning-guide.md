@@ -1,13 +1,13 @@
 # Learning Tycho — for programmers coming from Python, JavaScript, or Ruby
 
-A hands-on, project-driven introduction to Tycho — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have written real programs in it and understand how Tycho's value-semantic model gives you memory safety without a garbage collector, lifetimes, or manual `malloc`/`free`.
+A hands-on, project-driven introduction to Tycho — a tiny, statically typed, AOT-compiled systems language with implicit arena memory management. By the end you'll have written some real programs in it, and you'll see how Tycho's value-semantic model gives you memory safety without a garbage collector, lifetimes, or manual `malloc`/`free`.
 
-Tycho is an experimental, open proof-of-concept. It's small on purpose — usually one way to do each thing — so this guide can cover the whole language and still fit in one sitting.
+Tycho is an experimental, open proof-of-concept — I built it to test an idea, not to ship products. It's small on purpose — usually one way to do each thing — so this guide can cover the whole language and still fit in one sitting.
 
-**Who this is for:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You may have heard "stack vs heap" but never managed memory yourself. This guide meets you there and walks you into a systems language one concept at a time. Read it top to bottom: each section builds on the last, and the projects at the end pull everything together.
+**Who this is for:** You've written a dynamic, managed language — JavaScript, Python, or Ruby. You know what a function, a loop, and a string are. You may have heard "stack vs heap" but never managed memory yourself. This guide meets you there and walks you into a systems language one concept at a time. Read it top to bottom if you can: each section builds on the last, and the projects at the end pull everything together.
 
-> This is the *tutorial* — a narrative path through the language. For the
-> authoritative, by-topic description of every construct, see the
+> This is the *tutorial* — a narrative walk through the language. If you want
+> the precise, by-topic description of every construct, see the
 > [language reference](reference/index.md); for why the language is shaped this
 > way, [the thesis](thesis.md).
 
@@ -66,17 +66,17 @@ Three things make Tycho different from the languages you know:
 | Errors | Exceptions | `Result<T, E>` | `Result(T, E)` |
 | Concurrency | Shared mutable state | `Send`/`Sync` + lifetimes | Copy-in/copy-out (race-free) |
 
-The key insight, and the one idea to hold onto for the whole guide: **every value is independently owned**. When you assign `b = a`, `b` gets its own deep copy. Two variables never share storage. This is "value semantics," and it's what lets the compiler manage memory for you automatically — each scope gets an arena (a memory pool), and when the scope ends, the whole arena is freed at once. You never write `free()`, never count references, and never annotate lifetimes.
+The one idea to hold onto for the whole guide: **every value is independently owned**. When you assign `b = a`, `b` gets its own deep copy. Two variables never share storage. This is "value semantics," and it's what lets the transpiler manage memory for you automatically — each scope gets an arena (a memory pool), and when the scope ends, the whole arena is freed at once. You never write `free()`, never count references, and never annotate lifetimes.
 
-Don't worry if that's abstract right now. You'll *see* it in every section, and section 15 returns to it once you have enough code under your belt for it to click.
+Don't worry if that's abstract right now. You'll *see* it in every section, and section 15 comes back to it once you have enough code under your belt for it to click.
 
 ---
 
 ## 2. Setup and Hello World
 
-### Building the compiler
+### Building the transpiler
 
-You need a C compiler (`gcc` or `clang`) and `make`. Building Tycho is one step — there are no dependencies to install:
+You need a C compiler (`gcc` or `clang`) and `make`. Building Tycho is one step — there's nothing else to install:
 
 ```
 git clone <repo-url> tycho
@@ -84,11 +84,11 @@ cd tycho
 make
 ```
 
-This produces `./tychoc`, the Tycho compiler. (On macOS, install the Xcode Command Line Tools first: `xcode-select --install`.)
+This produces `./tychoc`, the Tycho transpiler. (On macOS, grab the Xcode Command Line Tools first: `xcode-select --install`.)
 
 ### Compiling and running a program
 
-`tychoc` compiles a `.ty` source file to a native executable next to it, then you run that executable:
+`tychoc` turns a `.ty` source file into a native executable next to it, then you run that executable:
 
 ```
 ./tychoc examples/hello.ty     # produces ./examples/hello
@@ -111,9 +111,9 @@ Compile and run:
 ./hello
 ```
 
-That's the full edit-compile-run loop you'll use for every program in this guide.
+That's the whole edit-compile-run loop you'll use for every program in this guide.
 
-**Key differences from JavaScript/Python:**
+**Things that differ from JavaScript/Python:**
 - `fn` instead of `function` / `def`
 - `-> type` declares the return type
 - Indentation is significant (tabs or spaces, but don't mix the two within one line)
@@ -127,7 +127,7 @@ That's the full edit-compile-run loop you'll use for every program in this guide
 
 ## 3. Variables, Types, and Arithmetic
 
-Tycho has two ways to introduce a variable: `:=` declares a new one and infers its type from the value, while `=` reassigns an existing one. Types are static — every variable has one fixed type — but you rarely write the type yourself.
+Tycho has two ways to introduce a variable: `:=` declares a new one and infers its type from the value, while `=` reassigns one that already exists. Types are static — every variable has one fixed type — but you rarely write the type out yourself.
 
 ```
 fn main():
@@ -198,7 +198,7 @@ chr(65)            # int  -> string: "A"
 
 ## 4. Functions
 
-A function declares its parameter types and, if it returns a value, its return type after `->`. The arguments come in *by value* — the function works on its own copies — which is your first taste of value semantics in action.
+A function declares its parameter types and, if it returns a value, its return type after `->`. Arguments come in *by value* — the function works on its own copies — which is your first taste of value semantics in action.
 
 ```
 # a function that returns an int
@@ -346,7 +346,7 @@ fn main():
 
 ### Building strings in a loop
 
-Tycho has a secret optimization: when you accumulate a string with `total = total + x` in a loop, the compiler grows the buffer in place — O(n) total, not O(n²). This is automatic:
+Tycho has a handy little optimization: when you accumulate a string with `total = total + x` in a loop, the transpiler grows the buffer in place — O(n) total, not O(n²). You get it for free:
 
 ```
 fn main():
@@ -471,7 +471,7 @@ fn main():
 
 ## 8. Structs
 
-Structs are **named product types** with value semantics. Think of them as plain objects that are always deep-copied.
+Structs are **named product types** with value semantics. Think of them as plain objects that always get deep-copied.
 
 ```
 struct Point:
@@ -579,7 +579,7 @@ for i in range(len(words)):
     counts[w] = map_get(counts, w, 0) + 1
 ```
 
-Despite looking like it rebuilds the map each step, the compiler **mutates in place** because value semantics proves `counts` is uniquely owned — O(n) total, not O(n²).
+It looks like it rebuilds the map each step, but the transpiler **mutates in place** because value semantics proves `counts` is uniquely owned — O(n) total, not O(n²).
 
 ### `m[k]` is a place
 
@@ -654,7 +654,7 @@ fn main():
             print("not found\n")
 ```
 
-`match` inspects which variant a value is and runs that arm (its full treatment is in §11). Here it is **exhaustive** — you must handle both `Some` and `None`, the compiler ensuring you don't forget the null check.
+`match` inspects which variant a value is and runs that arm (the full story is in §11). Here it's **exhaustive** — you have to handle both `Some` and `None`, so the transpiler won't let you forget the null check.
 
 ### Result(T, E) — no exceptions
 
@@ -747,7 +747,7 @@ fn main():
     print(str(eval(expr)) + "\n")    # 20
 ```
 
-Every `match` must be **exhaustive** — every variant needs an arm. The compiler won't let you forget a case. A trailing **`_` wildcard** arm is the catch-all: it covers every variant you didn't list (and the unlisted `Some`/`None` or `Ok`/`Err`), so you only spell out the cases you care about:
+Every `match` must be **exhaustive** — every variant needs an arm. The transpiler won't let you forget a case. A trailing **`_` wildcard** arm is the catch-all: it covers every variant you didn't list (and the unlisted `Some`/`None` or `Ok`/`Err`), so you only spell out the cases you care about:
 
 ```
 fn describe(e: Expr) -> string:
@@ -766,13 +766,13 @@ Enums are value-semantic too: copying an enum value deep-copies the whole tree.
 
 ## 12. Graphs and Linked Structures
 
-In Python or JavaScript you build a linked list or a graph by making objects point at each other — `node.next = other`, `a.neighbors.append(b)`. Two variables end up referring to the *same* object, and a change made through one is visible through the other. Tycho does not work that way.
+In Python or JavaScript you build a linked list or a graph by making objects point at each other — `node.next = other`, `a.neighbors.append(b)`. Two variables end up referring to the *same* object, and a change made through one shows up through the other. Tycho doesn't work that way.
 
-Tycho has **value semantics**: assignment deep-copies, two variables never share storage, and there are **no references, no pointers, and no recursive struct types** (a `struct` cannot contain itself). So you *cannot* build shared-mutable graphs, doubly-linked lists, or observer patterns the way you would in those languages — there is no way for two nodes to hold a handle on one shared, mutable third node.
+Tycho has **value semantics**: assignment deep-copies, two variables never share storage, and there are **no references, no pointers, and no recursive struct types** (a `struct` can't contain itself). So you *can't* build shared-mutable graphs, doubly-linked lists, or observer patterns the way you would in those languages — there's no way for two nodes to hold a handle on one shared, mutable third node.
 
 ### The flat node pool
 
-The Tycho way is the **flat node pool**: keep every node in one array, and have nodes refer to each other by their **integer index** into that array instead of by reference. An index is just an `int`, so "two nodes pointing at the same node" becomes "two ints with the same value" — no sharing, no aliasing. The whole structure is then a single value with a single lifetime, which is a perfect fit for Tycho's arenas.
+The Tycho way is the **flat node pool**: keep every node in one array, and have nodes refer to each other by their **integer index** into that array instead of by reference. An index is just an `int`, so "two nodes pointing at the same node" becomes "two ints with the same value" — no sharing, no aliasing. The whole structure is then one value with one lifetime, which fits Tycho's arenas nicely.
 
 Here is a tiny singly-linked list — each node stores its value and the index of the next node, with `-1` meaning "no node":
 
@@ -838,13 +838,13 @@ fn maybe() -> Option(int):
     return None        # None's type comes from the return annotation
 ```
 
-Function signatures are always explicit — they're the module interface.
+Function signatures are always explicit — they're the module's interface, so it's nice to read them straight.
 
 ---
 
 ## 15. Value Semantics: The Mental Model
 
-This is the most important concept in Tycho. Internalize these three rules and everything else follows:
+This is the single most important idea in Tycho. Get these three rules into your head and everything else follows:
 
 ### Rule 1: Assignment copies
 
@@ -880,7 +880,7 @@ b.tags[0] = "y"
 
 ### Why this matters: automatic memory management
 
-Because every value has exactly one owner, the compiler can attach each value to a **scope** (a function, a block, a loop iteration). When the scope ends, all its values are freed at once — no garbage collector, no reference counting, no `free()` calls.
+Because every value has exactly one owner, the transpiler can attach each value to a **scope** (a function, a block, a loop iteration). When the scope ends, all its values are freed at once — no garbage collector, no reference counting, no `free()` calls.
 
 ```
 fn main():
@@ -1008,7 +1008,7 @@ Calls chain: `a.vadd(b).vlen()` = `vlen(vadd(a, b))`.
 
 ## 18. Concurrency
 
-Tycho's concurrency model is **race-free by construction**. Every value that crosses a thread boundary is deep-copied. No locks, no lifetimes, no `Send`/`Sync` bounds.
+Tycho's concurrency model is **race-free by construction**. Every value that crosses a thread boundary gets deep-copied. No locks, no lifetimes, no `Send`/`Sync` bounds.
 
 ### spawn / wait
 
@@ -1129,7 +1129,7 @@ The boundary covers scalars (`int`, `float`, `bool`), strings (C strings are cop
 
 ## 21. Project: Inverted-Index Search Engine
 
-This is a real text search engine — index documents, query them with boolean AND, count term frequencies. Adapted from `examples/invindex.ty`.
+This is a real text search engine — index documents, query them with boolean AND, count term frequencies. It's adapted from `examples/invindex.ty`.
 
 ```
 # invindex.ty — An inverted-index search engine in ~80 lines
@@ -1250,9 +1250,9 @@ fn main():
 
 ## 22. Project: JSON Parser
 
-A full recursive-descent JSON parser + serializer in ~200 lines. This is `examples/json.ty`, adapted for learning.
+A full recursive-descent JSON parser + serializer in ~200 lines. This is `examples/json.ty`, trimmed a bit for learning.
 
-The key insight: the parsed document is a recursive `Json` enum — an AST. The parser builds it by recursive descent, the serializer walks it, and **zero memory management appears in the source**. Every node lives in a lexical arena and is freed when its scope exits.
+The thing to notice: the parsed document is a recursive `Json` enum — an AST. The parser builds it by recursive descent, the serializer walks it, and **zero memory management appears in the source**. Every node lives in a lexical arena and is freed when its scope exits.
 
 ```
 # json.ty — A JSON parser + serializer
@@ -1740,11 +1740,11 @@ math.gcd(12, 8)   s.argsort(xs)
 
 - **Read the examples:** `examples/` has 22 programs, from trivial to substantial.
 - **Read the tests:** `tests/*.ty` covers every language feature with focused examples.
-- **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and where it doesn't.
-- **Read the source:** The self-hosted compiler `compiler/tychoc0.ty` is ~12,000 lines of Tycho written in Tycho — a real program that exercises every feature.
+- **Read the thesis:** `docs/thesis.md` explains *why* value semantics makes implicit arenas work — and, honestly, where it doesn't.
+- **Read the source:** The self-hosted transpiler `compiler/tychoc0.ty` is ~12,000 lines of Tycho written in Tycho — a real program that exercises every feature.
 - **Run the benchmarks:** `make bench` to see the performance properties for yourself.
-- **Try the fuzzer:** `make fuzz` to see how the two compilers are checked against each other.
+- **Try the fuzzer:** `make fuzz` to see how the two transpilers are checked against each other.
 
 ---
 
-*The language is deliberately small — one way to do each thing — and it's an experimental proof-of-concept, not a production toolchain. But what's there is tested, measured, and self-hosting. Welcome to systems programming without the memory management.*
+*The language is deliberately small — one way to do each thing — and it's an experimental proof-of-concept, not a production toolchain. I won't pretend otherwise. But what's there is tested, measured, and self-hosting. Welcome to systems programming without the memory management.*

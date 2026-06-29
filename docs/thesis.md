@@ -1,15 +1,14 @@
 # The Tycho thesis: value semantics makes implicit arenas work
 
-This document explains the core idea behind Tycho — the *why*. The
+This is the core idea behind Tycho — the *why*. The
 [language reference](reference/index.md) describes *what* the language does;
-the [aggregates design note](arrays-structs.md) works this argument through under
-pressure. This document makes the case the implementation backs up with running,
-measured code.
+the [aggregates design note](arrays-structs.md) pushes this argument harder. Here
+I try to make the case that the running, measured code backs up.
 
-Tycho is an experimental, small, ahead-of-time language: Python-looking syntax,
+Tycho is a small, experimental, ahead-of-time language: Python-looking syntax,
 value semantics, no garbage collector, no `malloc`/`free`, no
 lifetime annotations, no borrow checker. You write code as if memory were
-managed for you, and it is. The claim is not "arenas are good" — everyone knows
+managed for you, and it is. I'm not claiming "arenas are good" — everyone knows
 that. The claim is sharper:
 
 > **Value semantics is the missing ingredient that lets hierarchical arena
@@ -18,7 +17,7 @@ that. The claim is sharper:
 > while staying competitive on performance.**
 
 This is a proof-of-concept exploration of that claim, not a production system.
-It is general-purpose within a domain (see §6) and deliberately not beyond it.
+It's general-purpose within a domain (see §6) and deliberately not beyond it.
 
 ## 1. The idea
 
@@ -50,26 +49,26 @@ both visible in the syntax:
    directly in that destination's arena, so it survives the inner scope's
    collapse).
 
-That is the whole escape rule, and it is *locally decidable* — from the
-statement and the signature, never from a global analysis. So the compiler can
+That's the whole escape rule, and it's *locally decidable* — from the
+statement and the signature, never from a global analysis. So the transpiler can
 insert every allocation, promotion, and free itself. The arenas become
 invisible. **The no-pointer rule turns the arena allocator's hardest
-prerequisite into a triviality.** That is the thesis in one sentence.
+prerequisite into something easy.** That's the thesis in one sentence.
 
 ## 2. The seam, and the one invariant that governs everything
 
 Building the language out — strings, then `[int]`/`[string]` arrays, then
-heap-bearing and nested structs — hits the same hazard at every level, and
-every level wants the same fix. Call it **the seam**:
+heap-bearing and nested structs — kept hitting the same hazard at every level,
+and every level wanted the same fix. Call it **the seam**:
 
 > A heap-backed value (a string's bytes, an array's buffer, recursively a
 > struct's heap fields) moved into a longer-lived place must have its bytes in
 > *that place's* arena.
 
-A bare variable read allocates nothing — it is a pointer copy. So returning or
+A bare variable read allocates nothing — it's a pointer copy. So returning or
 assigning a bare local heap value, naively, leaves a pointer into a scope
-that is about to be freed: a use-after-free. The fix is **deep copy on
-cross-arena move** (`copy_into` in the compiler; per-struct `tycho_copy_S_X`
+that's about to be freed: a use-after-free. The fix is **deep copy on
+cross-arena move** (`copy_into` in the transpiler; per-struct `tycho_copy_S_X`
 deep-copy functions generated into the output C). It nests: copying a
 `[string]` copies the buffer *and* every element's bytes; copying a struct
 copies each heap field, recursing. Structural equality (`==`) is the mirror
@@ -91,12 +90,12 @@ Correctness rests on a single property:
 > memory is freed — never **whether** a pointer dangles.
 
 Over-approximate "this might escape" and you allocate in a longer-lived arena
-than strictly needed: mild retention, never a bug. There is no symmetric
+than strictly needed: mild retention, never a bug. There's no symmetric
 disaster, because there are no aliases to invalidate. In a pointer-having
 language the same decision is a *correctness* obligation backed by alias
 analysis — which is why such languages reach for explicit arenas, lifetimes, or
-GC. Removing pointers demotes it to a *performance* knob the compiler may set
-freely. Every optimization below exploits exactly that asymmetry.
+GC. Removing pointers demotes it to a *performance* knob the transpiler can set
+freely. Every optimization below leans on exactly that asymmetry.
 
 The verification standard for this repo follows from it: every codegen change is
 checked under `cc -fsanitize=address,undefined`, asserting (a) exit 0, (b) clean
@@ -107,8 +106,8 @@ sanitizers, and (c) ASan output byte-identical to native `-O2` output. The full
 
 Value semantics buys safety with copies. Two patterns make the copies bite, and
 both are sealed *without making the model visible* — same source, same
-semantics, same bounded memory, just no copy. Each is the local exploitation of
-the asymmetry in §3.
+semantics, same bounded memory, no copy. Each one is the asymmetry in §3 applied
+locally.
 
 ### 4a. The return-path copy tax → return-slot move
 
@@ -118,7 +117,7 @@ escape analysis (`collect_escapes`) can see that `r` is returned by name and
 allocate it in the *caller's* arena from birth — so the `return` is a header
 move, not an O(n) copy. It composes across call frames: a value returned up
 several levels is built once, in the final consumer's arena, with **zero copy
-call-sites** (destination-passing, emergent). Soundness is §3:
+call-sites** (destination-passing, emergent). Soundness comes from §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
@@ -157,16 +156,16 @@ guarantee.
 
 ## 5. The walls — what's genuinely hard, honestly mapped
 
-A model is defined as much by what it *can't* do. Three patterns threaten the
-model. Two are sealed by the optimizations above. The third is narrower than it
-first looks, and is reachable — but it has a residue that is not a bug but the
-thesis itself.
+A model is defined as much by what it *can't* do, so I want to be honest about
+the limits. Three patterns threaten the model. Two are sealed by the
+optimizations above. The third is narrower than it first looks, and is reachable
+— but it has a residue that isn't a bug, it's the thesis itself.
 
 **The return copy tax** and **accumulation retention** are handled in §4a and
 §4b respectively.
 
 **Shared mutable state** is the genuinely hard one — sometimes described as
-"non-tree data: graphs, cycles, caches." Probing it empirically dissolves most
+"non-tree data: graphs, cycles, caches." Poking at it empirically dissolves most
 of it:
 
 - **Cyclic and graph-shaped data is *not* a wall.** A directed graph *with a
@@ -199,14 +198,14 @@ of it:
   the memoized version returns the same answer in **under a millisecond** — O(n)
   vs O(2ⁿ). That collapse is proof the array is truly shared, not copied per call.
 
-**The residue is the boundary, not a defect.** What remains genuinely
+**The residue is the boundary, not a defect.** What stays genuinely
 impossible is *pointer-identity aliasing of two named variables in one scope* —
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference. This is forbidden **by
-construction**, and `mut` deliberately does not provide it (it is call-scoped,
-not storable). That forbiddance is *what value semantics is*. Removing it would
-not extend Tycho; it would make it a different language.
+construction**, and `mut` deliberately doesn't provide it (it's call-scoped,
+not storable). That forbiddance is *what value semantics is*. Removing it
+wouldn't extend Tycho; it would make it a different language.
 
 ## 6. Where that leaves the idea
 
@@ -223,8 +222,8 @@ The honest verdict, backed by measurement rather than intuition:
   graphs, reference-cyclic structures) it is a poor fit, and no optimization
   changes that — it is the thesis's defining boundary, not a missing feature.
 
-So: not general-purpose, and not trying to be. Within its domain the wager
-holds — *value semantics is precisely the constraint that lets the arenas
+So: not general-purpose, and not trying to be. Within its domain I think the
+wager holds — *value semantics is precisely the constraint that lets the arenas
 disappear* — and the domain is large and real.
 
 ## 7. Reproducing the numbers
@@ -241,19 +240,20 @@ make                                    # build ./tychoc
 
 Peak RSS was read from `/proc/<pid>/status` `VmHWM`; the optimized append
 ceiling was confirmed with an `ulimit -v` ladder (fits under 4 MB at
-N=40 000, under 8 MB at N=400 000 — does not scale with N). Every example and
+N=40 000, under 8 MB at N=400 000 — doesn't scale with N). Every example and
 feature program is checked under `cc -fsanitize=address,undefined` with output
 required to match native `-O2`.
 
-Three further validations back the thesis, written up separately.
+Three further things back the thesis up, written up separately.
 
-**Self-hosting.** A second compiler written in Tycho itself
-(`compiler/tychoc0.ty`) reaches a byte-identical fixpoint (`make fixpoint`), and
-its codegen runs on this same implicit-arena model
+**Self-hosting.** A second transpiler written in Tycho itself
+(`compiler/tychoc0.ty`) reaches a byte-identical fixpoint (`make fixpoint`) — it
+reproduces its own emitted C byte-for-byte — and its codegen runs on this same
+implicit-arena model
 ([docs/memory-model.md](memory-model.md)). Soundness is checked by that
 byte-identical self-build and sanitizers. That makes the model eat its own dog
 food on a real, allocation-heavy, deeply-recursive program. A differential fuzzer
-and accept/reject parity lanes cross-check the two compilers under AddressSanitizer,
+and accept/reject parity lanes cross-check the two transpilers under AddressSanitizer,
 holding them to identical compile decisions with **no divergence skips** — the
 language `tychoc0` accepts is no longer a strict subset of the reference's.
 
@@ -261,9 +261,9 @@ language `tychoc0` accepts is no longer a strict subset of the reference's.
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
 compiler-vs-generated-code numbers are in [docs/perf.md](perf.md).
 
-**Concurrency as a corollary.** The same call convention — deep-copy in, copy
+**Concurrency falls out for free.** The same call convention — deep-copy in, copy
 out, a private arena per call — is already a sound thread boundary, so
-`spawn`/`wait`, `parallel for`, channels, and `select` are that convention run
+`spawn`/`wait`, `parallel for`, channels, and `select` are just that convention run
 on threads: race-free by construction, with no Sendable/lifetime/lock machinery
 in the language. Measured: `parallel for` at C-pthreads parity on a
 compute-bound reduction; and a lock-free-channel pipeline that runs ~9× faster than a

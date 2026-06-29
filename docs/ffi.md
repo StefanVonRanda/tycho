@@ -3,21 +3,21 @@
 Tycho's model is value semantics over an implicit arena: Tycho code never does
 manual memory management. The FFI is the one deliberate **escape hatch** — a
 narrow, opt-in boundary for calling existing C libraries (libm, libc, SQLite,
-SDL, …). The boundary is kept narrow so the value-semantic model stays intact on
+SDL, …). I keep the boundary narrow so the value-semantic model stays intact on
 the Tycho side: no foreign pointer ever leaks into Tycho's owned world.
 
 The FFI is an *unsafe* boundary — you can still pass a bad handle to C and crash
-inside C. The design's job is to keep the **Tycho side** sound and to make the
+inside C. All I'm trying to do is keep the **Tycho side** sound and make the
 unsafe surface explicit, which is what the `extern` keyword marks. The
 [FFI reference](reference/ffi.md) is the short version; this page is the
 full rule set. A complete binding lives in
 [`examples/sqlite/`](../examples/sqlite/) — in-memory SQLite driven through both
-compilers.
+transpilers.
 
 ## Quick start
 
 To call a C library you (1) declare each C function you need as an `extern fn`,
-(2) call it like any Tycho function, and (3) tell the compiler which library to
+(2) call it like any Tycho function, and (3) tell the transpiler which library to
 link. Calling `cbrt` from libm needs no link flags, because libm is always
 linked:
 
@@ -35,7 +35,7 @@ declares `crc32` from zlib and links `-lz` automatically:
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int
 ```
 
-The rest of this page covers the declaration syntax, which types may cross the
+The rest of this page covers the declaration syntax, which types can cross the
 boundary, the lifetime and safety rules, how linking works, and the by-design
 limits.
 
@@ -99,7 +99,7 @@ getters. (Only `Option(string)` is supported at the boundary, not arbitrary
 
 **Out-parameter constructors (`mut` params).** Many C APIs return a status and
 write their real result through a pointer out-parameter — `int sqlite3_open(const
-char *path, sqlite3 **db)`. Declare the out-parameter `mut` and the compiler passes
+char *path, sqlite3 **db)`. Declare the out-parameter `mut` and the transpiler passes
 the address of your local automatically; no hand-written shim:
 
 ```
@@ -134,15 +134,15 @@ crossing C's scalar conventions, both in-language (no shim):
 and tuples have Tycho-internal C representations, not a stable C ABI. The type
 checker rejects any `extern fn` whose parameter or return type is outside the
 table above (plus the `Option(string)` return form) — it fails closed rather than
-emit something that would corrupt memory across the boundary. To pass aggregate data, marshal it through scalars,
+emitting something that would corrupt memory across the boundary. To pass aggregate data, marshal it through scalars,
 strings, and `ptr` handles, or write a small C shim (see [Linking](#linking)).
 
 ## Typed handles (safe-by-default resources)
 
 A raw `ptr` is never freed for you. For a C resource with a clear owner and a
 destructor (a `sqlite3*`, a `FILE*`, a zlib stream), declare a **handle** type
-instead — the compiler frees it automatically at the end of the scope that owns
-it, so it cannot leak or be used after close:
+instead — the transpiler frees it automatically at the end of the scope that owns
+it, so it can't leak or be used after close:
 
 ```tycho
 handle Db:                                   # Db's C type is void*; freed by its destructor
@@ -162,12 +162,12 @@ fn run():
   every exit (block end, early `return`, `break`/`continue`). Freed exactly once.
 - **Borrow on pass.** Passing a handle to a fn/extern passes the `void*`; the
   callee does not free it. Only the owning scope does.
-- **Affine, fail-closed.** A handle is opaque (no deref) and cannot be copied,
+- **Affine, fail-closed.** A handle is opaque (no deref) and can't be copied,
   stored in a container/struct, captured by a closure or `parallel for`,
   reassigned, or returned out of its scope — the type checker rejects each so a
   handle can never be aliased into a double-free or escape its destructor. Only
   an `extern fn` opener may produce one. (These bans are enforced by the
-  reference compiler.)
+  reference transpiler.)
 
 ## Lifetime & safety
 
@@ -200,7 +200,7 @@ The whole point is that foreign memory never enters Tycho's owned world:
 
 The "race-free by construction" guarantee is over Tycho values and **stops at
 the FFI**: a C function touching process-global or `static` state is invisible
-to the compiler, so two tasks racing on it race exactly as they would in C.
+to the transpiler, so two tasks racing on it race exactly as they would in C.
 Isolate such state per thread (thread-local storage, as the `core:crypto` shim
 does) or serialize the calls. The full analysis is in
 [`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md), and
@@ -214,7 +214,7 @@ by accident. Scalar arguments pass into spawned tasks by value as usual.
 
 ## Linking
 
-The C reference compiler (`tychoc`) links the program for you:
+The C reference transpiler (`tychoc`) links the program for you:
 
 - Each distinct `"Lib"` from an `extern "Lib"` declaration becomes a `-l<Lib>`.
   `-lm` and libc are always passed, so libm/libc externs need no library name.
@@ -225,7 +225,7 @@ The C reference compiler (`tychoc`) links the program for you:
   `*_shim.c` pattern, as an explicit flag rather than auto-discovery). All
   accumulate onto one `cc` invocation, with libraries trailing the objects that
   need them. `--cc <compiler>` overrides the compiler.
-- The self-hosted compiler (`tychoc0`) emits C to stdout and does not link, so
+- The self-hosted transpiler (`tychoc0`) emits C to stdout and doesn't link, so
   these flags are `tychoc`-only; link `tychoc0`'s output with your own `cc`,
   passing the same `-l`/`-L`/shim flags.
 
@@ -236,7 +236,7 @@ wrapper as an `extern fn`, and pass the C file with `--shim`.
 
 ## Capabilities
 
-What the FFI supports today, in rough order of how much of C it unlocks:
+What the FFI handles today, in rough order of how much of C it unlocks:
 
 1. **Scalars + `string`** — `int`/`char`/`float`/`bool`/`string`/void. Covers
    libm, most of libc, and any C library with a scalar/string ABI.
@@ -245,10 +245,10 @@ What the FFI supports today, in rough order of how much of C it unlocks:
 3. **Linking ergonomics (`tychoc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim` on the
    `tychoc` command line.
 
-Both compilers compile every FFI feature (the static handle-misuse bans noted above
+Both transpilers handle every FFI feature (the static handle-misuse bans noted above
 are enforced by `tychoc`, the reference). The `tests/ffi/` fixtures (a scalar
 round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
-round-trip, and a `--shim` build) run through both compilers under `make ffi`,
+round-trip, and a `--shim` build) run through both transpilers under `make ffi`,
 ASan-clean and output-identical.
 
 A worked binding lives in [`examples/sqlite/`](../examples/sqlite/): opaque
@@ -258,7 +258,7 @@ returned text pointer is genuinely transient.
 
 ## Limitations (by design)
 
-These are deliberate boundaries, not missing work:
+These are deliberate boundaries, not stuff I haven't gotten to yet:
 
 - **No composite types across the boundary.** Arrays, maps, structs,
   `Option`/`Result`, and tuples are rejected; they have no stable C ABI. Marshal
@@ -274,7 +274,7 @@ These are deliberate boundaries, not missing work:
   — Tycho only shuttles handles back to C.
 
 These keep the boundary narrow on purpose: anything richer would either break
-value semantics on the Tycho side or depend on an unstable C ABI.
+value semantics on the Tycho side or lean on an unstable C ABI.
 
 ## Design notes
 

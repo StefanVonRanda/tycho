@@ -22,16 +22,16 @@ cached : tycho_fetch_ff67a9d764d6a236.txt
 ```
 
 The whole document lives in a per-scope arena and is freed when `main` exits —
-no `malloc`/`free`, no reference counts, no GC anywhere in the pipeline. That is
+no `malloc`/`free`, no reference counts, no GC anywhere in the pipeline. That's
 the thesis (value semantics + implicit arenas) on a realistic, allocation-heavy
 program rather than a micro-benchmark.
 
 ## Running
 
-`make fetch` (or `sh examples/fetch/run.sh`) builds the program by **both**
-compilers (the C `tychoc` and the self-hosted `tychoc0`), runs each against a local
+`make fetch` (or `sh examples/fetch/run.sh`) builds the program with **both**
+transpilers (the C `tychoc` and the self-hosted `tychoc0`), runs each against a local
 `file://` fixture so the whole pipeline is exercised **deterministically and
 offline**, asserts byte-identical output against `expected.out`, and re-runs the
 emitted C under ASan/UBSan (proving the transient libcurl response body is
 copied into the arena before the handle is freed — no use-after-free). It skips
-cleanly if libcurl is absent. A real `https://` GET is verified by hand.
+cleanly if libcurl is absent. I verify a real `https://` GET by hand.

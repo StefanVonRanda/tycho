@@ -7,28 +7,27 @@
 
 # Tycho
 
-A tiny AOT-compiled, statically typed systems language. The compiler is
-written in C, transpiles Tycho to C, and the C is compiled to a native
-binary.
+A tiny, statically typed systems language I built to test one idea. The
+transpiler is written in C, turns Tycho source into C, and hands that C to your
+C compiler to make a native binary.
 
 > **Status: experimental.** Tycho is a proof-of-concept exploring one idea —
-> implicit arenas + value semantics, no GC and no manual `free` — not a
-> production language. It self-hosts, is fuzzed and benchmarked, and builds with
-> just `cc` + `make`; but there are **no stability guarantees** and the language
-> may still change. It is **feature-complete for that proof-of-concept** — the
-> pillars (value semantics, implicit arenas, concurrency, generics, closures,
-> UFCS, FFI, `sink`) all ship in both compilers — so new work now is **ergonomics
-> polish and bug reports, not new pillars** ([CONTRIBUTING](CONTRIBUTING.md) says
-> where). **Experiments and feedback are very welcome** — see
-> [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and open
-> an issue. (Honest scope and limits are in
-> [Known limitations](#known-limitations-proof-of-concept).)
+> implicit arenas + value semantics, no GC and no manual `free`. It's not a
+> production language, and I won't pretend it is. It self-hosts, it's fuzzed and
+> benchmarked, and it builds with just `cc` + `make` — but there are **no
+> stability guarantees** and the language may still change. I'd call it
+> feature-complete for the proof-of-concept: value semantics, implicit arenas,
+> concurrency, generics, closures, UFCS, FFI, and `sink` all ship in both
+> transpilers, so what's left now is **ergonomics polish and bug reports, not new
+> features** ([CONTRIBUTING](CONTRIBUTING.md) has the details). **Experiments and
+> feedback are very welcome** — see [Getting started](#getting-started),
+> [CONTRIBUTING](CONTRIBUTING.md), and please open an issue. (The honest scope
+> and limits are in [Known limitations](#known-limitations-proof-of-concept).)
 
-Tycho's defining idea: **memory is managed by implicit hierarchical
-arenas**, one per scope, with scratch arenas for loops. The programmer
-never sees an arena — you declare and use values as if the language were
-dynamically managed. The compiler inserts all allocation, promotion, and
-reclamation.
+Tycho's whole idea: **memory is managed by implicit hierarchical arenas**, one
+per scope, with scratch arenas for loops. You never see an arena — you declare
+and use values as if the language were dynamically managed, and the transpiler
+inserts all the allocation, promotion, and reclamation for you.
 
 ```
 fn greet(name: string) -> string:
@@ -41,20 +40,20 @@ fn main():
 ```
 
 Python-looking syntax; static types, value semantics, and explicit returns;
-arena memory underneath. The same idea carries the
-concurrency story: `spawn`/`wait`, `parallel for`, and channels are the
-ordinary copy-in/copy-out call convention run on threads — race-free by
-construction *for pure Tycho values*, no locks or lifetime rules in the
-language (see [Concurrency](docs/reference/concurrency.md)). The
-guarantee is over the values the compiler owns; crossing into C via the FFI
-re-enters C's threading rules (see [FFI](docs/reference/ffi.md)). Types are inferred
-bidirectionally (Pierce–Turner local inference): locals
-from their initializers, literals/lambdas/bare empties from their destination
-— with every type ground at its own line (see
+arena memory underneath. The same idea carries the concurrency story:
+`spawn`/`wait`, `parallel for`, and channels are just the ordinary
+copy-in/copy-out call convention run on threads — race-free by construction
+*for pure Tycho values*, with no locks or lifetime rules in the language (see
+[Concurrency](docs/reference/concurrency.md)). That guarantee covers the values
+the transpiler owns; the moment you cross into C through the FFI you're back
+under C's threading rules (see [FFI](docs/reference/ffi.md)). Types are inferred
+bidirectionally (Pierce–Turner local inference): locals from their
+initializers, literals/lambdas/bare empties from their destination — with every
+type ground at its own line (see
 [Type inference](docs/reference/types.md#type-inference-bidirectional)).
 
-Why this works — value semantics is what lets the arenas be *implicit* — and
-where it doesn't, with measured numbers, is written up in
+Why this works — value semantics is what lets the arenas be *implicit* — and,
+honestly, where it doesn't, with measured numbers, is written up in
 [docs/thesis.md](docs/thesis.md).
 
 ```
@@ -67,8 +66,8 @@ hello Ada
 
 ## Getting started
 
-**Prerequisites:** a C compiler (`cc` — GCC or Clang) and `make`. That is all —
-the compiler is a single dependency-free C file. *(Optional: `pkg-config` + a
+**Prerequisites:** a C compiler (`cc` — GCC or Clang) and `make`. That's all —
+the transpiler is a single dependency-free C file. *(Optional: `pkg-config` + a
 library for the FFI-backed corelib modules such as `core:http` over libcurl, and
 a Go toolchain for the cross-language benchmarks; both are skipped cleanly when
 absent.)*
@@ -97,8 +96,8 @@ fn main():
 ```
 
 **Use the standard library.** `corelib/` is tycho's stdlib, imported as
-`core:<name>`. The compiler finds it next to its own binary by default (`./tychoc`
-sits beside `./corelib`), so no setup is needed; set `TYCHO_CORELIB` to point at a
+`core:<name>`. The transpiler finds it next to its own binary by default (`./tychoc`
+sits beside `./corelib`), so there's no setup; set `TYCHO_CORELIB` to point at a
 different corelib if you want to override that. A file with an `import` is a
 *package*, so give it its own directory:
 
@@ -118,7 +117,7 @@ Every corelib module has a runnable usage example under
 [`examples/corelib/<name>/`](examples/corelib), and two larger programs *compose*
 several modules end-to-end: [`examples/fetch`](examples/fetch) (an HTTP client —
 GET, JSON-parse, hash, cache) and [`examples/site`](examples/site) (a static-site
-generator). Build and verify the whole tree — compiler, self-host fixpoint, tests,
+generator). Build and verify the whole tree — transpiler, self-host fixpoint, tests,
 corelib, fuzzer — with `make ci`.
 
 **Where to go next:** the [language reference](docs/reference/index.md) describes every
@@ -129,7 +128,7 @@ construct; [docs/corelib.md](docs/corelib.md) catalogs the standard library; and
 
 | Command | What it does |
 | --- | --- |
-| `make` | Build the `./tychoc` compiler (native host). |
+| `make` | Build the `./tychoc` transpiler (native host). |
 | `./tychoc f.ty` | Transpile `f.ty` → `f.c`, then compile to native `f` with `cc`. |
 | `./tychoc f.ty --emit-c` | Only write `f.c`. |
 | `./tychoc f.ty -o name` | Write `name.c` and binary `name`. |
@@ -137,10 +136,10 @@ construct; [docs/corelib.md](docs/corelib.md) catalogs the standard library; and
 | `make test` | Run the test suite (see below). |
 | `make test-update` | Re-record the expected-output goldens (review the diff). |
 | `make bench` | Run the performance guard (see below). |
-| `make bootstrap` | Build the self-hosted compiler `compiler/tychoc0.ty` with `./tychoc` and validate it on its fixtures. |
-| `make fixpoint` | Self-host check: assert the Tycho-built compiler reproduces itself byte-identically and matches the C compiler's output. |
-| `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both compilers, assert byte-identical output and no sanitizer fault. |
-| `make corelib` | Build + validate the standard library (`corelib/`) three ways (C compiler vs the self-hosted `tychoc0`, against goldens), with usage examples and the `site` dogfood. |
+| `make bootstrap` | Build the self-hosted transpiler `compiler/tychoc0.ty` with `./tychoc` and validate it on its fixtures. |
+| `make fixpoint` | Self-host check: assert the self-hosted transpiler reproduces its own emitted C byte-for-byte, and produces the same program output as the C transpiler. |
+| `make fuzz` | Differential + ASan/UBSan soundness fuzzer: generate random well-typed programs, compile with both transpilers, assert byte-identical output and no sanitizer fault. |
+| `make corelib` | Build + validate the standard library (`corelib/`) three ways (the C transpiler vs the self-hosted `tychoc0`, against goldens), with usage examples and the `site` dogfood. |
 | `make ci` | The full local gate (no cloud CI): build, test, fixpoint, corelib + examples, concurrency, FFI, the three fuzz lanes, tooling, and the perf guard. |
 | `make clean` | Remove build artifacts. |
 
@@ -178,10 +177,10 @@ checks all still run.
 
 ## Documentation
 
-- **[Language reference](docs/reference/index.md)** — the authoritative description of every
+- **[Language reference](docs/reference/index.md)** — the reference for every
   construct, organized by topic (types, aggregates, enums, functions, generics, concurrency,
-  FFI, packages, builtins). This is the source of truth for how the language behaves; every
-  example in it compiles on both compilers.
+  FFI, packages, builtins). It's the source of truth for how the language behaves; every
+  example in it compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas work, and where
   it doesn't, with measured numbers. The argument the language exists to make.
 - **[Learning guide](docs/learning-guide.md)** — a hands-on, project-driven introduction for
@@ -200,38 +199,40 @@ checks all still run.
 
 ## Self-hosting
 
-Besides the C reference compiler (`src/tychoc.c`), Tycho has a second compiler
-**written in Tycho itself**: `compiler/tychoc0.ty`. It began as a subset of the
-language large enough to compile its own source, and it **self-hosts** — `make
-fixpoint` builds it three ways (the C compiler builds it, then that build
-rebuilds it, then that rebuild rebuilds it again) and asserts the last two
-emissions are byte-identical and that the Tycho-built compiler reproduces
-the C compiler's output across every `tests/` and `examples/` program. Run
-`make bootstrap` to build the self-hosted compiler and `make fixpoint` to check
-the byte-identical reproduction.
+Besides the C reference transpiler (`src/tychoc.c`), Tycho has a second
+transpiler **written in Tycho itself**: `compiler/tychoc0.ty`. It started as a
+subset of the language just large enough to compile its own source, and it
+**self-hosts** — `make fixpoint` builds it three ways (the C transpiler builds
+it, then that build rebuilds it, then that rebuild rebuilds it again) and
+asserts two things: the last two emit *byte-identical* C — so the self-hosted
+transpiler reproduces its own output exactly — and the self-hosted build
+produces the same program output as the C transpiler across every `tests/` and
+`examples/` program. Run `make bootstrap` to build the self-hosted transpiler
+and `make fixpoint` to check it.
 
-The fixpoint is also the language's parity discipline: **every feature lands
-in both compilers or not at all** — concurrency, bidirectional inference,
-packages, closures, FFI all exist twice (the two compilers emit different C
+The fixpoint is also the language's parity discipline: **every feature lands in
+both transpilers or not at all** — concurrency, bidirectional inference,
+packages, closures, FFI all exist twice (the two transpilers emit different C
 dialects with identical semantics), and shared test fixtures run through both
-via the fixpoint differential, so the compilers cannot drift.
+via the fixpoint differential, so the two can't drift apart.
 
-Since reaching the fixpoint, `tychoc0`'s codegen has been migrated from naive
-malloc/leak C to the same implicit-arena memory model the C compiler uses — one
-type family at a time (strings, arrays, maps, structs/tuples/boxes, every array
-element type, enum node trees, mutable containers, per-variable block scoping,
-transient placement, move-on-last-use, and finally heap-payload option/result
-elements), all now arena-managed and freed per scope. It is documented in
-[docs/memory-model.md](docs/memory-model.md). `tychoc0` reproduces the C
-compiler's memory behaviour across every element type, common and rare, with
-no known gap, and has full codegen-feature parity.
+Since reaching the fixpoint, I've migrated `tychoc0`'s codegen from naive
+malloc/leak C to the same implicit-arena memory model the C transpiler uses —
+one type family at a time (strings, arrays, maps, structs/tuples/boxes, every
+array element type, enum node trees, mutable containers, per-variable block
+scoping, transient placement, move-on-last-use, and finally heap-payload
+option/result elements), all now arena-managed and freed per scope. It's
+documented in [docs/memory-model.md](docs/memory-model.md). As far as I can
+tell `tychoc0` now matches the C transpiler's memory behaviour across every
+element type, common and rare, with no known gap, and has full codegen-feature
+parity.
 
-The language `tychoc0` compiles is no longer a strict subset: it reproduces the C
-compiler's output byte-for-byte across all `tests/` + `examples/` programs,
-including the additive `char` type, `float`, `Result`, newtypes, slices, and SOA.
-A differential + sanitizer **fuzzer** (`fuzz/`, type-directed random programs
-compiled by both compilers under ASan/UBSan) backs this up, with coverage
-spanning those types.
+The language `tychoc0` compiles is no longer a strict subset: its program output
+matches the C transpiler's byte-for-byte across all `tests/` + `examples/`
+programs, including the additive `char` type, `float`, `Result`, newtypes,
+slices, and SOA. A differential + sanitizer **fuzzer** (`fuzz/`, type-directed
+random programs compiled by both transpilers under ASan/UBSan) backs this up,
+with coverage spanning those types.
 
 **Self-compile speed.** When `tychoc0` compiles its own source, the dominant
 remaining cost is the value-semantic string-building in its codegen: each
@@ -245,7 +246,7 @@ functions.
 **Head-to-head (`bench/prongB/`, [RESULTS.md](bench/prongB/RESULTS.md)).** The
 same program in five languages, built optimized, peak RSS + best-of-3 wall time;
 every binary prints byte-identical output. `tycho (tychoc0)` is the self-hosted
-compiler after the migration:
+transpiler after the migration:
 
 | workload         | tycho (tychoc0) |        C |     Rust |   Go (GC) | Koka (Perceus) |
 | ---------------- | ------------: | -------: | -------: | --------: | -------------: |
@@ -262,7 +263,7 @@ not the millisecond counts: the reference toolchains are in RESULTS.md (gcc 15.2
 on an **AMD Ryzen 7 7735HS, x86-64 Linux** box and an **Apple Silicon arm64,
 macOS** box — the latter ~3–4× slower in wall time.) On the allocation-heavy
 tree workloads the
-self-hosted compiler is competitive with all four reference languages on this
+self-hosted transpiler is competitive with all four reference languages on this
 machine. On binary-trees it has the lowest memory of the five (13 MB, below
 Koka's 15) and the lowest wall time (107 ms), at equal memory to the mature
 `tychoc` — with no GC and no reference counting, only lexical arenas and value
@@ -274,7 +275,7 @@ append — the same byte-write C, Rust, and Go do — instead of allocating a
 one-char string per digit. On memory it is lowest of the five on binary-trees and
 within ~1–2 MB of the leader on the other workloads, trailing C and Rust only on
 array-pipeline time (per-element bounds-checking, not the memory model). The
-compiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
+transpiler-vs-generated-code analysis is in [docs/perf.md](docs/perf.md).
 
 **Realistic workload (`bench/site/`, [RESULTS.md](bench/site/RESULTS.md), `make
 bench-site`).** The same static-site generator — render *N* Markdown pages to
@@ -309,7 +310,7 @@ iteration's arena resets. That is the model below, on a real workload:
 Every scope — each proc, each `if`/`else` block, each loop body — gets its
 own **arena** with its own backing storage. Arenas form a hierarchy via
 `arena_child`. Data moves between arenas exactly two ways, and the
-compiler arranges both for you:
+transpiler arranges both for you:
 
 1. **Down**, as a function argument: a pointer is passed to a callee whose
    arena is a child, so it stays valid for the call. No copy.
@@ -317,7 +318,7 @@ compiler arranges both for you:
    (parent) arena, so it survives the callee's arena being freed.
 
 Assigning a value to a variable that lives in an outer scope is handled
-the same way — the compiler allocates the value in *that variable's*
+the same way — the transpiler allocates the value in *that variable's*
 arena, so it never dangles. This is what makes string accumulation across
 a loop safe:
 
@@ -366,7 +367,7 @@ appears in Tycho source.
   inner function. The full measured loss column, with the idiom and decision
   guide for each case, is in
   [docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md).
-- **Generic constraints are a fixed, compiler-known set** — generic *functions*,
+- **Generic constraints are a fixed, built-in set** — generic *functions*,
   *structs*, and *enums* (all including recursive types, e.g. `enum Tree($T)`)
   take `$T` and are monomorphized, but the only constraints are the built-in
   predicates (`numeric` / `comparable` / `has_str`) and type sets
@@ -376,9 +377,9 @@ appears in Tycho source.
 ## Repository layout
 
 ```
-src/tychoc.c        the C reference compiler (lexer, parser, type resolver, C codegen)
+src/tychoc.c        the C reference transpiler (lexer, parser, type resolver, C codegen)
 runtime/tycho_rt.c  the arena runtime, embedded verbatim into every output
-compiler/tychoc0.ty the self-hosted compiler, written in Tycho (see make fixpoint)
+compiler/tychoc0.ty the self-hosted transpiler, written in Tycho (see make fixpoint)
 compiler/run.sh, fixpoint.sh   bootstrap + self-host fixpoint harnesses
 build/             generated embed header (make artifact)
 examples/          hello, demo, accumulate, accumulate_big, arrays,
@@ -409,8 +410,8 @@ fuzz/              differential + ASan/UBSan soundness fuzzer (gen.py + run.py; 
 tools/prof/        dependency-free sampling CPU profiler for tycho-compiled binaries
 docs/thesis.md     why value semantics makes implicit arenas work (+ limits)
 docs/arrays-structs.md   the original aggregates design pressure-test
-docs/memory-model.md   how the self-hosted compiler runs on the implicit-arena model
-docs/perf.md       compiler + generated-code performance, incl. the cross-language benchmark suite
+docs/memory-model.md   how the self-hosted transpiler runs on the implicit-arena model
+docs/perf.md       transpiler + generated-code performance, incl. the cross-language benchmark suite
 ```
 
 The runtime is turned into a C string literal at build time (`make`
@@ -420,39 +421,39 @@ to every generated `.c`, so output files are self-contained.
 ## FAQ
 
 **"It just transpiles to C — that's not a real compiler."** Emitting C is a
-deliberate backend choice, not a shortcut: it makes Tycho portable to any target
-with a C compiler and inherits decades of mature optimization and tooling for
-free. C is the *assembler* here. The compiler still does all the real work —
-lexing, parsing, bidirectional type inference, the implicit-arena escape
+deliberate backend choice, not a shortcut. It makes Tycho portable to any target
+with a C compiler and lets it inherit decades of mature optimization and tooling
+for free — C is the *assembler* here. The transpiler still does all the real
+work: lexing, parsing, bidirectional type inference, the implicit-arena escape
 analysis, monomorphization, and the static reuse analysis (move-on-last-use,
 in-place append, FBIP-style buffer recycling) — none of which C does for you. The
-output is self-contained (the runtime is prepended to every file), so there is no
-hidden dependency. It is the same strategy several production languages use, and
-the benchmarks below are against C, Rust, Go, and Koka *binaries*, not against
+output is self-contained (the runtime is prepended to every file), so there's no
+hidden dependency. It's the same strategy several production languages use, and
+the benchmarks above are against C, Rust, Go, and Koka *binaries*, not against
 other transpilers.
 
 **"Deep-copying every value must be slow."** "Everything is a value, copied on
-assignment" is the *semantic model*, not what the generated code does at runtime.
-The compiler proves, statically, when a copy is unnecessary and elides it:
-returns are built directly in the caller's arena (no copy out), `acc = acc + e`
+assignment" is the *semantic model*, not what the generated code actually does at
+runtime. The transpiler proves, statically, when a copy is unnecessary and drops
+it: returns are built directly in the caller's arena (no copy out), `acc = acc + e`
 grows one buffer in place, `b := a` becomes a move when `a` is dead, `match` arms
 borrow the scrutinee's payload, and loop-carried rebuilds hand off their buffer.
-A copy happens only when a value genuinely escapes to two live owners — which is
-exactly when a GC or refcount would also do work. The result is measured, not
+A copy only happens when a value genuinely escapes to two live owners — which is
+exactly when a GC or refcount would also do work. And it's measured, not just
 asserted: on the allocation-heavy tree workloads it has the lowest memory and
 time of the five languages benchmarked, it matches C-pthreads on the parallel
 reduction, and it has the fastest channel pipeline of the four — see
 [bench/](bench/) and [docs/thesis.md](docs/thesis.md).
 
-**"No GC and no borrow checker — how is it memory-safe?"** There is no reference
-type in the language, so a dangling pointer is *inexpressible* — the bug other
-region systems ship escape analysis to prevent simply cannot be written. Memory
-is freed per scope by the arena hierarchy; values that outlive their scope are
-copied up. `Option` removes null, `Result` removes exceptions, array and slice
+**"No GC and no borrow checker — how is it memory-safe?"** There's no reference
+type in the language at all, so a dangling pointer is *inexpressible* — the bug
+other region systems ship escape analysis to prevent simply can't be written.
+Memory is freed per scope by the arena hierarchy; values that outlive their scope
+are copied up. `Option` removes null, `Result` removes exceptions, array and slice
 access is bounds-checked, and copy-in/copy-out concurrency removes data races by
 construction. Every test runs under AddressSanitizer + UndefinedBehaviorSanitizer
 (plus LeakSanitizer and, for concurrency, ThreadSanitizer), and a differential
-fuzzer cross-checks both compilers.
+fuzzer cross-checks both transpilers.
 
 **"Is it production-ready?"** No. Tycho is **experimental, proof-of-concept**
 software exploring one idea (implicit hierarchical arenas under value semantics).
@@ -469,7 +470,8 @@ libraries are linked explicitly through your own build via the FFI.
 
 ## License
 
-Tycho is licensed under the **[MIT License](LICENSE)**. It is experimental,
-proof-of-concept software provided "as is", without warranty — security notes
-are in [SECURITY.md](SECURITY.md), and how to build, test, contribute, or report
-a bug is in [CONTRIBUTING.md](CONTRIBUTING.md).
+Tycho is licensed under the **[MIT License](LICENSE)** — do whatever you want
+with it. AI helped build this proof-of-concept. It's experimental software
+provided "as is", without warranty — security notes are in
+[SECURITY.md](SECURITY.md), and how to build, test, contribute, or report a bug
+is in [CONTRIBUTING.md](CONTRIBUTING.md).

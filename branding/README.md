@@ -20,5 +20,5 @@ orbits. The geometry doubles as the language's memory model:
 All are SVG (scale infinitely), transparent background. Ink is `#1c1c2e`
 (deep indigo) on light, `#ececf4` on dark — recolour by editing the one hex.
 
-PNG/ICO exports aren't checked in; rasterise as needed, e.g.
+PNG/ICO exports aren't checked in; rasterise them as needed, e.g.
 `rsvg-convert -w 512 tycho-logo.svg > tycho-logo-512.png`.

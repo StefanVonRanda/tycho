@@ -10,7 +10,7 @@ stays sound with no borrow checker. The user-facing map surface is the
 
 With value semantics, changing a stored composite value would otherwise mean
 reading it out, mutating the copy, and reinserting it — and the reinsert copies
-the whole value every time. For a `[string: [int]]` inverted index that is O(n)
+the whole value every time. For a `[string: [int]]` inverted index that's O(n)
 per append, quadratic over a build. Instead, `m[k]` names the value's storage
 slot directly, so the mutation happens *in place*:
 
@@ -42,9 +42,9 @@ is whatever an empty of that type is: `0` / `0.0` / `""` / `false` for a scalar,
 an empty array, or a zeroed struct. So `push(m["new"], 1)` on a fresh map
 creates the empty `[int]` and then pushes; `m["new"] += 1` starts from `0`.
 
-**As a read** (an rvalue, for a scalar value type) it is a **pure** lookup that
-returns the value's zero on a missing key and **never inserts** — there is no
-hidden write lurking in a read. This is what makes the counter idiom read
+**As a read** (an rvalue, for a scalar value type) it's a **pure** lookup that
+returns the value's zero on a missing key and **never inserts** — no
+hidden write lurking in a read. That's what makes the counter idiom read
 naturally:
 
 ```
@@ -54,23 +54,23 @@ for w in words:
 miss := cnt["absent"]       # 0, and "absent" is NOT added to the map
 ```
 
-A composite (array/struct/map) value is not returned by a bare read — use
+A composite (array/struct/map) value isn't returned by a bare read — use
 `map_get(m, k, default)` for those, so the copy-out is explicit. (The compound
 forms above, e.g. `cnt[w] += 1`, are the more direct way to write the counter.)
 
 ## Why it can't dangle
 
 `m[k]` as a place is a **transient**: Tycho has no way to take a reference to a
-value, so `m[k]` can only appear *as* (or *inside*) a single mutation target,
-and it cannot be stored, bound, or carried past that one statement. That single
+value, so `m[k]` can only show up *as* (or *inside*) a single mutation target,
+and it can't be stored, bound, or carried past that one statement. That one
 property is what makes it sound:
 
 - The find-or-insert that locates the slot may rehash the table, but it does so
-  *before* yielding the slot. The mutation that follows runs with no intervening
-  map operation, so the slot cannot move under it.
+  *before* handing back the slot. The mutation that follows runs with no intervening
+  map operation, so the slot can't move under it.
 - `push(m[k], v)` grows the *value's* buffer, not the map's table, so it
   triggers no rehash of the map.
-- Value semantics already proves the slot is the unique owner of its value
+- Value semantics already proves the slot is the sole owner of its value
   (nothing else aliases it), so mutating it in place is invisible to everyone
   else — `cp := m; cp[k] = x` leaves `m` untouched, because `cp` took its own
   deep copy.
@@ -87,7 +87,7 @@ be pre-sized.
 
 ## Example
 
-The test suite exercises every form: a `[string: [int]]` index built with
+The test suite hits every form: a `[string: [int]]` index built with
 `push(m[k], v)`, a nested `m[k][i] = x`, an `[int: int]` counter with `m[k] += 1`
 from a zero start, a struct value via `m[k].field = x`, single-eval of a
 call-bearing key, the value-semantics check that a copied map's in-place mutation
@@ -104,4 +104,4 @@ accessor through the recursive place-lowering pass, so the deeper chains
 (`m[k].field`, `m[k][i]`) compose for free. A compound op single-evaluates the
 slot pointer and hoists a call-bearing key to a temporary, reusing the same
 double-eval guard the compound array-index path already had. A scalar rvalue
-read lowers to a pure `map_get` with the type's zero as the default.
+read lowers to a plain `map_get` with the type's zero as the default.

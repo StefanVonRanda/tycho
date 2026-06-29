@@ -1,22 +1,22 @@
 # Packages & modules
 
 Tycho organizes code into **packages**. A package is a *directory* of
-`.ty` files that share one flat namespace. You `import` a package and reference
+`.ty` files that share one flat namespace. You `import` a package and reach
 its symbols with a qualified `pkg.symbol` name.
 
-Three properties define the model:
+Three things define the model:
 
 - **A package is a directory**, not a file. Every `.ty` file in the directory
-  belongs to the same package and contributes to one shared namespace.
-- **Privacy is by leading underscore.** A top-level symbol whose name begins
-  with `_` is private to its own package: it is usable from any file *within*
+  belongs to the same package and adds to one shared namespace.
+- **Privacy is by leading underscore.** A top-level symbol whose name starts
+  with `_` is private to its own package: you can use it from any file *within*
   the package, but a qualified `pkg._name` from another package is rejected by
-  both compilers. Every other top-level symbol is exported.
-- **There is no separate compilation.** The compiler follows the import graph,
+  both transpilers. Every other top-level symbol is exported.
+- **There's no separate compilation.** The transpiler follows the import graph,
   merges everything reachable into one program, and emits a single `.c`.
 
 The [Packages reference](reference/packages.md) is the short version; this
-is the full design note.
+is the longer design note.
 
 ## Surface syntax
 
@@ -35,7 +35,7 @@ import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
   constructors, and enum variants — `geom.Point`, `geom.add`, `geom.Red`.
 - An imported package name is **reserved** in the file: a local or parameter
   with that name is a compile error, so `a.b` is never ambiguous. Import cycles
-  are an error.
+  are an error too.
 
 ## Example
 
@@ -76,8 +76,8 @@ symbols (`geom__Point`, `geom__add`).
 
 The package system is a whole-program transpile, not a linker pipeline:
 
-- The compiler reads the entry package, follows every `import`, merges all
-  reachable definitions into one AST, and emits one `.c`. There is no linker step
+- The transpiler reads the entry package, follows every `import`, merges all
+  reachable definitions into one AST, and emits one `.c`. There's no linker step
   and no per-package object file.
 - **A file with no `package` declaration is a standalone single-file program.**
   The `package` keyword is what switches on directory-package mode, so every
@@ -89,41 +89,41 @@ The package system is a whole-program transpile, not a linker pipeline:
   tuples, and `Result` element types all work, keyed on the mangled type name end
   to end.
 
-You rarely need to think about the mangling; it matters only when reading the
-generated C.
+You rarely need to think about the mangling; it only matters when you're reading
+the generated C.
 
 ## The `core:` collection
 
 The standard library is reached through a **collection** — a named root for
 imports that resolve outside the local directory tree. `import "core:strings"`
-pulls in the corelib package `strings`, located next to the compiler binary by
+pulls in the corelib package `strings`, which sits next to the transpiler binary by
 default (or at `TYCHO_CORELIB` if set) rather than relative to the importer. The
 corelib is documented in [corelib.md](corelib.md).
 
-Only the `core:` collection is exposed today; arbitrary named roots (Odin's wider
-`collection:` mechanism) are not.
+Only the `core:` collection is exposed today; I haven't done arbitrary named roots
+(Odin's wider `collection:` mechanism).
 
-## Both compilers
+## Both transpilers
 
-Packages work identically in the C reference compiler (`tychoc`) and the
-self-hosted compiler (`tychoc0`).
+Packages work the same in the C transpiler (`tychoc`) and the
+self-hosted one (`tychoc0`).
 
 `tychoc0` can compile a package directly — `tychoc0 path/main.ty` walks the
 directory and follows its imports through the same filesystem builtins — or read a
-pre-bundled, post-order source stream on stdin. The C compiler produces that
+pre-bundled, post-order source stream on stdin. The C transpiler produces that
 stream with `tychoc --bundle <entry>`: it emits imports first, with the entry
 package's header rewritten to `package main`. `tychoc0` then applies the same
 package mangling in a post-parse pass — dormant unless a `package` declaration
-was seen, so a single-file compile stays identical.
+showed up, so a single-file compile stays identical.
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
 `tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`, and
-`make fixpoint` additionally builds each fixture with `tychoc0` and checks that its
-output is byte-identical to the C compiler's.
+`make fixpoint` additionally builds each fixture with `tychoc0` and checks that
+`tychoc0` reproduces its own emitted C byte-for-byte.
 
-The compiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
-self-hosted compiler into a two-package program — `rt` (the leaf
+The transpiler dogfoods its own package system: `compiler/pkg-split.sh` splits the
+self-hosted transpiler into a two-package program — `rt` (the leaf
 C-runtime/string emitters) and `main` (`import "rt"`) — derived from `tychoc0.ty`
-by function name, with no duplicate source to maintain. This serves as a
+by function name, with no duplicate source to maintain. It's a
 real-world test that a multi-package build emits the same C as the single-file
 build.

@@ -45,13 +45,13 @@ shows compile errors inline.
 | setting | default | meaning |
 |---|---|---|
 | `tycho.lspPath` | `tycho-lsp` | path to the language-server binary |
-| `tycho.compilerPath` | `tychoc` | compiler the server runs for diagnostics (passed as `TYCHOC`) |
+| `tycho.compilerPath` | `tychoc` | transpiler the server runs for diagnostics (passed as `TYCHOC`) |
 | `tycho.enableServer` | `true` | set `false` for highlighting only |
 
 If your code imports `core:` packages, set `TYCHO_CORELIB` in your environment so
-the diagnostics compiler can resolve them (see [corelib](../../docs/corelib.md)).
+the diagnostics transpiler can resolve them (see [corelib](../../docs/corelib.md)).
 
 ## Status
 
-Diagnostics are line-level (the compiler reports `file:line: error: msg`). Hover
-types and go-to-definition are planned as the server grows.
+Diagnostics are line-level (the transpiler reports `file:line: error: msg`). Hover
+types and go-to-definition aren't here yet — I'll add them as the server grows.

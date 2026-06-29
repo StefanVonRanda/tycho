@@ -76,6 +76,6 @@ beforehand is unaffected.
 
 ---
 
-*Design background:* why deep-copied aggregates stay sound, and why a struct that would
-contain itself by value is rejected (use indirection through an array), is in
+*Design background:* if you want the why — why deep-copied aggregates stay sound, and why a
+struct that would contain itself by value is rejected (use indirection through an array) — see
 [the aggregates design note](../arrays-structs.md).

@@ -1,16 +1,16 @@
 # Enums, options, and `match`
 
 A *sum type* is a value that is exactly one of several alternatives. Tycho has one
-general form, the user-defined `enum`, and two built-in special cases that carry the
-language's answers to two perennial questions: `Option(T)` (the absence of a value,
-without `null`) and `Result(T, E)` (failure, without exceptions). All three are taken
-apart the same way — an exhaustive `match` — and all three are ordinary values, deep-copied
-on assignment and compared structurally with `==`, like everything else in the language.
+general form, the user-defined `enum`, plus two built-in special cases for two common
+problems: `Option(T)` (a value that might be absent, without `null`) and `Result(T, E)`
+(failure, without exceptions). You take all three apart the same way — an exhaustive
+`match` — and all three are ordinary values, deep-copied on assignment and compared
+structurally with `==`, like everything else in the language.
 
 ## `enum` — user-defined sum types
 
 An `enum` declares a type whose value is exactly one of several named **variants**, each
-carrying a payload of zero or more types. This is the tagged union, or algebraic data type:
+carrying a payload of zero or more types. It's the tagged union, or algebraic data type:
 
 ```
 enum Shape:
@@ -41,7 +41,7 @@ structurally. An enum may appear anywhere a type may — a struct field, an arra
 
 A variant may carry the enum itself, which makes the type an abstract syntax tree. Because
 the payload is arena-allocated rather than stored inline, a recursive enum is still a finite
-value — there is no infinitely-large type — and copying one deep-copies the entire tree:
+value — no infinitely-large type — and copying one deep-copies the entire tree:
 
 ```
 enum Expr:
@@ -81,11 +81,11 @@ match shape:
         ...
 ```
 
-Two rules make `match` safe by construction:
+Two rules keep `match` safe:
 
 - **It is exhaustive.** Every variant of the matched type must have an arm; a missing case
   is a compile error, so adding a variant forces you to handle it everywhere. A wildcard
-  arm `_:` matches any remaining variant when you genuinely want a catch-all.
+  arm `_:` matches any remaining variant when you really want a catch-all.
 - **Bindings are local to their arm.** `r` exists only inside the `Circle` arm. There is no
   way to read a payload that does not belong to the current variant.
 
@@ -94,9 +94,9 @@ Two rules make `match` safe by construction:
 
 ## `Option(T)` — a value, or nothing
 
-`Option(T)` is the built-in enum with variants `Some(x)` and `None`. It is Tycho's answer to
-the null-reference problem: a value that may be absent is *typed* as absent, and the absence
-cannot be ignored, because reading it requires an exhaustive `match`.
+`Option(T)` is the built-in enum with variants `Some(x)` and `None`. It's Tycho's take on
+the null-reference problem: a value that may be absent is *typed* as absent, and you can't
+ignore the absence, because reading it requires an exhaustive `match`.
 
 ```
 fn index_of(xs: [int], target: int) -> Option(int):
@@ -129,8 +129,8 @@ None` is `false`), and so do values that merely contain them.
 ## `Result(T, E)` — success, or an error
 
 `Result(T, E)` is the built-in enum with variants `Ok(value)` and `Err(error)` — Tycho's
-answer to error handling without exceptions. A function that can fail returns one, and the
-caller must confront both outcomes in a `match`:
+take on error handling without exceptions. A function that can fail returns one, and the
+caller has to handle both outcomes in a `match`:
 
 ```
 fn checked_div(a: int, b: int) -> Result(int, string):
@@ -154,7 +154,7 @@ recursing through `T` and `E`.
 
 ## `or_return` — propagating errors without boilerplate
 
-Chaining fallible calls with `match` at every step is noise. `or_return` removes it: writing
+Chaining fallible calls with `match` at every step gets noisy. `or_return` cuts it: writing
 `v := expr or_return` unwraps an `Ok` (binding `v` to the value) or, the moment `expr` is an
 `Err`, returns that `Err` from the enclosing function — which must itself return a
 `Result(_, E)` with the *same* error type `E`:

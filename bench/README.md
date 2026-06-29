@@ -1,16 +1,17 @@
 # tycho benchmarks — the memory model, across the workload space
 
 The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
-memory and predictable, pause-free reclamation, with no manual frees and no GC** —
-and the way to prove that is not a passing test suite but numbers next to C, Rust,
-Go (GC), and Koka (Perceus RC) on memory-heavy work, with **byte-identical output**
-per workload. This file is the map; each row links to a `RESULTS.md` with detail.
+memory and predictable, pause-free reclamation, with no manual frees and no GC**.
+The only way I trust that claim is numbers next to C, Rust, Go (GC), and Koka
+(Perceus RC) on memory-heavy work, with **byte-identical output** per workload —
+not a passing test suite. This file is the map; each row links to a `RESULTS.md`
+with detail.
 
 All peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Build regime:
 each language at its standard release optimization — tycho and C at `cc -O3`,
 `rustc -C opt-level=3`, `go build`, `koka -O2` (its max). The authoritative
 numbers under this regime are in each workload's `RESULTS.md`. Both tycho
-compilers (the C reference `tychoc` and the self-hosted `tychoc0`) are measured
+transpilers (the C reference `tychoc` and the self-hosted `tychoc0`) are measured
 where shown.
 
 ## Axis 1 — memory (peak RSS)
@@ -43,8 +44,8 @@ where shown.
 
 ## The shape dimension — value-shaped vs pointer-shaped data
 
-The clearest predictor of whether tycho matches C is the **shape** of the data, not the
-domain of the workload:
+The clearest predictor of whether tycho matches C turned out to be the **shape** of the
+data, not the domain of the workload:
 
 - **Value-shaped** (owned in one place, not shared) — a JSON value tree (`json/`: 37 vs
   35 MB), a SQLite result set (`dbquery/`), a flat array pipeline. tycho lands **≈ C**,

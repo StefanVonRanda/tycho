@@ -2,8 +2,8 @@
 
 An array `[T]` is a growable, ordered sequence of values of one element type. Like every
 Tycho value it has value semantics: assigning an array deep-copies it, so the copy and the
-original never share storage. The element type `T` may be `int`, `float`, `string`, a
-struct, or another array — nested arbitrarily.
+original never share storage. The element type `T` can be `int`, `float`, `string`, a
+struct, or another array — nested as deep as you like.
 
 ```
 xs := [10, 20, 30]      # literal
@@ -34,8 +34,8 @@ cell := grid[0][2]                 # 3
 ## Elements are places
 
 A composite-array element is a **mutable place** — you can write through it in place rather
-than rebuilding the whole element. This is a *projection*: the compiler yields the element's
-slot in the backing buffer, bounds-checked, with no pointer ever exposed in Tycho.
+than rebuilding the whole element. This is a *projection*: the transpiler hands you the
+element's slot in the backing buffer, bounds-checked, with no pointer ever exposed in Tycho.
 
 ```
 ps[0].x = 10                       # a field of an element
@@ -52,8 +52,8 @@ cannot project through a read-only borrowed parameter.
 
 An array parameter is a **read-only borrow** — passed without a copy, but you may only read
 it. Mutating a borrowed array (a `push` or an index-set) is a compile error; copy it first
-(`b := a`) for a mutable local, or take the parameter `mut`. A returned array is promoted
-into the caller's arena, so it never dangles.
+(`b := a`) if you want a mutable local, or take the parameter `mut`. A returned array is
+promoted into the caller's arena, so it never dangles.
 
 ```
 fn make_squares(n: int) -> [int]:   # returned: promoted into the caller's arena
@@ -85,10 +85,10 @@ Passing a slice to a function that only reads its parameter **costs nothing** �
 descriptor `{ data + a, b - a }` points into `xs`'s buffer, the same borrow an ordinary
 array argument already is. But the moment you **store** a slice, **return** it, or **push**
 it somewhere, it deep-copies into an owning array, so value semantics still holds: mutating
-`xs` afterward never touches the stored copy. This keeps the view non-storable — it can
+`xs` afterward never touches the stored copy. That keeps the view non-storable — it can
 never outlive or alias the buffer it came from — without any borrow checker. Slices work on
-every array type and compose (`xs[1:5][1:3]`). The one rule: you cannot pass a slice of `xs`
-and a `mut` of `xs` to the same call, since the `mut` could reallocate the viewed buffer.
+every array type and compose (`xs[1:5][1:3]`). One rule to remember: you cannot pass a slice
+of `xs` and a `mut` of `xs` to the same call, since the `mut` could reallocate the viewed buffer.
 A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — but unlike
 an array view it **always copies** into a fresh substring (there is no zero-copy string view);
 [`substr(s, a, b)`](builtins.md) is the equivalent function form.
