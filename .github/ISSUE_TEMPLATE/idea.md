@@ -21,7 +21,7 @@ What was awkward, surprising, missing, or confusing — or what would you change
 
 ---
 
-*Heads up — these are **deliberately out of scope**, so suggestions for them will
-be politely declined: a ternary/conditional expression and a package
-manager. Everything else is fair game. (See the README's "Known limitations" and
-`CONTRIBUTING.md`.)*
+*Heads up — a couple of things are **deliberately out of scope**, so I'll
+politely decline suggestions for them: a ternary/conditional expression and a
+package manager. Everything else is fair game. (See the README's "Known
+limitations" and `CONTRIBUTING.md`.)*

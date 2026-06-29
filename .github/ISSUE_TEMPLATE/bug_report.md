@@ -28,9 +28,9 @@ $ ...
 - Expected: …
 - Actual: … (paste the exact output / error / sanitizer report)
 
-**Does it reproduce in both compilers?** (helps a lot, if you can check)
-- [ ] `./tychoc bug.ty` (the C reference compiler)
-- [ ] the self-hosted compiler — easiest via `make fixpoint`, which builds with both
+**Does it reproduce in both transpilers?** (helps me a lot, if you can check)
+- [ ] `./tychoc bug.ty` (the C reference transpiler)
+- [ ] the self-hosted transpiler — easiest via `make fixpoint`, which builds with both
 - [ ] not sure
 
 **Environment**
