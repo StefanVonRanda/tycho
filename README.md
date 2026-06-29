@@ -7,27 +7,38 @@
 
 # Tycho
 
-A tiny, statically typed systems language I built to test one idea. The
-transpiler is written in C, turns Tycho source into C, and hands that C to your
-C compiler to make a native binary.
+Tycho is a proof-of-concept systems language built to test one specific idea:
+managing memory with **implicit hierarchical arenas and value semantics**, so
+you get memory safety with no GC and no manual `free`. The transpiler is written
+in C, turns Tycho source into C, and hands that C to your own C compiler to make
+a native binary.
 
-> **Status: experimental.** Tycho is a proof-of-concept exploring one idea —
-> implicit arenas + value semantics, no GC and no manual `free`. It's not a
-> production language, and I won't pretend it is. It self-hosts, it's fuzzed and
-> benchmarked, and it builds with just `cc` + `make` — but there are **no
-> stability guarantees** and the language may still change. I'd call it
-> feature-complete for the proof-of-concept: value semantics, implicit arenas,
-> concurrency, generics, closures, UFCS, FFI, and `sink` all ship in both
-> transpilers, so what's left now is **ergonomics polish and bug reports, not new
-> features** ([CONTRIBUTING](CONTRIBUTING.md) has the details). **Experiments and
-> feedback are very welcome** — see [Getting started](#getting-started),
-> [CONTRIBUTING](CONTRIBUTING.md), and please open an issue. (The honest scope
-> and limits are in [Known limitations](#known-limitations-proof-of-concept).)
+Each scope has its own memory arena — and loops get a scratch arena that resets
+every iteration — cleared when the scope exits. Values move between arenas only
+two ways: passed *down* into a sub-arena as an argument, or *promoted up* by
+being returned. Under strict value semantics those values are deep-copied, never
+aliased by reference, and that's what keeps them memory-safe. You never see any
+of this: you declare and use values as if the language were dynamically managed,
+and the transpiler inserts every allocation, promotion, and reclamation for you.
+Behind the scenes it also applies a handful of low-level optimisations that cut
+the performance tax usually charged for deep-copying values.
 
-Tycho's whole idea: **memory is managed by implicit hierarchical arenas**, one
-per scope, with scratch arenas for loops. You never see an arena — you declare
-and use values as if the language were dynamically managed, and the transpiler
-inserts all the allocation, promotion, and reclamation for you.
+> **Status: experimental.** The aim of Tycho is *solely* to test the "implicit
+> hierarchical arenas + value semantics" thesis — I don't recommend writing
+> production software in it, and I won't pretend otherwise. There are **no
+> stability guarantees** and the language may still change. That said, it
+> self-hosts, it's fuzzed and benchmarked, and it builds with nothing but `cc` +
+> `make`. The pillars — value semantics, implicit arenas, concurrency, generics,
+> closures, UFCS, FFI, `sink` — all ship in both transpilers, so what's left now
+> is ergonomics polish and bug reports, not new features. Experiments, questions,
+> corrections, and feedback are all welcome — see
+> [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and the
+> honest [Known limitations](#known-limitations-proof-of-concept).
+
+Tycho is a statically typed, procedural systems language. The syntax is heavily
+inspired by **Python** and **Nim**; the semantics sit closer to **Go** and
+**Odin**. Most of the value-semantics ideas come from
+**[Hylo](https://www.hylo-lang.org/)** — a huge shout-out to that project.
 
 ```
 fn greet(name: string) -> string:
@@ -52,8 +63,8 @@ initializers, literals/lambdas/bare empties from their destination — with ever
 type ground at its own line (see
 [Type inference](docs/reference/types.md#type-inference-bidirectional)).
 
-Why this works — value semantics is what lets the arenas be *implicit* — and,
-honestly, where it doesn't, with measured numbers, is written up in
+Why this works — value semantics is what lets the arenas be *implicit* — and
+where it doesn't, with measured numbers, is written up in
 [docs/thesis.md](docs/thesis.md).
 
 ```
@@ -168,12 +179,14 @@ holds ~1.5 MB where the un-optimized path is ~825 MB at the same N, so the 32 MB
 bound sits firmly between a working and a broken optimization; likewise the
 `move` bench holds ~126 MB where deep-copying the dead local would be ~187 MB.
 
-**Platform notes.** Tycho builds and self-hosts on Linux and macOS (Apple Silicon
-and Intel) with `cc`/`clang` and `make`. On macOS, install the Xcode Command
-Line Tools (`xcode-select --install`). One difference worth knowing: Apple's
-AddressSanitizer ships no LeakSanitizer, so the leak-detection half of the
-sanitizer builds is skipped there — the correctness, UBSan, and byte-identical
-checks all still run.
+**Platform notes.** All you really need is a working C compiler (`cc` — GCC or
+Clang) and `make`. Tycho builds and self-hosts on any unix-like OS — I've tested
+it on **Debian, Arch, and macOS** (Apple Silicon and Intel). I didn't bother
+with native Windows, but WSL should work fine. On macOS, install the Xcode
+Command Line Tools (`xcode-select --install`); one difference worth knowing is
+that Apple's AddressSanitizer ships no LeakSanitizer, so the leak-detection half
+of the sanitizer builds is skipped there — the correctness, UBSan, and
+byte-identical checks all still run.
 
 ## Documentation
 
@@ -471,7 +484,7 @@ libraries are linked explicitly through your own build via the FFI.
 ## License
 
 Tycho is licensed under the **[MIT License](LICENSE)** — do whatever you want
-with it. AI helped build this proof-of-concept. It's experimental software
-provided "as is", without warranty — security notes are in
-[SECURITY.md](SECURITY.md), and how to build, test, contribute, or report a bug
-is in [CONTRIBUTING.md](CONTRIBUTING.md).
+with the code. AI was used in building this proof-of-concept, so the whole repo
+goes out under MIT. It's experimental software provided "as is", without
+warranty — security notes are in [SECURITY.md](SECURITY.md), and how to build,
+test, contribute, or report a bug is in [CONTRIBUTING.md](CONTRIBUTING.md).
