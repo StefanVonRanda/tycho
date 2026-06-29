@@ -196,9 +196,6 @@ byte-identical checks all still run.
   example in it compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas work, and where
   it doesn't, with measured numbers. The argument the language exists to make.
-- **[Learning guide](docs/learning-guide.md)** — a hands-on, project-driven introduction for
-  programmers coming from Python, JavaScript, or Ruby. The same material is a self-contained
-  [browser tutorial](docs/learning-platform.html).
 - **Design notes** (`docs/*.md`: the arena memory model, concurrency, FFI, generics, maps, …) —
   the *rationale* behind each subsystem. The reference links to the relevant note from each page;
   these explain why, the reference explains what.

@@ -117,7 +117,6 @@ compiles on both transpilers; no dead file-or-anchor links across the tree.
 - `README.md` — **front door** (~460 lines, down from ~1400): pitch, quickstart, build/CI, self-hosting + benchmarks, honest limits, FAQ, and a navigation map. *Not* the reference.
 - `docs/reference/` — **the canonical language reference**, one topic per page: `index`, `basics`, `types`, `arrays-slices`, `structs-tuples`, `maps`, `enums-options`, `functions`, `generics`, `concurrency`, `ffi`, `packages`, `builtins`. The source of truth for behaviour. Voice: motivated-then-mechanical; each page footers to its design note (reference owns the *what*, the note owns the *why*).
 - `docs/thesis.md` — **the argument** (value-semantics → implicit arenas, honest wins/losses, machine-transparent benchmarks). The centerpiece for evaluators.
-- `docs/learning-guide.md` + `docs/learning-platform.html` — **the tutorial** (narrative; links into the reference).
 - `docs/*.md` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `arrays-structs`, `map-values`, `map-mutation`, `perf`, `corelib`) — **design notes**: the *why* behind each subsystem, deduped against the reference.
 
 **Internal, for working on the project (kept as working tools, not part of the editorial pass):**

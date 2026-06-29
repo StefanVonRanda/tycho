@@ -5,10 +5,8 @@ behaves. It's organized by topic; read it in order for a full tour, or jump to a
 for a specific feature.
 
 For *why* the language is shaped this way — the value-semantics and implicit-arena
-idea behind almost every decision here — see [the thesis](../thesis.md). For a
-gentler, project-driven first pass, start with the
-[learning guide](../learning-guide.md). This reference assumes you can already read
-a small program.
+idea behind almost every decision here — see [the thesis](../thesis.md). This
+reference assumes you can already read a small program.
 
 ## Pages
 

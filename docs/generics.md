@@ -191,10 +191,7 @@ with predicates in one clause (`where numeric(T), U: int | string`). A violation
 is the same instantiation-time signature error (`… T = float, which is not in the
 type set { int | float }`). This is the *expressiveness* lever type sets
 buy, kept fully monomorphizable and free of type classes — no dictionaries, no
-boxing; it is a compile-time membership test. For a worked,
-runnable walk-through see the *Type sets: a one-off constraint* subsection of
-Chapter 19 ("Generics, continued") in
-[`docs/learning-platform.html`](learning-platform.html).
+boxing; it is a compile-time membership test.
 
 ## 6. When `$T` can't be inferred
 
