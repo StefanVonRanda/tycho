@@ -38,6 +38,33 @@ including `push`/growth and element/field mutation through the borrow. `mut stri
 the string stays immutable, but reassignment through the borrow (`s = s + "."`) reaches the
 caller, with the new bytes built in the caller's arena.
 
+A third convention, `sink`, marks a parameter the callee **owns and consumes** — owned, so it
+may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:
+
+```
+fn scale2(xs: sink [int]) -> int:
+    s := 0
+    for i in range(0, len(xs)):
+        xs[i] = xs[i] * 2          # legal: a sink parameter is mutable
+        s = s + xs[i]
+    return s
+
+fn main():
+    print(str(scale2([5, 5, 5])))  # 30 — the fresh literal is adopted and mutated, ZERO copies
+    a := [1, 2, 3]
+    scale2(a)                      # a is dead after this, so it is adopted too — still no copy
+```
+
+This is the copy-eliding convention, and the elision is the point: `sink` adopts a value the
+caller no longer needs — a fresh literal, or a local on its last use — straight into the call
+with **no copy at all** (verified in the generated C: no `tycho_arr_int_copy` is emitted). It
+falls back to a copy exactly when value semantics demand independence — if the variable is read
+again afterwards, used inside a loop, or captured by a closure. Reusing an owned value *after*
+handing it to a `sink` is a compile error in both compilers, not a silent copy, so the move is a
+checked guarantee. The one copy `sink` can't elide is escape: a value returned or stored past the
+call must still be copied to a longer-lived arena — a property of the arena model, covered in
+[`docs/internals/sink-prototype.md`](../internals/sink-prototype.md).
+
 ## Declarations and assignment
 
 ```

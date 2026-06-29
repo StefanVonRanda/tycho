@@ -16,8 +16,12 @@ xs[0] = 99              # index write (bounds-checked)
 zs := xs                # value semantics: zs is an independent deep copy
 ```
 
-An out-of-bounds index aborts with a message rather than reading stray memory. Assignment
-is a **deep** copy: copying a `[string]`, `[Point]`, or `[[int]]` duplicates the element
+An out-of-bounds index aborts with a message rather than reading stray memory. This check is
+load-bearing, not belt-and-suspenders: because every value lives in one large arena block, an
+out-of-bounds read usually lands on *other live data* in the same block instead of an unmapped
+page, so the OS would never fault on it — the corruption would just be silent. The runtime
+bounds check is what turns that into a clean abort, which is why it is always on, in both
+compilers. Assignment is a **deep** copy: copying a `[string]`, `[Point]`, or `[[int]]` duplicates the element
 bytes, nested structs, and inner buffers too, so mutating the copy never touches the
 original.
 

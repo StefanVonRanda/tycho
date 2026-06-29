@@ -353,8 +353,8 @@ value returned up several levels is built once, in the final consumer's arena). 
 turning the textbook O(n²) accumulator into O(n) (measured at n=40 000: ~828 MB → under
 4 MB). Both are sound *because* value semantics already proves the value is uniquely owned
 at that point — no analysis, no annotation. The full argument, with the numbers and the
-honest account of where the model *loses*, is [the thesis](docs/thesis.md). None of it
-appears in Tycho source.
+honest account of where the model trades — and how to shape data so it stays fast — is
+[the thesis](docs/thesis.md). None of it appears in Tycho source.
 
 ### Known limitations (proof-of-concept)
 

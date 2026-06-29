@@ -1,12 +1,16 @@
-# Where value semantics + implicit arenas lose — and what to do instead
+# Optimizing data structures for the arena model
 > Status: evergreen analysis (current — reflects shipped behaviour).
 
-Tycho's model — value semantics with no pointers, memory managed by implicit arenas — is
-not free. It is a deliberate trade: you give up manual control (and some workloads) to get
-no `malloc`/`free`, no use-after-free, no GC pauses, and value equality that just works.
-This note is the honest accounting of where that trade goes against you, with the idiom to
-reach for in each case. It is not marketing; if your workload is in the "loses" column,
-use the idiom or use a different tool.
+Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes
+how you represent data, and the shapes it rewards are not always the ones you'd reach for in C.
+It is a deliberate trade: you give up manual control (and some workloads) to get no
+`malloc`/`free`, no use-after-free, no GC pauses, and value equality that just works. This note
+maps the terrain honestly — where the model is already competitive, and where a workload wants a
+data-oriented representation (a flat pool, an index, a scoped transient) to stay on the
+value-semantics path. The numbers are measured, not asserted; and where a workload's natural
+shape fights the model even after the right representation, the note says so and points you at a
+different tool. The aim is to make the good representation the obvious one, not to apologize for
+the model's edges.
 
 ## Where the model is competitive (for context)
 
@@ -19,7 +23,7 @@ checksum):
   place, copied rarely, and freed all at once.
 - **Flat data + libraries** — `bench/dbquery`, `bench/invindex`: tycho ≈ C, < Go on memory.
 
-## Where the model loses
+## Where the model wants a data-oriented representation
 
 ### 1. Pointer-shaped / structurally-shared structures (the big one)
 
@@ -69,8 +73,12 @@ fn insert(t: mut Trie, s: string):
 ```
 
 Indices are pointer-sized, this allows sharing (DAGs: point two parents at one index), and it
-stays within the model — the pool grows, the arena reclaims it, no `free`. The cost is
-ergonomic: you index a pool instead of following references, and you cannot delete a single
+stays within the model — the pool grows, the arena reclaims it, no `free`. This is the same
+data-oriented layout high-performance C engines reach for *on purpose*: one contiguous array,
+8-byte indices instead of scattered pointers, traversal that walks cache lines instead of chasing
+them. So it is a representation worth choosing, not merely a constraint to satisfy — value
+semantics just make it the default rather than the optimization you remember to apply. The cost
+is ergonomic: you index a pool instead of following references, and you cannot delete a single
 node without compacting. For graphs, the same pattern (`[Node]` + `[[int]]` adjacency by
 index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on
 shared pointers.
@@ -164,3 +172,14 @@ viable, and tell you honestly when to step off it.
 Is the trie/graph cost fundamental to value semantics, or just our implementation? See
 `hylo-mvs-research.md` — the most mature MVS language (Hylo) hits the same wall and answers
 it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.
+
+And it can't be sidestepped by quietly adding back references: a spike on stored/"remote"
+references (`../rfc/limited-references-spike.md`) settled this as a decision. A reference that
+*stores* a graph edge is incompatible with the two invariants that make Tycho what it is — the
+deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape
+arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The
+index-pool isn't the fallback after references didn't make it; within this model it *is* the way
+to store a graph, and the copy-cost side of the same question is what [`sink`](../reference/basics.md)
+answers for call arguments. The only reference-shaped feature that fits — user-defined
+projections, a generalization of the shipped `&m[k]` — is an ergonomic convenience over the
+index idiom, not a different way to store the data.

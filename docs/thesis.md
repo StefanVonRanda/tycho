@@ -198,7 +198,7 @@ of it:
   the memoized version returns the same answer in **under a millisecond** — O(n)
   vs O(2ⁿ). That collapse is proof the array is truly shared, not copied per call.
 
-**The residue is the boundary, not a defect.** What stays genuinely
+**This boundary is where the safety comes from.** What stays genuinely
 impossible is *pointer-identity aliasing of two named variables in one scope* —
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held

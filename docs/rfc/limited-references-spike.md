@@ -97,8 +97,9 @@ its scope, i.e. forbidden from exactly the boundary crossing `spawn` is built on
   unproven in Hylo. Adopting them would mean giving up the lock-free, arena, copy-as-boundary
   design — i.e. building a different language.
 
-Even Hylo, with the full static machinery, **falls back to indices** for real graph storage
-(`hylo-mvs-research.md` §wall). The index-pool is the MVS answer, not a Tycho cop-out.
+Even Hylo, with the full static machinery, **stores real graphs as indices**
+(`hylo-mvs-research.md` §wall). The index-pool is the MVS answer — a deliberate, cache-friendly
+representation, not a workaround.
 
 ## The one compatible increment: user-defined projections
 

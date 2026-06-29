@@ -5,12 +5,25 @@ call — is already a sound thread boundary. So concurrency is just that same co
 another thread: after the copy-in, a task shares zero bytes with its spawner, and race freedom
 falls out of value semantics. There's no `Sendable`, no lifetimes, and no locks in the language.
 
-## Scope of the guarantee
+## The safety envelope
 
-"Race-free by construction" holds for *pure Tycho values* — the world the compiler owns and
-deep-copies. It does **not** extend across the [FFI](ffi.md): if a task calls a C function that
-touches process-global or `static` C state, Tycho can't see that sharing, and two tasks racing
-on it race exactly as they would in C. So isolate such state per thread, or serialize the calls.
+The race-freedom guarantee has a precise edge, and it's worth stating before the mechanics: it
+covers **pure Tycho values** — the world the compiler owns and deep-copies — and nothing past
+the [FFI](ffi.md). Inside that envelope you get share-nothing concurrency for free. The moment a
+task calls into C, you step outside it, and the compiler can no longer vouch for what you touch.
+
+> **Crossing into C drops the guarantee.** If a C function reads or writes process-global or
+> `static` state, Tycho can't see that sharing. Two tasks calling it race exactly as they would
+> in plain C — the transpiler type-checks only the boundary (scalars, strings, opaque pointers),
+> never C's internal state.
+
+Concretely: two tasks calling an unshimmed stateful C library — say OpenSSL writing into a shared
+`static` buffer — race on that buffer even though both sides look like isolated Tycho. The fix is
+to keep the shared state per thread or serialize the calls. The `core:crypto` shim does the
+former: its return buffer is `static __thread char *g_out` (`corelib/crypto/crypto_shim.c:35`),
+so each OS thread gets its own. When you write your own FFI shim, design it the same way — assume
+nothing about the C side's thread-safety and isolate it explicitly. The full analysis is in
+[`docs/rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).
 
 ## `spawn` and `wait`
 

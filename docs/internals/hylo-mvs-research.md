@@ -91,7 +91,8 @@ forbids the shared mutable node that a C/Go trie or graph is built from, so Hylo
 identical wall, and its answers are the same two we already reached:
 
 1. **Indices into a pool** — the flat node-pool idiom (`examples/triepool.ty`,
-   `value-semantics-limits.md`). This is the standard MVS answer, not a Tycho cop-out.
+   `value-semantics-limits.md`). This is the standard MVS answer, and the same cache-friendly,
+   data-oriented layout Hylo's own graph code reaches for.
 2. **`remote parts`** — Hylo's *experimental* gap-filler (hylo-lang/discussions/754): a
    *limited* form of reference in the type system, preserving no-observable-aliasing and
    deterministic deallocation. It is the one genuinely new idea for the graph problem — but
