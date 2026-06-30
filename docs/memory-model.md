@@ -69,7 +69,7 @@ signatures and scopes — a local routing decision, not a dataflow trace.
 
 `arena_free` reclaims only memory that was `arena_alloc`'d into that arena; heap
 that is still `malloc`'d (for a type not yet placed on an arena) is untouched and
-simply leaks, exactly as a non-arena allocator would. So placing one type family
+leaks, exactly as a non-arena allocator would. So placing one type family
 on arenas while the rest stay on `malloc` is sound: no use-after-free, the placed
 type stops leaking, the rest leak as they did. The one irreducible, all-at-once
 piece is the threading spine — once any function takes `Arena *_parent`, every

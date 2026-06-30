@@ -167,7 +167,7 @@ fn main():
 | return a reference to a local | classic dangling | **inexpressible** — no reference type exists |
 
 The last row is the key point: the dangling-pointer bug that forces every other
-region system to ship escape analysis *for correctness* simply isn't expressible in
+region system to ship escape analysis *for correctness* isn't expressible in
 Tycho, so it cannot occur.
 
 ## 7. Generics — monomorphized over the built-in container machinery
