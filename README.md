@@ -7,27 +7,26 @@
 
 # Tycho
 
-Tycho is a proof-of-concept systems language built to test one specific idea:
-managing memory with **implicit hierarchical arenas and value semantics**, so
-you get memory safety with no GC and no manual `free`. You write code as if
-memory were managed for you — and it is: the transpiler (written in C) turns
-Tycho source into C, inserting every allocation and free itself, then hands that
-C to your own compiler for a native binary. *How* that works is the back half of
-this README; first, what it looks like.
-
-The syntax is heavily inspired by **Python** and **Nim**; the semantics sit
-closer to **Go** and **Odin**; the value-semantics ideas come from
-**[Hylo](https://www.hylo-lang.org/)** — a huge shout-out to that project:
+Tycho is a proof-of-concept systems language built to test one idea: managing
+memory with **implicit hierarchical arenas and value semantics**, so you get
+memory safety with no GC and no manual `free`. You write code as if memory were
+managed for you — and it is: the transpiler, written in C, lowers Tycho to C and
+inserts every allocation and free itself, then hands that C to your own compiler
+for a native binary. Here's what it looks like:
 
 ```
 fn greet(name: string) -> string:
-    return "hello " + name + "\n"
+    return "hello " + name
 
 fn main():
     print("what is your name: ")
     name := input()
-    print(greet(name))
+    println(greet(name))
 ```
+
+Python- and Nim-inspired syntax; Go- and Odin-like semantics; the value-semantics
+core comes from **[Hylo](https://www.hylo-lang.org/)**. Static types and arena
+memory sit underneath — neither shows up in the code you write.
 
 > **Status: experimental.** The aim of Tycho is *solely* to test the "implicit
 > hierarchical arenas + value semantics" thesis — I don't recommend writing
@@ -41,41 +40,15 @@ fn main():
 > [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and the
 > honest [Known limitations](#known-limitations-proof-of-concept).
 
-Python-looking syntax; static types, value semantics, and explicit returns;
-arena memory underneath. The same idea carries the concurrency story:
-`spawn`/`wait`, `parallel for`, and channels are just the ordinary
-copy-in/copy-out call convention run on threads — race-free by construction
-*for pure Tycho values*, with no locks or lifetime rules in the language (see
-[Concurrency](docs/reference/concurrency.md)). That guarantee covers the values
-the transpiler owns; the moment you cross into C through the FFI you're back
-under C's threading rules (see [FFI](docs/reference/ffi.md)). Types are inferred
-bidirectionally (Pierce–Turner local inference): locals from their
-initializers, literals/lambdas/bare empties from their destination — with every
-type ground at its own line (see
-[Type inference](docs/reference/types.md#type-inference-bidirectional)).
+## What it buys you
 
-Why this works — value semantics is what lets the arenas be *implicit* — and
-where it doesn't, with measured numbers, is written up in
-[docs/thesis.md](docs/thesis.md).
+Syntax is the easy part. The reason Tycho exists is what the memory model does
+underneath it — three things you can build and run today.
 
-```
-$ make
-$ ./tychoc examples/hello.ty
-$ ./examples/hello
-what is your name: Ada
-hello Ada
-```
-
-## See it first
-
-The syntax is the easy part — what matters is what runs underneath it. Three
-things you can build and run today.
-
-**A real recursive program at flat memory.** [`examples/json.ty`](examples/json.ty)
-is a full recursive-descent JSON parser + serializer (~220 lines): a recursive
-`Json` sum type, parsed by recursive descent, walked to serialize and query —
-real systems code with real recursion and **zero** `malloc`/`free`/refcount/GC
-in the source.
+**A recursive program at flat memory.** [`examples/json.ty`](examples/json.ty) is
+a full recursive-descent JSON parser + serializer (~220 lines): a recursive
+`Json` sum type, parsed and walked to serialize and query — real systems code
+with real recursion and **zero** `malloc`/`free`/refcount/GC in the source.
 
 ```
 enum Json:
@@ -129,10 +102,18 @@ and wall time, with no GC and no refcount:
 | ------------ | -------------: | --------: | ---------: | -------------: |
 | binary-trees | 13 MB / 107 ms | 33 / 765  | 32 / 1756  |      15 / 269  |
 
-The full five-language table (incl. Rust), methodology, and machine details are
-under [Self-hosting](#self-hosting) and
-[bench/prongB/RESULTS.md](bench/prongB/RESULTS.md). *Why* a value-semantic
-language can do this without a GC is [the thesis](docs/thesis.md).
+Full five-language table (incl. Rust), methodology, and machine details are under
+[Self-hosting](#self-hosting) and [bench/prongB/RESULTS.md](bench/prongB/RESULTS.md).
+
+There's more than memory underneath. Concurrency is the same copy-in/copy-out
+call convention run on threads — `spawn`/`wait`, `parallel for`, and channels,
+race-free by construction *for pure Tycho values* (across the FFI you're back
+under C's rules), with no locks or lifetime annotations (see
+[Concurrency](docs/reference/concurrency.md)). Types infer bidirectionally:
+locals from their initializers, literals from their destination (see
+[Type inference](docs/reference/types.md#type-inference-bidirectional)). *Why*
+value semantics makes all of this work without a GC — and where it doesn't, with
+measured numbers — is [the thesis](docs/thesis.md).
 
 ## Getting started
 
@@ -368,7 +349,7 @@ arena's win here is memory, not raw speed.
 
 ## Memory model
 
-The flat-10 MB JSON parser and the in-place string append [up top](#see-it-first)
+The flat-10 MB JSON parser and the in-place string append [up top](#what-it-buys-you)
 aren't special cases — they're this model running on real code. Here's the model.
 
 Every scope — each proc, each `if`/`else` block, each loop body — gets its
