@@ -9,19 +9,25 @@
 
 Tycho is a proof-of-concept systems language built to test one specific idea:
 managing memory with **implicit hierarchical arenas and value semantics**, so
-you get memory safety with no GC and no manual `free`. The transpiler is written
-in C, turns Tycho source into C, and hands that C to your own C compiler to make
-a native binary.
+you get memory safety with no GC and no manual `free`. You write code as if
+memory were managed for you — and it is: the transpiler (written in C) turns
+Tycho source into C, inserting every allocation and free itself, then hands that
+C to your own compiler for a native binary. *How* that works is the back half of
+this README; first, what it looks like.
 
-Each scope has its own memory arena — and loops get a scratch arena that resets
-every iteration — cleared when the scope exits. Values move between arenas only
-two ways: passed *down* into a sub-arena as an argument, or *promoted up* by
-being returned. Under strict value semantics those values are deep-copied, never
-aliased by reference, and that's what keeps them memory-safe. You never see any
-of this: you declare and use values as if the language were dynamically managed,
-and the transpiler inserts every allocation, promotion, and reclamation for you.
-Behind the scenes it also applies a handful of low-level optimisations that cut
-the performance tax usually charged for deep-copying values.
+The syntax is heavily inspired by **Python** and **Nim**; the semantics sit
+closer to **Go** and **Odin**; the value-semantics ideas come from
+**[Hylo](https://www.hylo-lang.org/)** — a huge shout-out to that project:
+
+```
+fn greet(name: string) -> string:
+    return "hello " + name + "\n"
+
+fn main():
+    print("what is your name: ")
+    name := input()
+    print(greet(name))
+```
 
 > **Status: experimental.** The aim of Tycho is *solely* to test the "implicit
 > hierarchical arenas + value semantics" thesis — I don't recommend writing
@@ -34,21 +40,6 @@ the performance tax usually charged for deep-copying values.
 > corrections, and feedback are all welcome — see
 > [Getting started](#getting-started), [CONTRIBUTING](CONTRIBUTING.md), and the
 > honest [Known limitations](#known-limitations-proof-of-concept).
-
-Tycho is a statically typed, procedural systems language. The syntax is heavily
-inspired by **Python** and **Nim**; the semantics sit closer to **Go** and
-**Odin**. Most of the value-semantics ideas come from
-**[Hylo](https://www.hylo-lang.org/)** — a huge shout-out to that project.
-
-```
-fn greet(name: string) -> string:
-    return "hello " + name + "\n"
-
-fn main():
-    print("what is your name: ")
-    name := input()
-    print(greet(name))
-```
 
 Python-looking syntax; static types, value semantics, and explicit returns;
 arena memory underneath. The same idea carries the concurrency story:
@@ -74,6 +65,74 @@ $ ./examples/hello
 what is your name: Ada
 hello Ada
 ```
+
+## See it first
+
+The syntax is the easy part — what matters is what runs underneath it. Three
+things you can build and run today.
+
+**A real recursive program at flat memory.** [`examples/json.ty`](examples/json.ty)
+is a full recursive-descent JSON parser + serializer (~220 lines): a recursive
+`Json` sum type, parsed by recursive descent, walked to serialize and query —
+real systems code with real recursion and **zero** `malloc`/`free`/refcount/GC
+in the source.
+
+```
+enum Json:
+    JNull
+    JBool(bool)
+    JNum(int)
+    JStr(string)
+    JArr([Json])
+    JObj([string], [Json])        # parallel keys / values
+```
+
+It runs clean under AddressSanitizer + LeakSanitizer, and parsing
+**5,000,000** documents in a loop holds at a **flat 10 MB** — each document's
+tree is reclaimed when its loop iteration's arena resets. No GC pause, no
+`free`, constant memory across millions of allocations.
+
+**Append a string in a loop — Tycho vs C.** `acc = acc + s` is the textbook
+O(n²) accumulator; Tycho grows `acc`'s buffer in place, so it's O(n) — the same
+byte-writes C does, with none of the bookkeeping:
+
+```
+# Tycho
+acc := ""
+for i in range(0, n):
+    acc = acc + s        # grows acc's buffer in place; acc is uniquely owned
+return acc               # built directly in the caller's arena — no copy out
+```
+
+```c
+/* the equivalent C: manual capacity, realloc, and a free you must not forget */
+char *acc = malloc(1); acc[0] = '\0';
+size_t len = 0, cap = 1, sl = strlen(s);
+for (int i = 0; i < n; i++) {
+    if (len + sl + 1 > cap) { cap = (len + sl + 1) * 2; acc = realloc(acc, cap); }
+    memcpy(acc + len, s, sl); len += sl; acc[len] = '\0';
+}
+free(acc);
+```
+
+No `malloc`, no `realloc`, no capacity tracking, no `free` — and the same memory
+profile: the bench guard holds the Tycho version at **~1.5 MB** where the naive
+copy-each-step path is **~825 MB** at the same N. The source is ordinary
+concatenation; the optimization is invisible.
+
+**It's competitive — measured, not asserted.** The self-hosted transpiler (Tycho
+compiling *itself* on the arena model) beats garbage-collected **Go** and
+reference-counted **Koka** on allocation-heavy tree workloads in *both* memory
+and wall time, with no GC and no refcount:
+
+| workload     |          tycho |         C |    Go (GC) | Koka (Perceus) |
+| ------------ | -------------: | --------: | ---------: | -------------: |
+| binary-trees | 13 MB / 107 ms | 33 / 765  | 32 / 1756  |      15 / 269  |
+
+The full five-language table (incl. Rust), methodology, and machine details are
+under [Self-hosting](#self-hosting) and
+[bench/prongB/RESULTS.md](bench/prongB/RESULTS.md). *Why* a value-semantic
+language can do this without a GC is [the thesis](docs/thesis.md).
 
 ## Getting started
 
@@ -203,8 +262,8 @@ byte-identical checks all still run.
   gates, and what's shipped; `docs/internals/` holds the design records. Start here to evaluate
   or contribute.
 
-**Where to start, by goal.** *Learn the language* → the learning guide, then the reference.
-*Understand the design* → the thesis and the design notes. *Evaluate or contribute* →
+**Where to start, by goal.** *Learn the language* → the reference, starting from
+[its index](docs/reference/index.md). *Understand the design* → the thesis and the design notes. *Evaluate or contribute* →
 [`STATUS.md`](STATUS.md) and [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Self-hosting
@@ -309,13 +368,8 @@ arena's win here is memory, not raw speed.
 
 ## Memory model
 
-This isn't only a benchmark story. `examples/json.ty` is a full recursive-descent
-JSON parser + serializer (~220 lines): a recursive `Json` sum type, parsed by
-recursive descent and walked to serialize and query — real systems code with real
-recursion and **zero** `malloc`/`free`/refcount/GC in the source. It runs clean
-under AddressSanitizer + LeakSanitizer, and parsing **5,000,000** documents in a
-loop holds at a flat **10 MB** — each document's tree is reclaimed when its loop
-iteration's arena resets. That is the model below, on a real workload:
+The flat-10 MB JSON parser and the in-place string append [up top](#see-it-first)
+aren't special cases — they're this model running on real code. Here's the model.
 
 Every scope — each proc, each `if`/`else` block, each loop body — gets its
 own **arena** with its own backing storage. Arenas form a hierarchy via
@@ -366,8 +420,7 @@ honest account of where the model trades — and how to shape data so it stays f
   array and link them by *integer index*, not by reference (optionally a
   generational index for use-after-free detection). The whole structure is then
   one value with one arena lifetime — see
-  [docs/arrays-structs.md](docs/arrays-structs.md) §2 and the learning guide's
-  "Graphs and Linked Structures".
+  [docs/arrays-structs.md](docs/arrays-structs.md) §2.
 - **Operational costs of the model, measured** — because value semantics stores
   children by value, pointer-shaped structures cost more than their pointer
   representation: a by-value recursive trie is **~3.2× C's memory**, a
