@@ -7,10 +7,13 @@
 
 # Tycho
 
-Tycho is a systems language with no garbage collector, no borrow checker, and no
-manual `free`. Memory is freed when a scope exits — and the compiler works out
-every allocation and free for you, because the language has no pointers to lose
-track of. It transpiles to C and builds with `cc` and `make`.
+Tycho is an experimental systems language built to test one idea: **implicit
+hierarchical arenas under value semantics**. Each scope owns a memory arena,
+freed when the scope exits; with no reference type in the language, the compiler
+sees every value's lifetime from the syntax alone and inserts every allocation
+and free itself. The payoff is automatic memory management — no garbage collector,
+no manual `free` — from lexical scope rather than a runtime. It transpiles to C
+and builds with `cc` and `make`.
 
 ```
 fn greet(name: string) -> string:
@@ -25,18 +28,17 @@ fn main():
 Python- and Nim-inspired syntax; Go- and Odin-like semantics; the value-semantics
 core comes from **[Hylo](https://www.hylo-lang.org/)**.
 
-> **Status: experimental.** Tycho exists to test one idea — implicit hierarchical
-> arenas under value semantics — not to ship production software, and I won't
-> pretend otherwise. Single implementation, no stability guarantee, the surface
-> still moves. What it *does* have: it self-hosts, it's fuzzed and benchmarked
+> **Status: experimental.** Tycho is a proof-of-concept, not production software,
+> and I won't pretend otherwise. Single implementation, no stability guarantee,
+> the surface still moves. What it *does* have: it self-hosts, it's fuzzed and benchmarked
 > against C/Rust/Go/Koka, and every feature ships in both transpilers or not at
 > all. Questions, corrections, and experiments are welcome.
 
 ## The idea
 
-Arenas are old and fast: a bump allocator hands out memory by incrementing a
-pointer, and frees everything at once when its scope ends. Game engines, request
-handlers, and region systems have used them for decades. The catch has always
+The arena is an old idea, and a fast one: a bump allocator hands out memory by
+incrementing a pointer, and frees everything at once when its scope ends. Game engines, request
+handlers, and region systems have used it for decades. The catch has always
 been knowing *when* a value is allowed to outlive its arena — in a language with
 pointers, that needs whole-program alias analysis, which is the hard part.
 
@@ -57,9 +59,10 @@ sound *because* the value is provably un-aliased; neither is visible in your cod
 
 ## See it work
 
-Every number below is checked in CI, byte-for-byte against a golden, on both
-transpilers. Absolute times are machine-specific — the cross-language *ratios*
-are the claim.
+The programs behind these numbers run in CI on both transpilers, their output
+checked byte-for-byte against a golden — so the code is verified correct. The
+figures themselves are measured and machine-specific, so the cross-language
+*ratios* are the claim, not the absolute times.
 
 **A real program at flat memory.** [`examples/json.ty`](examples/json.ty) is a
 220-line recursive-descent JSON parser over a recursive `Json` sum type — real
@@ -86,8 +89,8 @@ memory model). Toolchains and both reference machines (AMD Ryzen 7 7735HS x86-64
 Linux; Apple Silicon arm64 macOS) are in RESULTS.md.
 
 **A realistic workload** ([bench/site/](bench/site), `make bench-site`): render
-*N* Markdown pages to HTML, in Tycho / C / Go, an FNV checksum gating that all
-three do identical work.
+*N* Markdown pages to HTML in Tycho / C / Go, with an FNV checksum over every
+rendered byte confirming all three do identical work.
 
 | pages  |  tycho  |   C    |  Go (GC) |
 | -----: | -----: | -----: | -------: |
@@ -106,8 +109,8 @@ The strongest evidence for the model is that Tycho compiles itself on it. Beside
 the C reference transpiler (`src/tychoc.c`), there is a second transpiler written
 in Tycho — `compiler/tychoc0.ty` — and its codegen runs on the same implicit
 arenas it emits. A compiler is the hostile case for any allocator: thousands of
-small, short-lived, deeply-recursive AST nodes. It handles its own with no GC and
-no leak.
+small, short-lived, deeply-recursive AST nodes. It manages its own memory with no
+GC and no leaks.
 
 `make fixpoint` is the proof and the discipline. It builds `tychoc0` three ways
 and asserts the last two emit **byte-identical** C, and that the self-hosted build
@@ -193,9 +196,10 @@ Value semantics is not free, and the costs are structural — worth knowing befo
 you reach for Tycho.
 
 **No shared mutable references.** Every binding is an independent copy; there are
-no pointers, and recursive struct types are rejected. You cannot build a
-shared-mutable **graph**, **doubly-linked list**, or **observer** the way a
-pointer language does. The idiom is a **flat node pool**: hold all nodes in one
+no pointers, and recursive struct types are rejected (recursive *enums*, like the
+`Json` tree above, are fine — they nest through a boxed payload, not by value). You
+cannot build a shared-mutable **graph**, **doubly-linked list**, or **observer**
+the way a pointer language does. The idiom is a **flat node pool**: hold all nodes in one
 `[Node]` and link them by integer index, not reference (a generational index
 gives use-after-free detection). The whole structure becomes one value with one
 arena lifetime — and the layout is cache-friendly, the same data-oriented pattern
@@ -245,8 +249,8 @@ a value genuinely escapes to two live owners — exactly when a GC or refcount w
 also work. Measured, not asserted: see the tables above.
 
 **"No GC and no borrow checker — how is it memory-safe?"** There is no reference
-type, so a dangling pointer is *inexpressible* — the bug escape analysis exists to
-prevent can't be written. Memory frees per scope; values that outlive their scope
+type, so a dangling pointer is *inexpressible* — the bug that escape analysis
+exists to prevent can't be written. Memory frees per scope; values that outlive their scope
 are copied up. `Option` removes null, `Result` removes exceptions, indexing is
 bounds-checked, and copy-in/copy-out concurrency removes data races by
 construction (for pure Tycho values; across the FFI you're under C's rules). Every
