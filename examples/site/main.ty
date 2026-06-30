@@ -147,7 +147,7 @@ fn build(site_dir: string, out_dir: string):
     for i in range(len(order)):
         j := order[i]
         iso := datetime.format_iso(datetime.from_unix(dates[j]))
-        print(iso + "  " + slugs[j] + ".html  \"" + titles[j] + "\"  by " + authnames[j] + "  [" + shas[j][0:16] + "]\n")
+        println(iso + "  " + slugs[j] + ".html  \"" + titles[j] + "\"  by " + authnames[j] + "  [" + shas[j][0:16] + "]")
         links = links + "<li><a href=\"" + base + "/" + slugs[j] + ".html\">" + esc_html(titles[j]) + "</a></li>\n"
     index := page_html(title, "Index", "", "<ul>\n" + links + "</ul>\n")
     io.write(path.join(out_dir, "index.html"), index)
