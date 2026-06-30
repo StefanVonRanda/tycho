@@ -3,7 +3,7 @@
 This is the core idea behind Tycho — the *why*. The
 [language reference](reference/index.md) describes *what* the language does;
 the [aggregates design note](arrays-structs.md) pushes this argument harder. Here
-I try to make the case that the running, measured code backs up.
+I make the case for it, backed by running, measured code.
 
 Tycho is a small, experimental, ahead-of-time language: Python-looking syntax,
 value semantics, no garbage collector, no `malloc`/`free`, no

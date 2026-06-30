@@ -50,7 +50,7 @@ arena model bought, not how the current transpiler behaves. Today `tychoc0`'s
 emitted C uses the same implicit-arena model as the C transpiler (see
 [docs/memory-model.md](memory-model.md)), so the "arena vs naive" gap those
 sections document is closed. Concretely, the `accumulate_big` row below (naive:
-257 ms / 598 MB) is now **~0 ms / ~1.6 MB** — flat and bounded; the O(n²) blowup
+257 ms / 598 MB) is now **<1 ms / ~1.6 MB** — flat and bounded; the O(n²) blowup
 and the leak are gone. Read sections (1)–(2) as "naive vs
 arena," and the later sections as the current transpiler.
 
