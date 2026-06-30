@@ -30,7 +30,7 @@ Composite aggregates (arrays, maps, structs) are **rejected** at the boundary â€
 
 The "race-free by construction" guarantee is over Tycho values and does **not** cross the FFI.
 A C function touching process-global or `static` state is invisible to the compiler, so you'll
-need to isolate such state per thread or serialize the calls. See [Concurrency](concurrency.md#scope-of-the-guarantee).
+need to isolate such state per thread or serialize the calls. See [Concurrency](concurrency.md#the-safety-envelope).
 
 ## Linking
 
