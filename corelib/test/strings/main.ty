@@ -11,7 +11,7 @@ fn b2i(b: bool) -> int:
 fn main():
     println(strings.to_upper("Hello, World!"))           # HELLO, WORLD!
     println(strings.to_lower("Hello, World!"))           # hello, world!
-    print(strings.repeat("ab", 3) + "|[" + strings.trim("   spaced text   ") + "]\n")  # ababab|[spaced text]
+    println(strings.repeat("ab", 3) + "|[" + strings.trim("   spaced text   ") + "]")  # ababab|[spaced text]
     bits := b2i(strings.starts_with("hello", "he")) * 4 + b2i(strings.ends_with("hello", "lo")) * 2 + b2i(strings.contains("hello", "ell"))
     miss := b2i(strings.starts_with("hi", "x")) + b2i(strings.contains("abc", "z"))
     p1 := strings.parse_int("-42")

@@ -191,7 +191,7 @@ fn run_play():
         if g.alive == 0:
             break
         step(&g)
-        print(clear + render(g) + "WASD to steer, q to quit\n")
+        println(clear + render(g) + "WASD to steer, q to quit")
         snake_sleep_ms(120)
     snake_raw_off()
     println("game over — final score: " + str(g.score))

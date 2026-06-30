@@ -104,7 +104,7 @@ fn run_animation():
     esc := chr(27)
     clear := esc + "[2J" + esc + "[H"       # ANSI: clear screen + cursor home
     for gen in range(0, 300):
-        print(clear + render(g) + "Conway's Life — generation " + str(gen) + "  (Ctrl-C to stop)\n")
+        println(clear + render(g) + "Conway's Life — generation " + str(gen) + "  (Ctrl-C to stop)")
         tycho_life_sleep(60)
         g = step(g)
 

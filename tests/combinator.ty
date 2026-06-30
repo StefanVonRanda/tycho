@@ -80,9 +80,9 @@ fn pmap_run(p: fn(string, int) -> PR, f: fn(string) -> string, s: string, pos: i
 fn run_one(label: string, p: fn(string, int) -> PR, input: string):
     r := p(input, 0)
     if r.ok:
-        print(label + " on '" + input + "': matched '" + r.val + "', rest '" + substr(input, r.pos, len(input)) + "'\n")
+        println(label + " on '" + input + "': matched '" + r.val + "', rest '" + substr(input, r.pos, len(input)) + "'")
     else:
-        print(label + " on '" + input + "': FAILED\n")
+        println(label + " on '" + input + "': FAILED")
 
 fn main():
     is_digit := fn(c: int) -> bool: c >= 48 and c <= 57

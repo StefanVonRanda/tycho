@@ -18,4 +18,4 @@ fn main():
     w := W(Box(7), 3)
     println(str(w.inner.v + w.n))          # 10
     s := W(Box("hi"), 0)
-    print(s.inner.v + "!\n")                     # hi!
+    println(s.inner.v + "!")                     # hi!

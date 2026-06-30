@@ -25,7 +25,7 @@ fn main():
     println(f"leading {n} trailing")                    # leading 5 trailing
     println("plain string with {braces} stays literal") # plain string with {braces} stays literal
     g := f"built={n}"                                   # f-string into a variable
-    print(g + "!\n")                                    # built=5!
+    println(g + "!")                                    # built=5!
 
     # nested string literal inside a hole (the inner " no longer ends the f-string)
     println(f"wrapped={wrap("hi")}")                    # wrapped=[hi]
