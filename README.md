@@ -46,9 +46,9 @@ Value semantics removes the question. Tycho has no reference type: you cannot
 store or return a pointer into another value's memory, and `b := a` copies. So a
 value can leave a scope in exactly two ways, both visible in the source —
 **down**, passed as an argument to a callee, or **up**, returned to the caller —
-and the compiler can place every allocation from the syntax alone. No analysis,
-no annotations, no GC. That is the whole thesis, and the rest of the language
-follows from it; the full argument, with the measurements and the places it
+and the compiler can place every allocation from the syntax alone, with no
+whole-program analysis and no annotations to write. That is the whole thesis, and
+the rest of the language follows from it; the full argument, with the measurements and the places it
 costs, is in **[docs/thesis.md](docs/thesis.md)**.
 
 Two optimizations keep value semantics from being slow. A value built locally and
@@ -192,8 +192,7 @@ so that half of the sanitizer build is skipped there (the rest still runs).
 
 ## What it costs
 
-Value semantics is not free, and the costs are structural — worth knowing before
-you reach for Tycho.
+Value semantics is not free, and the costs are structural.
 
 **No shared mutable references.** Every binding is an independent copy; there are
 no pointers, and recursive struct types are rejected (recursive *enums*, like the
