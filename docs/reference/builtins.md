@@ -1,5 +1,10 @@
 # Builtins
 
+> **Thesis context:** Builtins are the lowest-level test of the arena model — I/O,
+> conversion, and concurrency primitives that must work with the same per-scope arena
+> discipline as any Tycho code. Every builtin that allocates (string ops, channel
+> operations) does so in the caller's arena.
+
 The built-in functions, by category. These are part of the language — always there, no
 import needed; the importable [standard library](../corelib.md) layers more on top. Anything written
 as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on its own topic page.

@@ -1,17 +1,17 @@
 # Performance: the self-hosted transpiler vs the C one
 
+> **[!CAUTION]** This document measures the **transpiler's own** compile-time performance
+> (`tychoc0` vs `tychoc`), tracking optimization history and codegen quality. It is
+> **not** about the language's performance or about the arena model's claims — those are
+> in [the thesis](thesis.md) and the cross-language benchmark suite
+> (`bench/prongB/`, `bench/conc/`). The thesis numbers are what matters for evaluating
+> the model; this page is a contributors' log.
+
 Tycho has two transpilers for the same language: `tychoc`, which I wrote by hand
 in C, and `tychoc0`, written in Tycho and able to transpile itself. This document
 is about how the self-hosted one performs — how fast `tychoc0` transpiles
 its own source, and how the value-semantic, implicit-arena memory model
 behaves on a real, allocation-heavy, deeply-recursive workload.
-
-Treat these figures as indicative, not a rigorous benchmark suite. They are
-best-of-N wall time and peak RSS (via `getrusage(RUSAGE_CHILDREN)`) on a
-single machine with `cc -O2`. Cross-language comparisons live elsewhere: the
-cross-language benchmark suite (`bench/prongB/`, vs C/Go/Rust/Koka),
-`bench/dbquery/` (real SQLite via FFI), and `bench/conc/` (concurrency vs
-C/Go/Rust). This file tracks only the self-hosted transpiler.
 
 > **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
 

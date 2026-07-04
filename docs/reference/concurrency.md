@@ -1,5 +1,10 @@
 # Concurrency
 
+> **Thesis context:** Concurrency tests whether the copy-in/copy-out call convention extends
+> to threads without adding Send/Sync, lifetime annotations, or locks. It does — each task
+> gets its own arena, arguments deep-copied in, result copied out — proving the arena model
+> is thread-safe by construction where it owns the memory. Stops at the FFI boundary.
+
 Tycho's call convention — arguments deep-copied in, the result copied out, a private arena per
 call — is already a sound thread boundary. So concurrency is just that same convention run on
 another thread: after the copy-in, a task shares zero bytes with its spawner, and race freedom

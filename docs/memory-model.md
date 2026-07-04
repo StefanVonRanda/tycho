@@ -2,7 +2,7 @@
 
 Tycho's memory model — value semantics over implicit per-scope arenas — is
 described in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and
-the README's [The idea](../README.md#the-idea) section. This document is
+the README's [The thesis](../README.md#the-thesis) section. This document is
 about the *self-hosted* transpiler, `tychoc0`: how it generates code on that same
 model, and the reclamation tricks that let its output match the C reference
 transpiler, `tychoc`.

@@ -1,5 +1,10 @@
 # Functions and closures
 
+> **Thesis context:** First-class functions and closures test upward escape for non-data
+> values. A closure captures its environment by value (deep copy) and re-homes it into the
+> caller's arena on return — exactly the same cross-arena move as a heap value. This proves
+> the arena model extends to function values that outlive their creating scope.
+
 A function in Tycho can be a first-class value — bound, passed, stored, returned, and called
 indirectly. A closure captures by value, like every other value in the language, which is what
 lets closures escape with no lifetime annotations. And any function can be called in method

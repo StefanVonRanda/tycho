@@ -205,7 +205,7 @@ Isolate such state per thread (thread-local storage, as the `core:crypto` shim
 does) or serialize the calls. The full analysis is in
 [`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md), and
 the concurrency guarantee's scope is in
-[the concurrency reference](reference/concurrency.md#scope-of-the-guarantee).
+[the concurrency reference](reference/concurrency.md#the-safety-envelope).
 
 Handles are affine (see [Typed handles](#typed-handles-safe-by-default-resources)):
 they cannot be captured by a closure or `parallel for`, or otherwise cross a

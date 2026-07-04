@@ -1,12 +1,12 @@
 # Tycho language reference
 
-This is the reference for the Tycho language — what each construct means and how it
-behaves. It's organized by topic; read it in order for a full tour, or jump to a page
-for a specific feature.
+This reference catalogs every feature of the language and how it behaves. Each
+feature exists to stress-test the arena model in a different dimension — the
+[thesis](../thesis.md) explains the argument; this reference documents the
+evidence.
 
-For *why* the language is shaped this way — the value-semantics and implicit-arena
-idea behind almost every decision here — see [the thesis](../thesis.md). This
-reference assumes you can already read a small program.
+Start with the thesis for *why*, then come here for *what*. Every example on
+every page compiles on both transpilers and produces the shown output.
 
 ## Pages
 
@@ -32,9 +32,9 @@ reference assumes you can already read a small program.
 - **Everything is a value.** The one idea behind the whole language is that data has
   *value semantics*: assignment, arguments, and returns copy, and the copy is deep, so
   two variables never share storage. Each page says how this plays out for its types
-  instead of restating the principle; [the thesis](../thesis.md) explains why it holds
-  and what it buys (no GC, no `free`, no data races on owned values).
+  instead of restating the principle; [the thesis](../thesis.md) explains the claim
+  and the evidence (no GC, no `free`, no data races on owned values).
 - **Examples are real.** Every code sample compiles and runs under both the C reference
   transpiler and the self-hosted transpiler — the language has two implementations that
-  must agree (see [Self-hosting](../../README.md#self-hosting)). Output shown in a
+  must agree (see [The evidence](../../README.md#the-evidence)). Output shown in a
   comment is the actual output.

@@ -1,5 +1,11 @@
 # FFI (calling C)
 
+> **Thesis context:** The FFI tests that the arena model coexists with C's heap without
+> escape hatches that would weaken it. Foreign strings are copied into the caller's arena
+> at the call site; opaque handles (`ptr`) are shuttled but never dereferenced. The
+> boundary is narrow on purpose — anything richer would either break value semantics or
+> depend on an unstable C ABI.
+
 `extern fn` declares a C function Tycho can call. It's bodyless, bound to a direct C symbol,
 and can optionally name the library to link.
 

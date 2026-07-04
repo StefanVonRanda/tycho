@@ -1,5 +1,11 @@
 # Generics
 
+> **Thesis context:** Generics test that the arena model survives type parameterization.
+> Monomorphization runs before the escape analysis — each instantiation is concrete,
+> value-semantic code, so the same locally-decidable lifetime rules apply. If generics
+> introduced pointers, aliasing, or whole-program dependence, the arena model would break.
+> They don't, so the model holds.
+
 A type parameter is written `$T`. Generic functions, structs, and enums are **monomorphized** —
 the transpiler stamps out a concrete copy per type the code actually uses, reusing the same
 container machinery as everything else, so a generic costs nothing at runtime. There are no type

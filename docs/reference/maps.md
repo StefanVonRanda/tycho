@@ -1,5 +1,10 @@
 # Maps
 
+> **Thesis context:** Maps test that the arena model works for associative containers with
+> in-place value mutation. `m[k]` as a mutable place exercises the same cross-arena copy
+> discipline as arrays — entries deep-copied in, deep-copied out — while the in-place
+> accumulator (`m[k] += 1`) tests that unique-ownership analysis applies to map slots.
+
 A map associates keys with values: `[K: V]`. The key type `K` is `string`, `int`, or a
 hashable composite (see [Keys](#keys)); the value type `V` is *any* type. Like everything
 in Tycho, a map is a value — assigning one deep-copies it, two maps compare entry-wise with

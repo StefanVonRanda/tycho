@@ -1,5 +1,9 @@
 # Basics
 
+> **Thesis context:** Procedures, control flow, and scope rules are the foundation that
+> per-scope arenas rest on. Every `if`/`else` block and every loop iteration gets its own
+> arena, freed at block exit; this page shows the scope boundaries the compiler sees.
+
 The procedural core of the language: how you define a procedure, declare and assign
 variables, write expressions, and control flow. Tycho is small — one way to do each thing.
 

@@ -21,7 +21,7 @@ filing an issue.
 ## Building and running
 
 All you need is a C compiler (`cc`) and `make` — the transpiler is a single
-dependency-free C file. See the README's [Getting started](README.md#getting-started).
+dependency-free C file. See the README's [Trying it](README.md#trying-it).
 
 ```
 make                 # build ./tychoc

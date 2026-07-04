@@ -10,11 +10,11 @@
 
 ## What this is
 
-Tycho is an experimental, statically-typed systems language that transpiles to C. Its thesis
-is a **value-semantics + implicit-arena** memory model: no pointers, no `malloc`/`free`, no GC,
-no use-after-free, and value equality that just works. It's a proof-of-concept, MIT-licensed.
-For an honest accounting of where the model wins and loses, see
-`docs/internals/value-semantics-limits.md`.
+Tycho is an **experimental proof-of-concept** that tests one claim: value semantics makes
+hierarchical arena allocation fully implicit, with no whole-program analysis. It transpiles
+to C and is MIT-licensed. For what's shipped and what's not, see [Shipped](#shipped-capabilities)
+and [Non-goals](#decided-non-goals-do-not-propose-these). For an honest accounting of where
+the model wins and loses, see `docs/internals/value-semantics-limits.md`.
 
 ## Architecture
 
@@ -114,8 +114,8 @@ now there is one canonical reference and the rest point to it. Every example in 
 compiles on both transpilers; no dead file-or-anchor links across the tree.
 
 **Public, reader-facing:**
-- `README.md` — **front door** (~460 lines, down from ~1400): pitch, quickstart, build/CI, self-hosting + benchmarks, honest limits, FAQ, and a navigation map. *Not* the reference.
-- `docs/reference/` — **the canonical language reference**, one topic per page: `index`, `basics`, `types`, `arrays-slices`, `structs-tuples`, `maps`, `enums-options`, `functions`, `generics`, `concurrency`, `ffi`, `packages`, `builtins`. The source of truth for behaviour. Voice: motivated-then-mechanical; each page footers to its design note (reference owns the *what*, the note owns the *why*).
+- `README.md` — **front door** (~270 lines): thesis pitch, evidence (self-hosting + benchmarks), honest limits, FAQ, build guide, and navigation map. *Not* the reference.
+- `docs/reference/` — **the canonical language reference**, one topic per page: `index`, `basics`, `types`, `arrays-slices`, `structs-tuples`, `maps`, `enums-options`, `functions`, `generics`, `concurrency`, `ffi`, `packages`, `builtins`. The source of truth for behaviour. Each page opens with a thesis-context blockquote (what question this feature exists to answer about the arena model); the body documents the feature. Design notes (below) own the *why* at depth.
 - `docs/thesis.md` — **the argument** (value-semantics → implicit arenas, honest wins/losses, machine-transparent benchmarks). The centerpiece for evaluators.
 - `docs/*.md` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `arrays-structs`, `map-values`, `map-mutation`, `perf`, `corelib`) — **design notes**: the *why* behind each subsystem, deduped against the reference.
 
