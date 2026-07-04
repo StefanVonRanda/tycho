@@ -7,12 +7,6 @@
 
 # Tycho
 
-> **[!CAUTION] Experimental proof-of-concept.** Tycho exists to test one idea — not
-> to ship production software. Single implementation, no stability guarantee, the
-> surface still moves. What it *does* have: it self-hosts, it's fuzzed and benchmarked
-> against C/Rust/Go/Koka, and every feature ships in both transpilers or not at
-> all. Questions, corrections, and experiments are welcome.
-
 **Tycho is an experimental systems language built to test one idea: implicit
 hierarchical arenas under value semantics.** Each scope owns a memory arena,
 freed when the scope exits; with no reference type in the language, the compiler
@@ -137,12 +131,12 @@ higher-kinded types, no variance. See [docs/generics.md](docs/generics.md).
 type, so a dangling pointer is *inexpressible* — the bug that escape analysis
 exists to prevent can't be written. Memory frees per scope; values that outlive their scope
 are copied up. `Option` removes null, `Result` removes exceptions, indexing is
-bounds-checked, and copy-in/copy-out concurrency removes data races by
-construction (for pure Tycho values; across the FFI you're under C's rules). Every
+bounds-checked, and copy-in/copy-out concurrency removes data races inside
+Tycho (concurrent FFI calls can still race). Every
 test runs under ASan + UBSan, plus LeakSanitizer and ThreadSanitizer.
 
 **"Where's the package manager?"** There isn't one, on purpose. A package is a
-directory of `.ty` files you import by path; the stdlib lives under `core:`. Adding
+directory of `.ty` files you import by path; the corelib lives under `core:`. Adding
 third-party code is a deliberate manual act — vendor the source — never a one-line
 command that pulls a transitive graph you've never read.
 
@@ -172,7 +166,7 @@ hello Ada
 `./tychoc f.ty` transpiles `f.ty` to `f.c` and compiles it to a native binary `f`;
 `-o name` names the output, `--emit-c` stops at the C.
 
-**Standard library.** `corelib/` is Tycho's stdlib, imported as `core:<name>`. The
+**Core library.** `corelib/` is Tycho's core library, imported as `core:<name>`. The
 transpiler finds it beside its own binary, so there's no setup (`TYCHO_CORELIB`
 overrides). A file with an `import` is a *package* — give it its own directory:
 
