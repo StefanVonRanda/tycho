@@ -95,13 +95,23 @@ object, no allocation.
 **Thesis fit:** total (compile-time only).
 **Effort:** low–medium. **Priority: medium.**
 
-### 1.3 Compiler diagnostics
-CONTRIBUTING already names this as wanted work ("keyword-used-as-variable
-message"). The compiler is correct and fails closed; the gap is *humane* errors —
-source span + caret, "did you mean", type-mismatch showing both sides, the
-`where`-predicate that failed by name. This is the single biggest day-to-day
-ergonomics lever and has zero thesis risk.
-**Effort:** medium, incremental. **Priority: high** (cheap wins, compounding).
+### 1.3 Compiler diagnostics — **substantially shipped**
+The humane-error asks are all implemented in tychoc (the reference compiler):
+`<file>:<line>: error:` with a source-line snippet, a `^` caret on parse errors,
+"did you mean 'X'?" for unknown variable/type/assignment/procedure, type
+mismatch showing both sides (`arithmetic requires two ints or two floats (got
+int, string)`, `argument 1 of 'f' is string, expected int`, `declared type int
+but value is string`), the failed `where`-predicate by name (`'add' instantiated
+with T = string, which does not satisfy numeric(T)`), and arg-count/field/index
+errors. Locked as goldens in `tests/diag/*.err` (tychoc only — tychoc0's
+bootstrap diagnostics are deliberately simpler).
+
+**Remaining — minor, demand-gated:** carets on *semantic* (not just parse) errors
+[needs a column on the offending AST node]; did-you-mean extended to struct
+fields; a fall-off-the-end "not all paths return" lint (currently a `-> int` body
+with no return silently yields 0 — defined, not UB; the lint would touch both
+compilers + reject-parity). None blocking.
+**Effort:** the residual is small. **Priority: low** (the compounding wins landed).
 
 ### 1.4 corelib gaps
 CONTRIBUTING lists "corelib gaps" as useful work. Suggested method: pick a target
