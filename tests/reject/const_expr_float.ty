@@ -1,0 +1,6 @@
+# float arithmetic in a const RHS is not folded (formatting-parity risk) -> error;
+# only negative float literals fold. Both compilers reject.
+const A = 1.0 * 2.0
+
+fn main():
+    println(str(A))

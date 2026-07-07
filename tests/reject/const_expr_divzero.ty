@@ -1,0 +1,5 @@
+# const int division by zero is a compile error (folded at compile time)
+const B = 5 / 0
+
+fn main():
+    println(str(B))

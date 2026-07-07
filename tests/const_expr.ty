@@ -1,0 +1,23 @@
+# Const expressions: integer arithmetic/bitwise/unary folded at compile time,
+# plus backward references to earlier top-level consts. Float arithmetic in a
+# const RHS stays an error (only negative float literals fold); local consts fold
+# arithmetic over literals but cannot reference other consts.
+const KB = 1024
+const MB = KB * 1024          # backward const ref + arithmetic
+const MASK = 1 << 8           # 256
+const BITS = (1 << 4) | 3     # 19
+const NOT0 = ~0               # -1
+const NEG = -(2 * 3)          # -6
+const MOD = 17 % 5            # 2
+
+fn main():
+    const LOCAL = 60 * 60      # local const, arithmetic over literals
+    println(str(KB))           # 1024
+    println(str(MB))           # 1048576
+    println(str(MASK))         # 256
+    println(str(BITS))         # 19
+    println(str(NOT0))         # -1
+    println(str(NEG))          # -6
+    println(str(MOD))          # 2
+    println(str(LOCAL))        # 3600
+    println(str(MB / KB))      # 1024  (runtime use of folded consts)

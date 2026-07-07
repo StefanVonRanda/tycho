@@ -1654,7 +1654,8 @@ static Expr *new_expr(ExprKind k, int line) {
 static Expr *parse_expr(Parser *ps);
 static Expr *parse_postfix(Parser *ps);   /* spawn parses its callee through the postfix chain */
 static int   is_literal_expr(Expr *e);    /* const RHS validation (plain int/float/str/bool/char literal) */
-static Expr *neg_literal_fold(Expr *e);   /* fold `-<int/float literal>` into one negative literal (for const) */
+static Expr *consts_find(const char *name);
+static Expr *const_fold(Expr *e, int refs); /* fold a const-expr (int arith/bitwise/unary + backward const refs when refs) to one literal */
 
 /* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
  * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
@@ -2293,7 +2294,7 @@ static Stmt *parse_stmt(Parser *ps) {
         ps->p++;                                  /* eat 'const' */
         Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
         eat(ps, TK_EQ, "'=' after the constant name");
-        Expr *lit = neg_literal_fold(parse_expr(ps));
+        Expr *lit = const_fold(parse_expr(ps), 0);   /* local: literals + int arithmetic, no sibling-const refs */
         if (!is_literal_expr(lit))
             die_at(lit->line, "const value must be a literal");
         eat(ps, TK_NEWLINE, "newline");
@@ -3185,18 +3186,49 @@ static int is_literal_expr(Expr *e) {
     return e->kind == E_INT || e->kind == E_CHAR || e->kind == E_FLOAT
         || e->kind == E_BOOL || e->kind == E_STR;
 }
-/* `const MIN = -100` — a unary minus over a numeric literal parses as a binop
- * (operand in lhs, rhs NULL), not a literal. Collapse it into a single negative
- * E_INT/E_FLOAT so a const can be negative; other shapes pass through unchanged
- * and then fail the is_literal_expr check as before. */
-static Expr *neg_literal_fold(Expr *e) {
-    if (e->kind == E_BINOP && e->op == TK_MINUS && e->rhs == NULL && e->lhs
-        && (e->lhs->kind == E_INT || e->lhs->kind == E_FLOAT)) {
-        Expr *n = e->lhs;
-        if (n->kind == E_INT) n->ival = -n->ival; else n->fval = -n->fval;
-        return n;
+/* Fold a const-expression into a single literal at parse time. Handles:
+ *   - unary `-`/`~` over an int literal, unary `-` over a float literal
+ *     (so `const MIN = -100`, `const T = -3.14` collapse to one negative literal);
+ *   - integer arithmetic/bitwise `+ - * / % & | ^ << >>` over int literals
+ *     (so `const KB = 1024`, `const MB = 1024 * 1024`, `const MASK = 1 << 8`);
+ *   - when `refs`, a bare identifier resolves to an earlier top-level const's
+ *     literal (`const MB = KB * 1024`).
+ * Float arithmetic and (with refs off) identifier refs are left unfolded and
+ * then fail the is_literal_expr check at the call site — fail closed. */
+static Expr *const_fold(Expr *e, int refs) {
+    if (!e) return e;
+    if (e->kind == E_IDENT) {
+        if (refs) { Expr *c = consts_find(pkg_mangle(e->sval)); if (c) return c; }
+        return e;
     }
-    return e;
+    if (e->kind != E_BINOP) return e;
+    if (e->rhs == NULL) {                        /* unary: operand in lhs */
+        Expr *a = const_fold(e->lhs, refs);
+        if (e->op == TK_MINUS) {
+            if (a->kind == E_INT)   { Expr *n = new_expr(E_INT, e->line);   n->ival = -a->ival; return n; }
+            if (a->kind == E_FLOAT) { Expr *n = new_expr(E_FLOAT, e->line); n->fval = -a->fval; return n; }
+        } else if (e->op == TK_TILDE && e->lhs && (a->kind == E_INT)) {
+            Expr *n = new_expr(E_INT, e->line);  n->ival = ~a->ival; return n;
+        }
+        return e;
+    }
+    Expr *a = const_fold(e->lhs, refs), *b = const_fold(e->rhs, refs);
+    if (a->kind != E_INT || b->kind != E_INT) return e;   /* int-only const arithmetic */
+    long x = a->ival, y = b->ival, r;
+    switch (e->op) {
+        case TK_PLUS:    r = x + y; break;
+        case TK_MINUS:   r = x - y; break;
+        case TK_STAR:    r = x * y; break;
+        case TK_SLASH:   if (y == 0) die_at(e->line, "const expression divides by zero"); r = x / y; break;
+        case TK_PERCENT: if (y == 0) die_at(e->line, "const expression divides by zero"); r = x % y; break;
+        case TK_AMP:     r = x & y; break;
+        case TK_PIPE:    r = x | y; break;
+        case TK_CARET:   r = x ^ y; break;
+        case TK_SHL:     r = x << y; break;
+        case TK_SHR:     r = x >> y; break;
+        default: return e;
+    }
+    Expr *n = new_expr(E_INT, e->line); n->ival = r; return n;
 }
 static Expr *consts_find(const char *name) {
     for (int i = 0; i < g_nconsts; i++)
@@ -3210,7 +3242,7 @@ static void parse_const(Parser *ps) {
     ps->p++;                                          /* eat contextual 'const' */
     Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
     eat(ps, TK_EQ, "'=' after the constant name");
-    Expr *lit = neg_literal_fold(parse_expr(ps));
+    Expr *lit = const_fold(parse_expr(ps), 1);   /* top level: also resolve backward const refs */
     if (!is_literal_expr(lit))
         die_at(lit->line, "const value must be a literal");
     char *nm = pkg_mangle(nameT->text);

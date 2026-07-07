@@ -1112,7 +1112,9 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         cname := toks[pos].text
         pos = pos + 1
         expect(toks, &pos, TEq)
-        clit := neg_lit_fold(parse_expr(toks, &pos))
+        noc := []string
+        noe := []Expr
+        clit := const_fold(parse_expr(toks, &pos), noc, noe, "")   # local: literals + int arithmetic, no sibling-const refs
         if not is_lit(clit):
             die("parse: const value must be a literal")
         return SConst(cname, clit, _sl)
@@ -2310,21 +2312,104 @@ fn is_lit(e: Expr) -> bool:
         _:
             return false
 
-# `const MIN = -100`: a unary minus over a numeric literal parses as EBin("u-", lit,
-# EInt("0")), not a literal. Collapse it into one negative EInt/EFloat so a const can
-# be negative; other shapes pass through and then fail the is_lit check as before.
-fn neg_lit_fold(e: Expr) -> Expr:
-    match e:
-        EBin(op, l, r, _el):
-            if op != "u-":
-                return e
-            match l:
-                EInt(s, _l2):
-                    return EInt("-" + s, _el)
-                EFloat(s, _l2):
-                    return EFloat("-" + s, _el)
+# Parse a decimal int-literal string (optional leading '-') to an int. Operand
+# strings are pure digits from the lexer or a "-"-prefixed result of an earlier
+# fold. 45 = '-', 48 = '0'.
+fn lit_to_int(s: string) -> int:
+    n := 0
+    i := 0
+    neg := false
+    if len(s) > 0 and s[0] == 45:
+        neg = true
+        i = 1
+    for i < len(s):
+        n = n * 10 + (s[i] - 48)
+        i = i + 1
+    if neg:
+        return 0 - n
+    return n
+
+# unary minus: negate an int literal (str() gives the same canonical decimal
+# tychoc's %ld emits) or prefix a float literal's source spelling with '-'.
+fn cf_neg(fl: Expr, orig: Expr) -> Expr:
+    match fl:
+        EInt(s, _l):
+            return EInt(str(0 - lit_to_int(s)), _l)
+        EFloat(s, _l):
+            return EFloat("-" + s, _l)
+        _:
+            return orig
+
+# unary bitwise NOT over an int literal: ~x == 0 - x - 1 in two's complement.
+fn cf_bnot(fl: Expr, orig: Expr) -> Expr:
+    match fl:
+        EInt(s, _l):
+            return EInt(str(0 - lit_to_int(s) - 1), _l)
+        _:
+            return orig
+
+# fold an integer binary op over two int literals to one int literal.
+fn fold_ii(op: string, x: int, y: int, orig: Expr, line: int) -> Expr:
+    if op == "+":
+        return EInt(str(x + y), line)
+    if op == "-":
+        return EInt(str(x - y), line)
+    if op == "*":
+        return EInt(str(x * y), line)
+    if op == "/":
+        if y == 0:
+            die("const expression divides by zero")
+        return EInt(str(x / y), line)
+    if op == "%":
+        if y == 0:
+            die("const expression divides by zero")
+        return EInt(str(x % y), line)
+    if op == "&":
+        return EInt(str(x & y), line)
+    if op == "|":
+        return EInt(str(x | y), line)
+    if op == "^":
+        return EInt(str(x ^ y), line)
+    if op == "<<":
+        return EInt(str(x << y), line)
+    if op == ">>":
+        return EInt(str(x >> y), line)
+    return orig   # comparison / logical / string op: not const-foldable -> is_lit fails
+
+fn cf_binop(op: string, fl: Expr, fr: Expr, orig: Expr, line: int) -> Expr:
+    match fl:
+        EInt(a, _la):
+            match fr:
+                EInt(b, _lb):
+                    return fold_ii(op, lit_to_int(a), lit_to_int(b), orig, line)
                 _:
-                    return e
+                    return orig
+        _:
+            return orig
+
+# Fold a const-expression into a single literal: integer arithmetic/bitwise/unary
+# over int literals (`const MB = 1024 * 1024`, `const MASK = 1 << 8`, `const N = ~0`),
+# unary minus over a numeric literal (`const MIN = -100`, `const T = -3.14`), and
+# backward references to earlier top-level consts resolved via (cn, cv, pfx). Float
+# arithmetic and (with an empty table) identifier refs pass through unfolded and
+# then fail the is_lit check at the call site -- fail closed. Mirrors tychoc's const_fold.
+fn const_fold(e: Expr, cn: [string], cv: [Expr], pfx: string) -> Expr:
+    match e:
+        EVar(name, _el):
+            i := len(cn) - 1
+            for i >= 0:
+                if cn[i] == name or cn[i] == pfx + name:
+                    return cv[i]
+                i = i - 1
+            return e
+        EBin(op, l, r, _el):
+            fl := const_fold(l, cn, cv, pfx)
+            fr := const_fold(r, cn, cv, pfx)
+            if op == "u-":
+                return cf_neg(fl, e)
+            if op == "u~":
+                return cf_bnot(fl, e)
+            return cf_binop(op, fl, fr, e, _el)
         _:
             return e
 
@@ -2620,7 +2705,7 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
             cnm := toks[pos].text
             pos = pos + 1
             expect(toks, &pos, TEq)
-            clit := neg_lit_fold(parse_expr(toks, &pos))
+            clit := const_fold(parse_expr(toks, &pos), constn, constv, curpfx)   # top level: also resolve backward const refs
             if not is_lit(clit):
                 die("parse: const value must be a literal")
             push(constn, curpfx + cnm)

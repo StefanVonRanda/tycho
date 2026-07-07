@@ -96,8 +96,19 @@ Negative-literal consts (`const MIN = -100`, `const T = -3.14`) are supported �
 both compilers fold `-<numeric literal>` into a single negative literal at
 const-parse time (locked by `tests/const_negative`).
 
-**Remaining — deferred by design:** const expressions (`const B = A * 2`) — needs
-a compile-time folder; this is the prerequisite piece for const generics (1.6).
+Const expressions are folded at compile time by a shared `const_fold` in both
+compilers: integer arithmetic/bitwise/unary (`const MB = 1024 * 1024`,
+`const MASK = 1 << 8`, `const N = ~0`) and backward references to earlier
+top-level consts (`const MB = KB * 1024`). Locked by `tests/const_expr` +
+`tests/reject/const_expr_{divzero,float,localref}` (both compilers). This is the
+prerequisite folder for const generics (1.6).
+
+**Deferred by design:** float arithmetic in a const RHS stays a compile error
+(only negative float literals fold — computing e.g. `1.0/2.0` byte-identically
+across tychoc's numeric-`ival` literals and tychoc0's source-string literals is a
+formatting-parity risk, low value); and a *local* const cannot reference another
+const (the self-hosted compiler has no sibling-const table at local-parse time) —
+both are symmetric limitations rejected by both compilers.
 
 ### 1.3 Compiler diagnostics — **substantially shipped**
 The humane-error asks are all implemented in tychoc (the reference compiler):
