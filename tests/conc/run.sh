@@ -18,6 +18,15 @@ trap 'rm -rf "$TMP"' EXIT
 # sanitizer binary at exit there. Gate by OS (see tests/run.sh).
 case "$(uname -s)" in Darwin) TYCHO_LSAN=0 ;; *) TYCHO_LSAN=1 ;; esac
 export ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN
+# Portable resource bound for the abort fixtures (esp. the spawn fork-bomb).
+# GNU `timeout` and `ulimit -v` (RLIMIT_AS) are Linux-only — macOS ships
+# neither. `ulimit -t` (CPU seconds) is portable; with TYCHO_MAX_TASKS pinning
+# the task cap the aborts die on their own well inside it. Add a real wall-clock
+# timeout only where one exists.
+if command -v timeout >/dev/null 2>&1; then TO="timeout 15"
+elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 15"
+else TO=""; fi
+if ( ulimit -v 1500000 ) 2>/dev/null; then AS_CAP="ulimit -v 1500000"; else AS_CAP=":"; fi
 pass=0; fail=0
 note() { echo "FAIL $1 ($2)"; }
 
@@ -73,7 +82,7 @@ for f in tests/conc/abort/*.ty; do
     # Bound every abort run by memory + CPU, and pin a low task cap so the
     # spawn fork-bomb (recursive spawn) hits the bounded-concurrency ceiling fast
     # instead of exhausting host threads. Harmless to the non-spawn fixtures.
-    ( ulimit -v 1500000; TYCHO_MAX_TASKS=16 timeout 15 "$TMP/ab" ) >/dev/null 2>"$TMP/ab.err"
+    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab" ) >/dev/null 2>"$TMP/ab.err"
     if [ $? -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
         note "$name" "expected runtime die '$want'"; fail=$((fail+1))
     else

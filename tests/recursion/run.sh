@@ -23,9 +23,17 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 # has value semantics, so a deep type/expression deep-copies O(n^2) and, without
 # a cap fired first, would exhaust host RAM (the OS OOM-killer then takes down
 # the whole session). The ulimit makes the compiler's own malloc fail closed.
-LIMV=1500000   # virtual-memory ceiling (KiB ~= 1.5 GB)
-TMO=30         # wall-clock ceiling (s)
-run() { ( ulimit -v "$LIMV"; timeout "$TMO" "$@" ); }
+LIMV=1500000   # virtual-memory ceiling (KiB ~= 1.5 GB), Linux only
+TMO=30         # wall-clock / CPU ceiling (s)
+# GNU `timeout` and `ulimit -v` (RLIMIT_AS) are Linux-only — macOS ships
+# neither. `ulimit -t` (CPU seconds) is portable and, with the compilers'
+# recursion cap firing at <100 MB here, bounds the runaway O(n^2) copy on macOS
+# too. Add a real wall-clock timeout only where one exists.
+if command -v timeout >/dev/null 2>&1; then TO="timeout $TMO"
+elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout $TMO"
+else TO=""; fi
+if ( ulimit -v "$LIMV" ) 2>/dev/null; then AS_CAP="ulimit -v $LIMV"; else AS_CAP=":"; fi
+run() { ( ulimit -t "$TMO"; $AS_CAP; $TO "$@" ); }
 
 py() { python3 - "$@"; }
 
