@@ -1,11 +1,11 @@
 # corelib: non-cryptographic hash functions. Import with `import "core:hash"`,
 # use `hash.fnv1a_32(s)`. For hash tables, checksums, and dedup -- NOT for
-# security (use a real digest for that; md5/sha are not in corelib yet).
+# security (use core:sha256 for that).
 #
-# All are 32-bit and return a non-negative int in [0, 2^32). They are kept
-# UB-free the same way core:rand is: values never leave [0, 2^32), shifts and
-# masks are done with `* / %` (so no signed 64-bit overflow), and the only
-# bit-operators used are `^` (which never grows a value past 32 bits here).
+# All are 32-bit and return a non-negative int in [0, 2^32). The word math runs
+# in the `u32` type -- multiplies and adds wrap at 2^32 natively (C `unsigned
+# int`), shifts are `>> <<` -- and each function converts back to `int` with
+# `to_int` at the boundary, so the public contract is still a plain int.
 #
 # Hashing only READS bytes (`s[i]` is the unsigned 0..255), so -- unlike the
 # decoders -- there is no 0x00 caveat on the input; a string read from a file
@@ -34,34 +34,34 @@ fn to_hex(h: int) -> string:
 
 # FNV-1a, 32-bit (offset basis 2166136261, prime 16777619).
 fn fnv1a_32(s: string) -> int:
-    h := 2166136261
+    h := to_u32(2166136261)
     for i in range(len(s)):
-        h = h ^ s[i]
-        h = (h * 16777619) % 4294967296
-    return h
+        h = h ^ to_u32(s[i])
+        h = h * to_u32(16777619)           # wraps at 2^32 natively
+    return to_int(h)
 
-# Dan Bernstein's djb2 (hash = hash * 33 + c), masked to 32 bits.
+# Dan Bernstein's djb2 (hash = hash * 33 + c), 32-bit.
 fn djb2(s: string) -> int:
-    h := 5381
+    h := to_u32(5381)
     for i in range(len(s)):
-        h = ((h * 33) + s[i]) % 4294967296
-    return h
+        h = h * to_u32(33) + to_u32(s[i])
+    return to_int(h)
 
-# sdbm (hash = c + hash*65536 + hash*64 - hash), masked to 32 bits.
+# sdbm (hash = c + hash*65536 + hash*64 - hash), 32-bit.
 fn sdbm(s: string) -> int:
-    h := 0
+    h := to_u32(0)
     for i in range(len(s)):
-        h = (((s[i] + (h * 65536)) + (h * 64)) - h) % 4294967296
-    return h
+        h = to_u32(s[i]) + (h << 16) + (h << 6) - h
+    return to_int(h)
 
 # CRC-32 (IEEE 802.3 / zlib, reflected, polynomial 0xEDB88320), bit by bit.
 fn crc32(s: string) -> int:
-    crc := 4294967295                      # 0xFFFFFFFF
+    crc := to_u32(4294967295)              # 0xFFFFFFFF
     for i in range(len(s)):
-        crc = crc ^ s[i]
+        crc = crc ^ to_u32(s[i])
         for k in range(8):
-            if crc % 2 == 1:
-                crc = (crc / 2) ^ 3988292384   # ^ 0xEDB88320
+            if (crc & 1) == 1:
+                crc = (crc >> 1) ^ to_u32(3988292384)   # ^ 0xEDB88320
             else:
-                crc = crc / 2
-    return crc ^ 4294967295
+                crc = crc >> 1
+    return to_int(crc ^ to_u32(4294967295))

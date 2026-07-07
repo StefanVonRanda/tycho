@@ -16,10 +16,12 @@
 # to accept/reject. A program both accept must also emit C that COMPILES in both
 # (an accept that emits broken C is a codegen/fail-open bug, reported too).
 #
-# COVERAGE: scalar types int/float/char/string/bool, each as a literal AND a
-# variable, against every binary operator. NOT yet covered (a follow-up could add
-# them with the same mechanism): newtypes, composite comparisons ([T]/Option/
-# Result/struct ==), unary operators, and indexing/call result operands.
+# COVERAGE: scalar types int/float/char/string/bool AND the sized numerics
+# u32/u64/f32, each as a literal (the sized ones via their to_*() constructor,
+# since there is no sized literal syntax) AND a variable, against every binary
+# operator. NOT yet covered (a follow-up could add them with the same mechanism):
+# newtypes, composite comparisons ([T]/Option/Result/struct ==), unary operators,
+# and indexing/call result operands.
 #
 # Usage: run_typeparity.py        (no seeds -- the matrix is fixed)
 import os, subprocess, sys, tempfile, shutil
@@ -33,17 +35,21 @@ BUILD_TIMEOUT = 300
 
 # type -> (literal form, variable name declared in the prelude)
 OPERANDS = {
-    "int":    ("7",    "vi"),
-    "float":  ("2.5",  "vf"),
-    "char":   ("'A'",  "vc"),
-    "string": ('"x"',  "vs"),
-    "bool":   ("true", "vb"),
+    "int":    ("7",           "vi"),
+    "float":  ("2.5",         "vf"),
+    "char":   ("'A'",         "vc"),
+    "string": ('"x"',         "vs"),
+    "bool":   ("true",        "vb"),
+    "u32":    ("to_u32(7)",   "vu"),
+    "u64":    ("to_u64(7)",   "vw"),
+    "f32":    ("to_f32(2.5)", "vg"),
 }
 TYPES = list(OPERANDS)
 OPS = ["+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^",
        "<", ">", "<=", ">=", "==", "!=", "and", "or"]
 PRELUDE = ('fn main():\n'
-           '    vi := 7\n    vf := 2.5\n    vc := \'A\'\n    vs := "x"\n    vb := true\n')
+           '    vi := 7\n    vf := 2.5\n    vc := \'A\'\n    vs := "x"\n    vb := true\n'
+           '    vu := to_u32(7)\n    vw := to_u64(7)\n    vg := to_f32(2.5)\n')
 
 def forms(t):
     lit, var = OPERANDS[t]

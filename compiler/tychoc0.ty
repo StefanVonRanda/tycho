@@ -4570,13 +4570,22 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             frlt := resolve_nt(dc, ctx, frt)
             sl := nt_skin_of(l, names, types, dc, ctx)
             sr := nt_skin_of(r, names, types, dc, ctx)
+            # numeric-literal width adaptation, shared by ==/!=, ordering, AND
+            # arithmetic so the three can never drift apart (they did: == and
+            # ordering once omitted the f32/uint literal clauses this centralizes).
+            # An int literal takes a u32/u64/f32 sibling, a float literal takes an
+            # f32 sibling (non-newtype only). Mirrors tychoc's pre-adaptation
+            # (src/tychoc.c ~4374), which applies uniformly to every binary op.
+            lnum := is_int_lit(l) or is_float_lit(l)
+            rnum := is_int_lit(r) or is_float_lit(r)
+            num_lit_ok := (sl == "" and sr == "") and ((rlt == frlt and (rlt == "u32" or rlt == "u64" or rlt == "f32")) or ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l)) or (rlt == "f32" and frlt != "" and rnum) or (frlt == "f32" and rlt != "" and lnum))
             if (op == "/" or op == "%") and is_zero_int_lit(r):   # reject div/mod by a literal zero (UB / SIGFPE at runtime)
                 die_at(dc, _el, "division by zero")
             if op == "&&" or op == "||":          # `and`/`or` are spelled &&/|| in the AST; literal bool only (no newtype)
                 if rlt != "bool" or frlt != "bool" or sl != "" or sr != "":
                     die_at(dc, _el, "and / or need two bool operands")
             elif op == "==" or op == "!=":
-                if rlt != frlt or sl != sr:
+                if not ((rlt == frlt and sl == sr) or num_lit_ok):   # a u32/u64/f32 also compares against an adapting numeric literal (like tychoc)
                     die_at(dc, _el, "cannot compare " + lt + " with " + frt)
             elif op == "<<" or op == ">>":        # shifts: an integer value (int/u32/u64) by any integer count
                 lint := (rlt == "int" or rlt == "u32" or rlt == "u64") and sl == ""
@@ -4589,18 +4598,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 uint_lit := ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l))
                 if not intl or not intr or not (rlt == frlt or uint_lit):
                     die_at(dc, _el, "modulo / bitwise operators require two ints, two u32, or two u64")
-            elif is_cmp(op):     # ordering: same newtype identity + an orderable base; an int LITERAL adapts to a float/u32/u64 operand, a numeric literal to f32 (all non-newtype)
+            elif is_cmp(op):     # ordering: same newtype identity + an orderable base; an int LITERAL adapts to a float operand, a numeric literal to a u32/u64/f32 (all non-newtype)
                 lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
-                uint_ok := (sl == "" and sr == "") and ((rlt == frlt and (rlt == "u32" or rlt == "u64" or rlt == "f32")) or ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l)))
-                if not (lit_ok or uint_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float" or rlt == "char"))):
+                if not (lit_ok or num_lit_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float" or rlt == "char"))):
                     die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
             else:                # arithmetic + - * /
                 lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
                 char_ok := (op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or rlt == "int") and (frt == "char" or frlt == "int")
-                lnum := is_int_lit(l) or is_float_lit(l)
-                rnum := is_int_lit(r) or is_float_lit(r)
-                uint_ok := (sl == "" and sr == "") and ((rlt == frlt and (rlt == "u32" or rlt == "u64" or rlt == "f32")) or ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l)) or (rlt == "f32" and frlt != "" and rnum) or (frlt == "f32" and rlt != "" and lnum))
-                if not (lit_ok or char_ok or uint_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float"))):
+                if not (lit_ok or char_ok or num_lit_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float"))):
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
             # integer division/modulo guard: -fwrapv wraps signed overflow, but x/0,
             # x%0 and LONG_MIN/-1 still trap (SIGFPE). Route int `/` and `%` (incl. an

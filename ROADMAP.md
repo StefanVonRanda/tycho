@@ -51,15 +51,37 @@ not a redundant `byte` alias.
 **Effort:** medium. Type-checker + codegen + cast rules + corelib migration.
 **Priority: high.**
 
-**Status — FFI-boundary slice shipped.** `u8`…`u64`/`i8`…`i64` are now valid in an
-`extern` signature (by-value param or return): the emitted C prototype uses the real
-fixed-width type (`unsigned int`, `unsigned long long`, …) so a call matches the C ABI
-instead of forcing everything through `long`, while the value stays `int` to Tycho (no
-arithmetic/printing/map/literal changes, no leak — `x: u32` outside an extern is still an
-error). Both transpilers, both agree, ASan-clean, `tests/ffi` case (9). The remaining,
-larger slice — sized ints as **first-class in-language** types (u32/u64 arithmetic with
-defined wrap for corelib crypto) — is unbuilt; see the scope options in the design
-discussion. `f32` also unbuilt.
+**Status — substantially shipped (commit `3870125`).** Two slices are done:
+
+1. **First-class `u32`/`u64`/`f32`.** Full in-language types: arithmetic, bitwise,
+   shifts, div/mod, comparison, `[]u32` arrays, printing, and conversions
+   (`to_u32`/`to_u64`/`to_f32`/`to_int`/`to_float`). `u32`/`u64` wrap at their C
+   width (`unsigned int` / `unsigned long long`); `f32` is single precision. Both
+   transpilers agree, ASan-clean, locked by `tests/sized_ints` and — for the u32
+   path end-to-end — the NIST vectors in `corelib/test/sha256`, which this type
+   rewrote to be correct *by construction* rather than by hand-masking.
+2. **FFI-boundary `u8`…`i64`.** Valid in an `extern` signature (by-value param or
+   return): the emitted C prototype uses the real fixed-width type so a call
+   matches the C ABI instead of funneling through `long`. `tests/ffi` case (9).
+
+**Remaining — small and demand-gated, not blocking:**
+- *corelib crypto cleanup — DONE.* `corelib/md5` and `corelib/hash` (crc32, djb2,
+  sdbm, fnv1a) now run their word math in `u32` (native wrap, `~`, `>> <<`)
+  instead of `% 4294967296` / `4294967295 - x`; output is byte-identical to the
+  goldens. `corelib/sha256` was already migrated.
+- *Parity gap — FIXED.* tychoc accepted `u32 == <int literal>` and
+  `f32 </== <numeric literal>` (it adapts literals at `src/tychoc.c:4374`) while
+  tychoc0's `==`/`!=` and ordering branches omitted that adaptation. Root cause:
+  the adaptation predicate was duplicated across three branches and drifted;
+  `compiler/tychoc0.ty` now computes it once (`num_lit_ok`) shared by all three.
+  `fuzz/run_typeparity.py` gained u32/u64/f32 to the exhaustive matrix (it had
+  only covered int/float/char/string/bool, which is why the gap stayed latent) —
+  now 4608/4608 cases agree, and `make fixpoint` stays byte-identical.
+- *Literal suffixes* (`123u32`) — **YAGNI**; typed bindings (`x: u32 = 123`)
+  already cover the need.
+- *Signed/small int family first-class* (`u8`/`i8`/`i16`/`i32`/`i64` outside an
+  `extern`) — **YAGNI**; the FFI boundary covers the correctness motive and no
+  in-language program has needed them. Add on first real demand.
 
 ### 1.2 `const` bindings and compile-time constants
 **State today:** no `const` in the reference. Enum variants carry values, but there's
