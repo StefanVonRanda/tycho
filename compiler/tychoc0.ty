@@ -458,6 +458,7 @@ enum Stmt:
     SParFor(string, Expr, Expr, [Stmt], int, int)   # `parallel for` (CC-3): loopvar, start, stop, body, par-id
                              # (parse: body=original, par-id=-1; the lift pass moves the body into a
                              # lifted __par<N> chunk proc and stores caps/accs in the pars side table)
+    SConst(string, Expr, int)   # `const NAME = <literal>` local: folded at each use in the mangle pass; a no-op in every other pass (no runtime storage)
 
 struct Param:
     name: string
@@ -1106,6 +1107,15 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         e := parse_expr(toks, &pos)
         expect(toks, &pos, TRParen)
         return SPrint(e, _sl)
+    elif t.kind == TIdent and t.text == "const" and toks[pos + 1].kind == TIdent:   # `const NAME = <literal>` local (folded at each use; contextual keyword)
+        pos = pos + 1
+        cname := toks[pos].text
+        pos = pos + 1
+        expect(toks, &pos, TEq)
+        clit := parse_expr(toks, &pos)
+        if not is_lit(clit):
+            die("parse: const value must be a literal")
+        return SConst(cname, clit, _sl)
     elif t.kind == TIdent and t.text == "delete" and toks[pos + 1].kind == TIdent:   # `delete PLACE[k]` -> PLACE = map_del(PLACE, k)
         pos = pos + 1
         name := toks[pos].text
@@ -2063,6 +2073,8 @@ struct Mctx:
     variants: [string]
     locals: [string]          # enclosing fn's param names: a call to one is an INDIRECT call (fn value), not a package fn -> don't prefix
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
+    constn: [string]          # `const` names in scope (top-level: mangled; local: bare) — a use folds to its literal
+    constv: [Expr]            # the literal Expr each const name folds to (parallel to constn)
 
 fn is_builtin_call(name: string) -> bool:
     return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_u32" or name == "to_u64" or name == "to_f32" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
@@ -2205,8 +2217,11 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
         EVar(s, _el):
             if is_known_variant(m, m.prefix + s):   # a bare payload-less variant value in this package
                 return EVar(m.prefix + s, _el)
-            if has_str(m.locals, s) or s == "None":  # a local var / None: never package-qualified
+            if has_str(m.locals, s) or s == "None":  # a local var / None: never package-qualified (shadows a const)
                 return EVar(s, _el)
+            ci := const_idx(m, s)                    # precedence: local var -> const -> variant -> fn
+            if ci >= 0:                              # a const: fold this use into a copy of its literal
+                return m.constv[ci]
             return EVar(m.prefix + s, _el)                # a bare same-package fn name used as a VALUE (e.g. `g := base`)
         EBin(op, l, r, _el):
             return EBin(op, mangle_expr(m, l), mangle_expr(m, r), _el)
@@ -2255,10 +2270,82 @@ fn mctx_add(m: Mctx, name: string) -> Mctx:       # extend the local-name set (a
         push(nl, m.locals[i])
         i = i + 1
     push(nl, name)
-    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, nl, m.externs)
+    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, nl, m.externs, m.constn, m.constv)
+
+# a local `const` binding: fold subsequent uses of `name` to the literal `lit`
+fn mctx_add_const(m: Mctx, name: string, lit: Expr) -> Mctx:
+    cn := []string
+    cv := []Expr
+    i := 0
+    for i < len(m.constn):
+        push(cn, m.constn[i])
+        push(cv, m.constv[i])
+        i = i + 1
+    push(cn, name)
+    push(cv, lit)
+    return Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, m.locals, m.externs, cn, cv)
+
+# index of `name` in the const table (bare name first, then package-prefixed), or -1.
+# Searched newest-first so a local const shadows a same-named top-level one.
+fn const_idx(m: Mctx, name: string) -> int:
+    i := len(m.constn) - 1
+    for i >= 0:
+        if m.constn[i] == name or m.constn[i] == m.prefix + name:
+            return i
+        i = i - 1
+    return 0 - 1
+
+fn is_lit(e: Expr) -> bool:
+    match e:
+        EInt(s, _el):
+            return true
+        EBool(s, _el):
+            return true
+        EChar(s, _el):
+            return true
+        EFloat(s, _el):
+            return true
+        EStr(s, _el):
+            return true
+        _:
+            return false
+
+# does a block (recursively) declare a local `const`? Gates whether the mangle
+# pass runs for an otherwise package-free single-file program (mangle folds consts).
+fn block_has_const(ss: [Stmt]) -> bool:
+    i := 0
+    for i < len(ss):
+        if stmt_has_const(ss[i]):
+            return true
+        i = i + 1
+    return false
+
+fn stmt_has_const(s: Stmt) -> bool:
+    match s:
+        SConst(n, e, _sl):
+            return true
+        SIf(c, t, el, _sl):
+            return block_has_const(t) or block_has_const(el)
+        SWhile(c, b, _sl):
+            return block_has_const(b)
+        SForRange(v, a, b, st, body, _sl):
+            return block_has_const(body)
+        SParFor(v, a, b, body, pid, _sl):
+            return block_has_const(body)
+        SMatch(subj, vars, binds, bodies, _sl):
+            j := 0
+            for j < len(bodies):
+                if block_has_const(bodies[j]):
+                    return true
+                j = j + 1
+            return false
+        _:
+            return false
 
 fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a statement introduces (visible to later siblings)
     match s:
+        SConst(n, e, _sl):
+            return mctx_add_const(m, n, e)        # a local const: later siblings fold uses of `n` to its literal
         SDecl(n, e, _sl):
             return mctx_add(m, n)
         STypedDecl(n, ty, e, _sl):
@@ -2338,9 +2425,13 @@ fn mangle_bodies(m: Mctx, bs: [[Stmt]]) -> [[Stmt]]:
 
 fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
     match s:
+        SConst(n, e, _sl):
+            return SConst(n, mangle_expr(m, e), _sl)   # a no-op downstream; the value is a literal (mangle is identity on it)
         SDecl(n, e, _sl):
             return SDecl(n, mangle_expr(m, e), _sl)
         SAssign(n, e, _sl):
+            if const_idx(m, n) >= 0:                    # reject reassignment of a const (both compilers must reject)
+                die("resolve: cannot assign to constant '" + n + "'")
             return SAssign(n, mangle_expr(m, e), _sl)
         SFieldAssign(lv, r, _sl):
             return SFieldAssign(mangle_expr(m, lv), mangle_expr(m, r), _sl)
@@ -2397,7 +2488,7 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
             return SSelect(uid, svars, nch, sbinds, nb, _sl)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
-    mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs)   # body sees the params as locals (indirect calls stay unprefixed)
+    mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs, m.constn, m.constv)   # body sees the params as locals (indirect calls stay unprefixed)
     nm := m.prefix + f.name
     if f.is_extern == 1:                      # FFI: a C symbol is global — never package-mangle it
         nm = f.name
@@ -2448,6 +2539,8 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
     variants := []string
     externs := []string                          # FFI extern fn names (global C symbols, never mangled)
     handles := []string                          # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl
+    constn := []string                           # top-level `const` names (mangled: curpfx+name)
+    constv := []Expr                             # the literal each const folds to (parallel to constn)
     curpfx := ""
     sawpkg := false
     for toks[pos].kind != TEof:
@@ -2504,9 +2597,58 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
             push(externs, ef.name)                                      # global C symbol — bare calls to it stay unmangled
         elif toks[pos].kind == TIdent and toks[pos].text == "handle":   # FFI R2: typed handle decl
             push(handles, parse_handle(toks, &pos))
+        elif toks[pos].kind == TIdent and toks[pos].text == "const":   # `const NAME = <literal>` module-level (folded at use)
+            pos = pos + 1
+            cnm := toks[pos].text
+            pos = pos + 1
+            expect(toks, &pos, TEq)
+            clit := parse_expr(toks, &pos)
+            if not is_lit(clit):
+                die("parse: const value must be a literal")
+            push(constn, curpfx + cnm)
+            push(constv, clit)
         else:
             push(rfuncs, parse_func(toks, &pos))
             push(fpfx, curpfx)
+    # a const name must not collide with a function / struct / enum / newtype /
+    # variant / another const (mirror tychoc's "already defined").
+    dupnames := []string
+    di := 0
+    for di < len(rstructs):
+        push(dupnames, spfx[di] + rstructs[di].name)
+        di = di + 1
+    di = 0
+    for di < len(renums):
+        push(dupnames, epfx[di] + renums[di].name)
+        di = di + 1
+    di = 0
+    for di < len(rfuncs):
+        push(dupnames, fpfx[di] + rfuncs[di].name)
+        di = di + 1
+    di = 0
+    for di < len(rntn):
+        push(dupnames, npfx[di] + rntn[di])
+        di = di + 1
+    ci := 0
+    for ci < len(constn):
+        if has_str(dupnames, constn[ci]) or has_str(variants, constn[ci]):
+            die("resolve: '" + constn[ci] + "' is already defined")
+        cj := 0
+        for cj < ci:
+            if constn[cj] == constn[ci]:
+                die("resolve: '" + constn[ci] + "' is already defined")
+            cj = cj + 1
+        ci = ci + 1
+    # Fold consts even in a package-free single-file program: run the func mangle
+    # pass (identity except for const substitution) when any const is present.
+    hasconst := len(constn) > 0
+    if hasconst == false:
+        fc := 0
+        for fc < len(rfuncs):
+            if block_has_const(rfuncs[fc].body):
+                hasconst = true
+            fc = fc + 1
+    dofold := sawpkg or hasconst
     # Pass 2: mangle, but only if the stream actually declared packages — so a
     # plain single-file program is returned untouched (byte-identical).
     structs := []StructDef
@@ -2517,21 +2659,21 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
     si := 0
     for si < len(rstructs):
         if sawpkg:
-            push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants, []string, externs), rstructs[si]))
+            push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), rstructs[si]))
         else:
             push(structs, rstructs[si])
         si = si + 1
     ei := 0
     for ei < len(renums):
         if sawpkg:
-            push(enums, mangle_enum(Mctx(epfx[ei], aliasn, aliasp, pkgs, variants, []string, externs), renums[ei]))
+            push(enums, mangle_enum(Mctx(epfx[ei], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), renums[ei]))
         else:
             push(enums, renums[ei])
         ei = ei + 1
     fi := 0
     for fi < len(rfuncs):
-        if sawpkg:
-            push(funcs, mangle_func(Mctx(fpfx[fi], aliasn, aliasp, pkgs, variants, []string, externs), rfuncs[fi]))
+        if dofold:
+            push(funcs, mangle_func(Mctx(fpfx[fi], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), rfuncs[fi]))
         else:
             push(funcs, rfuncs[fi])
         fi = fi + 1
@@ -2539,7 +2681,7 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
     for ni < len(rntn):
         if sawpkg:
             push(ntnames, npfx[ni] + rntn[ni])
-            push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants, []string, externs), rntu[ni]))
+            push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), rntu[ni]))
         else:
             push(ntnames, rntn[ni])
             push(ntunder, rntu[ni])
@@ -3818,6 +3960,8 @@ fn stmt_line(s: Stmt) -> int:
             return ln
         SReturn(a, ln):
             return ln
+        SConst(a, b, ln):
+            return ln
         SReturnVoid:
             return 0
         SIf(a, b, c, ln):
@@ -4113,6 +4257,8 @@ fn wl_scan_body(stmts: [Stmt], muts: mut [string], ex: mut bool):
                 wl_scan_expr(r, &muts, &ex)
             SReturn(e, p):
                 ex = true
+            SConst(n, e, p):
+                ex = ex
             SReturnVoid:
                 ex = true
             SBreak:
@@ -5624,6 +5770,8 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
                 i = i
             SReturn(e, _sl):
                 i = i
+            SConst(n, e, _sl):
+                i = i
             SReturnVoid:
                 i = i
             STypedDecl(n, t, e, _sl):
@@ -5674,6 +5822,8 @@ fn fuse_gather(stmts: [Stmt], out: mut [string]):
             SPrint(e, _sl):
                 i = i
             SReturn(e, _sl):
+                i = i
+            SConst(n, e, _sl):
                 i = i
             SReturnVoid:
                 i = i
@@ -5743,6 +5893,8 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
             SPrint(e, _sl):
                 i = i
             SReturn(e, _sl):
+                i = i
+            SConst(n, e, _sl):
                 i = i
             SReturnVoid:
                 i = i
@@ -5914,6 +6066,8 @@ fn rd_stmt(reads: mut [string], loopreads: mut [string], s: Stmt, inloop: bool):
             rd_expr(&reads, &loopreads, e, inloop)
         SReturn(e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
+        SConst(n, e, _sl):
+            j := 0
         SReturnVoid:
             j := 0
         SBreak:
@@ -6495,6 +6649,8 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             if is_func(ctx.rettype):              # escaping closure: re-home the captured env into _parent before freeing _scope (its hbox lives in &_scope); plain ref has env==0 -> no-op
                 return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_expr(e, names, types, dc, ctx) + "; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); " + conc_finals(names, 0) + return_frees(dc, ctx) + " return _ret; }\n"
             return rfl + "    { " + cty(dc, ctx, ctx.rettype) + "_ret = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, "_parent")) + "; " + conc_finals(names, 0) + return_frees(dc, ctx) + " return _ret; }\n"
+        SConst(n, e, _sl):
+            return ""
         SReturnVoid:
             return "    " + conc_finals(names, 0) + return_frees(dc, ctx) + " return;\n"
         SBreak:
@@ -6930,6 +7086,8 @@ fn sacc_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string
         SPrint(e, _sl):
             i := 0
         SReturn(e, _sl):
+            i := 0
+        SConst(n, e, _sl):
             i := 0
         SReturnVoid:
             i := 0
@@ -8389,6 +8547,8 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
         SReturn(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, ctx.rettype, e, names, types, "return value", _sl)   # newtype identity vs the declared return type
+        SConst(n, e, _sl):
+            j := 0
         SReturnVoid:
             j := 0
         SBreak:
@@ -8833,6 +8993,8 @@ fn pf_body_evars(stmts: [Stmt], out: mut [string]):
                 collect_evars(e, &out)
             SReturn(e, _sl):
                 collect_evars(e, &out)
+            SConst(n, e, _sl):
+                i = i
             SReturnVoid:
                 i = i
             SBreak:
@@ -8945,6 +9107,8 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: mut [string], accop: mut [strin
             SPrint(e, _sl):
                 i = i
             SReturn(e, _sl):
+                i = i
+            SConst(n, e, _sl):
                 i = i
             SReturnVoid:
                 i = i
@@ -9136,6 +9300,8 @@ fn count_reads_body(stmts: [Stmt], nm: string) -> int:
                 c = c + count_reads_expr(e, nm)
             SReturn(e, _sl):
                 c = c + count_reads_expr(e, nm)
+            SConst(n, e, _sl):
+                c = c
             SReturnVoid:
                 c = c
             SIf(cnd, t, el, _sl):
@@ -9310,6 +9476,8 @@ fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: mut [st
         match stmts[i]:
             SReturn(e, _sl):
                 die("return cannot cross a parallel for")
+            SConst(n, e, _sl):
+                push(locals, n)
             SReturnVoid:
                 die("return cannot cross a parallel for")
             SBreak:
@@ -9786,6 +9954,8 @@ fn pend_probe(s: Stmt, ex: mut Expr) -> string:
             return ""
         SReturn(e, _sl):
             return ""
+        SConst(n, e, _sl):
+            return ""
         SReturnVoid:
             return ""
         SIf(c, t, el, _sl):
@@ -10084,6 +10254,8 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: mut [string], t2: mut [string], nm: string
                     r := pend_seek(dc, ctx, &bn, &bt, nm, body, 0, fret)
                     if r != "":
                         return r
+            SConst(n, e, _sl):
+                i = i
             SReturnVoid:
                 i = i
             SBreak:
@@ -10139,6 +10311,8 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             # A closure MAY escape: gen_stmt's SReturn re-homes its captured env into
             # _parent via copyenv (value semantics, sound). rule (a) lifted.
             return SReturn(lift_expr(ground_pre(dc, ctx, fret, e), &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+        SConst(n, e, _sl):
+            return s
         SReturnVoid:
             return s
         SIf(c, th, el, _sl):
@@ -10440,6 +10614,8 @@ fn stmt_has_lambda(s: Stmt) -> bool:
             return expr_has_lambda(e)
         SReturn(e, _sl):
             return expr_has_lambda(e)
+        SConst(n, e, _sl):
+            return false
         SReturnVoid:
             return false
         SIf(c, th, el, _sl):
@@ -10753,6 +10929,8 @@ fn subst_stmt_t(s: Stmt, bn: [string], bt: [string]) -> Stmt:
             return SPrint(subst_expr_t(e, bn, bt), ln)
         SReturn(e, ln):
             return SReturn(subst_expr_t(e, bn, bt), ln)
+        SConst(n, e, ln):
+            return s
         SReturnVoid:
             return s
         SIf(c, th, el, ln):
@@ -11450,6 +11628,8 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             return SPrint(mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SReturn(e, ln):
             return SReturn(mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
+        SConst(nm, rhs, ln):
+            return s
         SReturnVoid:
             return s
         SIf(c, th, el, ln):

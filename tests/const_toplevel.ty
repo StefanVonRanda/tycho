@@ -1,0 +1,15 @@
+const MAX = 1024
+const PI = 3.14
+const GREETING = "hello"
+const ENABLED = true
+const NEWLINE = '\n'
+
+fn main():
+    println(str(MAX + 1))
+    println(str(PI * 2.0))
+    println(GREETING + " world")
+    println(str(ENABLED))
+    print("A" + NEWLINE)
+    println(str(FUTURE))
+
+const FUTURE = 42

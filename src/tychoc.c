@@ -1189,6 +1189,7 @@ struct Expr {
 typedef enum { S_DECL, S_ASSIGN, S_RETURN, S_IF, S_WHILE, S_FORRANGE,
                S_INDEXSET, S_FIELDSET, S_EXPR, S_MATCH, S_MDECL, S_MASSIGN,
                S_BREAK, S_CONTINUE,
+               S_CONST, /* `const NAME = <literal>` local: folded at use, no runtime storage */
                S_SELECT /* select over channel recv arms + default/closed (CC-5) */ } StmtKind;
 
 typedef struct Stmt Stmt;
@@ -1652,6 +1653,7 @@ static Expr *new_expr(ExprKind k, int line) {
 
 static Expr *parse_expr(Parser *ps);
 static Expr *parse_postfix(Parser *ps);   /* spawn parses its callee through the postfix chain */
+static int   is_literal_expr(Expr *e);    /* const RHS validation (plain int/float/str/bool/char literal) */
 
 /* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
  * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
@@ -2282,6 +2284,22 @@ static void hoist_index_calls(Expr *place, int line) {
 
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
+
+    /* `const NAME = <literal>` — a function-local immutable named literal, folded
+     * at each use (contextual keyword, like `delete`; a variable named `const` is
+     * unaffected since `const` is a keyword only when a name follows). */
+    if (t->kind == TK_IDENT && !strcmp(t->text, "const") && peek(ps, 1)->kind == TK_IDENT) {
+        ps->p++;                                  /* eat 'const' */
+        Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
+        eat(ps, TK_EQ, "'=' after the constant name");
+        Expr *lit = parse_expr(ps);
+        if (!is_literal_expr(lit))
+            die_at(lit->line, "const value must be a literal");
+        eat(ps, TK_NEWLINE, "newline");
+        Stmt *s = new_stmt(S_CONST, t->line);
+        s->name = nameT->text; s->expr = lit;
+        return s;
+    }
 
     /* `delete m[k]` -> m = map_del(m, k) (B5.2). `delete` is contextual: it is a
      * keyword only when an identifier (the map variable) follows, so a variable
@@ -3143,6 +3161,56 @@ static void check_pkg_private(const char *qualifier, const char *name, int line)
                "is not accessible from another package", qualifier, name);
 }
 
+/* --------------------------------------------------- top-level constants
+ * `const NAME = <literal>` is an immutable named literal folded at each use
+ * (Tycho has no runtime globals). Top-level consts live here (persistent
+ * across function bodies, so a use can forward-reference a later decl); local
+ * consts ride g_vars via vars_push_const. Both fold in resolve_expr E_IDENT. */
+typedef struct { char *name; Type type; Expr *lit; } ConstDef;
+static ConstDef *g_consts;
+static int g_nconsts = 0, g_consts_cap = 0;
+
+static Type lit_type(Expr *lit) {
+    switch (lit->kind) {
+        case E_INT:   return T_INT;
+        case E_CHAR:  return T_CHAR;
+        case E_FLOAT: return T_FLOAT;
+        case E_BOOL:  return T_BOOL;
+        case E_STR:   return T_STRING;
+        default:      return T_VOID;
+    }
+}
+static int is_literal_expr(Expr *e) {
+    return e->kind == E_INT || e->kind == E_CHAR || e->kind == E_FLOAT
+        || e->kind == E_BOOL || e->kind == E_STR;
+}
+static Expr *consts_find(const char *name) {
+    for (int i = 0; i < g_nconsts; i++)
+        if (!strcmp(g_consts[i].name, name)) return g_consts[i].lit;
+    return NULL;
+}
+/* `const NAME = <literal>` at module top level. Registered at parse time so any
+ * function body (parsed later) can fold it. Collision with a function name is
+ * caught in resolve_program (sigs aren't registered yet at parse time). */
+static void parse_const(Parser *ps) {
+    ps->p++;                                          /* eat contextual 'const' */
+    Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
+    eat(ps, TK_EQ, "'=' after the constant name");
+    Expr *lit = parse_expr(ps);
+    if (!is_literal_expr(lit))
+        die_at(lit->line, "const value must be a literal");
+    char *nm = pkg_mangle(nameT->text);
+    int vi;
+    if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0
+        || handle_find(nm) >= 0 || variant_find(nm, &vi) >= 0 || consts_find(nm))
+        die_at(nameT->line, "'%s' is already defined", nameT->text);
+    TBL_ENSURE(g_consts, g_nconsts, g_consts_cap);
+    g_consts[g_nconsts].name = nm;
+    g_consts[g_nconsts].type = lit_type(lit);
+    g_consts[g_nconsts].lit  = lit;
+    g_nconsts++;
+}
+
 static ProcVec parse_program(Tok *toks) {
     Parser ps = { toks, 0, 0 };
     ProcVec out = {0};
@@ -3157,6 +3225,7 @@ static ProcVec parse_program(Tok *toks) {
             out.v[out.n++] = pr;
             continue;
         }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "const")) { parse_const(&ps); continue; }
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         if (at(&ps, TK_HANDLE)) { parse_handle(&ps); continue; }
@@ -3311,7 +3380,7 @@ static void register_builtins(void) {
 
 /* can_mutate: may the variable's aggregate be mutated in place (push /
  * index-set)? Locals yes; parameters are immutable borrows (no). */
-typedef struct { char *name; Type type; int can_mutate; } Var;
+typedef struct { char *name; Type type; int can_mutate; Expr *lit; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
 static Var *g_vars;
 static int g_nvars = 0, g_vars_cap = 0;
 /* >=0: the next resolve_block dup-checks declarations from this g_vars index
@@ -3326,7 +3395,22 @@ static void vars_push(const char *name, Type t, int can_mutate) {
     g_vars[g_nvars].name = (char *)name;
     g_vars[g_nvars].type = t;
     g_vars[g_nvars].can_mutate = can_mutate;
+    g_vars[g_nvars].lit = NULL;
     g_nvars++;
+}
+/* a local const: immutable, folded at use (lit carries the literal Expr) */
+static void vars_push_const(const char *name, Type t, Expr *lit) {
+    TBL_ENSURE(g_vars, g_nvars, g_vars_cap);
+    g_vars[g_nvars].name = (char *)name;
+    g_vars[g_nvars].type = t;
+    g_vars[g_nvars].can_mutate = 0;
+    g_vars[g_nvars].lit = lit;
+    g_nvars++;
+}
+static Var *vars_lookup(const char *name) {   /* innermost binding, or NULL */
+    for (int i = g_nvars - 1; i >= 0; i--)
+        if (!strcmp(g_vars[i].name, name)) return &g_vars[i];
+    return NULL;
 }
 static int vars_find(const char *name, Type *out) {
     for (int i = g_nvars - 1; i >= 0; i--)
@@ -3618,11 +3702,21 @@ static Type resolve_expr_inner(Expr *e) {
         case E_NULL: return e->type = T_PTR;
         case E_STR:  return e->type = T_STRING;
         case E_IDENT: {
-            Type t;
-            if (vars_find(e->sval, &t)) {
-                if (t == T_PENDING)               /* B-3: this use NEEDS the type; grounding hasn't happened */
+            Var *lv = vars_lookup(e->sval);       /* local var / const (innermost) */
+            if (lv && lv->lit) {                  /* a local const: fold this use into its literal */
+                Expr *k = lv->lit;
+                e->kind = k->kind; e->ival = k->ival; e->fval = k->fval; e->sval = k->sval;
+                return e->type = lit_type(k);
+            }
+            if (lv) {
+                if (lv->type == T_PENDING)        /* B-3: this use NEEDS the type; grounding hasn't happened */
                     die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", e->sval);
-                return e->type = t;
+                return e->type = lv->type;
+            }
+            Expr *clit = consts_find(e->sval);    /* precedence: local var -> const -> variant -> fn */
+            if (clit) {                           /* a top-level const: fold into its literal */
+                e->kind = clit->kind; e->ival = clit->ival; e->fval = clit->fval; e->sval = clit->sval;
+                return e->type = lit_type(clit);
             }
             int evi, eid = variant_find(e->sval, &evi);   /* a payload-less enum variant? */
             if (eid < 0 && e->pkg && e->pkg[0])           /* try this package's prefixed variant */
@@ -4629,6 +4723,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
                 die_at(s->line, "break cannot apply to a parallel for (chunks cannot stop each other)");
             return;
         case S_CONTINUE: return;
+        case S_CONST: pf_add_local(s->name); return;   /* folded at use; track the name so a use isn't flagged as captured */
         case S_DECL:
             pf_scan_expr(s->expr); pf_add_local(s->name); return;
         case S_MDECL:
@@ -4993,6 +5088,9 @@ static int is_pure_builtin(const char *n) {
 
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
+        case S_CONST:   /* local const: register as an immutable literal, scoped like a `:=` (vars_restore drops it at block end); uses fold in resolve_expr */
+            vars_push_const(s->name, lit_type(s->expr), s->expr);
+            break;
         case S_DECL: {
             /* channel creation is legal exactly here (CC-4); the marker lets
              * the channel(...) resolve case reject every other position */
@@ -5072,6 +5170,9 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_ASSIGN: {
+            { Var *cv = vars_lookup(s->name);   /* const is immutable (local const, or top-level when no local shadows it) */
+              if (cv ? (cv->lit != NULL) : (consts_find(s->name) != NULL))
+                  die_at(s->line, "cannot assign to constant '%s'", s->name); }
             Type vt;
             if (!vars_find(s->name, &vt)) {
                 const char *sg = suggest_var(s->name);
@@ -5485,7 +5586,7 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
-            if (sig_find(pr->name) || generic_find(pr->name))
+            if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name))
                 die_at(pr->line, "'%s' is already defined", pr->name);
             TBL_ENSURE(g_generics, g_ngenerics, g_generics_cap);
             g_generics[g_ngenerics++] = pr;
@@ -5496,7 +5597,7 @@ static void resolve_program(ProcVec *prog) {
         for (int j = 0; j < pr->nparams; j++)
             if (pr->params[j].is_inout && IS_CHAN(pr->params[j].type))
                 die_at(pr->line, "a channel parameter cannot be mut (the handle is already shared)");
-        if (sig_find(pr->name))
+        if (sig_find(pr->name) || consts_find(pr->name))
             die_at(pr->line, "'%s' is already defined", pr->name);
         Sig s; memset(&s, 0, sizeof s);
         s.name = pr->name; s.ret = pr->ret; s.nparams = pr->nparams; s.builtin = 0;
@@ -7848,6 +7949,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind); fprintf(o, "}\n");
             break;
         }
+        case S_CONST: break;   /* a const is folded at each use; it emits no runtime storage */
         case S_BREAK:
         case S_CONTINUE: {
             if (g_loop_depth == 0)

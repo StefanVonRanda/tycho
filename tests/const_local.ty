@@ -1,0 +1,15 @@
+const SCALE = 10
+
+fn compute(x: int) -> int:
+    const FACTOR = 3
+    return x * FACTOR + SCALE
+
+fn shadow_test():
+    const SCALE = 99
+    println(str(SCALE))
+
+fn main():
+    const LIMIT = 5
+    println(str(compute(LIMIT)))
+    println(str(SCALE))
+    shadow_test()
