@@ -1,0 +1,6 @@
+# len(...) takes an array, a string, bytes, a map, or a soa -- not a scalar. Both
+# compilers must reject this. tychoc0 used to fail open: it emitted `x.len` on a
+# non-aggregate (broken C). Matches tychoc's type check.
+fn main():
+    x := 5
+    print(f"{len(x)}\n")

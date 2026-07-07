@@ -1,0 +1,6 @@
+# push's first argument must be an array or soa, not a scalar. Both compilers
+# must reject this. tychoc0 used to fail open: it emitted an Arr_*_push() call on
+# a scalar (broken C). Matches tychoc's type check.
+fn main():
+    x := 5
+    push(x, 1)

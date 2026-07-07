@@ -4632,6 +4632,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi), _el), substr(name, cdi + 1, len(name)), _el), args, _el), names, types, dc, ctx)
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
+                if not is_array(at) and not is_soa(at):   # reject push onto a non-array/soa. Was a fail-open: tychoc0 emitted Arr_*_push on a scalar (broken C). Matches tychoc (src/tychoc.c ~4206).
+                    die_at(dc, ctx.line, "push's first argument must be an array or soa")
                 if is_soa(at):                    # soa push: grow each field buffer (in the soa's arena) + scatter
                     return "Soa_" + soa_struct(at) + "_push(" + owner_arena_of(args[0], names, types, dc, ctx) + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
                 et := elem_ty(at)
@@ -4668,6 +4670,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "Arr_" + mangle(rt) + "_reserve(" + ra + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "len":
                 lent := type_of(args[0], names, types, dc, ctx)
+                if not (is_array(lent) or lent == "str" or lent == "bytes" or is_map(lent) or is_soa(lent)):   # reject len on a scalar. Was a fail-open: tychoc0 emitted `.len` on a non-aggregate (broken C). Matches tychoc (src/tychoc.c ~4128).
+                    die_at(dc, ctx.line, "len(...) takes an array, a string, bytes, a map, or a soa")
                 if lent == "str" or lent == "bytes":
                     return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
