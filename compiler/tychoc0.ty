@@ -4511,6 +4511,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((0 - " + gen_expr(l, names, types, dc, ctx) + ") - 1)"   # same ((0 - E) - 1) emit, direct (see u- above)
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
+                if not is_map(rt):                # the right operand must be a map (not an array/string/etc). Without this tychoc0 fail-opened -- `x in [int]` emitted a bogus map_*_has call on an array (broken C). Matches tychoc (src/tychoc.c ~4363).
+                    die_at(dc, _el, "`in` tests membership in a map; the right operand must be a map")
+                if lt != map_key(rt):             # and the key must be the map's key type (matches tychoc)
+                    die_at(dc, _el, "`in` key must be " + map_key(rt))
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
             if op == "+" and lt == "str":         # string concat: the left operand is a string
                 rcat := type_of(r, names, types, dc, ctx)

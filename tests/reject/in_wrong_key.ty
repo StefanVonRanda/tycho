@@ -1,0 +1,9 @@
+# `in`'s left operand (the key) must be the map's key type. Here the map is keyed
+# by string but the key tested is an int, a type error in both compilers. tychoc0
+# used to fail open and emit a map lookup with the wrong key type. This locks the
+# parity.
+fn main():
+    m := []string: int
+    m["a"] = 1
+    if 5 in m:
+        print("x\n")

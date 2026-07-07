@@ -1,0 +1,9 @@
+# `in` tests membership in a MAP; the right operand must be a map, not an array.
+# Both compilers must reject this. tychoc0 used to fail open here -- it emitted a
+# bogus map_*_has() call on the array (undeclared function / type-punned array as
+# a map), which the C compiler then rejected. tychoc has always rejected it at the
+# type level; this locks the parity.
+fn main():
+    a := [1, 2, 3]
+    if 5 in a:
+        print("x\n")
