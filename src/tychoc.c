@@ -1654,6 +1654,7 @@ static Expr *new_expr(ExprKind k, int line) {
 static Expr *parse_expr(Parser *ps);
 static Expr *parse_postfix(Parser *ps);   /* spawn parses its callee through the postfix chain */
 static int   is_literal_expr(Expr *e);    /* const RHS validation (plain int/float/str/bool/char literal) */
+static Expr *neg_literal_fold(Expr *e);   /* fold `-<int/float literal>` into one negative literal (for const) */
 
 /* String interpolation (parse-time desugar; no new AST node): "a{e}b" becomes
  * ("a" + str(e) + "b"). `{{`/`}}` are literal braces. Each `{e}` is lexed+parsed as a
@@ -2292,7 +2293,7 @@ static Stmt *parse_stmt(Parser *ps) {
         ps->p++;                                  /* eat 'const' */
         Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
         eat(ps, TK_EQ, "'=' after the constant name");
-        Expr *lit = parse_expr(ps);
+        Expr *lit = neg_literal_fold(parse_expr(ps));
         if (!is_literal_expr(lit))
             die_at(lit->line, "const value must be a literal");
         eat(ps, TK_NEWLINE, "newline");
@@ -3184,6 +3185,19 @@ static int is_literal_expr(Expr *e) {
     return e->kind == E_INT || e->kind == E_CHAR || e->kind == E_FLOAT
         || e->kind == E_BOOL || e->kind == E_STR;
 }
+/* `const MIN = -100` — a unary minus over a numeric literal parses as a binop
+ * (operand in lhs, rhs NULL), not a literal. Collapse it into a single negative
+ * E_INT/E_FLOAT so a const can be negative; other shapes pass through unchanged
+ * and then fail the is_literal_expr check as before. */
+static Expr *neg_literal_fold(Expr *e) {
+    if (e->kind == E_BINOP && e->op == TK_MINUS && e->rhs == NULL && e->lhs
+        && (e->lhs->kind == E_INT || e->lhs->kind == E_FLOAT)) {
+        Expr *n = e->lhs;
+        if (n->kind == E_INT) n->ival = -n->ival; else n->fval = -n->fval;
+        return n;
+    }
+    return e;
+}
 static Expr *consts_find(const char *name) {
     for (int i = 0; i < g_nconsts; i++)
         if (!strcmp(g_consts[i].name, name)) return g_consts[i].lit;
@@ -3196,7 +3210,7 @@ static void parse_const(Parser *ps) {
     ps->p++;                                          /* eat contextual 'const' */
     Tok *nameT = eat(ps, TK_IDENT, "a constant name after 'const'");
     eat(ps, TK_EQ, "'=' after the constant name");
-    Expr *lit = parse_expr(ps);
+    Expr *lit = neg_literal_fold(parse_expr(ps));
     if (!is_literal_expr(lit))
         die_at(lit->line, "const value must be a literal");
     char *nm = pkg_mangle(nameT->text);

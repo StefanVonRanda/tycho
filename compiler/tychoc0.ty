@@ -1112,7 +1112,7 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         cname := toks[pos].text
         pos = pos + 1
         expect(toks, &pos, TEq)
-        clit := parse_expr(toks, &pos)
+        clit := neg_lit_fold(parse_expr(toks, &pos))
         if not is_lit(clit):
             die("parse: const value must be a literal")
         return SConst(cname, clit, _sl)
@@ -2310,6 +2310,24 @@ fn is_lit(e: Expr) -> bool:
         _:
             return false
 
+# `const MIN = -100`: a unary minus over a numeric literal parses as EBin("u-", lit,
+# EInt("0")), not a literal. Collapse it into one negative EInt/EFloat so a const can
+# be negative; other shapes pass through and then fail the is_lit check as before.
+fn neg_lit_fold(e: Expr) -> Expr:
+    match e:
+        EBin(op, l, r, _el):
+            if op != "u-":
+                return e
+            match l:
+                EInt(s, _l2):
+                    return EInt("-" + s, _el)
+                EFloat(s, _l2):
+                    return EFloat("-" + s, _el)
+                _:
+                    return e
+        _:
+            return e
+
 # does a block (recursively) declare a local `const`? Gates whether the mangle
 # pass runs for an otherwise package-free single-file program (mangle folds consts).
 fn block_has_const(ss: [Stmt]) -> bool:
@@ -2602,7 +2620,7 @@ fn parse_program(toks: [Token], pos: mut int) -> Program:
             cnm := toks[pos].text
             pos = pos + 1
             expect(toks, &pos, TEq)
-            clit := parse_expr(toks, &pos)
+            clit := neg_lit_fold(parse_expr(toks, &pos))
             if not is_lit(clit):
                 die("parse: const value must be a literal")
             push(constn, curpfx + cnm)
