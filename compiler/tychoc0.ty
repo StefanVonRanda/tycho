@@ -1507,6 +1507,12 @@ fn parse_type_d(toks: [Token], pos: mut int, depth: int) -> string:
         return "str"
     elif name == "bytes":                        # immutable byte buffer: same char* repr as str, crosses FFI as (ptr,len)
         return "bytes"
+    elif name == "u32":                          # first-class 32-bit unsigned: C `unsigned int`, wraps at 2^32
+        return "u32"
+    elif name == "u64":                          # first-class 64-bit unsigned: C `unsigned long long`, wraps at 2^64
+        return "u64"
+    elif name == "f32":                          # first-class 32-bit float: C `float`
+        return "f32"
     elif name == "ptr":                          # FFI opaque handle -> void*
         return "ptr"
     elif name == "Channel":                      # Channel(T): a worker param's queue type (CC-4)
@@ -1716,7 +1722,51 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
 # FFI Stage 1: only scalars + string cross the C boundary (composites have
 # tycho-internal C reps, not a stable ABI). Reject everything else (fail closed).
 fn ffi_scalar(ty: string) -> bool:
-    return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str" or ty == "ptr"
+    return ty == "int" or ty == "char" or ty == "float" or ty == "bool" or ty == "str" or ty == "ptr" or ty == "u32" or ty == "u64" or ty == "f32"
+
+# FFI-boundary sized-integer types: recognized ONLY in `extern fn` param/return
+# positions. The value is `int` to Tycho; this is the real C ABI type emitted in the
+# extern prototype so a call matches e.g. `uint32_t f(uint32_t)`. Built-in C types
+# (not stdint) -- width-exact + ABI-compatible with uintN_t on every target. "" = not sized.
+fn ffi_sized_cty(ty: string) -> string:
+    if ty == "u8":
+        return "unsigned char "
+    if ty == "u16":
+        return "unsigned short "
+    if ty == "u32":
+        return "unsigned int "
+    if ty == "u64":
+        return "unsigned long long "
+    if ty == "i8":
+        return "signed char "
+    if ty == "i16":
+        return "short "
+    if ty == "i32":
+        return "int "
+    if ty == "i64":
+        return "long long "
+    return ""
+
+# A boundary-only sized FFI type (u8/u16/i8/i16/i32/i64) is `int` to Tycho -- normalize
+# it so a Sig (call-typing) never sees the sized name. u32/u64/f32 are FIRST-CLASS types
+# (real arithmetic/printing), so they are NOT normalized -- an extern `-> u32` is a u32.
+fn ffi_norm(ty: string) -> string:
+    if ty == "u8" or ty == "u16" or ty == "i8" or ty == "i16" or ty == "i32" or ty == "i64":
+        return "int"
+    return ty
+
+fn ffi_norm_list(ts: [string]) -> [string]:
+    out := []string
+    for t in ts:
+        push(out, ffi_norm(t))
+    return out
+
+# Build a Sig, normalizing an extern's sized FFI param/return types to `int` (a
+# non-extern type literally named "u32" is left intact -- only externs are normalized).
+fn mk_sig(name: string, ret: string, ptypes: [string], is_extern: int) -> Sig:
+    if is_extern == 1:
+        return Sig(name, ffi_norm(ret), ffi_norm_list(ptypes), is_extern)
+    return Sig(name, ret, ptypes, is_extern)
 
 # An extern's param/return type is allowed if it is a scalar, `bytes`, or a bare
 # name (a `handle` type -- can't consult dc here at parse time, so accept any
@@ -2015,7 +2065,7 @@ struct Mctx:
     externs: [string]         # FFI extern fn names: global C symbols, never package-mangled (like builtins)
 
 fn is_builtin_call(name: string) -> bool:
-    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
+    return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_u32" or name == "to_u64" or name == "to_f32" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_i32" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
@@ -2118,7 +2168,7 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         if ar > 0:
             mp = mangle_type_list(m, substr(inner, 0, ar))
         return "fn(" + mp + "->" + mangle_type(m, substr(inner, ar + 2, len(inner))) + ")"
-    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char" or ty == "ptr":
+    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char" or ty == "ptr" or ty == "bytes" or ty == "u32" or ty == "u64" or ty == "f32":
         return ty                  # builtin scalar types are never package-qualified (ptr = FFI opaque handle)
     if find(ty, ".") >= 0:
         return mangle_dotted(m, ty)
@@ -2957,6 +3007,12 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "long "
     if ty == "char":                             # one byte carried as a long
         return "long "
+    if ty == "u32":                              # wraps at 2^32 natively
+        return "unsigned int "
+    if ty == "u64":                              # wraps at 2^64 natively
+        return "unsigned long long "
+    if ty == "f32":
+        return "float "
     if ty == "float":
         return "double "
     if ty == "str":
@@ -3101,6 +3157,12 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return "float"
     if name == "to_int":
         return "int"
+    if name == "to_u32":                          # numeric -> u32 (truncate to low 32 bits)
+        return "u32"
+    if name == "to_u64":                          # numeric -> u64
+        return "u64"
+    if name == "to_f32":                          # numeric -> f32 (single precision)
+        return "f32"
     if name == "to_str":                          # unwrap a string newtype, or reinterpret bytes -> str
         return "str"
     if name == "to_bytes":                        # str -> bytes (same buffer, distinct type)
@@ -3436,8 +3498,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "bool"
             if op == "u-":                        # unary minus -> the operand's (numeric) type
                 return type_of(l, names, types, dc, ctx)
-            if op == "u~":                        # unary bitwise NOT -> int
-                return "int"
+            if op == "u~":                        # unary bitwise NOT -> the operand type (~u32 is a u32)
+                return type_of(l, names, types, dc, ctx)
             lt := type_of(l, names, types, dc, ctx)
             rt := type_of(r, names, types, dc, ctx)
             if op == "+" and (lt == "str" or rt == "str"):
@@ -3445,11 +3507,29 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if (op == "+" or op == "-") and (lt == "char" or rt == "char"):
                 return "char"                     # char +/- int (or char) stays a byte
             if op == "+" or op == "-" or op == "*" or op == "/":
+                # sized numerics widen the result to their type; a bare int literal on
+                # the other side adapts (legality — literals only — enforced in gen_expr).
+                if lt == "f32" or rt == "f32":
+                    return "f32"
                 if lt == "float" or rt == "float":
                     return "float"
+                if lt == "u32" or rt == "u32":
+                    return "u32"
+                if lt == "u64" or rt == "u64":
+                    return "u64"
                 return "int"
             if is_cmp(op) or op == "in" or op == "&&" or op == "||":
                 return "bool"                     # comparisons / `in` / and / or -> bool
+            if op == "<<" or op == ">>":          # shift result = the shifted value's width
+                if lt == "u32":
+                    return "u32"
+                if lt == "u64":
+                    return "u64"
+                return "int"
+            if lt == "u32" or rt == "u32":        # %, &, |, ^ on u32/u64 keep the width
+                return "u32"
+            if lt == "u64" or rt == "u64":
+                return "u64"
             return "int"                          # %, <<, >>, &, |, ^ -> int
         ECall(name, args, _el):
             tm0 := find(name, "$<")
@@ -4094,7 +4174,7 @@ fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the lo
 # is a no-op (map_set/map_del return a NEW map — a common footgun). Mirrors
 # is_pure_builtin in src/tychoc.c.
 fn is_pure_bi(n: string) -> bool:
-    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_str" or n == "to_bytes" or n == "to_ptr" or n == "to_i32" or n == "to_bool" or n == "is_null" or n == "len"
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or n == "find" or n == "map_get" or n == "map_has" or n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or n == "fabs" or n == "to_float" or n == "to_int" or n == "to_u32" or n == "to_u64" or n == "to_f32" or n == "to_str" or n == "to_bytes" or n == "to_ptr" or n == "to_i32" or n == "to_bool" or n == "is_null" or n == "len"
 
 fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e is such a call, else ""
     match e:
@@ -4424,9 +4504,10 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if resolve_nt(dc, ctx, lt) != "int" and resolve_nt(dc, ctx, lt) != "float":
                     die_at(dc, _el, "unary - needs an int or a float")
                 return "(0 - " + gen_expr(l, names, types, dc, ctx) + ")"   # emit the (0 - E) directly (byte-identical to the old EBin desugar) WITHOUT re-entering the binary newtype-identity check, which would reject `0 - newtype` -- `-newtype` is valid, the user's `0 - newtype` is not, and tychoc0 can't tell them apart once desugared
-            if op == "u~":                        # unary bitwise NOT: operand MUST be EXACTLY int -- not a float/char, and not a newtype-over-int (tychoc rejects `~Slot`; now that tychoc0 tracks newtype identity it rejects it too, so the unary-parity lane no longer skips it)
-                if resolve_nt(dc, ctx, lt) != "int" or nt_skin_of(l, names, types, dc, ctx) != "":
-                    die_at(dc, _el, "unary ~ needs an int")
+            if op == "u~":                        # unary bitwise NOT: operand must be int/u32/u64 (not float/char, not a newtype). For an unsigned operand `((0 - E) - 1)` computes 2^w - E - 1 = ~E in C, so the same emit is correct at every width.
+                ubase := resolve_nt(dc, ctx, lt)
+                if (ubase != "int" and ubase != "u32" and ubase != "u64") or nt_skin_of(l, names, types, dc, ctx) != "":
+                    die_at(dc, _el, "unary ~ needs an int, u32, or u64")
                 return "((0 - " + gen_expr(l, names, types, dc, ctx) + ") - 1)"   # same ((0 - E) - 1) emit, direct (see u- above)
             if op == "in":                        # `k in m` membership -> mapfam_has(m, k)
                 rt := type_of(r, names, types, dc, ctx)
@@ -4497,17 +4578,29 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             elif op == "==" or op == "!=":
                 if rlt != frlt or sl != sr:
                     die_at(dc, _el, "cannot compare " + lt + " with " + frt)
-            elif op == "%" or op == "<<" or op == ">>" or op == "&" or op == "|" or op == "^":
-                if rlt != "int" or frlt != "int" or sl != "" or sr != "":
-                    die_at(dc, _el, "modulo / shift / bitwise operators require two ints")
-            elif is_cmp(op):     # ordering: same newtype identity + an orderable base; an int LITERAL adapts to a float operand (both non-newtype)
+            elif op == "<<" or op == ">>":        # shifts: an integer value (int/u32/u64) by any integer count
+                lint := (rlt == "int" or rlt == "u32" or rlt == "u64") and sl == ""
+                rint := (frlt == "int" or frlt == "u32" or frlt == "u64") and sr == ""
+                if not lint or not rint:
+                    die_at(dc, _el, "shift operators require integer operands")
+            elif op == "%" or op == "&" or op == "|" or op == "^":   # modulo / bitwise: two matching integer widths (int/u32/u64), or a uint with an adapting int literal
+                intl := (rlt == "int" or rlt == "u32" or rlt == "u64") and sl == ""
+                intr := (frlt == "int" or frlt == "u32" or frlt == "u64") and sr == ""
+                uint_lit := ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l))
+                if not intl or not intr or not (rlt == frlt or uint_lit):
+                    die_at(dc, _el, "modulo / bitwise operators require two ints, two u32, or two u64")
+            elif is_cmp(op):     # ordering: same newtype identity + an orderable base; an int LITERAL adapts to a float/u32/u64 operand, a numeric literal to f32 (all non-newtype)
                 lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
-                if not (lit_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float" or rlt == "char"))):
+                uint_ok := (sl == "" and sr == "") and ((rlt == frlt and (rlt == "u32" or rlt == "u64" or rlt == "f32")) or ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l)))
+                if not (lit_ok or uint_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float" or rlt == "char"))):
                     die_at(dc, _el, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
             else:                # arithmetic + - * /
                 lit_ok := (rlt == "float" and frlt == "int" and is_int_lit(r) and sl == "" and sr == "") or (rlt == "int" and frlt == "float" and is_int_lit(l) and sl == "" and sr == "")
                 char_ok := (op == "+" or op == "-") and (lt == "char" or frt == "char") and (lt == "char" or rlt == "int") and (frt == "char" or frlt == "int")
-                if not (lit_ok or char_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float"))):
+                lnum := is_int_lit(l) or is_float_lit(l)
+                rnum := is_int_lit(r) or is_float_lit(r)
+                uint_ok := (sl == "" and sr == "") and ((rlt == frlt and (rlt == "u32" or rlt == "u64" or rlt == "f32")) or ((rlt == "u32" or rlt == "u64") and frlt == "int" and is_int_lit(r)) or ((frlt == "u32" or frlt == "u64") and rlt == "int" and is_int_lit(l)) or (rlt == "f32" and frlt != "" and rnum) or (frlt == "f32" and rlt != "" and lnum))
+                if not (lit_ok or char_ok or uint_ok or (sl == sr and rlt == frlt and (rlt == "int" or rlt == "float"))):
                     die_at(dc, _el, "arithmetic requires two ints or two floats")
             # integer division/modulo guard: -fwrapv wraps signed overflow, but x/0,
             # x%0 and LONG_MIN/-1 still trap (SIGFPE). Route int `/` and `%` (incl. an
@@ -4517,6 +4610,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 gfn := "hi_idiv"
                 if op == "%":
                     gfn = "hi_imod"
+                return gfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
+            if (op == "/" or op == "%") and (rlt == "u32" or rlt == "u64"):   # unsigned guard (div/mod by zero aborts cleanly)
+                gfn := "hi_udiv"
+                if op == "%":
+                    gfn = "hi_umod"
                 return gfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
@@ -4568,12 +4666,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 at := type_of(args[0], names, types, dc, ctx)
                 if at == "str":                                  # str(string) is identity (interpolation)
                     return gen_expr(args[0], names, types, dc, ctx)
-                if at == "float":
+                if at == "float" or at == "f32":                 # f32 promotes to double
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if at == "bool":
                     return "b2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                if at == "u32" or at == "u64":
+                    return "u2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if resolve_nt(dc, ctx, at) != "int":   # only int (incl. newtype-of-int) -> i2s; reject char/ptr/enum/etc. so tychoc0 fails closed like tychoc (str(char) was silently printing the byte value)
-                    die_at(dc, ctx.line, "str(x) takes an int, a bool, a float, or a string")
+                    die_at(dc, ctx.line, "str(x) takes an int, a u32/u64/f32, a bool, a float, or a string")
                 return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "sqrt" or name == "floor" or name == "fabs":
                 return name + "(" + gen_expr(args[0], names, types, dc, ctx) + ")"
@@ -4583,6 +4683,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
                 return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_u32":                          # -> u32 (truncate to low 32 bits)
+                return "((unsigned int)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_u64":                          # -> u64
+                return "((unsigned long long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_f32":                          # -> f32 (single precision)
+                return "((float)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_ptr":                          # FFI: int -> opaque ptr sentinel (e.g. SQLITE_TRANSIENT = (void*)-1); never deref'd in tycho
                 return "((void*)(long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_i32":                          # FFI: sign-extend a 32-bit C int return (low 32 bits valid; cast recovers the sign)
@@ -5285,6 +5391,14 @@ fn is_int_lit(e: Expr) -> bool:           # is `e` a literal int -- the only int
         EAddr(x, _el):
             return false
         ESpawn(sid, snm, sa, _el):
+            return false
+
+# Is `e` a float literal -- the only float that adapts to an f32 operand (mirrors tychoc's E_FLOAT).
+fn is_float_lit(e: Expr) -> bool:
+    match e:
+        EFloat(f, _el):
+            return true
+        _:
             return false
 
 # Is `e` an int literal equal to 0? Catches any zero spelling ("0", "00") so
@@ -6681,7 +6795,9 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
     # bytes crosses as (ptr,len): a bytes param -> two C args (const unsigned char*, long);
     # a bytes return -> a void function with two trailing out-params (out, outlen).
     bret := f.ret == "bytes"
-    rc := ret_cty(dc, ctx, f.ret)
+    rc := ffi_sized_cty(f.ret)          # FFI-boundary sized return -> real C ABI type
+    if rc == "":
+        rc = ret_cty(dc, ctx, f.ret)
     if bret:
         rc = "void "
     if is_option(f.ret) and option_inner(f.ret) == "str":   # FFI R3a: the C symbol returns char*, not HOption (the call site wraps NULL -> None)
@@ -6695,7 +6811,10 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
         if f.ptypes[i] == "bytes":
             out = out + "const unsigned char*, long"
         else:
-            out = out + cty(dc, ctx, f.ptypes[i])
+            psc := ffi_sized_cty(f.ptypes[i])   # FFI-boundary sized param -> real C ABI type
+            if psc == "":
+                psc = cty(dc, ctx, f.ptypes[i])
+            out = out + psc
         emitted = emitted + 1
         i = i + 1
     if bret:
@@ -7461,6 +7580,8 @@ fn preamble() -> string:
     # dependency; LONG_MIN % -1 is mathematically 0, returned directly (no trap).
     out = out + "static long hi_idiv(long a, long b) { if (b == 0) { fprintf(stderr, \"tycho: division by zero\\n\"); exit(1); } if (a == (-9223372036854775807L - 1L) && b == -1) { fprintf(stderr, \"tycho: division overflow\\n\"); exit(1); } return a / b; }\n"
     out = out + "static long hi_imod(long a, long b) { if (b == 0) { fprintf(stderr, \"tycho: modulo by zero\\n\"); exit(1); } if (a == (-9223372036854775807L - 1L) && b == -1) return 0; return a % b; }\n"
+    out = out + "static unsigned long long hi_udiv(unsigned long long a, unsigned long long b) { if (b == 0) { fprintf(stderr, \"tycho: division by zero\\n\"); exit(1); } return a / b; }\n"
+    out = out + "static unsigned long long hi_umod(unsigned long long a, unsigned long long b) { if (b == 0) { fprintf(stderr, \"tycho: modulo by zero\\n\"); exit(1); } return a % b; }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
     out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"
@@ -7468,6 +7589,7 @@ fn preamble() -> string:
     out = out + "static char* sc6(Arena* ar, const char* a, const char* b, const char* c, const char* d, const char* e, const char* f) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1], le = ((const long*)e)[-1], lf = ((const long*)f)[-1]; char* r = hs(ar, la + lb + lc + ld + le + lf); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); p += ld; memcpy(p, e, (size_t)le); p += le; memcpy(p, f, (size_t)lf); return r; }\n"
     out = out + "static char* sc_char(Arena* ar, const char* a, long c) { long la = ((const long*)a)[-1]; char* r = hs(ar, la + 1); memcpy(r, a, (size_t)la); r[la] = (char)c; return r; }\n"
     out = out + "static char* i2s(Arena* ar, long n) { char t[24]; int i = (int)sizeof t; unsigned long u = n < 0 ? -(unsigned long)n : (unsigned long)n; do { t[--i] = (char)('0' + u % 10); u /= 10; } while (u); if (n < 0) t[--i] = '-'; int m = (int)sizeof t - i; char* r = hs(ar, m); memcpy(r, t + i, (size_t)m); return r; }\n"
+    out = out + "static char* u2s(Arena* ar, unsigned long long u) { char t[24]; int i = (int)sizeof t; do { t[--i] = (char)('0' + u % 10); u /= 10; } while (u); int m = (int)sizeof t - i; char* r = hs(ar, m); memcpy(r, t + i, (size_t)m); return r; }\n"
     out = out + "static char* b2s(Arena* ar, long b) { const char* s = b ? \"true\" : \"false\"; long m = (long)strlen(s); char* r = hs(ar, m); memcpy(r, s, (size_t)m); return r; }\n"
     out = out + "static char* scopy(Arena* ar, const char* s) { long n = ((const long*)s)[-1]; char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     out = out + "static int str_cmp(const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; long n = la < lb ? la : lb; int c = n ? memcmp(a, b, (size_t)n) : 0; if (c != 0) return c < 0 ? -1 : 1; return la < lb ? -1 : (la > lb ? 1 : 0); }\n"
@@ -11650,7 +11772,7 @@ fn main():
     sigmap0 := []string: int
     i := 0
     for i < len(prog0.funcs):
-        push(sigs0, Sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes, prog0.funcs[i].is_extern))
+        push(sigs0, mk_sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes, prog0.funcs[i].is_extern))
         if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
             sigmap0[prog0.funcs[i].name] = i
         i = i + 1
@@ -11666,7 +11788,7 @@ fn main():
     sigmap := []string: int
     i = 0
     for i < len(funcs):
-        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
+        push(sigs, mk_sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
         if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap[funcs[i].name] = i
         i = i + 1
@@ -11680,7 +11802,7 @@ fn main():
     sigmap = []string: int
     i = 0
     for i < len(funcs):
-        push(sigs, Sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
+        push(sigs, mk_sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
         if map_get(sigmap, funcs[i].name, -1) < 0:
             sigmap[funcs[i].name] = i
         i = i + 1

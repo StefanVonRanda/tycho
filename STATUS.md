@@ -69,7 +69,9 @@ lane) and a `tychofmt` float-literal drift, `.25e3` → `.25 e3` (the `tools-che
 
 ## Shipped (capabilities)
 
-Types: int/float/bool/string/char/bytes, arrays + nested, maps (`[K:V]`, scalar **and composite
+Types: int/float/bool/string/char/bytes, **u32/u64/f32** (first-class fixed-width numerics —
+defined wrap, own arithmetic/printing/`[T]` arrays; `corelib/sha256` is written in `u32`),
+arrays + nested, maps (`[K:V]`, scalar **and composite
 keys** — struct/tuple/array/fieldless-enum/newtype — and composite values), tuples, structs,
 enums, `Option`/`Result`, soa (struct-of-arrays), newtypes (`type X = …`), typed FFI handles.
 
@@ -85,8 +87,9 @@ lock-free channels, `select`, bounded spawn cap (fork-bomb fails closed).
 Safety: defined two's-complement int wrap (`-fwrapv`), div/mod-by-zero + bounds + substr checks
 abort cleanly, hash-flooding-resistant maps (SipHash + random seed), byte-safe strings.
 
-FFI: `extern` over scalars/string/bytes/opaque `ptr`/typed handles, nullable-`Option(string)`
-returns, `mut` out-params; cc-line linking with shell-injection guard.
+FFI: `extern` over scalars/string/bytes/opaque `ptr`/typed handles, **sized-int boundary types**
+(`u8`…`u64`/`i8`…`i64` in an extern signature → real fixed-width C ABI, `int` to Tycho),
+nullable-`Option(string)` returns, `mut` out-params; cc-line linking with shell-injection guard.
 
 ## Decided non-goals (do not propose these)
 

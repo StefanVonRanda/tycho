@@ -104,6 +104,16 @@ static long tycho_imod(long a, long b) {
     if (a == LONG_MIN && b == -1) return 0;
     return a % b;
 }
+/* Unsigned div/mod for u32/u64: same clean-abort guard as the signed path. No
+ * overflow case (unsigned division never traps except on zero). */
+static unsigned long long tycho_udiv(unsigned long long a, unsigned long long b) {
+    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); exit(1); }
+    return a / b;
+}
+static unsigned long long tycho_umod(unsigned long long a, unsigned long long b) {
+    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
+    return a % b;
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */
@@ -949,6 +959,17 @@ char *tycho_int_to_str(Arena *a, long n) {
     unsigned long u = n < 0 ? -(unsigned long)n : (unsigned long)n;
     do { tmp[--i] = (char)('0' + u % 10); u /= 10; } while (u);
     if (n < 0) tmp[--i] = '-';
+    int m = (int)sizeof tmp - i;
+    char *r = tycho_str_alloc(a, m);
+    memcpy(r, tmp + i, (size_t)m);
+    return r;
+}
+
+/* Unsigned to string (u32/u64): plain decimal, no sign. */
+char *tycho_uint_to_str(Arena *a, unsigned long long u) {
+    char tmp[24];
+    int i = (int)sizeof tmp;
+    do { tmp[--i] = (char)('0' + u % 10); u /= 10; } while (u);
     int m = (int)sizeof tmp - i;
     char *r = tycho_str_alloc(a, m);
     memcpy(r, tmp + i, (size_t)m);

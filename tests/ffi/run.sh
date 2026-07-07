@@ -110,10 +110,36 @@ printf 'extern "x" fn f(s: mut string)\nfn main():\n    print("x")\n' > "$T/r4re
 if "$TYCHOC" "$T/r4rej.ty" -o "$T/r4rej" >/dev/null 2>&1; then echo "FAIL: mut-string out-param accepted by tychoc"; fail=1; fi
 if "$T/h0" "$T/r4rej.ty" >/dev/null 2>&1; then echo "FAIL: mut-string out-param accepted by tychoc0"; fail=1; fi
 
+# (9) FFI-boundary sized ints (u8/u16/u32/u64/i8/i16/i32/i64): recognized ONLY in
+# extern signatures; the value is `int` to Tycho but the emitted prototype uses the
+# real C ABI type, so a u32 wraps at 2^32 and a u64 return carries >32 bits. BOTH
+# compilers must build+run identically; and a sized type OUTSIDE an extern (a plain
+# `int` to Tycho) must be rejected fail-closed by both.
+sz='extern fn ffi_add32(a: u32, b: u32) -> u32\nextern fn ffi_shl64(x: u32, n: i32) -> u64\nextern fn ffi_negbyte(x: u8) -> i8\nfn main():\n    print(f"{ffi_add32(4000000000, 300000000)} {ffi_shl64(1, 33)} {ffi_negbyte(5)}\\n")\n'
+printf '%b' "$sz" > "$T/sz.ty"
+szexp="5032704 8589934592 -5"
+if ! "$TYCHOC" "$T/sz.ty" -o "$T/sz_c" --shim tests/ffi/shim.c >"$T/sz.log" 2>&1; then
+    echo "FAIL: sized-ffi tychoc compile"; sed 's/^/      /' "$T/sz.log"; fail=1
+else
+    [ "$("$T/sz_c" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc output '$("$T/sz_c" 2>&1)' != '$szexp'"; fail=1; }
+fi
+if ! { "$T/h0" "$T/sz.ty" > "$T/sz_h0.c" 2>/dev/null && \
+       $CC -O2 -fwrapv -std=c11 -o "$T/sz_h0" "$T/sz_h0.c" tests/ffi/shim.c -lm 2>"$T/sz_h0.log"; }; then
+    echo "FAIL: sized-ffi tychoc0 compile"; sed 's/^/      /' "$T/sz_h0.log"; fail=1
+else
+    [ "$("$T/sz_h0" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc0 output"; fail=1; }
+fi
+# reject: a boundary-ONLY sized type (i16 etc.) is valid only in an extern signature,
+# not as a general Tycho type (fail-closed, both compilers). u32/u64/f32 ARE first-class
+# now, so they are deliberately NOT rejected here.
+printf 'fn main():\n    x: i16 = 3\n    print(str(x))\n' > "$T/szrej.ty"
+if "$TYCHOC" "$T/szrej.ty" --emit-c -o "$T/szrej" >/dev/null 2>&1; then echo "FAIL: non-extern i16 accepted by tychoc"; fail=1; fi
+if "$T/h0" "$T/szrej.ty" >/dev/null 2>&1; then echo "FAIL: non-extern i16 accepted by tychoc0"; fail=1; fi
+
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden — scalars+string, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden — scalars+string, sized ints, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }

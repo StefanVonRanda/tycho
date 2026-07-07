@@ -13,6 +13,7 @@ and can optionally name the library to link.
 extern fn getpid() -> int                            # libc
 extern "m" fn cos(x: float) -> float                 # links -lm
 extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string out
+extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t at the C ABI
 ```
 
 ## The boundary
@@ -20,6 +21,13 @@ extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string
 Here's what can cross:
 
 - **Scalars** — `int`, `float`, `bool`.
+- **Sized integers** — `u8 u16 u32 u64 i8 i16 i32 i64`, valid **only** in an `extern`
+  signature (a by-value parameter or the return). They are `int` to Tycho — you pass and
+  receive ordinary `int` values — but the emitted C prototype uses the real fixed-width
+  type, so a call matches e.g. `uint32_t crc32(const uint8_t*, uint32_t)` at the ABI
+  instead of forcing everything through 64-bit `long`. A value narrows to the C width on
+  the way in (C's defined conversion) and widens back to `int` on return. Outside an
+  `extern` these names are ordinary identifiers, not types — `x: u32` is an error.
 - **`string`** — passed as a C `char*`; a C-returned string is **copied into the caller's
   arena** at the call site, so Tycho never holds a pointer into C-owned memory. A nullable C
   return is declared `-> Option(string)`.

@@ -20,10 +20,27 @@ their own page.
 | `bool` | `true` / `false` |
 | `string` | an immutable, length-counted byte string |
 | `char` | a single byte (`0`–`255`) |
+| `u32` / `u64` | 32- / 64-bit **unsigned** integer, wraps at 2³² / 2⁶⁴ |
+| `f32` | 32-bit IEEE-754 single-precision float |
 
 `int` and `float` never mix implicitly — there is no automatic widening. Convert
 explicitly with `to_float(n)` and `to_int(x)` (the latter truncates toward zero). The
 operators each type supports are in [Basics](basics.md#expressions).
+
+### `u32` / `u64` / `f32`
+
+Fixed-width numerics for bit-twiddling, hashing, and crypto (`corelib/sha256` is written
+in `u32`). They behave like `int`/`float` but at a defined width:
+
+- **Wrap is defined.** `u32`/`u64` arithmetic (`+ - * << ~` …) wraps modulo 2³²/2⁶⁴ — no
+  masking needed. `>>` is a logical shift; `/` and `%` abort cleanly on a zero divisor.
+- **Distinct and non-mixing**, like `char`. A `u32` never silently becomes an `int`.
+  Bridge explicitly with `to_u32(x)`, `to_u64(x)`, `to_f32(x)`, `to_int(x)`, `to_float(x)`
+  (each takes any numeric scalar). A bare **int literal adapts** to a `u32`/`u64` operand
+  and a numeric literal to `f32`, so `h ^ 16777619` and `x & 255` need no cast on the
+  constant; a non-literal `int` does (`state[i]` → `to_u32(state[i])`).
+- Arrays (`[u32]`, `[f32]`, …), struct fields, `str(...)`, and f-strings all work.
+- They also cross [FFI](ffi.md) as their real C type (`u32` ↔ `uint32_t`, etc.).
 
 ### `char`
 
