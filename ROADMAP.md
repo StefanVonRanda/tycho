@@ -92,12 +92,12 @@ RHS are compile errors; forward reference and shadowing work. Locked by
 `tests/const_toplevel` + `tests/const_local` goldens and three
 `tests/reject/const_*` fixtures (both compilers).
 
-**Remaining — minor, demand-gated:**
-- *Negative-number consts.* `const X = -100` is rejected today (a negative parses
-  as unary-minus, not a bare literal). Allow a unary-minus-wrapped numeric literal
-  in both compilers' literal check + fold. Small, common enough to be worth doing.
-- *Const expressions* (`const B = A * 2`) — deferred by design (needs a
-  compile-time folder); this is the prerequisite piece for const generics (1.6).
+Negative-literal consts (`const MIN = -100`, `const T = -3.14`) are supported —
+both compilers fold `-<numeric literal>` into a single negative literal at
+const-parse time (locked by `tests/const_negative`).
+
+**Remaining — deferred by design:** const expressions (`const B = A * 2`) — needs
+a compile-time folder; this is the prerequisite piece for const generics (1.6).
 
 ### 1.3 Compiler diagnostics — **substantially shipped**
 The humane-error asks are all implemented in tychoc (the reference compiler):
