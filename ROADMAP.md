@@ -83,17 +83,21 @@ not a redundant `byte` alias.
   `extern`) — **YAGNI**; the FFI boundary covers the correctness motive and no
   in-language program has needed them. Add on first real demand.
 
-### 1.2 `const` bindings and compile-time constants
-**State today:** no `const` in the reference. Enum variants carry values, but there's
-no `const MAX = 1024` / `const VERSION = "..."`. Values that never change are
-declared as ordinary `:=` locals or hardcoded.
+### 1.2 `const` bindings and compile-time constants — **shipped**
+`const NAME = <literal>` works at module top-level AND inside function bodies, for
+int/float/string/bool/char literals. A const is an immutable named literal folded
+at each use site (no runtime object — mirrors the nullary-enum-variant fold in
+both compilers, so emitted C stays byte-identical). Reassignment and non-literal
+RHS are compile errors; forward reference and shadowing work. Locked by
+`tests/const_toplevel` + `tests/const_local` goldens and three
+`tests/reject/const_*` fixtures (both compilers).
 
-**Why:** array-size clarity, magic-number elimination, and a prerequisite for
-*const generics* (1.6). A `const` is just a name the checker folds — no runtime
-object, no allocation.
-
-**Thesis fit:** total (compile-time only).
-**Effort:** low–medium. **Priority: medium.**
+**Remaining — minor, demand-gated:**
+- *Negative-number consts.* `const X = -100` is rejected today (a negative parses
+  as unary-minus, not a bare literal). Allow a unary-minus-wrapped numeric literal
+  in both compilers' literal check + fold. Small, common enough to be worth doing.
+- *Const expressions* (`const B = A * 2`) — deferred by design (needs a
+  compile-time folder); this is the prerequisite piece for const generics (1.6).
 
 ### 1.3 Compiler diagnostics — **substantially shipped**
 The humane-error asks are all implemented in tychoc (the reference compiler):
