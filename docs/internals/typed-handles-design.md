@@ -68,10 +68,18 @@ handle Db:
   a handle cannot be stored in an array/map/struct/tuple/Option/Result, captured
   by a closure/parallel-for, or escape via `return`. These are the same bans
   tasks already enforce, so this is the affine-type model, not a deferred subset.
-- **Deferred past v1 (each a clean follow-up):** explicit early `close(h)`
-  (consume + suppress the scope-exit free, mirroring `wait(t)`); returning/moving a
-  handle out of its scope (ownership transfer + re-home, mirroring an escaping
-  task); storing handles in containers.
+- **Shipped past v1:** explicit early `close(h)` — runs the destructor now and
+  NULLs the handle; the scope-exit finalizer is null-guarded (`if (h_x) free_fn(h_x)`)
+  so the C `free_fn` runs exactly once even though both paths reach it. `close`
+  requires a handle *variable* (a call result has no owning scope to suppress);
+  both compilers reject otherwise. Reassign stays banned. v1 does not compile-reject
+  a *use* after close — the handle is NULL, so a later borrow passes NULL to C
+  (a logic bug, not memory corruption; mirrors tasks' runtime-not-compile stance on
+  double-`wait`). Locked by the tests/ffi `use_res_close` case (freed exactly once,
+  ASan-clean) + `tests/reject/close_handle_nonvar`.
+- **Still deferred (each a clean follow-up):** returning/moving a handle out of its
+  scope (ownership transfer + re-home, mirroring an escaping task); storing handles
+  in containers.
 
 ## Implementation map (mirrors `bytes` and the task machinery)
 

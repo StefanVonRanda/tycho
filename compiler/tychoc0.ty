@@ -5046,6 +5046,16 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HOption _co; HCell* _rc = tycho_chan_recv_cell(_ch); if (_rc) { " + rct + " _v = " + cp_field(dc, ctx, rty, ctx.owner, "(*(" + rct + "*)_rc->val)") + "; tycho_chan_recv_commit(_ch, _rc); _co = hsome(hbox(" + ctx.owner + ", sizeof(" + rct + "), &_v)); } else { _co = hnone(); } _co; })"
             if name == "close" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
                 return "tycho_chan_close(" + gen_expr(args[0], names, types, dc, ctx) + ")"
+            if name == "close" and len(args) == 1 and is_handle(dc, type_of(args[0], names, types, dc, ctx)):
+                # FFI R2 early close: run the destructor now and NULL the handle so the
+                # (null-guarded) scope-exit finalizer is a no-op -- free_fn runs exactly once.
+                match args[0]:
+                    EVar(vn, _ev):
+                        hv := gen_expr(args[0], names, types, dc, ctx)
+                        ff := handle_free(dc, type_of(args[0], names, types, dc, ctx))
+                        return "({ if (" + hv + ") { " + ff + "(" + hv + "); " + hv + " = 0; } })"
+                    _:
+                        die("close(h) takes a handle variable")
             if is_newtype(dc, ctx, name):             # X(v) is zero-cost: identity
                 return gen_expr(args[0], names, types, dc, ctx)
             if is_variant(dc, ctx, name):             # enum construction -> mk_<enum>_<variant>(ar, ...); node
@@ -6585,7 +6595,7 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                     push(names, "!tycho_task_finish(" + un(name) + ")")
                     push(types, "!")
                 if is_handle(dc, ty):             # FFI R2: RAII -- emit the destructor free_fn(h) at this var's scope exit
-                    push(names, "!" + handle_free(dc, ty) + "(" + un(name) + ")")
+                    push(names, "!if (" + un(name) + ") " + handle_free(dc, ty) + "(" + un(name) + ")")   # null-guarded so an early close(h) isn't double-freed
                     push(types, "!")
                 if is_chan(ty) and expr_has_call(e):   # CC-4: a CREATED channel (not an alias) frees at its scope exit
                     push(names, "!tycho_chan_free(" + un(name) + ")")
@@ -6601,7 +6611,7 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                 push(names, "!tycho_task_finish(" + un(name) + ")")
                 push(types, "!")
             if is_handle(dc, ty):                 # FFI R2: RAII destructor at scope exit (see the transient path above)
-                push(names, "!" + handle_free(dc, ty) + "(" + un(name) + ")")
+                push(names, "!if (" + un(name) + ") " + handle_free(dc, ty) + "(" + un(name) + ")")   # null-guarded so an early close(h) isn't double-freed
                 push(types, "!")
             if is_chan(ty) and expr_has_call(e):
                 push(names, "!tycho_chan_free(" + un(name) + ")")

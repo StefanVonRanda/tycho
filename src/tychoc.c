@@ -4183,10 +4183,15 @@ static Type resolve_expr_inner(Expr *e) {
                 if (!IS_CHAN(ct)) die_at(e->line, "recv(ch) takes a channel, got %s", type_name(ct));
                 return e->type = opt_of(chan_inner(ct));
             }
-            if (!strcmp(e->sval, "close")) {  /* close(ch): receivers drain then see None; senders die */
-                if (e->nargs != 1) die_at(e->line, "close(ch) takes one channel");
+            if (!strcmp(e->sval, "close")) {  /* close(ch): receivers drain then see None; close(h): free a handle early */
+                if (e->nargs != 1) die_at(e->line, "close takes one channel or handle");
                 Type ct = resolve_expr(e->args[0]);
-                if (!IS_CHAN(ct)) die_at(e->line, "close(ch) takes a channel, got %s", type_name(ct));
+                if (IS_HANDLE(ct)) {   /* FFI R2: early close -- run the destructor now, suppress the scope-exit free */
+                    if (e->args[0]->kind != E_IDENT)
+                        die_at(e->line, "close(h) takes a handle variable");
+                    return e->type = T_VOID;
+                }
+                if (!IS_CHAN(ct)) die_at(e->line, "close takes a channel or a handle, got %s", type_name(ct));
                 return e->type = T_VOID;
             }
             /* str is polymorphic (int or float); to_int/to_float convert
@@ -6697,6 +6702,14 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "close") && e->nargs == 1 && IS_CHAN(e->args[0]->type))
         return sfmt("tycho_chan_close(%s)", gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "close") && e->nargs == 1 && IS_HANDLE(e->args[0]->type)) {
+        /* early close: run the destructor now and NULL the handle so the
+         * (null-guarded) scope-exit finalizer is a no-op -- the user's C
+         * free_fn runs exactly once even though both paths reach it. */
+        const char *ff = g_handles[HANDLE_ID(e->args[0]->type)].free_fn;
+        char *hv = gen_expr(e->args[0], arena);   /* h_<name> */
+        return sfmt("({ if (%s) { %s(%s); %s = 0; } })", hv, ff, hv, hv);
+    }
     if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
         return sfmt("tycho_write_file(%s, %s)", gen_expr(e->args[0], arena), gen_expr(e->args[1], arena));
     }
@@ -7335,8 +7348,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (IS_CHAN(s->decl_type) && s->expr->kind == E_CALL
                 && s->expr->sval && !strcmp(s->expr->sval, "channel"))
                 taskvar_push(sfmt("tycho_chan_free(h_%s)", s->name));   /* CC-4: creator scope owns + frees */
-            if (IS_HANDLE(s->decl_type))   /* FFI R2: RAII — emit the destructor free_fn(h) at this var's scope exit */
-                taskvar_push(sfmt("%s(h_%s)", g_handles[HANDLE_ID(s->decl_type)].free_fn, s->name));
+            if (IS_HANDLE(s->decl_type))   /* FFI R2: RAII — emit the destructor free_fn(h) at this var's scope exit, null-guarded so an early close(h) isn't double-freed */
+                taskvar_push(sfmt("if (h_%s) %s(h_%s)", s->name, g_handles[HANDLE_ID(s->decl_type)].free_fn, s->name));
             /* return-slot optimization: a function-top-level heap local that
              * is returned by name is built directly in the caller's arena, so
              * the eventual `return` is a no-op move instead of a deep copy.

@@ -104,10 +104,10 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
   costs ~3× C in RAM because children are stored by value (no sharing). I've benched it honestly; the
   recommended idiom (flat index-pool) is documented but on purpose not "the model." See
   `docs/internals/value-semantics-limits.md`.
-- **Genuinely open (minor):** explicit early `close(h)` on a typed handle (handles already auto-free
-  at scope exit — this is just an early-release optimization). `docs/internals/typed-handles-design.md`.
 - No larger open backlog: an audit (2026-06-27) cross-checked every "deferred/not-yet" marker in
-  `docs/internals/` against the shipped transpilers — all but the above mapped to shipped or decided.
+  `docs/internals/` against the shipped transpilers — all mapped to shipped or decided. (The last
+  "genuinely open (minor)" item, explicit early `close(h)` on a typed handle, shipped in both
+  compilers — see `docs/internals/typed-handles-design.md`.)
 
 ## Doc index (status-tagged)
 

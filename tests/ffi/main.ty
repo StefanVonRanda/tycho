@@ -27,6 +27,13 @@ fn use_res():
     println(f"resuse={ffi_res_use(r)} live_in={ffi_res_live()}")   # 7, 1 (borrow keeps it live)
     # r auto-freed here at scope exit -> ffi_res_close(r)
 
+fn use_res_close():                                                # FFI R2: explicit early close(h)
+    r := ffi_res_open(2)
+    u := ffi_res_use(r)                                            # 7 (borrow before close)
+    close(r)                                                       # destructor runs NOW, not at scope exit
+    println(f"closeuse={u} live_after_close={ffi_res_live()}")     # 7, 0 (freed by close)
+    # scope exit here: the null-guarded finalizer is a no-op -> no double free
+
 fn opts(o: Option(string)) -> string:        # FFI R3a: render an Option(string) result
     match o:
         Some(v):
@@ -72,6 +79,8 @@ fn main():
     println(f"live0={ffi_res_live()}")          # 0 before
     use_res()                                   # opens a handle, uses it, auto-frees at its scope exit
     println(f"live1={ffi_res_live()}")          # 0 again -> destructor ran exactly once
+    use_res_close()                             # opens a handle, closes it early (destructor at close)
+    println(f"live2={ffi_res_live()}")          # 0 -> closed exactly once, scope-exit was a no-op
     # Stage R3a — `-> Option(string)`: a C NULL surfaces as None (not "")
     println(f"get1={opts(ffi_get(1))} get0={opts(ffi_get(0))}")   # hit -> Some, miss -> None
     # Stage R4 — out-param constructors: `ffi_mk(id, &db) -> rc` + a scalar out-param, no shim
