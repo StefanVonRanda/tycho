@@ -544,9 +544,10 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
 # ---- occurrence scanning (references / rename / highlight) ------------------
 # Whole-word identifier occurrences of `name`, skipping string literals and `#`
 # comments so a rename never edits text inside a string or comment. Returned as a
-# flat [line, startCol, endCol, ...] triple list. (f-strings are skipped whole, so
-# identifiers inside f"...{hole}..." are conservatively not matched -- safe for
-# rename, at the cost of missing those refs; a known limitation.)
+# flat [line, startCol, endCol, ...] triple list. Inside an f-string (f"...") the
+# literal text is skipped but identifiers inside each `{...}` interpolation hole
+# ARE matched (so rename/references reach `x` in f"got {x}"); `{{`/`}}` are literal
+# braces, holes nest, and a nested "..." string inside a hole is skipped verbatim.
 fn find_occurrences(text: string, name: string) -> [int]:
     out := []int
     lines := split(text, "\n")
@@ -558,6 +559,51 @@ fn find_occurrences(text: string, name: string) -> [int]:
             ch := s[c]
             if ch == 35:                                   # '#' -> rest of line is a comment
                 c = n
+            elif ch == 102 and c + 1 < n and s[c + 1] == 34:   # f"..." interpolated string
+                c = c + 2                                  # skip the `f` and the opening quote
+                depth := 0                                 # 0 = literal part, >0 = inside a {...} hole
+                for c < n:
+                    d := s[c]
+                    if depth == 0:                         # literal text: not matchable
+                        if d == 34:                        # closing quote ends the f-string
+                            c = c + 1
+                            break
+                        elif d == 92:                      # backslash escape (e.g. \" ) -- skip both
+                            c = c + 2
+                        elif d == 123 and c + 1 < n and s[c + 1] == 123:   # literal {{
+                            c = c + 2
+                        elif d == 125 and c + 1 < n and s[c + 1] == 125:   # literal }}
+                            c = c + 2
+                        elif d == 123:                     # open a hole
+                            depth = 1
+                            c = c + 1
+                        else:
+                            c = c + 1
+                    else:                                  # inside a hole: match identifiers
+                        if d == 123:                       # nested brace
+                            depth = depth + 1
+                            c = c + 1
+                        elif d == 125:                     # close a hole level
+                            depth = depth - 1
+                            c = c + 1
+                        elif d == 34:                      # nested "..." inside a hole: skip verbatim
+                            c = c + 1
+                            for c < n and s[c] != 34:
+                                if s[c] == 92:
+                                    c = c + 1
+                                c = c + 1
+                            if c < n:
+                                c = c + 1                  # closing quote
+                        elif is_ident_ch(d) and not (d >= 48 and d <= 57):
+                            a := c
+                            for c < n and is_ident_ch(s[c]):
+                                c = c + 1
+                            if substr(s, a, c) == name:
+                                push(out, li)
+                                push(out, a)
+                                push(out, c)
+                        else:
+                            c = c + 1
             elif ch == 34 or ch == 39:                     # "..." or '...' string literal
                 q := ch
                 c = c + 1
