@@ -393,16 +393,18 @@ fn find_def(text: string, name: string) -> int:
             return i
     return 0 - 1
 
-# document store: parallel arrays uri -> (buffer text, --symbols index)
-fn doc_set(uris: mut [string], texts: mut [string], syms: mut [string], uri: string, text: string, sym: string):
+# document store: parallel arrays uri -> (buffer text, --symbols index, project index)
+fn doc_set(uris: mut [string], texts: mut [string], syms: mut [string], projs: mut [string], uri: string, text: string, sym: string, proj: string):
     for i in range(len(uris)):
         if uris[i] == uri:
             texts[i] = text
             syms[i] = sym
+            projs[i] = proj
             return
     push(uris, uri)
     push(texts, text)
     push(syms, sym)
+    push(projs, proj)
 
 fn doc_get(uris: [string], arr: [string], uri: string) -> string:
     for i in range(len(uris)):
@@ -415,6 +417,97 @@ fn compute_syms(text: string, cc: string) -> string:
     write_file("/tmp/.tycholsp_doc.ty", text)
     tycho_run(cc + " /tmp/.tycholsp_doc.ty --symbols > /tmp/.tycholsp_syms.txt 2>/dev/null")
     return read_file("/tmp/.tycholsp_syms.txt")
+
+# --- cross-package symbols (project index) -----------------------------------
+# The buffer temp above is a lone file, so `import "core:X"` and sibling files
+# never resolve (imports load only in package mode, over the real directory).
+# For imported/sibling members we run `--symbols` on the file IN PLACE, which
+# resolves the package + corelib (TYCHO_CORELIB from the server env). This is the
+# on-disk state -- fine for imported symbols (you rarely edit corelib live); the
+# active file's own live symbols still come from compute_syms.
+fn uri_to_path(uri: string) -> string:
+    if starts_with(uri, "file://"):
+        return substr(uri, 7, len(uri))
+    return ""
+
+fn has_import(text: string) -> bool:
+    lines := split(text, "\n")
+    for i in range(len(lines)):
+        if starts_with(ltrim(lines[i]), "import "):
+            return true
+    return false
+
+# `--symbols` over the real on-disk file (package-aware). "" for a non-file uri,
+# an import-less buffer, or a compile that doesn't resolve -> callers fall back.
+# ponytail: recomputed per change for import-bearing files (a full package
+# compile); gate on has_import keeps import-less single files zero-cost.
+fn compute_projs(uri: string, text: string, cc: string) -> string:
+    if not has_import(text):
+        return ""
+    path := uri_to_path(uri)
+    if path == "":
+        return ""
+    tycho_run(cc + " " + path + " --symbols > /tmp/.tycholsp_proj.txt 2>/dev/null")
+    return read_file("/tmp/.tycholsp_proj.txt")
+
+# the qualifier `q` in `q.member` when the cursor sits in the member position
+# (on/after the dot), else "". Walks back over the partial member, expects a
+# '.', then reads the qualifier identifier.
+fn qualifier_before(text: string, line: int, ch: int) -> string:
+    lines := split(text, "\n")
+    if line < 0 or line >= len(lines):
+        return ""
+    s := lines[line]
+    c := ch
+    if c > len(s):
+        c = len(s)
+    for c > 0 and is_ident_ch(s[c - 1]):           # skip the partial member
+        c = c - 1
+    if c <= 0 or s[c - 1] != 46:                    # require a '.' immediately before
+        return ""
+    c = c - 1
+    e := c
+    for c > 0 and is_ident_ch(s[c - 1]):            # read the qualifier identifier
+        c = c - 1
+    if c == e:
+        return ""
+    return substr(s, c, e)
+
+# rewrite the leading `pkg__member` in a signature to `pkg.member` for display
+fn demangle_sig(sig: string, pkg: string) -> string:
+    mark := pkg + "__"
+    p := find(sig, mark)
+    if p < 0:
+        return sig
+    return substr(sig, 0, p) + pkg + "." + substr(sig, p + len(mark), len(sig))
+
+# completion items for every public `pkg.<member>` in the project index, or ""
+# if `pkg` names no imported package (so the caller keeps its default list).
+fn pkg_members(projs: string, pkg: string) -> string:
+    prefix := pkg + "__"
+    lines := split(projs, "\n")
+    out := ""
+    nd := 0
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "fn" and starts_with(f[1], prefix):
+            member := substr(f[1], len(prefix), len(f[1]))
+            if len(member) > 0 and member[0] != 95 and find(member, "__") < 0:   # skip private + transitive
+                if nd > 0:
+                    out = out + ","
+                out = out + comp_item(member, 3, demangle_sig(f[3], pkg))
+                nd = nd + 1
+    return out
+
+# resolved signature of `pkg.member` from the project index, or ""
+fn pkg_fn_sig(projs: string, pkg: string, member: string) -> string:
+    want := pkg + "__" + member
+    lines := split(projs, "\n")
+    for i in range(len(lines)):
+        f := split(lines[i], "\t")
+        if len(f) >= 4 and f[0] == "fn" and f[1] == want:
+            return demangle_sig(f[3], pkg)
+    return ""
 
 # --- symbol-index queries (TAB-separated records from `tychoc --symbols`) ------
 # 1-based start line of the fn enclosing 0-based cursor line cl, or -1
@@ -483,19 +576,24 @@ fn sym_local_defline(syms: string, name: string, fnline: int) -> int:
             return digits_to_int(f[4]) - 1
     return 0 - 1
 
-fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+fn handle_hover(id: Json, uris: [string], texts: [string], syms: [string], projs: [string], params: Json):
     uri := as_str(get(get(params, "textDocument"), "uri"))
     text := doc_get(uris, texts, uri)
     sx := doc_get(uris, syms, uri)
+    px := doc_get(uris, projs, uri)
     pos := get(params, "position")
     cl := as_num(get(pos, "line"))
-    w := word_at(text, cl, as_num(get(pos, "character")))
+    cch := as_num(get(pos, "character"))
+    w := word_at(text, cl, cch)
     if w == "":
         send_result(id, "null")
         return
     info := ""
+    qual := qualifier_before(text, cl, cch)    # `pkg.member` -> the imported package's signature
+    if qual != "":
+        info = pkg_fn_sig(px, qual, w)
     efn := sym_enclosing_fn(sx, cl)            # a local or param of the enclosing function?
-    if efn >= 0:
+    if info == "" and efn >= 0:
         lt := sym_local_type(sx, w, efn)
         if lt == "":
             lt = sym_param_type(sx, w, efn)
@@ -675,10 +773,19 @@ fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json
 
 # completion: enclosing-fn locals/params + top-level defs + builtins/keywords.
 # (The client filters by the typed prefix; cross-package members aren't indexed.)
-fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
+fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], projs: [string], params: Json):
     uri := as_str(get(get(params, "textDocument"), "uri"))
     sx := doc_get(uris, syms, uri)
-    cl := as_num(get(get(params, "position"), "line"))
+    pos := get(params, "position")
+    cl := as_num(get(pos, "line"))
+    # `pkg.` member completion: if the token before the dot is an imported
+    # package, offer exactly that package's public members and nothing else.
+    qual := qualifier_before(doc_get(uris, texts, uri), cl, as_num(get(pos, "character")))
+    if qual != "":
+        pm := pkg_members(doc_get(uris, projs, uri), qual)
+        if pm != "":
+            send_result(id, "{\"isIncomplete\":false,\"items\":[" + pm + "]}")
+            return
     efn := sym_enclosing_fn(sx, cl)
     out := ""
     nd := 0
@@ -799,6 +906,7 @@ fn main():
     uris := []string
     texts := []string
     syms := []string
+    projs := []string
     for true:
         body := read_message()
         if body == "":
@@ -814,21 +922,21 @@ fn main():
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
             t := as_str(get(td, "text"))
-            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
+            doc_set(&uris, &texts, &syms, &projs, u, t, compute_syms(t, cc), compute_projs(u, t, cc))
             diagnose(u, t, cc)
         elif method == "textDocument/didChange":
             u := as_str(get(get(params, "textDocument"), "uri"))
             t := as_str(get(jat(get(params, "contentChanges"), 0), "text"))
-            doc_set(&uris, &texts, &syms, u, t, compute_syms(t, cc))
+            doc_set(&uris, &texts, &syms, &projs, u, t, compute_syms(t, cc), compute_projs(u, t, cc))
             diagnose(u, t, cc)
         elif method == "textDocument/hover":
-            handle_hover(id, uris, texts, syms, params)
+            handle_hover(id, uris, texts, syms, projs, params)
         elif method == "textDocument/definition":
             handle_definition(id, uris, texts, syms, params)
         elif method == "textDocument/documentSymbol":
             handle_document_symbol(id, uris, syms, params)
         elif method == "textDocument/completion":
-            handle_completion(id, uris, texts, syms, params)
+            handle_completion(id, uris, texts, syms, projs, params)
         elif method == "textDocument/references":
             handle_references(id, uris, texts, params)
         elif method == "textDocument/documentHighlight":

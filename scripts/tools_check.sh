@@ -141,5 +141,40 @@ got=$(cat "$TMP/dbg_out" 2>/dev/null)
 echo "    default #line=$off   -g #line=$on (names src=$([ "$onfile" -ge 1 ] && echo yes || echo no))   run=$got"
 { [ "$off" -eq 0 ] && [ "$on" -ge 1 ] && [ "$onfile" -ge 1 ] && [ "$ran" -eq 0 ] && [ "$got" = "42" ]; } || { echo "  LINE-INFO FAIL"; fail=1; }
 
+echo ">>> xpkg: cross-package completion + hover resolve imported members"
+# Guards A2: the LSP resolves `import "core:X"` by running --symbols on the file
+# in its real directory (package-aware). Needs a real on-disk file + TYCHO_CORELIB.
+mkdir -p "$TMP/xpkg"
+printf 'package main\nimport "core:strings"\n\nfn main():\n    s := strings.trim("  hi  ")\n    println(s)\n' > "$TMP/xpkg/main.ty"
+python3 - "$LSP" "$TMP/xpkg/main.ty" "$PWD/corelib" <<'PY' || fail=1
+import subprocess, json, os, sys
+lsp, path, corelib = sys.argv[1], sys.argv[2], sys.argv[3]
+def frame(o):
+    b = json.dumps(o).encode(); return b"Content-Length: %d\r\n\r\n%b" % (len(b), b)
+uri = "file://" + path
+text = open(path).read()
+line4 = text.split("\n")[4]                          # '    s := strings.trim("  hi  ")'
+dot = line4.index("strings.") + len("strings.")
+trim = line4.index("trim")
+msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
+        + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"text":text}}})
+        + frame({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":uri},"position":{"line":4,"character":dot}}})
+        + frame({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":uri},"position":{"line":4,"character":trim}}})
+        + frame({"jsonrpc":"2.0","method":"exit"}))
+p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, TYCHOC="./tychoc", TYCHO_CORELIB=corelib))
+out = p.stdout.decode(); i = 0; res = {}
+while True:
+    k = out.find("Content-Length: ", i)
+    if k < 0: break
+    j = out.find("\r\n\r\n", k); n = int(out[k+16:j]); body = out[j+4:j+4+n]; i = j+4+n
+    o = json.loads(body)
+    if isinstance(o.get("id"), int): res[o["id"]] = o.get("result")
+labels = [it["label"] for it in (res.get(2) or {}).get("items", [])]
+comp_ok = "trim" in labels and "lines" in labels     # package members, not the generic list
+hover_ok = "strings.trim" in json.dumps(res.get(3) or "")
+print("    completion(strings.) trim+lines=%s   hover(strings.trim)=%s" % (comp_ok, hover_ok))
+sys.exit(0 if comp_ok and hover_ok else 1)
+PY
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

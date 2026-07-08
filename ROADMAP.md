@@ -141,9 +141,13 @@ demand-driven — don't build ahead of a real program that needs it.
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
   are all **shipped** (`tools/lsp.ty`, compiler-backed via `tychoc --symbols`).
   Follow-ups: rename/references now reach identifiers inside f-string holes
-  (**shipped** — `find_occurrences` descends `{...}`); still open —
-  cross-package member completion, signatureHelp/workspace-symbol/semanticTokens
-  (additive, demand-gated).
+  (**shipped** — `find_occurrences` descends `{...}`); cross-package completion +
+  hover on imported members (`strings.trim`) also **shipped** — the LSP resolves
+  `import "core:X"` by running `--symbols` on the file in its real directory
+  (package-aware; needs `TYCHO_CORELIB` in the server env). Still open —
+  signatureHelp/workspace-symbol/semanticTokens (additive, demand-gated), and
+  package-aware *diagnostics* (today the buffer compiles single-file, so a
+  package file's diagnostics are empty rather than wrong — a safe gap).
 - **Debugging story** — **shipped.** `tychoc -g` emits `#line N "src.ty"`
   directives (single-file builds) and compiles with `-O0 -g`, so `gdb`/`lldb`
   step the `.ty` source via DWARF. Default builds emit no `#line` (byte-identical

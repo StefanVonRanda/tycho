@@ -52,5 +52,7 @@ Open a `.ty` file: tokens are colored and compile errors show inline.
 - `zed_extension_api`'s trait shape changes across Zed versions. If the WASM build
   fails, bump the version in `Cargo.toml` to match your Zed and adjust
   `src/lib.rs` to suit.
-- If your code imports `core:` packages, set `TYCHO_CORELIB` so the diagnostics
-  transpiler can resolve them (see [corelib](../../docs/corelib.md)).
+- If your code imports `core:` packages, set `TYCHO_CORELIB` so the server can
+  resolve them (see [corelib](../../docs/corelib.md)) — this also powers
+  completion and hover on imported members (`strings.trim`), which the server
+  reads by running the transpiler on the file in its real package directory.
