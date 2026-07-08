@@ -7041,7 +7041,11 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             return code
         SDestructure(dnames, e, _sl):                  # a, b := tuple_expr
             tt := type_of(e, names, types, dc, ctx)
+            if not is_tuple(tt):                       # fail closed: non-tuple RHS (mirrors tychoc)
+                die("type: the right side of a destructuring `:=` must be a tuple, got " + tt)
             parts := tuple_parts(tt)
+            if len(parts) != len(dnames):
+                die("type: destructuring " + str(len(dnames)) + " name(s) from a " + str(len(parts)) + "-element tuple")
             tmp := "_d_" + dnames[0]
             code := "    Tup_" + tup_suffix(tt) + " " + tmp + " = " + gen_expr(e, names, types, dc, ctx) + ";\n"
             j := 0
@@ -7053,6 +7057,11 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             return code
         SMultiAssign(mnames, e, _sl):                  # a, b = tuple_expr (existing vars)
             tt := type_of(e, names, types, dc, ctx)
+            if not is_tuple(tt):                       # fail closed: non-tuple RHS (mirrors tychoc)
+                die("type: the right side of a multi-assign must be a tuple, got " + tt)
+            mparts := tuple_parts(tt)
+            if len(mparts) != len(mnames):
+                die("type: assigning " + str(len(mnames)) + " name(s) from a " + str(len(mparts)) + "-element tuple")
             tmp := "_ma_" + mnames[0]
             # brace-scope the temp: two multi-assigns with the same first target in
             # one block must not redefine it (tychoc names its temp _mt<g_blk++>)
