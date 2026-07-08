@@ -1,0 +1,76 @@
+# Expression-valued `if` (ROADMAP 2.1): an `if` in tail position — RHS of a
+# declaration, a typed declaration, a reassignment, a place-set, or a `return`
+# — yields the value of the taken branch. Single expression per branch; every
+# path needs an `else`. Desugars to the same C the declare-then-assign-in-each-
+# arm statement form would emit.
+
+struct Box:
+    lo: int
+    hi: int
+
+# `:=` inferred, with an elif chain
+fn classify(n: int) -> string:
+    label := if n < 0:
+        "neg"
+    elif n == 0:
+        "zero"
+    else:
+        "pos"
+    return label
+
+# typed `:=`
+fn clamp(n: int) -> int:
+    v : int = if n > 10:
+        10
+    else:
+        n
+    return v
+
+# `return if ...`
+fn maxi(a: int, b: int) -> int:
+    return if a > b:
+        a
+    else:
+        b
+
+# heap-valued branches that escape by return (each branch built in the arena)
+fn pick(big: bool) -> [int]:
+    return if big:
+        [1, 2, 3, 4]
+    else:
+        [7]
+
+# reassign an existing variable + set a struct field from an `if`
+fn build(flip: bool) -> Box:
+    b := Box(0, 0)
+    b.lo = if flip:
+        5
+    else:
+        1
+    b.hi = if flip:
+        50
+    else:
+        10
+    return b
+
+fn main():
+    println(classify(-3))
+    println(classify(0))
+    println(classify(8))
+    println(str(clamp(4)) + " " + str(clamp(99)))
+    println(str(maxi(3, 9)) + " " + str(maxi(20, 2)))
+    xs := pick(true)
+    ys := pick(false)
+    println(str(len(xs)) + " " + str(len(ys)) + " " + str(xs[2]))
+    b := build(true)
+    c := build(false)
+    println(str(b.lo) + ":" + str(b.hi) + " " + str(c.lo) + ":" + str(c.hi))
+    # value-if in a loop, feeding a string accumulator through a temp
+    acc := ""
+    for i in range(5):
+        piece := if i == 3:
+            "#"
+        else:
+            "-"
+        acc = acc + piece
+    println(acc)

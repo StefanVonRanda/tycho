@@ -1212,6 +1212,7 @@ struct Stmt {
     Stmt   **els;  int nels;
     MatchArm *arms; int narms;           /* S_MATCH / S_SELECT (variant = "recv"/"default"/"closed") */
     Expr   **sel_ch;                     /* S_SELECT: per-arm channel expr (NULL for default/closed) */
+    Stmt    *ctrl;                       /* value if/match: `x := if.../match...` — the S_IF/S_MATCH whose single-expr branch tails feed this decl (only set on S_DECL; other tail positions desugar at parse time) */
     int      parallel;                   /* S_FORRANGE: `parallel for` (CC-3) */
     int      foreach;                    /* S_FORRANGE parallel: deferred `parallel for x in EXPR` (name=var, r_start=src ident, body=raw); resolve_parfor type-branches array vs channel */
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
@@ -2180,6 +2181,149 @@ static Stmt *parse_if(Parser *ps, int line) {
     return s;
 }
 
+/* --- expression-valued if/match (ROADMAP 2.1) -------------------------------
+ * `x := if c: a else: b`, `x = match v: ...`, `return if c: a else: b`, etc.
+ * Restricted to TAIL position (RHS of :=/typed-:=/=/place-=/return) and to a
+ * SINGLE expression per branch/arm. Each branch's tail expression is parsed as
+ * a lone `S_EXPR` (the normal statement grammar rejects a bare non-call expr).
+ * The non-decl positions desugar at parse time into ordinary S_RETURN/S_ASSIGN/
+ * S_INDEXSET/S_FIELDSET inside the branches (so resolve+codegen are reused
+ * wholesale); only `:=`/typed-`:=` keeps the control node on S_DECL.ctrl, its
+ * tails rewritten to assignments once the inferred type is known (resolver).
+ * ponytail: single-expression branches only; multi-statement value branches,
+ * diverging arms, and nested-subexpression use are deliberate follow-ups. */
+static Stmt **parse_value_block(Parser *ps, int *count) {
+    eat(ps, TK_INDENT, "an indented value branch");
+    Expr *tail = parse_expr(ps);
+    if (!at(ps, TK_NEWLINE))
+        die_at(tail->line, "a value branch must be a single expression "
+               "(multi-statement value branches are not yet supported)");
+    eat(ps, TK_NEWLINE, "newline");
+    while (accept(ps, TK_NEWLINE)) {}
+    eat(ps, TK_DEDENT, "end of the value branch");
+    Stmt *se = new_stmt(S_EXPR, tail->line);
+    se->expr = tail;
+    Stmt **body = (Stmt **)xmalloc(sizeof(Stmt *));
+    body[0] = se; *count = 1;
+    return body;
+}
+
+static Stmt *parse_value_if(Parser *ps, int line) {
+    Stmt *s = new_stmt(S_IF, line);
+    s->expr = parse_expr(ps);
+    eat(ps, TK_COLON, "':' before the block");
+    eat(ps, TK_NEWLINE, "newline");
+    s->body = parse_value_block(ps, &s->nbody);
+    if (at(ps, TK_ELIF)) {
+        Tok *e = cur(ps); ps->p++;
+        s->els = (Stmt **)xmalloc(sizeof(Stmt *));
+        s->els[0] = parse_value_if(ps, e->line);
+        s->nels = 1;
+    } else if (at(ps, TK_ELSE)) {
+        ps->p++;
+        eat(ps, TK_COLON, "':' after else");
+        eat(ps, TK_NEWLINE, "newline after else");
+        s->els = parse_value_block(ps, &s->nels);
+    } else {
+        die_at(line, "an `if` used as a value must have an `else` — every path must produce a value");
+    }
+    return s;
+}
+
+/* the `match` parser, shared by the statement form (value=0, block arms) and the
+ * value form (value=1, single-expression arms). Assumes `match` is consumed. */
+static Stmt *parse_match(Parser *ps, int line, int value) {
+    Stmt *s = new_stmt(S_MATCH, line);
+    s->expr = parse_expr(ps);                 /* the Option/enum being matched */
+    eat(ps, TK_COLON, "':' before the match arms");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_INDENT, "indented match arms");
+    int cap = 0;
+    while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+        if (accept(ps, TK_NEWLINE)) continue;
+        Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
+        const char *vqual = NULL, *vname = vn->text;
+        if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
+            vqual = vn->text;
+            vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
+        }
+        if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)xrealloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
+        MatchArm *arm = &s->arms[s->narms++];
+        if (vqual) {
+            check_pkg_private(vqual, vname, vn->line);
+            arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
+        }
+        else if (!strcmp(vname, "_"))
+            arm->variant = (char *)vname;
+        else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
+            arm->variant = (char *)vname;
+        else
+            arm->variant = pkg_mangle(vname);
+        arm->nbinds = 0; arm->line = vn->line;
+        if (accept(ps, TK_LPAREN)) {
+            while (!at(ps, TK_RPAREN)) {
+                if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
+                arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
+                if (!accept(ps, TK_COMMA)) break;
+            }
+            eat(ps, TK_RPAREN, "')'");
+        }
+        eat(ps, TK_COLON, "':' after the arm pattern");
+        eat(ps, TK_NEWLINE, "newline");
+        arm->body = value ? parse_value_block(ps, &arm->nbody)
+                          : parse_block(ps, &arm->nbody);
+    }
+    eat(ps, TK_DEDENT, "end of the match arms");
+    if (s->narms == 0) die_at(line, "match needs at least one arm");
+    return s;
+}
+
+/* parse an `if`/`match` in value (tail) position; caller is positioned ON the
+ * `if`/`match` keyword. Returns the S_IF/S_MATCH with single-expr branch tails. */
+static Stmt *parse_value_ctrl(Parser *ps) {
+    Tok *t = cur(ps);
+    if (t->kind == TK_IF)    { ps->p++; return parse_value_if(ps, t->line); }
+    if (t->kind == TK_MATCH) { ps->p++; return parse_match(ps, t->line, 1); }
+    die_at(t->line, "expected `if` or `match`");
+    return NULL;
+}
+
+/* rewrite the single-expr tail of every branch/arm of a value if/match into a
+ * concrete statement (S_RETURN / S_ASSIGN / place-set) — the parse-time desugar
+ * for the non-declaration tail positions. `kind` is the target StmtKind;
+ * `name`/`target` supply the destination. Recurses through elif chains. */
+static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target) {
+    Stmt **branches[2]; int nbr = 0;
+    if (c->kind == S_IF) {
+        branches[nbr++] = c->body;
+        if (c->nels == 1 && c->els[0]->kind == S_IF) { ctrl_rewrite_tails(c->els[0], kind, name, target); }
+        else branches[nbr++] = c->els;
+    }
+    /* for a match, each arm is a branch */
+    int narm = (c->kind == S_MATCH) ? c->narms : 0;
+    for (int i = 0; i < nbr + narm; i++) {
+        Stmt **body = (i < nbr) ? branches[i] : c->arms[i - nbr].body;
+        Stmt *se = body[0];                         /* the S_EXPR(tail) — always index 0, one element */
+        Stmt *ns = new_stmt(kind, se->line);
+        if (kind == S_RETURN)      { ns->expr = se->expr; }
+        else if (kind == S_ASSIGN) { ns->name = name; ns->expr = se->expr; }
+        else                       { ns->target = target; ns->expr = se->expr; }  /* S_INDEXSET / S_FIELDSET */
+        body[0] = ns;
+    }
+}
+
+/* collect the (already-resolved) tail expression of every branch/arm — used to
+ * unify their types for a `:=` value if/match. Mirrors ctrl_rewrite_tails. */
+static void ctrl_collect_tails(Stmt *c, Expr **out, int *n) {
+    if (c->kind == S_IF) {
+        out[(*n)++] = c->body[0]->expr;
+        if (c->nels == 1 && c->els[0]->kind == S_IF) ctrl_collect_tails(c->els[0], out, n);
+        else out[(*n)++] = c->els[0]->expr;
+    } else {   /* S_MATCH */
+        for (int i = 0; i < c->narms; i++) out[(*n)++] = c->arms[i].body[0]->expr;
+    }
+}
+
 /* `for x in COLL:` desugars to a collection-temp decl plus a range loop. The
  * temp decl must land in the block BEFORE the loop; parse_stmt queues it here
  * and parse_block drains the queue ahead of the statement it returned. */
@@ -2334,6 +2478,11 @@ static Stmt *parse_stmt(Parser *ps) {
 
     if (t->kind == TK_RETURN) {
         ps->p++;
+        if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `return if.../match...`: desugar each tail to its own return */
+            Stmt *c = parse_value_ctrl(ps);
+            ctrl_rewrite_tails(c, S_RETURN, NULL, NULL);
+            return c;
+        }
         Stmt *s = new_stmt(S_RETURN, t->line);
         if (!at(ps, TK_NEWLINE)) {
             Expr *first = parse_expr(ps);
@@ -2399,53 +2548,7 @@ static Stmt *parse_stmt(Parser *ps) {
     }
     if (t->kind == TK_MATCH) {
         ps->p++;
-        Stmt *s = new_stmt(S_MATCH, t->line);
-        s->expr = parse_expr(ps);                 /* the Option/enum being matched */
-        eat(ps, TK_COLON, "':' before the match arms");
-        eat(ps, TK_NEWLINE, "newline");
-        eat(ps, TK_INDENT, "indented match arms");
-        int cap = 0;
-        /* each arm: `Variant(b0, b1, ...):` or `Variant:`, then a block.
-         * Exhaustiveness/arity are checked against the scrutinee in the resolver. */
-        while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
-            if (accept(ps, TK_NEWLINE)) continue;
-            Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
-            const char *vqual = NULL, *vname = vn->text;
-            if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
-                vqual = vn->text;
-                vname = eat(ps, TK_IDENT, "a variant name after the package qualifier")->text;
-            }
-            if (s->narms == cap) { cap = cap ? cap * 2 : 4; s->arms = (MatchArm *)xrealloc(s->arms, (size_t)cap * sizeof(MatchArm)); }
-            MatchArm *arm = &s->arms[s->narms++];
-            /* Option/Result arms (Some/None/Ok/Err) are never package symbols; an
-             * enum variant is package-scoped, mangled with the qualifier's package
-             * (or, unqualified, the package this match is parsed in). */
-            if (vqual) {
-                check_pkg_private(vqual, vname, vn->line);
-                arm->variant = sfmt("%s%s", pkg_prefix_for(vqual), vname);
-            }
-            else if (!strcmp(vname, "_"))   /* `_` wildcard: a catch-all arm, never mangled */
-                arm->variant = (char *)vname;
-            else if (!strcmp(vname, "Some") || !strcmp(vname, "None") || !strcmp(vname, "Ok") || !strcmp(vname, "Err"))
-                arm->variant = (char *)vname;
-            else
-                arm->variant = pkg_mangle(vname);
-            arm->nbinds = 0; arm->line = vn->line;
-            if (accept(ps, TK_LPAREN)) {
-                while (!at(ps, TK_RPAREN)) {
-                    if (arm->nbinds >= 8) die_at(vn->line, "too many bindings (max 8)");
-                    arm->binds[arm->nbinds++] = eat(ps, TK_IDENT, "a binding name")->text;
-                    if (!accept(ps, TK_COMMA)) break;
-                }
-                eat(ps, TK_RPAREN, "')'");
-            }
-            eat(ps, TK_COLON, "':' after the arm pattern");
-            eat(ps, TK_NEWLINE, "newline");
-            arm->body = parse_block(ps, &arm->nbody);
-        }
-        eat(ps, TK_DEDENT, "end of the match arms");
-        if (s->narms == 0) die_at(t->line, "match needs at least one arm");
-        return s;
+        return parse_match(ps, t->line, 0);   /* statement form: block arms */
     }
     if (t->kind == TK_IF) {
         ps->p++;
@@ -2578,6 +2681,10 @@ static Stmt *parse_stmt(Parser *ps) {
         if (accept(ps, TK_COLONEQ)) {
             Stmt *s = new_stmt(S_DECL, t->line);
             s->name = name;
+            if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `x := if.../match...`: infer type + assign in resolve */
+                s->ctrl = parse_value_ctrl(ps);
+                return s;
+            }
             s->expr = parse_expr(ps);
             eat(ps, TK_NEWLINE, "newline");
             return s;
@@ -2588,11 +2695,20 @@ static Stmt *parse_stmt(Parser *ps) {
             s->typed_decl = 1;
             s->annot = parse_type(ps);
             eat(ps, TK_EQ, "'=' in typed declaration");
+            if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `x : T = if.../match...` */
+                s->ctrl = parse_value_ctrl(ps);
+                return s;
+            }
             s->expr = parse_expr(ps);
             eat(ps, TK_NEWLINE, "newline");
             return s;
         }
         eat(ps, TK_EQ, "'='");
+        if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `x = if.../match...`: desugar each tail to `x = tail` */
+            Stmt *c = parse_value_ctrl(ps);
+            ctrl_rewrite_tails(c, S_ASSIGN, name, NULL);
+            return c;
+        }
         Stmt *s = new_stmt(S_ASSIGN, t->line);
         s->name = name;
         s->expr = parse_expr(ps);
@@ -2607,7 +2723,13 @@ static Stmt *parse_stmt(Parser *ps) {
     if (accept(ps, TK_EQ)) {
         if (e->kind != E_INDEX && e->kind != E_FIELD && e->kind != E_TUPIDX)
             die_at(t->line, "cannot assign to this expression");
-        Stmt *s = new_stmt(e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line);
+        StmtKind sk = e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET;
+        if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `place = if.../match...`: desugar each tail to `place = tail` */
+            Stmt *c = parse_value_ctrl(ps);
+            ctrl_rewrite_tails(c, sk, NULL, e);
+            return c;
+        }
+        Stmt *s = new_stmt(sk, t->line);
         s->target = e;
         s->expr = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
@@ -4776,6 +4898,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
         case S_CONTINUE: return;
         case S_CONST: pf_add_local(s->name); return;   /* folded at use; track the name so a use isn't flagged as captured */
         case S_DECL:
+            if (s->ctrl) { pf_add_local(s->name); pf_scan_stmt(s->ctrl, loopdepth); return; }   /* value if/match decl: loop-local, scan branch tails */
             pf_scan_expr(s->expr); pf_add_local(s->name); return;
         case S_MDECL:
             pf_scan_expr(s->expr);
@@ -5107,6 +5230,7 @@ static void wl_scan_body(Stmt **body, int n, const char *mut[], int *nm, int *ex
         wl_scan_body(s->body, s->nbody, mut, nm, exit);
         wl_scan_body(s->els, s->nels, mut, nm, exit);
         for (int a = 0; a < s->narms; a++) wl_scan_body(s->arms[a].body, s->arms[a].nbody, mut, nm, exit);
+        if (s->ctrl) wl_scan_body(&s->ctrl, 1, mut, nm, exit);   /* value if/match decl */
     }
 }
 
@@ -5137,12 +5261,44 @@ static int is_pure_builtin(const char *n) {
     return 0;
 }
 
+/* >0 while resolving the single-expr tails of a value if/match (see S_EXPR case) */
+static int g_value_ctrl = 0;
 static void resolve_stmt(Stmt *s, Type ret) {
     switch (s->kind) {
         case S_CONST:   /* local const: register as an immutable literal, scoped like a `:=` (vars_restore drops it at block end); uses fold in resolve_expr */
             vars_push_const(s->name, lit_type(s->expr), s->expr);
             break;
         case S_DECL: {
+            if (s->ctrl) {   /* `x := if.../match...` / `x : T = if.../match...` (ROADMAP 2.1) */
+                g_value_ctrl++;
+                resolve_stmt(s->ctrl, ret);   /* reuse: arm binds, exhaustiveness, per-tail typing */
+                g_value_ctrl--;
+                Expr *tails[64]; int nt = 0;
+                ctrl_collect_tails(s->ctrl, tails, &nt);
+                Type t = T_VOID;              /* T_VOID doubles as the "unset" sentinel (a void tail dies first) */
+                for (int i = 0; i < nt; i++) {
+                    Type ti = tails[i]->type;
+                    if (ti == T_NONE || ti == T_OK_PARTIAL || ti == T_ERR_PARTIAL)
+                        die_at(tails[i]->line, "cannot infer the type of this branch — annotate the binding (x : T = if/match ...)");
+                    if (ti == T_VOID)
+                        die_at(tails[i]->line, "a value if/match branch must produce a value, not void");
+                    if (t == T_VOID) t = ti;
+                    else if (ti != t)
+                        die_at(tails[i]->line, "if/match branches produce different types (%s and %s)",
+                               type_name(t), type_name(ti));
+                }
+                if (s->typed_decl) {
+                    if (t != s->annot)
+                        die_at(s->line, "declared type %s but value is %s", type_name(s->annot), type_name(t));
+                    t = s->annot;
+                }
+                if (IS_TASK(t))
+                    die_at(s->line, "a value if/match cannot produce a task handle");
+                s->decl_type = t;
+                vars_push(s->name, t, 1);
+                ctrl_rewrite_tails(s->ctrl, S_ASSIGN, s->name, NULL);   /* tails become `name = tail` */
+                break;
+            }
             /* channel creation is legal exactly here (CC-4); the marker lets
              * the channel(...) resolve case reject every other position */
             if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
@@ -5463,14 +5619,19 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "cannot assign %s to a %s field", type_name(vt), type_name(tt));
             break;
         }
-        case S_EXPR:
-            if (s->expr && s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
+        case S_EXPR: {
+            /* inside a value if/match branch (g_value_ctrl), this S_EXPR is the tail
+             * VALUE, not a discarded statement — resolve it for its type but skip the
+             * discard warning and the discarded-task error. */
+            if (!g_value_ctrl && s->expr && s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
                 warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
                                        "nothing (to change a map, use `m[k] = v` or `delete m[k]`)",
                         s->expr->sval);
-            if (IS_TASK(resolve_expr(s->expr)))   /* CC-2: a discarded handle could never be waited */
+            Type et = resolve_expr(s->expr);
+            if (!g_value_ctrl && IS_TASK(et))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
             break;
+        }
     }
 }
 
@@ -5770,6 +5931,7 @@ static int stmt_unsafe(Stmt *s, const char *iv, const char *arr) {
             if (!strcmp(s->arms[a].binds[b], iv) || !strcmp(s->arms[a].binds[b], arr)) return 1;
         if (stmts_unsafe(s->arms[a].body, s->arms[a].nbody, iv, arr)) return 1;
     }
+    if (s->ctrl && stmt_unsafe(s->ctrl, iv, arr)) return 1;   /* value if/match decl: tails may pass arr to a call */
     return 0;
 }
 static int stmts_unsafe(Stmt **body, int n, const char *iv, const char *arr) {
@@ -5921,6 +6083,7 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
         c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm) + count_reads_e(s->r_step, nm);
         c += count_reads_b(s->body, s->nbody, nm) + count_reads_b(s->els, s->nels, nm);
         for (int a = 0; a < s->narms; a++) c += count_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
+        if (s->ctrl) c += count_reads_b(&s->ctrl, 1, nm);   /* value if/match decl: tails read variables too (move-on-last-use correctness) */
         /* S_SELECT: per-arm channel exprs (arm bodies are already in s->arms[].body) */
         if (s->kind == S_SELECT && s->sel_ch)
             for (int a = 0; a < s->narms; a++) c += count_reads_e(s->sel_ch[a], nm);
@@ -5958,6 +6121,7 @@ static int body_pushcount(Stmt **body, int n, const char *nm) {
         c += expr_pushcount(s->r_start, nm) + expr_pushcount(s->r_stop, nm) + expr_pushcount(s->r_step, nm);
         c += body_pushcount(s->body, s->nbody, nm) + body_pushcount(s->els, s->nels, nm);
         for (int a = 0; a < s->narms; a++) c += body_pushcount(s->arms[a].body, s->arms[a].nbody, nm);
+        if (s->ctrl) c += body_pushcount(&s->ctrl, 1, nm);   /* value if/match decl */
     }
     return c;
 }
@@ -5975,6 +6139,7 @@ static int body_defines(Stmt **body, int n, const char *nm) {
         }
         if (body_defines(s->body, s->nbody, nm)) return 1;
         if (body_defines(s->els, s->nels, nm)) return 1;
+        if (s->ctrl && body_defines(&s->ctrl, 1, nm)) return 1;   /* value if/match decl (its s->name is already checked above) */
     }
     return 0;
 }
@@ -5993,6 +6158,7 @@ static void fuse_gather(Stmt **body, int n, const char **names, Type *tys, int *
         fuse_gather(s->body, s->nbody, names, tys, cnt);
         fuse_gather(s->els, s->nels, names, tys, cnt);
         for (int a = 0; a < s->narms; a++) fuse_gather(s->arms[a].body, s->arms[a].nbody, names, tys, cnt);
+        if (s->ctrl) fuse_gather(&s->ctrl, 1, names, tys, cnt);   /* value if/match decl */
     }
 }
 static struct { const char *arr; int id; Type ty; } g_fuse[16];
@@ -6117,6 +6283,7 @@ static int block_mutates(Stmt **body, int n, const char *nm) {
         if (block_mutates(s->els, s->nels, nm)) return 1;
         for (int a = 0; a < s->narms; a++)
             if (block_mutates(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
+        if (s->ctrl && block_mutates(&s->ctrl, 1, nm)) return 1;   /* value if/match decl: a tail may pass &nm to a mut param */
     }
     return 0;
 }
@@ -7343,6 +7510,17 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     g_cur_scope = scope;
     switch (s->kind) {
         case S_DECL: {
+            if (s->ctrl) {   /* `x := if.../match...` (ROADMAP 2.1): declare, then let the
+                              * rewritten `name = tail` branches fill it. An array is zero-init'd
+                              * so the reassign-recycle guard (which reads .data) sees NULL on the
+                              * still-empty slot; every path assigns before any read. */
+                indent(o, ind);
+                fprintf(o, "%sh_%s%s;\n", c_type(s->decl_type), s->name,
+                        is_array(s->decl_type) ? " = {0}" : "");
+                cv_push(s->name, scope);
+                gen_stmt(o, s->ctrl, ind, scope, ret);
+                break;
+            }
             if (IS_TASK(s->decl_type))   /* CC-2: track for implicit join at this var's scope exit */
                 taskvar_push(sfmt("tycho_task_finish(h_%s)", s->name));
             if (IS_CHAN(s->decl_type) && s->expr->kind == E_CALL
@@ -8472,6 +8650,7 @@ static Stmt *clone_stmt(Stmt *s, Type *binds) {
     if (!s) return NULL;
     Stmt *c = (Stmt *)xmalloc(sizeof(Stmt));
     *c = *s;
+    c->ctrl    = clone_stmt(s->ctrl, binds);   /* value if/match on a `:=` decl (ROADMAP 2.1) */
     c->expr    = clone_expr(s->expr, binds);
     c->target  = clone_expr(s->target, binds);
     c->r_start = clone_expr(s->r_start, binds);

@@ -96,7 +96,43 @@ Two rules keep `match` safe:
   way to read a payload that does not belong to the current variant.
 
 `match` is a statement. To produce a value, assign or `return` from inside each arm, as the
-`eval` example does.
+`eval` example does — or use the **expression form** below.
+
+### `if` / `match` as an expression (tail position)
+
+An `if` or `match` may stand as the whole right-hand side of a `:=`, a typed `x : T =`, a
+plain `x =` / place assignment, or a `return`. The value of the taken branch/arm becomes the
+value bound, assigned, or returned:
+
+```
+label := match status:          # inferred type (all arms must agree)
+    Active:
+        "on"
+    Idle:
+        "waiting"
+    Done:
+        "finished"
+
+max := if a > b:                # `elif` chains are allowed; an `else` is required
+    a
+else:
+    b
+
+return match parse(s):          # each arm's value is returned
+    Ok(v):
+        v
+    Err(_):
+        0
+```
+
+Rules: each branch/arm is a **single expression** (its value); a value `if` **must** have an
+`else` (every path must produce a value); a value `match` is exhaustive as always; and all
+branches must have the **same type**, which becomes the type of the whole expression. This is
+sugar for the declare-then-assign-in-each-arm form above — it lowers to exactly that C.
+
+Not yet supported (deliberate follow-ups): multi-statement branches, a branch that `return`s
+instead of yielding a value, and use as a nested sub-expression (e.g. `1 + if …`). Use the
+statement form for those.
 
 ## `Option(T)` — a value, or nothing
 

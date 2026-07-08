@@ -1,0 +1,67 @@
+# Expression-valued `match` (ROADMAP 2.1): a `match` in tail position yields the
+# value of the taken arm. Single expression per arm; the match is exhaustive as
+# always. Covers enum / Option / Result scrutinees, payload binds used in the
+# tail, a `_` wildcard, and the return / assign tail positions.
+
+enum Shape:
+    Circle(int)
+    Rect(int, int)
+    Dot
+
+fn area(s: Shape) -> int:
+    return match s:
+        Circle(r):
+            3 * r * r
+        Rect(w, h):
+            w * h
+        Dot:
+            0
+
+fn tag(s: Shape) -> string:
+    # `:=` inferred from the arms
+    name := match s:
+        Circle(r):
+            "circle"
+        _:
+            "other"
+    return name
+
+fn describe(o: Option(int)) -> string:
+    s := match o:
+        Some(v):
+            "some:" + str(v)
+        None:
+            "none"
+    return s
+
+fn unwrap(r: Result(int, string)) -> string:
+    # assign into an existing variable from a match
+    out := "?"
+    out = match r:
+        Ok(v):
+            "ok:" + str(v)
+        Err(e):
+            "err:" + e
+    return out
+
+fn make(ok: bool) -> Result(int, string):
+    if ok:
+        return Ok(11)
+    return Err("nope")
+
+fn main():
+    println(str(area(Circle(2))) + " " + str(area(Rect(3, 4))) + " " + str(area(Dot)))
+    println(tag(Circle(1)) + " " + tag(Dot))
+    println(describe(Some(9)))
+    println(describe(None))
+    println(unwrap(make(true)))
+    println(unwrap(make(false)))
+    # heap-valued arms escaping by return
+    words := match Rect(2, 2):
+        Circle(r):
+            ["c"]
+        Rect(w, h):
+            ["r", "e", "c", "t"]
+        Dot:
+            ["d"]
+    println(str(len(words)) + " " + words[0])

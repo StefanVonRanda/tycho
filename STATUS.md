@@ -77,7 +77,9 @@ enums, `Option`/`Result`, soa (struct-of-arrays), newtypes (`type X = …`), typ
 
 Language: generics (binding-based monomorphization — generic structs/enums/fns, `where`
 constraints, recursive + nested, through containers/channels/Tasks), pattern `match` (variant +
-`Option`/`Result` + `_`), closures (downward value-capture), UFCS methods (`x.f(a)`), f-strings,
+`Option`/`Result` + `_`), **expression-valued `if`/`match`** (`x := if c: a else: b`,
+`return match v: …`, single-expression branches in tail position — RHS of `:=`/`x: T =`/`=`/`return`),
+closures (downward value-capture), UFCS methods (`x.f(a)`), f-strings,
 `or_return`, compound assignment, slices, destructuring, bidirectional type inference (Pierce-Turner),
 Odin-style packages/imports.
 
@@ -93,7 +95,8 @@ nullable-`Option(string)` returns, `mut` out-params; cc-line linking with shell-
 
 ## Decided non-goals (do not propose these)
 
-Traits / typeclasses · package manager · ternary operator · Hindley-Milner inference · COW /
+Traits / typeclasses · package manager · C-style ternary `?:` (the ergonomic need is met by
+**expression-valued `if`/`match`** in tail position — see Shipped) · Hindley-Milner inference · COW /
 refcounting · manual memory-management escape hatches as the *idiomatic* path (e.g. index-pool
 trie — deliberately not the benchmark answer; the point is the idiomatic model's honest cost) ·
 FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted CI.

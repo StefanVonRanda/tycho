@@ -459,6 +459,7 @@ enum Stmt:
                              # (parse: body=original, par-id=-1; the lift pass moves the body into a
                              # lifted __par<N> chunk proc and stores caps/accs in the pars side table)
     SConst(string, Expr, int)   # `const NAME = <literal>` local: folded at each use in the mangle pass; a no-op in every other pass (no runtime storage)
+    SValDecl(string, string, Stmt, int)   # `x := if.../match...` / `x : T = if.../match...` (ROADMAP 2.1): name, annot ("" = inferred), the SIf/SMatch whose single-expr tails feed the decl (rewritten to `x = tail` in gen). Other tail positions desugar to plain SIf/SMatch at parse time.
 
 struct Param:
     name: string
@@ -1065,7 +1066,7 @@ fn parse_block(toks: [Token], pos: mut int) -> [Stmt]:
                 # accepted. Compound stmts (if/for/while/match/select/parallel-for)
                 # end at their block's dedent, so the next token is the following
                 # stmt -- exempt them (keyed on the leading keyword).
-                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select" or firstkw == "parallel"
+                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select" or firstkw == "parallel" or stmt_self_terminates(st)
                 if not cmpd and toks[pos].kind != TNewline and toks[pos].kind != TDedent:
                     die("parse: line " + str(toks[pos].line) + ": expected newline")
             if toks[pos].kind == TNewline:
@@ -1162,6 +1163,8 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         return SPrint(EBin("+", e, EStr("\\n", _el), _el), _sl)
     elif t.kind == TIdent and t.text == "return":
         pos = pos + 1
+        if is_value_ctrl_kw(toks[pos]):          # `return if.../match...`: each tail becomes its own return
+            return ctrl_rewrite_tails(parse_value_ctrl(toks, &pos), 0, "", EInt("0", _el))
         if toks[pos].kind == TNewline:           # bare `return` (void)
             return SReturnVoid
         re := parse_expr(toks, &pos)
@@ -1282,7 +1285,7 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         body := parse_block(toks, &pos)
         return SWhile(cond, body, _sl)
     elif t.kind == TIdent and t.text == "match":
-        return parse_match(toks, &pos)
+        return parse_match(toks, &pos, false)
     elif t.kind == TIdent and t.text == "break":
         pos = pos + 1
         return SBreak
@@ -1308,6 +1311,8 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
             return SMultiAssign(names, parse_expr(toks, &pos), _sl)
         if toks[pos].kind == TWalrus:
             pos = pos + 1
+            if is_value_ctrl_kw(toks[pos]):      # `x := if.../match...`: infer type + assign in gen
+                return SValDecl(name, "", parse_value_ctrl(toks, &pos), _sl)
             rhs := parse_expr(toks, &pos)
             if toks[pos].kind == TIdent and toks[pos].text == "or_return":
                 pos = pos + 1
@@ -1317,9 +1322,13 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
             pos = pos + 1
             ty := parse_type(toks, &pos)
             expect(toks, &pos, TEq)
+            if is_value_ctrl_kw(toks[pos]):      # `x : T = if.../match...`
+                return SValDecl(name, ty, parse_value_ctrl(toks, &pos), _sl)
             return STypedDecl(name, ty, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TEq:
             pos = pos + 1
+            if is_value_ctrl_kw(toks[pos]):      # `x = if.../match...`: each tail becomes `x = tail`
+                return ctrl_rewrite_tails(parse_value_ctrl(toks, &pos), 1, name, EInt("0", _el))
             return SAssign(name, parse_expr(toks, &pos), _sl)
         elif is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # x OP= rhs -> x = x OP rhs
             op := toks[pos].text
@@ -1412,6 +1421,8 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
                 expect(toks, &pos, TEq)
                 return SFieldAssign(lv, EBin(op, lv, parse_expr(toks, &pos), _el), _sl)
             expect(toks, &pos, TEq)
+            if is_value_ctrl_kw(toks[pos]):      # `place = if.../match...`: each tail becomes `place = tail`
+                return ctrl_rewrite_tails(parse_value_ctrl(toks, &pos), 2, "", lv)
             return SFieldAssign(lv, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
             if name == "map_set":          # B5: removed -> reject (the parse_atom copy covers the expression form)
@@ -1945,7 +1956,146 @@ fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
             j = j + 1
     return StructDef(name, fields, typeparams, []string)
 
-fn parse_match(toks: [Token], pos: mut int) -> Stmt:
+# --- expression-valued if/match (ROADMAP 2.1) --------------------------------
+# A value branch/arm is a SINGLE expression (INDENT expr NEWLINE DEDENT), held as
+# a lone SExpr. `is_value_ctrl_kw` recognises the `if`/`match` that opens one in a
+# tail position (RHS of :=/typed-:=/=/place-=/return).
+fn is_value_ctrl_kw(t: Token) -> bool:
+    return t.kind == TIdent and (t.text == "if" or t.text == "match")
+
+fn is_sif(s: Stmt) -> bool:
+    match s:
+        SIf(a, b, c, d):
+            return true
+        _:
+            return false
+
+# a statement that self-terminates via its own block's dedent (so parse_block
+# must NOT demand a trailing newline). Covers the value if/match tail positions,
+# whose leading token is a name/`return`, not the `if`/`match` keyword.
+fn stmt_self_terminates(s: Stmt) -> bool:
+    match s:
+        SIf(a, b, c, d):
+            return true
+        SMatch(a, b, c, d, e):
+            return true
+        SValDecl(a, b, c, d):
+            return true
+        _:
+            return false
+
+fn parse_value_block(toks: [Token], pos: mut int) -> [Stmt]:
+    open_block(toks, &pos)
+    _tl2 := tloc(toks[pos])
+    tail := parse_expr(toks, &pos)
+    if toks[pos].kind != TNewline:
+        die("parse: line " + str(toks[pos].line) + ": a value branch must be a single expression (multi-statement value branches are not yet supported)")
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    expect(toks, &pos, TDedent)
+    body := []Stmt
+    push(body, SExpr(tail, _tl2))
+    return body
+
+# the single tail expression of a value branch (its lone SExpr)
+fn branch_tail(body: [Stmt]) -> Expr:
+    match body[0]:
+        SExpr(e, ln):
+            return e
+        _:
+            die("internal: value branch is not a single expression")
+            return EInt("0", 0)
+
+fn branch_tail_line(body: [Stmt]) -> int:
+    match body[0]:
+        SExpr(e, ln):
+            return ln
+        _:
+            return 0
+
+# rewrite one value branch's tail into a concrete statement (mode 0=return,
+# 1=assign name, 2=place-set target) — the parse-time desugar for non-decl tails.
+fn rewrite_branch(body: [Stmt], mode: int, name: string, target: Expr) -> [Stmt]:
+    e := branch_tail(body)
+    ln := branch_tail_line(body)
+    out := []Stmt
+    if mode == 0:
+        push(out, SReturn(e, ln))
+    elif mode == 1:
+        push(out, SAssign(name, e, ln))
+    else:
+        push(out, SFieldAssign(target, e, ln))
+    return out
+
+fn ctrl_rewrite_tails(c: Stmt, mode: int, name: string, target: Expr) -> Stmt:
+    match c:
+        SIf(cond, body, els, ln):
+            nb := rewrite_branch(body, mode, name, target)
+            ne := els
+            if len(els) == 1 and is_sif(els[0]):
+                ne = [ctrl_rewrite_tails(els[0], mode, name, target)]
+            else:
+                ne = rewrite_branch(els, mode, name, target)
+            return SIf(cond, nb, ne, ln)
+        SMatch(subj, vars, binds, bodies, ln):
+            nbodies := [][Stmt]
+            i := 0
+            for i < len(bodies):
+                push(nbodies, rewrite_branch(bodies[i], mode, name, target))
+                i = i + 1
+            return SMatch(subj, vars, binds, nbodies, ln)
+        _:
+            return c
+
+# collect the tail expression of every branch/arm — used to unify their types.
+fn ctrl_tails(c: Stmt) -> [Expr]:
+    out := []Expr
+    match c:
+        SIf(cond, body, els, ln):
+            push(out, branch_tail(body))
+            if len(els) == 1 and is_sif(els[0]):
+                inner := ctrl_tails(els[0])
+                k := 0
+                for k < len(inner):
+                    push(out, inner[k])
+                    k = k + 1
+            else:
+                push(out, branch_tail(els))
+        SMatch(subj, vars, binds, bodies, ln):
+            i := 0
+            for i < len(bodies):
+                push(out, branch_tail(bodies[i]))
+                i = i + 1
+        _:
+            die("internal: ctrl_tails on a non-if/match")
+    return out
+
+fn parse_value_if(toks: [Token], pos: mut int, sl: int) -> Stmt:
+    pos = pos + 1                        # consume `if`
+    cond := parse_expr(toks, &pos)
+    expect(toks, &pos, TColon)
+    then_body := parse_value_block(toks, &pos)
+    els := []Stmt
+    t := toks[pos]
+    if t.kind == TIdent and t.text == "elif":
+        esl := tloc(toks[pos])
+        els = [parse_value_if(toks, &pos, esl)]     # parse_value_if consumes the `elif` keyword
+    elif t.kind == TIdent and t.text == "else":
+        pos = pos + 1
+        expect(toks, &pos, TColon)
+        els = parse_value_block(toks, &pos)
+    else:
+        die("parse: line " + str(t.line) + ": an `if` used as a value must have an `else` — every path must produce a value")
+    return SIf(cond, then_body, els, sl)
+
+# parse an `if`/`match` in value (tail) position; caller is ON the keyword.
+fn parse_value_ctrl(toks: [Token], pos: mut int) -> Stmt:
+    _sl := tloc(toks[pos])
+    if toks[pos].text == "if":
+        return parse_value_if(toks, &pos, _sl)
+    return parse_match(toks, &pos, true)
+
+fn parse_match(toks: [Token], pos: mut int, value: bool) -> Stmt:
     _sl := tloc(toks[pos])
     expect_ident(toks, &pos, "match")
     subj := parse_expr(toks, &pos)
@@ -1983,7 +2133,10 @@ fn parse_match(toks: [Token], pos: mut int) -> Stmt:
                 expect(toks, &pos, TRParen)
             expect(toks, &pos, TColon)
             push(allbinds, binds)
-            push(bodies, parse_block(toks, &pos))
+            if value:
+                push(bodies, parse_value_block(toks, &pos))
+            else:
+                push(bodies, parse_block(toks, &pos))
     pos = pos + 1                                # consume TDedent
     return SMatch(subj, variants, allbinds, bodies, _sl)
 
@@ -2492,6 +2645,8 @@ fn mctx_bind(m: Mctx, s: Stmt) -> Mctx:           # the block-level binding(s) a
             return m
         SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             return m
+        SValDecl(n, ty, c, _sl):
+            return mctx_add(m, n)
 
 fn mangle_block(m: Mctx, ss: [Stmt]) -> [Stmt]:
     out := []Stmt
@@ -2589,6 +2744,11 @@ fn mangle_stmt(m: Mctx, s: Stmt) -> Stmt:
                 push(nb, mangle_block(mm, sbodies[sk]))
                 sk = sk + 1
             return SSelect(uid, svars, nch, sbinds, nb, _sl)
+        SValDecl(n, ty, c, _sl):
+            nty := ty
+            if ty != "":
+                nty = mangle_type(m, ty)
+            return SValDecl(n, nty, mangle_stmt(m, c), _sl)
 
 fn mangle_func(m: Mctx, f: Func) -> Func:
     mb := Mctx(m.prefix, m.aliasn, m.aliasp, m.pkgs, m.variants, f.params, m.externs, m.constn, m.constv)   # body sees the params as locals (indirect calls stay unprefixed)
@@ -4093,6 +4253,8 @@ fn stmt_line(s: Stmt) -> int:
             return ln
         SParFor(a, b, c, d, e, ln):
             return ln
+        SValDecl(a, b, c, ln):
+            return ln
 
 # abort with "line N: msg" + the source line and a caret under its first
 # non-blank char (resolve/codegen diagnostics). line 0 / out of range = no snippet.
@@ -4399,6 +4561,9 @@ fn wl_scan_body(stmts: [Stmt], muts: mut [string], ex: mut bool):
                 for j < len(sbodies):
                     wl_scan_body(sbodies[j], &muts, &ex)
                     j = j + 1
+            SValDecl(n, ty, c, p):
+                push(muts, n)
+                wl_scan_body([c], &muts, &ex)
         i = i + 1
 
 fn wl_check(cond: Expr, body: [Stmt], pos: int, dc: Decls):   # `body` is the loop body of a `for COND:`
@@ -5903,6 +6068,8 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
                 i = i
             SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 i = i
+            SValDecl(n, ty, cc, _sl):
+                c = c + fuse_pushcount([cc], name)
         i = i + 1
     return c
 
@@ -5956,6 +6123,8 @@ fn fuse_gather(stmts: [Stmt], out: mut [string]):
                 i = i
             SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 i = i
+            SValDecl(n, ty, cc, _sl):
+                fuse_gather([cc], &out)
         i = i + 1
 
 fn fuse_defines(stmts: [Stmt], name: string) -> bool:
@@ -6021,6 +6190,11 @@ fn fuse_defines(stmts: [Stmt], name: string) -> bool:
                 return true   # a parallel for captures arrays by value -- any live fusion cursor would be stale; fail closed
             SSelect(uid, svars, schans, sbinds, sbodies, _sl):
                 return true   # select arm bodies run between cursor writes -- fail closed, like parallel for
+            SValDecl(n, ty, cc, _sl):
+                if n == name:
+                    return true
+                if fuse_defines([cc], name):
+                    return true
         i = i + 1
     return false
 
@@ -6225,6 +6399,8 @@ fn rd_stmt(reads: mut [string], loopreads: mut [string], s: Stmt, inloop: bool):
                 rd_expr(&reads, &loopreads, schans[sk], true)   # the retry loop re-reads the channel exprs
                 rd_block(&reads, &loopreads, sbodies[sk], inloop)
                 sk = sk + 1
+        SValDecl(n, ty, cc, _sl):            # value if/match decl: tails read variables (move-on-last-use correctness)
+            rd_stmt(&reads, &loopreads, cc, inloop)
 
 fn compute_movables(body: [Stmt]) -> [string]:
     reads := []string
@@ -6566,6 +6742,57 @@ fn cond_unwrap(s: string) -> string:
         i = i + 1
     return s                                       # unbalanced -> unchanged
 
+# unify the tail-expression types of a value if/match (ROADMAP 2.1). Mirrors
+# tychoc's resolve-then-unify: each tail is typed in its branch's bind scope
+# (match payloads pushed to a value-copy of names/types), and all must agree.
+fn value_ctrl_type(c: Stmt, names: [string], types: [string], dc: Decls, ctx: Ctx, sl: int) -> string:
+    match c:
+        SIf(cond, body, els, ln):
+            t := type_of(branch_tail(body), names, types, dc, ctx)
+            et := ""
+            if len(els) == 1 and is_sif(els[0]):
+                et = value_ctrl_type(els[0], names, types, dc, ctx, sl)
+            else:
+                et = type_of(branch_tail(els), names, types, dc, ctx)
+            if t != et:
+                die_at(dc, sl, "if/match branches produce different types (" + t + " and " + et + ")")
+            return t
+        SMatch(subj, variants, allbinds, bodies, _sl2):
+            sty := resolve_ginst(type_of(subj, names, types, dc, ctx), dc, ctx)
+            rt := ""
+            i := 0
+            for i < len(variants):
+                vname := variants[i]
+                binds := allbinds[i]
+                bn := names                       # value copy: arm binds are scoped to the arm
+                bt := types
+                if vname != "_" and len(binds) > 0:
+                    if is_option(sty) or is_result(sty):
+                        bty := option_inner(sty)
+                        if is_result(sty):
+                            if vname == "Ok":
+                                bty = result_ok(sty)
+                            else:
+                                bty = result_err(sty)
+                        push(bn, binds[0])
+                        push(bt, bty)
+                    else:
+                        pts := variant_ptypes_in(dc, sty, vname)
+                        j := 0
+                        for j < len(binds):
+                            push(bn, binds[j])
+                            push(bt, pts[j])
+                            j = j + 1
+                ti := type_of(branch_tail(bodies[i]), bn, bt, dc, ctx)
+                if rt == "":
+                    rt = ti
+                elif ti != rt:
+                    die_at(dc, sl, "if/match branches produce different types (" + rt + " and " + ti + ")")
+                i = i + 1
+            return rt
+        _:
+            return "int"
+
 fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: Ctx) -> string:
     _el := 0
     ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
@@ -6617,6 +6844,27 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
                 push(names, "!tycho_chan_free(" + un(name) + ")")
                 push(types, "!")
             return code
+        SValDecl(name, annot, ctrl, _sl):            # `x := if.../match...` (ROADMAP 2.1)
+            di := 0
+            for di < len(names):
+                if names[di] == name and var_block_depth(dc, ctx, di) == ctx.depth:
+                    die("'" + name + "' is already declared in this scope")
+                di = di + 1
+            ty := value_ctrl_type(ctrl, names, types, dc, ctx, _sl)
+            if annot != "" and ty != annot:
+                die_at(dc, _sl, "declared type " + annot + " but value is " + ty)
+            if annot != "":
+                ty = annot
+            if is_task(ty):
+                die_at(dc, _sl, "a value if/match cannot produce a task handle")
+            zi := ""                                  # zero-init an array so the reassign-recycle guard reads NULL on the empty slot
+            if is_array(ty):
+                zi = " = {0}"
+            code := "    " + cty(dc, ctx, ty) + un(name) + zi + ";\n"
+            push(names, name)                         # in scope before the branch assigns
+            push(types, ty)
+            ctrl2 := ctrl_rewrite_tails(ctrl, 1, name, EInt("0", 0))   # each tail -> `name = tail`
+            return code + gen_stmt(ctrl2, &names, &types, dc, ctx)
         SAssign(name, e, _sl):
             if is_handle(dc, var_type(names, types, name)):   # FFI R2: rebinding orphans the old handle (freed once, at scope exit)
                 die_at(dc, _sl, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope")
@@ -7282,6 +7530,12 @@ fn sacc_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string
                     push(bt, chan_inner(type_of(schans[j], names, types, dc, ctx)))
                 sacc_block(&acc, sbodies[j], bn, bt, dc, ctx)   # collect_accums, which walks select arms
                 j = j + 1
+        SValDecl(n, annot, cc, _sl):              # register the name+type; the branch tails are a first assignment, never a str accumulator
+            dty := annot
+            if annot == "":
+                dty = value_ctrl_type(cc, names, types, dc, ctx, _sl)
+            push(names, n)
+            push(types, dty)
 
 fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     names := []string
@@ -8756,6 +9010,13 @@ fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [str
                     push(bt, chan_inner(type_of(schans[sk], names, types, dc, ctx)))
                 collect_block(&acc, sbodies[sk], bn, bt, dc, ctx)
                 sk = sk + 1
+        SValDecl(n, annot, cc, _sl):              # walk the ctrl (array-type noting, check_match exhaustiveness) with n NOT yet in scope, then register it
+            collect_stmt(&acc, cc, &names, &types, dc, ctx)
+            dty := annot
+            if annot == "":
+                dty = value_ctrl_type(cc, names, types, dc, ctx, _sl)
+            push(names, n)
+            push(types, dty)
 
 # Element types needing an Arr_T family: int/str (cover every literal seen in
 # practice) plus every array element type that appears in an annotation.
@@ -9159,6 +9420,8 @@ fn pf_body_evars(stmts: [Stmt], out: mut [string]):
                         collect_evars(schans[sk], &out)
                     pf_body_evars(sbodies[sk], &out)
                     sk = sk + 1
+            SValDecl(n, annot, cc, _sl):          # value if/match decl: its tails free-reference captured vars
+                pf_body_evars([cc], &out)
         i = i + 1
 
 # Reduction accumulators of a parallel-for body: assignments `n = n OP rest`
@@ -9258,6 +9521,8 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: mut [string], accop: mut [strin
                 for sk < len(svars):
                     pf_accs(sbodies[sk], outer, &accn, &accop)
                     sk = sk + 1
+            SValDecl(n, annot, cc, _sl):          # a fresh local; its only assignment target is n, never an outer reduction var
+                i = i
         i = i + 1
 
 # --- parallel-for body GATES (parity with tychoc's pf_scan_stmt + the
@@ -9452,6 +9717,8 @@ fn count_reads_body(stmts: [Stmt], nm: string) -> int:
                     k = k + 1
             SParFor(v, a, b, body, pid, _sl):
                 c = c + count_reads_expr(a, nm) + count_reads_expr(b, nm) + count_reads_body(body, nm)
+            SValDecl(n, annot, cc, _sl):          # value if/match decl: tails read variables (recycle/move correctness)
+                c = c + count_reads_body([cc], nm)
         i = i + 1
     return c
 
@@ -9686,6 +9953,9 @@ fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: mut [st
                 # bound exprs are evaluated in the enclosing chunk's scope.
                 pf_gate_expr(a, locals, names)
                 pf_gate_expr(b, locals, names)
+            SValDecl(n, annot, cc, _sl):          # value if/match decl: n is loop-local; gate its branch tails
+                push(locals, n)
+                pf_gate_body([cc], locals, names, &accn, &accop, &accnt, loopdepth)
         i = i + 1
 
 # "fn(a,b->r)" -> fills `parts` with the param types, returns the return type.
@@ -10097,6 +10367,8 @@ fn pend_probe(s: Stmt, ex: mut Expr) -> string:
             return ""
         SSelect(uid, svars, schans, sbinds, sbodies, _sl):
             return ""
+        SValDecl(n, annot, cc, _sl):              # value if/match always infers a concrete type (never a bare []/None)
+            return ""
 
 # B-3 seek, expression half: the first typed use of pending var `nm` inside
 # `e` -- an argument position whose destination type is known (arg_want).
@@ -10375,6 +10647,19 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: mut [string], t2: mut [string], nm: string
                 i = i
             SContinue:
                 i = i
+            SValDecl(x, annot, cc, _sl):          # seek nm in the branch tails, then register the new local (mirror SDecl + SIf)
+                bn := n2
+                bt := t2
+                r := pend_seek(dc, ctx, &bn, &bt, nm, [cc], 0, fret)
+                if r != "":
+                    return r
+                if x == nm:
+                    return ""
+                push(n2, x)
+                dty := annot
+                if annot == "":
+                    dty = value_ctrl_type(cc, n2, t2, dc, ctx, _sl)
+                push(t2, dty)
         i = i + 1
     return ""
 
@@ -10629,6 +10914,14 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
                 types = types[0:mark]
                 sk = sk + 1
             return SSelect(uid, svars, nch, sbinds, nb, _sl)
+        SValDecl(n, annot, cc, _sl):              # lift lambdas/spawns in the branch tails, then register the local (mirror SDecl order)
+            nty := annot
+            if annot == "":
+                nty = value_ctrl_type(cc, names, types, dc, ctx, _sl)
+            ncc := lift_stmt(cc, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret)
+            push(names, n)
+            push(types, nty)
+            return SValDecl(n, annot, ncc, _sl)
 
 # Does an expr / stmt / block contain a lambda anywhere? Used to skip the
 # scope-aware lift (which calls type_of) for lambda-free functions — keeping a
@@ -10769,6 +11062,8 @@ fn stmt_has_lambda(s: Stmt) -> bool:
                     return true
                 sk = sk + 1
             return false
+        SValDecl(n, annot, cc, _sl):
+            return stmt_has_lambda(cc)
 
 # ---------------------------------------------------- generics: monomorphize --
 # Stage 1: a `$T` function template is monomorphized into one concrete instance
@@ -11072,6 +11367,8 @@ fn subst_stmt_t(s: Stmt, bn: [string], bt: [string]) -> Stmt:
             return SSelect(uid, kinds, subst_exprs_t(chans, bn, bt), binds, subst_blocks_t(bodies, bn, bt), ln)
         SParFor(v, a, b, body, pid, fl):
             return SParFor(v, subst_expr_t(a, bn, bt), subst_expr_t(b, bn, bt), subst_block_t(body, bn, bt), pid, fl)
+        SValDecl(n, ty, cc, ln):
+            return SValDecl(n, subst_body_type(ty, bn, bt), subst_stmt_t(cc, bn, bt), ln)
 
 # generics: resolve a type to its ultimate newtype base (a newtype over int
 # satisfies numeric, matching tychoc's base_of + the newtype-arithmetic rule).
@@ -11818,6 +12115,17 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             push(nn, v)
             push(tt, "int")
             return SParFor(v, mono_expr(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_block(body, nn, tt, gens, &insts, &sinsts, &einsts, dc, ctx), pid, fl)
+        SValDecl(nm, annot, cc, ln):
+            mcc := mono_stmt(cc, &names, &types, gens, &insts, &sinsts, &einsts, dc, ctx)   # mono the branch tails (n not yet in scope)
+            if annot == "":
+                ty := value_ctrl_type(cc, names, types, dc, ctx, ln)   # rough type from the ORIGINAL ctrl (final codegen recomputes)
+                push(names, nm)
+                push(types, ty)
+                return SValDecl(nm, "", mcc, ln)
+            rty := resolve_gtype(annot, dc.structs, dc.enums, &sinsts, &einsts)   # Stage 2b generic annotation
+            push(names, nm)
+            push(types, rty)
+            return SValDecl(nm, rty, mcc, ln)
 
 fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> [Stmt]:
     nm := names                                   # by-value copy -> a block's decls don't leak to the caller (scope)

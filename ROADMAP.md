@@ -164,7 +164,28 @@ on the board — good warm-up.
 
 ## Tier 2 — Worth reopening (the ask items; decision was defensible, not airtight)
 
-### 2.1 The ternary — reframed as **expression-valued `if`/`match`** [reopens a STATUS non-goal]
+### 2.1 The ternary — reframed as **expression-valued `if`/`match`** — **shipped**
+`if` and `match` are now value-producing in **tail position**: the whole RHS of a `:=`, a typed
+`x : T =`, a plain `x =` / place assignment, or a `return`. Each branch/arm is a single
+expression; a value `if` requires an `else`; a value `match` stays exhaustive; all branches must
+unify to one type (which the binding infers). It desugars to the exact declare-then-assign-in-
+each-arm C the docs already showed by hand — the non-decl positions rewrite each tail to an
+`S_RETURN`/`S_ASSIGN`/place-set at parse time (reusing resolve + codegen wholesale); only `:=`
+carries the control node and infers the type by unifying tails. No new arena mechanism (the
+value lands in the destination arena exactly like a return). Both compilers, byte-identical
+fixpoint; locked by `tests/if_expr` + `tests/match_expr` goldens and four
+`tests/reject/{if_expr_type_mismatch,if_expr_no_else,match_expr_nonexhaustive,if_expr_multistatement}`
+fixtures (both compilers reject). The move-on-last-use read counter, push-fusion, and
+bounds-elision walkers were taught to descend into the value-decl's control node (a latent
+correctness gap for a variable read only inside a value tail).
+
+**Deferred by design** (ponytail follow-ups, marked in-code): multi-statement value branches;
+a diverging arm (`None: return -1` instead of yielding — `block_ends_in_return` is the hook);
+and use as a nested sub-expression (`1 + if …`) — the tail-position grammar is what keeps the
+indentation-block-as-value unambiguous. The statement form covers all three today.
+
+The rest of this section is the original design argument, kept for the record.
+
 You said the rejection wasn't on sound basis. Here's the honest read, both ways.
 
 **The rejection *is* internally consistent.** Tycho is statement-oriented on
