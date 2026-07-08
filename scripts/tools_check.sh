@@ -128,5 +128,18 @@ printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in
 echo "    tychoc: bad=$cpw good=$cpn   tychoc0: bad=$zpw good=$zpn"
 { [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ] && [ "$zpw" -ge 1 ] && [ "$zpn" -eq 0 ]; } || { echo "  PURE-RESULT PARITY FAIL"; fail=1; }
 
+echo ">>> line-info: -g emits #line mapping + compiles; default stays clean"
+# Guards B1 (tychoc-only feature). Default output must carry NO #line so the
+# byte-identical fixpoint/corelib gates are untouched; `-g` must emit #line
+# directives naming the .ty source and still build+run.
+printf 'fn main():\n    x := 41\n    println(str(x + 1))\n' > "$TMP/dbg.ty"
+"$TYCHOC" "$TMP/dbg.ty"    --emit-c -o "$TMP/dbg_off" >/dev/null 2>&1; off=$(grep -c '#line' "$TMP/dbg_off.c")
+"$TYCHOC" "$TMP/dbg.ty" -g --emit-c -o "$TMP/dbg_on"  >/dev/null 2>&1; on=$(grep -c '#line' "$TMP/dbg_on.c")
+onfile=$(grep -c 'dbg\.ty' "$TMP/dbg_on.c")
+"$TYCHOC" "$TMP/dbg.ty" -g -o "$TMP/dbg_bin" >/dev/null 2>&1 && "$TMP/dbg_bin" >"$TMP/dbg_out" 2>&1; ran=$?
+got=$(cat "$TMP/dbg_out" 2>/dev/null)
+echo "    default #line=$off   -g #line=$on (names src=$([ "$onfile" -ge 1 ] && echo yes || echo no))   run=$got"
+{ [ "$off" -eq 0 ] && [ "$on" -ge 1 ] && [ "$onfile" -ge 1 ] && [ "$ran" -eq 0 ] && [ "$got" = "42" ]; } || { echo "  LINE-INFO FAIL"; fail=1; }
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

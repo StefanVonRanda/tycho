@@ -138,13 +138,21 @@ compression (gzip/zlib), buffered I/O, a bignum/decimal type, richer `datetime`
 demand-driven — don't build ahead of a real program that needs it.
 
 ### 1.5 Tooling maturity
-- **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion.
-  The type info exists in the transpiler; surface it.
-- **Debugging story** — you emit C, so DWARF flows through. Document the
-  `gdb`/`lldb`-on-generated-C path (or a source-map) so `mut`/arena frames are
-  legible. Cheap, high goodwill.
+- **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
+  are all **shipped** (`tools/lsp.ty`, compiler-backed via `tychoc --symbols`).
+  Follow-ups: rename/references now reach identifiers inside f-string holes
+  (**shipped** — `find_occurrences` descends `{...}`); still open —
+  cross-package member completion, signatureHelp/workspace-symbol/semanticTokens
+  (additive, demand-gated).
+- **Debugging story** — **shipped.** `tychoc -g` emits `#line N "src.ty"`
+  directives (single-file builds) and compiles with `-O0 -g`, so `gdb`/`lldb`
+  step the `.ty` source via DWARF. Default builds emit no `#line` (byte-identical
+  fixpoint/corelib preserved); tychoc-only, opt-in. Package builds are skipped
+  (merged files lose per-node identity) — a documented limit. See
+  [docs/debugging.md](docs/debugging.md); locked by the `line-info` check in
+  `scripts/tools_check.sh`.
 - **Editor reach** beyond VS Code/Zed if anyone asks (Neovim via the LSP is
-  near-free).
+  near-free). Still open, demand-gated.
 
 **Priority: medium.**
 

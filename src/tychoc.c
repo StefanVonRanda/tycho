@@ -29,6 +29,8 @@
 
 static const char *g_srcname = "<input>";
 static const char *g_src = NULL;   /* current file's source text, for the error snippet (set in lex) */
+static int g_line_info = 0;        /* -g: emit `#line N "src.ty"` before each statement (single-file only) */
+static char *g_line_file = NULL;   /* the source path, C-string-escaped, for those directives */
 static int g_err_col = 0;          /* 1-based caret column (0 = none); set from the offending token before die_at */
 
 __attribute__((noreturn, format(printf, 2, 3)))
@@ -7508,6 +7510,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
      * the current statement's expressions are always emitted before recursing
      * into nested blocks, so a nested gen_stmt re-setting this is harmless. */
     g_cur_scope = scope;
+    if (g_line_info && s->line > 0)   /* -g: map this statement's C back to its .ty source line */
+        fprintf(o, "#line %d \"%s\"\n", s->line, g_line_file);
     switch (s->kind) {
         case S_DECL: {
             if (s->ctrl) {   /* `x := if.../match...` (ROADMAP 2.1): declare, then let the
@@ -9875,6 +9879,19 @@ static void emit_symbols(ProcVec *prog) {
         printf("type\t%s\t%s\n", g_newtypes[i].name, type_name(g_newtypes[i].under));
 }
 
+/* C-string-escape a source path for a `#line` directive (backslash + quote). */
+static char *c_escape_path(const char *p) {
+    size_t n = strlen(p);
+    char *b = xmalloc(2 * n + 1);
+    size_t k = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] == '\\' || p[i] == '"') b[k++] = '\\';
+        b[k++] = p[i];
+    }
+    b[k] = 0;
+    return b;
+}
+
 int main(int argc, char **argv) {
     g_argv0 = argv[0];
     const char *input = NULL;
@@ -9883,6 +9900,7 @@ int main(int argc, char **argv) {
     int emit_c_only = 0;
     int want_symbols = 0;
     int bundle = 0;
+    int debug = 0;    /* -g: emit #line directives + build with -O0 -g (single-file only) */
     int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
     char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
     char *shims = sfmt("%s", "");   /* FFI: companion C shim sources (--shim) compiled+linked alongside */
@@ -9893,6 +9911,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--symbols")) want_symbols = 1;
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
+        else if (!strcmp(argv[i], "-g")) debug = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
         /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
          * (-L/path) and separated (-L /path) forms; all accumulate onto the cc line. */
@@ -9911,7 +9930,7 @@ int main(int argc, char **argv) {
         else input = argv[i];
     }
     if (!input) {
-        fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [--bundle] [--native] [--cc <compiler>]\n"
+        fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
                         "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n");
         return 1;
     }
@@ -9930,6 +9949,12 @@ int main(int argc, char **argv) {
     const char *pkg = detect_package(toks.v);
     ProcVec prog = pkg ? compile_package(input, pkg)   /* package: merge the whole directory */
                        : parse_program(toks.v);        /* single file: unchanged */
+    if (debug && !pkg) {   /* -g: line info only for single-file builds -- merged packages lose per-node filenames */
+        g_line_info = 1;
+        g_line_file = c_escape_path(input);
+    } else if (debug && pkg) {
+        fprintf(stderr, "tychoc: -g line info is emitted only for single-file compiles; skipped for this package build\n");
+    }
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
 
@@ -9954,9 +9979,10 @@ int main(int argc, char **argv) {
      * (not C UB), so the optimizer can never miscompile overflowing arithmetic.
      * This is the language's integer-overflow contract; see docs/internals. */
     const char *march = native ? " -march=native" : "";
+    const char *optdbg = debug ? "-O0 -g" : "-O3";   /* -g: unoptimized + DWARF so gdb/lldb step the .ty source */
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
-    char *cmd = sfmt("%s -O3 -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, march, base, c_path, shims, links, extra, pkgdeps);
+    char *cmd = sfmt("%s %s -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, optdbg, march, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }
     printf("built %s\n", base);

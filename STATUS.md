@@ -123,7 +123,7 @@ compiles on both transpilers; no dead file-or-anchor links across the tree.
 - `README.md` — **front door** (~270 lines): thesis pitch, evidence (self-hosting + benchmarks), honest limits, FAQ, build guide, and navigation map. *Not* the reference.
 - `docs/reference/` — **the canonical language reference**, one topic per page: `index`, `basics`, `types`, `arrays-slices`, `structs-tuples`, `maps`, `enums-options`, `functions`, `generics`, `concurrency`, `ffi`, `packages`, `builtins`. The source of truth for behaviour. Each page opens with a thesis-context blockquote (what question this feature exists to answer about the arena model); the body documents the feature. Design notes (below) own the *why* at depth.
 - `docs/thesis.md` — **the argument** (value-semantics → implicit arenas, honest wins/losses, machine-transparent benchmarks). The centerpiece for evaluators.
-- `docs/*.md` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `arrays-structs`, `map-values`, `map-mutation`, `perf`, `corelib`) — **design notes**: the *why* behind each subsystem, deduped against the reference.
+- `docs/*.md` (`memory-model`, `concurrency`, `ffi`, `generics`, `packages`, `arrays-structs`, `map-values`, `map-mutation`, `perf`, `corelib`, `debugging`) — **design notes**: the *why* behind each subsystem, deduped against the reference. (`debugging` = the `-g`/`#line` gdb/lldb path.)
 
 **Internal, for working on the project (kept as working tools, not part of the editorial pass):**
 - `STATUS.md` (this file) + `docs/internals/value-semantics-limits.md` — **reference**, current.
