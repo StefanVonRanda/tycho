@@ -12315,6 +12315,32 @@ fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: mut [LamInfo], spawns:
 # tychoc0 accepted such programs and emitted C with duplicate symbols/members
 # that cc then rejected (a fail-open). Message-only: the decl AST carries no
 # position. Never fires on valid input, so fixpoint output is unchanged.
+# fall-off-the-end lint: does every path through `body` end in a return? An
+# exhaustive match returns iff every arm does; an if returns iff it has an else
+# and both sides return (an elif chain is a nested SIf handled by recursion).
+# Mirrors block_ends_in_return in src/tychoc.c.
+fn block_ends_in_return(body: [Stmt]) -> bool:
+    if len(body) == 0:
+        return false
+    s := body[len(body) - 1]
+    match s:
+        SReturn(_e, _l):
+            return true
+        SReturnVoid:
+            return true
+        SIf(_c, t, el, _l):
+            return len(el) > 0 and block_ends_in_return(t) and block_ends_in_return(el)
+        SMatch(_subj, _vars, _binds, bodies, _l):
+            allret := len(bodies) > 0
+            i := 0
+            for i < len(bodies):
+                if not block_ends_in_return(bodies[i]):
+                    allret = false
+                i = i + 1
+            return allret
+        _:
+            return false
+
 fn check_dups(prog: Program):
     tnames := []string
     i := 0
@@ -12371,6 +12397,16 @@ fn check_dups(prog: Program):
                 die("duplicate parameter '" + pn + "' in function '" + nm + "'")
             push(pnames, pn)
             j = j + 1
+        # fall-off-the-end lint (parity with src/tychoc.c): a non-void concrete
+        # proc whose body can reach its end without a return silently yields a
+        # zero value. Warn, don't reject (a body ending in an infinite loop is
+        # total yet not provably so). Extern (no body) and generic templates skip.
+        f := prog.funcs[i]
+        if f.ret != "void" and f.is_extern == 0 and not func_is_generic(f) and not block_ends_in_return(f.body):
+            ln := 0
+            if len(f.body) > 0:
+                ln = stmt_line(f.body[0]) / 100000
+            eprint("line " + str(ln) + ": warning: not all paths of '" + nm + "' return a value (a fall-off-the-end yields a zero value)" + chr(10))
         i = i + 1
     if not has_str(fns, "main"):                  # fail-closed: a program with no main emits main-less C (parity with tychoc)
         die("no 'main' procedure")

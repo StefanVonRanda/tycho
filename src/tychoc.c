@@ -3659,6 +3659,7 @@ static Expr *scalar_zero_expr(Type t, int line) {
 }
 
 static void resolve_block(Stmt **body, int n, Type ret);   /* fwd: the lambda body resolves as a block */
+static int block_ends_in_return(Stmt **body, int n);       /* fwd: fall-off-the-end lint (defined near codegen) */
 
 /* collect the (deduped) identifier names referenced anywhere in `e` — the basis of
  * a lambda's capture analysis (a free var that is an enclosing local is captured). */
@@ -5876,6 +5877,12 @@ static void resolve_program(ProcVec *prog) {
         g_fn_ret = pr->ret;
         g_dup_base = 0;   /* the top body shares the param scope (same C function): a decl colliding with a param is a redeclaration */
         resolve_block(pr->body, pr->nbody, pr->ret);
+        /* fall-off-the-end lint: a non-void proc whose body can reach its end
+         * without a return silently yields a zero value (codegen emits a
+         * defensive `return (T){0}`). Warn rather than reject — a body ending
+         * in an infinite loop never falls through yet isn't provably total. */
+        if (pr->ret != T_VOID && !block_ends_in_return(pr->body, pr->nbody))
+            warn_at(pr->line, "not all paths of '%s' return a value (a fall-off-the-end yields a zero value)", pr->name);
     }
 }
 

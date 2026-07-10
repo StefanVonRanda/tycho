@@ -129,10 +129,29 @@ edit-distance threshold as the other did-you-means, so a genuinely-unrelated nam
 (`p.zzzzzz`) still gets the plain message. tychoc only; locked by
 `tests/diag/dym_field.err`.
 
-**Remaining — minor, demand-gated:** carets on *semantic* (not just parse) errors
-[needs a column on the offending AST node]; a fall-off-the-end "not all paths
-return" lint (currently a `-> int` body with no return silently yields 0 —
-defined, not UB; the lint would touch both compilers + reject-parity). None blocking.
+**Fall-off-the-end "not all paths return" lint — shipped.** A non-void, non-extern,
+non-generic proc whose body can reach its end without a return now warns in *both*
+compilers (`not all paths of 'f' return a value` — codegen zero-fills that path).
+It's a **warning, not a reject**: a body ending in an infinite loop is total yet not
+provably so, and `tests/die.ty`'s `must_pos` (ends in an `else: die(...)`, where
+`die` diverges but the language has no `noreturn`) is a legitimate shape a hard
+reject would break. Reuses the existing `block_ends_in_return` in tychoc
+(`src/tychoc.c`, now also called in the checker); mirrored by a new
+`block_ends_in_return` over tychoc0's `Stmt` enum, hooked into `check_dups` (the
+original-`prog.funcs` loop, so it sees the same pre-monomorphization funcs tychoc
+does — no generic-instance warning divergence). Verified: corpus-wide both
+compilers agree on which files warn; fixpoint byte-identical; typeparity
+4608/4608; gated by the `fall-off-the-end` parity assertion in
+`scripts/tools_check.sh`.
+
+**Remaining — semantic-error carets: deferred (low value, structural cost).** Parse
+errors already carry a `^` caret; semantic errors (type mismatch, unknown field,
+arg-count) print `file:line: error:` + both sides + the source-line snippet but no
+caret, because `Expr` carries only a `line`, not a column (`src/tychoc.c:1185`).
+Adding one means a `col` on every `Expr` plus populating it at every parser
+construction site, then setting `g_err_col` before each semantic `die_at` — a broad
+structural edit for a cosmetic gain. Not worth it until a concrete demand appears.
+None blocking.
 **Effort:** the residual is small. **Priority: low** (the compounding wins landed).
 
 ### 1.4 corelib gaps

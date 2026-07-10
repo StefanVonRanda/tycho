@@ -136,6 +136,19 @@ printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in
 echo "    tychoc: bad=$cpw good=$cpn   tychoc0: bad=$zpw good=$zpn"
 { [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ] && [ "$zpw" -ge 1 ] && [ "$zpn" -eq 0 ]; } || { echo "  PURE-RESULT PARITY FAIL"; fail=1; }
 
+echo ">>> fall-off-the-end: both compilers warn on a non-void proc that can reach its end without returning"
+# Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
+# A `-> int` proc whose `if` has no else + no trailing return can fall off the
+# end (codegen zero-fills) -> must warn; a trailing return must not.
+printf 'fn f(n: int) -> int:\n    if n > 0:\n        return 1\n\nfn main():\n    print(str(f(1)))\n' > "$TMP/falloff.ty"
+printf 'fn f(n: int) -> int:\n    if n > 0:\n        return 1\n    return 0\n\nfn main():\n    print(str(f(1)))\n' > "$TMP/allret.ty"
+"$TYCHOC"      "$TMP/falloff.ty" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/f1"; cfo=$(grep -c 'not all paths' "$TMP/f1")
+"$TYCHOC"      "$TMP/allret.ty"  --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/f2"; cfn=$(grep -c 'not all paths' "$TMP/f2")
+"$TMP/tychoc0" "$TMP/falloff.ty" --emit-c 1>/dev/null 2>"$TMP/f3"; zfo=$(grep -c 'not all paths' "$TMP/f3")
+"$TMP/tychoc0" "$TMP/allret.ty"  --emit-c 1>/dev/null 2>"$TMP/f4"; zfn=$(grep -c 'not all paths' "$TMP/f4")
+echo "    tychoc: bad=$cfo good=$cfn   tychoc0: bad=$zfo good=$zfn"
+{ [ "$cfo" -ge 1 ] && [ "$cfn" -eq 0 ] && [ "$zfo" -ge 1 ] && [ "$zfn" -eq 0 ]; } || { echo "  FALL-OFF PARITY FAIL"; fail=1; }
+
 echo ">>> line-info: -g emits #line mapping + compiles; default stays clean"
 # Guards B1 (tychoc-only feature). Default output must carry NO #line so the
 # byte-identical fixpoint/corelib gates are untouched; `-g` must emit #line
