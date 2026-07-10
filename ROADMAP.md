@@ -290,6 +290,34 @@ deliberately not user-extensible (that's the anti-traits stance).
   thesis-safe. **This is the real generics roadmap.** **Priority: medium**,
   demand-driven.
 
+  **Status audit (on building the list out):** most of this is either already
+  done or not the cheap cleanup the phrasing implies.
+  - **generic UFCS — already shipped, both compilers.** A generic free fn is
+    callable as a method (`x.foo()` == `foo(x)`), dispatched by matching the
+    receiver against the template's first-param pattern, then instantiated;
+    scalar/string/array receivers + chaining. tychoc `ufcs_generic`
+    (`src/tychoc.c:3499`), tychoc0 `ufcs_name` + `match_typaram_str`
+    (`compiler/tychoc0.ty:3785`), locked by `tests/generic_ufcs`.
+  - **`defaultable(T)` + `zero$(T)` — shipped.** A bare predicate gates nothing,
+    so it shipped paired with the `zero$(T)` builtin it exists to constrain:
+    `zero$(T)` yields the type's zero (`0`/`0.0`/`false`/`""`) so a generic
+    accumulator can seed from the zero (`acc := zero$(T)`) and work on an *empty*
+    input instead of crashing on `xs[0]`. `zero$(T)` reuses the existing explicit
+    type-arg syntax (`empty$(int)`) and lowers to the scalar-zero literal at
+    resolve (tychoc) / gen (tychoc0) — the same node the `m[k]` read-default uses,
+    so no new codegen. v1 covers exactly the four scalar-zero types (int, float,
+    bool, string), which `defaultable(T)` gates; composite/Option/enum are
+    *not* defaultable (fail-closed — a `(T){0}` memset-zero isn't a valid Tycho
+    value for a heap-bearing type), add on demand. Locked by
+    `tests/generic_defaultable` (numeric + string accumulators, empty inputs) and
+    `tests/reject/{where_defaultable_bad,zero_bad_type}` (both compilers reject a
+    struct/array type). Verified: full suite, `fixpoint` byte-identical,
+    `typeparity` 4608/4608, behavioral parity tychoc == tychoc0.
+  - **variadic generics — needs variadic *parameters* first.** No varargs exist
+    (`fn f(xs: ...T)` doesn't parse). That's the major piece: new param syntax,
+    call-site array packing, arity through monomorphization, both compilers, all
+    gates. Demand-gated; no program needs it.
+
   **`hashable(T)` — shipped.** Constrains a type parameter to be usable as a map
   key, so a generic body can build `[T: V]` with a clean signature error at
   instantiation instead of a deep body error. The check reuses the standalone

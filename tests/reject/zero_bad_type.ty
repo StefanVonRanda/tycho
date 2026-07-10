@@ -1,0 +1,7 @@
+# zero$(T) on a non-defaultable type arg (an array has no scalar zero). Both
+# compilers must refuse -- zero$'s own fail-closed backstop, independent of any
+# `where` predicate.
+
+fn main():
+    y := zero$([int])
+    println(str(len(y)))

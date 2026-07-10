@@ -1696,7 +1696,7 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
         cont := true
         for cont:
             if toks[pos].kind != TIdent:
-                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str, hashable) or a type parameter")
+                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str, hashable, defaultable) or a type parameter")
             first := toks[pos].text
             pos = pos + 1
             entry := ""
@@ -1716,8 +1716,8 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
                     set = set + "|" + parse_type(toks, &pos)
                 entry = first + "=" + set          # encoded `T=t1|t2|...` (`=` marks a type-set)
             else:                                  # predicate form: pred(T)
-                if first != "numeric" and first != "comparable" and first != "has_str" and first != "hashable":
-                    die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + first + "' (known: numeric, comparable, has_str, hashable -- or use a type set, `T: int | float`)")
+                if first != "numeric" and first != "comparable" and first != "has_str" and first != "hashable" and first != "defaultable":
+                    die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + first + "' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)")
                 expect(toks, &pos, TLParen)
                 if toks[pos].kind != TIdent:
                     die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name")
@@ -3939,6 +3939,8 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         ECall(name, args, _el):
             tm0 := find(name, "$<")
             if tm0 >= 0:
+                if substr(name, 0, tm0) == "zero":   # zero$<T>: the defaultable-type zero; its type IS the type arg
+                    return substr(name, tm0 + 2, len(name) - 1)
                 name = substr(name, 0, tm0)       # generics: strip the explicit-type-arg encoding for the template sig lookup (placeholder type; codegen recomputes)
             di := find(name, ".")
             if di >= 0 and has_str(names, substr(name, 0, di)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
@@ -5041,6 +5043,22 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return gfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
+            zmk := find(name, "$<")
+            if zmk >= 0 and substr(name, 0, zmk) == "zero":   # zero$<T>: emit the scalar zero LITERAL (same node the map-read zero uses; byte-identical with tychoc's scalar_zero_expr lowering)
+                if len(args) != 0:
+                    die_at(dc, ctx.line, "zero$(T) takes no value arguments")
+                zt := substr(name, zmk + 2, len(name) - 1)
+                if find(zt, ";") >= 0:
+                    die_at(dc, ctx.line, "zero$(T) takes exactly one type argument")
+                if zt == "int":
+                    return gen_expr(EInt("0", _el), names, types, dc, ctx)
+                if zt == "float":
+                    return gen_expr(EFloat("0.0", _el), names, types, dc, ctx)
+                if zt == "bool":
+                    return gen_expr(EBool("0", _el), names, types, dc, ctx)
+                if zt == "str":
+                    return gen_expr(EStr("", _el), names, types, dc, ctx)
+                die_at(dc, ctx.line, "zero$(" + zt + "): only int, float, bool, and string are defaultable")
             cdi := find(name, ".")
             if cdi >= 0 and has_str(names, substr(name, 0, cdi)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
                 return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi), _el), substr(name, cdi + 1, len(name)), _el), args, _el), names, types, dc, ctx)
@@ -11304,7 +11322,20 @@ fn subst_expr_t(e: Expr, bn: [string], bt: [string]) -> Expr:
         EBin(o, l, r, el):
             return EBin(o, subst_expr_t(l, bn, bt), subst_expr_t(r, bn, bt), el)
         ECall(nm, a, el):
-            return ECall(nm, subst_exprs_t(a, bn, bt), el)
+            nm2 := nm                                # substitute typarams inside an explicit type-arg encoding (`zero$<T>` -> `zero$<int>`); no-op for concrete/absent encodings
+            mk := find(nm, "$<")
+            if mk >= 0:
+                base := substr(nm, 0, mk)
+                parts := split(substr(nm, mk + 2, len(nm) - 1), ";")
+                newenc := ""
+                pi := 0
+                for pi < len(parts):
+                    if pi > 0:
+                        newenc = newenc + ";"
+                    newenc = newenc + subst_body_type(parts[pi], bn, bt)
+                    pi = pi + 1
+                nm2 = base + "$<" + newenc + ">"
+            return ECall(nm2, subst_exprs_t(a, bn, bt), el)
         EField(b, f, el):
             return EField(subst_expr_t(b, bn, bt), f, el)
         EIndex(b, ix, el):
@@ -11419,6 +11450,8 @@ fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
     if pred == "hashable":
         ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
         return key_type_ok(dc, ctx0, ty)
+    if pred == "defaultable":                        # zero$(T) -- exact scalars (no newtype); matches tychoc
+        return ty == "int" or ty == "float" or ty == "bool" or ty == "str"
     return true
 
 fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls, explicit: [string]) -> string:
@@ -11907,6 +11940,8 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
             if mk >= 0:
                 rn = substr(nm, 0, mk)
                 explicit = split(substr(nm, mk + 2, len(nm) - 1), ";")
+            if mk >= 0 and rn == "zero":              # zero$<T> is a builtin, not a generic -- leave the encoded name for gen_expr/type_of
+                return ECall(nm, margs, el)
             di := find(nm, ".")                       # UFCS x generics, dotted form `recv.method` (parse_atom builds these as one ECall name)
             if mk < 0 and di >= 0:
                 rcv := substr(nm, 0, di)

@@ -2850,7 +2850,7 @@ static Proc *parse_fn(Parser *ps) {
         ps->p++;
         for (;;) {
             if (pr->ncon >= 8) die_at(cur(ps)->line, "at most 8 `where` constraints per function");
-            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate (numeric/comparable/has_str/hashable) or a type parameter");
+            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate (numeric/comparable/has_str/hashable/defaultable) or a type parameter");
             if (at(ps, TK_COLON)) {   /* type-set form: T: type1 | type2 | ...  (Go-style) */
                 int known = 0;
                 for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], pt->text)) known = 1;
@@ -2866,8 +2866,8 @@ static Proc *parse_fn(Parser *ps) {
                 }
                 pr->con_nset[pr->ncon] = n;
             } else {                  /* predicate form: pred(T) */
-                if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str") && strcmp(pt->text, "hashable"))
-                    die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str, hashable -- or use a type set, `T: int | float`)", pt->text);
+                if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str") && strcmp(pt->text, "hashable") && strcmp(pt->text, "defaultable"))
+                    die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)", pt->text);
                 eat(ps, TK_LPAREN, "'(' after a `where` predicate");
                 Tok *tn = eat(ps, TK_IDENT, "a type-parameter name");
                 int known = 0;
@@ -4048,6 +4048,23 @@ static Type resolve_expr_inner(Expr *e) {
         case E_STRUCTLIT:   /* produced by resolving E_CALL; already typed */
             return e->type;
         case E_CALL: {
+            /* zero$(T): the defaultable-type zero value, for seeding a generic
+             * accumulator (`total := zero$(T)`) that must work on an empty input
+             * without seeding from xs[0]. Lowered here to the scalar zero LITERAL
+             * (int 0 / float 0.0 / "" / false), so codegen needs no case. v1
+             * accepts exactly the four scalar-zero types (matches the
+             * `defaultable(T)` predicate); a non-defaultable type arg fails closed.
+             * Guarded on ntypeargs so a user call `zero(x)` without `$(...)` is
+             * untouched. */
+            if (e->sval && !strcmp(e->sval, "zero") && e->ntypeargs > 0) {
+                if (e->nargs != 0) die_at(e->line, "zero$(T) takes no value arguments");
+                if (e->ntypeargs != 1) die_at(e->line, "zero$(T) takes exactly one type argument");
+                Type zt = e->typeargs[0];
+                Expr *z = scalar_zero_expr(zt, e->line);
+                if (!z) die_at(e->line, "zero$(%s): only int, float, bool, and string are defaultable", type_name(zt));
+                *e = *z;
+                return e->type = zt;
+            }
             /* t.wait() / ch.send(v) / ch.recv() / ch.close() sugar on task- and
              * channel-typed locals: rewrite to the free-call form up front.
              * These live outside the Sig table, so the UFCS machinery below
@@ -5718,6 +5735,7 @@ static int constraint_ok(const char *pred, Type t) {
     if (!strcmp(pred, "comparable")) return b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING;   /* < > <= >= */
     if (!strcmp(pred, "has_str"))    return b == T_INT || b == T_BOOL || b == T_FLOAT || b == T_STRING;   /* str(x) */
     if (!strcmp(pred, "hashable"))   return key_type_ok(t);                                               /* map(T, _) key */
+    if (!strcmp(pred, "defaultable")) return t == T_INT || t == T_FLOAT || t == T_BOOL || t == T_STRING;  /* zero$(T) -- exact scalars (no newtype) */
     return 1;   /* unknown predicates are rejected at parse */
 }
 

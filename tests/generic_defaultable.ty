@@ -1,0 +1,18 @@
+# `where defaultable(T)` + `zero$(T)`: seed a generic accumulator from the type's
+# zero, so it works on an EMPTY input instead of crashing on xs[0]. zero$(T)
+# lowers to the scalar zero literal (0 / 0.0 / false / ""); v1 covers exactly the
+# four scalar-zero types, which is what the `defaultable(T)` predicate gates.
+
+fn total(xs: [$T]) -> T where defaultable(T):
+    acc := zero$(T)
+    for x in xs:
+        acc = acc + x
+    return acc
+
+fn main():
+    println(str(total([3, 1, 4, 1, 5])))       # 14
+    println(str(total([]int)))                 # 0    (empty -> zero seed, no xs[0] crash)
+    println(str(total([1.5, 2.5, 4.0])))       # 8.0
+    println(total(["a", "b", "c"]))            # abc
+    println(total([]string) + "<")             # <    (empty -> "")
+    println("z: i=" + str(zero$(int)) + " f=" + str(zero$(float)) + " b=" + str(zero$(bool)))
