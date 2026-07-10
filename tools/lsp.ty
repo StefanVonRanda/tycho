@@ -833,6 +833,46 @@ fn handle_document_symbol(id: Json, uris: [string], syms: [string], params: Json
             nd = nd + 1
     send_result(id, "[" + out + "]")
 
+# ASCII-lowercased copy, for case-insensitive workspace-symbol matching
+fn lower(s: string) -> string:
+    out := ""
+    for i in range(len(s)):
+        c := s[i]
+        if c >= 65 and c <= 90:
+            c = c + 32
+        out = out + chr(c)
+    return out
+
+# workspace/symbol: every top-level fn/struct/enum across ALL open buffers whose
+# name contains `query` (case-insensitive; an empty query returns all). Same
+# SymbolInformation shape as documentSymbol, but the location carries each
+# symbol's own buffer uri. uris/syms are kept parallel by doc_set.
+fn handle_workspace_symbol(id: Json, uris: [string], syms: [string], params: Json):
+    q := lower(as_str(get(params, "query")))
+    out := ""
+    nd := 0
+    for u in range(len(uris)):
+        uri := uris[u]
+        if uri == "":
+            continue
+        lines := split(syms[u], "\n")
+        for i in range(len(lines)):
+            f := split(lines[i], "\t")
+            if len(f) >= 3 and (f[0] == "fn" or f[0] == "struct" or f[0] == "enum"):
+                if q != "" and find(lower(f[1]), q) < 0:
+                    continue
+                kind := 12                                 # SymbolKind.Function
+                if f[0] == "struct":
+                    kind = 23                              # .Struct
+                elif f[0] == "enum":
+                    kind = 10                              # .Enum
+                l0 := digits_to_int(f[2]) - 1
+                if nd > 0:
+                    out = out + ","
+                out = out + "{\"name\":\"" + esc(f[1]) + "\",\"kind\":" + str(kind) + ",\"location\":{\"uri\":\"" + esc(uri) + "\",\"range\":{\"start\":{\"line\":" + str(l0) + ",\"character\":0},\"end\":{\"line\":" + str(l0) + ",\"character\":0}}}}"
+                nd = nd + 1
+    send_result(id, "[" + out + "]")
+
 # completion: enclosing-fn locals/params + top-level defs + builtins/keywords.
 # (The client filters by the typed prefix; cross-package members aren't indexed.)
 fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], projs: [string], params: Json):
@@ -1039,7 +1079,7 @@ fn main():
         id := get(msg, "id")
         params := get(msg, "params")
         if method == "initialize":
-            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"workspaceSymbolProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
         elif method == "textDocument/didOpen":
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
@@ -1057,6 +1097,8 @@ fn main():
             handle_definition(id, uris, texts, syms, params)
         elif method == "textDocument/documentSymbol":
             handle_document_symbol(id, uris, syms, params)
+        elif method == "workspace/symbol":
+            handle_workspace_symbol(id, uris, syms, params)
         elif method == "textDocument/completion":
             handle_completion(id, uris, texts, syms, projs, params)
         elif method == "textDocument/signatureHelp":

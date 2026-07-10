@@ -152,7 +152,7 @@ demand-driven — don't build ahead of a real program that needs it.
   hover on imported members (`strings.trim`) also **shipped** — the LSP resolves
   `import "core:X"` by running `--symbols` on the file in its real directory
   (package-aware; needs `TYCHO_CORELIB` in the server env). Still open —
-  workspace-symbol/semanticTokens (additive, demand-gated; signatureHelp shipped — below), and
+  semanticTokens (additive, demand-gated; signatureHelp + workspace-symbol shipped — below), and
   package-aware *diagnostics* (today the buffer compiles single-file, so a
   package file's diagnostics are empty rather than wrong — a safe gap).
   **signatureHelp — shipped:** typing inside a call shows the callee's signature
@@ -163,7 +163,14 @@ demand-driven — don't build ahead of a real program that needs it.
   back-scans the current line for the innermost unclosed `(` and the active-arg
   index (`tools/lsp.ty`). Known limit: cursor inside a paren/tuple *literal* arg
   finds that group's `(` (no callee) → no help. Gated by the `sighelp` assertion
-  in `scripts/tools_check.sh`. Still open — workspace-symbol/semanticTokens.
+  in `scripts/tools_check.sh`.
+  **workspace/symbol — shipped:** `Cmd+T` fuzzy symbol search over *all* open
+  buffers (top-level fn/struct/enum), case-insensitive substring on the name,
+  empty query returns everything; each result's location carries its own buffer
+  uri. Reuses documentSymbol's SymbolInformation emit across the parallel
+  uris/syms arrays (`handle_workspace_symbol`, `tools/lsp.ty`). Gated by the
+  `wsym` assertion in `scripts/tools_check.sh`. Still open — semanticTokens
+  (editors already highlight via TextMate grammars — low marginal value).
 - **Debugging story** — **shipped.** `tychoc -g` emits `#line N "src.ty"`
   directives (single-file builds) and compiles with `-O0 -g`, so `gdb`/`lldb`
   step the `.ty` source via DWARF. Default builds emit no `#line` (byte-identical
