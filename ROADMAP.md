@@ -172,7 +172,8 @@ read-loop lives in `os_shim.c` (checked allocations, fail-closed, Windows-guarde
 so Tycho only sees the finished string; locked by `corelib/test/os` (all three
 compile paths agree + golden), ASan/UBSan-clean over the buffer-growth and
 alloc/free paths. Still open and genuinely missing: TCP/UDP sockets, TLS,
-compression, bignum/decimal, datetime timezones — each demand-gated.
+compression (gzip/zlib), image decode/encode (PNG, JPEG), bignum/decimal,
+datetime timezones — each demand-gated.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
@@ -226,6 +227,37 @@ even though both paths reach it (`src/tychoc.c:4310`/`:7533`, `compiler/tychoc0.
 A *use* after close passes NULL to C rather than a dangling pointer. Both compilers;
 locked by the `tests/ffi` `use_res_close` case (freed exactly once, ASan-clean) and
 `tests/reject/close_handle_nonvar`. See `docs/internals/typed-handles-design.md:71`.
+
+---
+
+### 1.8 Formal language specification
+
+Tycho's behavioral contract lives in three places: the `docs/reference/` pages
+(12 feature pages, example-driven), the two-compiler parity gates (differential
+fuzzing + byte-identical fixpoint), and the golden test suite (274+ fixtures).
+None of these is a single formal specification — the kind that says "an
+`if`-expression arm is evaluated in a fresh scope whose arena is freed before
+the next arm" with a grammar production and a defined semantics for every
+construct.
+
+**Why it matters:** the self-hosting fixpoint proves the two compilers agree
+*today*, but it doesn't define the language for a third implementation, a
+future rewrite, or a user reasoning about edge cases without reading 10k lines
+of C. A spec is the non-negotiable deliverable for any versioned release — it's
+what lets a third party implement Tycho from scratch and produce byte-identical
+output.
+
+**Thesis fit:** total — a spec is a document, not a language feature. It
+documents the arena model and value semantics without changing them.
+
+**Effort:** high. Formalizing every construct, its arena lifetime, its
+conversion rules, and its interaction with every other construct is a book, not
+a README. The reference docs are a start; a spec means tightening them to
+grammar-level precision.
+
+**Priority: medium** — only if a versioned release is the goal. The current
+PoC is self-verifying (two implementations, byte-identical output), which is
+arguably *stronger* than a spec for the current project scope.
 
 ---
 
@@ -422,6 +454,13 @@ the project's own honest-limits culture (thesis §5).
 - **Verification surface** is already exceptional (16 gates, differential fuzzing,
   byte-identical self-host). Marginal add: property-based tests in `corelib/test`.
   Low priority — this is the project's strongest area, not its weakest.
+- **Date-based versioning.** Tycho currently has no version number — it's tracked
+  by git commit. If formal releases ever happen, a date-based scheme
+  (`Tycho 2027`, `Tycho 2028.01`) tells you at a glance how stale your build is
+  and encourages a regular update cadence without the baggage of semver promises
+  for a language still proving its thesis. Odin adopted this for the same reason:
+  a monthly release schedule with year-named milestones. **Priority: low** —
+  only relevant if versioned releases become the project's mode.
 
 ---
 
