@@ -208,6 +208,13 @@ element type instead of a family of per-type siblings.
   not atomic), `read_lines(p)` / `write_lines(p, lines)` (newline-terminated round-trip),
   `list(p)` (entry basenames), `exists(p)` (no exists builtin, so it lists the parent and
   checks membership). Error model mirrors the builtins — nothing aborts.
+- **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
+  `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
+  stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
+  shell won't start); `os.run(cmd)` additionally captures stdout into `Output{code, out}`.
+  `cmd` is a `/bin/sh -c` line — shell metacharacters are active, so quote untrusted input
+  yourself (no array-argv form yet). The stdout-capture read loop lives in `os_shim.c`, so
+  Tycho only ever receives the finished, NUL-terminated string.
 
 ## C-shim (FFI-backed) modules
 

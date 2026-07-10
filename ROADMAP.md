@@ -163,6 +163,17 @@ compression (gzip/zlib), buffered I/O, a bignum/decimal type, richer `datetime`
 (timezones), process/subprocess, environment/args helpers. **Priority: medium**,
 demand-driven — don't build ahead of a real program that needs it.
 
+**Audit result:** several of these are already covered — `environment/args`
+(the `args`/`getenv` builtins) and `buffered/line I/O` (`core:io`'s
+`read_lines`/`write_lines`). **process/subprocess — shipped** as `core:os`: a
+libc-only FFI shim (`popen`/`system`, no external dep) exposing `os.system(cmd)
+-> int` and `os.run(cmd) -> Output{code, out}` (captures stdout). The capture
+read-loop lives in `os_shim.c` (checked allocations, fail-closed, Windows-guarded)
+so Tycho only sees the finished string; locked by `corelib/test/os` (all three
+compile paths agree + golden), ASan/UBSan-clean over the buffer-growth and
+alloc/free paths. Still open and genuinely missing: TCP/UDP sockets, TLS,
+compression, bignum/decimal, datetime timezones — each demand-gated.
+
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
   are all **shipped** (`tools/lsp.ty`, compiler-backed via `tychoc --symbols`).

@@ -1,0 +1,25 @@
+# corelib test: exercises core:os. Every command is hermetic and side-effect-free
+# (true / false / exit N / printf) -- no filesystem, network, or process state is
+# touched, so the output is deterministic. tychoc and tychoc0 must agree and the
+# output is locked to corelib/test/os.out (corelib/run.sh).
+
+package main
+import "core:os"
+
+fn main():
+    # system(): exit code only. These commands write nothing to stdout, so they
+    # never interleave with the println output below (ordering stays stable).
+    println("true=" + str(os.system("true")))
+    println("false=" + str(os.system("false")))
+    println("exit7=" + str(os.system("exit 7")))
+
+    # run(): capture stdout + exit code (printf, not echo, for portable output).
+    r := os.run("printf hello")
+    println("out=[" + r.out + "] code=" + str(r.code))
+
+    r2 := os.run("printf 'a-b-c'")
+    println("out2=[" + r2.out + "]")
+
+    # a non-zero exit with no output.
+    r3 := os.run("false")
+    println("out3=[" + r3.out + "] code=" + str(r3.code))

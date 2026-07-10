@@ -1,0 +1,42 @@
+# core:os -- run external commands. A thin, turnkey FFI over libc `system(3)` and
+# `popen(3)`; the companion os_shim.c is pure libc, so there is no external
+# dependency to install and nothing to link. Import with `import "core:os"`.
+#
+#   os.system(cmd) -> int     Run cmd via the shell; stdout/stderr are inherited
+#                             from the parent. Returns the child's exit code
+#                             (0..255), 128+signal if it was killed by a signal,
+#                             or -1 if the shell could not be started.
+#
+#   os.run(cmd) -> Output     Run cmd via the shell, CAPTURING its stdout into
+#                             Output.out (stderr still goes to the parent).
+#                             Output.code is the same exit code as system(). On a
+#                             spawn failure: code -1, out "".
+#
+# SECURITY: cmd is handed to `/bin/sh -c` verbatim -- it IS a shell line, so shell
+# metacharacters are active. Never build cmd from untrusted input without quoting
+# it yourself; there is no array-argv form yet (add on demand).
+package os
+
+struct Output:
+    code: int
+    out: string
+
+# ---- shim externs (libc; defined in os_shim.c) ----
+extern fn osx_system(cmd: string) -> int
+extern fn osx_run(cmd: string) -> ptr          # opaque result handle; null only on popen() failure
+extern fn osx_run_code(r: ptr) -> int
+extern fn osx_run_out(r: ptr) -> string
+extern fn osx_run_free(r: ptr)
+
+# Run cmd, inheriting stdout/stderr; return its exit code.
+fn system(cmd: string) -> int:
+    return osx_system(cmd)
+
+# Run cmd, capturing stdout; return Output{code, out}.
+fn run(cmd: string) -> Output:
+    r := osx_run(cmd)
+    if is_null(r):
+        return Output(-1, "")
+    res := Output(osx_run_code(r), osx_run_out(r))   # both accessors copy out of the handle...
+    osx_run_free(r)                                  # ...before it is freed
+    return res
