@@ -1,0 +1,7 @@
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    p := Point(1, 2)
+    println(str(p.yy))

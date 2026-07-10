@@ -847,6 +847,12 @@ static const char *suggest_type(const char *name) {
     for (int i = 0; i < (int)(sizeof kw / sizeof *kw); i++) dym(name, kw[i], &best, &bestd);
     return dym_pick(name, best, bestd);
 }
+/* closest field name in `sd` to a mistyped `name`, or NULL if none is plausible */
+static const char *suggest_field(StructDef *sd, const char *name) {
+    const char *best = NULL; int bestd = 99;
+    for (int i = 0; i < sd->nfields; i++) dym(name, sd->fields[i].name, &best, &bestd);
+    return dym_pick(name, best, bestd);
+}
 
 /* "geom__" when t names a package-mangled user type (geom__Circle), else NULL.
  * Lets UFCS resolve a method defined in the receiver type's own package. */
@@ -4031,6 +4037,8 @@ static Type resolve_expr_inner(Expr *e) {
             for (int i = 0; i < sd->nfields; i++)
                 if (!strcmp(sd->fields[i].name, e->sval))
                     return e->type = sd->fields[i].type;
+            const char *fsg = suggest_field(sd, e->sval);
+            if (fsg) die_at(e->line, "struct %s has no field '%s'; did you mean '%s'?", sd->name, e->sval, fsg);
             die_at(e->line, "struct %s has no field '%s'", sd->name, e->sval);
         }
         case E_ADDR:   /* &place; only valid as a mut argument (checked at

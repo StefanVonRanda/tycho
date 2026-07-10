@@ -1,0 +1,2 @@
+tests/diag/dym_field.ty:7: error: struct Point has no field 'yy'; did you mean 'y'?
+     7 |     println(str(p.yy))

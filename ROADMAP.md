@@ -121,11 +121,18 @@ with T = string, which does not satisfy numeric(T)`), and arg-count/field/index
 errors. Locked as goldens in `tests/diag/*.err` (tychoc only — tychoc0's
 bootstrap diagnostics are deliberately simpler).
 
+**Did-you-mean extended to struct fields — shipped.** `p.yy` on a `Point{x,y}`
+now emits `struct Point has no field 'yy'; did you mean 'y'?`, reusing the existing
+Levenshtein `suggest_*`/`dym_pick` machinery (`suggest_field`, `src/tychoc.c:850`;
+wired at the field-miss site `:4041`). Only offers a suggestion within the same
+edit-distance threshold as the other did-you-means, so a genuinely-unrelated name
+(`p.zzzzzz`) still gets the plain message. tychoc only; locked by
+`tests/diag/dym_field.err`.
+
 **Remaining — minor, demand-gated:** carets on *semantic* (not just parse) errors
-[needs a column on the offending AST node]; did-you-mean extended to struct
-fields; a fall-off-the-end "not all paths return" lint (currently a `-> int` body
-with no return silently yields 0 — defined, not UB; the lint would touch both
-compilers + reject-parity). None blocking.
+[needs a column on the offending AST node]; a fall-off-the-end "not all paths
+return" lint (currently a `-> int` body with no return silently yields 0 —
+defined, not UB; the lint would touch both compilers + reject-parity). None blocking.
 **Effort:** the residual is small. **Priority: low** (the compounding wins landed).
 
 ### 1.4 corelib gaps
@@ -166,11 +173,13 @@ expressed. Fits monomorphization exactly (each `N` is a binding, like each type
 `$T`). Only pursue if a real need appears — it's the kind of feature that's easy to
 add speculatively and then carry forever. **Priority: low, YAGNI-gated.**
 
-### 1.7 Early `close(h)` on typed handles
-The one item STATUS already lists as genuinely-open-minor
-(`typed-handles-design.md`). Handles auto-free at scope exit; this is just an
-early-release optimization. **Priority: low**, but it's the smallest closed loop
-on the board — good warm-up.
+### 1.7 Early `close(h)` on typed handles — **shipped**
+Handles auto-free at scope exit; `close(h)` runs the destructor early and NULLs the
+handle, and the scope-exit free is null-guarded so the C `free_fn` runs exactly once
+even though both paths reach it (`src/tychoc.c:4310`/`:7533`, `compiler/tychoc0.ty:5214`/`:6825`).
+A *use* after close passes NULL to C rather than a dangling pointer. Both compilers;
+locked by the `tests/ffi` `use_res_close` case (freed exactly once, ASan-clean) and
+`tests/reject/close_handle_nonvar`. See `docs/internals/typed-handles-design.md:71`.
 
 ---
 
