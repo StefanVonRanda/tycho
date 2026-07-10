@@ -2850,7 +2850,7 @@ static Proc *parse_fn(Parser *ps) {
         ps->p++;
         for (;;) {
             if (pr->ncon >= 8) die_at(cur(ps)->line, "at most 8 `where` constraints per function");
-            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate (numeric/comparable/has_str) or a type parameter");
+            Tok *pt = eat(ps, TK_IDENT, "a `where` predicate (numeric/comparable/has_str/hashable) or a type parameter");
             if (at(ps, TK_COLON)) {   /* type-set form: T: type1 | type2 | ...  (Go-style) */
                 int known = 0;
                 for (int i = 0; i < g_ncur_typarams; i++) if (!strcmp(g_cur_typarams[i], pt->text)) known = 1;
@@ -2866,8 +2866,8 @@ static Proc *parse_fn(Parser *ps) {
                 }
                 pr->con_nset[pr->ncon] = n;
             } else {                  /* predicate form: pred(T) */
-                if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str"))
-                    die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str -- or use a type set, `T: int | float`)", pt->text);
+                if (strcmp(pt->text, "numeric") && strcmp(pt->text, "comparable") && strcmp(pt->text, "has_str") && strcmp(pt->text, "hashable"))
+                    die_at(pt->line, "unknown `where` predicate '%s' (known: numeric, comparable, has_str, hashable -- or use a type set, `T: int | float`)", pt->text);
                 eat(ps, TK_LPAREN, "'(' after a `where` predicate");
                 Tok *tn = eat(ps, TK_IDENT, "a type-parameter name");
                 int known = 0;
@@ -5700,6 +5700,15 @@ static int type_mentions_tp(Type t, Type tp) {
     return 0;
 }
 
+/* hashable(T): T is usable as a map key -- string, int (through newtypes), a
+ * fieldless enum, or a composite (struct/tuple/array) of all-hashable leaves.
+ * Mirrors the standalone key-validity path (map_of) without interning a type. */
+static int key_type_ok(Type t) {
+    if (base_of(t) == T_STRING) return 1;
+    if (mapkey_intrep(t)) return 1;                 /* int (via newtype) or fieldless enum */
+    return mapkey_composite(t) && key_hashable(t);
+}
+
 /* generics: the fixed, compiler-known `where` predicate set. Each is exactly the
  * capability the resolver already enforces (base_of sees through newtypes), so a
  * satisfied constraint guarantees the body's op type-checks for that T. */
@@ -5708,6 +5717,7 @@ static int constraint_ok(const char *pred, Type t) {
     if (!strcmp(pred, "numeric"))    return b == T_INT || b == T_FLOAT;                                   /* + - * / */
     if (!strcmp(pred, "comparable")) return b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING;   /* < > <= >= */
     if (!strcmp(pred, "has_str"))    return b == T_INT || b == T_BOOL || b == T_FLOAT || b == T_STRING;   /* str(x) */
+    if (!strcmp(pred, "hashable"))   return key_type_ok(t);                                               /* map(T, _) key */
     return 1;   /* unknown predicates are rejected at parse */
 }
 

@@ -1696,7 +1696,7 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
         cont := true
         for cont:
             if toks[pos].kind != TIdent:
-                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str) or a type parameter")
+                die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str, hashable) or a type parameter")
             first := toks[pos].text
             pos = pos + 1
             entry := ""
@@ -1716,8 +1716,8 @@ fn parse_func(toks: [Token], pos: mut int) -> Func:
                     set = set + "|" + parse_type(toks, &pos)
                 entry = first + "=" + set          # encoded `T=t1|t2|...` (`=` marks a type-set)
             else:                                  # predicate form: pred(T)
-                if first != "numeric" and first != "comparable" and first != "has_str":
-                    die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + first + "' (known: numeric, comparable, has_str -- or use a type set, `T: int | float`)")
+                if first != "numeric" and first != "comparable" and first != "has_str" and first != "hashable":
+                    die("parse: line " + str(toks[pos].line) + ": unknown `where` predicate '" + first + "' (known: numeric, comparable, has_str, hashable -- or use a type set, `T: int | float`)")
                 expect(toks, &pos, TLParen)
                 if toks[pos].kind != TIdent:
                     die("parse: line " + str(toks[pos].line) + ": expected a type-parameter name")
@@ -8385,6 +8385,18 @@ fn key_hashable(dc: Decls, ctx: Ctx, ty: string) -> bool:
         return key_hashable(dc, ctx, elem_ty(b))   # an array key hashes element-wise (order-sensitive)
     return false
 
+# hashable(T): T is usable as a map key -- string, int (through newtypes), a
+# fieldless enum, or a composite (struct/tuple/array) of all-hashable leaves.
+# Mirrors the standalone map-key validity check (8458) and tychoc's key_type_ok
+# exactly. ctx is inert here (the predicate helpers read only dc).
+fn key_type_ok(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    b := resolve_nt(dc, ctx, ty)
+    if b == "str" or b == "int":
+        return true
+    if enum_fieldless(dc, ctx, ty):
+        return true
+    return mapkey_composite(dc, ctx, ty) and key_hashable(dc, ctx, ty)
+
 # Is composite type `want` (a struct name or a tuple type string) reachable inside key
 # type kt -- the key, a struct field, or a tuple element of it, recursively?
 fn struct_in_key(dc: Decls, ctx: Ctx, want: string, kt: string) -> bool:
@@ -11404,6 +11416,9 @@ fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
         return b == "int" or b == "char" or b == "float" or b == "str"
     if pred == "has_str":
         return b == "int" or b == "bool" or b == "float" or b == "str"
+    if pred == "hashable":
+        ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
+        return key_type_ok(dc, ctx0, ty)
     return true
 
 fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls, explicit: [string]) -> string:

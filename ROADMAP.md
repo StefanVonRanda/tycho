@@ -289,6 +289,26 @@ deliberately not user-extensible (that's the anti-traits stance).
   resolution, const generics (1.6). All fit the closed-set model. Incremental,
   thesis-safe. **This is the real generics roadmap.** **Priority: medium**,
   demand-driven.
+
+  **`hashable(T)` — shipped.** Constrains a type parameter to be usable as a map
+  key, so a generic body can build `[T: V]` with a clean signature error at
+  instantiation instead of a deep body error. The check reuses the standalone
+  map-key validity path already in both compilers (`key_hashable` /
+  `mapkey_composite` / fieldless-enum / int·string via newtype) — a new
+  `key_type_ok` predicate, ~6 lines × 2 compilers, no codegen (a compile-time
+  accept/reject only, so emitted C is byte-identical). Accepts int, string,
+  fieldless enums, and composite struct/tuple/array keys of hashable leaves;
+  rejects float/bool/char and non-hashable composites. Locked by
+  `tests/generic_hashable` (int + string + enum + struct keys) and
+  `tests/reject/where_hashable_bad` (float key, both compilers reject). Verified:
+  full suite 274/0, `fixpoint` byte-identical, `typeparity` 4608/4608.
+
+  **The other two candidates are dead, on inspection:** `ordered(T)` would be a
+  redundant alias of `comparable` (which already gates `< > <= >=`); `==`/`!=`
+  already works on *any* generic T with no predicate (`gen_eq` recurses
+  structurally), so no `equatable(T)` is needed. `defaultable(T)` remains
+  buildable but thin (only scalars have a defined zero) — add on first real
+  demand.
 - **(b) User-defined constraints** — letting *users* name new predicates over
   types. That is traits/typeclasses by another name, and it's a hard STATUS
   non-goal. See 3.2. Don't drift into it by accident while doing (a).
