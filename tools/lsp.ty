@@ -531,6 +531,68 @@ fn sym_param_type(syms: string, name: string, fnline: int) -> string:
             return f[2]
     return ""
 
+# strip leading/trailing spaces and tabs
+fn trim_sp(s: string) -> string:
+    a := 0
+    b := len(s)
+    for a < b and (s[a] == 32 or s[a] == 9):
+        a = a + 1
+    for b > a and (s[b - 1] == 32 or s[b - 1] == 9):
+        b = b - 1
+    return substr(s, a, b)
+
+# For signatureHelp: scan the current line back from the cursor, tracking paren
+# depth, to find the innermost unclosed '(' and the callee name before it, and
+# count the top-level commas after it (the active-parameter index). Returns
+# "name\targidx" (name may be `pkg.member`), or "" if the cursor isn't inside a
+# call. Single-line calls only — a call split across lines yields no help.
+# ponytail: the innermost enclosing '(' wins, so a cursor inside a paren/tuple-
+# literal arg (`f((1,|2))`) finds that group's '(' — no callee before it -> no
+# help. Walk outward past callee-less groups if that case ever matters.
+fn call_sig_query(text: string, line: int, ch: int) -> string:
+    lines := split(text, "\n")
+    if line < 0 or line >= len(lines):
+        return ""
+    s := lines[line]
+    c := ch
+    if c > len(s):
+        c = len(s)
+    depth := 0
+    active := 0
+    op := 0 - 1                            # index of the enclosing '(' once found
+    i := c - 1
+    for i >= 0 and op < 0:
+        b := s[i]
+        if b == 41:                        # ')'
+            depth = depth + 1
+        elif b == 40:                      # '('
+            if depth == 0:
+                op = i
+            else:
+                depth = depth - 1
+        elif b == 44 and depth == 0:       # ',' separating this call's args
+            active = active + 1
+        i = i - 1
+    if op < 0:
+        return ""
+    # read the callee identifier immediately before '(' (skipping spaces/tabs)
+    e := op
+    for e > 0 and (s[e - 1] == 32 or s[e - 1] == 9):
+        e = e - 1
+    j := e
+    for j > 0 and is_ident_ch(s[j - 1]):
+        j = j - 1
+    if j == e:
+        return ""
+    name := substr(s, j, e)
+    if j > 0 and s[j - 1] == 46:           # a `pkg.member` qualifier
+        q := j - 1
+        for q > 0 and is_ident_ch(s[q - 1]):
+            q = q - 1
+        if q < j - 1:
+            name = substr(s, q, j - 1) + "." + name
+    return name + "\t" + str(active)
+
 # resolved description of a top-level `name` (fn sig / struct / enum / type), or ""
 fn sym_describe(syms: string, name: string) -> string:
     lines := split(syms, "\n")
@@ -879,6 +941,66 @@ fn handle_rename(id: Json, uris: [string], texts: [string], params: Json):
         k = k + 3
     send_result(id, "{\"changes\":{\"" + esc(uri) + "\":[" + out + "]}}")
 
+# signatureHelp: the signature of the call enclosing the cursor + active param.
+# Resolves a local call via the symbol index, a `pkg.member` call via the project
+# index; the parameter list is sliced from the resolved signature string so it
+# highlights the argument the cursor is on.
+fn handle_signature(id: Json, uris: [string], texts: [string], syms: [string], projs: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    pos := get(params, "position")
+    q := call_sig_query(text, as_num(get(pos, "line")), as_num(get(pos, "character")))
+    if q == "":
+        send_result(id, "null")
+        return
+    qf := split(q, "\t")
+    name := qf[0]
+    argidx := digits_to_int(qf[1])
+    dot := find(name, ".")
+    sig := ""
+    if dot >= 0:
+        sig = pkg_fn_sig(doc_get(uris, projs, uri), substr(name, 0, dot), substr(name, dot + 1, len(name)))
+    else:
+        sig = sym_describe(doc_get(uris, syms, uri), name)
+    if sig == "":
+        send_result(id, "null")
+        return
+    # slice the "(...)" list into one {"label":...} per top-level parameter
+    op := find(sig, "(")
+    plist := ""
+    np := 0
+    if op >= 0:
+        depth := 0
+        start := 0 - 1
+        i := op
+        for i < len(sig):
+            b := sig[i]
+            if b == 40 or b == 91:              # '(' or '['
+                depth = depth + 1
+                if b == 40 and depth == 1:
+                    start = i + 1
+            elif b == 41 or b == 93:            # ')' or ']'
+                depth = depth - 1
+                if depth == 0 and start >= 0:
+                    seg := trim_sp(substr(sig, start, i))
+                    if len(seg) > 0:
+                        if np > 0:
+                            plist = plist + ","
+                        plist = plist + "{\"label\":\"" + esc(seg) + "\"}"
+                        np = np + 1
+                    i = len(sig)                # done: end of the outer param list
+            elif b == 44 and depth == 1:        # top-level ',' between params
+                seg := trim_sp(substr(sig, start, i))
+                if np > 0:
+                    plist = plist + ","
+                plist = plist + "{\"label\":\"" + esc(seg) + "\"}"
+                np = np + 1
+                start = i + 1
+            i = i + 1
+    if np > 0 and argidx >= np:                 # clamp past-the-end (trailing comma)
+        argidx = np - 1
+    send_result(id, "{\"signatures\":[{\"label\":\"" + esc(sig) + "\",\"parameters\":[" + plist + "]}],\"activeSignature\":0,\"activeParameter\":" + str(argidx) + "}")
+
 # inlayHint: a `: type` hint after each inferred (`:=`) local, from the index.
 fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], params: Json):
     uri := as_str(get(get(params, "textDocument"), "uri"))
@@ -917,7 +1039,7 @@ fn main():
         id := get(msg, "id")
         params := get(msg, "params")
         if method == "initialize":
-            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
         elif method == "textDocument/didOpen":
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
@@ -937,6 +1059,8 @@ fn main():
             handle_document_symbol(id, uris, syms, params)
         elif method == "textDocument/completion":
             handle_completion(id, uris, texts, syms, projs, params)
+        elif method == "textDocument/signatureHelp":
+            handle_signature(id, uris, texts, syms, projs, params)
         elif method == "textDocument/references":
             handle_references(id, uris, texts, params)
         elif method == "textDocument/documentHighlight":
