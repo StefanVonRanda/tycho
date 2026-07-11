@@ -414,14 +414,39 @@ non-goals: variadics, callbacks-into-Tycho, struct-by-value, auto-bindgen.
   declared them out to keep FFI's surface small. Reopen only if FFI becomes a
   headline use case (it reads today as a supporting feature, not a pillar).
 
-### 2.4 User-defined projections / yielding subscripts
-Not on your original ask list, but it belongs at the *top* of any real roadmap:
-it's the **one** feature-work direction CONTRIBUTING explicitly blesses and RFCs
-(`limited-references-spike.md`) — zero-copy views that generalize the built-in
-`&m[k]`, the single limited-reference idea that fits the arena + deep-copy-boundary
-model. If you build one new language feature this cycle, this is the sanctioned
-one. **Priority: high among language features**, but scope it to a real need
-(CONTRIBUTING marks it low-priority-until-demanded).
+### 2.4 User-defined projections / yielding subscripts — **shipped**
+`subscript name(recv, args) -> inout U: yield &<place>` lets a library expose a
+zero-copy view into part of a value, generalizing the built-in `&m[k]`. Called as a
+method (`g.edge(i)`), usable as a place (`g.edge(i).w = v`, `&g.edge(i).w`) or an
+rvalue read. A subscript is a **compile-time place-macro**: at the call site the
+yielded place is inlined with the arguments substituted for the parameters, then read/
+written through the existing lvalue machinery — no runtime object, no arena
+interaction, no RC (the `m.get` desugar pattern). Fail-closed at compile time: the
+place must be rooted in a parameter (else it would dangle), each parameter appears at
+most once (no argument double-evaluation), and the declared `-> inout U` must match the
+yielded place's type.
+
+Both compilers; the self-hosting fixpoint stays byte-identical (tychoc0.ty uses no
+subscripts, and existing codegen is untouched). Locked by `tests/subscript` (both value
+shapes; write/read/compound/`&`-inout-field) and four `tests/reject/subscript_*`
+(dangling, param-twice, non-place, type-mismatch). Verified: `make test` 284/0,
+`make fixpoint` B==C byte-identical, `make fuzz` 500/500, `make tools-check` ok,
+ASan/UBSan-clean, tychoc0 output + emitted-C parity with tychoc. See
+[docs/reference/subscripts.md](docs/reference/subscripts.md).
+
+**v1 scope (per the RFC's index-pool example):** inout-yield, method-call form, one
+yielded place. Deferred: `let`-yield (read-only views), index-operator overload
+(`g[i]`), multi-use parameters (needs argument hoisting). *Inherited* limit (pre-existing,
+not introduced here): a bare scalar `&arr[i]` — as opposed to `&arr[i].field` — passed
+as an inout *argument* hits a built-in codegen gap; scalar-projection assignment and
+reads are unaffected.
+
+The design argument, kept for the record: this is the **one** feature-work direction
+CONTRIBUTING blesses and the `limited-references-spike.md` RFC blessed as compatible —
+the single limited-reference idea that fits the arena + deep-copy-boundary model
+(scoped, transient, never stored, never crossing the thread boundary). It was
+demand-gated ("scope it to a real need"); built against the RFC's own index-pool
+ergonomics example.
 
 ---
 
