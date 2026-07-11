@@ -1,0 +1,4 @@
+# A fixed-array literal must have exactly N elements.
+fn main():
+    v: [3]int = [1, 2]
+    print(str(v[0]))

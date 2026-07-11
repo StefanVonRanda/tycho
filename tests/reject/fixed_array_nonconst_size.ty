@@ -1,0 +1,5 @@
+# A fixed-array length must be an int literal or an int const, not an arbitrary name.
+fn main():
+    n := 3
+    v: [n]int = [1, 2, 3]
+    print(str(v[0]))

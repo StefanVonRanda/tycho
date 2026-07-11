@@ -78,6 +78,32 @@ fn sum(a: [int]) -> int:            # parameter: a read-only borrow
     return total
 ```
 
+## Fixed-size arrays (`[N]T`)
+
+`[N]T` is an array whose length `N` is fixed at compile time — an int literal (`[3]float`)
+or an int `const` (`const W = 16` then `[W]int`). Unlike the dynamic `[T]` (a heap buffer
+that grows with `push`), a `[N]T` is stored **inline** — no heap, no length header — and
+copied **by value** (a plain memcpy for scalar elements, deep for heap elements):
+
+```
+v: [3]int = [10, 20, 30]     # inline, exactly 3 elements
+w := v                        # a full value copy
+v[0] = 99                     # w[0] is still 10 — no sharing
+len(v)                        # 3, a compile-time constant (no runtime field)
+
+fn dot(a: [3]float, b: [3]float) -> float:      # passed and returned by value
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+```
+
+- The length is part of the **type**: `[3]int` and `[4]int` are different types, and a
+  literal must have exactly `N` elements (`[3]int = [1, 2]` is a compile error). A bare
+  `[1, 2, 3]` is a dynamic `[int]` unless the destination type is fixed, in which case it
+  coerces (count and element types checked).
+- Indexing is bounds-checked against the static `N`; `==` compares element-wise; a `[N]T`
+  can be a struct field (stored inline), a by-value parameter, and a return value.
+- Growth operations (`push`, `pop`, slices) do not apply — the size is fixed. Use a dynamic
+  `[T]` when the length varies.
+
 ## Slices (`xs[a:b]`)
 
 `xs[a:b]` is a sub-range of an array — `xs[a:]` runs to the end, `xs[:b]` from the start,

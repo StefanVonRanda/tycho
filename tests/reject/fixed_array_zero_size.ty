@@ -1,0 +1,4 @@
+# A fixed-array length must be positive.
+fn main():
+    v: [0]int = []
+    print("x")

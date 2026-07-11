@@ -429,7 +429,7 @@ enum Expr:
     ECall(string, [Expr], int)    # function call OR struct construction `Point(1,2)`
     EField(Expr, string, int)     # field access `base.field` (nests: `r.lo.x`)
     EIndex(Expr, Expr, int)       # array index `base[idx]`
-    EArrLit([Expr], int)          # array literal `[1, 2, 3]` (int elements)
+    EArrLit([Expr], string, int)  # array literal `[1, 2, 3]`; 2nd field = fixed type "[N]T" (1.6) or "" for a dynamic [T]
     EArrEmpty(string, int)        # empty typed array `[]int`
     EMapEmpty(string, string, int) # empty typed map `[]string: int` (key, value types)
     EMapLit([Expr], [Expr], int)  # non-empty map literal `[k0: v0, k1: v1]` (keys, vals)
@@ -738,7 +738,7 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
                     die("parse: spawn requires a direct call: spawn f(args)")
                 EIndex(b, ix, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
-                EArrLit(es, _el):
+                EArrLit(es, _ft, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
                 EArrEmpty(t, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
@@ -884,7 +884,7 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
             pos = pos + 1
             push(elems, parse_expr_d(toks, &pos, nd))
         expect(toks, &pos, TRBracket)
-        return EArrLit(elems, _el)
+        return EArrLit(elems, "", _el)
     else:
         die("parse: line " + str(toks[pos].line) + ": expected an atom")
         return EInt("0", _el)
@@ -1493,6 +1493,12 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         die("parse: line " + str(toks[pos].line) + ": expected a statement")
         return SReturn(EInt("0", _el), _sl)
 
+# Could this token begin a type? (disambiguates `[W]int` const-size from a dynamic
+# `[Foo]`.) tychoc0's scalar type names (int/float/...) tokenize as TIdent, so the
+# type-starting tokens are just: an identifier, '[', '$', or '('.
+fn tok_starts_type(k: Tok) -> bool:
+    return k == TIdent or k == TLBracket or k == TDollar or k == TLParen
+
 fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
     # H2 (type vector): bound nested-type recursion ([[[[...]]]], tuples,
     # generics) so a crafted deeply-nested type can't overflow the stack.
@@ -1521,8 +1527,32 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             out = out + parts[i]
             i = i + 1
         return out + ")"
-    if toks[pos].kind == TLBracket:              # [T] array  or  [K: V] map
+    if toks[pos].kind == TLBracket:              # [T] array  /  [K: V] map  /  [N]T fixed (1.6)
         pos = pos + 1
+        # [N]T fixed-size array (const generics Phase A, ROADMAP 1.6): a size INSIDE the
+        # brackets, then the element type after ']' (`[3]int`). N is an int literal or an
+        # int `const` name. A bare `[T]` (a type right after '[' with nothing after ']')
+        # stays a dynamic array. `[3]` is unambiguous; `[W]int` vs a dynamic `[Foo]` is
+        # disambiguated by whether a type follows the ']'.
+        if toks[pos].kind == TInt and toks[pos + 1].kind == TRBracket:
+            fixn := lit_to_int(toks[pos].text)
+            if fixn <= 0:
+                die("parse: line " + str(toks[pos].line) + ": a fixed-size array length must be positive")
+            pos = pos + 1
+            expect(toks, &pos, TRBracket)
+            felem := parse_type_d(toks, &pos, depth + 1)
+            if felem == "void" or felem == "bool":
+                die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            return "[" + str(fixn) + "]" + felem
+        # [W]T where W is an int `const` name (resolved to its literal in the mangle pass,
+        # which always runs when a const is present). Encoded "[#W]T" until then.
+        if toks[pos].kind == TIdent and toks[pos + 1].kind == TRBracket and tok_starts_type(toks[pos + 2].kind):
+            cnm := toks[pos].text
+            pos = pos + 2                            # past IDENT and ']'
+            felem := parse_type_d(toks, &pos, depth + 1)
+            if felem == "void" or felem == "bool":
+                die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            return "[#" + cnm + "]" + felem
         inner := parse_type_d(toks, &pos, depth + 1)
         if toks[pos].kind == TColon:
             pos = pos + 1
@@ -1827,7 +1857,7 @@ fn ident_use_count(e: Expr, name: string) -> int:
             return ident_use_count_args(a, name)
         ECallV(c, a, _el):
             return ident_use_count(c, name) + ident_use_count_args(a, name)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ident_use_count_args(es, name)
         EMapLit(ks, vs, _el):
             return ident_use_count_args(ks, name) + ident_use_count_args(vs, name)
@@ -2477,6 +2507,16 @@ fn mangle_type_list(m: Mctx, s: string) -> string:
         out = out + ","
     return out + mangle_type(m, part)
 
+# The int value of a const literal Expr (an int `const` used as a fixed-array size,
+# 1.6). Fail-closed: a non-int const (float/string) is rejected, never guessed.
+fn const_int(e: Expr) -> int:
+    match e:
+        EInt(s, _el):
+            return lit_to_int(s)
+        _:
+            die("resolve: a fixed-size array length must be an integer literal or an int `const`")
+            return 0
+
 fn mangle_type(m: Mctx, ty: string) -> string:
     if ty == "":
         return ty                  # an empty/pending element type (e.g. a bare `[]`) is never package-qualified
@@ -2490,6 +2530,19 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         return "..." + mangle_type(m, substr(ty, 3, len(ty)))
     if has_prefix(ty, "soa["):
         return "soa[" + mangle_type(m, substr(ty, 4, len(ty) - 1)) + "]"
+    if has_prefix(ty, "[#"):                      # [#W]T: a fixed array whose size is an int `const` W (1.6) -- resolve W to its literal now (the mangle pass always runs when a const is present)
+        ci := find(ty, "]")
+        cnm := substr(ty, 2, ci)
+        celem := substr(ty, ci + 1, len(ty))
+        idx := const_idx(m, cnm)
+        if idx < 0:
+            die("resolve: a fixed-size array length must be an integer literal or an int `const` -- '" + cnm + "' is not a const")
+        cv := const_int(m.constv[idx])
+        if cv <= 0:
+            die("resolve: a fixed-size array length must be positive")
+        return "[" + str(cv) + "]" + mangle_type(m, celem)
+    if is_fixarr(ty):                             # [N]T fixed: keep the size, mangle the element (1.6)
+        return "[" + str(fixarr_size(ty)) + "]" + mangle_type(m, elem_ty(ty))
     if has_prefix(ty, "["):
         return "[" + mangle_type(m, substr(ty, 1, len(ty) - 1)) + "]"
     if has_prefix(ty, "Option("):
@@ -2569,8 +2622,8 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return EField(mangle_expr(m, b), f, _el)
         EIndex(b, ix, _el):
             return EIndex(mangle_expr(m, b), mangle_expr(m, ix), _el)
-        EArrLit(es, _el):
-            return EArrLit(mangle_args(m, es), _el)
+        EArrLit(es, ft, _el):
+            return EArrLit(mangle_args(m, es), ft, _el)
         EArrEmpty(ty, _el):
             return EArrEmpty(mangle_type(m, ty), _el)
         EMapEmpty(k, v, _el):
@@ -3099,7 +3152,7 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
     ntunder := []string
     si := 0
     for si < len(rstructs):
-        if sawpkg:
+        if dofold:                                # dofold (packages OR a const present): mangle -- also resolves a `[#W]T` const-sized field (1.6). For a package-free file it is identity except that resolution, so a const-free single file stays byte-identical.
             push(structs, mangle_struct(Mctx(spfx[si], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), rstructs[si]))
         else:
             push(structs, rstructs[si])
@@ -3120,7 +3173,7 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
         fi = fi + 1
     ni := 0
     for ni < len(rntn):
-        if sawpkg:
+        if dofold:                                # dofold: mangle the underlying type -- also resolves a `[#W]T` const-sized newtype (1.6). npfx=="" for a package-free file, so a const-free single file stays byte-identical.
             push(ntnames, npfx[ni] + rntn[ni])
             push(ntunder, mangle_type(Mctx(npfx[ni], aliasn, aliasp, pkgs, variants, []string, externs, constn, constv), rntu[ni]))
         else:
@@ -3280,10 +3333,36 @@ fn base_ty(ty: string) -> string:
     return ty
 
 fn is_array(ty: string) -> bool:
-    return len(ty) > 0 and ty[0] == 91           # "[T]"
+    return len(ty) > 0 and ty[0] == 91           # "[T]" (dynamic) OR "[N]T" (fixed, 1.6)
 
-fn elem_ty(ty: string) -> string:               # "[T]" -> "T"
+# Fixed-size array `[N]T` (const generics Phase A, ROADMAP 1.6): encoded "[3]int"
+# (a digit right after '['), vs a dynamic array "[int]". Stored inline, value-
+# copied, static bounds. is_array covers BOTH; is_fixarr distinguishes.
+fn is_fixarr(ty: string) -> bool:
+    return len(ty) > 1 and ty[0] == 91 and is_digit(ty[1])   # '[' then a digit
+
+fn fixarr_size(ty: string) -> int:               # "[3]int" -> 3 (the length before ']')
+    i := 1
+    n := 0
+    for i < len(ty) and is_digit(ty[i]):
+        n = n * 10 + (ty[i] - 48)
+        i = i + 1
+    return n
+
+fn elem_ty(ty: string) -> string:               # "[T]" -> "T"  /  "[3]int" -> "int" (after the ']')
+    if is_fixarr(ty):
+        i := 1
+        for i < len(ty) and ty[i] != 93:         # skip the digits to ']' (93 = ']')
+            i = i + 1
+        return substr(ty, i + 1, len(ty))        # everything after ']'
     return substr(ty, 1, len(ty) - 1)
+
+# C family name for an array type (dynamic OR fixed). Dynamic [T] -> Arr_<mangle(T)>;
+# fixed [N]T -> Arr_<mangle("[N]T")> = Arr_f<N>_<mangle(T)> (distinct from Arr_<T>).
+fn afam(ty: string) -> string:
+    if is_fixarr(ty):
+        return "Arr_" + mangle(ty)
+    return "Arr_" + mangle(elem_ty(ty))
 
 # SOA arrays: `soa [Struct]` is encoded "soa[Struct]" (one growable buffer per
 # struct field + a shared len/cap, instead of an array of records).
@@ -3409,8 +3488,8 @@ fn subst_place_vars(e: Expr, params: [string], actuals: [Expr]) -> Expr:
             return EField(subst_place_vars(b, params, actuals), f, el)
         EIndex(b, ix, el):
             return EIndex(subst_place_vars(b, params, actuals), subst_place_vars(ix, params, actuals), el)
-        EArrLit(es2, el):
-            return EArrLit(subst_place_args(es2, params, actuals), el)
+        EArrLit(es2, ft, el):
+            return EArrLit(subst_place_args(es2, params, actuals), ft, el)
         EArrEmpty(t, el):
             return e
         EMapEmpty(k, v, el):
@@ -3650,6 +3729,8 @@ fn func_suffix(ty: string) -> string:            # a C identifier for the signat
 # A valid C identifier suffix for an element type, so composite element types
 # (nested arrays, Option/Result/tuple elements) get legal `Arr_<mangle>` names.
 fn mangle(ty: string) -> string:
+    if is_fixarr(ty):                            # fixed [N]T -> f<N>_<mangle(elem)> (distinct from arr_<elem>)
+        return "f" + str(fixarr_size(ty)) + "_" + mangle(elem_ty(ty))
     if is_array(ty):
         return "arr_" + mangle(elem_ty(ty))
     if is_option(ty):
@@ -3738,6 +3819,8 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "HTask* "
     if is_chan(ty):                              # shared bounded-queue handle (channels, CC-4)
         return "HChan* "
+    if is_fixarr(ty):                             # [N]T fixed -> the inline Arr_f<N>_T struct (1.6)
+        return afam(ty) + " "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
         return "Arr_" + mangle(elem_ty(ty)) + " "
     if is_map(ty):                                # {str:V} -> Map_str_V
@@ -3979,7 +4062,7 @@ fn efield_fname(e: Expr) -> string:               # field name if e is EField, e
             return ""
         EIndex(b, ix, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -4025,7 +4108,7 @@ fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller gu
             return e
         EIndex(b, ix, _el):
             return e
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return e
         EArrEmpty(t, _el):
             return e
@@ -4159,8 +4242,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return soa_struct(bt)             # soa element -> the struct
             if is_map(bt):                        # m[k] place -> the value type (#2)
                 return resolve_nt(dc, ctx, map_val(bt))
-            return resolve_nt(dc, ctx, substr(bt, 1, len(bt) - 1))   # else array element type (resolved like a var read, so a [Newtype] element is consistently its base in queries; identity is recovered separately via nt_skin_of off the container's stored type)
-        EArrLit(elems, _el):
+            return resolve_nt(dc, ctx, elem_ty(bt))   # else array element type (dynamic [T] or fixed [N]T, 1.6; resolved like a var read, so a [Newtype] element is consistently its base in queries; identity is recovered separately via nt_skin_of off the container's stored type)
+        EArrLit(elems, _ft, _el):
+            if _ft != "":                             # a fixed literal (1.6) tagged by the gfix pass -> its "[N]T" type
+                return _ft
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
         EArrEmpty(ety, _el):
             if ety == "":                         # bare []: ground_pre had no destination type for it
@@ -4384,7 +4469,7 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
             return ""
         EIndex(b, i, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -4488,7 +4573,7 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
             return ""
         EField(b, f, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -4670,7 +4755,7 @@ fn wl_root(e: Expr) -> string:                     # base identifier of a place:
             return ""
         ECall(nm, args, p):
             return ""
-        EArrLit(es, p):
+        EArrLit(es, _ft, p):
             return ""
         EArrEmpty(t, p):
             return ""
@@ -4725,7 +4810,7 @@ fn wl_cond_vars(e: Expr, vs: inout [string], hc: inout bool):   # collect cond i
             for k < len(es):
                 wl_cond_vars(es[k], &vs, &hc)
                 k = k + 1
-        EArrLit(es, p):
+        EArrLit(es, _ft, p):
             k := 0
             for k < len(es):
                 wl_cond_vars(es[k], &vs, &hc)
@@ -4804,7 +4889,7 @@ fn wl_scan_expr(e: Expr, muts: inout [string], ex: inout bool):   # &v / push/po
             for k < len(es):
                 wl_scan_expr(es[k], &muts, &ex)
                 k = k + 1
-        EArrLit(es, p):
+        EArrLit(es, _ft, p):
             k := 0
             for k < len(es):
                 wl_scan_expr(es[k], &muts, &ex)
@@ -4971,7 +5056,7 @@ fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e 
             return ""
         EIndex(b, ix, p):
             return ""
-        EArrLit(es, p):
+        EArrLit(es, _ft, p):
             return ""
         EArrEmpty(t, p):
             return ""
@@ -5124,7 +5209,7 @@ fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx,
             push(out, e)
         EIndex(b, ix, _el):
             push(out, e)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             push(out, e)
         EArrEmpty(t, _el):
             push(out, e)
@@ -5193,12 +5278,26 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # Write targets / push / reserve route through gen_place -> the slot
                 # lvalue instead, so reaching gen_expr here is always a read.
                 return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
+            if is_fixarr(bt):                               # [N]T fixed read a[i]: inline .v[], static bound N (1.6)
+                return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.v[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", " + str(fixarr_size(bt)) + ")]; })"
             # array read a[i]: bounds-checked (hi_bchk) to match tychoc/runtime. The
             # descriptor is copied into _a so `base` is evaluated ONCE (a side-effecting
             # base like m[k] must not run twice). Nested a[i][j] -> nested blocks, each
             # with its own _a (block-scoped shadowing is fine).
             return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.data[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", _a.len)]; })"
-        EArrLit(elems, _el):
+        EArrLit(elems, _ft, _el):
+            if _ft != "":                          # fixed [N]T literal (1.6): fill the inline v[] of a temp struct
+                fet := elem_ty(_ft)
+                feo := "0"
+                if elem_deepcopy(dc, ctx, fet):
+                    feo = ctx.owner
+                fsctx := with_owner(dc, ctx, feo)
+                fout := "({ " + cty(dc, ctx, _ft) + "_lf;"
+                fi := 0
+                for fi < len(elems):
+                    fout = fout + " _lf.v[" + str(fi) + "] = " + gen_rhs(elems[fi], names, types, dc, fsctx) + ";"
+                    fi = fi + 1
+                return fout + " _lf; })"
             et := type_of(elems[0], names, types, dc, ctx)
             eo := "0"                              # deep-copied element temporaries
             if elem_deepcopy(dc, ctx, et):             # live in the array's arena (no leak);
@@ -5508,6 +5607,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     die_at(dc, ctx.line, "len(...) takes an array, a string, bytes, a map, or a soa")
                 if lent == "str" or lent == "bytes":
                     return "((const long*)(" + gen_expr(args[0], names, types, dc, ctx) + "))[-1]"   # O(1): the length header
+                if is_fixarr(lent):                          # [N]T (1.6): length is the compile-time N (no .len field)
+                    return "((void)(" + gen_expr(args[0], names, types, dc, ctx) + "), " + str(fixarr_size(lent)) + "L)"
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
                 at := type_of(args[0], names, types, dc, ctx)
@@ -5744,7 +5845,7 @@ fn root_var(e: Expr) -> string:
             return ""
         ECall(n, a, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -5827,7 +5928,7 @@ fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> s
     if is_func(et):                                  # a fn value: re-home its env into `ar` (plain ref env==0 -> no-op)
         return "({ Fn_" + func_suffix(et) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(et):
-        return "Arr_" + mangle(elem_ty(et)) + "_copy(" + ar + ", " + src + ")"
+        return afam(et) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(et):
         return "Tup_" + tup_suffix(et) + "_copy(" + ar + ", " + src + ")"
     if is_option(et):                                # re-box the payload into `ar`; box_payload
@@ -5849,7 +5950,7 @@ fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
     if is_func(rt):                                  # a fn value: re-home its env into `ar`
         return "({ Fn_" + func_suffix(rt) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(rt):
-        return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ar + ", " + src + ")"
+        return afam(rt) + "_copy(" + ar + ", " + src + ")"
     if is_map(rt):
         return mfam(rt) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(rt):
@@ -5936,6 +6037,8 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
                 return gen_map_slotptr(b, i, bt, names, types, dc, ctx)
             if is_soa(bt):                          # soa element place: handled via field access (soa[i].f); bare soa[i] target is not a thing
                 return gen_expr(lv, names, types, dc, ctx)
+            if is_fixarr(bt):                       # [N]T fixed lvalue a[i]: inline .v[], static bound N (1.6)
+                return "(*({ " + cty(dc, ctx, bt) + "* _a = &(" + gen_place(b, names, types, dc, ctx) + "); &_a->v[hi_bchk(" + gen_expr(i, names, types, dc, ctx) + ", " + str(fixarr_size(bt)) + ")]; }))"
             # array element lvalue a[i]: bounds-checked (hi_bchk) like tychoc's _ptr.
             # A pointer stmt-expr keeps the result assignable; &(place) takes the base
             # address ONCE so a side-effecting place (e.g. m[k] slotptr) runs once.
@@ -5971,7 +6074,7 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
                 if psi >= 0:
                     return gen_place(subscript_projected_place(dc, psi, EVar(prvn, _el), ar), names, types, dc, ctx)
             return gen_expr(lv, names, types, dc, ctx)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return gen_expr(lv, names, types, dc, ctx)
         EArrEmpty(ty, _el):
             return gen_expr(lv, names, types, dc, ctx)
@@ -6027,7 +6130,7 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
             return false
         EField(b, f, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(ty, _el):
             return false
@@ -6077,7 +6180,7 @@ fn is_str_arr_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: C
             return false
         EField(b, f, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(ty, _el):
             return false
@@ -6125,7 +6228,7 @@ fn is_place(e: Expr) -> bool:
             return false
         ECall(n, a, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(t, _el):
             return false
@@ -6199,7 +6302,7 @@ fn is_eslice(e: Expr) -> bool:
             return false
         EIndex(b, i, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(t, _el):
             return false
@@ -6243,7 +6346,7 @@ fn is_evar(e: Expr, name: string) -> bool:
             return false
         EIndex(b, i, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(t, _el):
             return false
@@ -6289,7 +6392,7 @@ fn is_int_lit(e: Expr) -> bool:           # is `e` a literal int -- the only int
             return false
         EIndex(b, i, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(t, _el):
             return false
@@ -6353,7 +6456,7 @@ fn is_zero_int_lit(e: Expr) -> bool:
             return false
         EIndex(b, i, _el):
             return false
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return false
         EArrEmpty(t, _el):
             return false
@@ -6383,7 +6486,7 @@ fn is_zero_int_lit(e: Expr) -> bool:
 fn cp_typed(dc: Decls, ctx: Ctx, ty: string, code: string) -> string:
     rt := resolve_nt(dc, ctx, ty)
     if is_array(rt):
-        return "Arr_" + mangle(elem_ty(rt)) + "_copy(" + ctx.owner + ", " + code + ")"
+        return afam(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_map(rt):
         return mfam(rt) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_tuple(rt):
@@ -6423,7 +6526,7 @@ fn evar_name(e: Expr) -> string:
             return ""
         EIndex(b, i, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -6487,7 +6590,7 @@ fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), el
             return ""
         EIndex(b, i, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -6790,7 +6893,7 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
                 j = j + 1
         EAddr(x, _el):
             rd_expr(&reads, &loopreads, x, inloop)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             j := 0
             for j < len(es):
                 rd_expr(&reads, &loopreads, es[j], inloop)
@@ -7009,7 +7112,7 @@ fn gen_rhs(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         return code                                      # build fresh in ctx.owner) -- no double copy. A SOA slice
                                                          # is a VIEW (cap 0), so it falls through to Soa_*_copy below.
     if is_array(ty) and is_place(e):
-        return "Arr_" + mangle(elem_ty(ty)) + "_copy(" + ctx.owner + ", " + code + ")"
+        return afam(ty) + "_copy(" + ctx.owner + ", " + code + ")"
     if is_struct(dc, ctx, ty) and struct_is_heap(dc, ctx, ty) and is_place(e):
         return tcopy(dc, ctx, ty) + "(" + ctx.owner + ", " + code + ")"
     if is_map(ty) and is_place(e):               # value-semantic map copy (e.g. snap := counts)
@@ -7055,7 +7158,7 @@ fn expr_has_call(e: Expr) -> bool:
             return true
         EAddr(x, _el):
             return expr_has_call(x)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return any_has_call(es)
         EMapLit(ks, vs, _el):
             return any_has_call(ks) or any_has_call(vs)
@@ -7127,7 +7230,7 @@ fn expr_refs(e: Expr, name: string) -> bool:
             return false
         EAddr(x, _el):
             return expr_refs(x, name)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return any_refs(es, name)
         EMapLit(ks, vs, _el):
             return any_refs(ks, name) or any_refs(vs, name)
@@ -7433,7 +7536,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                     return deflt
                 EIndex(b, i, _el):
                     return deflt
-                EArrLit(es, _el):
+                EArrLit(es, _ft, _el):
                     return deflt
                 EArrEmpty(t, _el):
                     return deflt
@@ -7906,7 +8009,7 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
             push(out, e)
         EIndex(b, ix, _el):
             push(out, e)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             push(out, e)
         EArrEmpty(t, _el):
             push(out, e)
@@ -8183,7 +8286,7 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
         if f.ty == "str":
             out = out + "    r." + uf(f.name) + " = scopy(ar, s." + uf(f.name) + ");\n"
         elif is_array(f.ty):
-            out = out + "    r." + uf(f.name) + " = Arr_" + mangle(elem_ty(f.ty)) + "_copy(ar, s." + uf(f.name) + ");\n"
+            out = out + "    r." + uf(f.name) + " = " + afam(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_map(f.ty):
             out = out + "    r." + uf(f.name) + " = " + mfam(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
         elif is_soa(f.ty):
@@ -8302,7 +8405,7 @@ fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
         if p == "str":
             out = out + "    r.f" + str(i) + " = scopy(ar, s.f" + str(i) + ");\n"
         elif is_array(p):
-            out = out + "    r.f" + str(i) + " = Arr_" + mangle(elem_ty(p)) + "_copy(ar, s.f" + str(i) + ");\n"
+            out = out + "    r.f" + str(i) + " = " + afam(p) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_map(p):
             out = out + "    r.f" + str(i) + " = " + mfam(p) + "_copy(ar, s.f" + str(i) + ");\n"
         elif is_enum(dc, ctx, p):                     # deep-copy the enum node tree into `ar`
@@ -8397,7 +8500,7 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if ty == "str" or ty == "bytes":
         return "str_cmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
-        return "Arr_" + mangle(elem_ty(ty)) + "_eq(" + a + ", " + b + ")"
+        return afam(ty) + "_eq(" + a + ", " + b + ")"
     if is_enum(dc, ctx, ty):
         return teq(dc, ctx, ty) + "(" + a + ", " + b + ")"
     if is_struct(dc, ctx, ty):
@@ -8690,6 +8793,13 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(dc: Decls, ctx: Ctx, et: string) -> string:
+    if is_fixarr(et):                            # fixed [N]T (1.6): inline storage struct + copy/eq protos (no _from)
+        fnm := "Arr_" + mangle(et)
+        fct := cty(dc, ctx, elem_ty(et))         # ELEMENT C type (et itself is the array type)
+        fn2 := str(fixarr_size(et))
+        fout := "struct " + fnm + "_ { " + fct + "v[" + fn2 + "]; };\n"
+        fout = fout + "static int " + fnm + "_eq(" + fnm + " a, " + fnm + " b);\n"
+        return fout + "static " + fnm + " " + fnm + "_copy(Arena* ar, " + fnm + " a);\n"
     nm := "Arr_" + mangle(et)                    # named-tag body; the typedef is forward-declared in the driver
     ct := cty(dc, ctx, et)                           # (so a fn value whose param/ret is [T] can name Arr_T incomplete)
     out := "struct " + nm + "_ { " + ct + "* data; long len; long cap; };\n"
@@ -8697,7 +8807,27 @@ fn gen_arr_type(dc: Decls, ctx: Ctx, et: string) -> string:
     out = out + "static " + nm + " " + nm + "_from(Arena* ar, " + ct + "* s, long n);\n"
     return out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " a);\n"
 
+# Fixed-size array family (const generics Phase A, ROADMAP 1.6): inline v[N] storage,
+# value semantics via a full struct copy + per-element deep-copy; read/copy/eq only.
+fn gen_fixarr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
+    nm := "Arr_" + mangle(et)
+    fet := elem_ty(et)
+    ct := cty(dc, ctx, fet)                          # element C type, trailing space
+    n := str(fixarr_size(et))
+    out := "static " + ct + nm + "_get(" + nm + " xs, long i) { if (i < 0 || i >= " + n + ") { fprintf(stderr, \"tycho: index %ld out of bounds (len " + n + ")\\n\", i); exit(1); } return xs.v[i]; }\n"
+    out = out + "static " + ct + "*" + nm + "_ptr(" + nm + "* xs, long i) { if (i < 0 || i >= " + n + ") { fprintf(stderr, \"tycho: index %ld out of bounds (len " + n + ")\\n\", i); exit(1); } return &xs->v[i]; }\n"
+    out = out + "static void " + nm + "_set(Arena* ar, " + nm + "* xs, long i, " + ct + "v) { if (i < 0 || i >= " + n + ") { fprintf(stderr, \"tycho: index %ld out of bounds (len " + n + ")\\n\", i); exit(1); } xs->v[i] = " + cp_field(dc, ctx, fet, "ar", "v") + "; }\n"
+    # copy: struct copy memcpys the inline array; deep-copy each element for a heap element type
+    out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " src) { " + nm + " r = src;"
+    if elem_deepcopy(dc, ctx, fet):
+        out = out + " for (long i = 0; i < " + n + "; i++) r.v[i] = " + elem_copy_expr(dc, ctx, fet, "ar", "src.v[i]") + ";"
+    out = out + " return r; }\n"
+    out = out + "static int " + nm + "_eq(" + nm + " x, " + nm + " y) { for (long i = 0; i < " + n + "; i++) if (!(" + eq_field(dc, ctx, fet, "x.v[i]", "y.v[i]") + ")) return 0; return 1; }\n"
+    return out
+
 fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
+    if is_fixarr(et):                            # fixed [N]T: inline family (1.6)
+        return gen_fixarr_fns(dc, ctx, et)
     nm := "Arr_" + mangle(et)
     ct := cty(dc, ctx, et)                           # element C type, trailing space
     out := "static " + nm + " " + nm + "_new(void) { " + nm + " a; a.data = 0; a.len = 0; a.cap = 0; return a; }\n"
@@ -9101,7 +9231,11 @@ fn has_str(xs: [string], s: string) -> bool:
 # pulls in [int], and Option/Result element types are descended into).
 fn note_arr_types(acc: inout [string], ty: string):
     b := base_ty(ty)
-    if is_array(b):
+    if is_fixarr(b):                             # fixed [N]T (1.6): register the FULL type (its family
+        if not has_str(acc, b):                  # is keyed on N+elem), then descend into the element
+            push(acc, b)
+        note_arr_types(&acc, elem_ty(b))
+    elif is_array(b):
         et := elem_ty(b)
         if not has_str(acc, et):
             push(acc, et)
@@ -9339,7 +9473,7 @@ fn check_match(dc: Decls, ctx: Ctx, sty: string, vars: [string], el: int):
 
 fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
-        EArrLit(elems, _el):
+        EArrLit(elems, _ft, _el):
             note_arr_types(&acc, type_of(e, names, types, dc, ctx))
             j := 0
             for j < len(elems):
@@ -9835,7 +9969,7 @@ fn collect_evars(e: Expr, out: inout [string]):
         EIndex(b, ix, _el):
             collect_evars(b, &out)
             collect_evars(ix, &out)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             j := 0
             for j < len(es):
                 collect_evars(es[j], &out)
@@ -9995,7 +10129,7 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                             i = i
                         EIndex(b, ix, _el):
                             i = i
-                        EArrLit(es, _el):
+                        EArrLit(es, _ft, _el):
                             i = i
                         EArrEmpty(t, _el):
                             i = i
@@ -10108,7 +10242,7 @@ fn place_root(e: Expr) -> string:
             return ""
         ECall(cn, a, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -10151,7 +10285,7 @@ fn count_reads_expr(e: Expr, nm: string) -> int:
             return count_reads_expr(b, nm)
         EIndex(b, ix, _el):
             return count_reads_expr(b, nm) + count_reads_expr(ix, nm)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             c := 0
             j := 0
             for j < len(es):
@@ -10294,7 +10428,7 @@ fn reduction_op(e: Expr, n: string) -> string:
             return ""
         EIndex(b, ix, _el):
             return ""
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return ""
         EArrEmpty(t, _el):
             return ""
@@ -10344,7 +10478,7 @@ fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
         EIndex(b, ix, _el):
             pf_gate_expr(b, locals, names)
             pf_gate_expr(ix, locals, names)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             j := 0
             for j < len(es):
                 pf_gate_expr(es[j], locals, names)
@@ -10593,7 +10727,21 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
             return e
         EIndex(b, ix, _el):
             return e
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
+            # [e0, ..., eN-1] coerces to a fixed array [N]T (1.6) when the destination
+            # is fixed, the count matches, and each element grounds to T. Otherwise the
+            # bracket literal stays a dynamic [T] (this arm returns it unchanged).
+            if is_fixarr(want) and len(es) > 0:
+                n := fixarr_size(want)
+                if len(es) != n:
+                    die("type: a fixed-size array of length " + str(n) + " needs " + str(n) + " elements, got " + str(len(es)))
+                el := elem_ty(want)
+                ges := []Expr
+                gk := 0
+                for gk < len(es):
+                    push(ges, ground_pre(dc, ctx, el, es[gk]))
+                    gk = gk + 1
+                return EArrLit(ges, want, _el)      # tag the literal with its fixed type
             return e
         EMapEmpty(k2, v2, _el):
             return e
@@ -10702,7 +10850,7 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             return EField(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), f, _el)
         EIndex(b, ix, _el):
             return EIndex(lift_expr(b, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_expr(ix, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             ges := []Expr                          # B-0: later elements take the first element's type
             ew := ""
             ek := 0
@@ -10714,7 +10862,7 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                     ge = ground_pre(dc, ctx, ew, ge)
                 push(ges, ge)
                 ek = ek + 1
-            return EArrLit(lift_exprs(ges, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
+            return EArrLit(lift_exprs(ges, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _ft, _el)
         EMapLit(ks, vs, _el):
             return EMapLit(lift_exprs(ks, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), lift_exprs(vs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _el)
         ETuple(es, _el):
@@ -10859,7 +11007,7 @@ fn pend_init_kind(e: Expr) -> int:
             return 0
         EIndex(b, ix, _el):
             return 0
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             return 0
         EMapEmpty(k, v, _el):
             return 0
@@ -10966,7 +11114,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
             if br != "":
                 return br
             return pend_seek_expr(dc, ctx, n2, t2, nm, ix)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             j := 0
             for j < len(es):
                 if j > 0 and evar_name(es[j]) == nm and evar_name(es[0]) != nm:
@@ -11509,7 +11657,7 @@ fn expr_has_lambda(e: Expr) -> bool:
             return expr_has_lambda(b)
         EIndex(b, ix, _el):
             return expr_has_lambda(b) or expr_has_lambda(ix)
-        EArrLit(es, _el):
+        EArrLit(es, _ft, _el):
             j := 0
             for j < len(es):
                 if expr_has_lambda(es[j]):
@@ -11868,8 +12016,8 @@ fn subst_expr_t(e: Expr, bn: [string], bt: [string]) -> Expr:
             return EField(subst_expr_t(b, bn, bt), f, el)
         EIndex(b, ix, el):
             return EIndex(subst_expr_t(b, bn, bt), subst_expr_t(ix, bn, bt), el)
-        EArrLit(es2, el):
-            return EArrLit(subst_exprs_t(es2, bn, bt), el)
+        EArrLit(es2, ft, el):
+            return EArrLit(subst_exprs_t(es2, bn, bt), ft, el)
         EArrEmpty(t, el):
             return EArrEmpty(subst_body_type(t, bn, bt), el)
         EMapEmpty(k, v, el):
@@ -12567,8 +12715,8 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
             return EField(mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), f, el)
         EIndex(b, ix, el):
             return EIndex(mono_expr(b, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_expr(ix, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
-        EArrLit(es, el):
-            return EArrLit(mono_exprs(es, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
+        EArrLit(es, ft, el):
+            return EArrLit(mono_exprs(es, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ft, el)
         EMapLit(ks, vs, el):
             return EMapLit(mono_exprs(ks, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(vs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ETuple(es, el):
@@ -13081,7 +13229,7 @@ fn pack_expr(e: Expr, fnames: [string], fnparam: [int], flastpt: [string]) -> Ex
                         for ti < len(a):
                             push(trail, pack_expr(a[ti], fnames, fnparam, flastpt))
                             ti = ti + 1
-                        varg = EArrLit(trail, _el)
+                        varg = EArrLit(trail, "", _el)
                     elif ty_is_generic(velem):
                         die("resolve: cannot infer the element type of an empty variadic call to generic '" + nm + "'; pass at least one argument")
                     else:
@@ -13098,8 +13246,8 @@ fn pack_expr(e: Expr, fnames: [string], fnparam: [int], flastpt: [string]) -> Ex
             return EField(pack_expr(b, fnames, fnparam, flastpt), f, _el)
         EIndex(b, ix, _el):
             return EIndex(pack_expr(b, fnames, fnparam, flastpt), pack_expr(ix, fnames, fnparam, flastpt), _el)
-        EArrLit(es, _el):
-            return EArrLit(pack_exprs(es, fnames, fnparam, flastpt), _el)
+        EArrLit(es, ft, _el):
+            return EArrLit(pack_exprs(es, fnames, fnparam, flastpt), ft, _el)
         EMapLit(ks, vs, _el):
             return EMapLit(pack_exprs(ks, fnames, fnparam, flastpt), pack_exprs(vs, fnames, fnparam, flastpt), _el)
         ETuple(es, _el):
@@ -13227,6 +13375,222 @@ fn pack_program(prog: Program) -> Program:
         i = i + 1
     return Program(prog.structs, prog.enums, funcs, prog.ntnames, prog.ntunder, prog.handles)
 
+# ---- Fixed-size array literal grounding (const generics Phase A, ROADMAP 1.6) ----
+# ground_pre only runs for lambda-bearing functions (the scope-aware lift is skipped
+# for lambda-free funcs to keep tychoc0.ty byte-identical). A `[..] : [N]T` fixed
+# literal needs its "[N]T" tag regardless, so this pass runs on EVERY function, right
+# before codegen, and tags fixed-array literals at every want-bearing position. It
+# ONLY mutates fixed-array EArrLits (tychoc0.ty has none), so fixpoint stays identical.
+
+# Ground expr `e` against destination type `want`, tagging a fixed [N]T literal (and
+# recursing into sub-exprs to catch nested / call-argument fixed literals).
+fn gfix_expr(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string]) -> Expr:
+    match e:
+        EArrLit(es, ft, el):
+            el2 := ""                                 # element want: fixed dest -> its element type
+            if is_fixarr(want):
+                el2 = elem_ty(want)
+            ges := []Expr
+            gk := 0
+            for gk < len(es):
+                push(ges, gfix_expr(dc, ctx, el2, es[gk], names, types))
+                gk = gk + 1
+            if is_fixarr(want) and len(es) > 0 and ft == "":
+                n := fixarr_size(want)
+                if len(es) != n:
+                    die("type: a fixed-size array of length " + str(n) + " needs " + str(n) + " elements, got " + str(len(es)))
+                return EArrLit(ges, want, el)          # tag with the fixed type
+            return EArrLit(ges, ft, el)
+        ECall(nm, args, el):
+            ga := []Expr
+            gk := 0
+            for gk < len(args):
+                aw := arg_want(dc, ctx, names, types, nm, args, gk)
+                push(ga, gfix_expr(dc, ctx, aw, args[gk], names, types))
+                gk = gk + 1
+            return ECall(nm, ga, el)
+        ECallV(callee, cargs, el):
+            gc := []Expr
+            gk := 0
+            for gk < len(cargs):
+                push(gc, gfix_expr(dc, ctx, "", cargs[gk], names, types))
+                gk = gk + 1
+            return ECallV(gfix_expr(dc, ctx, "", callee, names, types), gc, el)
+        ETuple(es, el):
+            ges := []Expr
+            gk := 0
+            for gk < len(es):
+                push(ges, gfix_expr(dc, ctx, "", es[gk], names, types))
+                gk = gk + 1
+            return ETuple(ges, el)
+        EMapLit(ks, vs, el):
+            gks := []Expr
+            gvs := []Expr
+            gk := 0
+            for gk < len(ks):
+                push(gks, gfix_expr(dc, ctx, "", ks[gk], names, types))
+                push(gvs, gfix_expr(dc, ctx, "", vs[gk], names, types))
+                gk = gk + 1
+            return EMapLit(gks, gvs, el)
+        EBin(o, l, r, el):
+            return EBin(o, gfix_expr(dc, ctx, "", l, names, types), gfix_expr(dc, ctx, "", r, names, types), el)
+        EIndex(b, ix, el):
+            return EIndex(gfix_expr(dc, ctx, "", b, names, types), gfix_expr(dc, ctx, "", ix, names, types), el)
+        EField(b, f, el):
+            return EField(gfix_expr(dc, ctx, "", b, names, types), f, el)
+        ESlice(b, lo, hi, el):
+            return ESlice(gfix_expr(dc, ctx, "", b, names, types), gfix_expr(dc, ctx, "", lo, names, types), gfix_expr(dc, ctx, "", hi, names, types), el)
+        EAddr(x, el):
+            return EAddr(gfix_expr(dc, ctx, "", x, names, types), el)
+        ESpawn(sid, snm, sa, el):
+            gsa := []Expr
+            gk := 0
+            for gk < len(sa):
+                push(gsa, gfix_expr(dc, ctx, "", sa[gk], names, types))
+                gk = gk + 1
+            return ESpawn(sid, snm, gsa, el)
+        _:
+            return e
+
+fn gfix_block(dc: Decls, ctx: Ctx, stmts: [Stmt], names: inout [string], types: inout [string], fret: string) -> [Stmt]:
+    mark := len(names)
+    out := []Stmt
+    i := 0
+    for i < len(stmts):
+        push(out, gfix_stmt(dc, ctx, stmts[i], &names, &types, fret))
+        i = i + 1
+    names = names[0:mark]
+    types = types[0:mark]
+    return out
+
+# Env handling mirrors mono_stmt exactly (mono also runs for every func and keeps a
+# correct names/types env, incl. match-arm / select bindings) — only the action differs:
+# gfix tags fixed-array literals instead of monomorphizing.
+fn gfix_stmt(dc: Decls, ctx: Ctx, s: Stmt, names: inout [string], types: inout [string], fret: string) -> Stmt:
+    match s:
+        SDecl(n, e, sl):
+            ne := gfix_expr(dc, ctx, "", e, names, types)
+            ty := type_of(e, names, types, dc, ctx)
+            push(names, n)
+            push(types, ty)
+            return SDecl(n, ne, sl)
+        STypedDecl(n, ty, e, sl):
+            ne := gfix_expr(dc, ctx, ty, e, names, types)
+            push(names, n)
+            push(types, ty)
+            return STypedDecl(n, ty, ne, sl)
+        SAssign(n, e, sl):
+            aw := ""
+            if has_str(names, n):
+                aw = base_ty(var_type(names, types, n))
+            return SAssign(n, gfix_expr(dc, ctx, aw, e, names, types), sl)
+        SFieldAssign(lv, rhs, sl):
+            fw := type_of(lv, names, types, dc, ctx)
+            return SFieldAssign(gfix_expr(dc, ctx, "", lv, names, types), gfix_expr(dc, ctx, fw, rhs, names, types), sl)
+        SPrint(e, sl):
+            return SPrint(gfix_expr(dc, ctx, "", e, names, types), sl)
+        SReturn(e, sl):
+            return SReturn(gfix_expr(dc, ctx, fret, e, names, types), sl)
+        SConst(n, e, sl):
+            return s
+        SReturnVoid:
+            return s
+        SIf(c, th, el, sl):
+            gc := gfix_expr(dc, ctx, "", c, names, types)
+            return SIf(gc, gfix_block(dc, ctx, th, &names, &types, fret), gfix_block(dc, ctx, el, &names, &types, fret), sl)
+        SWhile(c, b, sl):
+            gc := gfix_expr(dc, ctx, "", c, names, types)
+            return SWhile(gc, gfix_block(dc, ctx, b, &names, &types, fret), sl)
+        SForRange(nm, a, b, st, body, sl):
+            ga := gfix_expr(dc, ctx, "", a, names, types)
+            gb := gfix_expr(dc, ctx, "", b, names, types)
+            gst := gfix_expr(dc, ctx, "", st, names, types)
+            nn := names
+            tt := types
+            push(nn, nm)
+            push(tt, "int")
+            return SForRange(nm, ga, gb, gst, gfix_block(dc, ctx, body, &nn, &tt, fret), sl)
+        SExpr(e, sl):
+            return SExpr(gfix_expr(dc, ctx, "", e, names, types), sl)
+        SOrReturn(nm, e, sl):
+            ne := gfix_expr(dc, ctx, "", e, names, types)
+            push(names, nm)
+            push(types, "int")
+            return SOrReturn(nm, ne, sl)
+        SDestructure(nms, e, sl):
+            return SDestructure(nms, gfix_expr(dc, ctx, "", e, names, types), sl)
+        SMultiAssign(nms, e, sl):
+            return SMultiAssign(nms, gfix_expr(dc, ctx, "", e, names, types), sl)
+        SMatch(subj, vars, binds, bodies, sl):
+            gs := gfix_expr(dc, ctx, "", subj, names, types)
+            msty := resolve_ginst(type_of(subj, names, types, dc, ctx), dc, ctx)
+            nb := [][Stmt]
+            i := 0
+            for i < len(bodies):
+                bn := names                           # arm bindings scoped to the arm
+                bt := types
+                if i < len(vars):
+                    pts := match_arm_ptypes(dc, ctx, msty, vars[i])
+                    j := 0
+                    for j < len(binds[i]):
+                        push(bn, binds[i][j])
+                        if j < len(pts):
+                            push(bt, pts[j])
+                        else:
+                            push(bt, "int")
+                        j = j + 1
+                push(nb, gfix_block(dc, ctx, bodies[i], &bn, &bt, fret))
+                i = i + 1
+            return SMatch(gs, vars, binds, nb, sl)
+        SBreak:
+            return s
+        SContinue:
+            return s
+        SSelect(uid, kinds, chans, bnds, bodies, sl):
+            nb := [][Stmt]
+            i := 0
+            for i < len(bodies):
+                bn := names
+                bt := types
+                if i < len(kinds) and kinds[i] == "recv" and i < len(bnds) and bnds[i] != "":
+                    cit := resolve_ginst(chan_inner(type_of(chans[i], names, types, dc, ctx)), dc, ctx)
+                    push(bn, bnds[i])
+                    push(bt, cit)
+                push(nb, gfix_block(dc, ctx, bodies[i], &bn, &bt, fret))
+                i = i + 1
+            gch := []Expr
+            gk := 0
+            for gk < len(chans):
+                push(gch, gfix_expr(dc, ctx, "", chans[gk], names, types))
+                gk = gk + 1
+            return SSelect(uid, kinds, gch, bnds, nb, sl)
+        SParFor(v, a, b, body, pid, fl):
+            nn := names
+            tt := types
+            push(nn, v)
+            push(tt, "int")
+            return SParFor(v, gfix_expr(dc, ctx, "", a, names, types), gfix_expr(dc, ctx, "", b, names, types), gfix_block(dc, ctx, body, &nn, &tt, fret), pid, fl)
+        SValDecl(nm, annot, cc, sl):
+            mcc := gfix_stmt(dc, ctx, cc, &names, &types, fret)
+            ty := annot
+            if annot == "":
+                ty = value_ctrl_type(cc, names, types, dc, ctx, sl)
+            push(names, nm)
+            push(types, ty)
+            return SValDecl(nm, annot, mcc, sl)
+
+fn gfix_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
+    nfuncs := []Func
+    i := 0
+    for i < len(prog.funcs):
+        f := prog.funcs[i]
+        names := []string
+        types := []string
+        seed_env(f, &names, &types)
+        push(nfuncs, Func(f.name, f.params, f.ptypes, f.ret, gfix_block(dc, ctx, f.body, &names, &types, f.ret), f.is_extern, f.lib, f.constraints))
+        i = i + 1
+    return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder, prog.handles)
+
 fn main():
     a := args()
     src := ""
@@ -13283,6 +13647,8 @@ fn main():
             sigmap[funcs[i].name] = i
         i = i + 1
     dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles, collect_subs(prog.funcs))
+    prog = gfix_program(prog, dc, ctx)                # 1.6: tag fixed-size array literals with their [N]T type (runs for every func, unlike the lambda-gated lift)
+    funcs = prog.funcs                                # re-capture: codegen below iterates `funcs`
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
