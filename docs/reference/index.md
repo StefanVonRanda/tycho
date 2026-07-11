@@ -17,6 +17,7 @@ every page compiles on both transpilers and produces the shown output.
 | [Arrays and slices](arrays-slices.md) | `[T]`, nested arrays, element places, slices `xs[a:b]` |
 | [Structs and tuples](structs-tuples.md) | `struct`, nested and recursive fields, tuples and multiple return values |
 | [Maps](maps.md) | `[K: V]` for scalar and composite keys, any value type, `m[k]` as a place |
+| [Subscripts](subscripts.md) | user-defined projections: `subscript … -> inout U: yield &<place>`, a zero-copy view generalizing `&m[k]` |
 | [Enums, options, and `match`](enums-options.md) | sum types, `Option(T)`, `Result(T, E)`, exhaustive `match`, `or_return` |
 | [Functions and closures](functions.md) | first-class function values, closures, methods (UFCS) |
 | [Generics](generics.md) | `$T` type parameters over functions, structs, and enums |

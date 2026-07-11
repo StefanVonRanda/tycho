@@ -1250,6 +1250,23 @@ typedef struct {
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
 
+/* A user-defined projection (2.4): `subscript name(p...) -> inout U: yield &<place>`.
+ * Not a function -- it yields a PLACE into one of its arguments. At a call site the
+ * yielded place is inlined with the args substituted for the params (a compile-time
+ * place-macro; no runtime object), then the surrounding read/write flows through the
+ * existing lvalue machinery. `place` is the inner of the `yield &<place>` (the E_ADDR
+ * is stripped at parse). Invariants (checked): the place is rooted in a parameter (so
+ * the projection can't dangle) and each parameter appears in it at most once (so an
+ * argument is never double-evaluated on substitution). */
+typedef struct {
+    char   *name;
+    Param  *params; int nparams;
+    Type    ret;            /* the projected type U (`-> inout U`) */
+    Expr   *place;          /* the yielded place expression (E_ADDR stripped) */
+    int     line;
+} Subscript;
+static Subscript *g_subs = NULL; static int g_nsubs = 0, g_nsubs_cap = 0;
+
 /* A lambda literal (E_LAMBDA.ival indexes here). `proc` is the lifted top-level
  * function: its params are [captures...][lambda params...] (so its body codegen is
  * ordinary). `ncap` captures lead; the rest are the lambda's own params. */
@@ -2731,7 +2748,9 @@ static Stmt *parse_stmt(Parser *ps) {
      * operator, so `a[i] += v` leaves the `+` for the compound check below. */
     Expr *e = parse_postfix(ps);
     if (accept(ps, TK_EQ)) {
-        if (e->kind != E_INDEX && e->kind != E_FIELD && e->kind != E_TUPIDX)
+        /* E_CALL is allowed as a target only if it resolves to a user subscript's place
+         * (checked in resolve_stmt, which corrects the kind); a plain call is rejected there. */
+        if (e->kind != E_INDEX && e->kind != E_FIELD && e->kind != E_TUPIDX && e->kind != E_CALL)
             die_at(t->line, "cannot assign to this expression");
         StmtKind sk = e->kind == E_INDEX ? S_INDEXSET : S_FIELDSET;
         if (at(ps, TK_IF) || at(ps, TK_MATCH)) {   /* `place = if.../match...`: desugar each tail to `place = tail` */
@@ -2890,6 +2909,107 @@ static Proc *parse_fn(Parser *ps) {
     pr->body = parse_block(ps, &pr->nbody);   /* type params stay in scope for the body */
     g_ncur_typarams = 0;                  /* leave the function's `$T` scope */
     return pr;
+}
+
+/* the base identifier of a place spine (v / v.f / v[i] / v.f[i].g), or NULL if the
+ * root is not a plain variable (a call/literal root is not a projectable place). */
+static const char *place_root_name(Expr *e) {
+    while (e && (e->kind == E_FIELD || e->kind == E_INDEX)) e = e->lhs;
+    return (e && e->kind == E_IDENT) ? e->sval : NULL;
+}
+/* how many times identifier `name` is referenced anywhere in `e`. */
+static int ident_use_count(Expr *e, const char *name) {
+    if (!e) return 0;
+    int n = (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) ? 1 : 0;
+    n += ident_use_count(e->lhs, name) + ident_use_count(e->rhs, name);
+    for (int i = 0; i < e->nargs; i++) n += ident_use_count(e->args[i], name);
+    return n;
+}
+
+/* subscript name(p: T, ...) -> inout U:      (2.4: a user-defined projection)
+ *     yield &<place>
+ * Parses + structurally validates; the place's TYPE is checked against U in resolve. */
+static void parse_subscript(Parser *ps) {
+    ps->p++;   /* consume the `subscript` contextual keyword (dispatch verified its text) */
+    Tok *nameT = eat(ps, TK_IDENT, "a subscript name");
+    eat(ps, TK_LPAREN, "'(' after the subscript name");
+    Subscript sub; memset(&sub, 0, sizeof sub);
+    sub.name = nameT->text;   /* matched by bare name + receiver type at the call site (v1) */
+    sub.line = nameT->line;
+    int cap = 0;
+    while (!at(ps, TK_RPAREN)) {
+        Tok *pn = eat(ps, TK_IDENT, "a parameter name");
+        eat(ps, TK_COLON, "':' after a parameter name");
+        Type pt = parse_type(ps);
+        if (sub.nparams == cap) { cap = cap ? cap * 2 : 4; sub.params = (Param *)xrealloc(sub.params, (size_t)cap * sizeof(Param)); }
+        sub.params[sub.nparams].name = pn->text;
+        sub.params[sub.nparams].type = pt;
+        sub.params[sub.nparams].is_inout = 0;
+        sub.params[sub.nparams].is_sink = 0;
+        sub.params[sub.nparams].ffi_ct = NULL;
+        sub.nparams++;
+        if (!accept(ps, TK_COMMA)) break;
+    }
+    eat(ps, TK_RPAREN, "')'");
+    eat(ps, TK_ARROW, "'-> inout <type>' -- a subscript yields an inout projection");
+    if (!accept(ps, TK_INOUT))
+        die_at(cur(ps)->line, "a subscript must yield an inout projection: `-> inout <type>`");
+    sub.ret = parse_type(ps);
+    eat(ps, TK_COLON, "':' before the yield body");
+    eat(ps, TK_NEWLINE, "newline");
+    eat(ps, TK_INDENT, "an indented `yield &<place>` body");
+    while (accept(ps, TK_NEWLINE)) { }
+    if (!(at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "yield")))
+        die_at(cur(ps)->line, "a subscript body must be a single `yield &<place>`");
+    ps->p++;   /* consume `yield` */
+    Expr *y = parse_expr(ps);
+    if (y->kind != E_ADDR)
+        die_at(sub.line, "a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)");
+    sub.place = y->lhs;
+    while (accept(ps, TK_NEWLINE)) { }
+    eat(ps, TK_DEDENT, "a subscript body is a single `yield` line");
+    /* the place must be rooted in a parameter (else the projection dangles) ... */
+    const char *root = place_root_name(sub.place);
+    int is_param = 0;
+    for (int i = 0; i < sub.nparams; i++) if (root && !strcmp(sub.params[i].name, root)) is_param = 1;
+    if (!is_param)
+        die_at(sub.line, "a subscript must yield a place rooted in one of its parameters (else the projection would dangle)");
+    /* ... and no parameter may appear more than once (no argument double-evaluation). */
+    for (int i = 0; i < sub.nparams; i++)
+        if (ident_use_count(sub.place, sub.params[i].name) > 1)
+            die_at(sub.line, "subscript parameter '%s' is used more than once in the yielded place (v1: at most once)", sub.params[i].name);
+    if (g_nsubs == g_nsubs_cap) { g_nsubs_cap = g_nsubs_cap ? g_nsubs_cap * 2 : 8; g_subs = (Subscript *)xrealloc(g_subs, (size_t)g_nsubs_cap * sizeof(Subscript)); }
+    g_subs[g_nsubs++] = sub;
+}
+
+/* Substitute a subscript's parameters with the actual call arguments in a CLONE of its
+ * yielded place (the template is shared across calls, so it must not be mutated). Each
+ * parameter appears at most once (enforced at parse), so an actual arg expr is spliced
+ * in directly (used exactly once) — never double-evaluated. */
+static Expr *subst_place(Expr *e, Subscript *sub, Expr **actual) {
+    if (!e) return NULL;
+    if (e->kind == E_IDENT && e->sval)
+        for (int i = 0; i < sub->nparams; i++)
+            if (!strcmp(sub->params[i].name, e->sval)) return actual[i];
+    Expr *c = new_expr(e->kind, e->line);
+    *c = *e;
+    c->lhs = subst_place(e->lhs, sub, actual);
+    c->rhs = subst_place(e->rhs, sub, actual);
+    if (e->nargs) {
+        c->args = (Expr **)xmalloc((size_t)e->nargs * sizeof(Expr *));
+        for (int i = 0; i < e->nargs; i++) c->args[i] = subst_place(e->args[i], sub, actual);
+    }
+    return c;
+}
+
+/* a subscript callable as `recv.name(<nargs> args)`: bare name matches, the declared
+ * receiver (first) parameter type == recv, and one parameter per arg plus the receiver. */
+static Subscript *find_subscript(const char *name, Type recv, int nargs) {
+    for (int i = 0; i < g_nsubs; i++) {
+        Subscript *s = &g_subs[i];
+        if (!strcmp(s->name, name) && s->nparams == nargs + 1 && s->params[0].type == recv) return s;
+    }
+    return NULL;
 }
 
 /* FFI Stage 1: only scalars + string may cross the C boundary. Composite types
@@ -3404,6 +3524,7 @@ static ProcVec parse_program(Tok *toks) {
             continue;
         }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "const")) { parse_const(&ps); continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "subscript")) { parse_subscript(&ps); continue; }
         if (at(&ps, TK_STRUCT)) { parse_struct(&ps); continue; }
         if (at(&ps, TK_ENUM))   { parse_enum(&ps); continue; }
         if (at(&ps, TK_HANDLE)) { parse_handle(&ps); continue; }
@@ -4106,6 +4227,23 @@ static Type resolve_expr_inner(Expr *e) {
                       }
                       return resolve_expr(e);
                   }
+                  /* g.edge(i) where `edge` is a user subscript (2.4) on g's type: inline
+                   * its yielded place with the receiver + args substituted, then resolve
+                   * THAT — a place in a place context, an rvalue read otherwise. No call. */
+                  { Subscript *sub = find_subscript(e->sval, _qvt, e->nargs);
+                    if (sub) {
+                        Expr **actual = (Expr **)xmalloc((size_t)sub->nparams * sizeof(Expr *));
+                        Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
+                        actual[0] = recv;
+                        for (int i = 0; i < e->nargs; i++) actual[i + 1] = e->args[i];
+                        Type want = sub->ret;
+                        *e = *subst_place(sub->place, sub, actual);
+                        Type got = resolve_expr(e);
+                        if (got != want)
+                            die_at(e->line, "subscript '%s' is declared `-> inout %s` but yields a place of type %s",
+                                   sub->name, type_name(want), type_name(got));
+                        return got;
+                    } }
                   /* x.foo(args), x a local var: a fn-typed-FIELD call takes precedence;
                    * otherwise UFCS — a free fn `foo` (or `<pkg>foo`) whose first
                    * parameter has x's type by value -> foo(x, args). Static dispatch
@@ -4168,6 +4306,20 @@ static Type resolve_expr_inner(Expr *e) {
                     }
                     return resolve_expr(e);
                 }
+                /* base.edge(i): a user subscript on a chained receiver (a.f().edge(i)). */
+                { Subscript *sub = find_subscript(fld->sval, bt, e->nargs);
+                  if (sub) {
+                      Expr **actual = (Expr **)xmalloc((size_t)sub->nparams * sizeof(Expr *));
+                      actual[0] = fld->lhs;
+                      for (int i = 0; i < e->nargs; i++) actual[i + 1] = e->args[i];
+                      Type want = sub->ret;
+                      *e = *subst_place(sub->place, sub, actual);
+                      Type got = resolve_expr(e);
+                      if (got != want)
+                          die_at(e->line, "subscript '%s' is declared `-> inout %s` but yields a place of type %s",
+                                 sub->name, type_name(want), type_name(got));
+                      return got;
+                  } }
                 int fnfield = 0;
                 if (IS_STRUCT(bt)) {
                     StructDef *sd = &g_structs[STRUCT_ID(bt)];
@@ -5340,6 +5492,18 @@ static const char *discarded_map_get(Expr *e) {
 /* >0 while resolving the single-expr tails of a value if/match (see S_EXPR case) */
 static int g_value_ctrl = 0;
 static void resolve_stmt(Stmt *s, Type ret) {
+    /* A bare subscript call as an assignment target — `r.at(i) = v` — parses as a
+     * place-set with an E_CALL target. Resolve it in place context so the subscript
+     * rewrites to its yielded place, then correct the statement kind to the resolved
+     * place (E_INDEX -> index-set, else field/tuple-set). A plain call is not a place. */
+    if ((s->kind == S_INDEXSET || s->kind == S_FIELDSET) && s->target && s->target->kind == E_CALL) {
+        g_place = 1;
+        resolve_expr(s->target);
+        g_place = 0;
+        if (s->target->kind == E_CALL)
+            die_at(s->line, "cannot assign to this expression");
+        s->kind = (s->target->kind == E_INDEX) ? S_INDEXSET : S_FIELDSET;
+    }
     switch (s->kind) {
         case S_CONST:   /* local const: register as an immutable literal, scoped like a `:=` (vars_restore drops it at block end); uses fold in resolve_expr */
             vars_push_const(s->name, lit_type(s->expr), s->expr);

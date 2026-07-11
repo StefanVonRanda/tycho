@@ -537,6 +537,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     src_lines: [string]       # the source split into lines (bundle-relative), for die_at snippet + caret
     vmap: [string: int]       # variant name -> enum index, built once (sibling of sigmap): O(1) is_variant/variant_enum, was a nested linear scan over all enums x variants (~7% of self-compile)
     handles: [string]         # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl (for is_handle/cty/finalizer)
+    subs: [Func]              # ROADMAP 2.4 user projections: each subscript is a MARKED Func (ret = "inout U", body = [SExpr(place)]); found at a call site by find_subscript. Empty in a subscript-free program (so codegen is byte-identical).
 
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
@@ -1353,7 +1354,36 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                         pos = pos + 1
                         push(qargs, parse_expr(toks, &pos))
                 expect(toks, &pos, TRParen)
-                return SExpr(ECall(qn, qargs, _el), _sl)
+                qcall := ECall(qn, qargs, _el)
+                # ROADMAP 2.4: a projection call `recv.name(args)` may be an assignment
+                # TARGET, possibly with trailing field/index steps: `g.edge(2).weight = v`.
+                # Collect the place spine over the call, then dispatch on `=` / `OP=`.
+                # A bare `recv.name(args)` (no trailer, no `=`) is still a statement call;
+                # a plain (non-subscript) call target is rejected in codegen.
+                qlv := qcall
+                for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
+                    if toks[pos].kind == TDot:
+                        pos = pos + 1
+                        if toks[pos].kind != TIdent and toks[pos].kind != TInt:
+                            die("parse: line " + str(toks[pos].line) + ": expected a field name or tuple index after '.'")
+                        qlv = EField(qlv, toks[pos].text, _el)
+                        pos = pos + 1
+                    else:
+                        pos = pos + 1
+                        qix := parse_expr(toks, &pos)
+                        expect(toks, &pos, TRBracket)
+                        qlv = EIndex(qlv, qix, _el)
+                if toks[pos].kind == TEq:
+                    pos = pos + 1
+                    if is_value_ctrl_kw(toks[pos]):   # `place = if.../match...`
+                        return ctrl_rewrite_tails(parse_value_ctrl(toks, &pos), 2, "", qlv)
+                    return SFieldAssign(qlv, parse_expr(toks, &pos), _sl)
+                if is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # place OP= rhs -> = <place> OP rhs
+                    op := toks[pos].text
+                    pos = pos + 1
+                    expect(toks, &pos, TEq)
+                    return SFieldAssign(qlv, EBin(op, qlv, parse_expr(toks, &pos), _el), _sl)
+                return SExpr(qlv, _sl)
             # collect the place steps first (a.b[i].c ...) so that, for a compound
             # assignment, a call-bearing index can be hoisted to a temp -- the place
             # is evaluated twice (read + store), and a side-effecting index must run
@@ -1745,6 +1775,122 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
     return Func(name, params, ptypes, ret, body, 0, "", constraints)
+
+# The base identifier of a place spine (v / v.f / v[i] / v.f[i].g), or "" if the
+# root is not a plain variable (a call/literal root is not a projectable place).
+fn place_root_name(e: Expr) -> string:
+    match e:
+        EField(b, f, _el):
+            return place_root_name(b)
+        EIndex(b, ix, _el):
+            return place_root_name(b)
+        EVar(n, _el):
+            return n
+        _:
+            return ""
+
+# How many times identifier `name` is referenced anywhere in `e` (over the
+# field/index/binary/call spine of a place). Mirrors tychoc's ident_use_count.
+fn ident_use_count(e: Expr, name: string) -> int:
+    match e:
+        EVar(n, _el):
+            if n == name:
+                return 1
+            return 0
+        EField(b, f, _el):
+            return ident_use_count(b, name)
+        EIndex(b, ix, _el):
+            return ident_use_count(b, name) + ident_use_count(ix, name)
+        EBin(o, l, r, _el):
+            return ident_use_count(l, name) + ident_use_count(r, name)
+        ECall(nm, a, _el):
+            return ident_use_count_args(a, name)
+        ECallV(c, a, _el):
+            return ident_use_count(c, name) + ident_use_count_args(a, name)
+        EArrLit(es, _el):
+            return ident_use_count_args(es, name)
+        EMapLit(ks, vs, _el):
+            return ident_use_count_args(ks, name) + ident_use_count_args(vs, name)
+        ETuple(es, _el):
+            return ident_use_count_args(es, name)
+        ESlice(b, lo, hi, _el):
+            return ident_use_count(b, name) + ident_use_count(lo, name) + ident_use_count(hi, name)
+        EAddr(x, _el):
+            return ident_use_count(x, name)
+        _:
+            return 0
+
+fn ident_use_count_args(es: [Expr], name: string) -> int:
+    n := 0
+    i := 0
+    for i < len(es):
+        n = n + ident_use_count(es[i], name)
+        i = i + 1
+    return n
+
+# subscript name(p: T, ...) -> inout U:      (ROADMAP 2.4: a user-defined projection)
+#     yield &<place>
+# Parses + structurally validates, and returns a MARKED Func: `ret` = "inout U"
+# and `body` = [SExpr(place)] (place = the inner of `yield &<place>`). The place's
+# TYPE is checked against U at each call site (in type_of). Structural invariants
+# (checked here): the place is rooted in a parameter (so the projection can't
+# dangle) and each parameter appears in it at most once (no arg double-evaluation).
+fn parse_subscript(toks: [Token], pos: inout int) -> Func:
+    expect_ident(toks, &pos, "subscript")
+    if toks[pos].kind != TIdent:
+        die("parse: line " + str(toks[pos].line) + ": expected a subscript name")
+    name := toks[pos].text
+    sline := toks[pos].line
+    pos = pos + 1
+    expect(toks, &pos, TLParen)
+    params := []string
+    ptypes := []string
+    if toks[pos].kind != TRParen:
+        p := parse_param(toks, &pos)
+        push(params, p.name)
+        push(ptypes, p.ty)
+        for toks[pos].kind == TComma:
+            pos = pos + 1
+            p2 := parse_param(toks, &pos)
+            push(params, p2.name)
+            push(ptypes, p2.ty)
+    expect(toks, &pos, TRParen)
+    expect(toks, &pos, TArrow)
+    expect_ident(toks, &pos, "inout")
+    u := parse_type(toks, &pos)
+    expect(toks, &pos, TColon)
+    open_block(toks, &pos)
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    expect_ident(toks, &pos, "yield")
+    y := parse_expr(toks, &pos)
+    place := EInt("0", sline * 100000)
+    match y:
+        EAddr(inner, _el):
+            place = inner
+        _:
+            die("parse: line " + str(sline) + ": a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)")
+    for toks[pos].kind == TNewline:
+        pos = pos + 1
+    expect(toks, &pos, TDedent)
+    # the place must be rooted in a parameter (else the projection dangles) ...
+    root := place_root_name(place)
+    isparam := false
+    i := 0
+    for i < len(params):
+        if root != "" and params[i] == root:
+            isparam = true
+        i = i + 1
+    if not isparam:
+        die("parse: line " + str(sline) + ": a subscript must yield a place rooted in one of its parameters (else the projection would dangle)")
+    # ... and no parameter may appear more than once (no argument double-evaluation).
+    i = 0
+    for i < len(params):
+        if ident_use_count(place, params[i]) > 1:
+            die("parse: line " + str(sline) + ": subscript parameter '" + params[i] + "' is used more than once in the yielded place (v1: at most once)")
+        i = i + 1
+    # MARKED Func: ret = "inout U", body = [SExpr(place)]. Never a Sig / C function.
+    return Func(name, params, ptypes, "inout " + u, [SExpr(place, sline * 100000)], 0, "", "")
 
 # FFI Stage 1: only scalars + string cross the C boundary (composites have
 # tycho-internal C reps, not a stable ABI). Reject everything else (fail closed).
@@ -2874,6 +3020,9 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
                 die("parse: const value must be a literal")
             push(constn, curpfx + cnm)
             push(constv, clit)
+        elif toks[pos].kind == TIdent and toks[pos].text == "subscript":   # ROADMAP 2.4: a user projection, stored as a MARKED Func (ret "inout U")
+            push(rfuncs, parse_subscript(toks, &pos))
+            push(fpfx, curpfx)
         else:
             push(rfuncs, parse_func(toks, &pos))
             push(fpfx, curpfx)
@@ -3152,6 +3301,123 @@ fn has_prefix(s: string, p: string) -> bool:
     if len(s) < len(p):
         return false
     return substr(s, 0, len(p)) == p
+
+# ROADMAP 2.4 user projections (subscripts). A subscript is stored as a MARKED
+# Func: `ret` is "inout U" (a normal ret never starts with "inout ") and `body`
+# is a single SExpr(place) holding the yielded place (the inner of `yield &<place>`).
+# These helpers keep the marking in one spot.
+fn is_subscript_func(f: Func) -> bool:
+    return has_prefix(f.ret, "inout ")
+
+# The projected type U of a subscript func (`ret` = "inout U" -> "U").
+fn subscript_ret(f: Func) -> string:
+    return substr(f.ret, 6, len(f.ret))           # drop the "inout " marker (6 chars)
+
+# The yielded place expr of a subscript func (body = [SExpr(place, _)]).
+fn subscript_place(f: Func) -> Expr:
+    match f.body[0]:
+        SExpr(place, _sl):
+            return place
+        _:
+            die("internal: subscript body is not a place")
+            return EInt("0", 0)
+
+# Every subscript func in `funcs` (the marked ones), for Decls.subs.
+fn collect_subs(funcs: [Func]) -> [Func]:
+    out := []Func
+    i := 0
+    for i < len(funcs):
+        if is_subscript_func(funcs[i]):
+            push(out, funcs[i])
+        i = i + 1
+    return out
+
+# A subscript callable as `recv.name(<nargs> args)`: bare name matches, the
+# declared receiver (first) parameter type == recvtype, and one parameter per arg
+# plus the receiver. Returns the index into dc.subs, or -1. Mirrors tychoc's
+# find_subscript (src/tychoc.c).
+fn find_subscript(dc: Decls, name: string, recvtype: string, nargs: int) -> int:
+    i := 0
+    for i < len(dc.subs):
+        s := dc.subs[i]
+        if s.name == name and len(s.ptypes) == nargs + 1 and s.ptypes[0] == recvtype:
+            return i
+        i = i + 1
+    return -1
+
+# Substitute a subscript's parameters with the actual call arguments in a CLONE of
+# its yielded place (the template is shared, so it must not be mutated). Each
+# parameter appears at most once (enforced at parse), so an actual arg expr is
+# spliced in directly — never double-evaluated. Mirrors tychoc's subst_place.
+fn subst_place_vars(e: Expr, params: [string], actuals: [Expr]) -> Expr:
+    match e:
+        EVar(name, el):
+            i := 0
+            for i < len(params):
+                if params[i] == name:
+                    return actuals[i]
+                i = i + 1
+            return e
+        EInt(s, el):
+            return e
+        EBool(s, el):
+            return e
+        EChar(s, el):
+            return e
+        EFloat(s, el):
+            return e
+        EStr(s, el):
+            return e
+        EBin(o, l, r, el):
+            return EBin(o, subst_place_vars(l, params, actuals), subst_place_vars(r, params, actuals), el)
+        ECall(nm, a, el):
+            return ECall(nm, subst_place_args(a, params, actuals), el)
+        EField(b, f, el):
+            return EField(subst_place_vars(b, params, actuals), f, el)
+        EIndex(b, ix, el):
+            return EIndex(subst_place_vars(b, params, actuals), subst_place_vars(ix, params, actuals), el)
+        EArrLit(es2, el):
+            return EArrLit(subst_place_args(es2, params, actuals), el)
+        EArrEmpty(t, el):
+            return e
+        EMapEmpty(k, v, el):
+            return e
+        EMapLit(ks, vs, el):
+            return EMapLit(subst_place_args(ks, params, actuals), subst_place_args(vs, params, actuals), el)
+        ETuple(es2, el):
+            return ETuple(subst_place_args(es2, params, actuals), el)
+        ESlice(b, lo, hi, el):
+            return ESlice(subst_place_vars(b, params, actuals), subst_place_vars(lo, params, actuals), subst_place_vars(hi, params, actuals), el)
+        EAddr(x, el):
+            return EAddr(subst_place_vars(x, params, actuals), el)
+        ELambda(id, ps, pts, ret, body, cn, ct, el):
+            return e
+        ECallV(c, a, el):
+            return ECallV(subst_place_vars(c, params, actuals), subst_place_args(a, params, actuals), el)
+        ESpawn(id, nm, a, el):
+            return ESpawn(id, nm, subst_place_args(a, params, actuals), el)
+
+fn subst_place_args(es: [Expr], params: [string], actuals: [Expr]) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, subst_place_vars(es[i], params, actuals))
+        i = i + 1
+    return out
+
+# The yielded place of subscript `dc.subs[si]` with the receiver + call args
+# substituted for its parameters (a fresh CLONE, so the shared template is never
+# mutated). This is the place `recv.name(args)` projects to; the surrounding
+# read/write flows through it via the existing lvalue machinery.
+fn subscript_projected_place(dc: Decls, si: int, recv: Expr, args: [Expr]) -> Expr:
+    sub := dc.subs[si]
+    actuals := []Expr
+    push(actuals, recv)                               # param 0 is the receiver
+    i := 0
+    for i < len(args):
+        push(actuals, args[i])
+        i = i + 1
+    return subst_place_vars(subscript_place(sub), sub.params, actuals)
 
 fn is_task(ty: string) -> bool:                   # Task(T): the handle from `spawn f(args)` (CC-1)
     return has_prefix(ty, "Task(")
@@ -3891,6 +4157,11 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     if cfn == "recv":
                         return "Option(" + chan_inner(cbt) + ")"
                     return "void"                 # send / close
+            if cfn != "":                         # ROADMAP 2.4: base.name(args) — a user projection on a chained receiver
+                srbt := resolve_nt(dc, ctx, base_ty(type_of(efield_base(callee), names, types, dc, ctx)))
+                ssi := find_subscript(dc, cfn, srbt, len(cargs))
+                if ssi >= 0:
+                    return subscript_call_type(dc, ctx, names, types, ssi, efield_base(callee), cargs, _el)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method: its return type
                 msi := dc.sigmap.get(mn, -1)
@@ -3951,8 +4222,14 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return substr(name, tm0 + 2, len(name) - 1)
                 name = substr(name, 0, tm0)       # generics: strip the explicit-type-arg encoding for the template sig lookup (placeholder type; codegen recomputes)
             di := find(name, ".")
-            if di >= 0 and has_str(names, substr(name, 0, di)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
-                return type_of(ECallV(EField(EVar(substr(name, 0, di), _el), substr(name, di + 1, len(name)), _el), args, _el), names, types, dc, ctx)
+            if di >= 0 and has_str(names, substr(name, 0, di)):   # `recv.name(args)` where recv is a LOCAL
+                rvn := substr(name, 0, di)
+                mnm := substr(name, di + 1, len(name))
+                rvt := resolve_nt(dc, ctx, base_ty(var_type(names, types, rvn)))
+                si := find_subscript(dc, mnm, rvt, len(args))   # ROADMAP 2.4: a user projection on recv's type -> the projected place's type U
+                if si >= 0:
+                    return subscript_call_type(dc, ctx, names, types, si, EVar(rvn, _el), args, _el)
+                return type_of(ECallV(EField(EVar(rvn, _el), mnm, _el), args, _el), names, types, dc, ctx)   # else a fn-field call
             if has_str(names, name):              # indirect call through a function-typed variable
                 vt := base_ty(var_type(names, types, name))
                 if is_func(vt):
@@ -4003,6 +4280,18 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if is_newtype(dc, ctx, name):             # Nt(v) constructor: KEEP the newtype identity unresolved, so a decl `r := Nt(v)` stores "Nt" and the value can be distinguished from its base. A var read (the EVar case above) and cty still resolve to the base, so codegen is unchanged.
                 return name
             return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
+
+# ROADMAP 2.4: the type a subscript call `recv.name(args)` projects to. The
+# subscript is declared `-> inout U`; substitute the receiver + args into its
+# yielded place and type THAT place, then check it matches U (fail closed on a
+# declared/actual type mismatch — mirrors tychoc). Returns U's base type.
+fn subscript_call_type(dc: Decls, ctx: Ctx, names: [string], types: [string], si: int, recv: Expr, args: [Expr], _el: int) -> string:
+    want := resolve_nt(dc, ctx, subscript_ret(dc.subs[si]))
+    place := subscript_projected_place(dc, si, recv, args)
+    got := type_of(place, names, types, dc, ctx)
+    if got != want:
+        die_at(dc, _el, "subscript '" + dc.subs[si].name + "' is declared `-> inout " + subscript_ret(dc.subs[si]) + "` but yields a place of type " + got)
+    return got
 
 fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
@@ -4930,6 +5219,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                         push(nca, cargs[1])
                         return gen_expr(ECall("map_get", nca, _el), names, types, dc, ctx)
                     die("m.get(key) or m.get(key, default) takes one or two arguments")
+            if cfn != "":                         # ROADMAP 2.4: base.name(args) — read through a projection on a chained receiver
+                grbt := resolve_nt(dc, ctx, base_ty(type_of(efield_base(callee), names, types, dc, ctx)))
+                gsi := find_subscript(dc, cfn, grbt, len(cargs))
+                if gsi >= 0:
+                    return gen_expr(subscript_projected_place(dc, gsi, efield_base(callee), cargs), names, types, dc, ctx)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method call: foo(recv, args)
                 allargs := []Expr
@@ -5099,8 +5393,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return gen_expr(EStr("", _el), names, types, dc, ctx)
                 die_at(dc, ctx.line, "zero$(" + zt + "): only int, float, bool, and string are defaultable")
             cdi := find(name, ".")
-            if cdi >= 0 and has_str(names, substr(name, 0, cdi)):   # `h.cb(args)` where h is a LOCAL: a fn-field call
-                return gen_expr(ECallV(EField(EVar(substr(name, 0, cdi), _el), substr(name, cdi + 1, len(name)), _el), args, _el), names, types, dc, ctx)
+            if cdi >= 0 and has_str(names, substr(name, 0, cdi)):   # `recv.name(args)` where recv is a LOCAL
+                grvn := substr(name, 0, cdi)
+                gmnm := substr(name, cdi + 1, len(name))
+                grvt := resolve_nt(dc, ctx, base_ty(var_type(names, types, grvn)))
+                gsi := find_subscript(dc, gmnm, grvt, len(args))   # ROADMAP 2.4: read through the projection -> gen_expr the yielded place
+                if gsi >= 0:
+                    return gen_expr(subscript_projected_place(dc, gsi, EVar(grvn, _el), args), names, types, dc, ctx)
+                return gen_expr(ECallV(EField(EVar(grvn, _el), gmnm, _el), args, _el), names, types, dc, ctx)   # else a fn-field call
             if name == "push":                    # push(arr, v): mutate in place
                 at := type_of(args[0], names, types, dc, ctx)
                 if not is_array(at) and not is_soa(at):   # reject push onto a non-array/soa. Was a fail-open: tychoc0 emitted Arr_*_push on a scalar (broken C). Matches tychoc (src/tychoc.c ~4206).
@@ -5593,6 +5893,14 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
         EBin(o, l, r, _el):
             return gen_expr(lv, names, types, dc, ctx)
         ECall(nm, ar, _el):
+            pdi := find(nm, ".")                  # ROADMAP 2.4: `recv.name(args)` as a PLACE — project to the yielded place and gen_place THAT
+            if pdi >= 0 and has_str(names, substr(nm, 0, pdi)):
+                prvn := substr(nm, 0, pdi)
+                pmnm := substr(nm, pdi + 1, len(nm))
+                prvt := resolve_nt(dc, ctx, base_ty(var_type(names, types, prvn)))
+                psi := find_subscript(dc, pmnm, prvt, len(ar))
+                if psi >= 0:
+                    return gen_place(subscript_projected_place(dc, psi, EVar(prvn, _el), ar), names, types, dc, ctx)
             return gen_expr(lv, names, types, dc, ctx)
         EArrLit(es, _el):
             return gen_expr(lv, names, types, dc, ctx)
@@ -5608,7 +5916,13 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
             return gen_expr(lv, names, types, dc, ctx)
         ELambda(id, ps, pts, ret, body, cn, ct, _el):
             return gen_expr(lv, names, types, dc, ctx)
-        ECallV(callee, cargs, _el):
+        ECallV(callee, cargs, _el):               # ROADMAP 2.4: base.name(args) as a PLACE (chained receiver)
+            pcfn := efield_fname(callee)
+            if pcfn != "":
+                pcbt := resolve_nt(dc, ctx, base_ty(type_of(efield_base(callee), names, types, dc, ctx)))
+                pcsi := find_subscript(dc, pcfn, pcbt, len(cargs))
+                if pcsi >= 0:
+                    return gen_place(subscript_projected_place(dc, pcsi, efield_base(callee), cargs), names, types, dc, ctx)
             return gen_expr(lv, names, types, dc, ctx)
         EAddr(inr, _el):
             return gen_expr(lv, names, types, dc, ctx)
@@ -5753,6 +6067,28 @@ fn is_place(e: Expr) -> bool:
             return false
         ESpawn(id, nm, a, _el):
             return false
+
+# Is `lv` a valid assignment target? Only a bare CALL is ever invalid here: it's a
+# place iff it names a user subscript (ROADMAP 2.4). A dotted `recv.name(args)` call
+# is an ECall whose name has a '.'; a chained `base.name(args)` is an ECallV whose
+# callee is an EField. Any non-call target (var/field/index/...) is fine and lowers
+# through gen_place as usual. Mirrors tychoc rejecting a non-subscript call target.
+fn place_target_ok(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
+    match lv:
+        ECall(nm, ar, _el):
+            di := find(nm, ".")
+            if di >= 0 and has_str(names, substr(nm, 0, di)):
+                rvt := resolve_nt(dc, ctx, base_ty(var_type(names, types, substr(nm, 0, di))))
+                return find_subscript(dc, substr(nm, di + 1, len(nm)), rvt, len(ar)) >= 0
+            return false                          # a plain `f(args) = v` is never a place
+        ECallV(callee, cargs, _el):
+            cfn := efield_fname(callee)
+            if cfn != "":
+                cbt := resolve_nt(dc, ctx, base_ty(type_of(efield_base(callee), names, types, dc, ctx)))
+                return find_subscript(dc, cfn, cbt, len(cargs)) >= 0
+            return false
+        _:
+            return true
 
 # A slice expression already MATERIALIZES an owning copy in ctx.owner
 # (Arr_*_slice/substr/gen_soa_slice all allocate fresh into ctx.owner), so unlike
@@ -7011,6 +7347,13 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 ESpawn(sid, snm, sa, _el):
                     return deflt
         SFieldAssign(lv, rhs, _sl):
+            # ROADMAP 2.4: a bare CALL as an assignment target is only valid if it
+            # names a user subscript (which projects to a place). `recv.name(args) = v`
+            # parses to SFieldAssign(ECall("recv.name", args), v); a plain (non-subscript)
+            # call target -- `f(1) = 3`, `pkg.g(x) = 3` -- is not a place: reject cleanly
+            # (mirrors tychoc's resolve_stmt, which corrects or rejects the target).
+            if not place_target_ok(lv, names, types, dc, ctx):
+                die_at(dc, _sl, "cannot assign to this expression")
             # storing into a (malloc) struct field / array element: the value must
             # be malloc'd (owner "0"), not left in _scope which frees at return.
             # EXCEPT a map-place m[k]: its slot lives in the map's own arena, so
@@ -12493,7 +12836,9 @@ fn check_dups(prog: Program):
         # zero value. Warn, don't reject (a body ending in an infinite loop is
         # total yet not provably so). Extern (no body) and generic templates skip.
         f := prog.funcs[i]
-        if f.ret != "void" and f.is_extern == 0 and not func_is_generic(f) and not block_ends_in_return(f.body):
+        # a subscript (marked Func: ret "inout U", body a single yield-place) is not
+        # a proc with a return path — skip the fall-off-the-end lint for it.
+        if f.ret != "void" and f.is_extern == 0 and not func_is_generic(f) and not is_subscript_func(f) and not block_ends_in_return(f.body):
             ln := 0
             if len(f.body) > 0:
                 ln = stmt_line(f.body[0]) / 100000
@@ -12527,7 +12872,7 @@ fn main():
             sigmap0[prog0.funcs[i].name] = i
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
-    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums), prog0.handles)
+    dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums), prog0.handles, collect_subs(prog0.funcs))
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
@@ -12542,7 +12887,7 @@ fn main():
         if sigmap.get(funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap[funcs[i].name] = i
         i = i + 1
-    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)
+    dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles, collect_subs(prog.funcs))
     ctx := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
     # generics: expand `$T` templates into concrete instances, then rebuild the
     # sig tables from the monomorphized program (templates dropped, instances added)
@@ -12556,7 +12901,7 @@ fn main():
         if sigmap.get(funcs[i].name, -1) < 0:
             sigmap[funcs[i].name] = i
         i = i + 1
-    dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)
+    dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles, collect_subs(prog.funcs))
     ets := collect_elem_types(prog, dc, ctx)
     out := preamble()
     # Emission order is carefully staged so every C type is complete before use,
@@ -12743,11 +13088,16 @@ fn main():
         i = i + 1
     i = 0                                        # 9. prototypes
     for i < len(funcs):
-        if funcs[i].is_extern == 1:              # FFI: real C ABI decl, not the h_/arena proto
+        if is_subscript_func(funcs[i]):          # ROADMAP 2.4: a subscript is a place-macro, not a C function
+            i = i + 1
+        elif funcs[i].is_extern == 1:            # FFI: real C ABI decl, not the h_/arena proto
             out = out + gen_extern_proto(funcs[i], dc, ctx)
+            i = i + 1
         elif funcs[i].name != "main":
             out = out + gen_proto(funcs[i], dc, ctx)
-        i = i + 1
+            i = i + 1
+        else:
+            i = i + 1
     i = 0                                        # 9a'. CC spawn sites: per-site args struct + thread trampoline.
     for i < len(spawns):                         #      The trampoline runs the call with the task's root arena as
         si := str(i)                             #      _parent, parks the result in a root-allocated slot, then
@@ -12768,7 +13118,7 @@ fn main():
     if has_fnval:                                # 9b. fn-value adapter thunks (after protos: each forwards to h_<name>)
         i = 0
         for i < len(funcs):
-            if funcs[i].name != "main" and funcs[i].is_extern == 0 and fn_value_eligible(funcs[i]) and not has_prefix(funcs[i].name, "__lam"):
+            if not is_subscript_func(funcs[i]) and funcs[i].name != "main" and funcs[i].is_extern == 0 and fn_value_eligible(funcs[i]) and not has_prefix(funcs[i].name, "__lam"):
                 out = out + gen_fnval_thunk(funcs[i], dc, ctx)   # lifted lambdas get a capture-aware thunk instead (below); externs have no h_ wrapper
             i = i + 1
     i = 0                                        # 9c. closure thunks: unpack the env, call the lifted __lam proc
@@ -12789,7 +13139,7 @@ fn main():
         i = i + 1
     i = 0
     for i < len(funcs):
-        if funcs[i].is_extern == 0:              # FFI externs have no body
+        if funcs[i].is_extern == 0 and not is_subscript_func(funcs[i]):   # FFI externs have no body; a subscript is a place-macro (no C function)
             out = out + gen_func(funcs[i], dc, ctx)
         i = i + 1
     print(out)
