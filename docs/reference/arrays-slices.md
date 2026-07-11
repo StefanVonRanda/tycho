@@ -104,6 +104,39 @@ fn dot(a: [3]float, b: [3]float) -> float:      # passed and returned by value
 - Growth operations (`push`, `pop`, slices) do not apply — the size is fixed. Use a dynamic
   `[T]` when the length varies.
 
+### Generic over size (`[$N]T`)
+
+A function can be **generic over the length** of a fixed array. A parameter written `[$N]T`
+introduces a size parameter `$N` that the call infers from the argument, and inside the body
+`N` is an ordinary `int` constant equal to that length:
+
+```
+fn sum(xs: [$N]int) -> int:      # N is inferred from the argument
+    total := 0
+    for i in range(N):           # N is a compile-time int in the body
+        total = total + xs[i]
+    return total
+
+a: [3]int = [10, 20, 30]
+b: [4]int = [1, 2, 3, 4]
+print(str(sum(a)))               # 60   (one instance, N = 3)
+print(str(sum(b)))               # 10   (a second instance, N = 4)
+```
+
+Each distinct length used is monomorphized into its own instance (just like a `$T` type
+parameter), so `sum(a)` and `sum(b)` compile to two specialized functions. Size and element
+parameters compose: `[$N]$T` infers **both** the length and the element type. A `$N` repeated
+across parameters must bind to one length — `fn dot(a: [$N]int, b: [$N]int)` requires its two
+arguments to be the same size, checked at the call.
+
+- The argument must be a **fixed** array — a `[3]int`, not a dynamic `[int]` (a dynamic array
+  has no compile-time length to infer `N` from). A bare `[1, 2, 3]` literal is dynamic unless
+  its destination type is fixed.
+- `$N` is inferred from an argument, so a return-only `[$N]T` (no parameter mentions `N`) is a
+  compile error — there is nothing to infer it from.
+- A `[$N]T` is a template type: it is meaningful only as a function parameter, never in a
+  stored position (a struct field, an enum payload, a newtype).
+
 ## Slices (`xs[a:b]`)
 
 `xs[a:b]` is a sub-range of an array — `xs[a:]` runs to the end, `xs[:b]` from the start,

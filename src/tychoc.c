@@ -627,6 +627,9 @@ static Type arrc_sized(Type elem, long size) {   /* find-or-create [elem] (size 
 static Type arrc_of(Type elem) { return arrc_sized(elem, 0); }             /* dynamic [elem] */
 static Type fixarr_of(Type elem, long n) { return arrc_sized(elem, n); }   /* fixed [n]elem */
 #define IS_FIXARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0)
+/* const generics 1.6B: `[$N]T` — the size is a *parameter* (encoded as a NEGATIVE
+ * size, see sizeparam_enc). Template-only: never a concrete fixed array, never emitted. */
+#define IS_SIZEPARAM_ARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size < 0)
 static long fixarr_size(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
 static int is_array(Type t) {
     return t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_ARRAY_FLOAT || IS_ARRC(t);
@@ -657,6 +660,27 @@ static Type typaram_of(char *name) {
 static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)].name; }
 static char *g_cur_typarams[16];
 static int   g_ncur_typarams = 0;
+
+/* const generics 1.6B: a `$N` SIZE parameter (`[$N]T`). Encoded as a NEGATIVE size
+ * in an arrc entry -- `size == -(id + 1)` -- so it lives in the same intern table
+ * as `[T]` (size 0) and `[3]T` (size > 0). Interned by name like a `$T` type
+ * parameter; bound to a concrete N at instantiation (from a `[3]T` argument), after
+ * which the body sees `N` as an ordinary int const. Never reaches codegen. */
+typedef struct { char *name; } SizeParam;
+static SizeParam *g_sizeparams;
+static int g_nsizeparams = 0, g_sizeparams_cap = 0;
+static long sizeparam_enc(char *name) {           /* find-or-create; returns the NEGATIVE size encoding for `[$name]T` */
+    for (int i = 0; i < g_nsizeparams; i++)
+        if (!strcmp(g_sizeparams[i].name, name)) return -(long)(i + 1);
+    TBL_ENSURE(g_sizeparams, g_nsizeparams, g_sizeparams_cap);
+    int id = g_nsizeparams;
+    g_sizeparams[id].name = name; g_nsizeparams++;
+    return -(long)(id + 1);
+}
+static int   sizeparam_id(long enc) { return (int)(-enc - 1); }   /* decode the NEGATIVE size back to a table index */
+static char *g_cur_sizeparams[16];
+static int   g_ncur_sizeparams = 0;
+static long *g_sizebinds = NULL;   /* during instantiate_generic: sizebinds[sizeparam_id] = concrete N (0 == unbound; real sizes are > 0) */
 
 /* Option(T) — a tagged optional (Some(value) or None). Interned like composite
  * arrays; one monomorphic TychoOpt<id> { char has; T val; } is generated per
@@ -1116,7 +1140,12 @@ static const char *type_name(Type t) {
     if (IS_CHAN(t))    return sfmt("Channel(%s)", type_name(chan_inner(t)));
     if (IS_HANDLE(t))  return g_handles[HANDLE_ID(t)].name;
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
-    if (IS_ARRC(t))   return sfmt("[%s]", type_name(arr_elem(t)));
+    if (IS_ARRC(t)) {   /* [T] dynamic, [N]T fixed (1.6), [$N]T size-param (1.6B) */
+        long sz = g_arrtypes[ARRC_ID(t)].size;
+        if (sz > 0) return sfmt("[%ld]%s", sz, type_name(arr_elem(t)));
+        if (sz < 0) return sfmt("[$%s]%s", g_sizeparams[sizeparam_id(sz)].name, type_name(arr_elem(t)));
+        return sfmt("[%s]", type_name(arr_elem(t)));
+    }
     if (IS_MAPC(t))   return sfmt("[%s: %s]", type_name(map_key(t)), type_name(map_val(t)));
     if (IS_OPT(t))    return sfmt("Option(%s)", type_name(opt_inner(t)));
     if (IS_RES(t))    return sfmt("Result(%s, %s)", type_name(res_ok(t)), type_name(res_err(t)));
@@ -1256,6 +1285,8 @@ typedef struct {
     int     ncon;
     Type    typarams[16];  /* generics: the template's $-params in declaration (first-appearance) order */
     int     ntyparams;     /* for mapping explicit call-site type args `f$(int, ...)` by position */
+    char   *sizeparams[16];/* const generics 1.6B: `[$N]T` size-param names, first-appearance order (bound to an int const in the body) */
+    int     nsizeparams;
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -1329,7 +1360,18 @@ static Type subst_type(Type t, Type *binds) {
      * references itself terminates (the in-progress instance is found and reused). */
     if (IS_STRUCT(t) && g_structs[STRUCT_ID(t)].generic) return STRUCT_TYPE(struct_instantiate(STRUCT_ID(t), binds));
     if (IS_ENUM(t)   && g_enums[ENUM_ID(t)].generic)     return ENUM_TYPE(enum_instantiate(ENUM_ID(t), binds));
-    if (is_array(t)) return arr_of(subst_type(arr_elem(t), binds));   /* arr_of canonicalizes [int]->T_ARRAY_INT */
+    if (is_array(t)) {
+        Type se = subst_type(arr_elem(t), binds);
+        if (IS_ARRC(t)) {
+            long sz = g_arrtypes[ARRC_ID(t)].size;
+            if (sz < 0) {   /* [$N]T (1.6B): substitute the bound concrete N; if still unbound, stay a size-param */
+                long cn = (g_sizebinds && g_sizebinds[sizeparam_id(sz)] > 0) ? g_sizebinds[sizeparam_id(sz)] : 0;
+                return cn > 0 ? fixarr_of(se, cn) : arrc_sized(se, sz);
+            }
+            if (sz > 0) return fixarr_of(se, sz);   /* [3]$T -> [3]int: preserve the fixed size */
+        }
+        return arr_of(se);   /* dynamic: arr_of canonicalizes [int]->T_ARRAY_INT */
+    }
     if (IS_OPT(t))  return opt_of(subst_type(opt_inner(t), binds));
     if (IS_RES(t))  return res_of(subst_type(g_restypes[RES_ID(t)].ok, binds), subst_type(g_restypes[RES_ID(t)].err, binds));
     if (is_map(t))  return map_of(subst_type(map_key(t), binds), subst_type(map_val(t), binds));   /* map_of canonicalizes [string:int]->T_MAP_SI */
@@ -1345,6 +1387,7 @@ static Type subst_type(Type t, Type *binds) {
  * is transient (only in a template) and must never reach codegen. */
 static int has_typaram(Type t) {
     if (IS_TYPARAM(t)) return 1;
+    if (IS_SIZEPARAM_ARR(t)) return 1;   /* const generics 1.6B: `[$N]T` is template-only, transient like a `$T` */
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].generic;   /* a bare generic template type is transient (a deferred self-reference) */
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].generic;
     if (is_array(t)) return has_typaram(arr_elem(t));
@@ -1359,6 +1402,24 @@ static int has_typaram(Type t) {
     return 0;
 }
 
+/* const generics 1.6B: does `t` (recursively) mention a `$N` size parameter? A
+ * `[$N]T` is only meaningful in a generic function's parameter type (where the
+ * argument fixes N); in any *stored* position (struct field, enum payload, newtype)
+ * there is nothing to infer N from, so it is rejected -- fail closed (RULE 5). */
+static int type_has_sizeparam(Type t) {
+    if (IS_SIZEPARAM_ARR(t)) return 1;
+    if (is_array(t)) return type_has_sizeparam(arr_elem(t));
+    if (IS_OPT(t))  return type_has_sizeparam(opt_inner(t));
+    if (IS_RES(t))  return type_has_sizeparam(g_restypes[RES_ID(t)].ok) || type_has_sizeparam(g_restypes[RES_ID(t)].err);
+    if (is_map(t))  return type_has_sizeparam(map_key(t)) || type_has_sizeparam(map_val(t));
+    if (IS_FUNC(t)) {
+        if (type_has_sizeparam(func_ret(t))) return 1;
+        for (int i = 0; i < func_n(t); i++) if (type_has_sizeparam(func_param(t, i))) return 1;
+        return 0;
+    }
+    return 0;
+}
+
 /* Match a (possibly type-parameterized) field type against a concrete argument
  * type, binding type parameters; 0 on a conflict/mismatch. */
 static int match_type(Type pat, Type concrete, Type *binds) {
@@ -1367,7 +1428,19 @@ static int match_type(Type pat, Type concrete, Type *binds) {
         if (binds[id] != T_VOID && binds[id] != concrete) return 0;
         binds[id] = concrete; return 1;
     }
-    if (is_array(pat) && is_array(concrete)) return match_type(arr_elem(pat), arr_elem(concrete), binds);
+    if (is_array(pat) && is_array(concrete)) {
+        long ps_ = IS_ARRC(pat)      ? g_arrtypes[ARRC_ID(pat)].size      : 0;   /* built-in arrays (T_ARRAY_INT ...) are dynamic: size 0 */
+        long cs_ = IS_ARRC(concrete) ? g_arrtypes[ARRC_ID(concrete)].size : 0;
+        if (ps_ < 0) {                          /* [$N]T pattern (1.6B): bind N; the argument must be a fixed array */
+            if (cs_ <= 0 || !g_sizebinds) return 0;
+            int sid = sizeparam_id(ps_);
+            if (g_sizebinds[sid] > 0 && g_sizebinds[sid] != cs_) return 0;   /* N already bound to a different size */
+            g_sizebinds[sid] = cs_;
+        } else if (ps_ != cs_) {
+            return 0;                           /* [3]T vs [4]T, or fixed vs dynamic: distinct types */
+        }
+        return match_type(arr_elem(pat), arr_elem(concrete), binds);
+    }
     if (IS_OPT(pat) && IS_OPT(concrete))   return match_type(opt_inner(pat), opt_inner(concrete), binds);
     if (IS_RES(pat) && IS_RES(concrete))   return match_type(g_restypes[RES_ID(pat)].ok, g_restypes[RES_ID(concrete)].ok, binds)
                                                && match_type(g_restypes[RES_ID(pat)].err, g_restypes[RES_ID(concrete)].err, binds);
@@ -1556,6 +1629,30 @@ static Type parse_type_inner(Parser *ps) {
         /* The size N is INSIDE the brackets, the element T follows the `]` (`[3]int`).
          * N is an int literal or an int `const`. `[3]int` is unambiguous; `[W]int` vs a
          * dynamic `[Foo]` is disambiguated by whether a type follows the `]`. */
+        /* [$N]T generic-over-size (const generics 1.6B): a `$N` size parameter, its
+         * length inferred from the argument at each call (`[$N]int`; in the body N is
+         * an int const). Distinguished from a dynamic `[$T]` (type-param element) by a
+         * TYPE following `]`. The one non-type IDENT that can follow a complete type in
+         * a signature is the contextual keyword `where` (`-> [$T] where cmp(T)`), so it
+         * is excluded -- otherwise a dynamic `[$T]` return would be misread as `[$T]where`. */
+        if (at(ps, TK_DOLLAR) && peek(ps, 1)->kind == TK_IDENT &&
+            peek(ps, 2)->kind == TK_RBRACKET && tok_starts_type(peek(ps, 3)->kind) &&
+            !(peek(ps, 3)->kind == TK_IDENT && !strcmp(peek(ps, 3)->text, "where"))) {
+            ps->p++;                             /* eat '$' */
+            Tok *snm = eat(ps, TK_IDENT, "a size-parameter name after '$'");
+            int seen = 0;
+            for (int i = 0; i < g_ncur_sizeparams; i++) if (!strcmp(g_cur_sizeparams[i], snm->text)) { seen = 1; break; }
+            if (!seen) {
+                if (g_ncur_sizeparams >= 16) die_at(snm->line, "too many size parameters (max 16)");
+                g_cur_sizeparams[g_ncur_sizeparams++] = snm->text;
+            }
+            long enc = sizeparam_enc(snm->text);
+            eat(ps, TK_RBRACKET, "']'");
+            Type felem = parse_type(ps);
+            if (felem == T_VOID || felem == T_BOOL)
+                die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+            return arrc_sized(felem, enc);
+        }
         int size_is_int   = at(ps, TK_INT) && peek(ps, 1)->kind == TK_RBRACKET;
         int size_is_const = at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_RBRACKET &&
                             tok_starts_type(peek(ps, 2)->kind);
@@ -2874,6 +2971,7 @@ static Stmt **parse_block(Parser *ps, int *count) {
 
 static Proc *parse_fn(Parser *ps) {
     g_ncur_typarams = 0;                  /* fresh `$T` scope for this function */
+    g_ncur_sizeparams = 0;                /* fresh `$N` size-param scope (const generics 1.6B) */
     eat(ps, TK_FN, "'fn'");
     Tok *nameT = eat(ps, TK_IDENT, "a procedure name");
     eat(ps, TK_LPAREN, "'('");
@@ -2919,9 +3017,11 @@ static Proc *parse_fn(Parser *ps) {
     else pr->ret = T_VOID;
     if (IS_HANDLE(pr->ret))   /* FFI R2: a handle is freed at its owner's scope exit; returning it (the only way is from an extern opener) would free-then-escape */
         die_at(pr->line, "a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it");
-    pr->generic = (g_ncur_typarams > 0);   /* a `$T` in the signature makes this a template */
+    pr->generic = (g_ncur_typarams > 0 || g_ncur_sizeparams > 0);   /* a `$T` type param OR a `$N` size param in the signature makes this a template */
     pr->ntyparams = g_ncur_typarams;       /* record the $-params in order, for explicit call-site type args */
     for (int i = 0; i < g_ncur_typarams; i++) pr->typarams[i] = typaram_of(g_cur_typarams[i]);
+    pr->nsizeparams = g_ncur_sizeparams;   /* const generics 1.6B: record the signature's `$N` size params (bound per instance) */
+    for (int i = 0; i < g_ncur_sizeparams; i++) pr->sizeparams[i] = g_cur_sizeparams[i];
 
     /* generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known
      * predicate set, checked at instantiation against the inferred concrete type. */
@@ -2967,6 +3067,7 @@ static Proc *parse_fn(Parser *ps) {
     eat(ps, TK_NEWLINE, "newline");
     pr->body = parse_block(ps, &pr->nbody);   /* type params stay in scope for the body */
     g_ncur_typarams = 0;                  /* leave the function's `$T` scope */
+    g_ncur_sizeparams = 0;                /* leave the function's `$N` size-param scope */
     return pr;
 }
 
@@ -3697,7 +3798,8 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
  * the template body with `$T` substituted at clone time — so instances resolve
  * independently with no shared/sticky resolved state (the source of the prior
  * multi-instantiation, typed-local, and nested-call bugs). */
-typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody; } GInst;
+typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody;
+                 long spvals[16]; int nsp; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams) */
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
 static Stmt **clone_block(Stmt **body, int n, Type *binds);   /* per-instance body clone; defined near ginst_to_proc */
 static Proc **g_inst_procs; static int g_ninst_procs = 0, g_inst_procs_cap = 0;   /* resolved generic-instance Procs, shared by the prototype + body emit loops (Stage-2 #3) */
@@ -6026,7 +6128,11 @@ static char *type_mangle_ident(Type t) {
     if (t == T_CHAR)   return "char";
     if (IS_STRUCT(t))  return g_structs[STRUCT_ID(t)].name;
     if (IS_ENUM(t))    return g_enums[ENUM_ID(t)].name;
-    if (is_array(t))   return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
+    if (is_array(t)) {
+        long sz = IS_ARRC(t) ? g_arrtypes[ARRC_ID(t)].size : 0;
+        if (sz > 0) return sfmt("arr%ld_%s", sz, type_mangle_ident(arr_elem(t)));   /* [N]T (1.6): distinct per fixed size */
+        return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
+    }
     if (IS_OPT(t))     return sfmt("opt_%s", type_mangle_ident(opt_inner(t)));
     if (IS_RES(t))     return sfmt("res_%s_%s", type_mangle_ident(g_restypes[RES_ID(t)].ok), type_mangle_ident(g_restypes[RES_ID(t)].err));
     if (is_map(t))     return sfmt("map_%s_%s", type_mangle_ident(map_key(t)), type_mangle_ident(map_val(t)));
@@ -6076,6 +6182,9 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
     Type binds[256];
     for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
+    long sizebinds[256];                                       /* const generics 1.6B: sizebinds[sizeparam_id] = concrete N */
+    for (int i = 0; i < g_nsizeparams && i < 256; i++) sizebinds[i] = 0;   /* 0 == unbound (real sizes are > 0) */
+    long *saved_sb = g_sizebinds; g_sizebinds = sizebinds;     /* match_type/subst_type bind & substitute `$N` while this is live */
     if (e->ntypeargs > 0) {   /* explicit call-site type args bind the params in declaration order */
         if (e->ntypeargs != gt->ntyparams)
             die_at(e->line, "'%s' has %d type parameter(s), but %d explicit type argument(s) were given",
@@ -6132,7 +6241,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     if (has_typaram(cret))
         die_at(e->line, "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)", gt->name, gt->name);
     e->sval = nm;                                     /* rewrite the call to the instance */
-    if (sig_find(nm)) return;                         /* already instantiated */
+    if (sig_find(nm)) { g_sizebinds = saved_sb; return; }   /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
     s.name = nm; s.ret = cret; s.nparams = gt->nparams; s.builtin = 0;
     for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.inout[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; s.variadic[j] = gt->params[j].is_variadic; }
@@ -6144,6 +6253,10 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     gi.body = clone_block(gt->body, gt->nbody, gi.binds);   /* Stage-2: the instance's own `$T`-substituted body */
     gi.nbody = gt->nbody;
     for (int j = 0; j < gt->nparams; j++) gi.params[j] = cparams[j];
+    gi.nsp = gt->nsizeparams;   /* const generics 1.6B: record this instance's `$N` values, for the body's int consts */
+    for (int i = 0; i < gt->nsizeparams; i++)
+        gi.spvals[i] = sizebinds[sizeparam_id(sizeparam_enc(gt->sizeparams[i]))];
+    g_sizebinds = saved_sb;
     g_ginsts[g_nginsts++] = gi;
     if (g_nginsts > 1024)   /* runaway guard: fail closed on a recursive generic at a strictly-growing type */
         die_at(e->line, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?");
@@ -6165,6 +6278,21 @@ static void resolve_program(ProcVec *prog) {
     for (int i = 0; i < g_nnewtypes; i++)
         if (IS_CHAN(g_newtypes[i].under))
             die_at(0, "a newtype cannot wrap a channel");
+    /* const generics 1.6B: a `[$N]T` size parameter is meaningful only in a generic
+     * function parameter (the argument fixes N). In a stored position nothing infers
+     * N, so reject it -- fail closed rather than emit a phantom array type. */
+    for (int i = 0; i < g_nstructs; i++)
+        for (int f = 0; f < g_structs[i].nfields; f++)
+            if (type_has_sizeparam(g_structs[i].fields[f].type))
+                die_at(g_structs[i].line, "a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`");
+    for (int i = 0; i < g_nenums; i++)
+        for (int v = 0; v < g_enums[i].nvariants; v++)
+            for (int p = 0; p < g_enums[i].variants[v].npayload; p++)
+                if (type_has_sizeparam(g_enums[i].variants[v].payload[p]))
+                    die_at(g_enums[i].line, "an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`");
+    for (int i = 0; i < g_nnewtypes; i++)
+        if (type_has_sizeparam(g_newtypes[i].under))
+            die_at(0, "a newtype cannot wrap a `[$N]T` size-parameterized array");
     /* register every user proc up front so calls can be forward refs */
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
@@ -9096,6 +9224,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
             Type pt = p->params[j].type;
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout || p->params[j].is_sink;
             vars_push(p->params[j].name, pt, mutable);
+        }
+        for (int k = 0; k < g_ginsts[i].nsp; k++) {   /* const generics 1.6B: bind each `$N` as an int const so the body's `N` folds to the instance's length */
+            Expr *lit = new_expr(E_INT, p->line);
+            lit->ival = g_ginsts[i].spvals[k];
+            vars_push_const(g_ginsts[i].tmpl->sizeparams[k], T_INT, lit);
         }
         g_fn_ret = p->ret; g_dup_base = 0;
         resolve_block(p->body, p->nbody, p->ret);

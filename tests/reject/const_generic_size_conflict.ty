@@ -1,0 +1,8 @@
+# One `$N` shared by two parameters must bind to a single length; a [3] and a [4]
+# argument conflict.
+fn g(a: [$N]int, b: [$N]int) -> int:
+    return N
+fn main():
+    p: [3]int = [1, 2, 3]
+    q: [4]int = [1, 2, 3, 4]
+    print(str(g(p, q)))

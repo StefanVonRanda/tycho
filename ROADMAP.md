@@ -214,11 +214,17 @@ datetime timezones — each demand-gated.
 
 **Priority: medium.**
 
-### 1.6 Const generics (array-length parameters)
-Depends on 1.2. Lets `[N]T` fixed-size arrays and generic code over a size be
-expressed. Fits monomorphization exactly (each `N` is a binding, like each type
-`$T`). Only pursue if a real need appears — it's the kind of feature that's easy to
-add speculatively and then carry forever. **Priority: low, YAGNI-gated.**
+### 1.6 Const generics (array-length parameters) — **shipped**
+Two phases. **Phase A:** `[N]T` fixed-size arrays — length fixed at compile time (an int
+literal or an int `const`), stored inline, value-copied, static bounds, `len` = the constant
+N; works as a struct field, by-value parameter, and return (`src/tychoc.c`
+`fixarr_of`/`IS_FIXARR`, `compiler/tychoc0.ty` `is_fixarr`/`afam`). **Phase B:** generic over
+size — a `[$N]T` parameter infers its length from the (fixed-size) argument and monomorphizes
+one instance per length, exactly like a `$T` type binding; in the body `N` is an `int` const.
+Size and element params compose (`[$N]$T` infers both). Rejected in every stored position
+(struct field, enum payload, newtype) and for a return-only `$N` — fail closed
+(`src/tychoc.c` sizeparam encoding in the arrc `size` field + `match_type`/`subst_type`;
+`compiler/tychoc0.ty` `is_sizeparam_arr` + `match_typaram_str`). Byte-identical at fixpoint.
 
 ### 1.7 Early `close(h)` on typed handles — **shipped**
 Handles auto-free at scope exit; `close(h)` runs the destructor early and NULLs the

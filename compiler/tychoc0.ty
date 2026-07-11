@@ -70,6 +70,19 @@ fn is_alpha(c: int) -> bool:
 fn is_alnum(c: int) -> bool:
     return is_alpha(c) or is_digit(c)
 
+# const generics 1.6B: a size-param binding's value is a plain integer string (a
+# length), a type-param binding's is always a type name -- so an all-digit binding
+# distinguishes the two. Used to fold a body's `$N` reference to its int literal.
+fn str_all_digits(s: string) -> bool:
+    if len(s) == 0:
+        return false
+    i := 0
+    for i < len(s):
+        if not is_digit(s[i]):
+            return false
+        i = i + 1
+    return true
+
 # After a value-producing token a '.' is field/tuple access (t.0, x.field), so a
 # `.5` there stays DOT + INT; everywhere else `.<digit>` begins a leading-dot float.
 fn tok_postfixable(k: Tok) -> bool:
@@ -1553,6 +1566,17 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
             return "[#" + cnm + "]" + felem
+        # [$N]T generic-over-size (const generics 1.6B): a `$N` size parameter (its length
+        # inferred from the argument at each call). Distinguished from a dynamic `[$T]`
+        # (type-param element) by a TYPE following ']'; the one non-type IDENT that can
+        # follow a complete type in a signature is `where`, so it is excluded.
+        if toks[pos].kind == TDollar and toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TRBracket and tok_starts_type(toks[pos + 3].kind) and not (toks[pos + 3].kind == TIdent and toks[pos + 3].text == "where"):
+            snm := toks[pos + 1].text
+            pos = pos + 3                            # past '$', name, and ']'
+            felem := parse_type_d(toks, &pos, depth + 1)
+            if felem == "void" or felem == "bool":
+                die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            return "[$" + snm + "]" + felem
         inner := parse_type_d(toks, &pos, depth + 1)
         if toks[pos].kind == TColon:
             pos = pos + 1
@@ -3363,6 +3387,66 @@ fn afam(ty: string) -> string:
     if is_fixarr(ty):
         return "Arr_" + mangle(ty)
     return "Arr_" + mangle(elem_ty(ty))
+
+# const generics 1.6B: `[$N]T` -- a size PARAMETER array. Encoded "[$N]int" (like a
+# fixed "[3]int" but the length is a $-name inferred from the argument, then bound to
+# an int const in the body). is_fixarr is false for it ('$' is not a digit); it is a
+# generic template type (contains '$') -- monomorphized, never emitted. The one non-
+# type IDENT that follows a complete type is `where`, excluded at parse.
+fn is_sizeparam_arr(ty: string) -> bool:
+    if len(ty) < 3 or ty[0] != 91 or ty[1] != 36:   # '[' then '$'
+        return false
+    i := 2
+    for i < len(ty) and ty[i] != 93:                 # scan the $name up to ']' (93)
+        i = i + 1
+    return i < len(ty) - 1                            # a ']' was found AND an element type follows it
+
+fn sizeparam_name(ty: string) -> string:             # "[$N]int" -> "N"
+    i := 2
+    for i < len(ty) and ty[i] != 93:
+        i = i + 1
+    return substr(ty, 2, i)
+
+fn sizeparam_elem(ty: string) -> string:             # "[$N]int" -> "int" (after the ']')
+    i := 1
+    for i < len(ty) and ty[i] != 93:
+        i = i + 1
+    return substr(ty, i + 1, len(ty))
+
+# const generics 1.6B: does `ty` (recursively) mention a `[$N]T` size parameter?
+# Mirrors src/tychoc.c type_has_sizeparam -- rejected in every STORED position
+# (struct field, enum payload, newtype), where there is nothing to infer N from.
+fn ty_has_sizeparam(ty: string) -> bool:
+    if is_sizeparam_arr(ty):
+        return true
+    if is_array(ty):                                 # dynamic [E] or fixed [N]E -- check the element
+        return ty_has_sizeparam(elem_ty(ty))
+    if is_map(ty):
+        return ty_has_sizeparam(map_key(ty)) or ty_has_sizeparam(map_val(ty))
+    if is_option(ty):
+        return ty_has_sizeparam(substr(ty, 7, len(ty) - 1))       # Option(<inner>)
+    if is_result(ty):
+        rargs := split_type_args(substr(ty, 7, len(ty) - 1))       # Result(<ok>,<err>)
+        ri := 0
+        for ri < len(rargs):
+            if ty_has_sizeparam(rargs[ri]):
+                return true
+            ri = ri + 1
+        return false
+    if is_func(ty):
+        fin := func_inner(ty)
+        fa := func_arrow(fin)
+        if fa >= 0:
+            if ty_has_sizeparam(substr(fin, fa + 2, len(fin))):
+                return true
+            fps := split_type_args(substr(fin, 0, fa))
+            fi := 0
+            for fi < len(fps):
+                if ty_has_sizeparam(fps[fi]):
+                    return true
+                fi = fi + 1
+        return false
+    return false
 
 # SOA arrays: `soa [Struct]` is encoded "soa[Struct]" (one growable buffer per
 # struct field + a shared len/cap, instead of an array of records).
@@ -11800,6 +11884,8 @@ fn gen_inst_mangle(ty: string) -> string:
     if ty == "str":
         return "string"
     n := len(ty)
+    if is_fixarr(ty):                                # "[N]E" fixed (1.6): arr<N>_<E> (distinct per size; matches tychoc type_mangle_ident)
+        return "arr" + str(fixarr_size(ty)) + "_" + gen_inst_mangle(elem_ty(ty))
     if n > 1 and ty[0] == 91 and ty[n - 1] == 93:    # "[E]" array -> arr_<E> (C-identifier-safe)
         return "arr_" + gen_inst_mangle(substr(ty, 1, n - 1))
     if n > 1 and ty[0] == 123 and ty[n - 1] == 125:  # "{K:V}" map -> map_<K>_<V>
@@ -11900,6 +11986,19 @@ fn match_typaram_str(pat: string, concrete: string, bnames: inout [string], btyp
         push(bnames, bn)
         push(btypes, concrete)
         return true
+    if is_sizeparam_arr(pat) and is_fixarr(concrete):   # const generics 1.6B: "[$N]E" vs a fixed "[K]E'" -- bind N=K, then match the element
+        spn := sizeparam_name(pat)
+        spv := str(fixarr_size(concrete))
+        j := 0
+        for j < len(bnames):
+            if bnames[j] == spn:
+                if btypes[j] != spv:                 # N already bound to a different length -> no match
+                    return false
+                return match_typaram_str(sizeparam_elem(pat), elem_ty(concrete), &bnames, &btypes)
+            j = j + 1
+        push(bnames, spn)
+        push(btypes, spv)
+        return match_typaram_str(sizeparam_elem(pat), elem_ty(concrete), &bnames, &btypes)
     if pn > 1 and cn > 1 and pat[0] == 91 and concrete[0] == 91 and pat[pn - 1] == 93 and concrete[cn - 1] == 93:
         return match_typaram_str(substr(pat, 1, pn - 1), substr(concrete, 1, cn - 1), &bnames, &btypes)   # "[E]" array
     if pn > 1 and cn > 1 and pat[0] == 123 and concrete[0] == 123 and pat[pn - 1] == 125 and concrete[cn - 1] == 125:   # "{K:V}" map
@@ -11994,6 +12093,11 @@ fn subst_expr_t(e: Expr, bn: [string], bt: [string]) -> Expr:
         EStr(s, el):
             return e
         EVar(s, el):
+            j := 0                                    # const generics 1.6B: a `$N` size param is an int const in the body -> fold this reference to its literal
+            for j < len(bn):
+                if bn[j] == s and str_all_digits(bt[j]):
+                    return EInt(bt[j], el)
+                j = j + 1
             return e
         EBin(o, l, r, el):
             return EBin(o, subst_expr_t(l, bn, bt), subst_expr_t(r, bn, bt), el)
@@ -12465,6 +12569,10 @@ fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: ino
     n := len(ty)
     if n == 0:
         return ty
+    if is_fixarr(ty):                             # "[N]E" fixed (1.6): keep the length, resolve the element
+        return "[" + str(fixarr_size(ty)) + "]" + resolve_gtype(elem_ty(ty), structs, enums, &sinsts, &einsts)
+    if is_sizeparam_arr(ty):                      # "[$N]E" size-param (1.6B): keep the $N, resolve the element
+        return "[$" + sizeparam_name(ty) + "]" + resolve_gtype(sizeparam_elem(ty), structs, enums, &sinsts, &einsts)
     if is_array(ty):                              # "[E]" -> "[resolve(E)]" (recursive generics: `[LL(int)]` -> `[LL__int]`)
         return "[" + resolve_gtype(elem_ty(ty), structs, enums, &sinsts, &einsts) + "]"
     if is_soa(ty):                                # "soa[E]" -> "soa[resolve(E)]"
@@ -13087,6 +13195,8 @@ fn check_dups(prog: Program):
             fnm := prog.structs[i].fields[j].name
             if has_str(fnames, fnm):
                 die("duplicate field '" + fnm + "' in struct '" + nm + "'")
+            if ty_has_sizeparam(prog.structs[i].fields[j].ty):   # const generics 1.6B: nothing infers N in a stored position -- fail closed
+                die("a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`")
             push(fnames, fnm)
             j = j + 1
         i = i + 1
@@ -13101,6 +13211,8 @@ fn check_dups(prog: Program):
     for i < len(prog.ntnames):
         if has_str(tnames, prog.ntnames[i]):
             die("type '" + prog.ntnames[i] + "' is already defined")
+        if ty_has_sizeparam(prog.ntunder[i]):   # const generics 1.6B: a newtype cannot wrap a `[$N]T`
+            die("a newtype cannot wrap a `[$N]T` size-parameterized array")
         push(tnames, prog.ntnames[i])
         i = i + 1
     vnames := []string
@@ -13111,6 +13223,11 @@ fn check_dups(prog: Program):
             vn := prog.enums[i].variants[j].name
             if has_str(vnames, vn):
                 die("variant name '" + vn + "' is already used in this package")
+            pk := 0
+            for pk < len(prog.enums[i].variants[j].ptypes):   # const generics 1.6B: reject a `[$N]T` payload (nothing infers N)
+                if ty_has_sizeparam(prog.enums[i].variants[j].ptypes[pk]):
+                    die("an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`")
+                pk = pk + 1
             push(vnames, vn)
             j = j + 1
         i = i + 1
