@@ -11,7 +11,13 @@
 # or a compile-acceptance discrepancy is a FINDING (program saved to findings/).
 # Programs both compilers reject are skipped. Leak detection is OFF (leaks aren't
 # soundness bugs); we hunt use-after-free / heap-corruption / UB / miscompiles.
+#
+# Seeds are independent, so they run in PARALLEL across a process pool (each worker
+# in its own temp dir). Worker count defaults to cpu_count()-2; override with the
+# FUZZ_JOBS env var (FUZZ_JOBS=1 restores fully-sequential behaviour). Verdicts and
+# final counts are identical to a sequential run; only line ordering differs.
 import subprocess, sys, os, tempfile, shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen.py")
@@ -59,7 +65,7 @@ def build_run(c_file, exe, tmp, asan=False):
 def is_to(e):
     return e is not None and e.startswith("timeout")
 
-def run_seed(seed, h0, tmp):
+def classify(seed, h0, tmp):
     # generator failure (crash / empty output) is a hard failure of the fuzz
     # run itself, never a silent skip: every seed must yield a valid program.
     g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True, text=True, timeout=TIMEOUT)
@@ -111,37 +117,65 @@ def run_seed(seed, h0, tmp):
         return "FAIL", "tychoc0 native vs ASan diverge (UB): %r vs %r" % (out_h0, out_as)
     return "ok", None
 
+def run_seed(seed, h0):
+    # one self-contained task: own temp dir (so parallel seeds never clobber each
+    # other's p.ty/*.c/binaries), classify, and on FAIL copy the program into
+    # findings/ under its unique seed name before the temp dir is torn down.
+    tmp = tempfile.mkdtemp(prefix="fuzz_")
+    try:
+        try:
+            verdict, msg = classify(seed, h0, tmp)
+        except subprocess.TimeoutExpired:
+            return seed, "timeout", "unexpected TimeoutExpired"   # safety net
+        if verdict == "FAIL":
+            try:
+                shutil.copy(os.path.join(tmp, "p.ty"), os.path.join(FINDINGS, "seed_%d.ty" % seed))
+            except OSError:
+                pass
+        return seed, verdict, msg
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 500
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    jobs = int(os.environ.get("FUZZ_JOBS", 0)) or max(1, (os.cpu_count() or 4) - 2)
     os.makedirs(FINDINGS, exist_ok=True)
-    tmp = tempfile.mkdtemp()
-    h0 = os.path.join(tmp, "h0")
+    tmp0 = tempfile.mkdtemp(prefix="fuzz_h0_")
+    h0 = os.path.join(tmp0, "h0")
     if subprocess.run([TYCHOC, os.path.join(REPO, "compiler", "tychoc0.ty"), "-o", h0]).returncode != 0:
-        print("tychoc0 build failed"); return 2
+        print("tychoc0 build failed"); shutil.rmtree(tmp0, ignore_errors=True); return 2
     counts = {"ok": 0, "skip": 0, "FAIL": 0, "timeout": 0}
-    for seed in range(start, start + n):
-        try:
-            verdict, msg = run_seed(seed, h0, tmp)
-        except subprocess.TimeoutExpired:
-            # safety net for an unexpected timeout outside the per-side handling
-            verdict, msg = "timeout", "unexpected TimeoutExpired"
-        if verdict == "GENFAIL":
-            # the generator itself crashed or produced nothing: the whole fuzz
-            # run is meaningless. Hard-fail immediately.
-            print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
-            shutil.rmtree(tmp, ignore_errors=True)
-            return 1
-        counts[verdict] = counts.get(verdict, 0) + 1
-        if verdict == "FAIL":
-            shutil.copy(os.path.join(tmp, "p.ty"), os.path.join(FINDINGS, "seed_%d.ty" % seed))
-            print("FAIL seed %d: %s" % (seed, msg))
-        elif verdict == "timeout":
-            print("timeout seed %d: %s" % (seed, msg))
-        if seed % 200 == 0:
-            print("... %d/%d  ok=%d skip=%d timeout=%d FAIL=%d" % (seed - start + 1, n, counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
-    shutil.rmtree(tmp, ignore_errors=True)
-    print("DONE: ok=%d skip=%d timeout=%d FAIL=%d  (findings in fuzz/findings/)" % (counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
+    done = genfail = 0
+    print("fuzz: %d seeds x 4 builds (2 native, 2 ASan), %d workers" % (n, jobs))
+    try:
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            futs = {ex.submit(run_seed, seed, h0): seed for seed in range(start, start + n)}
+            for fut in as_completed(futs):
+                seed, verdict, msg = fut.result()
+                if verdict == "GENFAIL":
+                    # the generator itself crashed / produced nothing: the whole
+                    # run is meaningless. Abort now, cancelling pending seeds.
+                    print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
+                    genfail = 1
+                    for f in futs:
+                        f.cancel()
+                    break
+                counts[verdict] = counts.get(verdict, 0) + 1
+                if verdict == "FAIL":
+                    print("FAIL seed %d: %s" % (seed, msg))
+                elif verdict == "timeout":
+                    print("timeout seed %d: %s" % (seed, msg))
+                done += 1
+                if done % 200 == 0:
+                    print("... %d/%d  ok=%d skip=%d timeout=%d FAIL=%d" % (
+                        done, n, counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
+    finally:
+        shutil.rmtree(tmp0, ignore_errors=True)
+    if genfail:
+        return 1
+    print("DONE: ok=%d skip=%d timeout=%d FAIL=%d  (findings in fuzz/findings/)" % (
+        counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
     if counts["FAIL"]:
         return 1
     # skip-rate ceiling: a both-compilers-reject is tolerable noise, but if a
