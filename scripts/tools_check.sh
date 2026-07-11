@@ -126,8 +126,8 @@ echo "    tychoc: bad=$cbw good=$cgw   tychoc0: bad=$zbw good=$zgw"
 
 echo ">>> pure-result: both compilers warn on a discarded pure-builtin result"
 # Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
-# A bare `len(m)` discards the value it returns -> must warn; `m[k]=v` must not.
-printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    len(m)\n' > "$TMP/pure.ty"
+# A bare `m.get(k,d)` discards the value it returns -> must warn; `m[k]=v` must not.
+printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    m.get("a", 0)\n' > "$TMP/pure.ty"
 printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in m))\n' > "$TMP/nopure.ty"
 "$TYCHOC"      "$TMP/pure.ty"   --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p1"; cpw=$(grep -c 'warning:' "$TMP/p1")
 "$TYCHOC"      "$TMP/nopure.ty" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p2"; cpn=$(grep -c 'warning:' "$TMP/p2")

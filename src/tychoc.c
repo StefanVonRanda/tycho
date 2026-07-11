@@ -5325,6 +5325,18 @@ static int is_pure_builtin(const char *n) {
     return 0;
 }
 
+/* A discarded `m.get(k[, d])` statement is a pure map read whose value is thrown
+ * away -- warn like any pure builtin. Detected on the PRE-resolve method-call
+ * form (receiver `m` is a variable that resolves to a map), which distinguishes it
+ * from a bare `m[k]` statement (index syntax, deliberately left un-warned). Returns
+ * the display name to warn about, or NULL. */
+static const char *discarded_map_get(Expr *e) {
+    if (!e || e->kind != E_CALL || !e->sval || strcmp(e->sval, "get") || e->nargs < 1 || !e->qual) return NULL;
+    Type rt;
+    if (vars_find(e->qual, &rt) && is_map(rt)) return "m.get";
+    return NULL;
+}
+
 /* >0 while resolving the single-expr tails of a value if/match (see S_EXPR case) */
 static int g_value_ctrl = 0;
 static void resolve_stmt(Stmt *s, Type ret) {
@@ -5687,10 +5699,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
             /* inside a value if/match branch (g_value_ctrl), this S_EXPR is the tail
              * VALUE, not a discarded statement — resolve it for its type but skip the
              * discard warning and the discarded-task error. */
-            if (!g_value_ctrl && s->expr && s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
-                warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
-                                       "nothing (to change a map, use `m[k] = v` or `delete m[k]`)",
-                        s->expr->sval);
+            if (!g_value_ctrl && s->expr) {
+                const char *dn = (s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
+                                     ? s->expr->sval : discarded_map_get(s->expr);
+                if (dn)
+                    warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
+                                           "nothing (to change a map, use `m[k] = v` or `delete m[k]`)", dn);
+            }
             Type et = resolve_expr(s->expr);
             if (!g_value_ctrl && IS_TASK(et))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");

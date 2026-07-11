@@ -4645,6 +4645,25 @@ fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e 
         ESpawn(sid, snm, sargs, p):
             return ""
 
+# A discarded `m.get(k[, d])` statement is a pure map read whose value is thrown
+# away -- warn like a pure builtin. The receiver must be a bare variable of map
+# type (parity with tychoc's qual form); a bare `m[k]` statement is index syntax
+# and stays un-warned.
+fn mapget_discarded(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
+    match e:
+        ECall(nm, args, _el):                       # a bare `m.get(...)` statement parses to ECall("m.get", args)
+            dp := find(nm, ".")
+            if dp < 0 or len(args) < 1:
+                return false
+            if substr(nm, dp + 1, len(nm)) != "get":
+                return false
+            recv := substr(nm, 0, dp)
+            if not has_str(names, recv):            # receiver must be a local variable (excludes packages, e.g. csv.get)
+                return false
+            return is_map(type_of(EVar(recv, _el), names, types, dc, ctx))
+        _:
+            return false
+
 # Enter a nested block: a fresh child arena `_b<depth+1>` becomes the allocation
 # owner for the block's transients/local decls. `base` is the env length at entry
 # (vars declared from here on are block-local). Sibling blocks reuse the same
@@ -7058,6 +7077,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             return "    " + conc_loop_finals(names, ctx) + loop_frees(dc, ctx) + "continue;\n"
         SExpr(e, _sl):                                 # MM-10: discarded result -> all transients dead at stmt end; free them in a per-stmt _t arena (matches tychoc S_EXPR + scalar_transient)
             pn := pure_call_name(e)                     # warn on a discarded pure-builtin result (no-op statement)
+            if pn == "" and mapget_discarded(e, names, types, dc, ctx):
+                pn = "m.get"
             if pn != "":
                 warn_at(dc, _sl, "result of " + pn + " is discarded; it has no side effects, so this statement does nothing (to change a map, use m[k] = v or delete m[k])")
             return "    { Arena _t = arena_new(0); " + gen_expr(e, names, types, dc, with_owner(dc, ctx, "&_t")) + "; arena_free(&_t); }\n"
