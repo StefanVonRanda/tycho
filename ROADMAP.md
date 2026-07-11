@@ -356,10 +356,15 @@ deliberately not user-extensible (that's the anti-traits stance).
     `tests/reject/{where_defaultable_bad,zero_bad_type}` (both compilers reject a
     struct/array type). Verified: full suite, `fixpoint` byte-identical,
     `typeparity` 4608/4608, behavioral parity tychoc == tychoc0.
-  - **variadic generics — needs variadic *parameters* first.** No varargs exist
-    (`fn f(xs: ...T)` doesn't parse). That's the major piece: new param syntax,
-    call-site array packing, arity through monomorphization, both compilers, all
-    gates. Demand-gated; no program needs it.
+  - **variadic parameters + generics — shipped.** `fn f(xs: ...T)`: a final
+    variadic parameter is a `[T]` the call packs its trailing args into
+    (`f(a,b,c)`, `f()` -> `[]T`, `f(arr...)` spread; fixed params may precede it).
+    The generic form `...$T` infers `T` from the arguments. It's sugar — the call
+    folds trailing args into one array-literal arg, then it's an ordinary call to
+    `f(fixed..., xs: [T])`, so `[$T]` vs the packed `[int]` unifies in the existing
+    monomorphizer with no new inference. Both compilers, byte-identical fixpoint;
+    locked by `tests/variadic` + four `tests/reject/variadic_*`. (In-language only;
+    FFI variadics stays a decided non-goal.) See `docs/reference/functions.md`.
 
   **`hashable(T)` — shipped.** Constrains a type parameter to be usable as a map
   key, so a generic body can build `[T: V]` with a clean signature error at
