@@ -32,6 +32,7 @@ enum Tok:
     TComma
     TColon
     TDot
+    TEllipsis                 # `...` : variadic param `xs: ...T` / spread `x...` (ROADMAP 2.2a)
     TArrow
     TWalrus
     TEq
@@ -267,6 +268,10 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int, lines
     elif c == 44:
         push(toks, Token(TComma, ",", line, col))
         return i + 1
+    elif c == 46 and i + 2 < n and src[i + 1] == 46 and src[i + 2] == 46:
+        # `...` : variadic parameter marker / spread operator (ROADMAP 2.2a)
+        push(toks, Token(TEllipsis, "...", line, col))
+        return i + 3
     elif c == 46 and i + 1 < n and is_digit(src[i + 1]) and (len(toks) == 0 or not tok_postfixable(toks[len(toks) - 1].kind)):
         # leading-dot float: .5 / .5e3 (the '.' is not field/tuple access here)
         start := i
@@ -434,6 +439,7 @@ enum Expr:
     ELambda(int, [string], [string], string, Expr, [string], [string], int)   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
     ECallV(Expr, [Expr], int)     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
     ESpawn(int, string, [Expr], int)   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
+    ESpread(Expr, int)            # `x...` : spread an array into a variadic parameter (lhs=the array); packed away by pack_program before any later pass, so it is a hard error anywhere it survives
 
 enum Stmt:
     SDecl(string, Expr, int)
@@ -750,6 +756,9 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
                     die("parse: spawn requires a direct call: spawn f(args)")
                 ECallV(c, a, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
+                ESpread(_sx, _sel):
+                    die("internal: unexpected spread ... (pack_program should have removed it)")
+                    return _sx
                 ESpawn(sid, sn2, sa2, _el):
                     die("parse: spawn requires a direct call: spawn f(args)")
             return EInt("0", _el)
@@ -927,6 +936,9 @@ fn parse_postfix_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
                 else:
                     expect(toks, &pos, TRBracket)
                     e = EIndex(e, idx, _el)
+    if toks[pos].kind == TEllipsis:                  # `x...` : spread into a variadic parameter (validated at the call site by pack_program)
+        pos = pos + 1
+        e = ESpread(e, _el)
     return e
 
 fn parse_mul_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
@@ -1624,6 +1636,9 @@ fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind == TIdent and toks[pos].text == "sink":
         pos = pos + 1
         return Param(name, "~" + parse_type(toks, &pos))   # sink marker (owned, mutable, by-value)
+    if toks[pos].kind == TEllipsis:                        # variadic: `name: ...T` — element type carried as "...T" (body type is [T]); packed away at each call site (ROADMAP 2.2a)
+        pos = pos + 1
+        return Param(name, "..." + parse_type(toks, &pos))
     return Param(name, parse_type(toks, &pos))
 
 # Generics: collect the names introduced by `$X` in a type string ("$T" -> "T",
@@ -1705,6 +1720,11 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
+    vi := 0                                          # variadic: only the LAST parameter may be `...T` (ROADMAP 2.2a)
+    for vi + 1 < len(ptypes):
+        if is_variadic_pt(ptypes[vi]):
+            die("parse: line " + str(toks[pos].line) + ": a variadic parameter must be the last parameter of '" + name + "'")
+        vi = vi + 1
     ret := "void"
     if toks[pos].kind == TArrow:
         pos = pos + 1
@@ -2466,6 +2486,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         return "&" + mangle_type(m, substr(ty, 1, len(ty)))
     if has_prefix(ty, "~"):                           # sink marker — preserve it, mangle the inner type
         return "~" + mangle_type(m, substr(ty, 1, len(ty)))
+    if has_prefix(ty, "..."):                          # variadic marker (2.2a) — preserve it, mangle the inner element type
+        return "..." + mangle_type(m, substr(ty, 3, len(ty)))
     if has_prefix(ty, "soa["):
         return "soa[" + mangle_type(m, substr(ty, 4, len(ty) - 1)) + "]"
     if has_prefix(ty, "["):
@@ -2565,6 +2587,9 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
             return ECallV(mangle_expr(m, callee), mangle_args(m, cargs), _el)
         EAddr(x, _el):
             return EAddr(mangle_expr(m, x), _el)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, a, _el):
             return ESpawn(id, mangle_ref(m, nm), mangle_args(m, a), _el)
 
@@ -3241,6 +3266,14 @@ fn is_inout(ty: string) -> bool:
 fn is_sink(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 126          # '~' — a `sink` (owned, mutable, by-value) param
 
+# Variadic parameter encoding (ROADMAP 2.2a): a `xs: ...T` param carries the
+# element type as "...T" in ptypes until pack_program (a) rewrites its call sites
+# and (b) normalizes the ptype to the in-body array type [T].
+fn is_variadic_pt(ty: string) -> bool:
+    return has_prefix(ty, "...")
+fn variadic_elem(ty: string) -> string:          # "...T" -> "T"
+    return substr(ty, 3, len(ty))
+
 fn base_ty(ty: string) -> string:
     if is_inout(ty) or is_sink(ty):
         return substr(ty, 1, len(ty))
@@ -3394,6 +3427,9 @@ fn subst_place_vars(e: Expr, params: [string], actuals: [Expr]) -> Expr:
             return e
         ECallV(c, a, el):
             return ECallV(subst_place_vars(c, params, actuals), subst_place_args(a, params, actuals), el)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, a, el):
             return ESpawn(id, nm, subst_place_args(a, params, actuals), el)
 
@@ -3961,6 +3997,9 @@ fn efield_fname(e: Expr) -> string:               # field name if e is EField, e
             return ""
         ECallV(c, a, _el):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(id, nm, a, _el):
             return ""
 
@@ -4004,6 +4043,9 @@ fn efield_base(e: Expr) -> Expr:                  # base of an EField (caller gu
             return e
         ECallV(c, a, _el):
             return e
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, a, _el):
             return e
 
@@ -4173,6 +4215,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                         return resolve_nt(dc, ctx, subst_field_type(dc.sigs[msi].ret, sbn, sbt))
                 return resolve_nt(dc, ctx, sig_ret(dc, ctx, mn))
             return resolve_nt(dc, ctx, func_ret(type_of(callee, names, types, dc, ctx)))
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(id, nm, sargs, _el):
             return "Task(" + resolve_nt(dc, ctx, sig_ret(dc, ctx, nm)) + ")"
         EAddr(inner, _el):
@@ -4351,6 +4396,9 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
             return ""
         ESlice(b, lo, hi, _el):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(id, nm, a, _el):
             return ""
 
@@ -4457,6 +4505,9 @@ fn soa_field_access(dc: Decls, ctx: Ctx, base: Expr, fld: string, names: [string
         ECallV(callee, cargs, _el):
             return ""
         EAddr(x, _el):
+            return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return ""
         ESpawn(id, nm, a, _el):
             return ""
@@ -4637,6 +4688,9 @@ fn wl_root(e: Expr) -> string:                     # base identifier of a place:
             return ""
         ECallV(callee, cargs, p):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(sid, snm, sargs, p):
             return ""
 
@@ -4646,6 +4700,8 @@ fn wl_cond_vars(e: Expr, vs: inout [string], hc: inout bool):   # collect cond i
             hc = true
         ECallV(callee, cargs, p):
             hc = true
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sargs, p):
             hc = true
         EVar(n, p):
@@ -4724,6 +4780,8 @@ fn wl_scan_expr(e: Expr, muts: inout [string], ex: inout bool):   # &v / push/po
             for k < len(cargs):
                 wl_scan_expr(cargs[k], &muts, &ex)
                 k = k + 1
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sargs, p):
             k := 0
             for k < len(sargs):
@@ -4931,6 +4989,9 @@ fn pure_call_name(e: Expr) -> string:              # the pure-builtin name if e 
             return ""
         ECallV(callee, cargs, p):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(sid, snm, sargs, p):
             return ""
 
@@ -5081,6 +5142,8 @@ fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx,
             push(out, e)
         ECallV(callee, cargs, _el):
             push(out, e)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             push(out, e)
 
@@ -5635,6 +5698,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args_sink(args, dc.sigs[csidx].ptypes, names, types, dc, ctx) + ")"
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(id, nm, sargs, _el):
             # CC-1 spawn site: copy every argument into the task's private root
             # arena (after this, spawner and task share zero bytes), then start
@@ -5689,6 +5755,9 @@ fn root_var(e: Expr) -> string:
         ETuple(es, _el):
             return ""
         ESlice(b, lo, hi, _el):
+            return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return ""
         ESpawn(id, nm, a, _el):
             return ""
@@ -5926,6 +5995,9 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
             return gen_expr(lv, names, types, dc, ctx)
         EAddr(inr, _el):
             return gen_expr(lv, names, types, dc, ctx)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(id, nm, a, _el):
             return gen_expr(lv, names, types, dc, ctx)
 
@@ -5972,6 +6044,9 @@ fn is_map_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) 
         ECallV(callee, cargs, _el):
             return false
         EAddr(inr, _el):
+            return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return false
         ESpawn(id, nm, a, _el):
             return false
@@ -6020,6 +6095,9 @@ fn is_str_arr_index(e: Expr, names: [string], types: [string], dc: Decls, ctx: C
             return false
         EAddr(inr, _el):
             return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return false
         ESpawn(id, nm, a, _el):
             return false
 
@@ -6064,6 +6142,9 @@ fn is_place(e: Expr) -> bool:
         ECallV(callee, cargs, _el):
             return false
         EAddr(inner, _el):
+            return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return false
         ESpawn(id, nm, a, _el):
             return false
@@ -6134,6 +6215,9 @@ fn is_eslice(e: Expr) -> bool:
             return false
         EAddr(inner, _el):
             return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return false
         ESpawn(sid, nm, a, _el):
             return false
 
@@ -6177,6 +6261,9 @@ fn is_evar(e: Expr, name: string) -> bool:
             return false
         EAddr(x, _el):
             return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return false
         ESpawn(sid, snm, sa, _el):
             return false
 
@@ -6219,6 +6306,9 @@ fn is_int_lit(e: Expr) -> bool:           # is `e` a literal int -- the only int
         ECallV(callee, cargs, _el):
             return false
         EAddr(x, _el):
+            return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return false
         ESpawn(sid, snm, sa, _el):
             return false
@@ -6280,6 +6370,9 @@ fn is_zero_int_lit(e: Expr) -> bool:
         ECallV(callee, cargs, _el):
             return false
         EAddr(x, _el):
+            return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return false
         ESpawn(sid, snm, sa, _el):
             return false
@@ -6348,6 +6441,9 @@ fn evar_name(e: Expr) -> string:
             return ""
         EAddr(x, _el):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(sid, snm, sa, _el):
             return ""
 
@@ -6408,6 +6504,9 @@ fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), el
         ECallV(callee, cargs, _el):
             return ""
         EAddr(x, _el):
+            return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return ""
         ESpawn(sid, snm, sa, _el):
             return ""
@@ -6721,6 +6820,8 @@ fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bo
             j := 0
         EMapEmpty(k, v, _el):
             j := 0
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             j := 0                                # spawn args read as if in a loop: never move-eligible (the
             for j < len(sa):                      # site always deep-copies into the task root -- keep it that way)
@@ -6976,6 +7077,9 @@ fn expr_has_call(e: Expr) -> bool:
             return false
         EMapEmpty(k, v, _el):
             return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return false
         ESpawn(sid, snm, sa, _el):
             return true                           # a spawn site allocates (task root + arg copies)
 
@@ -7042,6 +7146,9 @@ fn expr_refs(e: Expr, name: string) -> bool:
         EArrEmpty(t, _el):
             return false
         EMapEmpty(k, v, _el):
+            return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return false
         ESpawn(sid, snm, sa, _el):
             return any_refs(sa, name)
@@ -7343,6 +7450,9 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 EAddr(x, _el):
                     return deflt
                 ELambda(id, ps, pts, ret, body, cn, ct, _el):
+                    return deflt
+                ESpread(_sx, _sel):
+                    die("internal: unexpected spread ... (pack_program should have removed it)")
                     return deflt
                 ESpawn(sid, snm, sa, _el):
                     return deflt
@@ -7814,6 +7924,8 @@ fn plus_flatten(e: Expr, out: inout [Expr]):
             push(out, e)
         EAddr(x, _el):
             push(out, e)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             push(out, e)
 
@@ -9293,6 +9405,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
         EVar(n, _el):
             if not has_str(names, n):              # a bare top-level fn name used as a value: collect its fn type
                 note_arr_types(&acc, type_of(e, names, types, dc, ctx))
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
@@ -9765,6 +9879,8 @@ fn collect_evars(e: Expr, out: inout [string]):
             return
         EMapEmpty(k, v, _el):
             return
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
@@ -9897,6 +10013,8 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [s
                             i = i
                         ECallV(c, a, _el):
                             i = i
+                        ESpread(_sx, _sel):
+                            die("internal: unexpected spread ... (pack_program should have removed it)")
                         ESpawn(sid, snm, sa, _el):
                             i = i
             SDecl(n, e, _sl):
@@ -10008,6 +10126,9 @@ fn place_root(e: Expr) -> string:
             return ""
         ECallV(callee, cargs, _el):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(sid, snm, sa, _el):
             return ""
 
@@ -10064,6 +10185,9 @@ fn count_reads_expr(e: Expr, nm: string) -> int:
                 c = c + count_reads_expr(cargs[j], nm)
                 j = j + 1
             return c
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return 0
         ESpawn(sid, snm, sa, _el):
             c := 0
             j := 0
@@ -10188,6 +10312,9 @@ fn reduction_op(e: Expr, n: string) -> string:
             return ""
         ECallV(callee, cargs, _el):
             return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return ""
         ESpawn(sid, snm, sa, _el):
             return ""
 
@@ -10250,6 +10377,8 @@ fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
             for j < len(cargs):
                 pf_gate_expr(cargs[j], locals, names)
                 j = j + 1
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
         ESpawn(sid, snm, sa, _el):
             j := 0
             for j < len(sa):
@@ -10478,6 +10607,9 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
             return e
         ECallV(c2, a2, _el):
             return e
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(sid, snm, sa, _el):
             return e
 
@@ -10671,6 +10803,9 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             push(lifted, Func("__lam" + str(myid), lparams, lptypes, ret, lbody, 0, "", ""))
             push(lams, LamInfo(myid, mk_functype(pts, ret), capnames, captypes, pts, ret))
             return ELambda(myid, ps, pts, ret, nb, capnames, captypes, _el)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, sargs, _el):
             # CC-1: assign the spawn-site id and record the SpawnInfo that drives
             # the HSpawnA_<id> args-struct + tycho_spawn_<id> trampoline emission.
@@ -10739,6 +10874,9 @@ fn pend_init_kind(e: Expr) -> int:
         ELambda(id, ps, pts, ret, bx, cn, ct, _el):
             return 0
         ECallV(c, a2, _el):
+            return 0
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return 0
         ESpawn(sid, snm, sa, _el):
             return 0
@@ -10876,6 +11014,9 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
                 if r != "":
                     return r
                 j = j + 1
+            return ""
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
             return ""
         ESpawn(sid, snm, sa, _el):
             j := 0
@@ -11418,6 +11559,9 @@ fn expr_has_lambda(e: Expr) -> bool:
             return t == ""                        # a bare [] gates the lift: ground_pre runs there (B-0)
         EMapEmpty(k, v, _el):
             return false
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return false
         ESpawn(sid, snm, sa, _el):
             return true                           # conc gates the lift too: spawn sites get their ids there
 
@@ -11742,6 +11886,9 @@ fn subst_expr_t(e: Expr, bn: [string], bt: [string]) -> Expr:
             return ELambda(id, ps, subst_types_list(pts, bn, bt), subst_body_type(ret, bn, bt), subst_expr_t(body, bn, bt), cn, ct, el)
         ECallV(c, a, el):
             return ECallV(subst_expr_t(c, bn, bt), subst_exprs_t(a, bn, bt), el)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, a, el):
             return ESpawn(id, nm, subst_exprs_t(a, bn, bt), el)
 
@@ -12452,6 +12599,9 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                         newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
                         return ECall(newnm, allargs, el)
             return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
+        ESpread(_sx, _sel):
+            die("internal: unexpected spread ... (pack_program should have removed it)")
+            return _sx
         ESpawn(id, nm, a, el):
             return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
 
@@ -12847,6 +12997,236 @@ fn check_dups(prog: Program):
     if not has_str(fns, "main"):                  # fail-closed: a program with no main emits main-less C (parity with tychoc)
         die("no 'main' procedure")
 
+# ------------------------------------------------ variadic packing (2.2a) ----
+# A `fn f(xs: ...T)` call packs its trailing arguments into ONE `[T]` argument
+# (or, for `f(arr...)`, uses that array directly). This runs ONCE over the parsed
+# program, right after parse_program and before any later pass, so type_of / gen /
+# mono / lift all see an ordinary call to `f(fixed..., xs: [T])`. It also rejects
+# every misuse of spread `...` (the ESpread node is gone after this pass). Mirrors
+# the call-packing block in src/tychoc.c resolve_expr_inner (ROADMAP 2.2a).
+
+# Look up a callee by name; returns its parameter count (or -1 if not a user fn).
+fn pack_lookup_nparams(fnames: [string], fnparam: [int], nm: string) -> int:
+    i := 0
+    for i < len(fnames):
+        if fnames[i] == nm:
+            return fnparam[i]
+        i = i + 1
+    return -1
+# The callee's LAST parameter type ("...T" when variadic), or "" if not a user fn.
+fn pack_lookup_lastpt(fnames: [string], flastpt: [string], nm: string) -> string:
+    i := 0
+    for i < len(fnames):
+        if fnames[i] == nm:
+            return flastpt[i]
+        i = i + 1
+    return ""
+
+fn pack_exprs(es: [Expr], fnames: [string], fnparam: [int], flastpt: [string]) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, pack_expr(es[i], fnames, fnparam, flastpt))
+        i = i + 1
+    return out
+
+fn pack_expr(e: Expr, fnames: [string], fnparam: [int], flastpt: [string]) -> Expr:
+    match e:
+        EInt(s, _el):
+            return e
+        EFloat(s, _el):
+            return e
+        EStr(s, _el):
+            return e
+        EBool(s, _el):
+            return e
+        EChar(s, _el):
+            return e
+        EVar(s, _el):
+            return e
+        EArrEmpty(t, _el):
+            return e
+        EMapEmpty(k, v, _el):
+            return e
+        EBin(o, l, r, _el):
+            return EBin(o, pack_expr(l, fnames, fnparam, flastpt), pack_expr(r, fnames, fnparam, flastpt), _el)
+        ECall(nm, a, _el):
+            # Decide FIRST whether this is a variadic call — a spread arg `x...` is
+            # only unwrapped here, never packed as a bare expr (packing an ESpread
+            # is a hard error). So a variadic call handles its trailing args itself;
+            # any other call packs its args normally (rejecting a stray spread).
+            lastpt := pack_lookup_lastpt(fnames, flastpt, nm)
+            if is_variadic_pt(lastpt):
+                nparams := pack_lookup_nparams(fnames, fnparam, nm)
+                nfixed := nparams - 1
+                if len(a) < nfixed:
+                    die("resolve: '" + nm + "' takes at least " + str(nfixed) + " argument(s), got " + str(len(a)))
+                velem := variadic_elem(lastpt)         # element type T (or "$T" for a generic variadic)
+                spread := false                        # is any trailing argument a spread `x...`?
+                si := nfixed
+                for si < len(a):
+                    if is_spread(a[si]):
+                        spread = true
+                    si = si + 1
+                varg := EInt("0", _el)                  # replaced below
+                if spread:
+                    if len(a) - nfixed != 1 or not is_spread(a[nfixed]):
+                        die("resolve: a spread argument x... must be the only variadic argument to '" + nm + "'")
+                    varg = pack_expr(spread_inner(a[nfixed]), fnames, fnparam, flastpt)   # unwrap: pass the [T] array directly (pack a nested variadic call inside it)
+                else:
+                    ntrail := len(a) - nfixed
+                    if ntrail > 0:
+                        trail := []Expr
+                        ti := nfixed
+                        for ti < len(a):
+                            push(trail, pack_expr(a[ti], fnames, fnparam, flastpt))
+                            ti = ti + 1
+                        varg = EArrLit(trail, _el)
+                    elif ty_is_generic(velem):
+                        die("resolve: cannot infer the element type of an empty variadic call to generic '" + nm + "'; pass at least one argument")
+                    else:
+                        varg = EArrEmpty(velem, _el)    # typed empty []T
+                na := []Expr
+                fi := 0
+                for fi < nfixed:
+                    push(na, pack_expr(a[fi], fnames, fnparam, flastpt))
+                    fi = fi + 1
+                push(na, varg)
+                return ECall(nm, na, _el)
+            return ECall(nm, pack_exprs(a, fnames, fnparam, flastpt), _el)
+        EField(b, f, _el):
+            return EField(pack_expr(b, fnames, fnparam, flastpt), f, _el)
+        EIndex(b, ix, _el):
+            return EIndex(pack_expr(b, fnames, fnparam, flastpt), pack_expr(ix, fnames, fnparam, flastpt), _el)
+        EArrLit(es, _el):
+            return EArrLit(pack_exprs(es, fnames, fnparam, flastpt), _el)
+        EMapLit(ks, vs, _el):
+            return EMapLit(pack_exprs(ks, fnames, fnparam, flastpt), pack_exprs(vs, fnames, fnparam, flastpt), _el)
+        ETuple(es, _el):
+            return ETuple(pack_exprs(es, fnames, fnparam, flastpt), _el)
+        ESlice(b, lo, hi, _el):
+            return ESlice(pack_expr(b, fnames, fnparam, flastpt), pack_expr(lo, fnames, fnparam, flastpt), pack_expr(hi, fnames, fnparam, flastpt), _el)
+        EAddr(x, _el):
+            return EAddr(pack_expr(x, fnames, fnparam, flastpt), _el)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return ELambda(id, ps, pts, ret, pack_expr(body, fnames, fnparam, flastpt), cn, ct, _el)
+        ECallV(callee, cargs, _el):
+            return ECallV(pack_expr(callee, fnames, fnparam, flastpt), pack_exprs(cargs, fnames, fnparam, flastpt), _el)
+        ESpawn(id, nm, a, _el):
+            return ESpawn(id, nm, pack_exprs(a, fnames, fnparam, flastpt), _el)
+        ESpread(x, _el):                               # a spread that no variadic call consumed -> a misuse
+            die("resolve: spread ... is only valid as the argument to a variadic parameter")
+            return x
+
+fn is_spread(e: Expr) -> bool:
+    match e:
+        ESpread(x, _el):
+            return true
+        _:
+            return false
+fn spread_inner(e: Expr) -> Expr:
+    match e:
+        ESpread(x, _el):
+            return x
+        _:
+            return e
+
+fn pack_block(stmts: [Stmt], fnames: [string], fnparam: [int], flastpt: [string]) -> [Stmt]:
+    out := []Stmt
+    i := 0
+    for i < len(stmts):
+        push(out, pack_stmt(stmts[i], fnames, fnparam, flastpt))
+        i = i + 1
+    return out
+
+fn pack_stmt(s: Stmt, fnames: [string], fnparam: [int], flastpt: [string]) -> Stmt:
+    match s:
+        SDecl(n, e, _sl):
+            return SDecl(n, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SAssign(n, e, _sl):
+            return SAssign(n, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SFieldAssign(lv, r, _sl):
+            return SFieldAssign(pack_expr(lv, fnames, fnparam, flastpt), pack_expr(r, fnames, fnparam, flastpt), _sl)
+        SPrint(e, _sl):
+            return SPrint(pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SReturn(e, _sl):
+            return SReturn(pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SReturnVoid:
+            return s
+        SBreak:
+            return s
+        SContinue:
+            return s
+        SConst(n, e, _sl):
+            return SConst(n, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SIf(c, t, el, _sl):
+            return SIf(pack_expr(c, fnames, fnparam, flastpt), pack_block(t, fnames, fnparam, flastpt), pack_block(el, fnames, fnparam, flastpt), _sl)
+        SWhile(c, b, _sl):
+            return SWhile(pack_expr(c, fnames, fnparam, flastpt), pack_block(b, fnames, fnparam, flastpt), _sl)
+        SForRange(v, a, b, st, body, _sl):
+            return SForRange(v, pack_expr(a, fnames, fnparam, flastpt), pack_expr(b, fnames, fnparam, flastpt), pack_expr(st, fnames, fnparam, flastpt), pack_block(body, fnames, fnparam, flastpt), _sl)
+        SExpr(e, _sl):
+            return SExpr(pack_expr(e, fnames, fnparam, flastpt), _sl)
+        STypedDecl(n, ty, e, _sl):
+            return STypedDecl(n, ty, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SOrReturn(n, e, _sl):
+            return SOrReturn(n, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SDestructure(ns, e, _sl):
+            return SDestructure(ns, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SMultiAssign(ns, e, _sl):
+            return SMultiAssign(ns, pack_expr(e, fnames, fnparam, flastpt), _sl)
+        SMatch(subj, vars, binds, bodies, _sl):
+            nb := [][Stmt]
+            k := 0
+            for k < len(bodies):
+                push(nb, pack_block(bodies[k], fnames, fnparam, flastpt))
+                k = k + 1
+            return SMatch(pack_expr(subj, fnames, fnparam, flastpt), vars, binds, nb, _sl)
+        SParFor(v, a, b, body, pid, _sl):
+            return SParFor(v, pack_expr(a, fnames, fnparam, flastpt), pack_expr(b, fnames, fnparam, flastpt), pack_block(body, fnames, fnparam, flastpt), pid, _sl)
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
+            nch := pack_exprs(schans, fnames, fnparam, flastpt)
+            nb := [][Stmt]
+            sk := 0
+            for sk < len(sbodies):
+                push(nb, pack_block(sbodies[sk], fnames, fnparam, flastpt))
+                sk = sk + 1
+            return SSelect(uid, svars, nch, sbinds, nb, _sl)
+        SValDecl(n, ty, c, _sl):
+            return SValDecl(n, ty, pack_stmt(c, fnames, fnparam, flastpt), _sl)
+
+# Rewrite every variadic call site, then normalize each variadic param's own
+# ptype "...T" -> the in-body array type "[T]" so no later pass ever sees "...".
+fn pack_program(prog: Program) -> Program:
+    fnames := []string
+    fnparam := []int
+    flastpt := []string
+    i := 0
+    for i < len(prog.funcs):
+        push(fnames, prog.funcs[i].name)
+        push(fnparam, len(prog.funcs[i].ptypes))
+        if len(prog.funcs[i].ptypes) > 0:
+            push(flastpt, prog.funcs[i].ptypes[len(prog.funcs[i].ptypes) - 1])
+        else:
+            push(flastpt, "")
+        i = i + 1
+    funcs := []Func
+    i = 0
+    for i < len(prog.funcs):
+        f := prog.funcs[i]
+        nbody := pack_block(f.body, fnames, fnparam, flastpt)
+        npt := []string                               # normalize "...T" -> "[T]" (the body's array type)
+        pj := 0
+        for pj < len(f.ptypes):
+            if is_variadic_pt(f.ptypes[pj]):
+                push(npt, "[" + variadic_elem(f.ptypes[pj]) + "]")
+            else:
+                push(npt, f.ptypes[pj])
+            pj = pj + 1
+        push(funcs, Func(f.name, f.params, npt, f.ret, nbody, f.is_extern, f.lib, f.constraints))
+        i = i + 1
+    return Program(prog.structs, prog.enums, funcs, prog.ntnames, prog.ntunder, prog.handles)
+
 fn main():
     a := args()
     src := ""
@@ -12863,6 +13243,7 @@ fn main():
     pos := 0
     prog0 := parse_program(toks, &pos)
     check_dups(prog0)                                 # fail-closed: reject duplicate decls before codegen
+    prog0 = pack_program(prog0)                       # variadic (2.2a): fold each `f(a,b,c)`/`f(x...)` trailing args into one [T] arg; normalize "...T" params to "[T]"; reject every spread misuse
     sigs0 := []Sig                                    # sigs over the ORIGINAL funcs: capture-type lookups during the lift
     sigmap0 := []string: int
     i := 0

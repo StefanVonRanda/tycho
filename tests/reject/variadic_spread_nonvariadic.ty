@@ -1,0 +1,5 @@
+fn f(x: int) -> int:
+    return x
+fn main():
+    a := [1,2]
+    print(str(f(a...)))

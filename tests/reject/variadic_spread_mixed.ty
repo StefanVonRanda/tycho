@@ -1,0 +1,5 @@
+fn sum(xs: ...int) -> int:
+    return 0
+fn main():
+    a := [1]
+    print(str(sum(1, a...)))

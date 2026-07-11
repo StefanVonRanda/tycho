@@ -116,7 +116,7 @@ typedef enum {
     TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
     TK_BREAK, TK_CONTINUE,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
-    TK_DOT, TK_DOLLAR,
+    TK_DOT, TK_ELLIPSIS, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES,
     TK_KW_U32, TK_KW_U64, TK_KW_F32
 } TokKind;
@@ -398,7 +398,8 @@ static TokVec lex(const char *src) {
             /* operators (two-char first) */
             char c2 = p[1];
             TokKind k; int len = 1;
-            if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
+            if (c == '.' && c2 == '.' && p[2] == '.') { k = TK_ELLIPSIS; len = 3; }  /* variadic `...T` / spread `x...` */
+            else if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
             else if (c == ':' && c2 == '=') { k = TK_COLONEQ;    len = 2; }
             else if (c == '=' && c2 == '=') { k = TK_EQEQ;       len = 2; }
             else if (c == '!' && c2 == '=') { k = TK_NEQ;        len = 2; }
@@ -1173,6 +1174,7 @@ typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, 
                E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
                E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
+               E_SPREAD,   /* x... : spread an array into a variadic parameter (lhs=the array); rejected elsewhere */
                E_SLICE,    /* xs[a:b]: a sub-range view (lhs=array, rhs=lo or NULL, args[0]=hi or NULL) */
                E_LAMBDA,   /* fn(p)->r: e closure literal; ival indexes g_laminfo */
                E_NULL,     /* `null`: the opaque ptr literal (void*)0 (FFI) */
@@ -1226,7 +1228,7 @@ struct Stmt {
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
 };
 
-typedef struct { char *name; Type type; int is_inout; int is_sink; const char *ffi_ct; } Param;   /* ffi_ct: FFI-boundary sized C type ("unsigned int " etc.) for a u8/u16/.../i64 extern param — NULL = use c_type(type) (which is int) */
+typedef struct { char *name; Type type; int is_inout; int is_sink; int is_variadic; const char *ffi_ct; } Param;   /* is_variadic: `xs: ...T` — type is [T]; a call packs its trailing args into it */   /* ffi_ct: FFI-boundary sized C type ("unsigned int " etc.) for a u8/u16/.../i64 extern param — NULL = use c_type(type) (which is int) */
 
 typedef struct {
     char   *name;
@@ -1761,6 +1763,7 @@ static Expr *parse_primary(Parser *ps) {
             pr->params[pr->nparams].type = pt;
             pr->params[pr->nparams].is_inout = 0;
             pr->params[pr->nparams].is_sink = 0;
+            pr->params[pr->nparams].is_variadic = 0;   /* a lambda parameter is never variadic */
             pr->params[pr->nparams].ffi_ct = NULL;
             pr->nparams++;
             if (!accept(ps, TK_COMMA)) break;
@@ -2067,6 +2070,12 @@ static Expr *parse_postfix(Parser *ps) {
         Expr *o = new_expr(E_ORRETURN, t->line);
         o->lhs = e;
         e = o;
+    }
+    if (at(ps, TK_ELLIPSIS)) {   /* x... : spread into a variadic parameter (validated at the call site) */
+        Tok *t = cur(ps); ps->p++;
+        Expr *sp = new_expr(E_SPREAD, t->line);
+        sp->lhs = e;
+        e = sp;
     }
     return e;
 }
@@ -2844,17 +2853,26 @@ static Proc *parse_fn(Parser *ps) {
          * dead local / fresh value, else copied — see arg_into at the call site). */
         int is_sink = 0;
         if (!is_inout && at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "sink")) { ps->p++; is_sink = 1; }
+        /* variadic: `name: ...T` — the param is a `[T]`; a call packs its trailing args. */
+        int is_variadic = accept(ps, TK_ELLIPSIS);
+        if (is_variadic && (is_inout || is_sink))
+            die_at(pn->line, "a variadic parameter cannot also be inout or sink");
         Type pt = parse_type(ps);
+        if (is_variadic) pt = arr_of(pt);      /* `...T` -> the param's type is [T] */
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = is_inout;
         pr->params[pr->nparams].is_sink = is_sink;
+        pr->params[pr->nparams].is_variadic = is_variadic;
         pr->params[pr->nparams].ffi_ct = NULL;
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
     }
     eat(ps, TK_RPAREN, "')'");
+    for (int i = 0; i + 1 < pr->nparams; i++)   /* only the LAST parameter may be variadic */
+        if (pr->params[i].is_variadic)
+            die_at(pr->line, "a variadic parameter must be the last parameter of '%s'", nameT->text);
 
     if (accept(ps, TK_ARROW)) { pr->ret = parse_type(ps); pr->has_ret = 1; }
     else pr->ret = T_VOID;
@@ -2946,6 +2964,7 @@ static void parse_subscript(Parser *ps) {
         sub.params[sub.nparams].type = pt;
         sub.params[sub.nparams].is_inout = 0;
         sub.params[sub.nparams].is_sink = 0;
+        sub.params[sub.nparams].is_variadic = 0;
         sub.params[sub.nparams].ffi_ct = NULL;
         sub.nparams++;
         if (!accept(ps, TK_COMMA)) break;
@@ -3084,6 +3103,7 @@ static Proc *parse_extern_fn(Parser *ps) {
         pr->params[pr->nparams].type = pt;
         pr->params[pr->nparams].is_inout = p_inout;
         pr->params[pr->nparams].is_sink = 0;   /* extern params are never sink */
+        pr->params[pr->nparams].is_variadic = 0;   /* nor variadic (FFI variadics is a non-goal) */
         pr->params[pr->nparams].ffi_ct = p_ffi_ct;
         pr->nparams++;
         if (!accept(ps, TK_COMMA)) break;
@@ -3544,6 +3564,7 @@ typedef struct {
     Type        params[16];
     int         inout[16];   /* per-param: is it an inout (by-pointer) param? */
     int         sink[16];  /* per-param: is it a `sink` (owned, mutable) param? (prototype) */
+    int         variadic[16];  /* per-param: is it a variadic `...T` param (only the last may be)? */
     int         nparams;
     int         builtin;
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
@@ -3869,6 +3890,8 @@ static Type resolve_expr_inner(Expr *e) {
     int _place = g_place; g_place = 0;   /* children are rvalues unless a spine case re-enables (see g_place) */
     switch (e->kind) {
         case E_INT:  return e->type = T_INT;
+        case E_SPREAD:   /* a variadic call unwraps its spread args before resolving them; anywhere else is a misuse */
+            die_at(e->line, "spread `...` is only valid as the argument to a variadic parameter");
         case E_SPAWN: {   /* spawn f(args): a named user-proc call on a new thread -> Task(ret) */
             Expr *c = e->lhs;
             resolve_expr(c);
@@ -3916,7 +3939,7 @@ static Type resolve_expr_inner(Expr *e) {
                     if (IS_HANDLE(vt)) die_at(e->line, "a closure cannot capture a handle -- it is freed at the end of its scope");
                     if (IS_CHAN(vt)) die_at(e->line, "a closure cannot capture a channel handle -- take it as a parameter instead");
                     if (ncap >= 16) die_at(e->line, "a lambda captures at most 16 variables");
-                    caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0; caps[ncap].is_sink = 0; caps[ncap].ffi_ct = NULL;
+                    caps[ncap].name = (char *)ids[i]; caps[ncap].type = vt; caps[ncap].is_inout = 0; caps[ncap].is_sink = 0; caps[ncap].is_variadic = 0; caps[ncap].ffi_ct = NULL;
                     ncap++;
                 }   /* else a function/enum/global: resolves inside the lifted proc, not a capture */
             }
@@ -4746,6 +4769,46 @@ static Type resolve_expr_inner(Expr *e) {
                 if (resolve_exp(e->args[1], T_INT) != T_INT)
                     die_at(e->line, "reserve's capacity must be int");
                 return e->type = T_VOID;
+            }
+            /* variadic call packing (2.2a): if the callee's last parameter is `...T`,
+             * fold the trailing arguments into ONE array argument (or, for `x...`, use
+             * that array directly) BEFORE generic inference / arity / type checks run.
+             * After this, the call is an ordinary call to `f(fixed..., xs: [T])`. */
+            if (!e->qual && !e->lhs) {
+                int vnp = -1, vlast = 0, velem_generic = 0; Type velem = T_VOID;
+                Proc *vgt = generic_find(e->sval);
+                if (vgt) { vnp = vgt->nparams;
+                    if (vnp > 0 && vgt->params[vnp - 1].is_variadic) { vlast = 1; velem = arr_elem(vgt->params[vnp - 1].type); velem_generic = IS_TYPARAM(velem); } }
+                else { Sig *vs = sig_find(e->sval);
+                    if (vs && !vs->builtin) { vnp = vs->nparams;
+                        if (vnp > 0 && vs->variadic[vnp - 1]) { vlast = 1; velem = arr_elem(vs->params[vnp - 1]); } } }
+                if (vlast) {
+                    int nfixed = vnp - 1;
+                    if (e->nargs < nfixed)
+                        die_at(e->line, "'%s' takes at least %d argument(s), got %d", e->sval, nfixed, e->nargs);
+                    int ntrail = e->nargs - nfixed, spread = 0;
+                    for (int i = nfixed; i < e->nargs; i++) if (e->args[i]->kind == E_SPREAD) spread = 1;
+                    Expr *varg;
+                    if (spread) {
+                        if (ntrail != 1 || e->args[nfixed]->kind != E_SPREAD)
+                            die_at(e->line, "a spread argument `x...` must be the only variadic argument to '%s'", e->sval);
+                        varg = e->args[nfixed]->lhs;   /* unwrap; its [T] type is checked in the arg loop below */
+                    } else {
+                        Expr *lit = new_expr(E_ARRLIT, e->line);
+                        lit->nargs = ntrail;
+                        if (ntrail > 0) {
+                            lit->args = (Expr **)xmalloc((size_t)ntrail * sizeof(Expr *));
+                            for (int i = 0; i < ntrail; i++) lit->args[i] = e->args[nfixed + i];
+                        } else if (velem_generic) {
+                            die_at(e->line, "cannot infer the element type of an empty variadic call to generic '%s'; pass at least one argument", e->sval);
+                        } else { lit->type = arr_of(velem); lit->ival = (int)arr_of(velem); }   /* typed empty [T] */
+                        varg = lit;
+                    }
+                    Expr **na = (Expr **)xmalloc((size_t)(nfixed + 1) * sizeof(Expr *));
+                    for (int i = 0; i < nfixed; i++) na[i] = e->args[i];
+                    na[nfixed] = varg;
+                    e->args = na; e->nargs = nfixed + 1;
+                }
             }
             { Proc *gt = generic_find(e->sval);   /* generics: infer type args, intern instance, rewrite e->sval */
               if (gt && !e->qual && !e->lhs) instantiate_generic(gt, e);
@@ -6018,7 +6081,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     if (sig_find(nm)) return;                         /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
     s.name = nm; s.ret = cret; s.nparams = gt->nparams; s.builtin = 0;
-    for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.inout[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; }
+    for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.inout[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; s.variadic[j] = gt->params[j].is_variadic; }
     TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap); g_sigs[g_nsigs++] = s;
     TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
     GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret;
@@ -6074,6 +6137,7 @@ static void resolve_program(ProcVec *prog) {
             s.params[j] = pr->params[j].type;
             s.inout[j]  = pr->params[j].is_inout;
             s.sink[j] = pr->params[j].is_sink;
+            s.variadic[j] = pr->params[j].is_variadic;
             /* inout: non-heap types (int/bool/pure struct) and the mutable
              * aggregates [int]/[string]/heap-bearing structs. A heap inout
              * carries its value's owning arena (_ina_<name>), so any
@@ -7273,6 +7337,8 @@ static const char *op_str(TokKind op) {
 
 static char *gen_expr(Expr *e, const char *arena) {
     switch (e->kind) {
+        case E_SPREAD:   /* unreachable: resolve rewrites/rejects every spread before codegen */
+            die_at(e->line, "internal: spread `...` reached codegen");
         case E_INT:
             /* u32/u64 literals need an unsigned C suffix: an unadorned `...L` is signed
              * long, so `u32_var + 3000000000L` would promote to signed 64-bit and wrap at

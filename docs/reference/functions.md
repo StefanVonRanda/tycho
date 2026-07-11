@@ -10,6 +10,33 @@ indirectly. A closure captures by value, like every other value in the language,
 lets closures escape with no lifetime annotations. And any function can be called in method
 position with `x.f(a)`, without classes.
 
+## Variadic parameters
+
+A final parameter written `xs: ...T` is **variadic**: inside the body `xs` is a `[T]`, and a
+call packs its trailing arguments into that array. It is sugar over an array — the packed
+`[T]` is a value, deep-copied at the boundary like any array, so it needs no new machinery.
+
+```
+fn sum(xs: ...int) -> int:
+    acc := 0
+    for x in xs: acc = acc + x
+    return acc
+
+sum(1, 2, 3)          # packs [1, 2, 3] -> 6
+sum()                 # []int -> 0
+nums := [4, 5, 6]
+sum(nums...)          # spread: pass an existing array -> 15
+```
+
+- Only the **last** parameter may be variadic, and it may follow fixed parameters
+  (`fn tagged(tag: string, xs: ...int)`).
+- `f(a, b, c)` **packs**; `f(arr...)` **spreads** an existing `[T]` (so a variadic function
+  can forward its own args: `sum(xs...)`). A spread argument must be the sole variadic
+  argument; a spread is only valid into a variadic parameter.
+- The **generic form** `xs: ...$T` infers `T` from the arguments — `count(1, 2, 3)` binds
+  `T = int`, `count("a", "b")` binds `T = string`. An empty generic variadic call (`count()`)
+  can't infer `T` and is a compile error.
+
 ## First-class function values
 
 A top-level function used as a value has type `fn(P1, ..., Pn) -> R` (drop the `-> R` for a
