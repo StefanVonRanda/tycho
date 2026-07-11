@@ -20,7 +20,7 @@ fn main():
     m[Point(1, 2)] = 10
     m[Point(3, 4)] = 20
     m[Point(1, 2)] = 11                       # overwrite, not a new entry
-    println("get=" + str(map_get(m, Point(1, 2), -1)) + " miss=" + str(map_get(m, Point(9, 9), -1)))
+    println("get=" + str(m.get(Point(1, 2), -1)) + " miss=" + str(m.get(Point(9, 9), -1)))
     println("in=" + str(Point(3, 4) in m) + " len=" + str(len(m)))
     ks := keys(m)
     println("order=(" + str(ks[0].x) + "," + str(ks[0].y) + ")(" + str(ks[1].x) + "," + str(ks[1].y) + ")")
@@ -33,7 +33,7 @@ fn main():
     tally[p] = 1
     tally[p] += 4                             # in-place accumulator
     p.name = "X"
-    println("alice=" + str(map_get(tally, Person("alice", 30), 0)) + " keyname=" + keys(tally)[0].name)
+    println("alice=" + str(tally.get(Person("alice", 30), 0)) + " keyname=" + keys(tally)[0].name)
 
     # deep == (entry-wise, order-independent)
     a := []Person: int
@@ -47,4 +47,4 @@ fn main():
     # nested-struct key (Edge has Point fields -> recursive hash/eq)
     g := []Edge: string
     g[Edge(Point(0, 0), Point(1, 1))] = "diag"
-    println("edge=" + map_get(g, Edge(Point(0, 0), Point(1, 1)), "?") + " emiss=" + map_get(g, Edge(Point(0, 0), Point(2, 2)), "?"))
+    println("edge=" + g.get(Edge(Point(0, 0), Point(1, 1)), "?") + " emiss=" + g.get(Edge(Point(0, 0), Point(2, 2)), "?"))

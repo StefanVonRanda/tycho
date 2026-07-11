@@ -12,16 +12,16 @@ fn main():
     m["a"] = "apple"
     m["b"] = "banana"
     m["a"] = "avocado" # overwrite
-    println(map_get(m, "a", "?"))         # avocado
-    println(map_get(m, "b", "?"))         # banana
-    println(map_get(m, "z", "none"))      # none (default)
+    println(m.get("a", "?"))         # avocado
+    println(m.get("b", "?"))         # banana
+    println(m.get("z", "none"))      # none (default)
     if "a" in m:
         println("has-a")
     if not "z" in m:
         println("no-z")
 
     # heap-value lifetime: bind, then force many rehashes; v stays its own copy
-    v := map_get(m, "a", "?")
+    v := m.get("a", "?")
     i := 0
     for i in range(40):
         m["k" + str(i)] = "v" + str(i)
@@ -33,8 +33,8 @@ fn main():
     base["k"] = "orig"
     cp := base
     cp["k"] = "mutated"
-    println(map_get(base, "k", "?"))      # orig (the copy's change must not leak)
-    println(map_get(cp, "k", "?"))        # mutated
+    println(base.get("k", "?"))      # orig (the copy's change must not leak)
+    println(cp.get("k", "?"))        # mutated
 
     delete m["a"]
     if not "a" in m:
@@ -44,23 +44,23 @@ fn main():
     pts := []string: P
     pts["origin"] = P(0, 0)
     pts["unit"] = P(1, 1)
-    q := map_get(pts, "unit", P(9, 9))
+    q := pts.get("unit", P(9, 9))
     println(str(q.x) + "," + str(q.y))    # 1,1
-    println(str(map_get(pts, "missing", P(7, 8)).y))  # 8 (default)
+    println(str(pts.get("missing", P(7, 8)).y))  # 8 (default)
 
     # [int: V] composite values (occupancy-array scheme; 0 is a real key)
     im := []int: string
     im[1] = "one"
     im[0] = "zero"
     im[1] = "uno" # overwrite
-    println(map_get(im, 1, "?") + map_get(im, 0, "?") + map_get(im, 5, "x"))  # unozerox
+    println(im.get(1, "?") + im.get(0, "?") + im.get(5, "x"))  # unozerox
     ipt := []int: P
     ipt[9] = P(8, 7)
-    println(str(map_get(ipt, 9, P(0, 0)).x) + "," + str(map_get(ipt, 9, P(0, 0)).y))  # 8,7
+    println(str(ipt.get(9, P(0, 0)).x) + "," + str(ipt.get(9, P(0, 0)).y))  # 8,7
 
     # literal with entries
     lit := ["x": "ex", "y": "why"]
-    println(map_get(lit, "x", "?") + map_get(lit, "y", "?"))  # exwhy
+    println(lit.get("x", "?") + lit.get("y", "?"))  # exwhy
 
     # == on composite-valued maps (deep value equality)
     e1 := ["k": "v", "j": "w"]
@@ -81,14 +81,14 @@ fn main():
     av := []int: [int]
     av[1] = [10, 20, 30]
     da := []int
-    println("arrval=" + str(len(map_get(av, 1, da))))                  # arrval=3
+    println("arrval=" + str(len(av.get(1, da))))                  # arrval=3
     nv := []string: [string: int]
     box := []string: int
     box["x"] = 7
     nv["a"] = box
     dn := []string: int
-    println("nestval=" + str(map_get(map_get(nv, "a", dn), "x", 0)))   # nestval=7
+    println("nestval=" + str(nv.get("a", dn).get("x", 0)))   # nestval=7
     # m[k] = <multi-entry map literal>: the inner map must be built in nv's arena,
     # NOT owner 0 — else the chained-set intermediate tables leak (LSan, make test).
     nv["b"] = ["y": 9, "z": 8]
-    println("place=" + str(map_get(map_get(nv, "b", dn), "z", 0)))     # place=8
+    println("place=" + str(nv.get("b", dn).get("z", 0)))     # place=8

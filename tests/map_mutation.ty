@@ -19,16 +19,16 @@ fn main():
     push(idx["cat"], 4)
     push(idx["dog"], 2)
     push(idx["cat"], 7)
-    cat := map_get(idx, "cat", []int)
+    cat := idx.get("cat", []int)
     print("cat:")
     for i in range(len(cat)):
         print(" " + str(cat[i]))
     println("")                                                  # cat: 1 4 7
-    println("doglen=" + str(len(map_get(idx, "dog", []int))))  # doglen=1
+    println("doglen=" + str(len(idx.get("dog", []int))))  # doglen=1
 
     # nested place: m[k][i] = x
     idx["cat"][1] = 40
-    cat2 := map_get(idx, "cat", []int)
+    cat2 := idx.get("cat", []int)
     println(str(cat2[0]) + "," + str(cat2[1]) + "," + str(cat2[2]))  # 1,40,7
 
     # [int:int] counter: m[k] += 1, fresh key starts from zero
@@ -36,32 +36,32 @@ fn main():
     words := [3, 3, 5, 3, 5]
     for i in range(len(words)):
         cnt[words[i]] += 1
-    println(str(map_get(cnt, 3, 0)) + "," + str(map_get(cnt, 5, 0)) + "," + str(map_get(cnt, 9, 0)))  # 3,2,0
+    println(str(cnt.get(3, 0)) + "," + str(cnt.get(5, 0)) + "," + str(cnt.get(9, 0)))  # 3,2,0
 
     # [string:int] plain assign + compound (fresh-key compound = 0 + 1)
     s := []string: int
     s["a"] = 10
     s["a"] += 5
     s["b"] += 1
-    println(str(map_get(s, "a", -1)) + "," + str(map_get(s, "b", -1)))  # 15,1
+    println(str(s.get("a", -1)) + "," + str(s.get("b", -1)))  # 15,1
 
     # [string: string] plain assign with a heap value (must own its own bytes)
     sv := []string: string
     sv["g"] = "greeting"
-    println(map_get(sv, "g", "?"))                          # greeting
+    println(sv.get("g", "?"))                          # greeting
 
     # [string:P] struct value: m[k].field = x (auto-insert zero struct, then set)
     pts := []string: P
     pts["o"].x = 3
     pts["o"].y = 4
-    q := map_get(pts, "o", P(0, 0))
+    q := pts.get("o", P(0, 0))
     println(str(q.x) + "," + str(q.y))                      # 3,4
 
     # call-bearing key is single-eval'd: k7() prints exactly once per statement
     km := []int: int
     km[k7()] += 10
     km[k7()] = 5
-    println("=" + str(map_get(km, 7, -1)))                  # [k7][k7]=5
+    println("=" + str(km.get(7, -1)))                  # [k7][k7]=5
 
     # value semantics: copy then mutate the copy in place; original unchanged
     base := []string: int
@@ -69,4 +69,4 @@ fn main():
     cp := base
     cp["k"] = 999
     cp["k"] += 1
-    println(str(map_get(base, "k", -1)) + "," + str(map_get(cp, "k", -1)))  # 100,1000
+    println(str(base.get("k", -1)) + "," + str(cp.get("k", -1)))  # 100,1000

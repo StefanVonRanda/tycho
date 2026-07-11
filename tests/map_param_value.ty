@@ -6,10 +6,10 @@ fn bump(c: [string: int]) -> int:
     d := c                    # value-semantics copy
     d["k"] = 999
     d["n"] = 7
-    return map_get(d, "k", 0)
+    return d.get("k", 0)
 
 fn main():
     base := ["k": 1]
     r := bump(base)
     # caller's "k" stays 1; the new "n" never appears in the caller
-    println(str(map_get(base, "k", 0)) + " " + str(r) + " " + str(map_get(base, "n", -1)))
+    println(str(base.get("k", 0)) + " " + str(r) + " " + str(base.get("n", -1)))

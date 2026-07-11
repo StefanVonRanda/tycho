@@ -115,7 +115,7 @@ string. That string then poisons two downstream sites in the mono pass:
 UFCS *method* call, in the `ECallV` arm at `compiler/tychoc0.ty:3115`–`:3122`:
 
 ```
-msi := map_get(dc.sigmap, mn, -1)
+msi := dc.sigmap.get(mn, -1)
 if msi >= 0 and len(dc.sigs[msi].ptypes) >= 1 and ty_is_generic(dc.sigs[msi].ret):
     rbt := type_of(efield_base(callee), names, types, dc, ctx)   # the receiver's concrete type
     sbn := []string
@@ -181,7 +181,7 @@ So `type_of`'s `ECall` arm can, just before the `:3187` fallthrough, do:
 
 ```
 # (proposed, in type_of ECall arm, before the sig_ret fallthrough)
-si := map_get(dc.sigmap, name, -1)
+si := dc.sigmap.get(name, -1)
 if si >= 0 and ty_is_generic(dc.sigs[si].ret):
     bn := []string
     bt := []string

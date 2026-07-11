@@ -25,7 +25,7 @@ fn main():
         ks := keys(m)
         ki := 0
         for ki in range(len(ks)):
-            lst := map_get(m, ks[ki], []int)
+            lst := m.get(ks[ki], []int)
             checksum = checksum + len(lst)
             li := 0
             for li in range(len(lst)):

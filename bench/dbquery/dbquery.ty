@@ -60,15 +60,15 @@ fn main():
             amt := sqlite3_column_int64(st, 1)
             label := sqlite3_column_text(st, 2)   # C-owned text -> arena-copied on return
             lbllen = lbllen + len(label)
-            m_sum[cat] = map_get(m_sum, cat, 0) + amt
-            m_cnt[cat] = map_get(m_cnt, cat, 0) + 1
+            m_sum[cat] = m_sum.get(cat, 0) + amt
+            m_cnt[cat] = m_cnt.get(cat, 0) + 1
         sqlite3_finalize(st)
         chk := lbllen
         ks := keys(m_sum)
         ki := 0
         for ki < len(ks):
             c := ks[ki]
-            chk = chk + (c + 1) * map_get(m_sum, c, 0) + map_get(m_cnt, c, 0)
+            chk = chk + (c + 1) * m_sum.get(c, 0) + m_cnt.get(c, 0)
             ki = ki + 1
         acc = acc + chk
         q = q + 1

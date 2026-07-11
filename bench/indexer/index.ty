@@ -51,10 +51,10 @@ fn worker(ch: Channel(string)) -> [string: int]:
                         cur = cur + chr(c)
                     else:
                         if len(cur) > 0:
-                            local[cur] = map_get(local, cur, 0) + 1
+                            local[cur] = local.get(cur, 0) + 1
                             cur = ""
                 if len(cur) > 0:
-                    local[cur] = map_get(local, cur, 0) + 1
+                    local[cur] = local.get(cur, 0) + 1
             None:
                 return local
     return local
@@ -73,7 +73,7 @@ fn merge(into: inout [string: int], add: [string: int]):
     ks := keys(add)
     for i in range(len(ks)):
         k := ks[i]
-        into[k] = map_get(into, k, 0) + map_get(add, k, 0)
+        into[k] = into.get(k, 0) + add.get(k, 0)
 
 fn main():
     a := args()                          # a[0] is the program name
@@ -108,7 +108,7 @@ fn main():
     csum := 0
     for i in range(len(ks)):
         k := ks[i]
-        c := map_get(m, k, 0)
+        c := m.get(k, 0)
         tokens = tokens + c
         csum = csum + len(k) * c
 

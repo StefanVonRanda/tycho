@@ -1935,12 +1935,14 @@ static Expr *parse_primary(Parser *ps) {
         }
         if (at(ps, TK_LPAREN)) {           /* call */
             ps->p++;
-            /* B5: the map_* mutators were removed in favour of operator/keyword
-             * syntax. Reject a user-typed call here (the `delete` desugar builds
-             * its map_del node directly, bypassing this path; map_get is kept). */
+            /* The map_* functions were removed in favour of operator/keyword/method
+             * syntax. Reject a user-typed call here (the `delete`/`m[k]`/`m.get`
+             * desugars build their map_del/map_get nodes directly in resolve,
+             * bypassing this parse-time path). */
             if (!strcmp(t->text, "map_set")) die_at(t->line, "map_set was removed; use `m[k] = v`");
             if (!strcmp(t->text, "map_has")) die_at(t->line, "map_has was removed; use `k in m`");
             if (!strcmp(t->text, "map_del")) die_at(t->line, "map_del was removed; use `delete m[k]`");
+            if (!strcmp(t->text, "map_get")) die_at(t->line, "map_get was removed; use `m.get(k, default)`");
             Expr *e = new_expr(E_CALL, t->line);
             e->sval = t->text;
             e->pkg  = g_cur_pkg_prefix;   /* the package this call appears in; resolver tries <pkg>name first */
@@ -4085,6 +4087,25 @@ static Type resolve_expr_inner(Expr *e) {
              * the field access (the parser couldn't tell h from a package name). */
             { Type _qvt;
               if (e->qual && !e->lhs && vars_find(e->qual, &_qvt)) {
+                  /* m.get(k) / m.get(k, default): a map read spelled as a method on a
+                   * map receiver. Rewrite to the m[k] rvalue path (no default) or the
+                   * internal map_get node (explicit default) -- reusing the exact same
+                   * lowering, so emitted C is unchanged. Receiver-directed: `get` on any
+                   * non-map type falls through to the UFCS resolution below untouched. */
+                  if (is_map(_qvt) && !strcmp(e->sval, "get")) {
+                      if (e->nargs != 1 && e->nargs != 2)
+                          die_at(e->line, "m.get(key) or m.get(key, default) takes one or two arguments (got %d)", e->nargs);
+                      Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
+                      if (e->nargs == 1) {   /* m.get(k) == m[k] rvalue read (value-type zero on a miss) */
+                          e->kind = E_INDEX; e->lhs = recv; e->rhs = e->args[0];
+                          e->args = NULL; e->nargs = 0; e->qual = NULL; e->sval = NULL;
+                      } else {               /* m.get(k, d) == map_get(m, k, d) */
+                          Expr **na = (Expr **)xmalloc(3 * sizeof(Expr *));
+                          na[0] = recv; na[1] = e->args[0]; na[2] = e->args[1];
+                          e->args = na; e->nargs = 3; e->qual = NULL; e->sval = "map_get";
+                      }
+                      return resolve_expr(e);
+                  }
                   /* x.foo(args), x a local var: a fn-typed-FIELD call takes precedence;
                    * otherwise UFCS — a free fn `foo` (or `<pkg>foo`) whose first
                    * parameter has x's type by value -> foo(x, args). Static dispatch
@@ -4132,6 +4153,21 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->lhs && e->lhs->kind == E_FIELD) {
                 Expr *fld = e->lhs;
                 Type bt = resolve_expr(fld->lhs);
+                /* base.get(k[, default]) on a map receiver: same map-read rewrite as the
+                 * local-var path above, for a chained receiver (a.f().get(k)). */
+                if (is_map(bt) && !strcmp(fld->sval, "get")) {
+                    if (e->nargs != 1 && e->nargs != 2)
+                        die_at(e->line, "m.get(key) or m.get(key, default) takes one or two arguments (got %d)", e->nargs);
+                    if (e->nargs == 1) {
+                        e->kind = E_INDEX; e->lhs = fld->lhs; e->rhs = e->args[0];
+                        e->args = NULL; e->nargs = 0; e->sval = NULL;
+                    } else {
+                        Expr **na = (Expr **)xmalloc(3 * sizeof(Expr *));
+                        na[0] = fld->lhs; na[1] = e->args[0]; na[2] = e->args[1];
+                        e->args = na; e->nargs = 3; e->sval = "map_get"; e->lhs = NULL;
+                    }
+                    return resolve_expr(e);
+                }
                 int fnfield = 0;
                 if (IS_STRUCT(bt)) {
                     StructDef *sd = &g_structs[STRUCT_ID(bt)];

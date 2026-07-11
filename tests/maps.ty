@@ -13,11 +13,11 @@ fn sumvals(m: [string: int]) -> int:
     ks := keys(m)
     total := 0
     for i in range(len(ks)):
-        total = total + map_get(m, ks[i], 0)
+        total = total + m.get(ks[i], 0)
     return total
 
 fn bump(m: inout [string: int], k: string):
-    m[k] = map_get(m, k, 0) + 1
+    m[k] = m.get(k, 0) + 1
 
 fn drop(m: inout [string: int], k: string):
     delete m[k]
@@ -26,13 +26,13 @@ fn main():
     counts := []string: int
     words := ["a", "b", "a", "c", "a", "b"]
     for i in range(len(words)):
-        counts[words[i]] = map_get(counts, words[i], 0) + 1
-    println("a=" + str(map_get(counts, "a", 0)) + " b=" + str(map_get(counts, "b", 0)) + " c=" + str(map_get(counts, "c", 0)))
+        counts[words[i]] = counts.get(words[i], 0) + 1
+    println("a=" + str(counts.get("a", 0)) + " b=" + str(counts.get("b", 0)) + " c=" + str(counts.get("c", 0)))
     println("distinct=" + str(len(counts)) + " total=" + str(sumvals(counts)))
 
     snap := counts
     counts["a"] = 100
-    println("snap_a=" + str(map_get(snap, "a", 0)) + " counts_a=" + str(map_get(counts, "a", 0)))
+    println("snap_a=" + str(snap.get("a", 0)) + " counts_a=" + str(counts.get("a", 0)))
 
     less := counts                     # value-semantics copy: deleting from it leaves counts intact
     delete less["a"]
@@ -46,7 +46,7 @@ fn main():
     bump(&m, "x")
     bump(&m, "x")
     bump(&m, "y")
-    println("inout x=" + str(map_get(m, "x", 0)) + " len=" + str(len(m)))
+    println("inout x=" + str(m.get("x", 0)) + " len=" + str(len(m)))
     drop(&m, "x")
     println("after_drop x_has=" + yn("x" in m) + " len=" + str(len(m)))
 
@@ -58,7 +58,7 @@ fn main():
     println("emptied len=" + str(len(t)))
     for i in range(30):
         t["k" + str(i)] = i * 2
-    println("refilled len=" + str(len(t)) + " k7=" + str(map_get(t, "k7", -1)) + " k49=" + str(map_get(t, "k49", -1)))
+    println("refilled len=" + str(len(t)) + " k7=" + str(t.get("k7", -1)) + " k49=" + str(t.get("k49", -1)))
 
     e := []string: int
     println("empty_keys_len=" + str(len(keys(e))))

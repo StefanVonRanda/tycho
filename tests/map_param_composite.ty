@@ -8,19 +8,19 @@ struct P:
     y: int
 
 fn sum_list(m: [string: [int]], term: string) -> int:
-    xs := map_get(m, term, []int)
+    xs := m.get(term, []int)
     s := 0
     for i in range(len(xs)):
         s += xs[i]
     return s
 
 fn pt_x(m: [int: P], k: int) -> int:
-    return map_get(m, k, P(0, 0)).x
+    return m.get(k, P(0, 0)).x
 
 fn grow(m: [string: [int]]) -> int:        # copy the borrowed param, then mutate the copy: must not touch the caller
     d := m
     d["zzz"] = [9, 9, 9]
-    return len(map_get(d, "zzz", []int))
+    return len(d.get("zzz", []int))
 
 fn main():
     idx := []string: [int]

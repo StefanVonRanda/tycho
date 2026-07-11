@@ -814,6 +814,8 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
                 die("parse: map_has was removed; use k in m")
             if name == "map_del":
                 die("parse: map_del was removed; use delete m[k]")
+            if name == "map_get":
+                die("parse: map_get was removed; use m.get(k, default)")
             pos = pos + 1
             args := []Expr
             if toks[pos].kind != TRParen:
@@ -1431,6 +1433,8 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 die("parse: map_has was removed; use k in m")
             if name == "map_del":
                 die("parse: map_del was removed; use delete m[k]")
+            if name == "map_get":
+                die("parse: map_get was removed; use m.get(k, default)")
             pos = pos + 1
             args := []Expr
             if toks[pos].kind != TRParen:
@@ -2992,13 +2996,13 @@ fn vinst(name: string) -> string:                 # "Has#Box__int" -> "Box__int"
     return ""
 
 fn is_variant(dc: Decls, ctx: Ctx, name: string) -> bool:
-    return map_get(dc.vmap, vbase(name), -1) >= 0
+    return dc.vmap.get(vbase(name), -1) >= 0
 
 fn variant_enum(dc: Decls, ctx: Ctx, vname: string) -> string:
     inst := vinst(vname)                           # generics: a mono-encoded constructor carries its concrete instance enum
     if inst != "":
         return inst
-    i := map_get(dc.vmap, vbase(vname), -1)
+    i := dc.vmap.get(vbase(vname), -1)
     if i < 0:
         die("type: unknown variant")
     return dc.enums[i].name
@@ -3614,7 +3618,7 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
         return variant_enum(dc, ctx, name)
     if is_struct(dc, ctx, name):                      # construction yields the struct
         return name
-    si := map_get(dc.sigmap, name, -1)                # O(1) user-function lookup (was a linear scan)
+    si := dc.sigmap.get(name, -1)                # O(1) user-function lookup (was a linear scan)
     if si >= 0:
         return dc.sigs[si].ret
     die_at(dc, ctx.line, "type: unknown function '" + name + "'")
@@ -3623,13 +3627,13 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
 # if `name` is not a user function (so a bare name can be typed as a value).
 fn sig_ptypes(dc: Decls, name: string) -> [string]:   # the named fn's param types (spawn-site copy-in, CC-1)
-    si := map_get(dc.sigmap, name, -1)
+    si := dc.sigmap.get(name, -1)
     if si < 0:
         die("type: unknown function '" + name + "' in spawn")
     return dc.sigs[si].ptypes
 
 fn sig_functype(dc: Decls, name: string) -> string:
-    si := map_get(dc.sigmap, name, -1)
+    si := dc.sigmap.get(name, -1)
     if si < 0:
         return ""
     s := dc.sigs[si]
@@ -3776,7 +3780,7 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
     bt := type_of(efield_base(callee), names, types, dc, ctx)
     if struct_fn_field(dc, bt, fname):            # a real fn-typed field wins (call-through-field)
         return ""
-    si := map_get(dc.sigmap, fname, -1)
+    si := dc.sigmap.get(fname, -1)
     if si >= 0 and len(dc.sigs[si].ptypes) >= 1:
         if recv_matches(dc.sigs[si].ptypes[0], bt):
             return fname
@@ -3787,12 +3791,12 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
     us := find(bt, "__")                          # method in the receiver type's package: geom__Circle -> geom__area
     if us >= 0:
         qn := substr(bt, 0, us + 2) + fname
-        sj := map_get(dc.sigmap, qn, -1)
+        sj := dc.sigmap.get(qn, -1)
         if sj >= 0 and len(dc.sigs[sj].ptypes) >= 1 and recv_matches(dc.sigs[sj].ptypes[0], bt):
             return qn
     if ctx.curpkg != "":                          # same-package method on a receiver whose TYPE carries no
         cn := ctx.curpkg + fname                  # package prefix (a scalar/builtin): try <curpkg>__method
-        sk := map_get(dc.sigmap, cn, -1)
+        sk := dc.sigmap.get(cn, -1)
         if sk >= 0 and len(dc.sigs[sk].ptypes) >= 1 and recv_matches(dc.sigs[sk].ptypes[0], bt):
             return cn
     return ""
@@ -3875,6 +3879,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             return mk_functype(pts, ret)
         ECallV(callee, cargs, _el):
             cfn := efield_fname(callee)           # t.wait() / ch.send(v) ...: a task/chan "method" (CC)
+            if cfn == "get":                      # m.get(k[, default]): a map read spelled as a method -> value type
+                gbt := type_of(efield_base(callee), names, types, dc, ctx)
+                if is_map(gbt):
+                    return map_val(gbt)
             if is_conc_method(cfn):
                 cbt := type_of(efield_base(callee), names, types, dc, ctx)
                 if is_task(cbt) and cfn == "wait":
@@ -3885,7 +3893,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return "void"                 # send / close
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method: its return type
-                msi := map_get(dc.sigmap, mn, -1)
+                msi := dc.sigmap.get(mn, -1)
                 if msi >= 0 and len(dc.sigs[msi].ptypes) >= 1 and ty_is_generic(dc.sigs[msi].ret):
                     rbt := type_of(efield_base(callee), names, types, dc, ctx)   # generic method: substitute its return from the receiver type
                     sbn := []string
@@ -3979,7 +3987,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return "Result(" + type_of(args[0], names, types, dc, ctx) + ",)"
             if name == "Err":
                 return "Result(," + type_of(args[0], names, types, dc, ctx) + ")"
-            gsi := map_get(dc.sigmap, name, -1)
+            gsi := dc.sigmap.get(name, -1)
             if gsi >= 0 and ty_is_generic(dc.sigs[gsi].ret):   # generic call: infer type args from the argument types and substitute the CONCRETE return, so a generic result can feed a bound var or another generic (matches tychoc; was returning the template's "$T")
                 gbn := []string
                 gbt := []string
@@ -4891,6 +4899,18 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                         push(nca, cargs[cci])
                         cci = cci + 1
                     return gen_expr(ECall(cfn, nca, _el), names, types, dc, ctx)
+            if cfn == "get":                      # m.get(k) == m[k] read; m.get(k, d) == m.get(k, d)
+                gbt := type_of(efield_base(callee), names, types, dc, ctx)
+                if is_map(gbt):
+                    if len(cargs) == 1:
+                        return gen_expr(EIndex(efield_base(callee), cargs[0], _el), names, types, dc, ctx)
+                    if len(cargs) == 2:
+                        nca := []Expr
+                        push(nca, efield_base(callee))
+                        push(nca, cargs[0])
+                        push(nca, cargs[1])
+                        return gen_expr(ECall("map_get", nca, _el), names, types, dc, ctx)
+                    die("m.get(key) or m.get(key, default) takes one or two arguments")
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method call: foo(recv, args)
                 allargs := []Expr
@@ -4899,7 +4919,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 for ci < len(cargs):
                     push(allargs, cargs[ci])
                     ci = ci + 1
-                msi := map_get(dc.sigmap, mn, -1)     # sink-aware args: a `sink` receiver/param adopts-or-copies
+                msi := dc.sigmap.get(mn, -1)     # sink-aware args: a `sink` receiver/param adopts-or-copies
                 return un(mn) + "(" + ctx.owner + ", " + gen_call_args_sink(allargs, dc.sigs[msi].ptypes, names, types, dc, ctx) + ")"
             ct := cty(dc, ctx, type_of(callee, names, types, dc, ctx))
             code := "({ " + ct + "_f = " + gen_expr(callee, names, types, dc, ctx) + "; _f.call(_f.env, " + ctx.owner
@@ -5290,7 +5310,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # but is not a known user function is a call to something undefined.
             # (A value-position call is already caught in type_of; this covers
             # the statement position, whose result -- and thus type_of -- is unused.)
-            csidx := map_get(dc.sigmap, name, -1)
+            csidx := dc.sigmap.get(name, -1)
             if csidx < 0:
                 die_at(dc, ctx.line, "type: unknown function '" + name + "'")
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
@@ -6436,13 +6456,13 @@ fn compute_movables(body: [Stmt]) -> [string]:
         i = i + 1
     i = 0
     for i < len(reads):
-        freq[reads[i]] = map_get(freq, reads[i], 0) + 1
+        freq[reads[i]] = freq.get(reads[i], 0) + 1
         i = i + 1
     mv := []string
     i = 0
     for i < len(reads):
         n := reads[i]
-        if map_get(freq, n, 0) == 1 and map_get(lset, n, 0) == 0:
+        if freq.get(n, 0) == 1 and lset.get(n, 0) == 0:
             push(mv, n)
         i = i + 1
     return mv
@@ -7342,7 +7362,7 @@ fn gen_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
 
 # FFI: is `name` an extern (C) function? Drives the direct-call codegen.
 fn sig_is_extern(dc: Decls, name: string) -> bool:
-    si := map_get(dc.sigmap, name, -1)
+    si := dc.sigmap.get(name, -1)
     if si < 0:
         return false
     return dc.sigs[si].is_extern == 1
@@ -8674,7 +8694,7 @@ fn nt_skin_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
         ECall(nm, args, _el):
             if is_newtype(dc, ctx, nm):
                 return nm                                  # Nt(v) constructor
-            si := map_get(dc.sigmap, nm, -1)
+            si := dc.sigmap.get(nm, -1)
             if si >= 0:
                 return nt_or_empty(dc, ctx, dc.sigs[si].ret)   # a fn returning a newtype
             return ""
@@ -8766,7 +8786,7 @@ fn is_eaddr(e: Expr) -> bool:
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
 # every user call: collect_elem_types walks every body, so this is universal.
 fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string], types: [string], el: int):
-    si := map_get(dc.sigmap, nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
+    si := dc.sigmap.get(nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
     if si < 0:
         return
     pp := dc.sigs[si].ptypes
@@ -10123,7 +10143,7 @@ fn arg_want(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string, a
         return ""
     if is_newtype(dc, ctx, nm):                   # X(v): the underlying type grounds the wrapped literal
         return resolve_nt(dc, ctx, nm)
-    si := map_get(dc.sigmap, nm, 0 - 1)
+    si := dc.sigmap.get(nm, 0 - 1)
     if si >= 0 and i < len(dc.sigs[si].ptypes):
         return base_ty(dc.sigs[si].ptypes[i])
     sj := 0
@@ -10291,7 +10311,7 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             # CC-1: assign the spawn-site id and record the SpawnInfo that drives
             # the HSpawnA_<id> args-struct + tycho_spawn_<id> trampoline emission.
             nsa := lift_exprs(sargs, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
-            si := map_get(dc.sigmap, nm, -1)
+            si := dc.sigmap.get(nm, -1)
             if si < 0:
                 die("type: spawn of unknown function '" + nm + "'")
             if dc.sigs[si].is_extern == 1:
@@ -10497,7 +10517,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
             j := 0
             for j < len(sa):
                 if evar_name(sa[j]) == nm:
-                    si := map_get(dc.sigmap, snm, 0 - 1)
+                    si := dc.sigmap.get(snm, 0 - 1)
                     if si >= 0 and j < len(dc.sigs[si].ptypes):
                         return base_ty(dc.sigs[si].ptypes[j])
                 else:
@@ -12482,7 +12502,7 @@ fn main():
     i := 0
     for i < len(prog0.funcs):
         push(sigs0, mk_sig(prog0.funcs[i].name, prog0.funcs[i].ret, prog0.funcs[i].ptypes, prog0.funcs[i].is_extern))
-        if map_get(sigmap0, prog0.funcs[i].name, -1) < 0:
+        if sigmap0.get(prog0.funcs[i].name, -1) < 0:
             sigmap0[prog0.funcs[i].name] = i
         i = i + 1
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
@@ -12498,7 +12518,7 @@ fn main():
     i = 0
     for i < len(funcs):
         push(sigs, mk_sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
-        if map_get(sigmap, funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
+        if sigmap.get(funcs[i].name, -1) < 0:        # first-match wins (matches the old scan)
             sigmap[funcs[i].name] = i
         i = i + 1
     dc := Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)
@@ -12512,7 +12532,7 @@ fn main():
     i = 0
     for i < len(funcs):
         push(sigs, mk_sig(funcs[i].name, funcs[i].ret, funcs[i].ptypes, funcs[i].is_extern))
-        if map_get(sigmap, funcs[i].name, -1) < 0:
+        if sigmap.get(funcs[i].name, -1) < 0:
             sigmap[funcs[i].name] = i
         i = i + 1
     dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles)

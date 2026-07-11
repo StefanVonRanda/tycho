@@ -18,7 +18,7 @@ struct Point:
 fn distinct(xs: [$T]) -> int where hashable(T):
     m : [T: int] = []
     for x in xs:
-        m[x] = map_get(m, x, 0) + 1
+        m[x] = m.get(x, 0) + 1
     return len(m)
 
 fn main():

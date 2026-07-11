@@ -23,7 +23,7 @@ fn total(xs: Ids) -> int:
 
 fn bump(e: Env, k: string) -> Env:
     m := to_under(e)
-    m[k] = map_get(m, k, 0) + 1
+    m[k] = m.get(k, 0) + 1
     return Env(m)
 
 fn main():
@@ -33,7 +33,7 @@ fn main():
     if dup == ids:
         println("ids eq")
     e := bump(bump(Env([]), "a"), "a")
-    println(str(map_get(to_under(e), "a", 0)))
+    println(str(to_under(e).get("a", 0)))
     p := Pos(Pt(7, 9))
     q := to_under(p)
     println(str(q.x + q.y))

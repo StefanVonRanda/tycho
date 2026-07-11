@@ -10,7 +10,7 @@ fn total(m: [string: int]) -> int:
         break
     keysl := keys(m)
     for i in range(len(keysl)):
-        t = t + map_get(m, keysl[i], 0)
+        t = t + m.get(keysl[i], 0)
     return t
 
 fn apply(f: fn(int) -> int, x: int) -> int:
@@ -52,7 +52,7 @@ fn b3() -> int:
     m := []string: int
     m["a"] = 10
     o := None
-    o = Some(xs[0] + xs[1] + map_get(m, "a", 0))
+    o = Some(xs[0] + xs[1] + m.get("a", 0))
     grid := []
     if true:
         push(grid, [1, 2])

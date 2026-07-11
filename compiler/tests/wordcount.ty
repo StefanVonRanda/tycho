@@ -10,11 +10,11 @@ fn main():
     counts := []string: int
     for i in range(len(words)):
         w := words[i]
-        counts[w] = map_get(counts, w, 0) + 1
+        counts[w] = counts.get(w, 0) + 1
 
     ks := keys(counts)
     for i in range(len(ks)):
         w := ks[i]
-        println(w + ": " + str(map_get(counts, w, 0)))
+        println(w + ": " + str(counts.get(w, 0)))
 
     println("distinct words: " + str(len(counts)))

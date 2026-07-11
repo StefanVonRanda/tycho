@@ -26,7 +26,7 @@ fn main():
     ck := keys(cnt)
     ci := 0
     for ci in range(len(ck)):
-        reserve(idx[ck[ci]], map_get(cnt, ck[ci], 0))
+        reserve(idx[ck[ci]], cnt.get(ck[ci], 0))
 
     # pass 2: replay the LCG, push each posting into its pre-sized list (no regrow)
     seed = 1
@@ -42,7 +42,7 @@ fn main():
     sum := 0
     ki := 0
     for ki in range(len(ks)):
-        dl := map_get(idx, ks[ki], []int)
+        dl := idx.get(ks[ki], []int)
         sum += len(ks[ki]) + len(dl)
         di := 0
         for di in range(len(dl)):

@@ -22,11 +22,11 @@ fn main():
         for w in split(clean, " "):    # split is a builtin
             t := strings.trim(w)
             if len(t) > 0:
-                counts[t] = map_get(counts, t, 0) + 1
+                counts[t] = counts.get(t, 0) + 1
     words := arrays.sort(keys(counts))
     nums := []int
     for w in words:
-        push(nums, map_get(counts, w, 0))
+        push(nums, counts.get(w, 0))
     ord := sort.argsort_desc(nums)
     for i in range(len(ord)):
         if nums[ord[i]] > 1:

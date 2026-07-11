@@ -55,7 +55,7 @@ miss := cnt["absent"]       # 0, and "absent" is NOT added to the map
 ```
 
 A composite (array/struct/map) value isn't returned by a bare read — use
-`map_get(m, k, default)` for those, so the copy-out is explicit. (The compound
+`m.get(k, default)` for those, so the copy-out is explicit. (The compound
 forms above, e.g. `cnt[w] += 1`, are the more direct way to write the counter.)
 
 ## Why it can't dangle
@@ -104,4 +104,4 @@ accessor through the recursive place-lowering pass, so the deeper chains
 (`m[k].field`, `m[k][i]`) compose for free. A compound op single-evaluates the
 slot pointer and hoists a call-bearing key to a temporary, reusing the same
 double-eval guard the compound array-index path already had. A scalar rvalue
-read lowers to a plain `map_get` with the type's zero as the default.
+read lowers to a plain `m.get` with the type's zero as the default.

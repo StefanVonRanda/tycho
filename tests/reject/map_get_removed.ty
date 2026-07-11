@@ -1,0 +1,7 @@
+# map_get was removed in favour of the `m.get(k, default)` method; a user call
+# (bare statement, the form that previously slipped past tychoc0's parse_atom
+# check) must be rejected by both compilers.
+fn main():
+    m := []string: int
+    m["a"] = 1
+    map_get(m, "a", 0)

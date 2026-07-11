@@ -125,9 +125,9 @@ fn build(site_dir: string, out_dir: string):
         if path.ext(fname) == ".md":
             fmtext, body := split_content(io.read(path.join(content_dir, fname)))
             fm := parse_front(fmtext)
-            ptitle := map_get(fm, "title", fname)
-            pdate := strings.parse_int(map_get(fm, "date", "0"))
-            pauthor := map_get(authors, map_get(fm, "author", ""), "unknown")
+            ptitle := fm.get("title", fname)
+            pdate := strings.parse_int(fm.get("date", "0"))
+            pauthor := authors.get(fm.get("author", ""), "unknown")
             slug := path.stem(fname)
             html := page_html(title, ptitle, pauthor, render_md(body))
             io.write(path.join(out_dir, slug + ".html"), html)

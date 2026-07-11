@@ -265,16 +265,16 @@ class Gen:
             add(ind+1, "len(str(" + ks + "[" + ii + "] in " + name + "))")   # str(bool): present key -> "true"
             if vt.startswith("["):                  # composite (array) value: bind the borrow + recurse
                 gv = self.fresh("gv")
-                self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + vt[1:-1] + ")")
+                self.emit(ind+1, gv + " := " + name + ".get(" + ks + "[" + ii + "], []" + vt[1:-1] + ")")
                 self.checksum_into(ind+1, gv, vt, env, acc)
             elif vt.startswith("{"):                # nested-map value: bind the borrow + recurse
                 nkt, nvt = self._kv(vt)
                 gv = self.fresh("gv")
-                self.emit(ind+1, gv + " := map_get(" + name + ", " + ks + "[" + ii + "], []" + nkt + ": " + nvt + ")")
+                self.emit(ind+1, gv + " := " + name + ".get(" + ks + "[" + ii + "], []" + nkt + ": " + nvt + ")")
                 self.checksum_into(ind+1, gv, vt, env, acc)
             else:
                 dflt = '""' if vt == "string" else ("0" if vt == "int" else "0.0")
-                g = "map_get(" + name + ", " + ks + "[" + ii + "], " + dflt + ")"
+                g = name + ".get(" + ks + "[" + ii + "], " + dflt + ")"
                 contrib = g if vt == "int" else ("len(" + g + ")" if vt == "string" else "to_int(" + g + ")")
                 add(ind+1, contrib)   # SUM is key-order independent
         elif t == "Result([int], string)":                # heap Ok payload + Err string, matched both arms
@@ -408,7 +408,7 @@ class Gen:
             self.emit(ind, m + " : [" + n0 + ": int] = []")
             self.emit(ind, m + "[" + n0 + "(\"a\")] = " + self.gen_expr("int", env, 2))
             self.emit(ind, m + "[" + n0 + "(\"b\")] = " + str(self.r.randint(0, 9)))
-            self.emit(ind, "acc = acc + map_get(" + m + ", " + n0 + "(\"a\"), 0) + len(" + m + ")")
+            self.emit(ind, "acc = acc + " + m + ".get(" + n0 + "(\"a\"), 0) + len(" + m + ")")
             if self.r.random() < 0.5:
                 self.emit(ind, "if " + n0 + "(\"b\") in " + m + ":")
                 self.emit(ind+1, "acc = acc + 1")
@@ -419,12 +419,12 @@ class Gen:
             self.emit(ind+1, "acc = acc + len(to_under(" + ks + "[" + i + "]))")
             return
         if k == "enumkey_use":         # fieldless-enum key: stored as its TAG, keys() rebuilds the
-            # wrapped singletons (which must round-trip through match and map_get)
+            # wrapped singletons (which must round-trip through match and m.get)
             m = self.fresh("em")
             self.emit(ind, m + " : [FzColor: int] = []")
             self.emit(ind, m + "[FzA] = " + self.gen_expr("int", env, 2))
             self.emit(ind, m + "[FzB] = " + str(self.r.randint(0, 9)))
-            self.emit(ind, "acc = acc + map_get(" + m + ", FzA, 0) + map_get(" + m + ", FzB, 0) + len(" + m + ")")
+            self.emit(ind, "acc = acc + " + m + ".get(FzA, 0) + " + m + ".get(FzB, 0) + len(" + m + ")")
             if self.r.random() < 0.5:
                 self.emit(ind, "delete " + m + "[FzA]")
                 self.emit(ind, "acc = acc + len(" + m + ")")
@@ -819,7 +819,7 @@ class Gen:
                 m = self.fresh("im")
                 self.emit(ind, m + " := []string: int")
                 self.emit(ind, m + "[\"g\"] = " + str(self.r.randint(0, 30)))
-                self.emit(ind, "acc = acc + map_get(" + m + ", \"g\", 0)")
+                self.emit(ind, "acc = acc + " + m + ".get(\"g\", 0)")
             if self.r.random() < 0.5:
                 o = self.fresh("io")
                 self.emit(ind, o + " := None")

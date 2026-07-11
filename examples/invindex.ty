@@ -29,11 +29,11 @@ fn normalize(w: string) -> string:
     return r
 
 fn term_slot(idx: [string: int], term: string) -> int:
-    return map_get(idx, term, 0 - 1)    # slot in `postings`, or -1 if unseen
+    return idx.get(term, 0 - 1)    # slot in `postings`, or -1 if unseen
 
 # record one occurrence of `term` in document `doc`
 fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
-    pi := map_get(tidx, term, 0 - 1)
+    pi := tidx.get(term, 0 - 1)
     if pi < 0:                           # first time we see this term
         p := Posting(term, []int, []int)
         push(p.docs, doc)

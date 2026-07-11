@@ -118,7 +118,7 @@ Init `h` from the seed so different processes hash differently (hash-flood defen
 `mapc_of(key,val)` already keys on `(key,val)` — no change. `map_of` (942) gains a
 branch: a struct/tuple (or newtype-over-struct) key → `mapc_of(key,val)` +
 `arr_of(key)` (for `keys()`). The op codegen (`map_fn`, `gen_call` for
-`m[k]`/`map_get`/`in`/`delete`/`keys`/`len`/`==`/slotptr) already dispatches by
+`m[k]`/`m.get`/`in`/`delete`/`keys`/`len`/`==`/slotptr) already dispatches by
 `MAPC_ID` and is key-type-agnostic, so it needs no change once the runtime exists —
 the literal `k` expression is emitted by the normal expr path (a struct value).
 

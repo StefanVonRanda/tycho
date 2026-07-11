@@ -16,23 +16,23 @@ fn main():
     m[(1, "a")] = 10
     m[(2, "b")] = 20
     m[(1, "a")] = 11                          # overwrite, not a new entry
-    println("get=" + str(map_get(m, (1, "a"), -1)) + " miss=" + str(map_get(m, (9, "z"), -1)))
+    println("get=" + str(m.get((1, "a"), -1)) + " miss=" + str(m.get((9, "z"), -1)))
     println("in=" + str((2, "b") in m) + " len=" + str(len(m)))
     m[(1, "a")] += 5                          # in-place accumulator on a tuple key
     ks := keys(m)
-    println("acc=" + str(map_get(m, (1, "a"), 0)) + " k0=(" + str(ks[0].0) + "," + ks[0].1 + ")")
+    println("acc=" + str(m.get((1, "a"), 0)) + " k0=(" + str(ks[0].0) + "," + ks[0].1 + ")")
     delete m[(1, "a")]
     println("del: len=" + str(len(m)) + " gone=" + str(not ((1, "a") in m)))
 
     # tuple whose element is a struct (recursive hash/eq through the struct)
     a := [](int, Point): string
     a[(1, Point(2, 3))] = "hit"
-    println("tstruct=" + map_get(a, (1, Point(2, 3)), "?") + " miss=" + map_get(a, (1, Point(9, 9)), "?"))
+    println("tstruct=" + a.get((1, Point(2, 3)), "?") + " miss=" + a.get((1, Point(9, 9)), "?"))
 
     # tuple of tuples + deep ==
     c := []((int, int), int): bool
     c[((1, 2), 3)] = true
-    println("ttup=" + str(map_get(c, ((1, 2), 3), false)) + " miss=" + str(map_get(c, ((1, 2), 9), false)))
+    println("ttup=" + str(c.get(((1, 2), 3), false)) + " miss=" + str(c.get(((1, 2), 9), false)))
     d := [](int, string): int
     d[(7, "k")] = 1
     e := [](int, string): int
@@ -45,4 +45,4 @@ fn main():
     g := []Edge: int
     g[Edge((0, 0), 5)] = 42
     g[Edge((0, 0), 5)] += 1
-    println("sff=" + str(map_get(g, Edge((0, 0), 5), -1)) + " miss=" + str(map_get(g, Edge((1, 1), 5), -1)))
+    println("sff=" + str(g.get(Edge((0, 0), 5), -1)) + " miss=" + str(g.get(Edge((1, 1), 5), -1)))

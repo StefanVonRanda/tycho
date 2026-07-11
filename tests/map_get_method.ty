@@ -1,0 +1,30 @@
+# The `m.get` method: a map read spelled as a method. `m.get(k)` is exactly the
+# `m[k]` rvalue read (value-type zero on a miss); `m.get(k, default)` returns the
+# caller's default on a miss. Both string- and int-keyed; scalar and composite
+# value types; chained on a call result.
+fn pick(m: [string: int], k: string) -> int:
+    return m.get(k, 0 - 1)          # default reaches through a return
+
+fn main():
+    sm := ["a": 1, "b": 2]
+    println("a=" + str(sm.get("a")))            # a=1  (present)
+    println("miss0=" + str(sm.get("z")))        # miss0=0  (zero default == sm["z"])
+    println("missd=" + str(sm.get("z", 99)))    # missd=99 (explicit default)
+    println("pick_b=" + str(pick(sm, "b")))     # pick_b=2
+    println("pick_x=" + str(pick(sm, "x")))     # pick_x=-1
+
+    im := [10: 100, 20: 200]
+    println("i20=" + str(im.get(20)))           # i20=200
+    println("i30=" + str(im.get(30, 0 - 7)))    # i30=-7
+
+    # composite value type: a missing key yields the empty array; present yields a copy
+    lists := ["xs": [1, 2, 3]]
+    println("xs_len=" + str(len(lists.get("xs"))))     # xs_len=3
+    println("no_len=" + str(len(lists.get("none"))))   # no_len=0
+
+    # accumulator idiom (in-place, O(n)): m.get then store
+    counts := []string: int
+    words := ["go", "go", "stop", "go"]
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    println("go=" + str(counts.get("go")) + " stop=" + str(counts.get("stop")))  # go=3 stop=1

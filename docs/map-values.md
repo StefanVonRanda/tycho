@@ -35,8 +35,8 @@ directions:
   the *map's* arena, so it lives as long as the map and is independent of the
   source variable. Mutating the original afterwards never touches the stored
   copy.
-- **Out** (`map_get`): the stored value lives in the map's arena, which may be a
-  borrow that is freed before the result is used. So `map_get` returns an
+- **Out** (`m.get`): the stored value lives in the map's arena, which may be a
+  borrow that is freed before the result is used. So `m.get` returns an
   **independent deep copy** into the caller's arena — it survives later inserts
   that rehash the table, and it survives the map itself being freed. The default
   argument is heap-copied the same way.
@@ -44,7 +44,7 @@ directions:
 Because both directions copy, value semantics holds end to end:
 
 ```
-v := map_get(m, "a", default)
+v := m.get("a", default)
 m["a"] = other                 # rehashes, moves slots
 use(v)                         # still the old value — v is its own copy
 ```
@@ -64,8 +64,8 @@ For both key kinds — `[string: V]` and `[int: V]` — the value `V` may be:
 - a nested map (`[string: [string: int]]`).
 
 All operations work uniformly regardless of `V`:
-`m[k] = v` / `map_get` / `k in m` / `delete m[k]` / `keys` / `len`, deep value
-`==`, the in-place accumulator, and `inout`. `map_get`'s default and the stored
+`m[k] = v` / `m.get` / `k in m` / `delete m[k]` / `keys` / `len`, deep value
+`==`, the in-place accumulator, and `inout`. `m.get`'s default and the stored
 value take `V`; the key takes `K`. The key `K` is `string`, `int`, a newtype over
 either, a fieldless enum, or any **hashable composite** (struct/tuple/array, hashed
 deeply over its fields); only a map itself is not yet usable as a key (see the

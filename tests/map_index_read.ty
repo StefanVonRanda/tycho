@@ -2,7 +2,7 @@
 # on a missing key and NEVER inserts. Scalar value types (int/float/string/bool),
 # string + int keys. Write/compound forms (m[k]=v, m[k] op= v) stay the in-place
 # slot (a mutation, so they DO insert). Composite-value reads still need an
-# explicit map_get(m, k, default).
+# explicit m.get(k, default).
 fn main():
     cnt := []string: int
     words := ["a", "b", "a", "a", "c", "b"]

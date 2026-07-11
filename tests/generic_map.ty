@@ -5,7 +5,7 @@ fn msize(m: [$K: $V]) -> int:
     return len(m)
 
 fn lookup(m: [$K: $V], k: $K, d: $V) -> $V:    # $K, $V used in params and return
-    return map_get(m, k, d)
+    return m.get(k, d)
 
 fn main():
     counts := ["a": 1, "b": 2, "c": 3]

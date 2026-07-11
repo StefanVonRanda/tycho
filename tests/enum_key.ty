@@ -15,7 +15,7 @@ fn main():
     m[Red] = 3
     m[Blue] = 5
     m[Green] = 4
-    println(str(map_get(m, Red, 0) + map_get(m, Green, 0) + map_get(m, Blue, 0)))
+    println(str(m.get(Red, 0) + m.get(Green, 0) + m.get(Blue, 0)))
     println(str(len(m)))
     if Red in m:
         println("has red")
@@ -23,7 +23,7 @@ fn main():
     total := 0
     i := 0
     for i < len(ks):
-        total = total + map_get(m, ks[i], 0)
+        total = total + m.get(ks[i], 0)
         i = i + 1
     println(str(total))
     delete m[Blue]

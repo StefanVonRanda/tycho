@@ -37,15 +37,16 @@ totals[user].balance = 0          # mutate a struct-valued entry's field
 
 Read as an rvalue, `m[k]` returns the value **by copy** and never inserts: a scalar value
 returns the value type's zero for a missing key, a composite value returns a deep copy. When
-you need a non-zero default for a missing key, `map_get(m, k, default)` is the one remaining
-map *function* — everything else (`m[k]`, `in`, `delete`, `len`, `keys`) is operator or
-keyword syntax:
+you need a non-zero default for a missing key, `m.get(k, default)` returns `default` on a
+miss — the same read, spelled as a method. `m.get(k)` (no default) is exactly `m[k]`. Every
+map operation is now operator, keyword, or method syntax (`m[k]`, `m.get`, `in`, `delete`,
+`len`, `keys`) — no snake_case map functions:
 
 ```
-counts[w] = map_get(counts, w, 0) + 1    # equivalent to counts[w] += 1
+counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 ```
 
-That accumulator looks like it rebuilds the map every step — `map_get` then a store — but
+That accumulator looks like it rebuilds the map every step — `counts.get` then a store — but
 because value semantics proves `counts` is uniquely owned at that point, the compiler
 mutates it in place. The loop is **O(n) total**, the same in-place trick as string append.
 

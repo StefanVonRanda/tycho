@@ -58,11 +58,11 @@ Unicode-aware). String escapes: `\n \t \\ \"`.
 ## Maps
 
 `len(m)`, `m[k] = v`, `k in m`, `delete m[k]`, and `keys(m)` are documented on the
-[Maps](maps.md) page. The one map *function*:
+[Maps](maps.md) page. The default-valued read is a method on the map:
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
-| `map_get(m, k, d)` | `(map, K, V) -> V` | Value for `k`, or default `d` if absent. |
+| `m.get(k, d)` | `(map, K, V) -> V` | Value for `k`, or default `d` if absent. `m.get(k)` is `m[k]` (value-type zero on a miss). |
 
 ## Concurrency
 

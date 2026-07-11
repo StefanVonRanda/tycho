@@ -7,10 +7,10 @@ fn main():
     counts := []int: int
     counts[5] = 100
     counts[0] = 7 # key 0
-    counts[5] = map_get(counts, 5, 0) + 1
-    println("c5=" + str(map_get(counts, 5, 0 - 1)))    # 101
-    println("c0=" + str(map_get(counts, 0, 0 - 1)))    # 7
-    println("miss=" + str(map_get(counts, 9, 0 - 1)))  # -1
+    counts[5] = counts.get(5, 0) + 1
+    println("c5=" + str(counts.get(5, 0 - 1)))    # 101
+    println("c0=" + str(counts.get(0, 0 - 1)))    # 7
+    println("miss=" + str(counts.get(9, 0 - 1)))  # -1
     if 0 in counts:
         println("has0=yes")
     if not 9 in counts:
@@ -20,7 +20,7 @@ fn main():
     # value semantics: a snapshot does not see later mutations
     snap := counts
     counts[5] = 999
-    println("snap5=" + str(map_get(snap, 5, 0)) + " now5=" + str(map_get(counts, 5, 0)))  # 101 999
+    println("snap5=" + str(snap.get(5, 0)) + " now5=" + str(counts.get(5, 0)))  # 101 999
 
     delete counts[5]
     println("afterdel=" + str(len(counts)))   # 1
@@ -35,8 +35,8 @@ fn main():
     push(data, 7)
     i := 0
     for i in range(0, len(data)):
-        h[data[i]] = map_get(h, data[i], 0) + 1
-    println("h3=" + str(map_get(h, 3, 0)) + " h7=" + str(map_get(h, 7, 0)))   # 3 2
+        h[data[i]] = h.get(data[i], 0) + 1
+    println("h3=" + str(h.get(3, 0)) + " h7=" + str(h.get(7, 0)))   # 3 2
     sumk := 0
     for kk in keys(h):
         sumk = sumk + kk
@@ -46,8 +46,8 @@ fn main():
     fm := []int: float
     fm[1] = 1.5
     fm[2] = 2.5
-    fm[1] = map_get(fm, 1, 0.0) + 0.25
-    println("fm1=" + str(fm_round(map_get(fm, 1, 0.0))) + " fm2=" + str(fm_round(map_get(fm, 2, 0.0))))   # 175 250
+    fm[1] = fm.get(1, 0.0) + 0.25
+    println("fm1=" + str(fm_round(fm.get(1, 0.0))) + " fm2=" + str(fm_round(fm.get(2, 0.0))))   # 175 250
 
 fn fm_round(x: float) -> int:        # avoid float-print formatting differences
     return to_int(x * 100.0)

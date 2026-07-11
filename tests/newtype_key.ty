@@ -10,23 +10,23 @@ fn main():
     scores : [UserId: int] = []
     scores[UserId("ana")] = 10
     scores[UserId("bo")] = 7
-    println(str(map_get(scores, UserId("ana"), 0)))
+    println(str(scores.get(UserId("ana"), 0)))
     println(str(len(scores)))
     ks := keys(scores)
     total := 0
     i := 0
     for i < len(ks):
-        total = total + map_get(scores, ks[i], 0)
+        total = total + scores.get(ks[i], 0)
         i = i + 1
     println(str(total))
     names : [Slot: string] = []
     names[Slot(3)] = "three"
     s3 := Slot(3)
-    println(map_get(names, s3, "?"))
+    println(names.get(s3, "?"))
     if Slot(3) in names:
         println("has 3")
     delete names[Slot(3)]
     println(str(len(names)))
     counts : [UserId: int] = []
     counts[UserId("x")] = 5
-    println(str(map_get(counts, UserId("x"), 0)))
+    println(str(counts.get(UserId("x"), 0)))

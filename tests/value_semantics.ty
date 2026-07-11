@@ -51,7 +51,7 @@ fn main():
         counts["k"] = i
         if i == 2:
             snap = counts
-    println("2 counts=" + str(map_get(counts, "k", 0)) + " snap=" + str(map_get(snap, "k", 0)) + " (expect counts=3 snap=2)")
+    println("2 counts=" + str(counts.get("k", 0)) + " snap=" + str(snap.get("k", 0)) + " (expect counts=3 snap=2)")
 
     # 3. construction-arg move: mutating the source array after it was built
     #    into Box must not change the stored value (move only if source dead).

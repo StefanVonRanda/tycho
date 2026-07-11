@@ -152,7 +152,7 @@ fn eval(e: Expr, env: [string: float]) -> Result(float, string):
             return Ok(v)
         EVar(name):
             if name in env:
-                return Ok(map_get(env, name, 0.0))
+                return Ok(env.get(name, 0.0))
             return Err("undefined variable: " + name)
         ENeg(x):
             v := eval(x, env) or_return

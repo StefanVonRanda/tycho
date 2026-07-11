@@ -27,7 +27,7 @@ fn contains(xs: [int], v: int) -> bool:
 fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> int:
     if len(terms) == 0:
         return 0
-    p0 := map_get(tidx, terms[0], 0 - 1)
+    p0 := tidx.get(terms[0], 0 - 1)
     if p0 < 0:
         return 0
     hits := 0
@@ -37,7 +37,7 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> int:
         ok := true
         ti := 1
         for ti in range(1, len(terms)):
-            pj := map_get(tidx, terms[ti], 0 - 1)
+            pj := tidx.get(terms[ti], 0 - 1)
             if pj < 0 or not contains(postings[pj].docs, doc):
                 ok = false
         if ok:
@@ -58,7 +58,7 @@ fn main():
         for j in range(w):
             seed = (seed * 1103515245 + 12345) % 2147483647
             term := "t" + str(seed % v)
-            slot := map_get(tidx, term, 0 - 1)
+            slot := tidx.get(term, 0 - 1)
             if slot < 0:
                 tidx[term] = len(terms)
                 push(terms, term)
@@ -83,7 +83,7 @@ fn main():
         k := 0
         for k in range(w):
             seed = (seed * 1103515245 + 12345) % 2147483647
-            slot := map_get(tidx, "t" + str(seed % v), 0 - 1)
+            slot := tidx.get("t" + str(seed % v), 0 - 1)
             fill_one(&postings, slot, d2)
 
     sum := 0
