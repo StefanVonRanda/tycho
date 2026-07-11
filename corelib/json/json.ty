@@ -21,13 +21,13 @@ enum Json:
     JArr([Json])
     JObj([string], [Json])        # parallel keys / values
 
-# ---- parser (recursive descent; `pos` is threaded by mut) ----------------
+# ---- parser (recursive descent; `pos` is threaded by inout) ----------------
 
-fn skip_ws(s: string, n: int, pos: mut int):
+fn skip_ws(s: string, n: int, pos: inout int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
-fn parse_string(s: string, n: int, pos: mut int) -> string:
+fn parse_string(s: string, n: int, pos: inout int) -> string:
     pos = pos + 1                              # skip opening "
     r := ""
     for pos < n and s[pos] != 34:              # until closing "
@@ -52,7 +52,7 @@ fn parse_string(s: string, n: int, pos: mut int) -> string:
     pos = pos + 1                              # skip closing "
     return r
 
-fn parse_number(s: string, n: int, pos: mut int) -> int:
+fn parse_number(s: string, n: int, pos: inout int) -> int:
     neg := false
     if s[pos] == 45:                           # '-'
         neg = true
@@ -65,7 +65,7 @@ fn parse_number(s: string, n: int, pos: mut int) -> int:
         return 0 - v
     return v
 
-fn parse_array(s: string, n: int, pos: mut int) -> Json:
+fn parse_array(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1                              # skip [
     xs := []Json
     skip_ws(s, n, &pos)
@@ -78,7 +78,7 @@ fn parse_array(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1                              # skip ]
     return JArr(xs)
 
-fn parse_object(s: string, n: int, pos: mut int) -> Json:
+fn parse_object(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1                              # skip {
     ks := []string
     vs := []Json
@@ -96,7 +96,7 @@ fn parse_object(s: string, n: int, pos: mut int) -> Json:
     pos = pos + 1                              # skip }
     return JObj(ks, vs)
 
-fn parse_value(s: string, n: int, pos: mut int) -> Json:
+fn parse_value(s: string, n: int, pos: inout int) -> Json:
     skip_ws(s, n, &pos)
     if pos >= n:
         return JNull                           # truncated / empty: fail closed

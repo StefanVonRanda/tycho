@@ -1,4 +1,4 @@
-fn scale(xs: mut [float], k: float):
+fn scale(xs: inout [float], k: float):
     for i in range(len(xs)):
         xs[i] = xs[i] * k
 
@@ -22,7 +22,7 @@ fn main():
     ys := xs                      # value-semantic copy
     push(ys, 99.0)
     println("xs_len=" + str(len(xs)) + " ys_len=" + str(len(ys)))  # 3, 4 (independent)
-    scale(&xs, 2.0)               # mut mutation
+    scale(&xs, 2.0)               # inout mutation
     println("scaled0=" + str(xs[0]) + " scaled_sum=" + str(total(xs)))  # 20.0, 31.0
     zs := make(4)                 # returned [float]
     println("made=" + str(zs[0]) + "," + str(zs[1]) + "," + str(zs[3]) + " sum=" + str(total(zs)))  # 0,0.5,1.5 sum 3

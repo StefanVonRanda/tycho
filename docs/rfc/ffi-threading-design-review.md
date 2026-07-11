@@ -5,7 +5,7 @@ recommendations have since shipped** — re-verify against the compilers before
 treating any item below as open.
 
 - **FFI — shipped:** R1 `bytes` (`tests/bytes*`), R2 typed `handle`s with
-  destructors, R3 nullable `-> Option(string)`, R4 `mut` out-parameter
+  destructors, R3 nullable `-> Option(string)`, R4 `inout` out-parameter
   constructors (`src/tychoc.c:2742`, `examples/sqlite/demo.ty`).
 - **FFI — deliberate non-goals:** R5 variadics / callbacks-into-Tycho; the
   auto-shim for *non-scalar* out-params is rejected by ABI design, not pending.
@@ -88,7 +88,7 @@ unbounded, and a panic/abort in any task `exit(1)`s the whole process
 rejects anything outside the scalar/string/`ptr` table, failing closed:
 
 - Parse + type gate: `src/tychoc.c:2515` (`ffi_scalar_type`), `:2521`
-  (`parse_extern_fn`), `:2540` (rejects `inout`/`mut` params), `:2542`
+  (`parse_extern_fn`), `:2540` (rejects `inout`/`inout` params), `:2542`
   (rejects composite params), `:2554` (rejects composite return).
 - Type table: `docs/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
@@ -322,7 +322,7 @@ these cases, and the docs only partially flag them:
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
    sound (double-wait dies loudly, `runtime/tycho_rt.c:297-300`; implicit join
    at every scope exit, `:310-315`; `parallel for` rejects captured tasks /
-   mut captures / cross-chunk mutation, `src/tychoc.c:4176-4263`). No unsafety
+   inout captures / cross-chunk mutation, `src/tychoc.c:4176-4263`). No unsafety
    found here — call out as *verified sound*, not a gap.
 
 ### Threading — ranked recommendations

@@ -49,7 +49,7 @@ structured**, meaning:
 
 - Copying or rebinding a handle, reassigning it, storing it in any container or
   closure, discarding a bare `spawn`, or spawning a builtin / extern / `void`
-  function / function with `mut` parameters are all compile errors.
+  function / function with `inout` parameters are all compile errors.
 - **Implicit join**: any task still unwaited when its variable's scope exits —
   block end, each loop iteration, `break`, `continue`, early `return`,
   `or_return` — is joined and freed right there. A function can never return
@@ -73,7 +73,7 @@ chunk and fold at the in-order join. Integer results are therefore **identical
 for any thread count**; float reductions may reassociate, like every parallel
 reduce. Everything else fails closed: any other write to an outer variable,
 reading an accumulator mid-loop, `break`/`return`/`or_return` at the
-parallel-loop level, a `mut` of a capture, and range steps are all compile
+parallel-loop level, a `inout` of a capture, and range steps are all compile
 errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
@@ -228,7 +228,7 @@ the claim/commit bracket, and emits the finalizers LIFO at each scope exit.
 
 **Lineage.** Structured spawn/await with no function colouring follows Hylo/Val's
 structured-concurrency work (Val's first design required sink-only spawn
-environments — exactly Tycho's only mode); Tycho skips the `mut`-to-disjoint-parts
+environments — exactly Tycho's only mode); Tycho skips the `inout`-to-disjoint-parts
 machinery and gets the expressiveness from chunk-copy + merge at a copy cost that
 *is* the design point. Share-nothing message copying is the Erlang/Pony model, and
 the channel core is Vyukov's bounded MPMC queue.

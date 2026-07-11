@@ -14,7 +14,7 @@ Syntax highlighting (tree-sitter) + live diagnostics (via `tycho-lsp`) for
   including `$T` generics — with zero parse errors.** To regenerate after editing
   `grammar.js`: `npx tree-sitter-cli@0.25 generate --abi 15` in this directory
   (ABI 15 matches the committed parser; the keyword set tracks the language, e.g.
-  `mut`, and `$T` type parameters lex as a `typaram` token).
+  `inout`, and `$T` type parameters lex as a `typaram` token).
 - `languages/tycho/` — Zed language config + `highlights.scm` queries.
 - `extension.toml`, `Cargo.toml`, `src/lib.rs` — the Zed extension; the Rust code
   just launches `tycho-lsp` (passing `TYCHOC`) for diagnostics.

@@ -1,6 +1,6 @@
 # `select` inside a `parallel for` is now allowed, BUT the parfor body gates
 # still fire inside its arms: a chunk cannot early-exit, so a `return` (or
-# break/mut-capture) in a select arm must still be rejected. This locks the
+# break/inout-capture) in a select arm must still be rejected. This locks the
 # parity that the select-arm scan reuses the same gates as any other body --
 # tychoc via pf_scan_stmt recursing into the arm, which hits S_RETURN.
 fn main():

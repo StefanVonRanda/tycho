@@ -10,8 +10,8 @@ struct Trie:
     word: bool
 
 # descend, creating nodes; returns 1 if this insertion completed a NEW word.
-# `nn` (node count) is threaded by mut and bumped whenever a child node is created.
-fn insert(t: mut Trie, s: string, i: int, nn: mut int) -> int:
+# `nn` (node count) is threaded by inout and bumped whenever a child node is created.
+fn insert(t: inout Trie, s: string, i: int, nn: inout int) -> int:
     if i >= len(s):
         if t.word:
             return 0

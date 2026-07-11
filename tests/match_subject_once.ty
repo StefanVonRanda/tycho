@@ -5,14 +5,14 @@ enum Step:
     Go(int)
     Halt
 
-fn take(s: mut [int]) -> Option(int):
+fn take(s: inout [int]) -> Option(int):
     if len(s) == 0:
         return None
     v := s[len(s) - 1]
     pop(s)
     return Some(v)
 
-fn next(n: mut int) -> Step:
+fn next(n: inout int) -> Step:
     n = n + 1
     if n < 3:
         return Go(n)

@@ -60,7 +60,7 @@ struct TrieNode:
 struct Trie:
     nodes: [TrieNode]          # the pool; node 0 is the root
 
-fn insert(t: mut Trie, s: string):
+fn insert(t: inout Trie, s: string):
     cur := 0
     i := 0
     for i in range(0, len(s)):
@@ -152,7 +152,7 @@ starting tiny.
 Assigning or passing a large value can deep-copy it. This is correct (value semantics) but
 costs a copy.
 
-**Idiom:** thread large values through `mut` (inout) parameters so they are passed by
+**Idiom:** thread large values through `inout` (inout) parameters so they are passed by
 reference and mutated in place, instead of returning rebuilt copies. The compiler already
 borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that.
 

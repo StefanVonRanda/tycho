@@ -11,7 +11,7 @@ struct TrieNode:
 struct Trie:
     nodes: [TrieNode]              # node 0 is the root
 
-fn insert(t: mut Trie, s: string) -> int:    # returns 1 if a NEW word was completed
+fn insert(t: inout Trie, s: string) -> int:    # returns 1 if a NEW word was completed
     cur := 0
     i := 0
     for i in range(0, len(s)):

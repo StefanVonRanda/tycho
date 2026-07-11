@@ -1,5 +1,5 @@
 # Projections: mutate a composite-array element in place (Hylo-style yield).
-# arr[i].f = v, push(arr[i].tags, v), m[i][j] = v, and &arr[i].x as mut all
+# arr[i].f = v, push(arr[i].tags, v), m[i][j] = v, and &arr[i].x as inout all
 # reach the element's slot in the backing buffer -- no pointer exposed to Tycho,
 # and value semantics still holds (a copy is independent of the mutation).
 
@@ -11,7 +11,7 @@ struct Bag:
     name: string
     tags: [string]
 
-fn bump(n: mut int):
+fn bump(n: inout int):
     n = n + 1
 
 fn main():
@@ -40,6 +40,6 @@ fn main():
     grid[1][2] = 60
     println("g12=" + str(grid[1][2]) + " g00=" + str(grid[0][0]))
 
-    # 6. mut through a projected element: &arr[i].x
+    # 6. inout through a projected element: &arr[i].x
     bump(&ps[1].x)
     println("p1x_after_bump=" + str(ps[1].x))

@@ -34,7 +34,7 @@ def load_corpus():
 
 KEYWORDS = ["fn", "struct", "enum", "if", "elif", "else", "for", "in", "while",
             "match", "return", "break", "continue", "import", "package", "type",
-            "spawn", "mut", "true", "false", "and", "or", "not", "soa"]
+            "spawn", "inout", "true", "false", "and", "or", "not", "soa"]
 PUNCT = [":", "(", ")", "[", "]", "{", "}", ",", "=", "+", "-", "*", "/", ".",
          "->", "==", "!=", "<", ">", '"', "'", "\\", "#", ";", "@", "%", "&",
          "|", "?", "!", "  ", "\t"]

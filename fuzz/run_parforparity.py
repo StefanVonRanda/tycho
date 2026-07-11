@@ -2,7 +2,7 @@
 # parallel-for GATE parity: tychoc (the C reference compiler) and tychoc0 (self-
 # hosted) MUST agree on whether a program with a `parallel for` is accepted or
 # rejected. The body of a chunk has hard rules -- no early exit (return / break-
-# to-the-parfor / or_return), no in-place mutation or `mut`-pass of a captured
+# to-the-parfor / or_return), no in-place mutation or `inout`-pass of a captured
 # variable, an outer variable may be updated ONLY as a +/* reduction read nowhere
 # else, no range step, an int range -- and each rule is a SOUNDNESS gate: a chunk
 # that violates one silently miscompiles (a private copy drained, a partial read
@@ -126,7 +126,7 @@ fn main():
         acc = acc + i
 ''',
 "pass_capture_as_mut": '''\
-fn bump(xs: mut [int]):
+fn bump(xs: inout [int]):
     xs[0] = 9
 fn main():
     xs := [1, 2, 3]
@@ -213,7 +213,7 @@ fn main():
     print(str(acc) + "\\n")
 ''',
 "pass_local_as_mut": '''\
-fn bump(xs: mut [int]):
+fn bump(xs: inout [int]):
     xs[0] = 9
 fn main():
     acc := 0

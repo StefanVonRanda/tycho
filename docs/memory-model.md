@@ -58,10 +58,10 @@ a million iterations run in constant memory.
 
 The reason all of this needs no whole-program may-alias analysis is value
 semantics. With no aliasing, no closures over references, and no free pointers
-(only explicit `mut`), every way a value can outlive its scope is
+(only explicit `inout`), every way a value can outlive its scope is
 *syntactically visible*, and its destination is *lexically known at the write
 site*: `outer = e` targets `outer`'s home block, `push(outer, v)` targets
-`outer`'s home, `return e` targets `_parent`, an argument or `mut` targets the
+`outer`'s home, `return e` targets `_parent`, an argument or `inout` targets the
 caller. So the transpiler decides where each allocation lives by reading
 signatures and scopes — a local routing decision, not a dataflow trace.
 
@@ -184,8 +184,8 @@ env extent), not dataflow.
 **Element-level ownership.** Moving container *elements* into their container's
 arena: map keys; array string elements (~274×); nested-array elements (~77×);
 struct/tuple array elements (~140×); option/result array elements with scalar
-payload (~45×); and `mut` container home-arena threading (~582×) plus its
-extension to `mut` heap-struct fields. The hardest case — heap-payload
+payload (~45×); and `inout` container home-arena threading (~582×) plus its
+extension to `inout` heap-struct fields. The hardest case — heap-payload
 option/result elements such as `[Option(str)]` — is handled by making options
 first-class deep-copied value types (245 → 11 MB at 4M iterations, flat).
 

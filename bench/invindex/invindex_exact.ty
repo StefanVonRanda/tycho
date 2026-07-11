@@ -10,7 +10,7 @@ struct Posting:
     docs: [int]
     freqs: [int]
 
-fn fill_one(postings: mut [Posting], pi: int, doc: int):
+fn fill_one(postings: inout [Posting], pi: int, doc: int):
     n := len(postings[pi].docs)
     if n > 0 and postings[pi].docs[n - 1] == doc:
         postings[pi].freqs[n - 1] += 1

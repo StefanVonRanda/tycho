@@ -31,7 +31,7 @@ fn main():
 A function value is either a **reference** to a named function — it captures nothing, so it is
 just a code pointer, zero-cost and immortal — or a **closure** (below). This is what gives you
 `map`/`filter`/`reduce`-style helpers over concrete function arguments without generics. Two
-things cannot become values: builtins (`len`, `push`, …) and functions with `mut` parameters.
+things cannot become values: builtins (`len`, `push`, …) and functions with `inout` parameters.
 Everything else is first-class — storable in a struct field, array, map value, or tuple.
 
 ## Closures (lambdas)

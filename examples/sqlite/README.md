@@ -4,9 +4,9 @@ tycho calling **real SQLite** (in-memory) through its FFI, with **no hand-writte
 shim** — every binding is a direct `extern` to a `libsqlite3` symbol. It shows
 the whole stack working against a serious C library:
 
-- **out-parameter constructors (`mut ptr`)** — `sqlite3_open(":memory:", &db)` and
+- **out-parameter constructors (`inout ptr`)** — `sqlite3_open(":memory:", &db)` and
   `sqlite3_prepare_v2(..., &st, ...)` write their `sqlite3**` / `sqlite3_stmt**`
-  result through a pointer out-param. tycho declares it `mut ptr` and the transpiler
+  result through a pointer out-param. tycho declares it `inout ptr` and the transpiler
   passes the address for you (FFI R4) — the reason this binding no longer needs a
   shim.
 - **`ptr` handles** — the `sqlite3*` db and `sqlite3_stmt*` cursor are opaque

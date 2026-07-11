@@ -331,7 +331,7 @@ nothing (the flush sits after the loop, which `break` falls through to);
 first; nested loops pushing the same array reuse the outer cursor.
 
 **Sound by construction** — fuse ONLY when `count_reads == pushcount` (used
-solely as a push target), the array is a plain non-mut scalar local not
+solely as a push target), the array is a plain non-inout scalar local not
 defined/shadowed in the body, and (for a `while`) the condition does not read
 it. Any miss falls back to the standard codegen, so a non-fused loop is never
 wrong. In `tychoc` the registry is C globals (`g_fuse`); `tychoc0` has no globals,

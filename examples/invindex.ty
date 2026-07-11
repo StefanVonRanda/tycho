@@ -6,7 +6,7 @@
 #     (maps hold int/float values, so the posting LISTS live in the struct array);
 #   - each Posting owns its growing doc-id and frequency arrays, and we grow an
 #     element's array field IN PLACE (`push(postings[i].docs, ...)`) through an
-#     `mut [Posting]` borrow -- a projection, no pointer ever exposed;
+#     `inout [Posting]` borrow -- a projection, no pointer ever exposed;
 #   - `tidx = map_set(tidx, term, ...)` is the in-place map accumulator.
 # Every value is deep-copied by value semantics where the language says so; the
 # arenas reclaim it all per scope. Deterministic, so its output is a golden oracle.
@@ -32,7 +32,7 @@ fn term_slot(idx: [string: int], term: string) -> int:
     return map_get(idx, term, 0 - 1)    # slot in `postings`, or -1 if unseen
 
 # record one occurrence of `term` in document `doc`
-fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int):
+fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
     pi := map_get(tidx, term, 0 - 1)
     if pi < 0:                           # first time we see this term
         p := Posting(term, []int, []int)
@@ -48,7 +48,7 @@ fn add(postings: mut [Posting], tidx: mut [string: int], term: string, doc: int)
             push(postings[pi].docs, doc)
             push(postings[pi].freqs, 1)
 
-fn index_doc(postings: mut [Posting], tidx: mut [string: int], text: string, doc: int):
+fn index_doc(postings: inout [Posting], tidx: inout [string: int], text: string, doc: int):
     words := split(text, " ")
     i := 0
     for i in range(len(words)):

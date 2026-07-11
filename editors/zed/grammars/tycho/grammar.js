@@ -36,7 +36,7 @@ module.exports = grammar({
       choice(
         "fn", "if", "elif", "else", "for", "while", "in", "match", "select",
         "parallel", "spawn", "return", "break", "continue", "or_return",
-        "struct", "enum", "type", "import", "package", "extern", "mut", "soa",
+        "struct", "enum", "type", "import", "package", "extern", "inout", "soa",
         "and", "or", "not",
       ),
 

@@ -86,7 +86,7 @@ fn is_addop(o: string) -> bool:
 fn is_mulop(o: string) -> bool:
     return o == "*" or o == "/"
 
-fn parse_factor(toks: [Tok], pos: mut int) -> Result(Expr, string):
+fn parse_factor(toks: [Tok], pos: inout int) -> Result(Expr, string):
     if pos >= len(toks):
         return Err("unexpected end of input")
     t := toks[pos]
@@ -118,7 +118,7 @@ fn parse_factor(toks: [Tok], pos: mut int) -> Result(Expr, string):
                 return Ok(ENeg(f))
             return Err("unexpected token: " + o)
 
-fn parse_term(toks: [Tok], pos: mut int) -> Result(Expr, string):
+fn parse_term(toks: [Tok], pos: inout int) -> Result(Expr, string):
     left := parse_factor(toks, &pos) or_return
     for is_mulop(peek_op(toks, pos)):
         op := peek_op(toks, pos)
@@ -127,7 +127,7 @@ fn parse_term(toks: [Tok], pos: mut int) -> Result(Expr, string):
         left = EBin(op, left, right)
     return Ok(left)
 
-fn parse_expr(toks: [Tok], pos: mut int) -> Result(Expr, string):
+fn parse_expr(toks: [Tok], pos: inout int) -> Result(Expr, string):
     left := parse_term(toks, &pos) or_return
     for is_addop(peek_op(toks, pos)):
         op := peek_op(toks, pos)
@@ -193,7 +193,7 @@ fn trim(s: string) -> string:
     return substr(s, a, b)
 
 # evaluate one line ("let NAME = EXPR" or a bare EXPR); returns a display string
-fn run_line(line: string, env: mut [string: float]) -> string:
+fn run_line(line: string, env: inout [string: float]) -> string:
     src := line
     name := ""
     is_let := false
@@ -216,7 +216,7 @@ fn run_line(line: string, env: mut [string: float]) -> string:
                     return "error: " + msg
                 Ok(v):
                     if is_let:
-                        env[name] = v        # place-assign (map_set does not write back through mut)
+                        env[name] = v        # place-assign (map_set does not write back through inout)
                         return name + " = " + str(v)
                     return str(v)
 

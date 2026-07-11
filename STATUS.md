@@ -63,7 +63,7 @@ Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `ma
 steps (test 248 · fuzz 500/500 · fuzz-reject 436 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
 eqparity 512 (0 skipped) · unaryparity 30 (0 skipped) · tools-check · bench-guard · recursion). The fast gates
 (`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release caught
-two tychoc0 fail-opens they had missed — a `mut` argument accepted without `&` (the `fuzz-reject`
+two tychoc0 fail-opens they had missed — a `inout` argument accepted without `&` (the `fuzz-reject`
 lane) and a `tychofmt` float-literal drift, `.25e3` → `.25 e3` (the `tools-check` lane) — both fixed
 (commits `dd973f0`, `2c11c4e`). Lesson I keep relearning: run the full `make ci` before any release.
 
@@ -91,7 +91,7 @@ abort cleanly, hash-flooding-resistant maps (SipHash + random seed), byte-safe s
 
 FFI: `extern` over scalars/string/bytes/opaque `ptr`/typed handles, **sized-int boundary types**
 (`u8`…`u64`/`i8`…`i64` in an extern signature → real fixed-width C ABI, `int` to Tycho),
-nullable-`Option(string)` returns, `mut` out-params; cc-line linking with shell-injection guard.
+nullable-`Option(string)` returns, `inout` out-params; cc-line linking with shell-injection guard.
 
 ## Decided non-goals (do not propose these)
 
@@ -100,6 +100,18 @@ Traits / typeclasses · package manager · C-style ternary `?:` (the ergonomic n
 refcounting · manual memory-management escape hatches as the *idiomatic* path (e.g. index-pool
 trie — deliberately not the benchmark answer; the point is the idiomatic model's honest cost) ·
 FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted CI.
+
+## Naming decisions (with rationale)
+
+- **The mutable-borrow keyword is `inout`, not `mut`.** It denotes an exclusive,
+  copy-in/copy-out borrow (equivalent to `x = f(x)`, marked `&` at the call site) —
+  the Swift/Hylo model, *not* a stored reference. `inout` is chosen deliberately over
+  `mut`: it names the copy-**in**/copy-**out** semantics directly, matches the Swift/Hylo
+  prior art the thesis cites, and — critically — avoids Rust's `mut`/`&mut` connotation of
+  a *stored mutable alias*, which is exactly the construct value semantics forbids by
+  construction (thesis §5). The keyword was briefly `mut` (commit `852a846`) and reverted
+  for this reason; the compiler internals (`TK_INOUT`/`is_inout`) always kept the honest
+  name. See `docs/reference/basics.md`.
 
 ## Known limits & open work
 

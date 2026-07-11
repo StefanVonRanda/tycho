@@ -109,7 +109,7 @@ fn lex_err(src: string, at: int, msg: string):
 fn tloc(t: Token) -> int:
     return t.line * 100000 + t.col
 
-fn scan_token(src: string, n: int, i: int, toks: mut [Token], line: int, linestart: int) -> int:
+fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int, linestart: int) -> int:
     c := src[i]
     tok0 := i                                    # token start, for the error caret (i advances as we scan)
     col := tok0 - linestart                       # 0-based column of the token start (for the diagnostic caret)
@@ -430,7 +430,7 @@ enum Expr:
     EMapLit([Expr], [Expr], int)  # non-empty map literal `[k0: v0, k1: v1]` (keys, vals)
     ETuple([Expr], int)           # tuple literal `(a, b, ...)` / `return a, b`
     ESlice(Expr, Expr, Expr, int) # `base[lo:hi]` sub-array (owning copy)
-    EAddr(Expr, int)              # `&place` at a call site (pass to a mut param)
+    EAddr(Expr, int)              # `&place` at a call site (pass to a inout param)
     ELambda(int, [string], [string], string, Expr, [string], [string], int)   # `fn(p)->r: e` closure literal: id, params, ptypes, ret, body-expr, capnames, captypes (last two filled by the lift pass)
     ECallV(Expr, [Expr], int)     # call-on-expression: `<expr>(args)` — an indirect call on a fn VALUE (array elem, struct field, call result)
     ESpawn(int, string, [Expr], int)   # `spawn f(args)` (CC-1): spawn-site id (assigned by the lift pass), callee, args
@@ -539,7 +539,7 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     handles: [string]         # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl (for is_handle/cty/finalizer)
 
 struct Ctx:                   # mutable per-scope / per-function state only
-    vparams: [string]         # current func's NON-mut param names (map accum guard)
+    vparams: [string]         # current func's NON-inout param names (map accum guard)
     saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
     rettype: string           # current func's Tycho return type (for the return-slot _scope free)
     owner: string             # arena that fresh allocations go into ("0"=NULL=malloc; "&_t"/"_parent"/"&_scope")
@@ -568,19 +568,19 @@ struct Program:
 
 # --------------------------------------------------------------- parser ----
 
-fn expect(toks: [Token], pos: mut int, k: Tok):
+fn expect(toks: [Token], pos: inout int, k: Tok):
     if toks[pos].kind != k:
         die("parse: line " + str(toks[pos].line) + ": unexpected token")
     pos = pos + 1
 
-fn expect_ident(toks: [Token], pos: mut int, name: string):
+fn expect_ident(toks: [Token], pos: inout int, name: string):
     if toks[pos].kind != TIdent or toks[pos].text != name:
         die("parse: line " + str(toks[pos].line) + ": expected a keyword")
     pos = pos + 1
 
 # Open an indented block: a newline, then any number of blank/comment-only
 # lines (each a stray NEWLINE), then the INDENT.
-fn open_block(toks: [Token], pos: mut int):
+fn open_block(toks: [Token], pos: inout int):
     expect(toks, &pos, TNewline)
     for toks[pos].kind == TNewline:
         pos = pos + 1
@@ -663,7 +663,7 @@ fn desugar_interp(s: string) -> Expr:
 struct Pctx:
     depth: int
 
-fn parse_atom_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     # H2: every expression-nesting level (parens, unary, call args, array/map
     # elements, index/slice) passes through parse_atom, so bounding depth here
@@ -686,7 +686,7 @@ fn parse_atom_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
     elif t.kind == TTilde:                        # unary bitwise NOT ~E: marker op; codegen checks the
         pos = pos + 1                            # operand is EXACTLY int and emits ((0 - E) - 1). Was
         return EBin("u~", parse_atom_d(toks, &pos, nd), EInt("0", _el), _el)   # desugared here, which over-accepted ~float/~char
-    elif t.kind == TAmp:                         # &place : pass to a mut param
+    elif t.kind == TAmp:                         # &place : pass to a inout param
         pos = pos + 1
         return EAddr(parse_postfix_d(toks, &pos, nd), _el)
     elif t.kind == TInt:
@@ -877,7 +877,7 @@ fn parse_atom_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         die("parse: line " + str(toks[pos].line) + ": expected an atom")
         return EInt("0", _el)
 
-fn parse_postfix_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_postfix_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     e := parse_atom_d(toks, &pos, pc)
     d := pc.depth                                # each postfix step (.field / [idx] / (call)) wraps `e`, deepening + deep-copying the tree
@@ -926,7 +926,7 @@ fn parse_postfix_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
                     e = EIndex(e, idx, _el)
     return e
 
-fn parse_mul_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_mul_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_postfix_d(toks, &pos, pc)
     d := pc.depth                                # each chain step deepens the left-spine tree (value-semantics deep-copies `l`)
@@ -940,7 +940,7 @@ fn parse_mul_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         l = EBin(op, l, r, _el)
     return l
 
-fn parse_add_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_add_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_mul_d(toks, &pos, pc)
     d := pc.depth                                # each chain step deepens the left-spine tree (value-semantics deep-copies `l`)
@@ -954,7 +954,7 @@ fn parse_add_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         l = EBin(op, l, r, _el)
     return l
 
-fn parse_cmp_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_cmp_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_add_d(toks, &pos, pc)
     k := toks[pos].kind
@@ -965,7 +965,7 @@ fn parse_cmp_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         return EBin(op, l, r, _el)
     return l
 
-fn parse_not_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_not_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     if toks[pos].kind == TIdent and toks[pos].text == "not":
         if pc.depth > 256:                       # H2: a `not not not ...` chain recurses parse_not_d -- cap it like parens/unary
@@ -974,7 +974,7 @@ fn parse_not_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         return EBin("not", parse_not_d(toks, &pos, Pctx(pc.depth + 1)), EInt("0", _el), _el)   # logical not; operand must be bool (validated in codegen). rhs is an unused placeholder
     return parse_cmp_d(toks, &pos, pc)
 
-fn parse_and_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_and_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_not_d(toks, &pos, pc)
     d := pc.depth                                # each `and` step deepens the left-spine tree (value-semantics deep-copies `l`)
@@ -987,7 +987,7 @@ fn parse_and_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
         l = EBin("&&", l, r, _el)
     return l
 
-fn parse_expr_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_expr_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     l := parse_and_d(toks, &pos, pc)
     d := pc.depth                                # each `or` step deepens the left-spine tree (value-semantics deep-copies `l`)
@@ -1002,7 +1002,7 @@ fn parse_expr_d(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 
 # Public entry point: starts a fresh nesting-depth context. H2 (parser
 # recursion bound) is enforced in parse_atom_d via the threaded Pctx.
-fn parse_expr(toks: [Token], pos: mut int) -> Expr:
+fn parse_expr(toks: [Token], pos: inout int) -> Expr:
     return parse_expr_d(toks, &pos, Pctx(0))
 
 # `for x in COLL:` desugars to a collection-temp decl plus a range loop over its
@@ -1010,7 +1010,7 @@ fn parse_expr(toks: [Token], pos: mut int) -> Expr:
 # the block builder calls this directly). COLL is bound to a temp so it is
 # evaluated exactly once; the element read `x := _fc[_fi]` reuses array/string
 # indexing. The temp id is the `for` token position -- unique per occurrence.
-fn parse_foreach(toks: [Token], pos: mut int, out: mut [Stmt]):
+fn parse_foreach(toks: [Token], pos: inout int, out: inout [Stmt]):
     _el := tloc(toks[pos])
     _sl := tloc(toks[pos])
     uid := str(pos)
@@ -1034,7 +1034,7 @@ fn parse_foreach(toks: [Token], pos: mut int, out: mut [Stmt]):
     push(out, SDecl(cn, coll, _sl))                                # _fc := COLL  (the prelude)
     push(out, SForRange(iv, EInt("0", _el), ECall("len", largs, _el), EInt("1", _el), fbody, _sl))
 
-fn parse_block(toks: [Token], pos: mut int) -> [Stmt]:
+fn parse_block(toks: [Token], pos: inout int) -> [Stmt]:
     stmts := []Stmt
     open_block(toks, &pos)
     for toks[pos].kind != TDedent:
@@ -1074,7 +1074,7 @@ fn parse_block(toks: [Token], pos: mut int) -> [Stmt]:
     pos = pos + 1
     return stmts
 
-fn parse_else(toks: [Token], pos: mut int) -> [Stmt]:
+fn parse_else(toks: [Token], pos: inout int) -> [Stmt]:
     _sl := tloc(toks[pos])
     t := toks[pos]
     if t.kind == TIdent and t.text == "elif":
@@ -1098,7 +1098,7 @@ fn parse_else(toks: [Token], pos: mut int) -> [Stmt]:
 fn is_caop_kind(k: Tok) -> bool:
     return k == TPlus or k == TMinus or k == TStar or k == TSlash or k == TPercent or k == TAmp or k == TPipe or k == TCaret or k == TShl or k == TShr
 
-fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
+fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
     _el := tloc(toks[pos])
     _sl := tloc(toks[pos])
     t := toks[pos]
@@ -1447,7 +1447,7 @@ fn parse_stmt(toks: [Token], pos: mut int, pending: mut [Stmt]) -> Stmt:
         die("parse: line " + str(toks[pos].line) + ": expected a statement")
         return SReturn(EInt("0", _el), _sl)
 
-fn parse_type_d(toks: [Token], pos: mut int, depth: int) -> string:
+fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
     # H2 (type vector): bound nested-type recursion ([[[[...]]]], tuples,
     # generics) so a crafted deeply-nested type can't overflow the stack.
     if depth > 256:
@@ -1575,18 +1575,18 @@ fn parse_type_d(toks: [Token], pos: mut int, depth: int) -> string:
         return name                              # a struct or enum type name
 
 # Public entry point: starts a fresh type-nesting depth context (H2).
-fn parse_type(toks: [Token], pos: mut int) -> string:
+fn parse_type(toks: [Token], pos: inout int) -> string:
     return parse_type_d(toks, &pos, 0)
 
-fn parse_param(toks: [Token], pos: mut int) -> Param:
+fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a parameter name")
     name := toks[pos].text
     pos = pos + 1
     expect(toks, &pos, TColon)
-    if toks[pos].kind == TIdent and toks[pos].text == "mut":
+    if toks[pos].kind == TIdent and toks[pos].text == "inout":
         pos = pos + 1
-        return Param(name, "&" + parse_type(toks, &pos))   # mut marker
+        return Param(name, "&" + parse_type(toks, &pos))   # inout marker
     if toks[pos].kind == TIdent and toks[pos].text == "sink":
         pos = pos + 1
         return Param(name, "~" + parse_type(toks, &pos))   # sink marker (owned, mutable, by-value)
@@ -1594,7 +1594,7 @@ fn parse_param(toks: [Token], pos: mut int) -> Param:
 
 # Generics: collect the names introduced by `$X` in a type string ("$T" -> "T",
 # "[$T]" -> "T"). Used to rewrite a later bare `T` reference back to "$T".
-fn collect_dollar_names(s: string, bs: mut [string]):
+fn collect_dollar_names(s: string, bs: inout [string]):
     i := 0
     for i < len(s):
         if s[i] == 36:                           # '$'
@@ -1652,7 +1652,7 @@ fn func_is_generic(f: Func) -> bool:
         i = i + 1
     return ty_is_generic(f.ret)
 
-fn parse_func(toks: [Token], pos: mut int) -> Func:
+fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a function name")
@@ -1799,8 +1799,8 @@ fn extern_ok_ty(ty: string) -> bool:
         return true
     return find(ty, "[") < 0 and find(ty, "(") < 0 and find(ty, ":") < 0
 
-# An extern PARAMETER is allowed if it is a non-mut scalar/bytes/handle (extern_ok_ty),
-# OR a `mut` (out) param `&T` (FFI R4) whose T is int/char/float/bool/ptr -- a clean T*
+# An extern PARAMETER is allowed if it is a non-inout scalar/bytes/handle (extern_ok_ty),
+# OR a `inout` (out) param `&T` (FFI R4) whose T is int/char/float/bool/ptr -- a clean T*
 # the C fn fills and tycho reads back by value. `&str` (a char** out-param) would hand
 # tycho a raw C pointer with no length header; `&bytes`/`&handle`/`&composite` likewise
 # have no trivial pointer-to-self ABI -- all rejected.
@@ -1812,7 +1812,7 @@ fn extern_param_ok(ty: string) -> bool:
 
 # extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
 # Name is NOT mangled — a C symbol is global.
-fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
+fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "extern")
     lib := ""
     if toks[pos].kind == TStr:                 # optional link-library name
@@ -1829,14 +1829,14 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
     if toks[pos].kind != TRParen:
         p := parse_param(toks, &pos)
         if not extern_param_ok(p.ty):
-            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `mut` int/char/float/bool/ptr for an out-param)")
+            die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `inout` int/char/float/bool/ptr for an out-param)")
         push(params, p.name)
         push(ptypes, p.ty)
         for toks[pos].kind == TComma:
             pos = pos + 1
             p2 := parse_param(toks, &pos)
             if not extern_param_ok(p2.ty):
-                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `mut` int/char/float/bool/ptr for an out-param)")
+                die("parse: line " + str(toks[pos].line) + ": extern fn '" + name + "': a parameter must be int/char/float/bool/string/ptr/bytes or a handle (or `inout` int/char/float/bool/ptr for an out-param)")
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
@@ -1853,7 +1853,7 @@ fn parse_extern_func(toks: [Token], pos: mut int) -> Func:
 # A lambda literal `fn(p: T, ...) [-> R]: expr` — single-expression body (implicit
 # return). The leading `fn` and the opening `(` have already been consumed-checked
 # by the caller (parse_atom). id is a placeholder (0); the lift pass assigns it.
-fn parse_lambda(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
+fn parse_lambda(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     _el := tloc(toks[pos])
     expect(toks, &pos, TLParen)
     params := []string
@@ -1890,7 +1890,7 @@ fn parse_lambda(toks: [Token], pos: mut int, pc: Pctx) -> Expr:
 #     free: c_free_fn
 # FFI R2 typed handle (docs/internals/typed-handles-design.md): an affine void* whose
 # destructor `c_free_fn` runs at the owning var's scope exit. Returns "Name=c_free_fn".
-fn parse_handle(toks: [Token], pos: mut int) -> string:
+fn parse_handle(toks: [Token], pos: inout int) -> string:
     expect_ident(toks, &pos, "handle")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a handle name")
@@ -1913,7 +1913,7 @@ fn parse_handle(toks: [Token], pos: mut int) -> string:
     expect(toks, &pos, TDedent)
     return name + "=" + freefn
 
-fn parse_struct(toks: [Token], pos: mut int) -> StructDef:
+fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     expect_ident(toks, &pos, "struct")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a struct name")
@@ -1984,7 +1984,7 @@ fn stmt_self_terminates(s: Stmt) -> bool:
         _:
             return false
 
-fn parse_value_block(toks: [Token], pos: mut int) -> [Stmt]:
+fn parse_value_block(toks: [Token], pos: inout int) -> [Stmt]:
     open_block(toks, &pos)
     _tl2 := tloc(toks[pos])
     tail := parse_expr(toks, &pos)
@@ -2070,7 +2070,7 @@ fn ctrl_tails(c: Stmt) -> [Expr]:
             die("internal: ctrl_tails on a non-if/match")
     return out
 
-fn parse_value_if(toks: [Token], pos: mut int, sl: int) -> Stmt:
+fn parse_value_if(toks: [Token], pos: inout int, sl: int) -> Stmt:
     pos = pos + 1                        # consume `if`
     cond := parse_expr(toks, &pos)
     expect(toks, &pos, TColon)
@@ -2089,13 +2089,13 @@ fn parse_value_if(toks: [Token], pos: mut int, sl: int) -> Stmt:
     return SIf(cond, then_body, els, sl)
 
 # parse an `if`/`match` in value (tail) position; caller is ON the keyword.
-fn parse_value_ctrl(toks: [Token], pos: mut int) -> Stmt:
+fn parse_value_ctrl(toks: [Token], pos: inout int) -> Stmt:
     _sl := tloc(toks[pos])
     if toks[pos].text == "if":
         return parse_value_if(toks, &pos, _sl)
     return parse_match(toks, &pos, true)
 
-fn parse_match(toks: [Token], pos: mut int, value: bool) -> Stmt:
+fn parse_match(toks: [Token], pos: inout int, value: bool) -> Stmt:
     _sl := tloc(toks[pos])
     expect_ident(toks, &pos, "match")
     subj := parse_expr(toks, &pos)
@@ -2140,7 +2140,7 @@ fn parse_match(toks: [Token], pos: mut int, value: bool) -> Stmt:
     pos = pos + 1                                # consume TDedent
     return SMatch(subj, variants, allbinds, bodies, _sl)
 
-fn parse_enum(toks: [Token], pos: mut int) -> EnumDef:
+fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
     expect_ident(toks, &pos, "enum")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected an enum name")
@@ -2195,7 +2195,7 @@ fn parse_enum(toks: [Token], pos: mut int) -> EnumDef:
             vi = vi + 1
     return EnumDef(name, variants, typeparams, []string)
 
-fn parse_newtype(toks: [Token], pos: mut int) -> Param:   # `type Name = Underlying`
+fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Underlying`
     expect_ident(toks, &pos, "type")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a newtype name")
@@ -2782,7 +2782,7 @@ fn path_last(path: string) -> string:                  # "math/geom" -> "geom"
         j = j + 1
     return out
 
-fn parse_program(toks: [Token], pos: mut int) -> Program:
+fn parse_program(toks: [Token], pos: inout int) -> Program:
     # Pass 1: parse every def, recording its package prefix, and collect the
     # package / alias / variant tables. Two passes are needed because a qualified
     # or bare reference may name a package, alias, or variant declared later in
@@ -3080,7 +3080,7 @@ fn match_arm_ptypes(dc: Decls, ctx: Ctx, sty: string, vname: string) -> [string]
         return []string
     return variant_ptypes_in(dc, sty, vname)
 
-# A mut parameter's type is marked with a leading '&'. The base type drives
+# A inout parameter's type is marked with a leading '&'. The base type drives
 # all type logic; the marker only affects C codegen (pointer + deref).
 fn is_inout(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 38
@@ -3403,7 +3403,7 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return cty(dc, ctx, resolve_nt(dc, ctx, ty))
     if is_sink(ty):                              # sink T -> plain T (by value, owned)
         return cty(dc, ctx, base_ty(ty))
-    if is_inout(ty):                              # mut T -> pointer to T's C type
+    if is_inout(ty):                              # inout T -> pointer to T's C type
         inner := cty(dc, ctx, base_ty(ty))           # ends with a space
         return substr(inner, 0, len(inner) - 1) + "* "
     if ty == "int":
@@ -3762,8 +3762,8 @@ fn pkg_prefix_of(name: string) -> string:
 
 # A UFCS receiver matches a method's first parameter if the types are equal, or that
 # parameter is `sink` (the receiver is consumed -- gen_call_args_sink adopts-or-copies it
-# at the call). `mut` is NOT relaxed here: a mut receiver would need `&`, which the UFCS
-# desugar does not insert, so a mut first param must stay unmatched.
+# at the call). `inout` is NOT relaxed here: a inout receiver would need `&`, which the UFCS
+# desugar does not insert, so a inout first param must stay unmatched.
 fn recv_matches(ptype: string, bt: string) -> bool:
     return ptype == bt or (is_sink(ptype) and base_ty(ptype) == bt)
 
@@ -4006,9 +4006,9 @@ fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx)
         i = i + 1
     return out
 
-# If `arg` is a mut container argument (`&place` where place is an array/map/
+# If `arg` is a inout container argument (`&place` where place is an array/map/
 # soa), the extra hidden arena to pass after it: the place's home arena in the
-# CALLER (a local -> its scope/block arena; a chained mut -> the caller's own
+# CALLER (a local -> its scope/block arena; a chained inout -> the caller's own
 # _ina_, threading the true home up the chain). "" otherwise. Mirrors
 # inout_container_param exactly so call arity matches the callee signature.
 fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
@@ -4057,7 +4057,7 @@ fn arg_ina(arg: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> 
         ESpawn(id, nm, a, _el):
             return ""
 
-# Like gen_args, but after each mut-container arg, interleave its home arena
+# Like gen_args, but after each inout-container arg, interleave its home arena
 # (the hidden _ina_ param) — kept positionally in sync with gen_params.
 fn gen_call_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     out := ""
@@ -4299,7 +4299,7 @@ fn warn_at(dc: Decls, code: int, msg: string):
 # Loop-progress check (1:1 port of src/tychoc.c wl_*): a `for COND:` whose condition
 # variables are never changed in the body (and which can't break/return/die) may
 # spin forever. Sound under value semantics: a var changes only by assign-to-it,
-# place-mutation (v[i]=/v.f=), push/pop(v,..), or &v passed to a mut param.
+# place-mutation (v[i]=/v.f=), push/pop(v,..), or &v passed to a inout param.
 fn wl_root(e: Expr) -> string:                     # base identifier of a place: v / v[i] / v.f
     match e:
         EIndex(b, ix, p):
@@ -4343,7 +4343,7 @@ fn wl_root(e: Expr) -> string:                     # base identifier of a place:
         ESpawn(sid, snm, sargs, p):
             return ""
 
-fn wl_cond_vars(e: Expr, vs: mut [string], hc: mut bool):   # collect cond idents; flag a call/spawn
+fn wl_cond_vars(e: Expr, vs: inout [string], hc: inout bool):   # collect cond idents; flag a call/spawn
     match e:
         ECall(nm, args, p):
             hc = true
@@ -4403,7 +4403,7 @@ fn wl_cond_vars(e: Expr, vs: mut [string], hc: mut bool):   # collect cond ident
         ELambda(lid, ps, pts, ret, lb, cn, ct, p):
             hc = hc
 
-fn wl_scan_expr(e: Expr, muts: mut [string], ex: mut bool):   # &v / push/pop(v) / die hiding in an expr
+fn wl_scan_expr(e: Expr, muts: inout [string], ex: inout bool):   # &v / push/pop(v) / die hiding in an expr
     match e:
         EAddr(x, p):
             r := wl_root(x)
@@ -4482,7 +4482,7 @@ fn wl_scan_expr(e: Expr, muts: mut [string], ex: mut bool):   # &v / push/pop(v)
         EMapEmpty(kt, vt, p):
             ex = ex
 
-fn wl_scan_body(stmts: [Stmt], muts: mut [string], ex: mut bool):
+fn wl_scan_body(stmts: [Stmt], muts: inout [string], ex: inout bool):
     i := 0
     for i < len(stmts):
         match stmts[i]:
@@ -4721,7 +4721,7 @@ fn teq(dc: Decls, ctx: Ctx, ty: string) -> string:
 # (forward / source order). A string-`+` node recurses left then appends its rhs;
 # anything else (incl. a sub-expr like `a + 'c'` that isn't a plain string-`+`) is
 # a single leaf. Lets gen_expr flatten `a + b + c [..]` to one scN call.
-fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx, out: mut [Expr]):
+fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx, out: inout [Expr]):
     match e:
         EBin(op, l, r, _el):
             if op == "+" and type_of(l, names, types, dc, ctx) == "str" and type_of(r, names, types, dc, ctx) == "str":
@@ -4790,7 +4790,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if ft != "":
                     return "(Fn_" + func_suffix(ft) + "){0, " + un(name) + "__clo, 0}"   # plain ref: no env to re-home
                 return un(name)
-            if is_inout(var_type(names, types, name)):   # mut param -> deref the pointer
+            if is_inout(var_type(names, types, name)):   # inout param -> deref the pointer
                 return "(*" + un(name) + ")"
             return un(name)
         EField(base, fld, _el):
@@ -4906,7 +4906,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if len(cargs) > 0:
                 code = code + ", " + gen_call_args(cargs, names, types, dc, ctx)
             return code + "); })"
-        EAddr(inner, _el):                             # &(*p) == p, so passing a mut param onward works
+        EAddr(inner, _el):                             # &(*p) == p, so passing a inout param onward works
             if is_place(inner):   # &place: take the real storage lvalue via gen_place, which recurses the field/index spine (map slot ptr, checked array element, struct field). gen_expr lowers m[k]/a[i] to non-assignable reads (map_get / checked stmt-expr), so &gen_expr would be address-of-rvalue and either fail to compile or alias a copy.
                 return "&" + gen_place(inner, names, types, dc, ctx)
             return "&" + gen_expr(inner, names, types, dc, ctx)
@@ -5354,7 +5354,7 @@ fn root_var(e: Expr) -> string:
         ESpawn(id, nm, a, _el):
             return ""
 
-# The arena a container place lives in: a mut-param container is the caller's
+# The arena a container place lives in: a inout-param container is the caller's
 # (its buffer must grow in _parent so it survives the call); a local lives in
 # this function's _scope. (One scope per function until MM-5 adds per-block.)
 # Most recent declaration index of `name` in the env (-1 if absent). Searches
@@ -5368,9 +5368,9 @@ fn var_index(names: [string], name: string) -> int:
     return -1
 
 # The arena a container place lives in (so a push/grow lands where the container
-# itself lives). mut-param array/map/soa: its home arena, threaded as the hidden
+# itself lives). inout-param array/map/soa: its home arena, threaded as the hidden
 # `_ina_<name>` param (so the grow frees with the caller's container instead of
-# malloc-leaking). mut scalar/struct: malloc ("0", immortal — no _ina_). A var
+# malloc-leaking). inout scalar/struct: malloc ("0", immortal — no _ina_). A var
 # declared in the current block (index >= block_base): the block arena, freed at
 # block exit / per loop iteration. An outer-scope local: the function _scope.
 # Does an array of element type `et` deep-copy its elements (vs shallow memcpy)?
@@ -5483,7 +5483,7 @@ fn owner_arena_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx
     if is_inout(rvt):
         if inout_container_param(dc, ctx, rvt):       # its home arena is threaded as a hidden param
             return "_ina_" + rv
-        return "0"                                # mut scalar / struct: no _ina_ (malloc, immortal)
+        return "0"                                # inout scalar / struct: no _ina_ (malloc, immortal)
     d := var_block_depth(dc, ctx, var_index(names, rv))
     if d == 0:
         return "&_scope"
@@ -5990,7 +5990,7 @@ fn count_str_occ(xs: [string], s: string) -> int:
 # descriptor (data/len/cap) cached in C locals across the loop, so the hot path
 # is a register write; a grow hook runs only on overflow; the descriptor is
 # written back at loop exit. Sound by construction: fuse only when reads==pushes
-# (used solely as push target), the array is a plain non-mut scalar local not
+# (used solely as push target), the array is a plain non-inout scalar local not
 # defined/shadowed in the body, and (while) the condition does not read it.
 fn push_target(e: Expr) -> string:        # var name if e is push(EVar, ...), else ""
     match e:
@@ -6091,7 +6091,7 @@ fn fuse_pushcount(stmts: [Stmt], name: string) -> int:
         i = i + 1
     return c
 
-fn fuse_gather(stmts: [Stmt], out: mut [string]):
+fn fuse_gather(stmts: [Stmt], out: inout [string]):
     i := 0
     for i < len(stmts):
         match stmts[i]:
@@ -6235,7 +6235,7 @@ fn add_fuse(ctx: Ctx, nm: string, suf: string, ety: string) -> Ctx:
 
 # Return the fusible scalar arrays of `body` as parallel (name, cursor-suffix,
 # elem-type) lists. A candidate qualifies iff: scalar int/float local (the env
-# type is exactly "[int]"/"[float]" -- a mut param reads as "mut [...]" and
+# type is exactly "[int]"/"[float]" -- a inout param reads as "inout [...]" and
 # is excluded); not already cached by an enclosing loop; not defined/shadowed in
 # the body; used solely as a push target (reads == pushes); and, for a while
 # loop, not read by the condition (which re-evaluates each iteration).
@@ -6257,7 +6257,7 @@ fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: C
         nm := cand[i]
         et := fuse_envtype(names, types, nm)
         ok := true
-        if not is_array(et):                          # any array element type (scalar/str/struct/tuple/...); mut + soa excluded by is_array
+        if not is_array(et):                          # any array element type (scalar/str/struct/tuple/...); inout + soa excluded by is_array
             ok = false
         if count_str_occ(ctx.fusearr, nm) > 0:
             ok = false
@@ -6277,7 +6277,7 @@ fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: C
 # Collect every variable READ (expression occurrence), and separately those read
 # inside a loop body/condition. A name read exactly once and never in a loop is a
 # move candidate. (Decl/loop-var/assign-target NAMES are writes — not collected.)
-fn rd_expr(reads: mut [string], loopreads: mut [string], e: Expr, inloop: bool):
+fn rd_expr(reads: inout [string], loopreads: inout [string], e: Expr, inloop: bool):
     match e:
         EVar(n, _el):
             push(reads, n)
@@ -6352,13 +6352,13 @@ fn rd_expr(reads: mut [string], loopreads: mut [string], e: Expr, inloop: bool):
                 rd_expr(&reads, &loopreads, sa[j], true)
                 j = j + 1
 
-fn rd_block(reads: mut [string], loopreads: mut [string], stmts: [Stmt], inloop: bool):
+fn rd_block(reads: inout [string], loopreads: inout [string], stmts: [Stmt], inloop: bool):
     i := 0
     for i < len(stmts):
         rd_stmt(&reads, &loopreads, stmts[i], inloop)
         i = i + 1
 
-fn rd_stmt(reads: mut [string], loopreads: mut [string], s: Stmt, inloop: bool):
+fn rd_stmt(reads: inout [string], loopreads: inout [string], s: Stmt, inloop: bool):
     match s:
         SDecl(n, e, _sl):
             rd_expr(&reads, &loopreads, e, inloop)
@@ -6497,7 +6497,7 @@ fn gen_sink_arg(e: Expr, ty: string, names: [string], types: [string], dc: Decls
     # consume diagnostic: a bare OWNED variable (a local or a sink param) handed to a
     # sink parameter but used again (or inside a loop) cannot be moved into it. Require
     # an explicit copy so move-vs-copy is visible (Hylo-style), rather than silently
-    # copying. Borrowed/mut params (which can never move) and field/index args still copy.
+    # copying. Borrowed/inout params (which can never move) and field/index args still copy.
     nm := evar_name(e)
     if nm != "" and var_index(names, nm) >= 0:
         rt := resolve_nt(dc, ctx, ty)
@@ -6811,7 +6811,7 @@ fn value_ctrl_type(c: Stmt, names: [string], types: [string], dc: Decls, ctx: Ct
         _:
             return "int"
 
-fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: Ctx) -> string:
+fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> string:
     _el := 0
     ctx = with_line(ctx, stmt_line(s))            # statement line for any resolve/codegen die() within
     match s:
@@ -6925,10 +6925,10 @@ fn gen_stmt(s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: C
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
                 # the caller's table, so mutating it in place is a value-semantics
-                # violation. ctx.vparams holds this func's non-mut params; for
+                # violation. ctx.vparams holds this func's non-inout params; for
                 # those we fall through to `deflt` (pure map_set = deep-copy+put),
-                # matching the C compiler (src/tychoc.c:3556 drops non-mut params
-                # from accums). Locals and mut map params still grow in place.
+                # matching the C compiler (src/tychoc.c:3556 drops non-inout params
+                # from accums). Locals and inout map params still grow in place.
                 ECall(fname, args, _el):
                     if fname == "map_set" and is_evar(args[0], name) and not has_str(ctx.vparams, name):
                         return "    " + mfam(type_of(EVar(name, _el), names, types, dc, ctx)) + "_put(" + owner_arena_of(EVar(name, _el), names, types, dc, ctx) + ", &" + lhs + ", " + krt(dc, ctx, type_of(EVar(name, _el), names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ", " + gen_expr(args[2], names, types, dc, ctx) + ");\n"
@@ -7305,15 +7305,15 @@ fn ret_cty(dc: Decls, ctx: Ctx, ret: string) -> string:
         return "void "
     return cty(dc, ctx, ret)
 
-# A mut array/map/soa param: its container's home arena is the CALLER's, so
+# A inout array/map/soa param: its container's home arena is the CALLER's, so
 # the callee receives it as a hidden `Arena* _ina_<name>` param and grows/allocs
-# into it (instead of malloc-leaking). Inout scalars and mut structs do NOT get
+# into it (instead of malloc-leaking). Inout scalars and inout structs do NOT get
 # one (a struct's field-container is a smaller separate residual, still malloc).
 fn inout_container_param(dc: Decls, ctx: Ctx, ptype: string) -> bool:
     if not is_inout(ptype):
         return false
     b := base_ty(ptype)
-    if resolve_nt(dc, ctx, b) == "str":          # mut string: reassignment bytes build in _ina_
+    if resolve_nt(dc, ctx, b) == "str":          # inout string: reassignment bytes build in _ina_
         return true
     return is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b))   # a heap struct's field-containers grow in _ina_
 
@@ -7327,7 +7327,7 @@ fn gen_params(f: Func, dc: Decls, ctx: Ctx) -> string:
         i = i + 1
     return out
 
-fn seed_env(f: Func, names: mut [string], types: mut [string]):
+fn seed_env(f: Func, names: inout [string], types: inout [string]):
     i := 0
     for i < len(f.params):
         push(names, f.params[i])
@@ -7386,7 +7386,7 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
 # Leftmost-flatten an all-'+' EBin chain into its operands, left to right.
 # A non-'+' binop or any leaf is one whole piece. So `a + b + c` -> [a, b, c]
 # but `(a - b) + c` -> [(a-b), c].
-fn plus_flatten(e: Expr, out: mut [Expr]):
+fn plus_flatten(e: Expr, out: inout [Expr]):
     match e:
         EBin(op, l, r, _el):
             if op == "+":
@@ -7451,7 +7451,7 @@ fn sacc_pieces(e: Expr, name: string) -> [Expr]:
 # guard `var_type == "str"` is accurate; a non-str `c = c + 1` is never flagged.
 # Match arms bind payloads as "" (unknown) — at worst an arm-local accumulator is
 # missed (stays the safe pure-concat path); a false positive is impossible.
-fn sacc_block(acc: mut [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
+fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
     ts := types
     i := 0
@@ -7459,7 +7459,7 @@ fn sacc_block(acc: mut [string], stmts: [Stmt], names: [string], types: [string]
         sacc_stmt(&acc, stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
 
-fn sacc_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: Ctx):
+fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e, _sl):
             dty := type_of(e, names, types, dc, ctx)   # compute BEFORE pushing n (keep names/types in sync)
@@ -7577,9 +7577,9 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
         if ty_has_handle(dc, ctx, f.ptypes[hpi]) and not is_handle(dc, f.ptypes[hpi]):
             die("type: fn '" + f.name + "' parameter '" + f.params[hpi] + "': a handle cannot be nested in a container or aggregate")
         hpi = hpi + 1
-    # Record this func's NON-mut param names so the map accumulator pass skips
+    # Record this func's NON-inout param names so the map accumulator pass skips
     # the in-place put on a by-value map param (it would mutate the caller's
-    # shared table). Mirrors the C compiler dropping non-mut params from accums
+    # shared table). Mirrors the C compiler dropping non-inout params from accums
     # (src/tychoc.c:3556). Inout map params are left in (in-place is the wanted
     # mutation). The pure-set fallback rehashes the same way the C compiler does,
     # so key order stays identical (no wordcount divergence).
@@ -7590,7 +7590,7 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
             push(vparams, f.params[pi])
         pi = pi + 1
     # String self-append accumulators (locals only — a param has no SDecl, so no
-    # sidecars; like the C compiler dropping non-mut params from accums).
+    # sidecars; like the C compiler dropping non-inout params from accums).
     raw := []string
     sn := names
     st := types
@@ -7732,7 +7732,7 @@ fn gen_func_typedef(dc: Decls, ctx: Ctx, ty: string) -> string:
         i = i + 1
     return out + "); void* (*copyenv)(Arena*, void*); } Fn_" + func_suffix(ty) + ";\n"   # copyenv re-homes the env on return (0 for a plain ref)
 
-fn fn_value_eligible(f: Func) -> bool:           # usable as a value: no mut params (the fat-ptr call ABI carries none)
+fn fn_value_eligible(f: Func) -> bool:           # usable as a value: no inout params (the fat-ptr call ABI carries none)
     i := 0
     for i < len(f.ptypes):
         if is_inout(f.ptypes[i]):
@@ -7877,7 +7877,7 @@ fn comp_dep_types(dc: Decls, ctx: Ctx, ty: string) -> [string]:
 # first (so a struct embedding a tuple -- or a tuple embedding a struct -- sees a complete
 # type). `emitted` carries the dedup set across the whole pass. By-value recursion is
 # forbidden upstream, so the graph is a DAG.
-fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: mut [string]) -> string:
+fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: inout [string]) -> string:
     b := resolve_nt(dc, ctx, ty)
     if has_str(emitted, b):
         return ""
@@ -8603,7 +8603,7 @@ fn has_str(xs: [string], s: string) -> bool:
 
 # Record the array element types a type needs, recursively (so [[int]] also
 # pulls in [int], and Option/Result element types are descended into).
-fn note_arr_types(acc: mut [string], ty: string):
+fn note_arr_types(acc: inout [string], ty: string):
     b := base_ty(ty)
     if is_array(b):
         et := elem_ty(b)
@@ -8753,7 +8753,7 @@ fn check_struct_ctor(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [stri
             return
         i = i + 1
 
-# Is `e` an `&place` argument (the only valid form for a `mut`/inout parameter)?
+# Is `e` an `&place` argument (the only valid form for a `inout`/inout parameter)?
 fn is_eaddr(e: Expr) -> bool:
     match e:
         EAddr(x, _el):
@@ -8761,7 +8761,7 @@ fn is_eaddr(e: Expr) -> bool:
         _:
             return false
 
-# A `mut` (inout) parameter must be passed `&variable`; tychoc rejects a bare
+# A `inout` (inout) parameter must be passed `&variable`; tychoc rejects a bare
 # argument there, but tychoc0 used to accept it and emit C that passes the value
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
 # every user call: collect_elem_types walks every body, so this is universal.
@@ -8773,7 +8773,7 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
     k := 0
     for k < len(args) and k < len(pp):
         if is_inout(pp[k]) and not is_eaddr(args[k]):
-            die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is mut; pass it as '&variable'")
+            die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is inout; pass it as '&variable'")
         elif not is_inout(pp[k]) and not is_sink(pp[k]):
             nt_check(dc, ctx, pp[k], args[k], names, types, "argument " + str(k + 1) + " of '" + nm + "'", el)
         k = k + 1
@@ -8841,7 +8841,7 @@ fn check_match(dc: Decls, ctx: Ctx, sty: string, vars: [string], el: int):
                 die_at(dc, el, "non-exhaustive match: missing variant " + vn[k] + " of " + sty)
             k = k + 1
 
-fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
+fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx):
     match e:
         EArrLit(elems, _el):
             note_arr_types(&acc, type_of(e, names, types, dc, ctx))
@@ -8870,7 +8870,7 @@ fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
         ECall(nm, args, _el):
-            check_call_args(dc, ctx, nm, args, names, types, _el)   # reject `mut` arg not `&variable` + newtype-identity arg mismatch (matches tychoc)
+            check_call_args(dc, ctx, nm, args, names, types, _el)   # reject `inout` arg not `&variable` + newtype-identity arg mismatch (matches tychoc)
             if is_struct(dc, ctx, nm):                  # struct constructor: each field init must match the field's newtype
                 check_struct_ctor(dc, ctx, nm, args, names, types, _el)
             j := 0
@@ -8915,7 +8915,7 @@ fn collect_expr(acc: mut [string], e: Expr, names: [string], types: [string], dc
                 collect_expr(&acc, sa[j], names, types, dc, ctx)
                 j = j + 1
 
-fn collect_block(acc: mut [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
+fn collect_block(acc: inout [string], stmts: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx):
     ns := names
     ts := types
     i := 0
@@ -8923,7 +8923,7 @@ fn collect_block(acc: mut [string], stmts: [Stmt], names: [string], types: [stri
         collect_stmt(&acc, stmts[i], &ns, &ts, dc, ctx)
         i = i + 1
 
-fn collect_stmt(acc: mut [string], s: Stmt, names: mut [string], types: mut [string], dc: Decls, ctx: Ctx):
+fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e, _sl):
             # reject a bare untyped `x := Ok(v)` / `x := Err(v)`: the constructor fixes only
@@ -9263,7 +9263,7 @@ fn resolve_import_dir(dir: string, imp: string) -> string:
         return root + "/" + substr(imp, 5, len(imp))
     return dir + "/" + imp
 
-fn bundle(dir: string, is_entry: bool, seen: mut [string]) -> string:
+fn bundle(dir: string, is_entry: bool, seen: inout [string]) -> string:
     k := 0
     for k < len(seen):
         if seen[k] == dir:
@@ -9305,7 +9305,7 @@ fn bundle(dir: string, is_entry: bool, seen: mut [string]) -> string:
 # with its id + capture names/types so gen_expr can build the closure value
 # (env + thunk) at the use site. A LamInfo per lambda drives env-struct + thunk
 # emission. tychoc0 has NO mutable globals, so the lifted funcs, the capture
-# counter, and the LamInfo list are all threaded by mut.
+# counter, and the LamInfo list are all threaded by inout.
 fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string, byte-identical to sig_functype's format
     out := "fn("
     i := 0
@@ -9319,7 +9319,7 @@ fn mk_functype(ptypes: [string], ret: string) -> string:   # fn(...) type string
 # Gather every EVar name appearing in `e` (descending into nested lambda bodies,
 # so an outer lambda transitively sees a var its inner lambda needs from an
 # enclosing scope). Used for capture analysis (free-var scan).
-fn collect_evars(e: Expr, out: mut [string]):
+fn collect_evars(e: Expr, out: inout [string]):
     match e:
         EVar(n, _el):
             push(out, n)
@@ -9391,7 +9391,7 @@ fn collect_evars(e: Expr, out: mut [string]):
 # occurrence, via the lambda free-var scan; body-local shadowing only yields a
 # harmless extra chunk-proc param. (Reject-grade analysis -- acc-read audits,
 # outer-write rejection -- stays in the C compiler, which gates user programs.)
-fn pf_body_evars(stmts: [Stmt], out: mut [string]):
+fn pf_body_evars(stmts: [Stmt], out: inout [string]):
     i := 0
     for i < len(stmts):
         match stmts[i]:
@@ -9466,7 +9466,7 @@ fn pf_body_evars(stmts: [Stmt], out: mut [string]):
 # Reduction accumulators of a parallel-for body: assignments `n = n OP rest`
 # (OP in +,*) to a variable bound in the ENCLOSING env. These become identity-
 # initialized locals of the chunk proc, folded at the in-order join.
-fn pf_accs(stmts: [Stmt], outer: [string], accn: mut [string], accop: mut [string]):
+fn pf_accs(stmts: [Stmt], outer: [string], accn: inout [string], accop: inout [string]):
     i := 0
     for i < len(stmts):
         match stmts[i]:
@@ -9567,7 +9567,7 @@ fn pf_accs(stmts: [Stmt], outer: [string], accn: mut [string], accop: mut [strin
 # --- parallel-for body GATES (parity with tychoc's pf_scan_stmt + the
 # resolve_parfor read-count post-check) -----------------------------------------
 # A chunk proc is spawned N ways, so its body may NOT early-exit (return / break
-# applying to the parfor / or_return), may NOT mutate or mut-pass a CAPTURED
+# applying to the parfor / or_return), may NOT mutate or inout-pass a CAPTURED
 # (outer) variable, and may update a captured scalar ONLY as a consistent +/*
 # reduction whose accumulator is read nowhere else. `locals` = names bound INSIDE
 # the chunk (loop var, decls, match/select/for binds); a name in the outer env
@@ -9807,14 +9807,14 @@ fn reduction_op(e: Expr, n: string) -> string:
         ESpawn(sid, snm, sa, _el):
             return ""
 
-# reject a captured `&v` (mut-pass) or push/pop(capturedAggregate, ...) anywhere
+# reject a captured `&v` (inout-pass) or push/pop(capturedAggregate, ...) anywhere
 # in an expression; recurse into every sub-expression.
 fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
     match e:
         EAddr(x, _el):
             r := place_root(x)
             if r != "" and has_str(names, r) and not has_str(locals, r):
-                die("parallel for cannot pass a captured variable as mut")
+                die("parallel for cannot pass a captured variable as inout")
             pf_gate_expr(x, locals, names)
         ECall(cn, a, _el):
             if (cn == "push" or cn == "pop") and len(a) >= 1:
@@ -9888,7 +9888,7 @@ fn pf_gate_expr(e: Expr, locals: [string], names: [string]):
         EMapEmpty(k, v, _el):
             return
 
-fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: mut [string], accop: mut [string], accnt: mut [int], loopdepth: int):
+fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: inout [string], accop: inout [string], accnt: inout [int], loopdepth: int):
     locals := locals0     # block-scoped local copy; caller's set is unaffected
     i := 0
     for i < len(stmts):
@@ -9999,7 +9999,7 @@ fn pf_gate_body(stmts: [Stmt], locals0: [string], names: [string], accn: mut [st
 
 # "fn(a,b->r)" -> fills `parts` with the param types, returns the return type.
 # Depth-aware over nested ([{ so a nested fn-type's own , and -> don't split.
-fn fnty_split(ft: string, parts: mut [string]) -> string:
+fn fnty_split(ft: string, parts: inout [string]) -> string:
     inner := substr(ft, 3, len(ft) - 1)
     d := 0
     st := 0
@@ -10150,7 +10150,7 @@ fn ground_args(dc: Decls, ctx: Ctx, names: [string], types: [string], nm: string
         i = i + 1
     return out
 
-fn lift_exprs(es: [Expr], lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spawns: mut [SpawnInfo], pars: mut [ParInfo], names: mut [string], types: mut [string], dc: Decls, ctx: Ctx) -> [Expr]:
+fn lift_exprs(es: [Expr], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
@@ -10158,7 +10158,7 @@ fn lift_exprs(es: [Expr], lifted: mut [Func], ctr: mut int, lams: mut [LamInfo],
         i = i + 1
     return out
 
-fn lift_expr(e: Expr, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spawns: mut [SpawnInfo], pars: mut [ParInfo], names: mut [string], types: mut [string], dc: Decls, ctx: Ctx) -> Expr:
+fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx) -> Expr:
     _sl := 0
     match e:
         EInt(t, _el):
@@ -10301,7 +10301,7 @@ fn lift_expr(e: Expr, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             sj := 0
             for sj < len(dc.sigs[si].ptypes):
                 if is_inout(dc.sigs[si].ptypes[sj]):
-                    die("type: cannot spawn a function with mut parameters (no shared state across threads)")
+                    die("type: cannot spawn a function with inout parameters (no shared state across threads)")
                 sj = sj + 1
             sid := len(spawns)
             push(spawns, SpawnInfo(nm, dc.sigs[si].ptypes, dc.sigs[si].ret))
@@ -10361,7 +10361,7 @@ fn pend_init_kind(e: Expr) -> int:
 
 # B-3 probe: the declared name if `s` is an untyped decl with a bare
 # initializer ("" otherwise), with the initializer handed back via `ex`.
-fn pend_probe(s: Stmt, ex: mut Expr) -> string:
+fn pend_probe(s: Stmt, ex: inout Expr) -> string:
     match s:
         SDecl(n, e, _sl):
             if pend_init_kind(e) != 0:
@@ -10531,7 +10531,7 @@ fn pend_seek_expr(dc: Decls, ctx: Ctx, n2: [string], t2: [string], nm: string, e
 # `nm = e` (typeof e), `return nm` (the fn's return type), `place = nm`
 # (typeof place), or a typed argument position (pend_seek_expr). A shadowing
 # redeclaration of `nm` ends the search. Recurses into nested blocks.
-fn pend_seek(dc: Decls, ctx: Ctx, n2: mut [string], t2: mut [string], nm: string, stmts: [Stmt], from: int, fret: string) -> string:
+fn pend_seek(dc: Decls, ctx: Ctx, n2: inout [string], t2: inout [string], nm: string, stmts: [Stmt], from: int, fret: string) -> string:
     i := from
     for i < len(stmts):
         match stmts[i]:
@@ -10702,7 +10702,7 @@ fn pend_seek(dc: Decls, ctx: Ctx, n2: mut [string], t2: mut [string], nm: string
         i = i + 1
     return ""
 
-fn lift_block(stmts: [Stmt], lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spawns: mut [SpawnInfo], pars: mut [ParInfo], names: mut [string], types: mut [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
+fn lift_block(stmts: [Stmt], lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> [Stmt]:
     _el := 0
     _sl := 0
     mark := len(names)                                # block-local decls don't leak to the enclosing scope
@@ -10725,7 +10725,7 @@ fn lift_block(stmts: [Stmt], lifted: mut [Func], ctr: mut int, lams: mut [LamInf
     types = types[0:mark]
     return out
 
-fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spawns: mut [SpawnInfo], pars: mut [ParInfo], names: mut [string], types: mut [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
+fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo], names: inout [string], types: inout [string], dc: Decls, ctx: Ctx, fret: string) -> Stmt:
     _el := 0
     match s:
         SDecl(n, e, _sl):
@@ -10842,7 +10842,7 @@ fn lift_stmt(s: Stmt, lifted: mut [Func], ctr: mut int, lams: mut [LamInfo], spa
             # captures...) -> partial(s); register its spawn site (the driver
             # emits the trampoline) and the ParInfo the site codegen reads.
             # GATE the body first (parity with tychoc's pf_scan_stmt): reject an
-            # early exit, a captured-variable mutation/mut-pass, or a non-reduction
+            # early exit, a captured-variable mutation/inout-pass, or a non-reduction
             # outer update -- a chunk that does any of these silently miscompiles.
             gloc := []string
             push(gloc, v)
@@ -11211,7 +11211,7 @@ fn find_top_colon(s: string) -> int:
 # Stage 3: structurally match a parameter-type PATTERN against a concrete argument
 # type string, binding each "$X". Handles "$T", "[$T]", "{$K:$V}", "Option($T)",
 # "Result($T,$E)" (recursing). 0 on a constructor mismatch or bind conflict.
-fn match_typaram_str(pat: string, concrete: string, bnames: mut [string], btypes: mut [string]) -> bool:
+fn match_typaram_str(pat: string, concrete: string, bnames: inout [string], btypes: inout [string]) -> bool:
     pn := len(pat)
     cn := len(concrete)
     if pn > 0 and pat[0] == 36:                  # "$X" -> bind X = concrete
@@ -11454,7 +11454,7 @@ fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
         return ty == "int" or ty == "float" or ty == "bool" or ty == "str"
     return true
 
-fn mono_instantiate(gt: Func, argtypes: [string], insts: mut [Func], ln: int, dc: Decls, explicit: [string]) -> string:
+fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, dc: Decls, explicit: [string]) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
@@ -11603,7 +11603,7 @@ fn subst_field_type(ty: string, bnames: [string], btypes: [string]) -> string:
 # Intern the concrete instance of generic struct `t` for the bindings
 # (typeparam name -> concrete type); append the new StructDef to `sinsts`,
 # return its mangled name. Mangle matches tychoc (header typeparam order).
-fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: mut [StructDef]) -> string:
+fn instantiate_struct(t: StructDef, bnames: [string], btypes: [string], sinsts: inout [StructDef]) -> string:
     nm := t.name
     iargs := []string
     i := 0
@@ -11642,7 +11642,7 @@ fn find_generic_enum(enums: [EnumDef], name: string) -> int:
 # name -> concrete type); append the new EnumDef to `einsts`, return its mangled
 # name. Variant payloads keep generic-application form (e.g. "Tree(int)") until a
 # later resolve pass; instantiate dedups before substituting, so recursion ends.
-fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut [EnumDef]) -> string:
+fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: inout [EnumDef]) -> string:
     nm := t.name
     iargs := []string                            # concrete type args, in typeparam order (provenance)
     i := 0
@@ -11679,7 +11679,7 @@ fn instantiate_enum(t: EnumDef, bnames: [string], btypes: [string], einsts: mut 
 # match_typaram_str fails. Recover the bindings from the instance's recorded type
 # args, so a recursive enum constructor whose payloads are all self-references
 # (no bare $T to pin T), like `Node(Tree($T), Tree($T))`, still infers T.
-fn recover_enum_binds(pat: string, concrete: string, enums: [EnumDef], einsts: [EnumDef], bnames: mut [string], btypes: mut [string]) -> bool:
+fn recover_enum_binds(pat: string, concrete: string, enums: [EnumDef], einsts: [EnumDef], bnames: inout [string], btypes: inout [string]) -> bool:
     # Descend through container wrappers first: a recursive generic enum whose
     # payload holds the enum inside a container (`Node([Tree($T)])`, `[Tree($T)]`
     # vs `[Tree__int]`) gives match_typaram_str nothing to bind (the inner
@@ -11737,7 +11737,7 @@ fn call_callee(e: Expr) -> string:
 # arg's type as the mangled instance name `Box__int` (not `Box(int)`), which doesn't
 # structurally match `Box($T)`. Find that instance in sinsts and bind $T from its recorded
 # inst_args. Only needed when the typaram has no other (bare/container) binding source.
-fn recover_struct_binds(pat: string, concrete: string, structs: [StructDef], sinsts: [StructDef], bnames: mut [string], btypes: mut [string]) -> bool:
+fn recover_struct_binds(pat: string, concrete: string, structs: [StructDef], sinsts: [StructDef], bnames: inout [string], btypes: inout [string]) -> bool:
     pp := find(pat, "(")
     if pp <= 0 or pat[len(pat) - 1] != 41:       # ')'
         return false
@@ -11782,7 +11782,7 @@ fn split_type_args(s: string) -> [string]:
 # "Box__int", interning the concrete StructDef). Recurses into parametric args
 # ("Option(Box(int))" -> "Option(Box__int)"). Scalars/bare names, arrays, maps,
 # tuples and fn-types pass through (their inner generic structs are Stage 3).
-fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: mut [StructDef], einsts: mut [EnumDef]) -> string:
+fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: inout [StructDef], einsts: inout [EnumDef]) -> string:
     n := len(ty)
     if n == 0:
         return ty
@@ -11831,7 +11831,7 @@ fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: mut
 # Collect the struct names a field type embeds BY VALUE (so they must be emitted
 # first). Names inside `[...]` (arrays/maps) are held by pointer -> not a by-value
 # dep; names inside `(...)` (Option/Result/tuple) are by value -> a dep.
-fn struct_byval_deps(ty: string, isstruct: [string], out: mut [string]):
+fn struct_byval_deps(ty: string, isstruct: [string], out: inout [string]):
     i := 0
     bdepth := 0
     n := len(ty)
@@ -11904,7 +11904,7 @@ fn ufcs_gen_matches(gt: Func, rty: string) -> bool:
     bt := []string
     return match_typaram_str(gt.ptypes[0], rty, &bn, &bt)
 
-fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> [Expr]:
+fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> [Expr]:
     out := []Expr
     i := 0
     for i < len(es):
@@ -11912,7 +11912,7 @@ fn mono_exprs(es: [Expr], names: [string], types: [string], gens: [Func], insts:
         i = i + 1
     return out
 
-fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> Expr:
+fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> Expr:
     match e:
         EInt(s, el):
             return e
@@ -12071,7 +12071,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: mut
         ESpawn(id, nm, a, el):
             return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
 
-fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> Stmt:
+fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> Stmt:
     match s:
         SDecl(nm, rhs, ln):
             mr := mono_expr(rhs, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
@@ -12186,7 +12186,7 @@ fn mono_stmt(s: Stmt, names: mut [string], types: mut [string], gens: [Func], in
             push(types, rty)
             return SValDecl(nm, rty, mcc, ln)
 
-fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: mut [Func], sinsts: mut [StructDef], einsts: mut [EnumDef], dc: Decls, ctx: Ctx) -> [Stmt]:
+fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> [Stmt]:
     nm := names                                   # by-value copy -> a block's decls don't leak to the caller (scope)
     ty := types
     out := []Stmt
@@ -12337,7 +12337,7 @@ fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
 # stamped + lifted `__lam<id>` funcs appended, and fills `lams` (one per lambda)
 # for env-struct + thunk emission. `dc` carries the ORIGINAL function sigs (built
 # before the lift) so capture-type lookups resolve; rebuilt afterwards by main.
-fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: mut [LamInfo], spawns: mut [SpawnInfo], pars: mut [ParInfo]) -> Program:
+fn lift_program(prog: Program, dc: Decls, ctx: Ctx, lams: inout [LamInfo], spawns: inout [SpawnInfo], pars: inout [ParInfo]) -> Program:
     lifted := []Func
     ctr := 0
     nfuncs := []Func

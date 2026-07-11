@@ -22,11 +22,11 @@ don't mix the two within one line's indentation), every block header ends with `
 starts a comment — like Python's layout.
 
 By default a parameter is a **copy** (or, for the heap aggregates, a read-only **borrow**). An
-`mut` parameter is mutated in place: the callee writes back into the caller's variable, marked
+`inout` parameter is mutated in place: the callee writes back into the caller's variable, marked
 with `&` at the call site.
 
 ```
-fn incr(n: mut int):
+fn incr(n: inout int):
     n = n + 1
 
 fn main():
@@ -35,10 +35,10 @@ fn main():
 ```
 
 This is copy-in/copy-out (equivalent to `x = incr(x)`), so it preserves value semantics: the
-`&` argument must name a mutable variable, and the same variable cannot be passed to two `mut`
-parameters of one call (that would be overlapping mutable access). `mut` covers `int`, `bool`,
+`&` argument must name a mutable variable, and the same variable cannot be passed to two `inout`
+parameters of one call (that would be overlapping mutable access). `inout` covers `int`, `bool`,
 value structs, and the heap aggregates (`[int]`, `[string]`, heap-bearing structs, maps) —
-including `push`/growth and element/field mutation through the borrow. `mut string` works too:
+including `push`/growth and element/field mutation through the borrow. `inout string` works too:
 the string stays immutable, but reassignment through the borrow (`s = s + "."`) reaches the
 caller, with the new bytes built in the caller's arena.
 

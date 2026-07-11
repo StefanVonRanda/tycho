@@ -97,21 +97,21 @@ still returns `char*`, but a `NULL` surfaces as `None` and any other pointer as
 getters. (Only `Option(string)` is supported at the boundary, not arbitrary
 `Option(T)`.)
 
-**Out-parameter constructors (`mut` params).** Many C APIs return a status and
+**Out-parameter constructors (`inout` params).** Many C APIs return a status and
 write their real result through a pointer out-parameter — `int sqlite3_open(const
-char *path, sqlite3 **db)`. Declare the out-parameter `mut` and the transpiler passes
+char *path, sqlite3 **db)`. Declare the out-parameter `inout` and the transpiler passes
 the address of your local automatically; no hand-written shim:
 
 ```
-extern "sqlite3" fn sqlite3_open(path: string, db: mut ptr) -> int
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 
 db := null
 rc := sqlite3_open("app.db", &db)     # the compiler emits sqlite3_open(path, &db)
 ```
 
-A `mut` extern parameter is declared to C as a pointer to its type (`ptr → void**`,
+A `inout` extern parameter is declared to C as a pointer to its type (`ptr → void**`,
 `int → long*`, etc.), so the C function fills it in place and Tycho reads it back by
-value. Only `int`/`char`/`float`/`bool`/`ptr` may be `mut` — a `mut string` would be
+value. Only `int`/`char`/`float`/`bool`/`ptr` may be `inout` — a `inout string` would be
 a `char**` handing Tycho a raw pointer with no length header, and `bytes`/handles/
 composites have no trivial pointer-to-self ABI, so all are rejected (use `--shim`).
 

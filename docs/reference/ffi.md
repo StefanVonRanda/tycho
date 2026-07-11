@@ -36,7 +36,7 @@ Here's what can cross:
   and `is_null(p)` work on it.
 - **typed `handle`s** — `handle Name: free: c_fn` declares a `void*` whose C destructor runs
   automatically at scope exit (RAII), so a foreign resource won't leak or get used after close.
-- **`mut` scalar / string out-parameters** — cross too.
+- **`inout` scalar / string out-parameters** — cross too.
 
 Composite aggregates (arrays, maps, structs) are **rejected** at the boundary — fail closed.
 

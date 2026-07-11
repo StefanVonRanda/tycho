@@ -390,7 +390,7 @@ handing the predicate mechanism to users.
 
 ### 2.3 FFI improvements — most of the win is 1.1, the rest hits the non-goals [partially reopens]
 **State today:** `extern` over scalars/string/bytes/opaque `ptr`/typed handles,
-nullable `Option(string)` returns, `mut` out-params (STATUS "FFI"). Declared
+nullable `Option(string)` returns, `inout` out-params (STATUS "FFI"). Declared
 non-goals: variadics, callbacks-into-Tycho, struct-by-value, auto-bindgen.
 
 **What improves FFI without touching any non-goal:**
@@ -432,7 +432,7 @@ the project's own honest-limits culture (thesis §5).
 
 | Item | Verdict | Reason |
 |---|---|---|
-| **Shared-mutable / graph references** (observer graphs, ref-cyclic structs, stored aliases) | **No — defining boundary** | This *is* what value semantics forbids by construction (thesis §5). `mut` already covers the reachable part (call-scoped exclusive borrow). Storable aliasing would make it a different language. Graphs → index pools. |
+| **Shared-mutable / graph references** (observer graphs, ref-cyclic structs, stored aliases) | **No — defining boundary** | This *is* what value semantics forbids by construction (thesis §5). `inout` already covers the reachable part (call-scoped exclusive borrow). Storable aliasing would make it a different language. Graphs → index pools. |
 | **Traits / typeclasses** (user-defined constraints) | **No — but note it's the ceiling on 2.2b** | Removes the closed-predicate-set simplicity. The whole generics-constraint story is built on *not* having this. |
 | **GC / refcounting / COW** | **No — thesis-defining** | The entire claim is "no GC, arenas made implicit by value semantics." Adding any of these dissolves the point. |
 | **Hindley-Milner / global inference** | **No** | "Every expression typed at its own site, no unification" is a stated design property (`types.md:112`). Bidirectional local inference is the deliberate choice. |

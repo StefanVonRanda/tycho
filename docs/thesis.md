@@ -182,11 +182,11 @@ of it:
 
 - The real, narrow wall is **shared mutable state threaded through function
   calls** — canonically a memoization table that recursive calls must all
-  write to. The thesis-preserving answer is `mut`: an exclusive,
+  write to. The thesis-preserving answer is `inout`: an exclusive,
   copy-in/copy-out mutable borrow (the Swift/Hylo model — *not* a stored
-  reference). `mut` does not break value semantics: it is equivalent to
+  reference). `inout` does not break value semantics: it is equivalent to
   `x = f(x)`, made safe by an exclusivity rule (the same variable cannot be
-  passed to two `mut` parameters of one call). Heap `mut` — `[int]`,
+  passed to two `inout` parameters of one call). Heap `inout` — `[int]`,
   `[string]`, and heap-bearing structs, including `push`/growth and
   element/field mutation through the borrow — lets the callee share and mutate
   the caller's aggregate in place, so a memo table (or a recursive output
@@ -203,7 +203,7 @@ impossible is *pointer-identity aliasing of two named variables in one scope* �
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference. This is forbidden **by
-construction**, and `mut` deliberately doesn't provide it (it's call-scoped,
+construction**, and `inout` deliberately doesn't provide it (it's call-scoped,
 not storable). That forbiddance is *what value semantics is*. Removing it
 wouldn't extend Tycho; it would make it a different language.
 
@@ -233,7 +233,7 @@ The figures above are measured on the committed compiler. To reproduce:
 ```
 make                                    # build ./tychoc
 ./tychoc examples/accumulate_big.ty     # in-place append, large N
-./tychoc examples/memo.ty               # mut memoized fib(40)
+./tychoc examples/memo.ty               # inout memoized fib(40)
 # (the return-slot A/B -- this compiler vs a pre-return-slot baseline built from an
 #  earlier commit against a regenerated embed header -- is scripted in bench/*/RESULTS.md)
 ```

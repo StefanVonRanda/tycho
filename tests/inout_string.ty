@@ -1,14 +1,14 @@
-# mut string: reassignment through the borrow reaches the caller, and the
+# inout string: reassignment through the borrow reaches the caller, and the
 # new bytes build in the caller's (owner) arena via _ina_, not the callee's
 # scope -- so they survive the call and the caller's loop arenas.
 
-fn shout(s: mut string):
+fn shout(s: inout string):
     s = s + "!"
 
-fn rename(s: mut string, n: string):
+fn rename(s: inout string, n: string):
     s = n
 
-fn grow(s: mut string, n: int):
+fn grow(s: inout string, n: int):
     i := 0
     for i < n:
         s = s + "."

@@ -11,12 +11,12 @@ struct Edge:
     to: int
     w: int
 
-fn hswap(h: mut [(int, int)], a: int, b: int):
+fn hswap(h: inout [(int, int)], a: int, b: int):
     t := h[a]
     h[a] = h[b]
     h[b] = t
 
-fn hpush(h: mut [(int, int)], d: int, node: int):
+fn hpush(h: inout [(int, int)], d: int, node: int):
     push(h, (d, node))
     i := len(h) - 1
     for i > 0:
@@ -26,7 +26,7 @@ fn hpush(h: mut [(int, int)], d: int, node: int):
         hswap(&h, p, i)
         i = p
 
-fn hpop(h: mut [(int, int)]) -> (int, int):
+fn hpop(h: inout [(int, int)]) -> (int, int):
     top := h[0]
     n := len(h) - 1
     h[0] = h[n]

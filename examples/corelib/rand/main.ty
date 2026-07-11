@@ -1,5 +1,5 @@
 # Example: core:rand -- deterministic xorshift32 (NOT cryptographic). tycho has no
-# globals, so the state is an explicit int threaded via mut. Seeded here so the
+# globals, so the state is an explicit int threaded via inout. Seeded here so the
 # output is reproducible; in real use seed from the clock: rand.seed(now()).
 package main
 import "core:rand"

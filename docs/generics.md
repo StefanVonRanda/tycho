@@ -106,7 +106,7 @@ Rules:
   forward, in-order discipline as the rest of type-inference grounding — no
   backtracking.
 - It composes with the existing literal/`[]`/`None` grounding: a bare `[]`
-  argument is grounded *by the parameter's pattern* (`fn push_all(xs: mut [$T],
+  argument is grounded *by the parameter's pattern* (`fn push_all(xs: inout [$T],
   …)` called with `[]` grounds the array from the other arguments, exactly as
   `push` already grounds a pending `[]`).
 - The result type and body are then **substituted** ($T → the bound concrete

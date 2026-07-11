@@ -7,12 +7,12 @@
 # checksum (the cross-language correctness check). N/Q below match the C/Go ports.
 #
 # Bound directly to libsqlite3 with NO hand-written shim: out-param constructors
-# (sqlite3_open/prepare_v2) via `mut ptr` (FFI R4); SQLITE_TRANSIENT = (void*)-1
+# (sqlite3_open/prepare_v2) via `inout ptr` (FFI R4); SQLITE_TRANSIENT = (void*)-1
 # via to_ptr(-1); SQLITE_ROW (100) compared directly; sqlite3_column_int64 for a
 # clean 64-bit read; column_text arena-copied on the string return.
-extern "sqlite3" fn sqlite3_open(path: string, db: mut ptr) -> int
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> int
-extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: mut ptr, tail: ptr) -> int
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: inout ptr, tail: ptr) -> int
 extern "sqlite3" fn sqlite3_bind_int64(st: ptr, i: int, v: int) -> int
 extern "sqlite3" fn sqlite3_bind_text(st: ptr, i: int, s: string, n: int, dtor: ptr) -> int
 extern "sqlite3" fn sqlite3_step(st: ptr) -> int

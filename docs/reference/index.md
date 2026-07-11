@@ -12,7 +12,7 @@ every page compiles on both transpilers and produces the shown output.
 
 | Page | Covers |
 | --- | --- |
-| [Basics](basics.md) | procedures, parameters (`mut`), declarations and assignment, expressions and operators, control flow |
+| [Basics](basics.md) | procedures, parameters (`inout`), declarations and assignment, expressions and operators, control flow |
 | [Types](types.md) | the scalar types, `bytes`, string interpolation, distinct `type` newtypes, bidirectional type inference |
 | [Arrays and slices](arrays-slices.md) | `[T]`, nested arrays, element places, slices `xs[a:b]` |
 | [Structs and tuples](structs-tuples.md) | `struct`, nested and recursive fields, tuples and multiple return values |

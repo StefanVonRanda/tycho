@@ -8,7 +8,7 @@
 A map associates keys with values: `[K: V]`. The key type `K` is `string`, `int`, or a
 hashable composite (see [Keys](#keys)); the value type `V` is *any* type. Like everything
 in Tycho, a map is a value — assigning one deep-copies it, two maps compare entry-wise with
-`==`, and a map crosses a function boundary as a read-only borrow unless taken `mut`.
+`==`, and a map crosses a function boundary as a read-only borrow unless taken `inout`.
 
 ```
 counts := ["ada": 1, "alan": 2]   # a [string: int], typed from the literal
@@ -67,9 +67,9 @@ the value is deep-copied in and out like any other heap value, so a stored array
 is independent of the one you put in. Maps themselves are values too: `b := counts` is a
 deep copy, `==`/`!=` compare entry-wise (`a == b` exactly when `b` is an independent copy of
 `a`), a `[string: int]` parameter is a read-only borrow (mutating it is a compile error —
-copy it first, or take it `mut`), and a returned map is promoted into the caller's arena. An
-`mut [string: int]` lets a callee share and mutate the caller's map in place — a counter
-threaded through calls — exactly like a `mut` array.
+copy it first, or take it `inout`), and a returned map is promoted into the caller's arena. An
+`inout [string: int]` lets a callee share and mutate the caller's map in place — a counter
+threaded through calls — exactly like a `inout` array.
 
 ## Keys
 

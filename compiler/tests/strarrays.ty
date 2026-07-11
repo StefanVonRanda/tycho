@@ -1,9 +1,9 @@
-# Recursive output collector: a [string] threaded through `mut` accumulates
+# Recursive output collector: a [string] threaded through `inout` accumulates
 # across call frames. The buffer regrows in the *caller's* arena (carried as
 # _ina_out), so every push survives the nested return — past Wall #3's
 # shared-mutable-output case.
 
-fn collect(out: mut [string], n: int):
+fn collect(out: inout [string], n: int):
     if n == 0:
         return
     push(out, "item-" + str(n))

@@ -8,7 +8,7 @@ cannot do in Tycho's arena model; the findings refine the research note.
 
 ## What was built
 
-Syntax mirrors `mut` (convention after the colon): `x: sink T`.
+Syntax mirrors `inout` (convention after the colon): `x: sink T`.
 
 ```
 fn scale2(xs: sink [int]) -> int:   # xs is OWNED and MUTABLE (a borrow is read-only)
@@ -93,7 +93,7 @@ x := dbl(keep)       // keep is dead -> adopted; b untouched
 print(b[0])          // 5
 ```
 
-The rule excludes **borrowed/mut parameters** (they can never move, so they always copy — an
+The rule excludes **borrowed/inout parameters** (they can never move, so they always copy — an
 error would offer no escape) and field/index arguments (you can't move a part out of a value).
 A `sink` parameter *is* owned, so reusing one after handing it on errors like a local would.
 Reject golden: `tests/reject/sink_use_after.ty` (both compilers reject); the escape hatch is
@@ -114,7 +114,7 @@ Closing the tychoc0 side took three parts, the third being a latent bug the firs
 exposed:
 
 1. the UFCS matcher (`recv_matches`) strips the `~` marker so a `sink` first parameter
-   matches the receiver type (`mut` is deliberately *not* relaxed — a `mut` receiver would
+   matches the receiver type (`inout` is deliberately *not* relaxed — a `inout` receiver would
    need `&`, which the desugar doesn't insert);
 2. the UFCS call routes its arguments through `gen_call_args_sink` (adopt-or-copy);
 3. a **move-on-last-use bug** the first two surfaced: `recv.method()` parses as a

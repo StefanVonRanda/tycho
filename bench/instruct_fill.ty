@@ -1,13 +1,13 @@
-# mut STRUCT field-container threading: a callee pushes into an `mut Bag`'s
+# inout STRUCT field-container threading: a callee pushes into an `inout Bag`'s
 # array FIELD, where the Bag lives in the caller's per-iteration block arena.
 # With the struct's home arena threaded (the hidden _ina_ param, extended from
 # arrays/maps/soa to heap structs), the grown field buffer frees per iteration
-# -> O(1). Before, owner_arena_of(mut struct)=0, so push grew it via malloc
+# -> O(1). Before, owner_arena_of(inout struct)=0, so push grew it via malloc
 # (immortal) and leaked every iteration -> O(n). Asserts constant RSS.
 struct Bag:
     items: [int]
 
-fn fill(b: mut Bag, n: int):
+fn fill(b: inout Bag, n: int):
     for i in range(n):
         push(b.items, i)
 

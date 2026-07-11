@@ -52,8 +52,8 @@ in a debugger:
 - **Every function takes a hidden first argument `Arena *_parent`** — the arena
   that owns its return value. You'll see it on every frame; ignore it unless
   you're debugging allocation.
-- **`mut` parameters are passed by pointer.** A `mut int x` is a `long *h_x` in
-  C; print `*h_x`, not `h_x`. A heap `mut` also carries an `Arena *_ina_x`
+- **`inout` parameters are passed by pointer.** A `inout int x` is a `long *h_x` in
+  C; print `*h_x`, not `h_x`. A heap `inout` also carries an `Arena *_ina_x`
   just before it.
 - **Locals are prefixed `h_`** (`h_x` for Tycho `x`) to avoid clashing with C
   keywords and runtime symbols.

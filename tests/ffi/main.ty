@@ -10,8 +10,8 @@ extern "ffidemo" fn ffi_read(h: ptr) -> int
 extern "ffidemo" fn ffi_bsum(b: bytes) -> int            # bytes param -> (ptr,len), int return
 extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the out-param shim
 extern "ffidemo" fn ffi_get(key: int) -> Option(string)  # FFI R3a: nullable string return (C NULL -> None)
-extern "ffidemo" fn ffi_mk(id: int, out: mut ptr) -> int # FFI R4: out-param constructor (compiler passes &db)
-extern "ffidemo" fn ffi_dbl(a: int, out: mut int)        # FFI R4: scalar out-param
+extern "ffidemo" fn ffi_mk(id: int, out: inout ptr) -> int # FFI R4: out-param constructor (compiler passes &db)
+extern "ffidemo" fn ffi_dbl(a: int, out: inout int)        # FFI R4: scalar out-param
 extern "ffidemo" fn ffi_neg() -> int                     # returns a negative 32-bit C int (to_i32 recovers the sign)
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
 

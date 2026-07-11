@@ -29,17 +29,17 @@
 #                             array's block arena). Before the option-element fix
 #                             the boxes were malloc'd (owner 0) and leaked (~62 MB
 #                             at this N under tychoc0); bound 32 MB.
-#   inout_fill    peak RSS  — a callee pushes into an `mut [int]` whose array
+#   inout_fill    peak RSS  — a callee pushes into an `inout [int]` whose array
 #                             lives in the caller's per-iteration block arena; with
 #                             the home arena threaded (the _ina_ param), the grown
 #                             buffer frees each iteration. Before the threading,
-#                             owner_arena_of(mut)=0 grew it via malloc and leaked
+#                             owner_arena_of(inout)=0 grew it via malloc and leaked
 #                             (~798 MB at this N under tychoc0); bound 32 MB.
 #   loop_scratch  peak RSS  — loop scratch arena resets, so memory is constant
 #                             over 5M iterations (bound 32 MB).
 #   map_accum     peak RSS  — map accumulator reuses its table (pure deep-copy
 #                             per insert would be O(n^2); bound 64 MB).
-#   memo          wall time — mut memo keeps fib O(n); an exponential
+#   memo          wall time — inout memo keeps fib O(n); an exponential
 #                             regression blows the bound (instant vs seconds;
 #                             bound 1000 ms).
 #   transient     peak RSS  — a heap value folded into a scalar accumulator

@@ -9,7 +9,7 @@ struct Trie:
     kids: [int: Trie]          # child keyed by the next byte; recursive via a (heap) map
     word: bool
 
-fn insert(t: mut Trie, s: string, i: int):
+fn insert(t: inout Trie, s: string, i: int):
     if i >= len(s):
         t.word = true
         return

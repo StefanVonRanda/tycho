@@ -64,8 +64,8 @@ fn blank(w: int, h: int) -> [int]:
         push(cells, 0)
     return cells
 
-# stamp patterns into a flat cell array (mut) at row r, col c
-fn set_glider(cells: mut [int], w: int, r: int, c: int):
+# stamp patterns into a flat cell array (inout) at row r, col c
+fn set_glider(cells: inout [int], w: int, r: int, c: int):
     cells[r * w + c + 1] = 1
     cells[(r + 1) * w + c + 2] = 1
     cells[(r + 2) * w + c] = 1
@@ -73,7 +73,7 @@ fn set_glider(cells: mut [int], w: int, r: int, c: int):
     cells[(r + 2) * w + c + 2] = 1
 
 # the R-pentomino: a tiny pattern that churns chaotically for ~1100 generations
-fn set_rpentomino(cells: mut [int], w: int, r: int, c: int):
+fn set_rpentomino(cells: inout [int], w: int, r: int, c: int):
     cells[r * w + c + 1] = 1
     cells[r * w + c + 2] = 1
     cells[(r + 1) * w + c] = 1

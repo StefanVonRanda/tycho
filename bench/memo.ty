@@ -1,7 +1,7 @@
-# mut memoization: one [int] memo shared by reference through every recursive
-# call, so fib is O(n) not O(2^n). If mut sharing regressed (each call copied
+# inout memoization: one [int] memo shared by reference through every recursive
+# call, so fib is O(n) not O(2^n). If inout sharing regressed (each call copied
 # the array), fib(45) would go exponential and blow the time bound.
-fn fib(n: int, memo: mut [int]) -> int:
+fn fib(n: int, memo: inout [int]) -> int:
     if n < 2:
         return n
     if memo[n] > 0:

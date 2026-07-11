@@ -82,7 +82,7 @@ test-update: tychoc
 	@RECORD=1 sh tests/run.sh
 
 # Performance guard: assert the thesis's optimizations still hold (peak RSS
-# stays linear, the mut memo stays O(n)). See bench/run.sh.
+# stays linear, the inout memo stays O(n)). See bench/run.sh.
 bench: tychoc
 	@sh bench/run.sh
 
@@ -102,7 +102,7 @@ bench-dbquery: tychoc
 bench-conc: tychoc
 	@sh bench/conc/run.sh
 
-# Parallel text indexer dogfood (channel fan-out -> worker maps -> mut merge)
+# Parallel text indexer dogfood (channel fan-out -> worker maps -> inout merge)
 # vs C/Go over an identical synthetic corpus. See bench/indexer/RESULTS.md.
 bench-indexer: tychoc
 	@sh bench/indexer/run.sh

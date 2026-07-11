@@ -1,4 +1,4 @@
-# Mutable context object: a heap struct passed by `mut` so callees mutate
+# Mutable context object: a heap struct passed by `inout` so callees mutate
 # shared state in place. The string field-set and the [int] field-push both
 # copy/regrow into the struct's owning arena (carried as _ina_ctx). A value
 # snapshot taken before the call stays isolated (deep-copy semantics).
@@ -7,7 +7,7 @@ struct Ctx:
     label: string
     log: [int]
 
-fn step(ctx: mut Ctx, name: string, code: int):
+fn step(ctx: inout Ctx, name: string, code: int):
     ctx.label = name
     push(ctx.log, code)
 

@@ -41,7 +41,7 @@ composite-key runtime is that scheme with:
 | key copied by value       | key **deep-copied** in (like composite values) |
 | `keys()` returns longs    | `keys()` returns K, deep-copied out        |
 
-Value side (`put`/`get`/`in`/`delete`/`len`/`==`/`mut`) is unchanged from the
+Value side (`put`/`get`/`in`/`delete`/`len`/`==`/`inout`) is unchanged from the
 existing composite-value machinery.
 
 ## The one new function: a generated deep-hash

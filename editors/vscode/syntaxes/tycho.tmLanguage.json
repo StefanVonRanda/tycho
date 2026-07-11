@@ -34,7 +34,7 @@
       }
     },
     { "name": "keyword.control.tycho", "match": "\\b(if|elif|else|for|while|in|match|select|parallel|spawn|return|break|continue|or_return)\\b" },
-    { "name": "keyword.other.tycho", "match": "\\b(fn|struct|enum|type|import|package|extern|mut|soa)\\b" },
+    { "name": "keyword.other.tycho", "match": "\\b(fn|struct|enum|type|import|package|extern|inout|soa)\\b" },
     { "name": "keyword.operator.word.tycho", "match": "\\b(and|or|not)\\b" },
     { "name": "constant.language.tycho", "match": "\\b(true|false|null)\\b" },
     { "name": "storage.type.tycho", "match": "\\b(int|float|string|bool|char|ptr|void)\\b" },

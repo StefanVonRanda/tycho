@@ -12,7 +12,7 @@ fn sumx(ps: [P]) -> int:
         t = t + ps[i].x
     return t
 
-fn addp(ps: mut [P], p: P):
+fn addp(ps: inout [P], p: P):
     push(ps, p)
 
 fn make_row(n: int) -> [int]:

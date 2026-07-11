@@ -1,7 +1,7 @@
 # Dogfooding tycho's FFI on a real C library: SQLite, in-memory -- with NO
 # hand-written shim. Every binding is a direct `extern` to a libsqlite3 symbol:
 #   - sqlite3_open / sqlite3_prepare_v2 are out-param constructors: the handle is
-#     written through a `mut ptr` (FFI R4), so the compiler passes &db / &st for us.
+#     written through a `inout ptr` (FFI R4), so the compiler passes &db / &st for us.
 #   - sqlite3_exec's trailing callback/arg/errmsg are passed as `null`.
 #   - sqlite3_step returns SQLITE_ROW (100) / SQLITE_DONE (101); we compare directly.
 #   - sqlite3_column_text returns a C string valid only until the next step; tycho
@@ -12,9 +12,9 @@
 # Result codes are all non-negative, so reading C `int` returns as tycho's 64-bit
 # int is correct on a mainstream ABI (a C API returning negative ints would still
 # want a `long` shim). Build:  tychoc demo.ty -o demo --pkg sqlite3   (no --shim)
-extern "sqlite3" fn sqlite3_open(path: string, db: mut ptr) -> int
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> int
-extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: mut ptr, tail: ptr) -> int
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: inout ptr, tail: ptr) -> int
 extern "sqlite3" fn sqlite3_step(st: ptr) -> int
 extern "sqlite3" fn sqlite3_column_int64(st: ptr, i: int) -> int
 extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string

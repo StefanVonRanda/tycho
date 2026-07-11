@@ -3,7 +3,7 @@
 # Wraps the clock() (monotonic nanoseconds) and now() (UNIX seconds) builtins
 # with a stopwatch and unit conversions. tycho has no globals, but a monotonic
 # reading is just an int the caller holds -- so the stopwatch is value-semantic,
-# no mut needed (unlike core:rand's mutable state):
+# no inout needed (unlike core:rand's mutable state):
 #
 #     sw := time.start()
 #     # ... work ...

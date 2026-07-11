@@ -50,7 +50,7 @@ element's slot in the backing buffer, bounds-checked, with no pointer ever expos
 ps[0].x = 10                       # a field of an element
 push(ps[0].tags, "extra")          # grow an element's array field in place
 grid[1][2] = 60                    # a nested-array element
-bump(&ps[1].x)                     # an element field as a `mut` argument
+bump(&ps[1].x)                     # an element field as a `inout` argument
 ```
 
 Value semantics still holds: after `qs := ps`, mutating `ps[0].x` leaves `qs` untouched —
@@ -61,7 +61,7 @@ cannot project through a read-only borrowed parameter.
 
 An array parameter is a **read-only borrow** — passed without a copy, but you may only read
 it. Mutating a borrowed array (a `push` or an index-set) is a compile error; copy it first
-(`b := a`) if you want a mutable local, or take the parameter `mut`. A returned array is
+(`b := a`) if you want a mutable local, or take the parameter `inout`. A returned array is
 promoted into the caller's arena, so it never dangles.
 
 ```
@@ -97,7 +97,7 @@ it somewhere, it deep-copies into an owning array, so value semantics still hold
 `xs` afterward never touches the stored copy. That keeps the view non-storable — it can
 never outlive or alias the buffer it came from — without any borrow checker. Slices work on
 every array type and compose (`xs[1:5][1:3]`). One rule to remember: you cannot pass a slice
-of `xs` and a `mut` of `xs` to the same call, since the `mut` could reallocate the viewed buffer.
+of `xs` and a `inout` of `xs` to the same call, since the `inout` could reallocate the viewed buffer.
 A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — but unlike
 an array view it **always copies** into a fresh substring (there is no zero-copy string view);
 [`substr(s, a, b)`](builtins.md) is the equivalent function form.

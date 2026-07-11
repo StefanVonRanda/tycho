@@ -41,7 +41,7 @@ Brandon's analysis names the design axis cleanly. To stop `let ys = xs` from ali
 - immutable value parameters are passed as **borrows, not copies** (`src/tychoc.c:3216`
   "parameters are immutable borrows"; the read-only error at `:4108`) — this is Hylo's
   `let`;
-- `mut` parameters are exclusive in-place mutation — Hylo's `inout`;
+- `inout` parameters are exclusive in-place mutation — Hylo's `inout`;
 - **move-on-last-use** elides the copy when a source is dead after the move;
 - `match`/`for` bindings borrow rather than copy when not mutated;
 - map/array places (`&m[k]`) yield a slot lvalue rather than a copy.

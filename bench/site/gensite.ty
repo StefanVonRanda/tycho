@@ -22,7 +22,7 @@ fn word(n: int) -> string:                 # base-26 [a-z], deterministic
         m = m / 26
     return s
 
-fn words(state: mut int, k: int) -> string:
+fn words(state: inout int, k: int) -> string:
     s := ""
     for i in range(k):
         state = (state * 1103515245 + 12345) % 2147483648

@@ -1,5 +1,5 @@
 # Minesweeper in Tycho — dogfooding RECURSION over a mutable grid (the flood-fill
-# reveal). reveal() recurses with an `mut Game`; if tycho copied the struct per
+# reveal). reveal() recurses with an `inout Game`; if tycho copied the struct per
 # call instead of threading it, the flood wouldn't propagate — so the demo's
 # flood frame is the real test. Cursor UI reuses Snake's termios raw-input shim.
 #
@@ -26,7 +26,7 @@ struct Game:
 fn xnext(s: int) -> int:               # LCG, fits 63 bits, no overflow/mask needed
     return (s * 1103515245 + 12345) % 2147483648
 
-fn place_mines(g: mut Game):
+fn place_mines(g: inout Game):
     r := g.rng
     placed := 0
     for tries in range(0, 1000000):
@@ -39,7 +39,7 @@ fn place_mines(g: mut Game):
             placed = placed + 1
     g.rng = r
 
-fn compute_counts(g: mut Game):
+fn compute_counts(g: inout Game):
     for y in range(0, g.h):
         for x in range(0, g.w):
             c := 0
@@ -68,8 +68,8 @@ fn new_game(w: int, h: int, nmines: int, seed: int) -> Game:
     return g
 
 # the flood fill: reveal (x,y); if it has no adjacent mines, recurse into all 8
-# neighbours. Recurses with a mut Game — the dogfood's recursion stress.
-fn reveal(g: mut Game, x: int, y: int):
+# neighbours. Recurses with a inout Game — the dogfood's recursion stress.
+fn reveal(g: inout Game, x: int, y: int):
     if x < 0 or x >= g.w or y < 0 or y >= g.h:
         return
     idx := y * g.w + x
@@ -85,7 +85,7 @@ fn reveal(g: mut Game, x: int, y: int):
                 if not (dx == 0 and dy == 0):
                     reveal(&g, x + dx, y + dy)
 
-fn check_win(g: mut Game):
+fn check_win(g: inout Game):
     if g.state != 0:
         return
     hidden_safe := 0
@@ -95,11 +95,11 @@ fn check_win(g: mut Game):
     if hidden_safe == 0:
         g.state = 1
 
-fn play_reveal(g: mut Game, x: int, y: int):
+fn play_reveal(g: inout Game, x: int, y: int):
     reveal(&g, x, y)
     check_win(&g)
 
-fn toggle_flag(g: mut Game, x: int, y: int):
+fn toggle_flag(g: inout Game, x: int, y: int):
     idx := y * g.w + x
     if g.shown[idx] == 0:
         if g.flag[idx] == 1:
