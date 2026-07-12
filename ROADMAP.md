@@ -171,9 +171,25 @@ libc-only FFI shim (`popen`/`system`, no external dep) exposing `os.system(cmd)
 read-loop lives in `os_shim.c` (checked allocations, fail-closed, Windows-guarded)
 so Tycho only sees the finished string; locked by `corelib/test/os` (all three
 compile paths agree + golden), ASan/UBSan-clean over the buffer-growth and
-alloc/free paths. Still open and genuinely missing: TCP/UDP sockets, TLS,
-compression (gzip/zlib), image decode/encode (PNG, JPEG), bignum/decimal,
-datetime timezones — each demand-gated.
+alloc/free paths.
+
+**Shipped 2026-07-12** (each: both compilers agree, golden, ASan/UBSan-clean):
+- **TCP/UDP sockets — `core:net`.** A libc-only socket shim: `listen`/`accept`/
+  `connect`/`port_of`/`write`/`read`/`close_fd` and `udp_bind`/`udp_send`/
+  `udp_read`, fds as `int` (negative = failure), binary-safe `bytes` payloads.
+- **compression (gzip) — `core:compress`.** gzip compress/decompress over zlib (a
+  `deps` pkg-config module; the test skips where zlib is absent — the `http`
+  precedent). `bytes -> bytes`, fail-closed on corrupt/truncated input.
+- **bignum — `core:bignum`.** Arbitrary-precision integers in pure Tycho (base-10^9
+  limbs, value-semantic): `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/
+  `divmod`/`div`/`mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`. (A *decimal* type is not
+  built.)
+- **datetime timezones — `core:datetime`.** Pure FIXED offsets (`from_unix_at`,
+  `to_unix_at`, `format_iso_tz`) plus DST-aware SYSTEM/zone offsets via a libc shim
+  (`local_offset`, `offset_at`, `now_local`). No IANA tz database.
+
+Still open and genuinely missing: **TLS**, **image decode/encode (PNG, JPEG)**, and
+a **decimal** type — each demand-gated.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
