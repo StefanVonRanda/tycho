@@ -1,0 +1,228 @@
+# corelib: arbitrary-precision integers (bignum). Import with `import "core:bignum"`.
+#
+# Pure Tycho -- no FFI, no floats. A Big is a sign plus a little-endian array of
+# base-10^9 limbs (each 0..10^9-1), normalized so the top limb is non-zero and the
+# empty limb array is the sole representation of zero. Value semantics carries the
+# whole story: a Big OWNS its limb array, `b := a` deep-copies it, and every op
+# returns a fresh Big -- no aliasing, all arena-managed. That is the thesis, applied
+# to a data structure that genuinely grows on the heap.
+#
+# Base 10^9 is chosen so the carry-propagating multiply cannot overflow signed
+# 64-bit: one step is r[k] (<10^9) + a[i]*b[j] (<10^18) + carry (<10^9) which is
+# ~1.0e18, well under 9.2e18. It also makes decimal I/O a per-limb print.
+package bignum
+
+struct Big:
+    sign: int                  # -1, 0, +1  (0 iff the value is zero)
+    limbs: [int]               # base-10^9, little-endian, normalized (top limb != 0; empty iff zero)
+
+# Base and limb width as nullary functions rather than `const`: a module-level
+# `const` is (as of this writing) not visible inside the functions of an IMPORTED
+# package -- it resolves only in `package main`. A nullary fn works cross-package.
+# base() = 10^9 (one limb); width() = its 9 decimal digits.
+fn base() -> int:
+    return 1000000000
+fn width() -> int:
+    return 9
+
+fn zero() -> Big:
+    return Big(0, []int)
+
+# ---- limb-magnitude helpers (sign ignored; inputs are normalized) ----------
+
+# Drop trailing (high) zero limbs. Parameters are read-only borrows, so copy first.
+fn strip(r: [int]) -> [int]:
+    y := r
+    for len(y) > 0 and y[len(y) - 1] == 0:
+        pop(y)
+    return y
+
+# Compare two normalized magnitudes: -1 (x<y) / 0 / 1 (x>y).
+fn mag_cmp(x: [int], y: [int]) -> int:
+    if len(x) != len(y):
+        if len(x) < len(y):
+            return -1
+        return 1
+    i := len(x) - 1
+    for i >= 0:
+        if x[i] != y[i]:
+            if x[i] < y[i]:
+                return -1
+            return 1
+        i = i - 1
+    return 0
+
+fn mag_add(x: [int], y: [int]) -> [int]:
+    r := []int
+    carry := 0
+    n := len(x)
+    if len(y) > n:
+        n = len(y)
+    i := 0
+    for i < n:
+        s := carry
+        if i < len(x):
+            s = s + x[i]
+        if i < len(y):
+            s = s + y[i]
+        push(r, s % base())
+        carry = s / base()
+        i = i + 1
+    if carry > 0:
+        push(r, carry)
+    return r
+
+# x - y, requires x >= y (caller checks via mag_cmp). Result is stripped.
+fn mag_sub(x: [int], y: [int]) -> [int]:
+    r := []int
+    borrow := 0
+    i := 0
+    for i < len(x):
+        d := x[i] - borrow
+        if i < len(y):
+            d = d - y[i]
+        if d < 0:
+            d = d + base()
+            borrow = 1
+        else:
+            borrow = 0
+        push(r, d)
+        i = i + 1
+    return strip(r)
+
+fn mag_mul(x: [int], y: [int]) -> [int]:
+    if len(x) == 0 or len(y) == 0:
+        return []int
+    r := []int
+    i := 0
+    for i < len(x) + len(y):        # zero-init the product buffer
+        push(r, 0)
+        i = i + 1
+    i = 0
+    for i < len(x):
+        carry := 0
+        j := 0
+        for j < len(y):
+            cur := r[i + j] + x[i] * y[j] + carry   # < 1.0e18, no overflow (see header)
+            r[i + j] = cur % base()
+            carry = cur / base()
+            j = j + 1
+        r[i + len(y)] = r[i + len(y)] + carry
+        i = i + 1
+    return strip(r)
+
+# ---- construction ----------------------------------------------------------
+
+# NB: INT_MIN is not representable (0 - INT_MIN overflows); callers pass in-range ints.
+fn from_int(n: int) -> Big:
+    if n == 0:
+        return zero()
+    sg := 1
+    m := n
+    if n < 0:
+        sg = -1
+        m = 0 - n
+    ls := []int
+    for m > 0:
+        push(ls, m % base())
+        m = m / base()
+    return Big(sg, ls)
+
+# Parse a decimal string: optional '-'/'+', then digits. Non-digits after the sign
+# end the number (lenient); empty / sign-only / all-zero parse as zero.
+fn from_str(s: string) -> Big:
+    n := len(s)
+    i := 0
+    sg := 1
+    if n > 0 and s[0] == 45:            # '-'
+        sg = -1
+        i = 1
+    if n > 0 and s[0] == 43:            # '+'
+        i = 1
+    end := i
+    for end < n and s[end] >= 48 and s[end] <= 57:   # consume the digit run
+        end = end + 1
+    ls := []int
+    hi := end
+    for hi > i:                          # build limbs from the RIGHT, width() digits each
+        lo := hi - width()
+        if lo < i:
+            lo = i
+        v := 0
+        k := lo
+        for k < hi:
+            v = v * 10 + (s[k] - 48)
+            k = k + 1
+        push(ls, v)
+        hi = lo
+    ls = strip(ls)
+    if len(ls) == 0:
+        return zero()
+    return Big(sg, ls)
+
+# ---- signed operations -----------------------------------------------------
+
+fn is_zero(a: Big) -> bool:
+    return a.sign == 0
+
+fn neg(a: Big) -> Big:
+    if a.sign == 0:
+        return a
+    return Big(0 - a.sign, a.limbs)      # value semantics deep-copies limbs on return
+
+# Total order by value: -1 / 0 / 1.
+fn cmp(a: Big, b: Big) -> int:
+    if a.sign != b.sign:
+        if a.sign < b.sign:
+            return -1
+        return 1
+    if a.sign == 0:
+        return 0
+    m := mag_cmp(a.limbs, b.limbs)
+    if a.sign < 0:                        # both negative: larger magnitude = smaller value
+        return 0 - m
+    return m
+
+fn add(a: Big, b: Big) -> Big:
+    if a.sign == 0:
+        return b
+    if b.sign == 0:
+        return a
+    if a.sign == b.sign:
+        return Big(a.sign, mag_add(a.limbs, b.limbs))
+    m := mag_cmp(a.limbs, b.limbs)        # opposite signs -> subtract the smaller magnitude
+    if m == 0:
+        return zero()
+    if m > 0:
+        return Big(a.sign, mag_sub(a.limbs, b.limbs))
+    return Big(b.sign, mag_sub(b.limbs, a.limbs))
+
+fn sub(a: Big, b: Big) -> Big:
+    return add(a, neg(b))
+
+fn mul(a: Big, b: Big) -> Big:
+    if a.sign == 0 or b.sign == 0:
+        return zero()
+    return Big(a.sign * b.sign, mag_mul(a.limbs, b.limbs))
+
+# ---- formatting ------------------------------------------------------------
+
+fn pad_limb(v: int) -> string:            # zero-pad a non-top limb to width() digits
+    s := str(v)
+    for len(s) < width():
+        s = "0" + s
+    return s
+
+fn to_str(a: Big) -> string:
+    if a.sign == 0:
+        return "0"
+    out := ""
+    if a.sign < 0:
+        out = "-"
+    n := len(a.limbs)
+    out = out + str(a.limbs[n - 1])       # top limb: no leading-zero padding
+    i := n - 2
+    for i >= 0:
+        out = out + pad_limb(a.limbs[i])
+        i = i - 1
+    return out
