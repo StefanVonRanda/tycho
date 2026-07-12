@@ -1,0 +1,53 @@
+# corelib test: exercises core:net entirely over the loopback interface, inside
+# this one process -- no external network and no fixed port (the listener binds
+# port 0, so the kernel picks an unused ephemeral port), so the run is hermetic
+# and fully deterministic. The output prints payloads, lengths, and success
+# flags -- never the fd numbers or the ephemeral port, which are not stable.
+# tychoc and tychoc0 must agree and the output is locked to corelib/test/net.out
+# (corelib/run.sh).
+#
+# Single-threaded loopback is sound: connect() to a listening 127.0.0.1 socket
+# completes the TCP handshake into the listen backlog immediately, before
+# accept() is called, so listen -> connect -> accept runs in one thread.
+
+package main
+import "core:net"
+
+fn main():
+    # -- TCP: client <-> server round trip over loopback --
+    srv := net.listen("127.0.0.1", 0)          # ephemeral port
+    println("listen_ok=" + str(srv >= 0))
+    port := net.port_of(srv)
+    println("port_ok=" + str(port > 0))
+
+    cli := net.connect("127.0.0.1", port)
+    println("connect_ok=" + str(cli >= 0))
+    conn := net.accept(srv)
+    println("accept_ok=" + str(conn >= 0))
+
+    # client -> server
+    sent := net.write(cli, to_bytes("ping"))
+    println("sent=" + str(sent))
+    got := net.read(conn, 64)
+    println("got=[" + to_str(got) + "] len=" + str(len(got)))
+
+    # server -> client (echo the same bytes back)
+    echoed := net.write(conn, got)
+    println("echoed=" + str(echoed))
+    back := net.read(cli, 64)
+    println("back=[" + to_str(back) + "]")
+
+    net.close_fd(cli)
+    net.close_fd(conn)
+    net.close_fd(srv)
+
+    # -- UDP: one datagram sent to our own bound address over loopback --
+    u := net.udp_bind("127.0.0.1", 0)
+    println("udp_ok=" + str(u >= 0))
+    uport := net.port_of(u)
+    usent := net.udp_send(u, "127.0.0.1", uport, to_bytes("hello-udp"))
+    println("udp_sent=" + str(usent))
+    dg := net.udp_read(u, 64)
+    println("udp=[" + to_str(dg) + "] len=" + str(len(dg)))
+
+    net.close_fd(u)

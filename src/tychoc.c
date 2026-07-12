@@ -8474,6 +8474,23 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ char *_ret = %s; %s return _ret; }\n", v, rf);
                 }
+            } else if (ret == T_BYTES) {
+                /* bytes shares string's length-headered char* repr, so it
+                 * promotes up exactly like T_STRING: a fresh value (an out-param
+                 * extern call) is built directly in _parent; a bare bytes place
+                 * is deep-copied there before this scope frees. tycho_str_copy is
+                 * length-based (header, not strlen), so interior NULs survive.
+                 * Without this branch a returned bytes fell to the scalar `else`
+                 * and was built in the freed &_scope -- a use-after-free (the only
+                 * `-> bytes`-returning code is core:net; tychoc0.ty has none, so
+                 * this is output-invisible to fixpoint + the golden suite). */
+                if (ret_must_copy(s->expr)) {
+                    char *v = gen_expr(s->expr, "&_scope");
+                    indent(o, ind); fprintf(o, "{ char *_ret = tycho_str_copy(_parent, %s); %s return _ret; }\n", v, rf);
+                } else {
+                    char *v = gen_expr(s->expr, "_parent");
+                    indent(o, ind); fprintf(o, "{ char *_ret = %s; %s return _ret; }\n", v, rf);
+                }
             } else if (ret == T_ARRAY_INT) {
                 /* promote up. A fresh value (literal/call) is built directly
                  * in the caller's arena; a borrowed/local variable is

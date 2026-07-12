@@ -5,6 +5,8 @@ read=7 passnull=-1 hnull=0 badnull=1 eqnull=1
 echolen=5
 bsum=294 brev=cba brevlen=3
 nulsum=195 nullen=3
+wrapfn=zyx wraplen=3
+wrapnullen=3
 live0=0
 resuse=7 live_in=1
 live1=0

@@ -46,6 +46,13 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+fn brev_fn(b: bytes) -> bytes:        # FFI: a bytes RETURNED from a function. A returned bytes must
+    return ffi_brev(b)                # land in the caller's arena, not the freed callee _scope -- that
+                                      # was a use-after-free (core:net, the first `-> bytes` corelib user,
+                                      # hit it: the tychoc S_RETURN switch had no T_BYTES branch, and
+                                      # tychoc0's gen_rhs never copied a bytes place). Both compilers now
+                                      # promote it; this locks the fix, ASan-clean, in a green gate.
+
 fn main():
     # Stage 1 — scalars + string
     e := ffi_echo("hi")                        # string arg (zero-cost char*) + string return (arena-copied)
@@ -75,6 +82,14 @@ fn main():
     nul := to_bytes("a" + chr(0) + "b")
     rn := ffi_brev(nul)
     println(f"nulsum={ffi_bsum(nul)} nullen={len(rn)}")
+    # Stage R1b — a bytes RETURNED THROUGH A FUNCTION (return-arena homing). The result
+    # is read AFTER brev_fn returns and after intervening allocations, so a use-after-free
+    # would corrupt it (this is exactly what core:net's net.read hit). Interior NUL must
+    # survive the return-copy too (length-based, not strlen).
+    wf := brev_fn(to_bytes("xyz"))                          # reversed -> "zyx"
+    println(f"wrapfn={to_str(wf)} wraplen={len(wf)}")
+    wn := brev_fn(to_bytes("a" + chr(0) + "c"))             # "a\0c" reversed -> "c\0a", len 3
+    println(f"wrapnullen={len(wn)}")
     # Stage R2 — a typed handle freed (exactly once) by its destructor at scope exit
     println(f"live0={ffi_res_live()}")          # 0 before
     use_res()                                   # opens a handle, uses it, auto-frees at its scope exit
