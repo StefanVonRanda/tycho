@@ -68,6 +68,24 @@ fn main():
     # offset formatting edge cases (incl. +5:45 Nepal)
     println("off = " + datetime.format_offset(0) + " " + datetime.format_offset(19800) + " " + datetime.format_offset(0 - 28800) + " " + datetime.format_offset(20700))
 
+    # DST via an EXPLICIT POSIX TZ rule -- host-independent (the rule lives in the
+    # string, no zoneinfo file), so the golden is reproducible. US Eastern is EST
+    # (UTC-5) in winter and EDT (UTC-4) in summer.
+    et := "EST5EDT,M3.2.0,M11.1.0"
+    etjan := datetime.offset_at(et, 1234567890)          # 2009-02-13 UTC -> winter -> 0 - 18000
+    etjul := datetime.offset_at(et, 1247000000)          # 2009-07-07 UTC -> summer -> 0 - 14400
+    etz := datetime.offset_at("UTC0", 1234567890)        # 0
+    println(f"et_jan={etjan} et_jul={etjul} utc0={etz}")
+    # compose the pure + libc layers: ts1234 as US-Eastern wall-clock, DST applied
+    nyc := datetime.format_iso_tz(datetime.from_unix_at(1234567890, etjan), etjan)
+    println("nyc = " + nyc)                              # 2009-02-13T18:31:30-05:00
+    # system local_offset() is host-dependent -- assert invariants, not the value
+    lo := datetime.local_offset(1234567890)
+    println("local_off_ok = " + str(b2i(lo >= 0 - 50400 and lo <= 50400 and lo % 900 == 0)))
+    # now_local(): non-deterministic; fields must be in range
+    nl := datetime.now_local()
+    println("now_local_valid = " + str(b2i(nl.month >= 1 and nl.month <= 12 and nl.day >= 1 and nl.day <= 31 and nl.year >= 1970 and nl.hour >= 0 and nl.hour <= 23 and nl.second >= 0 and nl.second <= 59)))
+
     # now_utc(): value is non-deterministic, but the fields must be in range
     nu := datetime.now_utc()
     nvalid := b2i(nu.month >= 1 and nu.month <= 12 and nu.day >= 1 and nu.day <= 31 and nu.year >= 1970 and nu.hour >= 0 and nu.hour <= 23 and nu.second >= 0 and nu.second <= 59)

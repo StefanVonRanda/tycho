@@ -12,4 +12,8 @@ pst = 2009-02-13T15:31:30-08:00
 utc = 2009-02-13T23:31:30Z
 tzroundtrip=1234567890 ok=1
 off = Z +05:30 -08:00 +05:45
+et_jan=-18000 et_jul=-14400 utc0=0
+nyc = 2009-02-13T18:31:30-05:00
+local_off_ok = 1
+now_local_valid = 1
 now_valid = 1

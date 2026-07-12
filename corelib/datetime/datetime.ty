@@ -1,11 +1,14 @@
 # corelib: civil (Gregorian) calendar math over UNIX timestamps. Import with
 # `import "core:datetime"`, use `datetime.from_unix(secs)`.
 #
-# Pure integer arithmetic -- no FFI, no floats. The date<->day-count core is
-# Howard Hinnant's well-known `days_from_civil` / `civil_from_days` chrono
+# The calendar core is pure integer arithmetic -- no floats. The date<->day-count
+# core is Howard Hinnant's well-known `days_from_civil` / `civil_from_days` chrono
 # algorithm (proleptic Gregorian, epoch 1970-01-01 = day 0). It is written for
 # truncated integer division, which is exactly what tycho's int `/` does, so it
-# ports verbatim. All times are UTC -- there is no timezone database here.
+# ports verbatim. The core is UTC; on top of it sit two timezone layers: pure
+# FIXED offsets (from_unix_at / format_iso_tz, no FFI), and DST-aware SYSTEM/zone
+# offsets via a tiny libc shim (local_offset / offset_at / now_local, the only
+# FFI here -- see datetime_shim.c). There is still no IANA tz database.
 package datetime
 
 struct DateTime:
@@ -177,3 +180,34 @@ fn format_offset(offset_secs: int) -> string:
 # zone. Typical use: format_iso_tz(from_unix_at(secs, off), off).
 fn format_iso_tz(dt: DateTime, offset_secs: int) -> string:
     return format_iso(dt) + format_offset(offset_secs)
+
+# ---- system / zone local time (libc) ---------------------------------------
+# The ONLY FFI in this package (companion datetime_shim.c, pure libc). libc knows
+# the real UTC offset -- DST included -- for a zone at an instant; the pure
+# from_unix_at above then applies it. Everything else here stays integer-only.
+
+extern fn dtx_local_offset(secs: int) -> int            # system local offset (secs east), DST-aware
+extern fn dtx_offset_at(tz: string, secs: int) -> int   # offset for an explicit POSIX TZ string
+
+# The SYSTEM local timezone's UTC offset (seconds east of UTC; negative = west) at
+# `secs`, DST-aware. Host-dependent (reads the process TZ / OS default) -- for a
+# reproducible zone, use offset_at.
+fn local_offset(secs: int) -> int:
+    return dtx_local_offset(secs)
+
+# UTC offset for an EXPLICIT POSIX TZ string at `secs`, DST-aware AND host-
+# independent (the rule lives in the string; no zoneinfo file needed):
+# "EST5EDT,M3.2.0,M11.1.0" -> 0 - 18000 in winter, 0 - 14400 in summer; "UTC0" ->
+# 0. NOT thread-safe -- it sets the process TZ; serialize offset_at across threads.
+fn offset_at(tz: string, secs: int) -> int:
+    return dtx_offset_at(tz, secs)
+
+# A UTC timestamp rendered as SYSTEM-local civil fields (DST-aware). For the
+# numeric offset (e.g. to pass to format_iso_tz) call local_offset(secs).
+fn from_unix_local(secs: int) -> DateTime:
+    return from_unix_at(secs, local_offset(secs))
+
+# Current SYSTEM-local time (reads now(); non-deterministic, like now_utc).
+fn now_local() -> DateTime:
+    n := now()
+    return from_unix_at(n, local_offset(n))
