@@ -1681,7 +1681,7 @@ static Type parse_type_inner(Parser *ps) {
                 return mapc_of(elem, val);
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
-                die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum; int-keyed maps support only int/float values");
+                die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum");
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
@@ -1972,7 +1972,7 @@ static Expr *parse_primary(Parser *ps) {
                 ps->p++;
                 Type val = parse_type(ps);
                 Type mt = map_of(elem, val);
-                if (mt == T_VOID) die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum; int-keyed maps support only int/float values");
+                if (mt == T_VOID) die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum");
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
@@ -4244,7 +4244,7 @@ static Type resolve_expr_inner(Expr *e) {
                  * genuinely invalid key (float/bool/non-hashable). So a composite-keyed
                  * literal `[K(1): 10, Red: 1]` is accepted, matching declared maps. */
                 if (map_of(kt, vt) == T_VOID)
-                    die_at(e->line, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array; int-keyed maps support only int/float values");
+                    die_at(e->line, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array");
                 for (int i = 0; i < e->nargs; i += 2) {
                     if (resolve_expr(e->args[i]) != kt)
                         die_at(e->line, "map keys must all have the same type");
