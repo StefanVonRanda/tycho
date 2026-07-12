@@ -111,8 +111,10 @@ element type instead of a family of per-type siblings.
   and its exact inverse `to_unix(dt)`; `days_from_civil`/`civil_from_days`/
   `weekday_from_days` (the day-count core); `weekday(y,m,d)` (0=Sun..6=Sat), `is_leap`,
   `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); and formatting
-  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`. No
-  timezone database — everything is UTC.
+  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`. The
+  core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
+  `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
+  small libc shim (`local_offset`, `offset_at`, `now_local`). There is no IANA tz database.
 - **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
   core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
@@ -189,6 +191,13 @@ element type instead of a family of per-type siblings.
   (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
   content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
   for that). Bit-exact against NIST vectors (`sha256("abc") = ba7816bf…f20015ad`).
+- **`bignum`** — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),
+  value-semantic: `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/`divmod`/`div`/
+  `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.
+- **`decimal`** — arbitrary-precision base-10 fixed point, composed on `core:bignum` (a `Big`
+  coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are **exact** (`0.1 + 0.2 == 0.3`):
+  `from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/`abs`, `rescale` (truncating).
+  Division is deferred (needs a rounding policy).
 - **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
   [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
   pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what you reach for
@@ -215,6 +224,10 @@ element type instead of a family of per-type siblings.
   `cmd` is a `/bin/sh -c` line — shell metacharacters are active, so quote untrusted input
   yourself (no array-argv form yet). The stdout-capture read loop lives in `os_shim.c`, so
   Tycho only ever receives the finished, NUL-terminated string.
+- **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
+  no `deps`, nothing to install). `listen`/`accept`/`connect`/`port_of`/`write`/`read`/
+  `close_fd` and `udp_bind`/`udp_send`/`udp_read`; fds are `int` (negative = failure),
+  payloads are binary-safe `bytes`.
 
 ## C-shim (FFI-backed) modules
 
@@ -232,6 +245,19 @@ A shim that needs a system library beyond libc — one with headers to find and 
 flag that **varies by platform** — declares it in a `corelib/<module>/deps` manifest:
 pkg-config package names, one per line (`#` comments and blank lines ignored). For
 example `corelib/http/deps` is just `libcurl`.
+
+The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documented above,
+plus three more:
+
+- **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`);
+  `bytes -> bytes`, fail-closed on corrupt or truncated input.
+- **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
+  Image{width, height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
+  non-PNG. JPEG is a demand-gated follow-up.
+- **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
+  `connect(host, port)` verifies the certificate against the system CA store, checks the
+  hostname, and sends SNI; failure returns a null handle (never a silent insecure
+  connection). `write`/`read`/`close_conn` over the encrypted stream.
 
 - **Build:** when `tychoc` auto-discovers a module's shim it reads the sibling `deps` and
   runs `pkg-config --cflags --libs <name>` for each, splicing the result onto the cc line

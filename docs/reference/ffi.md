@@ -20,25 +20,30 @@ extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t
 
 Here's what can cross:
 
-- **Scalars** — `int`, `float`, `bool`.
-- **Sized integers** — `u8 u16 u32 u64 i8 i16 i32 i64`, valid **only** in an `extern`
-  signature (a by-value parameter or the return). They are `int` to Tycho — you pass and
-  receive ordinary `int` values — but the emitted C prototype uses the real fixed-width
-  type, so a call matches e.g. `uint32_t crc32(const uint8_t*, uint32_t)` at the ABI
-  instead of forcing everything through 64-bit `long`. A value narrows to the C width on
-  the way in (C's defined conversion) and widens back to `int` on return. Outside an
-  `extern` these names are ordinary identifiers, not types — `x: u32` is an error.
+- **Scalars** — `int`, `char`, `float`, `bool`.
+- **Sized integers** — the first-class `u32`, `u64`, `f32` cross as **themselves** (an
+  `extern` parameter or return of one of those types takes/produces a value of that exact
+  type). The narrower spellings `u8 u16 i8 i16 i32 i64` are valid **only** in an `extern`
+  signature and are `int` to Tycho — you pass and receive ordinary `int` values, but the
+  emitted C prototype uses the real fixed-width type so a call matches e.g.
+  `int16_t f(uint8_t)` at the ABI. On the way in the `int` narrows to the C width; on the
+  way back the C result widens to `int`, **sign-extended** for `i8`/`i16`/`i32`/`i64` and
+  **zero-extended** for `u8`/`u16` (so `u8(-1)` reads back as `255`, `i8(200)` as `-56`).
 - **`string`** — passed as a C `char*`; a C-returned string is **copied into the caller's
   arena** at the call site, so Tycho never holds a pointer into C-owned memory. A nullable C
   return is declared `-> Option(string)`.
 - **`bytes`** — a binary buffer (interior NULs intact), crossing as a `(pointer, length)` pair.
+- **`[int]` and `[float]`** — a scalar array crosses as a `(const T*, long)` pair (like
+  `bytes`); an array of any other element type does not.
 - **`ptr`** — an opaque foreign handle, a `void*` Tycho never dereferences. The `null` literal
   and `is_null(p)` work on it.
 - **typed `handle`s** — `handle Name: free: c_fn` declares a `void*` whose C destructor runs
   automatically at scope exit (RAII), so a foreign resource won't leak or get used after close.
-- **`inout` scalar / string out-parameters** — cross too.
+- **`inout` scalar out-parameters** (a numeric scalar or `ptr`) — cross too; a `string`,
+  `bytes`, handle, or composite `inout` out-parameter is **rejected** (no trivial out-param ABI).
 
-Composite aggregates (arrays, maps, structs) are **rejected** at the boundary — fail closed.
+Maps, structs, and non-scalar arrays are **rejected** at the boundary — fail closed. (The
+scalar arrays `[int]`/`[float]` do cross, above.)
 
 ## Threads
 

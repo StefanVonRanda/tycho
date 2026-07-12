@@ -47,7 +47,9 @@ in `u32`). They behave like `int`/`float` but at a defined width:
 A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
 `\n \t \r \0 \\ \'`. It interoperates with `int` deliberately and narrowly:
 
-- `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`), and stays within a byte.
+- `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`). The result keeps the
+  `char` type but its value is the ordinary integer result — it is **not** reduced to
+  `0..255` (e.g. `'a' + 300` is a `char` holding `397`).
 - `string + char` appends the byte **in place**, without allocating, so building a string
   one character at a time is a byte-write, not an allocation per character:
 
@@ -73,8 +75,8 @@ An `f"..."` string interpolates `{expr}` holes, desugaring to ordinary concatena
 `f"point=({p.x},{p.y}) sum={a + b}"` becomes `"point=(" + str(p.x) + ...`. A plain
 `"..."` is **never** interpolated, so it needs no brace escaping; inside an `f"..."`,
 `{{` and `}}` are literal braces. A hole may hold any expression — including one with its
-own string literals or a nested f-string — and must evaluate to an `int`, `float`, `bool`
-(printed `true`/`false`), or `string`.
+own string literals or a nested f-string — and must evaluate to a value `str` accepts: an
+`int`, a `u32`/`u64`/`f32`, a `float`, a `bool` (printed `true`/`false`), or a `string`.
 
 ## Distinct newtypes (`type`)
 

@@ -92,3 +92,15 @@ See [Concurrency](concurrency.md) for semantics.
 | Builtin | Type |
 | --- | --- |
 | `sqrt(x)` / `pow(x, y)` / `floor(x)` / `fabs(x)` | `float… -> float` |
+
+## FFI and sized-integer helpers
+
+Supporting the [FFI boundary](ffi.md) and the sized numeric types; always available, no import.
+
+| Builtin | Type | Meaning |
+| --- | --- | --- |
+| `eprint(s)` | `string -> void` | Write `s` to standard error (no newline, no exit). |
+| `is_null(p)` | `ptr -> bool` | Test an opaque FFI `ptr` for null. |
+| `to_ptr(n)` | `int -> ptr` | Make a sentinel `ptr` from an int (e.g. `(void*)-1`); Tycho never dereferences it. |
+| `to_i32(n)` | `int -> int` | Sign-extend the low 32 bits of `n` — for an `extern` that returns a 32-bit C `int`. |
+| `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | numeric `-> u32`/`u64`/`f32` | Convert any numeric scalar to the sized type. |
