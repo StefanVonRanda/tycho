@@ -141,3 +141,39 @@ fn month_name(m: int) -> string:                # 1=Jan..12=Dec, else "?"
     if m >= 1 and m <= 12:
         return names[m]
     return "?"
+
+# ---- fixed-offset timezones ------------------------------------------------
+# Still no IANA tz database (that needs zoneinfo parsing + DST rules). What
+# these add is a FIXED UTC offset, in seconds east of UTC (negative = west):
+# render a UTC instant as the wall-clock at that offset, recover the UTC instant
+# from local fields, and format with the `+HH:MM` / `-HH:MM` / `Z` suffix. Common
+# offsets: UTC = 0, IST `+5:30` = 19800, PST `-8:00` = 0 - 28800, NPT `+5:45` =
+# 20700. System local time WITH DST is a libc-shim follow-up (add on demand).
+
+# Civil wall-clock fields of a UTC timestamp AS SEEN at a fixed offset. The
+# returned DateTime carries no offset of its own -- pass the same offset to
+# format_iso_tz / to_unix_at. Shifting the instant also rolls the day/weekday.
+fn from_unix_at(secs: int, offset_secs: int) -> DateTime:
+    return from_unix(secs + offset_secs)
+
+# Inverse: local wall-clock fields, interpreted at `offset_secs`, back to the UTC
+# timestamp. Exact inverse: to_unix_at(from_unix_at(s, off), off) == s.
+fn to_unix_at(dt: DateTime, offset_secs: int) -> int:
+    return to_unix(dt) - offset_secs
+
+# "Z" for UTC, else "+HH:MM" / "-HH:MM". Whole-minute offsets; any sub-minute
+# seconds are dropped (no real zone uses them).
+fn format_offset(offset_secs: int) -> string:
+    if offset_secs == 0:
+        return "Z"
+    sign := "+"
+    a := offset_secs
+    if offset_secs < 0:
+        sign = "-"
+        a = 0 - offset_secs
+    return sign + pad2(a / 3600) + ":" + pad2((a % 3600) / 60)
+
+# ISO-8601 with the offset suffix: format the (already-local) fields, then the
+# zone. Typical use: format_iso_tz(from_unix_at(secs, off), off).
+fn format_iso_tz(dt: DateTime, offset_secs: int) -> string:
+    return format_iso(dt) + format_offset(offset_secs)

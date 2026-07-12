@@ -55,6 +55,19 @@ fn main():
     dfcy2k := datetime.days_from_civil(2000, 1, 1)
     println(f"dfc epoch={dfc0} y2k={dfcy2k}")
 
+    # fixed-offset timezones: the SAME UTC instant (ts1234) rendered at offsets
+    ist := datetime.format_iso_tz(datetime.from_unix_at(1234567890, 19800), 19800)          # +5:30
+    pst := datetime.format_iso_tz(datetime.from_unix_at(1234567890, 0 - 28800), 0 - 28800)  # -8:00
+    utc := datetime.format_iso_tz(datetime.from_unix_at(1234567890, 0), 0)                   # Z
+    println("ist = " + ist)              # 2009-02-14T05:01:30+05:30 (rolls to next day)
+    println("pst = " + pst)              # 2009-02-13T15:31:30-08:00
+    println("utc = " + utc)              # 2009-02-13T23:31:30Z
+    # local-fields-at-offset -> UTC instant is the exact inverse
+    tzrt := datetime.to_unix_at(datetime.from_unix_at(1234567890, 19800), 19800)
+    println(f"tzroundtrip={tzrt} ok={b2i(tzrt == 1234567890)}")
+    # offset formatting edge cases (incl. +5:45 Nepal)
+    println("off = " + datetime.format_offset(0) + " " + datetime.format_offset(19800) + " " + datetime.format_offset(0 - 28800) + " " + datetime.format_offset(20700))
+
     # now_utc(): value is non-deterministic, but the fields must be in range
     nu := datetime.now_utc()
     nvalid := b2i(nu.month >= 1 and nu.month <= 12 and nu.day >= 1 and nu.day <= 31 and nu.year >= 1970 and nu.hour >= 0 and nu.hour <= 23 and nu.second >= 0 and nu.second <= 59)
