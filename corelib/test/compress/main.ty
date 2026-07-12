@@ -1,0 +1,37 @@
+# corelib test: core:compress. The exact compressed bytes/length are zlib-version
+# and platform dependent (gzip header, compression tuning), so the checks are all
+# boolean invariants -- round-trip identity, "compresses", binary-safety, empty and
+# corrupt handling -- which are deterministic everywhere. tychoc and tychoc0 must
+# agree and the output is locked to corelib/test/compress.out (corelib/run.sh).
+package main
+import "core:compress"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    # round-trip a compressible (repetitive) buffer
+    orig := ""
+    i := 0
+    for i < 50:
+        orig = orig + "The quick brown fox jumps over the lazy dog. "
+        i = i + 1
+    ob := to_bytes(orig)
+    c := compress.compress(ob)
+    d := compress.decompress(c)
+    println("roundtrip=" + str(b2i(to_str(d) == orig)))            # 1
+    println("smaller=" + str(b2i(len(c) < len(ob))))              # 1 (repetitive -> compresses)
+
+    # binary-safe: interior NUL bytes survive the round-trip
+    nb := to_bytes("a" + chr(0) + "b" + chr(0) + "c")            # 5 bytes
+    nd := compress.decompress(compress.compress(nb))
+    println("nul_roundtrip=" + str(b2i(len(nd) == 5)))            # 1
+
+    # empty input round-trips to empty
+    ed := compress.decompress(compress.compress(to_bytes("")))
+    println("empty_roundtrip=" + str(b2i(len(ed) == 0)))          # 1
+
+    # corrupt input -> empty bytes (fail closed, no crash)
+    println("corrupt_empty=" + str(b2i(len(compress.decompress(to_bytes("not a gzip stream at all"))) == 0)))   # 1

@@ -1,0 +1,5 @@
+roundtrip=1
+smaller=1
+nul_roundtrip=1
+empty_roundtrip=1
+corrupt_empty=1
