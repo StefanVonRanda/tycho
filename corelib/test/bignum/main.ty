@@ -74,3 +74,10 @@ fn main():
     println("div_invariant=" + str(b2i(bignum.cmp(recon, aa) == 0 and bignum.cmp(rr, bb) < 0)))   # 1
     # division by zero -> 0 (documented fail-closed)
     println("divzero=" + bignum.to_str(bignum.div(bignum.from_int(5), bignum.from_int(0))))        # 0
+
+    # --- abs / pow / to_int ---
+    println("abs=" + bignum.to_str(bignum.abs(bignum.from_int(0 - 42))) + " " + bignum.to_str(bignum.abs(bignum.from_int(42))))     # 42 42
+    println("pow2_100_ok=" + str(b2i(bignum.to_str(bignum.pow(bignum.from_int(2), 100)) == "1267650600228229401496703205376")))    # 1
+    println("pow_edge=" + bignum.to_str(bignum.pow(bignum.from_int(3), 0)) + " " + bignum.to_str(bignum.pow(bignum.from_int(0), 5)) + " " + bignum.to_str(bignum.pow(bignum.from_int(10), 3)))   # 1 0 1000
+    println("to_int=" + str(bignum.to_int(bignum.from_int(42))) + " " + str(bignum.to_int(bignum.from_str("5000000000"))) + " " + str(bignum.to_int(bignum.from_int(0 - 7))))     # 42 5000000000 -7
+    println("to_int_overflow=" + str(bignum.to_int(bignum.pow(bignum.from_int(10), 30))))          # 0 (10^30 doesn't fit)

@@ -14,6 +14,7 @@ package bignum
 
 const BASE = 1000000000        # 10^9 -- one limb
 const WIDTH = 9                # decimal digits per limb
+const INT_MAX = 9223372036854775807   # 2^63 - 1 -- the to_int fits-in-a-64-bit-int bound
 
 struct Big:
     sign: int                  # -1, 0, +1  (0 iff the value is zero)
@@ -218,6 +219,11 @@ fn neg(a: Big) -> Big:
         return a
     return Big(0 - a.sign, a.limbs)      # value semantics deep-copies limbs on return
 
+fn abs(a: Big) -> Big:
+    if a.sign < 0:
+        return neg(a)
+    return a
+
 # Total order by value: -1 / 0 / 1.
 fn cmp(a: Big, b: Big) -> int:
     if a.sign != b.sign:
@@ -276,6 +282,21 @@ fn mod(a: Big, b: Big) -> Big:
     q, r := divmod(a, b)
     return r
 
+# a raised to a non-negative integer power, by square-and-multiply. A negative
+# exponent has no integer value, so it returns zero; 0 ** 0 == 1 by convention.
+fn pow(a: Big, e: int) -> Big:
+    if e < 0:
+        return zero()
+    result := from_int(1)
+    b := a
+    n := e
+    for n > 0:
+        if n % 2 == 1:
+            result = mul(result, b)
+        b = mul(b, b)
+        n = n / 2
+    return result
+
 # ---- formatting ------------------------------------------------------------
 
 fn pad_limb(v: int) -> string:            # zero-pad a non-top limb to WIDTH digits
@@ -297,3 +318,20 @@ fn to_str(a: Big) -> string:
         out = out + pad_limb(a.limbs[i])
         i = i - 1
     return out
+
+# The int value when the magnitude fits in a signed 64-bit int, else 0. Fail-closed
+# on overflow -- but note 0 is also the value of zero, so if a large value is
+# possible, size-check first (e.g. via to_str) rather than trusting a 0 return.
+fn to_int(a: Big) -> int:
+    if a.sign == 0:
+        return 0
+    if len(a.limbs) > 3:                  # > ~10^27 -- cannot fit in 64 bits
+        return 0
+    mag := 0
+    i := len(a.limbs) - 1
+    for i >= 0:
+        if mag > (INT_MAX - a.limbs[i]) / BASE:   # mag*BASE + limb would exceed INT_MAX
+            return 0                               # fail closed
+        mag = mag * BASE + a.limbs[i]
+        i = i - 1
+    return mag * a.sign
