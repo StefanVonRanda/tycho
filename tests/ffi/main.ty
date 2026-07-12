@@ -14,6 +14,8 @@ extern "ffidemo" fn ffi_mk(id: int, out: inout ptr) -> int # FFI R4: out-param c
 extern "ffidemo" fn ffi_dbl(a: int, out: inout int)        # FFI R4: scalar out-param
 extern "ffidemo" fn ffi_neg() -> int                     # returns a negative 32-bit C int (to_i32 recovers the sign)
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
+extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
+extern "ffidemo" fn ffi_favg(xs: [float]) -> float       # [float] param -> (const double*, long)
 
 handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
     free: ffi_res_close
@@ -90,6 +92,8 @@ fn main():
     println(f"wrapfn={to_str(wf)} wraplen={len(wf)}")
     wn := brev_fn(to_bytes("a" + chr(0) + "c"))             # "a\0c" reversed -> "c\0a", len 3
     println(f"wrapnullen={len(wn)}")
+    # Stage R1c -- [int]/[float] cross as (const T*, long), empty array -> len 0
+    println(f"isum={ffi_isum([10, 20, 30, 42])} isum0={ffi_isum([]int)} favg={ffi_favg([2.0, 4.0, 6.0])}")   # 102 0 4.0
     # Stage R2 — a typed handle freed (exactly once) by its destructor at scope exit
     println(f"live0={ffi_res_live()}")          # 0 before
     use_res()                                   # opens a handle, uses it, auto-frees at its scope exit

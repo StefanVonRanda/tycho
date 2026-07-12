@@ -2024,7 +2024,7 @@ fn mk_sig(name: string, ret: string, ptypes: [string], is_extern: int) -> Sig:
 # name (a `handle` type -- can't consult dc here at parse time, so accept any
 # non-composite identifier; cty resolves it to void* iff it's a real handle).
 fn extern_ok_ty(ty: string) -> bool:
-    if ffi_scalar(ty) or ty == "bytes":
+    if ffi_scalar(ty) or ty == "bytes" or ty == "[int]" or ty == "[float]":   # [int]/[float] cross as (const T*, long)
         return true
     return find(ty, "[") < 0 and find(ty, "(") < 0 and find(ty, ":") < 0
 
@@ -5849,11 +5849,20 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     av := gen_expr(args[ai], names, types, dc, ctx)
                     if emitted > 0:
                         xa = xa + ", "
-                    if type_of(args[ai], names, types, dc, ctx) == "bytes":   # bytes -> (const unsigned char* ptr, long len)
+                    pt := type_of(args[ai], names, types, dc, ctx)
+                    if pt == "bytes":                 # bytes -> (const unsigned char* ptr, long len)
                         tv := "_xb" + str(nb)
                         nb = nb + 1
                         edecls = edecls + "char* " + tv + " = " + av + "; "
                         xa = xa + "(const unsigned char*)" + tv + ", ((const long*)" + tv + ")[-1]"
+                    elif pt == "[int]" or pt == "[float]":   # [int]/[float] -> (const T*)xs.data, xs.len
+                        ep := "(const long*)"
+                        if pt == "[float]":
+                            ep = "(const double*)"
+                        tv := "_xa" + str(nb)
+                        nb = nb + 1
+                        edecls = edecls + cty(dc, ctx, pt) + " " + tv + " = " + av + "; "
+                        xa = xa + ep + tv + ".data, " + tv + ".len"
                     else:
                         xa = xa + av                  # tycho str is already char* -> zero-cost arg
                     emitted = emitted + 1
@@ -8059,6 +8068,10 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
             out = out + ", "
         if f.ptypes[i] == "bytes":
             out = out + "const unsigned char*, long"
+        elif f.ptypes[i] == "[int]":            # [int]/[float] cross as (const T*, long)
+            out = out + "const long*, long"
+        elif f.ptypes[i] == "[float]":
+            out = out + "const double*, long"
         else:
             psc := ffi_sized_cty(f.ptypes[i])   # FFI-boundary sized param -> real C ABI type
             if psc == "":

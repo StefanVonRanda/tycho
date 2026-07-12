@@ -3180,6 +3180,15 @@ static int ffi_scalar_type(Type t) {
     return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING || t == T_PTR ||
            t == T_U32 || t == T_U64 || t == T_F32;   /* first-class sized numerics cross as their real C type */
 }
+/* A scalar array (`[int]`/`[float]`) crosses the FFI as a `(const T*, long)` pair,
+ * exactly like `bytes` crosses as (ptr,len). Returns the C element-pointer type, or
+ * NULL for a non-scalar-array (arrays of string/struct/nested stay rejected — they
+ * have no flat, self-describing C ABI). */
+static const char *ffi_arr_ptr_ctype(Type t) {
+    if (t == T_ARRAY_INT)   return "const long *";
+    if (t == T_ARRAY_FLOAT) return "const double *";
+    return NULL;
+}
 
 /* FFI boundary-only sized-integer types (u8/u16/i8/i16/i32/i64): recognized ONLY in
  * `extern fn` param/return positions (never a general Tycho type — `int` to Tycho, no
@@ -3237,8 +3246,8 @@ static Proc *parse_extern_fn(Parser *ps) {
              * tycho a raw C pointer with no length header) — banned, as are bytes/handle/
              * composite, which have no trivial pointer-to-self ABI. */
             if (!ffi_scalar_type(pt) || pt == T_STRING) die_at(pn->line, "extern fn '%s': an `inout` (out) parameter '%s' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI", pr->name, pn->text);
-        } else if (!ffi_scalar_type(pt) && pt != T_BYTES && !IS_HANDLE(pt)) {
-            die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes or a handle (no composites across the C boundary)", pr->name, pn->text);
+        } else if (!ffi_scalar_type(pt) && pt != T_BYTES && !ffi_arr_ptr_ctype(pt) && !IS_HANDLE(pt)) {
+            die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes, [int]/[float], or a handle (no other composites across the C boundary)", pr->name, pn->text);
         }
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
@@ -7151,10 +7160,16 @@ static char *gen_extern_raw(Expr *e) {
     int emitted = 0, nb = 0;
     for (int i = 0; i < e->nargs; i++) {
         char *a = gen_expr(e->args[i], g_cur_scope);
-        if (e->args[i]->type == T_BYTES) {
+        Type at = e->args[i]->type;
+        const char *arrp = ffi_arr_ptr_ctype(at);
+        if (at == T_BYTES) {
             char *tv = sfmt("_xb%d", nb++);
             decls = sfmt("%schar *%s = %s; ", decls, tv, a);
             args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
+        } else if (arrp) {   /* [int]/[float] -> (const T*)xs.data, xs.len (single-eval temp) */
+            char *tv = sfmt("_xa%d", nb++);
+            decls = sfmt("%s%s%s = %s; ", decls, c_type(at), tv, a);
+            args = sfmt("%s%s(%s)%s.data, %s.len", args, emitted++ ? ", " : "", arrp, tv, tv);
         } else {
             args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
         }
@@ -7455,10 +7470,16 @@ static char *gen_call(Expr *e, const char *arena) {
             int emitted = 0, nb = 0;
             for (int i = 0; i < e->nargs; i++) {
                 char *a = gen_expr(e->args[i], g_cur_scope);
-                if (e->args[i]->type == T_BYTES) {
+                Type at = e->args[i]->type;
+                const char *arrp = ffi_arr_ptr_ctype(at);
+                if (at == T_BYTES) {
                     char *tv = sfmt("_xb%d", nb++);
                     decls = sfmt("%schar *%s = %s; ", decls, tv, a);
                     args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
+                } else if (arrp) {   /* [int]/[float] -> (const T*)xs.data, xs.len */
+                    char *tv = sfmt("_xa%d", nb++);
+                    decls = sfmt("%s%s%s = %s; ", decls, c_type(at), tv, a);
+                    args = sfmt("%s%s(%s)%s.data, %s.len", args, emitted++ ? ", " : "", arrp, tv, tv);
                 } else {
                     args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
                 }
@@ -8911,8 +8932,11 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
     fprintf(o, "extern %s%s(", bret ? "void " : optstr ? "char *" : pr->ret_ffi_ct ? pr->ret_ffi_ct : c_type(pr->ret), pr->name);
     int emitted = 0;
     for (int i = 0; i < pr->nparams; i++) {
+        const char *arrp = ffi_arr_ptr_ctype(pr->params[i].type);
         if (pr->params[i].type == T_BYTES)
             fprintf(o, "%sconst unsigned char *, long", emitted++ ? ", " : "");
+        else if (arrp)                     /* [int]/[float] cross as (const T*, long) */
+            fprintf(o, "%s%s, long", emitted++ ? ", " : "", arrp);
         else if (pr->params[i].is_inout)   /* FFI R4: out-param — the C fn takes a pointer to T */
             fprintf(o, "%s%s*", emitted++ ? ", " : "", c_type(pr->params[i].type));
         else

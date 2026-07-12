@@ -78,3 +78,8 @@ void ffi_dbl(long a, long *out) { *out = a * 2; }
  * -style sentinel) round-trips. */
 int  ffi_neg(void)        { return -7; }
 long ffi_ptrval(void *p)  { return (long)p; }
+
+/* arrays cross as (const T*, long): ffi_isum sums an [int], ffi_favg averages a
+ * [float]. Proves [int]/[float] params reach C as a flat (pointer, length) pair. */
+long   ffi_isum(const long *xs, long n)   { long s = 0; for (long i = 0; i < n; i++) s += xs[i]; return s; }
+double ffi_favg(const double *xs, long n) { if (n == 0) return 0.0; double s = 0; for (long i = 0; i < n; i++) s += xs[i]; return s / (double)n; }
