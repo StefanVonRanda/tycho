@@ -3,7 +3,7 @@
 Every Tycho expression has a **type**, determined at its own site by the
 inference rules of [§6](04-inference.md). Every value has **value semantics**:
 assignment, argument passing, and return copy the value deeply, so two variables
-never share storage ([§9](07-memory-model.md), forthcoming). This chapter
+never share storage ([§9](07-memory-model.md)). This chapter
 defines the types themselves — their values, ranges, and identity — and defers
 their construction and operations to the chapters noted.
 
@@ -24,14 +24,14 @@ equality). Type constructors fall into two groups:
 
 - **Nominal** — `struct`, `enum`, `newtype`, and `handle` types are identified
   by their declaration. Two distinct declarations are distinct types even with
-  identical structure; a newtype is distinct from its underlying type (§5.5).
+  identical structure; a newtype is distinct from its underlying type (§5.4).
 - **Structural** — arrays, fixed-size arrays, tuples, maps, `Option`, `Result`,
   `soa`, function types, and the channel/task handle types are identified by
   their structure. Two of them are the same type iff they are built from the
   same constructor applied to the same component types.
 
 This distinction is normative: it determines exactly when two values may be
-compared, assigned, or unified across `match`/`if` arms (§5.6, [§6](04-inference.md)).
+compared, assigned, or unified across `match`/`if` arms (§5.5, [§6](04-inference.md)).
 
 ## 5.2 Scalar types
 
@@ -40,7 +40,7 @@ compared, assigned, or unified across `match`/`if` arms (§5.6, [§6](04-inferen
 `int` is a **64-bit two's-complement signed integer**, with values `−2^63`
 through `2^63 − 1`. Arithmetic that overflows this range **wraps** with
 two's-complement semantics; overflow is fully defined and never traps
-([§30](17-runtime.md), forthcoming). Division and modulo by zero abort;
+([§30](17-runtime.md)). Division and modulo by zero abort;
 `(−2^63) / −1` aborts (quotient overflow) while `(−2^63) % −1` is `0`. The
 only integer literal is decimal ([§3.9.1](01-lexical.md#391-integer-literals)),
 denoting a non-negative value; `−2^63` is obtained only by computation.
@@ -61,7 +61,7 @@ are fully defined by IEEE-754; only the *textual* form `str` produces for
 ### 5.2.3 `bool`
 
 `bool` has the two values `true` and `false`. It is comparable with `==`/`!=`
-and usable with `str` (via `has_str`), but is **not ordered** (§5.6).
+and usable with `str` (via `has_str`), but is **not ordered** (§5.5).
 
 ### 5.2.4 `char`
 
@@ -69,7 +69,7 @@ and usable with `str` (via `has_str`), but is **not ordered** (§5.6).
 as a character literal ([§3.9.3](01-lexical.md#393-character-literals)) and
 arises by inference; there is no `char` type keyword. `char` interoperates
 narrowly with `int`: `char ± int` has type `char`. `char` is comparable and
-ordered (§5.6) but is **not** accepted by `str` — an intentional asymmetry
+ordered (§5.5) but is **not** accepted by `str` — an intentional asymmetry
 (§8).
 
 The result has type `char`, but its numeric value is the ordinary integer result
@@ -85,7 +85,7 @@ length-sensitive operations (comparison, concatenation, search, indexing) use
 the stored length, not a `NUL` terminator. Indexing `s[i]` yields the `i`-th
 byte as an `int` in `0..255` and aborts if `i` is out of bounds; a `string` is
 not assignable through an index (`s[i] = v` is a compile error). Operations are
-detailed in §16 (forthcoming).
+detailed in §16.
 
 ### 5.2.6 `bytes`
 
@@ -93,7 +93,7 @@ detailed in §16 (forthcoming).
 representation as `string` but a **distinct type**. It is produced by
 `to_bytes` from a `string` (§8); there is no `bytes` literal. `bytes` exists
 primarily to cross the FFI boundary as a `(pointer, length)` pair
-([§24](14-ffi.md), forthcoming).
+([§24](14-ffi.md)).
 
 ### 5.2.7 `u32` and `u64`
 
@@ -115,10 +115,10 @@ in an `f32` context (§8); it promotes to `float` (binary64) for `str`.
 
 `ptr` is an **opaque FFI pointer** (`void*`). Tycho never dereferences it; it
 supports only the `null` literal, being passed to and returned from `extern`
-functions, `null`-comparison, and `is_null` ([§24](14-ffi.md), forthcoming).
-Sized integers narrower than `u32`/`i64` (`u8`, `u16`, `i8`, `i16`, `i32`,
-`i64`) are **not** first-class types; they are valid only as `extern` signature
-spellings (§24).
+functions, `null`-comparison, and `is_null` ([§24](14-ffi.md)).
+The sized-integer spellings other than the first-class `u32`/`u64`/`f32` (namely
+`u8`, `u16`, `i8`, `i16`, `i32`, `i64`) are **not** first-class types; they are
+valid only as `extern` signature spellings (§24).
 
 ## 5.3 Composite types
 
@@ -153,7 +153,7 @@ slicing. The generic form `[$N]T` is a const generic (§7.4).
 A tuple `(T1, …, Tn)` is an **anonymous product** of 2 to 8 elements, identified
 structurally. Its elements are accessed by position (`t.0`, `t.1`) and are
 assignable places. Multiple return values and destructuring use tuples
-(§17, forthcoming).
+(§17).
 
 ### 5.3.4 Structs
 
@@ -161,7 +161,7 @@ A `struct` is a **nominal product type** with named fields, constructed
 positionally in field-declaration order. A field may be recursive **only
 through a container** (e.g. `children: [Node]`); a direct by-value self-field
 (`next: Node` or `next: Option(Node)` directly) is rejected, because an inline
-self-embedding would be infinitely sized (§17, forthcoming).
+self-embedding would be infinitely sized (§17).
 
 ### 5.3.5 Maps `[K: V]`
 
@@ -187,7 +187,7 @@ as a top-level key type.
 > correction; the reference `maps.md` page is to be updated to match this rule.
 
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
-`k in m`, `delete m[k]`, `m.get`) are specified in §18 (forthcoming).
+`k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
 > Provenance: `map_of` `src/tychoc.c:1037-1065`; `key_hashable` `:989-1002`.
 
@@ -197,21 +197,21 @@ An `enum` is a **nominal sum type**; each variant is globally uniquely named and
 may carry a payload of up to 8 types. `Option(T)` is the built-in enum with
 variants `Some(T)` and `None`; `Result(T, E)` is the built-in enum with variants
 `Ok(T)` and `Err(E)`. Enums are consumed by exhaustive `match` and support
-`or_return` for `Option`/`Result` (§19, forthcoming). Recursive payloads are
+`or_return` for `Option`/`Result` (§19). Recursive payloads are
 permitted (they are arena-allocated, hence finite).
 
 ### 5.3.7 `soa`
 
 `soa [S]` is a **struct-of-arrays** collection whose element type `S` MUST be a
 struct; it presents the same value-semantic array interface while storing each
-field in its own backing array (§17, forthcoming).
+field in its own backing array (§17).
 
 ### 5.3.8 Function types
 
 `fn(P1, …, Pn) -> R` is a **first-class function type** (up to 8 parameters),
 identified structurally. A parameter type may not be `void`. A function *value*
-is a closure over captured state (§15, forthcoming); function values compare by
-**identity**, not structurally (§5.6). A function that has an `inout` parameter
+is a closure over captured state (§15); function values compare by
+**identity**, not structurally (§5.5). A function that has an `inout` parameter
 cannot be used as a first-class value.
 
 ### 5.3.9 Typed handles
@@ -219,9 +219,9 @@ cannot be used as a first-class value.
 A `handle` type is a **nominal, affine, opaque FFI resource** — a `void*` with a
 declared C free function that runs at scope exit. A handle value cannot be
 copied, stored in any aggregate, captured by a closure or `parallel for`, or
-returned from a Tycho function (§25, forthcoming). The concurrency handle types
+returned from a Tycho function (§25). The concurrency handle types
 `Task(T)` and `Channel(T)` are similarly affine and non-storable
-([§20](13-concurrency.md), forthcoming).
+([§20](13-concurrency.md)).
 
 ## 5.4 Newtypes
 

@@ -27,7 +27,7 @@ and recursive self-references; every occurrence of a given `$T` MUST bind to the
 same concrete type. A generic is instantiated once per distinct binding of its
 parameters.
 
-Explicit type arguments may be supplied with the `name$(T, …)` form (§7.6),
+Explicit type arguments may be supplied with the `name$(T, …)` form (§7.5),
 which binds the parameters in declaration order; this is required when a
 parameter is not inferable from the arguments (for example a payload-less
 generic enum variant).
@@ -117,7 +117,7 @@ A generic free function is callable in method position: `x.f(a)` means `f(x, a)`
 dispatched by matching the receiver against the template's first-parameter
 pattern and then instantiating. Explicit type arguments on a non-generic call
 are an error. Method-call resolution for generics runs before the ordinary
-signature lookup ([§15](11-functions.md), forthcoming).
+signature lookup ([§15](11-functions.md)).
 
 ## 7.7 Variadic generics (`...$T`)
 
@@ -125,4 +125,4 @@ A final variadic parameter `...$T` has type `[T]`; a call packs its trailing
 arguments into that array, inferring `T` from them, and an existing `[T]` may be
 forwarded with the spread form `xs...`. An empty variadic supplied to a generic
 element type is an error (nothing to infer `T` from). A variadic parameter
-cannot also be `inout` or `sink` (§15, forthcoming).
+cannot also be `inout` or `sink` (§15).

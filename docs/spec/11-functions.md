@@ -14,9 +14,9 @@ A function has a name, a parameter list, an optional `-> R` return type (absent
 means `void`), an optional `where` clause (for a generic function,
 [§7.2](05-generics.md#72-constraints-where)), and a block body. A function that
 mentions a `$T` or `$N` in its signature is generic (§7). A function MUST NOT
-return a `handle` ([§25](14-ffi.md), forthcoming). Exactly one function named
+return a `handle` ([§25](14-ffi.md)). Exactly one function named
 `main`, with no parameters and `void` return, is the program entry point
-([§27](15-program.md), forthcoming).
+([§27](15-program.md)).
 
 ## 15.2 Parameter passing modes
 
@@ -63,15 +63,18 @@ A function name and a lambda both denote a **function value** of a function type
 and called. A lambda's body is a single expression. Closures capture their free
 variables by **deep copy at creation**, and an escaping closure's environment is
 re-homed into the caller's storage on return
-([§13.6](09-expressions.md#136-closures-and-function-values)). A function with an
-`inout` parameter cannot be taken as a value (an `inout` borrow is call-scoped
-and cannot be deferred through an indirect call). Function values compare by
+([§13.6](09-expressions.md#136-closures-and-function-values)). Two things cannot
+be taken as function values: a **builtin** name (`len`, `push`, `str`, …), and a
+function with an **`inout`** parameter (an `inout` borrow is call-scoped and
+cannot be deferred through an indirect call). Function values compare by
 identity.
 
 ## 15.5 Methods (UFCS)
 
-Any free function may be called in **method position**: `x.f(a, b)` is defined to
-mean `f(x, a, b)`. Method-call syntax is uniform function-call syntax — Tycho has
+Any free function may be called in **method position**: `x.f(a, b)` means
+`f(x, a, b)` — **unless** the receiver's struct has a function-typed field named
+`f`, in which case that stored function value is called instead (the field wins).
+Method-call syntax is uniform function-call syntax — Tycho has
 no separately-declared methods. For a generic function, the receiver is matched
 against the template's first-parameter pattern and the function is then
 instantiated ([§7.6](05-generics.md#76-ufcs-and-generic-method-style-calls)).
@@ -86,4 +89,4 @@ place-macro that yields a place rooted in one of its parameters, generalizing th
 built-in `&m[k]`. It is called in method position, usable as a place or an
 rvalue, and introduces no run-time object and no new aliasing. Its rules (the
 yielded place rooted in a parameter, each parameter used at most once) are
-specified in §18 (forthcoming).
+specified in §18.

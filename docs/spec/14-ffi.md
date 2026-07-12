@@ -6,7 +6,7 @@ crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
 > Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c:3212-3282`;
-> boundary copy routines `runtime/tycho_rt.c:740-761`,`:1127-1134`; typed handles
+> boundary copy routines `runtime/tycho_rt.c:740-761`,`:1026`,`:1127-1134`; typed handles
 > `docs/internals/typed-handles-design.md`.
 
 ## 24. `extern` and the C boundary
@@ -18,10 +18,10 @@ is emitted unmangled and it receives no arena argument.
 
 ### 24.1 Crossable types
 
-Only these may appear in an `extern` signature; a composite (array, map, struct)
-is **rejected** at the boundary:
+Only these may appear in an `extern` signature; a **map, struct, or non-scalar
+array** is rejected at the boundary:
 
-- **Scalars** `int`, `float`, `bool`.
+- **Scalars** `int`, `char`, `float`, `bool`.
 - **Sized integers.** The first-class sized types `u32`, `u64`, and `f32`
   ([§5.2](03-types.md#52-scalar-types)) cross as themselves — an `extern`
   parameter or return of one of these types takes or produces a value of that
@@ -35,10 +35,15 @@ is **rejected** at the boundary:
   into C memory. A nullable C return is declared `-> Option(string)`.
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
   a `bytes`/array returned from C is copied into an arena and the C buffer freed.
+- **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, long)`
+  pair (like `bytes`); an array of any other element type, and any map or struct,
+  is rejected (no flat, self-describing C ABI).
 - **`ptr`** — an opaque `void*` Tycho never dereferences; the `null` literal and
   `is_null(p)` apply.
 - **typed `handle`s** — §25.
-- **`inout` scalar/string out-parameters**.
+- **`inout` out-parameters** — a numeric scalar or `ptr` only (`int`/`char`/
+  `float`/`bool`/`ptr`); a `string`, `bytes`, handle, or composite `inout`
+  out-parameter is **rejected** (no trivial out-param ABI).
 
 Every value returned from C that carries storage (`string`, `bytes`, an array) is
 **deep-copied into the caller's storage at the call site**; a program never holds
@@ -58,8 +63,8 @@ type error).
 
 An `extern "Lib"` adds `-lLib` to the link line; a package's `deps` file adds
 `pkg-config` flags, and a co-located `<pkg>_shim.c` is compiled and linked
-automatically ([§28](15-program.md), forthcoming). `-lm` and `-fwrapv` are always
-on the link line.
+automatically ([§28](15-program.md)). `-lm` (a link flag) and `-fwrapv` (a
+compile flag) are always on this single `cc` command line.
 
 ## 25. Typed handles
 

@@ -1,22 +1,26 @@
 # The Tycho language specification
 
-> **Status: DRAFT / in progress.** This is the formal specification of the Tycho
-> language — the normative contract a conforming implementation must satisfy.
-> It is being written per [ROADMAP §1.8](../../ROADMAP.md) and the build plan in
+> **Status: source-audited draft (2026-07-12).** The formal specification of the
+> Tycho language — the normative contract a conforming implementation must
+> satisfy. Written per [ROADMAP §1.8](../../ROADMAP.md); build plan in
 > [docs/internals/spec-plan.md](../internals/spec-plan.md).
 >
-> Last synced against `src/tychoc.c` + `compiler/tychoc0.ty`: **2026-07-12**.
-> A complete first draft of all chapters (1–33) and appendices (A–H) exists and
-> has been **source-audited**: every chapter — including the four originally
-> drafted by subagents — was cross-checked against `src/tychoc.c`, all internal
-> section links and `§`-cross-references were verified mechanically, and the
-> previously-open behavioral corners (float/`char` semantics, evaluation order,
-> the concurrency ordering guarantees, the FFI sized-int round-trip) were pinned
-> by differential probing. What remains before it is a *finished* spec: the
-> Phase-5 conformance pass (`make spec-check` + the coverage matrix), back-porting
-> the reference-doc drifts logged in [Appendix H](appendix-h-differences.md), and
-> flattening the collected grammar (Appendix A). The remaining `Editor's note`
-> blocks are informative reconciliation notes, not open questions.
+> **Every chapter (1–33) and appendix (A–H) has been cross-checked against the
+> reference compiler `src/tychoc.c`** — the four chapters originally drafted by
+> subagents and the eight core chapters alike, one adversarial auditor per
+> chapter, with each finding re-verified against source before it was applied.
+> All internal links, `§`-labels, and section cross-references are verified
+> mechanically, and every open behavioral corner (float/`char` semantics,
+> evaluation order, `>>` sign behavior, `range` step 0, the concurrency ordering
+> guarantees, the FFI sized-int round-trip) is pinned by differential probing on
+> both compilers. The content is verified against the implementation.
+>
+> It is a *draft*, not the ratified 1.0, because the following remain (finishing
+> work, not correctness): the `make spec-check` conformance gate, the
+> collected-grammar flattening (Appendix A), the conformance coverage matrix
+> (Appendix E), and back-porting the reference-doc drifts logged in
+> [Appendix H](appendix-h-differences.md). The remaining `Editor's note` blocks
+> are informative reconciliation notes, not open questions.
 
 ## What this document is
 

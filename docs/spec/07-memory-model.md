@@ -53,7 +53,8 @@ copy/equality symmetry does not apply.
 
 ### 9.4 Uniqueness
 
-Because nothing aliases, **every heap buffer has exactly one owner**. This
+Because nothing aliases, **every mutable heap buffer has exactly one owner**
+(immutable interned string literals, which are shared and immortal, aside). This
 uniqueness is what lets the reference implementation mutate or recycle a value's
 storage in place whenever the value is provably dead or uniquely held, with no
 reference counting — the check a reference-counted language performs at run time
@@ -71,9 +72,12 @@ transparency is guaranteed by the value-semantics asymmetry (§10.4): under valu
 semantics a wrong storage decision can change only when memory is reclaimed,
 never whether a pointer dangles.
 
-The reference implementation verifies this by requiring optimized output to be
-byte-identical to unoptimized `-O2` output across the whole suite; a conforming
-implementation MUST hold to the same observable-equivalence standard.
+The reference implementation verifies this by requiring the emitted C, compiled
+under AddressSanitizer/UBSan, to produce output byte-identical to the native
+`-O2` build across the whole suite (exit 0, clean sanitizers), with per-
+optimization A/B baselines separately confirming each optimization is
+output-invisible; a conforming implementation MUST hold to the same
+observable-equivalence standard.
 
 ## 10. Object lifetimes and storage
 
@@ -106,11 +110,11 @@ the syntax:
   a `return`; the outer variable's, for an outer assignment), so it survives the
   inner scope's collapse.
 
-The write forms that cause an "up" escape and their destinations are: `return e`
-(to the caller); `outer = e` and `push(outer, v)` and any store through a place
-whose root is an outer variable (to that variable's storage); and passing an
-argument or `inout` (to the callee). Every escape destination is decidable at
-the write site from the local scopes and signatures.
+The write forms that route a value to another scope, and their destinations,
+are: **up** — `return e` (to the caller), and `outer = e` / `push(outer, v)` /
+any store through a place whose root is an outer variable (to that variable's
+storage); and **down** — passing an argument or `inout` (to the callee). Every
+destination is decidable at the write site from the local scopes and signatures.
 
 ### 10.3 Observable storage guarantees
 
@@ -120,8 +124,9 @@ A conforming implementation MUST guarantee:
    there is no use-after-free. Under value semantics this is guaranteed *by
    construction* (§10.4).
 2. **No leak at scope exit.** When a scope exits (including `main`), the storage
-   it exclusively owns is reclaimed; at normal program termination nothing that
-   the program allocated remains live. (The reference implementation enforces
+   it exclusively owns is reclaimed; no value's storage outlives its owning scope,
+   and at normal program termination there are no reachable leaks. (The reference
+   implementation enforces
    this under LeakSanitizer.)
 
 The reference implementation additionally provides two properties that follow
@@ -161,9 +166,11 @@ captured, returned, or stored.
 ### 11.2 Exclusivity
 
 The same caller variable MUST NOT be passed to two `inout` parameters of a single
-call, and more generally two `inout` arguments of one call MUST NOT designate
-overlapping storage (e.g. `&x` twice, or `&a[i]` twice, or `&a` together with an
-element of `a`). Such overlap is rejected at compile time (*"overlapping mutable
+call, and more generally two `inout` arguments of one call MUST NOT share a root
+variable. The check is by **root variable**, conservatively (may-overlap): both
+`&a[i]` and `&a[j]` — and `&a.x` with `&a.y` — are rejected because they root at
+the same `a`, even when the elements or fields provably do not overlap. Such
+overlap is rejected at compile time (*"overlapping mutable
 access"*); it would make the copy-out order observable and reintroduce aliasing.
 
 Both implementations enforce this (`src/tychoc.c:5019`;
@@ -187,7 +194,7 @@ call frames while preserving value semantics.
 ### 11.4 Relationship to `sink`
 
 `sink` is a distinct parameter mode: the callee **owns and consumes** the
-argument (§15, forthcoming). Unlike `inout`, `sink` does not write a value back;
+argument (§15.2). Unlike `inout`, `sink` does not write a value back;
 it takes ownership, and the caller MUST NOT use the argument after the call.
 `sink` and `inout` are mutually exclusive on a parameter, and neither may combine
 with a variadic parameter.

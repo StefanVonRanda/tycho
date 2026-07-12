@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt`/`parse_if`/`parse_match`/`for`/`select`
-> `src/tychoc.c:2338-2827`,`:2686-2725`. Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:2605-2950` (`parse_if` `:2338`,
+> `parse_match` `:2409`, `for` `:2741-2826`, `select` `:2686-2722`). Loop and `match` behaviors marked
 > "probed" were confirmed on both compilers (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -55,8 +55,12 @@ valid in every shape and are errors outside a loop.
 **Counting form** — `for i in range(a, b, step):` binds `i` (an `int`, scoped to
 the loop) to successive values from `a` toward `b`, stepping by `step`. `range(n)`
 means `range(0, n, 1)`; `range(a, b)` means step `1`. The bound `b` is exclusive.
-A **negative step** counts downward. A **zero step yields no iterations**
-(*probed*: `range(0, 3, 0)` runs the body zero times).
+A **negative step** counts downward. A **zero step is not guarded**: the loop
+test is `a < b` when `step > 0` and `a > b` otherwise, so a zero step takes the
+`a > b` test — it yields **no iterations when `a <= b`** (probed: `range(0, 3, 0)`
+runs the body zero times) but is a **non-terminating loop when `a > b`** (e.g.
+`range(3, 0, 0)`, since the counter never advances). A program MUST NOT use a
+zero step.
 
 **Foreach form** — `for x in xs:` iterates a collection: an array (binding each
 element) or a `string` (binding each byte as an `int`). The **collection is
@@ -92,6 +96,6 @@ non-zero status; it never returns and is typed `void`, so a non-`void` function
 that `die`s in one branch still type-checks. `die` is the only user-callable
 abort ([§29](16-builtins.md), forthcoming; there is no `assert`/`panic`). Other
 terminating conditions (division by zero, out-of-bounds access, and the like) are
-the defined runtime aborts of [§30](17-runtime.md) (forthcoming). Normal
+the defined runtime aborts of [§30](17-runtime.md). Normal
 termination occurs when `main` returns, after which all program storage is
 reclaimed ([§10.3](07-memory-model.md#103-observable-storage-guarantees)).

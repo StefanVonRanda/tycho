@@ -135,7 +135,7 @@ is unaffected. They are **not** reserved:
   and the match wildcard `_`.
 - **Built-in functions:** every builtin (`len`, `push`, `pop`, `print`, `str`,
   `to_int`, `wait`, `send`, `recv`, `close`, …) is an ordinary identifier
-  resolved as a call; none is reserved ([§29](16-builtins.md), forthcoming).
+  resolved as a call; none is reserved ([§29](16-builtins.md)).
 
 > Provenance: contextual dispatch at `src/tychoc.c:3689-3698` (top level),
 > `:2611`/`:2627` (`const`/`delete`), `:1582`/`:2026` (`soa`), `:3028`
@@ -198,9 +198,9 @@ than that is rejected (`integer literal out of range`).
 Because a literal is non-negative and negation is a separate unary operator
 (§4), the most negative `int` value, `−9223372036854775808`, has no literal
 spelling; it is obtained by computation (for example negating a smaller value,
-relying on defined wraparound — §30, forthcoming). An integer literal adapts to
+relying on defined wraparound — §30). An integer literal adapts to
 a `float`, `u32`, `u64`, or `f32` context by the literal-adaptation rules of the
-type system (§8, forthcoming); it does not change the literal's syntax.
+type system (§8); it does not change the literal's syntax.
 
 > Provenance: `src/tychoc.c:279-285` (accumulation + overflow check).
 
@@ -216,7 +216,7 @@ Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
 A float literal has a fractional part (`3.14`), an exponent (`1e10`, `2E8`), or
 both (`1.5e-3`), or begins with a dot (`.5`). The value is that of the C
 `strtod` parse of the same text and denotes an IEEE-754 binary64 (`float`); a
-float literal adapts to `f32` by literal adaptation (§8, forthcoming). There is
+float literal adapts to `f32` by literal adaptation (§8). There is
 no hexadecimal-float form.
 
 Two disambiguation rules are normative:
@@ -225,10 +225,13 @@ Two disambiguation rules are normative:
   float literal *only* when the preceding token is not value-producing (i.e. not
   an identifier, number, string, character literal, `)`, or `]`). After a
   value-producing token, `.` is the field/tuple-index operator, so `t.0` is a
-  tuple index and `x.5` is a field access followed by a number, never a float.
+  tuple index and `x.5` is a tuple index (`.` then the integer `5`), never a float.
 - **Malformed exponent.** An `e`/`E` not followed by an optional sign and at
   least one digit is not part of the number; the `e…` is lexed as a separate
-  identifier. Thus `1e`, `1.e5`, and `1e+` do not form float literals.
+  identifier. Thus `1e` and `1e+` do not form float literals (`1e` tokenizes as
+  `INT DOT?`… i.e. the `e` becomes a lone identifier). `1.e5` also does not form a
+  float, but for a different reason: the `.` is not followed by a digit, so no
+  fractional part forms and it tokenizes as `INT(1) "." IDENT(e5)`.
 
 > Provenance: `src/tychoc.c:249-277`; the leading-dot predicate is
 > `tok_postfixable`, `:151-154`.

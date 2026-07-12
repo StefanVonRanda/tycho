@@ -60,7 +60,7 @@ A value of a newtype `X = U` is unwrapped to its `U` value by the base-specific
 conversion — `to_int` (`U = int`), `to_float` (`U = float`), `to_str` (`U =
 string`), `to_bool` (`U = bool`) — or by the generic `to_under`, which yields
 the underlying type of any newtype. Unwrapping is zero-cost (a newtype is erased
-in lowering, [§5.5](03-types.md#54-newtypes)).
+in lowering, [§5.4](03-types.md#54-newtypes)).
 
 ## 8.4 Hard errors
 

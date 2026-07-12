@@ -23,7 +23,7 @@ message text, the layout of generated C, or the performance of any construct
 [docs/thesis.md](../thesis.md) and [docs/perf.md](../perf.md)).
 
 Tycho is defined **abstractly**: scalar widths and behavior are fixed
-independently of any compilation target (§5, forthcoming). The reference
+independently of any compilation target (§5). The reference
 implementation transpiles to C; that lowering is *one conforming realization*,
 never the definition. The single, minimal register of behavior an
 implementation is permitted to vary is collected in
@@ -80,7 +80,7 @@ tests skip (rather than fail) when the external library is absent.
 An implementation MUST NOT accept a program this specification requires to be
 rejected. **Failing closed** — rejecting a doubtful program rather than
 compiling it to undefined behavior — is a normative principle of this language
-([§30](17-runtime.md), forthcoming), inherited from the reference
+([§30](17-runtime.md)), inherited from the reference
 implementation's design.
 
 ### 1.4 Requirement keywords
@@ -110,7 +110,7 @@ release names the language version it specifies; a conforming implementation
 states which version it implements.
 
 Within a frozen version, this document is normative and stable; corrections that
-change observable behavior are issued as eradata against a named version, never
+change observable behavior are issued as errata against a named version, never
 silently.
 
 ## 2. Notation

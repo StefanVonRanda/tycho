@@ -23,10 +23,13 @@ diagnostic text is not ([§1.1](00-conventions.md)).
   It never traps. (The reference realizes this by compiling with `-fwrapv`.)
 - **Unsigned overflow** (`u32`, `u64`) wraps modulo `2^32` / `2^64`, by
   definition.
+- **`chr(n)`** uses the low 8 bits of `n` (`n & 0xff`); it does **not** abort or
+  reject an out-of-range `n`. So `chr(256)` is the `NUL` byte and `chr(-1)` is
+  byte `255` (probed on both compilers).
 
-Integer overflow is the one arithmetic condition that is fully defined rather
-than aborting; every other numeric edge either aborts (§30.2) or is unspecified
-(§30.5).
+Integer overflow and `chr` masking are the arithmetic conditions that are fully
+defined rather than aborting; every other numeric edge either aborts (§30.2) or
+is unspecified (§30.5).
 
 ## 30.2 Conditions that abort
 
@@ -41,7 +44,6 @@ A conforming implementation MUST abort on each of the following:
 - **`pop` from an empty array.**
 - **`reserve` with a negative or excessive capacity.**
 - **`split` with an empty separator.**
-- **`chr(n)` with `n` outside `0..255`.**
 - **Channel misuse:** `send` on a closed channel; a second `close`; a channel
   capacity below 1.
 - **Task misuse:** a second `wait` on a task; exceeding the concurrent-task

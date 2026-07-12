@@ -37,8 +37,8 @@ following groundings occur:
 1. **Ground a pending type.** A declaration whose initializer is an
    otherwise-untypeable empty form is *pending* until first use (§6.4); checking
    against `T` grounds it to `T`.
-2. **Fill an empty aggregate.** A bare `[]`, an empty slice `[:]`, or an empty
-   map literal takes its element/key/value types from `T`.
+2. **Fill an empty aggregate.** A bare `[]` takes its element types (array or
+   soa) or its key/value types (map) from `T`.
 3. **Coerce a bracket literal to a fixed-size array.** A `[a, b, c]` literal
    checked against `[N]U` becomes a fixed-size array, with the element count and
    element types verified against `N` and `U`.
@@ -59,7 +59,7 @@ diagnostic naming both the expected and the actual type.
   `x`. The initializer MUST NOT be `void`.
 - `x : T = e` (typed declaration) **checks** `e` against `T`. A mismatch — for
   example a `U` value where a newtype over `U` is declared — is rejected. This
-  is where newtype distinctness ([§5.5](03-types.md#54-newtypes)) is enforced.
+  is where newtype distinctness ([§5.4](03-types.md#54-newtypes)) is enforced.
 - `x = e` (assignment) checks `e` against the existing type of `x`.
 - Function parameter and return types are **always explicit** in the signature;
   they are the fixed points from which inference within a body proceeds.
@@ -69,23 +69,29 @@ diagnostic naming both the expected and the actual type.
 Two initializers cannot be typed in isolation: a bare empty array `[]` and a
 bare `None`. When used as a declaration initializer without an annotation, the
 variable's type is **pending** and is grounded by the type expected at its first
-use within the same block. A pending type that is never grounded, and the
-special forms `x := None`, `x := Ok(v)`, and `x := Err(e)` used with no
-expected-type context, are **rejected** — a program MUST annotate or otherwise
-ground them (e.g. `x : [int] = []`, `x : Option(int) = None`).
+use within the same block; a pending type that is **never** grounded is rejected
+(a program MUST annotate or ground it, e.g. `x : [int] = []`, `x : Option(int) =
+None`). The `Result` constructors behave differently: `x := Ok(v)` and
+`x := Err(e)` are **not** pending — only one of `Result`'s two type parameters is
+known, so they are rejected **immediately** at the declaration and MUST be
+annotated (`x : Result(int, string) = Ok(v)`).
 
-> Provenance: pending grounding `pend_ground` `src/tychoc.c:5784-5791`;
-> rejection of ungrounded bare sum constructors `:5800-5805`.
+> Provenance: pending deferral `src/tychoc.c:5784-5791`, grounding `pend_ground`
+> `:4006-4025`; rejection of ungrounded `None` / immediate rejection of bare
+> `Ok`/`Err` `:5800-5805`.
 
 ## 6.5 Branch unification for value `if` / `match`
 
 A value-producing `if` or `match` in tail position ([§4.3.2](02-grammar.md),
-[§13](09-expressions.md)/[§14](10-statements.md), forthcoming) requires **all
+[§13](09-expressions.md)/[§14](10-statements.md)) requires **all
 branches to have the same type**, which becomes the type of the whole
-expression. Unification here means literal equality of the branch types (with
-numeric-literal adaptation and bare-sum-constructor fixing per §6.2), not the
-introduction of a type variable. A branch whose type cannot be made equal to the
-others is rejected.
+expression. For the `:=` and typed `x : T =` forms, unification is **strict**
+equality of the independently-synthesized branch types: there is no
+numeric-literal adaptation across branches and no type variable, and a bare
+`None`/`Ok`/`Err` branch is rejected (it must be annotated). In the `x =` /
+place-assignment / `return` tail positions a destination type flows into each
+branch, so adaptation and bare-sum-constructor fixing apply there. A branch
+whose type cannot be made equal to the others is rejected.
 
 ## 6.6 Non-goals of inference
 

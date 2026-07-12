@@ -2,7 +2,7 @@
 
 Tycho's concurrency is the ordinary call convention run on another thread. The
 same rule that governs a call — deep-copy arguments in, deep-copy the result out,
-a private arena per activation ([§9](07-memory-model.md)) — is already a sound
+a private arena per activation ([§10](07-memory-model.md)) — is already a sound
 thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
@@ -25,7 +25,7 @@ threads ever hold the same Tycho storage, there are no data races on Tycho value
 (§23), whose send/receive operations are themselves defined to deep-copy the
 payload across the boundary, preserving the no-shared-storage invariant. This
 guarantee covers Tycho values only and **does not extend across the FFI
-boundary** ([§26](14-ffi.md), forthcoming): a C function that touches process
+boundary** ([§26](14-ffi.md)): a C function that touches process
 global or `static` state can race exactly as it would in C.
 
 **Ordering (happens-before).** Each cross-thread transfer establishes a
@@ -129,8 +129,11 @@ one receiver, in ticket order.
 `select` waits on multiple channels:
 
 - a `recv(ch, x):` arm runs when `ch` has a value, binding it to `x`;
-- an optional `default:` arm makes the `select` non-blocking (it runs when no
-  `recv` arm is immediately ready);
+- an optional `default:` arm makes the `select` non-blocking: it runs when at
+  least one channel is still open but no `recv` arm is ready. The all-closed
+  condition is terminal and takes priority over `default` — if every listed
+  channel is closed and drained, the `closed` arm runs (if present) and the
+  `select` exits *without* running `default`;
 - an optional `closed:` arm runs when every listed channel is closed and drained.
 
 A `select` MUST have at least one arm.

@@ -12,7 +12,7 @@ dependencies ([§28](#28-packages-and-modules)).
 The type-level meaning of the declarations a program contains is given in
 [§5](03-types.md); their scoping within a package is [§12](08-declarations.md);
 the FFI contract an `extern` declaration participates in — which types may cross
-the C boundary, and how — is [§24](14-ffi.md) (forthcoming). This chapter
+the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
@@ -33,12 +33,12 @@ parameter or a non-`void` return type (`src/tychoc.c:6354-6355`,
 
 `main` is the sole entry point: execution begins by calling it and the program
 terminates when it returns (the runtime allocates the program's root arena
-around this call — [§10](07-memory-model.md), forthcoming). `main` is an
+around this call — [§10](07-memory-model.md)). `main` is an
 ordinary procedure in every other respect; it MAY be called recursively and MAY
 appear in any file of the entry package.
 
 The program's command-line arguments are obtained through the builtin `args()`,
-which returns a `[string]` ([§29](16-builtins.md), forthcoming). The array
+which returns a `[string]` ([§29](16-builtins.md)). The array
 mirrors the process `argv` exactly, so `args()[0]` is the **program name** (the
 path by which the executable was invoked) and the operands follow at
 `args()[1]` onward (`runtime/tycho_rt.c:1351-1356`, wired from the generated
@@ -87,7 +87,7 @@ The following rules are normative (`parse_extern_fn`
   same C symbol therefore refer to the same foreign function regardless of the
   Tycho packages they appear in.
 - An `extern` procedure is invoked **without** the implicit arena argument that
-  every Tycho procedure receives ([§10](07-memory-model.md), forthcoming); it
+  every Tycho procedure receives ([§10](07-memory-model.md)); it
   calls the C symbol directly.
 - The optional leading string literal names a **link library** (`extern "Lib"
   fn …`), which the implementation adds to the link line as `-lLib` (§27.4).
@@ -95,7 +95,7 @@ The following rules are normative (`parse_extern_fn`
 The set of types an `extern` parameter or return may name — including the
 FFI-only sized-integer spellings (`u8`, `u16`, `i8`, `i16`, `i32`, `i64`),
 `inout` out-parameters, and the `Option(string)` nullable return — is defined by
-the FFI chapter ([§24](14-ffi.md), forthcoming), which is the single normative
+the FFI chapter ([§24](14-ffi.md)), which is the single normative
 home for the crossable-type rules. This section governs only the *declaration
 form* and its role in program structure.
 
@@ -123,7 +123,7 @@ with these normative properties:
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation (`:10604`, `:3728`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
-  ([§20](13-concurrency.md), forthcoming).
+  ([§20](13-concurrency.md)).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
   (unoptimized with debug info) instead (`:10601`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST

@@ -24,11 +24,12 @@ writing a place stores into that storage.
 
 **Arithmetic** (`+ - * / %`, unary `-`). Both operands MUST have the same type,
 which is `int`, `float`, a sized numeric (`u32`/`u64`/`f32`), `char` (for `+`/`-`
-with the byte-domain rule below), or a newtype over a numeric base; the result
-keeps that type. `int`/`u32`/`u64` division or modulo by a zero *value* aborts
-([§30](17-runtime.md), forthcoming); by a zero *literal* it is a compile error.
-`float`/`f32` division never traps and follows IEEE-754 (`x/0.0` → `±inf` or
-`NaN`). Integer overflow wraps (two's-complement for `int`, modulo `2^32`/`2^64`
+with the byte-domain rule below), or a newtype over an `int` or `float` base; the
+result keeps that type. `int`/`u32`/`u64` division or modulo by a zero *value*
+aborts ([§30](17-runtime.md)). Division or modulo by an **integer literal `0`** is
+a compile error regardless of operand type (so `x / 0` is rejected even when `x`
+is `float`); `float`/`f32` division by a zero *value* or by the float literal
+`0.0` never traps and follows IEEE-754 (`x/0.0` → `±inf`/`NaN`). Integer overflow wraps (two's-complement for `int`, modulo `2^32`/`2^64`
 for `u32`/`u64`). `char ± int` has type `char` but its value is the ordinary
 integer result and is **not** reduced to `0..255` (probed: `'a' + 300` yields a
 `char` holding `397`).
@@ -46,7 +47,8 @@ b` evaluates `b` only when `a` is `false`). Precedence, tightest first among the
 logical group: `not`, then `and`, then `or`, all looser than any comparison.
 
 **Bitwise and shift** (`& | ^ ~ << >>`). Operands MUST be the same integer type.
-`>>` is a logical shift. Per the Go-style precedence (§4.5) `& << >>` bind at the
+`>>` is an **arithmetic** (sign-preserving) shift on signed `int` and a **logical**
+shift on `u32`/`u64`. Per the Go-style precedence (§4.5) `& << >>` bind at the
 multiplicative level and `| ^` at the additive level, so every bitwise operator
 binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift count
 outside `0 .. width−1` is **unspecified** (probed: currently inherits the C
@@ -54,9 +56,11 @@ target's undefined behavior; a program MUST NOT rely on it).
 
 ## 13.3 Unary operators
 
-`-e` negates; `~e` is bitwise NOT; `not e` is boolean negation; `&p` forms an
-`inout` argument from a place (§11). Unary operators bind tighter than every
-binary operator except the postfix group.
+`-e` negates; `~e` is bitwise NOT; `&p` forms an `inout` argument from a place
+(§11). These prefix operators bind tighter than every binary operator (below only
+the postfix group). `not e` is boolean negation but is **not** part of this tight
+group: it sits at a much looser precedence level — looser than every comparison
+and arithmetic/bitwise operator (§13.2, §4.5).
 
 ## 13.4 Evaluation order
 
@@ -91,9 +95,13 @@ place-assignment, or a `return`. In that position:
 - a value `if` MUST have an `else` (every path yields a value); `elif` chains are
   allowed;
 - a value `match` MUST be exhaustive;
-- all branches MUST have the same type (with numeric-literal adaptation and
-  bare-sum-constructor fixing, [§6.5](04-inference.md#65-branch-unification-for-value-if--match)),
-  and that type is the type of the whole expression.
+- all branches MUST have the same type, which becomes the type of the whole
+  expression ([§6.5](04-inference.md#65-branch-unification-for-value-if--match)).
+  For the `:=` and typed `x : T =` forms this is **strict** type equality: the
+  branches must already synthesize the identical concrete type, and a bare
+  `None`/`Ok`/`Err` branch (type not yet fixed) is rejected. Numeric-literal
+  adaptation and bare-sum-constructor fixing apply only in the `x =` /
+  place-assignment / `return` tail positions, where a destination type flows in.
 
 The value lands in the destination's storage exactly as a returned value does; it
 introduces no new aliasing. Multi-statement branches, a branch that diverges

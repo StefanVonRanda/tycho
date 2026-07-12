@@ -37,7 +37,7 @@ The one deliberate exception is a **C-owned opaque handle** returned as `ptr`
 (§31.3): such a handle is *not* arena-managed and MUST be released by the
 package's stated free function (for example `regex.release`, `http.release`,
 `image` frees internally). The `ptr` itself is carried by value and is never
-dereferenced by Tycho ([§24](14-ffi.md), forthcoming).
+dereferenced by Tycho ([§24](14-ffi.md)).
 
 ### 31.2 Conformance tiers
 

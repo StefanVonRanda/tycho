@@ -7,7 +7,7 @@ catalog of the builtins — grouped by category, each with its argument and resu
 types and a one-line semantics, and each marked **Sig** or **magic** (§29.2).
 
 The construction, mutation, and place semantics of the aggregates these builtins
-operate on are specified in Part VI (§16–§19, forthcoming); their arena and
+operate on are specified in Part VI (§16–§19); their arena and
 value-copy behavior in [§9](07-memory-model.md); the conversions' full
 accepts→yields table in [§8.2](06-conversions.md#82-explicit-conversion-builtins).
 Operators and keywords that read as calls but are **not** builtins — `m[k]`,
@@ -35,7 +35,7 @@ The line between the **language** and the **corelib** is drawn precisely:
   import.
 - Every other predefined function is a **corelib** procedure, reached only
   through `import "core:…"` and specified in [Part XVIII](README.md) (the
-  standard library, forthcoming). Corelib is *layered on* the language; it is
+  standard library). Corelib is *layered on* the language; it is
   not part of it.
 
 This distinction is normative: it fixes which names a conforming implementation
@@ -48,7 +48,7 @@ Builtins fall into two kinds, and each entry below is marked with one:
 
 - **Sig** — registered in `register_builtins` with a **fixed, monomorphic
   signature** and resolved by ordinary signature lookup, arity check, and
-  argument type-checking, exactly like a user function (§15, forthcoming). A
+  argument type-checking, exactly like a user function (§15). A
   `Sig` builtin is never overloaded and takes its arguments by value.
 - **magic** — recognized **by name in `resolve_expr`** (and in codegen) *before*
   signature lookup. A magic builtin MAY be polymorphic (its result or accepted
@@ -65,7 +65,7 @@ follows observable behavior: `str` is polymorphic and is marked **magic**;
 
 > Editor's note (Appendix H): the reference page `docs/reference/builtins.md` is
 > **incomplete** — it omits `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`,
-> `to_u64`, `to_f32`, and `keys`. This chapter is the complete set;
+> `to_u64`, and `to_f32`. This chapter is the complete set;
 > the gap is logged for Appendix H and the reference page is to be updated to
 > match.
 
@@ -107,7 +107,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`). | Sig |
-| `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md), forthcoming). | Sig |
+| `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md)). | Sig |
 | `to_i32(n)` | `int -> int`: sign-extend the low 32 bits of a returned C `int` (FFI, [§24](14-ffi.md)). | Sig |
 | `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ([§24](14-ffi.md)). | Sig |
 
@@ -158,7 +158,7 @@ rejected — so they may grow or shrink the value in the owning arena.
 ## 29.7 Maps
 
 Map key/value rules and the map operators are in [§5.3.5](03-types.md#535-maps-k-v)
-and §18 (forthcoming). The two map builtins proper are `keys` and the `.get`
+and §18. The two map builtins proper are `keys` and the `.get`
 method sugar; both are **magic**.
 
 | Builtin | Signature | Kind | Semantics |
@@ -174,7 +174,7 @@ any non-map type `get` falls through to ordinary UFCS resolution.
 
 The map operators `m[k]` (as a place and as an absent-key read yielding the
 value's zero), `k in m`, and `delete m[k]` are **not** builtins — they are
-operators/keywords specified in §18 (forthcoming). The former functions
+operators/keywords specified in §18. The former functions
 `map_set`, `map_get`, `map_has`, and `map_del` have been **removed**: a
 user-written call to any of them is a **hard parse error** directing the author
 to `m[k] = v`, `m.get(k, default)`, `k in m`, and `delete m[k]` respectively.
@@ -208,7 +208,7 @@ applied to it ([§7.5](05-generics.md)).
 ## 29.9 Concurrency
 
 The concurrency model — tasks, channels, and their ordering guarantees — is
-[§20](13-concurrency.md) (forthcoming); this section catalogs only the builtins
+[§20](13-concurrency.md); this section catalogs only the builtins
 and their static rules. `Task(T)` and `Channel(T)` are affine, non-storable
 handle types with no type syntax ([§5.3.9](03-types.md#539-typed-handles)); the
 builtins below are their only consumers.
@@ -219,7 +219,7 @@ builtins below are their only consumers.
 | `channel(T, cap)` | `-> Channel(T)` | magic | Create a bounded channel of capacity `cap` (an `int`). **Legal only as the direct RHS of a declaration** (`ch := channel(T, cap)`); any other position is a compile error. |
 | `send(ch, v)` | `(Channel(T), T) -> void` | magic | Deep-copy `v` into the channel; blocks when full; aborts if the channel is closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | magic | Blocking receive (deep-copied out); `None` means the channel is closed **and** drained. |
-| `close(ch)` | `Channel(T) -> void` | magic | Close a channel: receivers drain then see `None`. Also `close(h)` on a **handle** variable ([§25](14-ffi.md), forthcoming): run its destructor early and suppress the scope-exit free. |
+| `close(ch)` | `Channel(T) -> void` | magic | Close a channel: receivers drain then see `None`. Also `close(h)` on a **handle** variable ([§25](14-ffi.md)): run its destructor early and suppress the scope-exit free. |
 | `ncpu()` | `-> int` | Sig | The `parallel for` fan-out width (online CPUs; overridable by `TYCHO_THREADS`). |
 
 `send`, `recv`, and `close` also have method-sugar forms on a channel-typed local
@@ -260,7 +260,7 @@ builtins — exactly the four below, all `Sig`, all over `float`:
 | `fabs(x)` | `float -> float` | Sig |
 
 Other numeric functions — `min`, `max`, `clamp`, and the trigonometric functions
-— are **not** builtins; they are provided by the standard library (§31, forthcoming)
+— are **not** builtins; they are provided by the standard library (§31)
 and require an import.
 
 > Provenance: `src/tychoc.c:3844-3848`.
@@ -276,7 +276,7 @@ registered in `register_builtins` and none is special-cased in `resolve_expr`
 The runtime does abort on its own for defined error conditions — an
 out-of-bounds index, a `pop` on an empty array, division or modulo by a zero
 *value*, a `split` on an empty separator, a `send` on a closed channel, and the
-other cases enumerated in [§30](17-runtime.md) (forthcoming). Those aborts are
+other cases enumerated in [§30](17-runtime.md). Those aborts are
 **internal**: they are emitted by the runtime, not exposed as callable functions,
 and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal

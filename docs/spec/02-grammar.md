@@ -40,10 +40,10 @@ ConstDecl   ::= "const" IDENT "=" ConstExpr NEWLINE
 the `STR` is the path (a `core:` prefix selects the corelib root). `ConstExpr`
 is an expression that folds to a single literal at compile time (integer
 arithmetic, bitwise, unary, and backward references to earlier top-level
-constants); its rules are given in §8 and §13 (forthcoming). Package resolution,
-visibility, and merging are specified in §28 (forthcoming).
+constants); its rules are given in §8 and §13. Package resolution,
+visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl`, `parse_import_decl`, `parse_const`
+> Provenance: `parse_package_decl` `src/tychoc.c:3459`, `parse_import_decl` `:3466`, `parse_const`
 > (`src/tychoc.c:3664-3681`).
 
 ### 4.1.1 Functions
@@ -56,11 +56,11 @@ Param      ::= IDENT ":" ( "inout" | "sink" )? "..."? Type
 
 A parameter is a name, a colon, an optional passing mode (`inout` for a
 copy-in/copy-out borrow, or the contextual `sink` for an owned/consumed
-parameter — §15, forthcoming), an optional `...` marking a **variadic**
+parameter — §15), an optional `...` marking a **variadic**
 parameter, and its type. A variadic parameter has type `[T]` (the call packs
 its trailing arguments into it) and MUST be the last parameter; it cannot also
 be `inout` or `sink`. A missing `->` return type means the function returns
-nothing (`void`). A function MUST NOT return a `handle` (§25, forthcoming).
+nothing (`void`). A function MUST NOT return a `handle` (§25).
 
 Type parameters are introduced *inside* `Type` by the `$` sigil (§4.2); a
 function that mentions any `$T` type parameter or `$N` size parameter in its
@@ -96,11 +96,11 @@ TypeParams ::= "(" "$" IDENT ( "," "$" IDENT )* ")"
 
 A `struct` has one or more fields; an `enum` has one or more variants, each with
 an optional payload of up to 8 types. A `handle` names an opaque FFI resource
-and its C free function (§25, forthcoming). A `type` declaration introduces a
+and its C free function (§25). A `type` declaration introduces a
 distinct **newtype** over an underlying type; the permitted underlying types are
-constrained in §5 (forthcoming). Recursion through a struct field is permitted
+constrained in §5. Recursion through a struct field is permitted
 only via a container (e.g. `[Node]`), never as a direct by-value self-field
-(§17, forthcoming).
+(§17).
 
 > Provenance: `parse_struct`/`parse_enum`/`parse_handle`/`parse_typedecl`,
 > `src/tychoc.c:3294-3446`.
@@ -115,14 +115,15 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
 
 An `ExternFn` is bodyless and binds to a C symbol; its optional `STR` names a
 link library. Its parameter and return types are restricted to the
-FFI-crossable set — the scalars, `string`, `bytes`, `ptr`, typed handles, and
-the extern-only sized-integer spellings `u8`/`u16`/`i8`/`i16`/`i32`/`i64`, plus
-`inout` scalar/string out-parameters and an `Option(string)` return (§24,
-forthcoming).
+FFI-crossable set — the scalars (`int`, `char`, `float`, `bool`), `string`,
+`bytes`, `ptr`, `[int]`/`[float]`, typed handles, the first-class sized numerics
+`u32`/`u64`/`f32`, and the extern-only sized-integer spellings
+`u8`/`u16`/`i8`/`i16`/`i32`/`i64`, plus `inout` **scalar** out-parameters (not
+`string`) and an `Option(string)` return ([§24](14-ffi.md)).
 
 A `Subscript` declares a user-defined projection: it yields a place (an lvalue)
 rooted in one of its parameters. Its rules — the place must be rooted in a
-parameter, each parameter used at most once — are given in §18 (forthcoming).
+parameter, each parameter used at most once — are given in §18.
 `Place` is defined in §4.4.
 
 > Provenance: `parse_extern_fn` (`:3212-3282`), `parse_subscript`
@@ -152,7 +153,7 @@ PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
             | "u32" | "u64" | "f32"
 ```
 
-Notes (constrained further in §5–§7, forthcoming):
+Notes (constrained further in §5–§7):
 
 - A `$IDENT` after `[` denotes a **size parameter** (`[$N]T`, a const-generic
   array) — and is distinguished from a dynamic `[$T]` (type-parameter element)
@@ -211,7 +212,7 @@ ExprStmt       ::= Call NEWLINE
   a field, a tuple element, or a user-subscript call. In `CompoundAssign`, a
   side-effecting call inside the place is evaluated once (hoisted); a pure index
   sub-expression may be evaluated twice, as writing the form out longhand would
-  (this single-vs-double evaluation is pinned in §13, forthcoming).
+  (this single-vs-double evaluation is pinned in §13).
 - `DeleteStmt` removes a map element; the `Postfix` MUST be an index `m[k]`.
 - The **only** valid bare-expression statement is a call. A bare variable,
   index, field, or `or_return` expression is rejected as having no effect.
@@ -247,15 +248,15 @@ ValueCtrl   ::= If | Match              /* value form: single-expression branche
   one argument means `0..n`), **foreach** (`for x in collection`, over an array
   or a string's bytes), and **condition** (`for cond:`, the while-loop form).
   `break`/`continue` are valid in every shape and only inside a loop.
-- `parallel for` applies only to a range or foreach loop (§22, forthcoming).
+- `parallel for` applies only to a range or foreach loop (§22).
 - `match` is exhaustive; a bare variant name is a nullary-variant pattern, a
   parenthesized list binds a variant's payload, `pkg.Variant` matches a
-  qualified variant, and `_` is the wildcard (§19, forthcoming).
+  qualified variant, and `_` is the wildcard (§19).
 - **`ValueCtrl`** is the value-producing form of `if`/`match`: it may appear only
   as the tail of a declaration (`:=`, typed `=`), an assignment, a place
   assignment, or a `return`. Each branch/arm is a single expression; a value
   `if` MUST have an `else`; a value `match` MUST be exhaustive; all branches MUST
-  unify to one type. These rules are given in §13/§14 (forthcoming).
+  unify to one type. These rules are given in §13/§14.
 
 > Provenance: `parse_if` (`:2338`), `parse_match` (`:2409`, `:2723`), `for`/
 > `parallel` (`:2731-2827`), `select` (`:2686-2722`), value-control routing
@@ -310,14 +311,22 @@ Primary ::= INT | FLOAT | STR | CHAR
           | IDENT "$" "(" Type ( "," Type )* ")" ( "(" ArgList? ")" )?  /* explicit type args */
           | IDENT "(" ArgList? ")"                      /* named call */
           | IDENT                                       /* variable, or nullary enum variant */
-Lambda  ::= "fn" "(" ParamList? ")" ( "->" Type )? ":" Expr
+Lambda  ::= "fn" "(" LambdaParams? ")" ( "->" Type )? ":" Expr
+LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 ```
+
+A lambda parameter's type is **optional** (inferred from the expected function
+type when omitted, §6.2), and a lambda parameter may **not** carry `inout`,
+`sink`, or `...` — so a lambda uses `LambdaParams`, not the `ParamList` of §4.1.1.
+`Call` in `ExprStmt` and after `spawn` denotes a `Postfix` whose outermost
+operation is a call `(...)`. A `Subscript` (§4.1.3) parameter is likewise plain
+`IDENT ":" Type` (no passing modes).
 
 - The array/map literal forms (`[e, …]`, `[k: v, …]`, empty typed `[]T` /
   `[]K:V`) and the pending bare `[]`/`None` grounding are detailed in §16/§18
-  (forthcoming).
+ .
 - A lambda's body is a single expression. A closure captures by deep copy at
-  creation (§13, forthcoming).
+  creation (§13).
 - `IDENT $ ( Type … )` supplies explicit type arguments to a generic call (e.g.
   `zero$(int)`); it is the only use of `$` in expression position.
 - `spawn` and `channel(…)` are restricted in where they may appear (§23,
@@ -353,7 +362,7 @@ Consequently `a & b == c` parses as `(a & b) == c`. The unary `&` (address-of /
 `inout` argument) and binary `&` (bitwise-AND) share a spelling but occupy
 different precedence levels (2 and 3). `and`/`or` short-circuit (§13,
 forthcoming). Evaluation order within a precedence level, and the order of
-argument and place sub-expression evaluation, is pinned in §13 (forthcoming) —
+argument and place sub-expression evaluation, is pinned in §13 —
 the grammar fixes only associativity, not side-effect order.
 
 > Provenance: `parse_mul`/`parse_add`/`parse_cmp`/`parse_not`/`parse_and`/

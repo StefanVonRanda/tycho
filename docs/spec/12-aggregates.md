@@ -87,7 +87,7 @@ borrowed parameter** is rejected (§16.4, [§11](07-memory-model.md#11-inout)).
 ### 16.4 Growth: `push`, `pop`, `reserve`
 
 Three built-in operations change an array's length or capacity (the builtins are
-catalogued in §29, forthcoming); each requires a mutable array place as its
+catalogued in §29); each requires a mutable array place as its
 first argument.
 
 | Form | Effect |
@@ -169,7 +169,7 @@ also exists, but unlike an array view it **always copies** into a fresh
 substring: there is no zero-copy string view. A string slice also **clamps**
 out-of-range bounds rather than aborting (`start < 0` → `0`, `end > len` → `len`,
 `end < start` → empty) — unlike an array slice, which aborts — because it is
-exactly `substr(s, a, b)`, the equivalent function form (§29, forthcoming).
+exactly `substr(s, a, b)`, the equivalent function form (§29).
 
 ### 16.7 Element-type restriction
 
@@ -225,7 +225,7 @@ bump(&p.x)               # a field as an `inout` argument
 Two structs compare with `==`/`!=` field-wise, recursing into nested structs,
 arrays, and strings, so `a == b` holds exactly when `b` is an independent copy of
 `a` ([§5.5](03-types.md#55-equality-and-ordering)). A struct MAY be a method
-(UFCS) receiver (§15, forthcoming).
+(UFCS) receiver (§15).
 
 ### 17.3 Recursion only through a container
 
@@ -246,7 +246,7 @@ values, not merely a return convention:
 - **Construction.** A parenthesized list `(10, 20)`, or a bare `return a, b`,
   builds a tuple.
 - **Multiple return values.** A function whose return type is a tuple returns
-  several values as one tuple (§15, forthcoming).
+  several values as one tuple (§15).
 - **Positional access and places.** `t.0`, `t.1`, … read an element; `t.0 = v`
   writes one in place (a tuple element is a writable place). An index out of
   `0 .. n-1` is a compile error (`src/tychoc.c:4154-4156`).
@@ -496,7 +496,7 @@ match s:
   **same type**, which is the type of the whole expression. A value `match` is
   exhaustive exactly as the statement form is. The value form of `if` similarly
   requires an `else` (every path must produce a value). This desugars to the
-  declare-then-assign-in-each-arm form (§14, forthcoming).
+  declare-then-assign-in-each-arm form (§14).
 
 ```
 label := match status:          # value match — arms are single expressions

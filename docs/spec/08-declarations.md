@@ -39,8 +39,8 @@ unary operations over literals and — at top level — backward references to
 earlier top-level constants. A `const` is an immutable named literal, folded at
 each use site (it has no run-time storage). Reassigning a `const`, or a
 non-constant right-hand side, is an error. A top-level `const` MUST NOT collide
-with a struct, enum, newtype, handle, variant, or another constant of the same
-name. Float arithmetic in a `const` right-hand side, and a *local* `const`
+with a struct, enum, newtype, handle, variant, function, or another constant of
+the same name. Float arithmetic in a `const` right-hand side, and a *local* `const`
 referencing another `const`, are not permitted (only negative float *literals*
 fold).
 
@@ -71,9 +71,9 @@ compilers agree).
 ## 12.5 Name resolution
 
 Within a body, an identifier resolves to (in order) a local variable or
-parameter in scope, a nullary enum variant, a top-level constant, or a
+parameter in scope, a top-level constant, a nullary enum variant, or a
 function/type name. A qualified name `pkg.name` resolves through the imported
-package's prefix ([§28](15-program.md), forthcoming). All package-level names
+package's prefix ([§28](15-program.md)). All package-level names
 are mangled to one flat namespace by a per-package prefix; this mangling is not
 observable in the source language (a program always uses the unqualified or
 `pkg.`-qualified spelling).
