@@ -1,0 +1,37 @@
+# core:tls -- a TLS 1.2/1.3 client over OpenSSL. The `deps` manifest names
+# `openssl`; pkg-config supplies -lssl -lcrypto, so it is turnkey where OpenSSL is
+# installed and its test is skipped where it is not. Import with `import "core:tls"`.
+#
+# Secure by default: connect verifies the server certificate against the system CA
+# store and checks the hostname (SNI is sent). A failed resolve/connect/handshake/
+# verification returns a NULL handle -- fail closed, so you never get an insecure
+# connection by accident (guard with is_null / tls.ok). Payloads are binary-safe
+# `bytes`. Built on the same POSIX sockets that core:net uses, wrapped in TLS.
+#
+#   tls.connect(host, port) -> ptr    Connect + TLS handshake + verify; null on failure.
+#   tls.write(conn, data)   -> int    Send over the encrypted stream; bytes sent or -1.
+#   tls.read(conn, max)     -> bytes  Read up to `max` decrypted bytes; empty on close/error.
+#   tls.close_conn(conn)              Shut down and free (safe on a null handle).
+#   tls.ok(conn)            -> bool   Whether connect succeeded (not null).
+package tls
+
+# ---- shim externs (OpenSSL; defined in tls_shim.c) ----
+extern fn tlsx_connect(host: string, port: int) -> ptr    # opaque TLS-connection handle; null on failure
+extern fn tlsx_write(conn: ptr, data: bytes) -> int
+extern fn tlsx_read(conn: ptr, max: int) -> bytes
+extern fn tlsx_close(conn: ptr)
+
+fn connect(host: string, port: int) -> ptr:
+    return tlsx_connect(host, port)
+
+fn write(conn: ptr, data: bytes) -> int:
+    return tlsx_write(conn, data)
+
+fn read(conn: ptr, max: int) -> bytes:
+    return tlsx_read(conn, max)
+
+fn close_conn(conn: ptr):
+    tlsx_close(conn)
+
+fn ok(conn: ptr) -> bool:
+    return not is_null(conn)

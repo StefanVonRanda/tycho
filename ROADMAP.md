@@ -195,9 +195,16 @@ alloc/free paths.
   `png_image` API (a `deps` pkg-config module). `decode(bytes) -> Image{width,
   height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
   non-PNG. JPEG (lossy, libjpeg) is a demand-gated follow-up.
+- **TLS — `core:tls`.** A TLS 1.2/1.3 client over OpenSSL libssl (a `deps` module).
+  Secure by default: `connect(host, port)` verifies the cert against the system CA
+  store, checks the hostname, and sends SNI; failure returns a null handle (never a
+  silent insecure connection). `write`/`read`/`close_conn` over the encrypted
+  stream. Deterministic offline test (dead-port -> null, the http pattern); the live
+  handshake is verified manually.
 
-Still open and genuinely missing: **TLS** (image decode/encode is now covered for
-PNG) — demand-gated.
+With TLS, **the explicit 1.4 corelib gaps are all shipped.** What remains is
+demand-gated extras only — JPEG/other image formats, `datetime` string parsing,
+bignum `gcd`, an HTTP server, a CLI-arg parser — each to be built on a real need.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion

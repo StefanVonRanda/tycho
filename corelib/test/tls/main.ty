@@ -1,0 +1,27 @@
+# corelib test: exercises core:tls. Skipped where OpenSSL is absent (via
+# corelib/tls/deps). tychoc and tychoc0 must agree and the output is locked to
+# corelib/test/tls.out (corelib/run.sh).
+#
+# This is the DETERMINISTIC OFFLINE path (the core:http pattern): nothing listens
+# on the loopback port, so the TCP connect -- and thus the TLS handshake -- fails
+# and connect returns a null handle. It proves the FFI round-trip and fail-closed
+# error handling without a server or external network. A live TLS session cannot
+# be a stable golden, so the successful path is verified manually.
+package main
+import "core:tls"
+
+fn b2i(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+fn main():
+    c := tls.connect("127.0.0.1", 1)                      # a closed loopback port -> connection refused
+    println("connect_null=" + str(b2i(is_null(c))))       # 1
+    println("ok=" + str(b2i(tls.ok(c))))                  # 0
+
+    # read/write/close on the null handle are safe, fail-closed no-ops
+    println("write=" + str(tls.write(c, to_bytes("hello"))))   # -1
+    println("read_len=" + str(len(tls.read(c, 64))))           # 0
+    tls.close_conn(c)                                          # safe on null
+    println("done=1")
