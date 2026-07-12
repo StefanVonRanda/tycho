@@ -9517,6 +9517,41 @@ fn is_eaddr(e: Expr) -> bool:
         _:
             return false
 
+# The root variable of a `&place` inout argument (walking .field/[index] down to
+# the base), or "" if the place is not rooted in a plain variable. Feeds the
+# exclusivity check; mirrors tychoc's root walk (src/tychoc.c:5012-5018).
+fn eaddr_root_name(e: Expr) -> string:
+    match e:
+        EAddr(p, _el):
+            return place_root_name(p)
+        _:
+            return ""
+
+# Root variable of a place spine that may include a slice (v / v.f / v[i] /
+# v[a:b]), or "" if not a plain variable. place_root_name does not descend a
+# slice; this one does, for the slice-vs-inout overlap check (src/tychoc.c:5027).
+fn place_root_name_slice(e: Expr) -> string:
+    match e:
+        EField(b, f, _el):
+            return place_root_name_slice(b)
+        EIndex(b, ix, _el):
+            return place_root_name_slice(b)
+        ESlice(b, lo, hi, _el):
+            return place_root_name_slice(b)
+        EVar(n, _el):
+            return n
+        _:
+            return ""
+
+# The source variable a slice argument `base[lo:hi]` views, or "" if the arg is
+# not a slice (or not rooted in a plain variable). Mirrors src/tychoc.c:5026-5029.
+fn slice_root(e: Expr) -> string:
+    match e:
+        ESlice(b, lo, hi, _el):
+            return place_root_name_slice(b)
+        _:
+            return ""
+
 # A `inout` (inout) parameter must be passed `&variable`; tychoc rejects a bare
 # argument there, but tychoc0 used to accept it and emit C that passes the value
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
@@ -9533,6 +9568,34 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
         elif not is_inout(pp[k]) and not is_sink(pp[k]):
             nt_check(dc, ctx, pp[k], args[k], names, types, "argument " + str(k + 1) + " of '" + nm + "'", el)
         k = k + 1
+    # exclusivity (Law of Exclusivity): the same variable may not be passed to two
+    # inout params of one call -- overlapping mutable access breaks the x = f(x)
+    # value-semantics model. Parity with tychoc (src/tychoc.c:5006-5021); tychoc0
+    # had no such check (a fail-open: it accepted `swap(&x, &x)`).
+    i := 0
+    for i < len(args) and i < len(pp):
+        if is_inout(pp[i]):
+            ri := eaddr_root_name(args[i])
+            if ri != "":
+                j := i + 1
+                for j < len(args) and j < len(pp):
+                    if is_inout(pp[j]) and eaddr_root_name(args[j]) == ri:
+                        die_at(dc, el, "variable '" + ri + "' passed to two inout parameters of '" + nm + "' (overlapping mutable access)")
+                    j = j + 1
+        i = i + 1
+    # slice-vs-inout overlap: a slice argument views its source's buffer; an inout
+    # of that same variable in the same call could reallocate it (e.g. push),
+    # leaving the slice dangling. Parity with tychoc (src/tychoc.c:5022-5038).
+    sc := 0
+    for sc < len(args):
+        sroot := slice_root(args[sc])
+        if sroot != "":
+            sk := 0
+            for sk < len(args) and sk < len(pp):
+                if is_inout(pp[sk]) and eaddr_root_name(args[sk]) == sroot:
+                    die_at(dc, el, "cannot pass a slice of '" + sroot + "' and an inout of '" + sroot + "' in one call (the inout may reallocate the buffer the slice views)")
+                sk = sk + 1
+        sc = sc + 1
 
 # The variant names of enum `ename` (the bare name "E" or a generic instance
 # "Tree__int"; falls back to the generic base "Tree" of an application form).

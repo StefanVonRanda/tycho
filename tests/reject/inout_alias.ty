@@ -1,0 +1,13 @@
+# The same variable may not be passed to two `inout` parameters of one call
+# (the Law of Exclusivity -- two overlapping mutable borrows would break the
+# `x = f(x)` value-semantics model). Both compilers reject it. tychoc always
+# did (src/tychoc.c:5006-5021); tychoc0 used to accept `swap2(&n, &n)` and emit
+# C -- a fail-open with no such check -- now fixed (parity restored).
+fn swap2(x: inout int, y: inout int):
+    t := x
+    x = y
+    y = t
+fn main():
+    n := 5
+    swap2(&n, &n)
+    print(str(n))
