@@ -12,16 +12,19 @@ program MUST NOT depend on anything in the "unspecified" list.
 | # | Behavior | Reference | Status |
 |---|---|---|---|
 | 1 | **Argument / operand / place evaluation order** within one expression (order of side effects among a call's arguments, a binary operator's operands, or a place's sub-expressions). | [§13.4](09-expressions.md#134-evaluation-order) | probed; inherited from the target, not sequenced by Tycho |
-| 2 | **Shift count outside `0 .. width−1`** for `<<`/`>>`. | [§13.2](09-expressions.md#132-operators) | probed; currently C undefined behavior, no guard |
-| 3 | **Out-of-range narrowing conversion** — `to_int(f)` for `f` outside `int` range; `to_u32`/`to_u64`/`to_f32` whose source does not fit. (In-range `to_int(float)` truncates toward zero.) | [§8.5](06-conversions.md#85-out-of-range-conversions) | probed |
-| 4 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
-| 5 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
-| 6 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
+| 2 | **Out-of-range narrowing conversion** — `to_int(f)` for `f` outside `int` range; `to_u32`/`to_u64`/`to_f32` whose source does not fit. (In-range `to_int(float)` truncates toward zero.) | [§8.5](06-conversions.md#85-out-of-range-conversions) | probed |
+| 3 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
+| 4 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
+| 5 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
 
-Items 1–3 are candidates for future tightening (for example, pinning
-left-to-right evaluation by emitting sequenced temporaries, or masking/rejecting
-an out-of-range shift). Any such change would move the item from this list into
-the normative body; until then it is unspecified.
+An out-of-range **shift count** was formerly in this list; it is now defined
+(count ≥ width → `0`, negative count → runtime abort — [§13.2](09-expressions.md#132-operators)).
+
+Items 1–2 are candidates for future tightening (for example, pinning
+left-to-right evaluation by emitting sequenced temporaries, or defining the
+out-of-range narrowing conversion). Any such change would move the item from this
+list into the normative body; until then it is unspecified. (The out-of-range
+shift count was such a candidate and has since been defined — §13.2.)
 
 ## F.2 Implementation-defined behavior
 

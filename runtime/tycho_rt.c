@@ -114,6 +114,43 @@ static unsigned long long tycho_umod(unsigned long long a, unsigned long long b)
     if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
     return a % b;
 }
+/* Shift guard. Shifting by >= the operand's bit width, or by a negative count, is
+ * C undefined behavior -- the determinism contract requires a defined result.
+ * A count >= width shifts every bit out, so the result is 0 (as Go, Odin, and
+ * Swift all define). A negative count is a program bug (like a bad index), so
+ * abort cleanly with a tycho: message. Signed `<<` is computed in unsigned to
+ * dodge signed-overflow UB (the -fwrapv two's-complement contract); signed `>>`
+ * stays arithmetic (sign-extending) for in-range counts. */
+static long tycho_shl_i(long x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 64) return 0;
+    return (long)((unsigned long)x << n);
+}
+static long tycho_shr_i(long x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 64) return 0;
+    return x >> n;
+}
+static unsigned int tycho_shl_u32(unsigned int x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 32) return 0;
+    return x << n;
+}
+static unsigned int tycho_shr_u32(unsigned int x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 32) return 0;
+    return x >> n;
+}
+static unsigned long long tycho_shl_u64(unsigned long long x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 64) return 0;
+    return x << n;
+}
+static unsigned long long tycho_shr_u64(unsigned long long x, long long n) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= 64) return 0;
+    return x >> n;
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */

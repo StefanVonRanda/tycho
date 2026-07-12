@@ -2781,8 +2781,16 @@ fn fold_ii(op: string, x: int, y: int, orig: Expr, line: int) -> Expr:
     if op == "^":
         return EInt(str(x ^ y), line)
     if op == "<<":
+        if y < 0:
+            die("const expression shifts by a negative count")
+        if y >= 64:
+            return EInt("0", line)
         return EInt(str(x << y), line)
     if op == ">>":
+        if y < 0:
+            die("const expression shifts by a negative count")
+        if y >= 64:
+            return EInt("0", line)
         return EInt(str(x >> y), line)
     return orig   # comparison / logical / string op: not const-foldable -> is_lit fails
 
@@ -5625,6 +5633,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 if op == "%":
                     gfn = "hi_umod"
                 return gfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
+            if op == "<<" or op == ">>":   # shift guard: count >= width -> 0, negative -> clean abort (else C UB). Keyed on result width = lhs type (rlt).
+                sfn := "hi_shl_i"
+                if op == ">>":
+                    sfn = "hi_shr_i"
+                if rlt == "u32":
+                    sfn = "hi_shr_u32"
+                    if op == "<<":
+                        sfn = "hi_shl_u32"
+                if rlt == "u64":
+                    sfn = "hi_shr_u64"
+                    if op == "<<":
+                        sfn = "hi_shl_u64"
+                return sfn + "(" + gen_expr(l, names, types, dc, ctx) + ", " + gen_expr(r, names, types, dc, ctx) + ")"
             return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
         ECall(name, args, _el):
             zmk := find(name, "$<")
@@ -8872,6 +8893,12 @@ fn preamble() -> string:
     out = out + "static long hi_imod(long a, long b) { if (b == 0) { fprintf(stderr, \"tycho: modulo by zero\\n\"); exit(1); } if (a == (-9223372036854775807L - 1L) && b == -1) return 0; return a % b; }\n"
     out = out + "static unsigned long long hi_udiv(unsigned long long a, unsigned long long b) { if (b == 0) { fprintf(stderr, \"tycho: division by zero\\n\"); exit(1); } return a / b; }\n"
     out = out + "static unsigned long long hi_umod(unsigned long long a, unsigned long long b) { if (b == 0) { fprintf(stderr, \"tycho: modulo by zero\\n\"); exit(1); } return a % b; }\n"
+    out = out + "static long hi_shl_i(long x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 64) return 0; return (long)((unsigned long)x << n); }\n"
+    out = out + "static long hi_shr_i(long x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 64) return 0; return x >> n; }\n"
+    out = out + "static unsigned int hi_shl_u32(unsigned int x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 32) return 0; return x << n; }\n"
+    out = out + "static unsigned int hi_shr_u32(unsigned int x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 32) return 0; return x >> n; }\n"
+    out = out + "static unsigned long long hi_shl_u64(unsigned long long x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 64) return 0; return x << n; }\n"
+    out = out + "static unsigned long long hi_shr_u64(unsigned long long x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 64) return 0; return x >> n; }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
     out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"

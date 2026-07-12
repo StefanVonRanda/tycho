@@ -50,9 +50,12 @@ logical group: `not`, then `and`, then `or`, all looser than any comparison.
 `>>` is an **arithmetic** (sign-preserving) shift on signed `int` and a **logical**
 shift on `u32`/`u64`. Per the Go-style precedence (§4.5) `& << >>` bind at the
 multiplicative level and `| ^` at the additive level, so every bitwise operator
-binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift count
-outside `0 .. width−1` is **unspecified** (probed: currently inherits the C
-target's undefined behavior; a program MUST NOT rely on it).
+binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift **count**
+outside `0 .. width−1` is **defined**, not inherited from C: a count **≥ the
+operand's bit width** yields `0` (every bit is shifted out — matching Go, Odin,
+and Swift), and a **negative** count is a program error that **aborts** at runtime
+(`tycho: negative shift count`), like division by zero. A negative *constant*
+count is rejected at compile time.
 
 ## 13.3 Unary operators
 

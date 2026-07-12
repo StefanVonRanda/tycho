@@ -3647,8 +3647,10 @@ static Expr *const_fold(Expr *e, int refs) {
         case TK_AMP:     r = x & y; break;
         case TK_PIPE:    r = x | y; break;
         case TK_CARET:   r = x ^ y; break;
-        case TK_SHL:     r = x << y; break;
-        case TK_SHR:     r = x >> y; break;
+        case TK_SHL:     if (y < 0) die_at(e->line, "const expression shifts by a negative count");
+                         r = y >= 64 ? 0 : (long)((unsigned long)x << y); break;
+        case TK_SHR:     if (y < 0) die_at(e->line, "const expression shifts by a negative count");
+                         r = y >= 64 ? 0 : x >> y; break;
         default: return e;
     }
     Expr *n = new_expr(E_INT, e->line); n->ival = r; return n;
@@ -7874,6 +7876,14 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
             if ((e->op == TK_SLASH || e->op == TK_PERCENT) && (base_of(e->type) == T_U32 || base_of(e->type) == T_U64))
                 return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", l, r);
+            /* shifts route through the runtime guard: count >= width -> 0, negative
+             * count -> clean abort (both are C undefined behavior otherwise). Helper
+             * is keyed on the result width (= the shifted value's type). */
+            if (e->op == TK_SHL || e->op == TK_SHR) {
+                const char *w = base_of(e->type) == T_U32 ? "u32"
+                              : base_of(e->type) == T_U64 ? "u64" : "i";
+                return sfmt("tycho_sh%c_%s(%s, %s)", e->op == TK_SHL ? 'l' : 'r', w, l, r);
+            }
             return sfmt("(%s %s %s)", l, op_str(e->op), r);
         }
     }

@@ -27,9 +27,10 @@ diagnostic text is not ([§1.1](00-conventions.md)).
   reject an out-of-range `n`. So `chr(256)` is the `NUL` byte and `chr(-1)` is
   byte `255` (probed on both compilers).
 
-Integer overflow and `chr` masking are the arithmetic conditions that are fully
-defined rather than aborting; every other numeric edge either aborts (§30.2) or
-is unspecified (§30.5).
+Integer overflow, `chr` masking, and an over-wide shift count (`≥` the operand's
+bit width, defined as `0`) are the arithmetic conditions that are fully defined
+rather than aborting; every other numeric edge either aborts (§30.2 — including a
+negative shift count) or is unspecified (§30.5).
 
 ## 30.2 Conditions that abort
 
@@ -38,6 +39,8 @@ A conforming implementation MUST abort on each of the following:
 - **Integer division or modulo by zero** (`int`, `u32`, `u64`). Additionally
   `(−2^63) / −1` aborts (quotient overflow); `(−2^63) % −1` yields `0` and does
   not abort.
+- **A negative shift count** (`<<`, `>>`). A count `≥` the operand's bit width
+  does *not* abort — it is defined as `0` (§30.1, §13.2).
 - **Array index out of bounds**, on both read (`a[i]`) and write (`a[i] = v`).
 - **String index out of bounds** (`s[i]`). (`s[i] = v` is a *compile* error —
   strings are immutable.)
@@ -77,8 +80,6 @@ a conforming program MUST NOT depend on them. They are collected in
 
 - **Argument / operand / place evaluation order** within one expression
   (§13.4; *probed* — inherited from the target, not sequenced by Tycho).
-- **A shift count outside `0 .. width−1`** (`<<`, `>>`) (*probed* — currently C
-  undefined behavior; no guard).
 - **An out-of-range narrowing conversion** — `to_int(f)` for a `float` outside the
   `int` range, or a `to_u32`/`to_u64`/`to_f32` whose source does not fit
   (*probed*). In-range `to_int(float)` truncates toward zero.
