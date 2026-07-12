@@ -160,7 +160,7 @@ aids; the prose and grammar are the specification.
 
 The tree-sitter grammar under `editors/zed/` is a **non-normative** editor
 highlighter. It does not model indentation and is known to diverge from the
-language in several places (enumerated in [§3.7](01-lexical.md#37-non-normative-tree-sitter-grammar));
+language in several places (enumerated in [§3.10](01-lexical.md#310-non-normative-tree-sitter-grammar));
 it MUST NOT be treated as a grammar of record.
 
 ### 2.3 Examples

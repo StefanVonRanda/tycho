@@ -51,10 +51,12 @@ denoting a non-negative value; `−2^63` is obtained only by computation.
 rounding, and special values (signed zero, infinities, NaN) follow IEEE-754.
 `/` is true division and does not trap.
 
-> Editor's note (punch-list C/#17): the exact IEEE-754 conformance level, the
-> behavior of `==`/`<` on NaN and signed zero, and whether `0.0/0.0` yields NaN
-> or is unspecified must be pinned by probing both implementations. This section
-> will state a definitive rule before the chapter leaves draft.
+Division never traps: `0.0/0.0` is `NaN`, `1.0/0.0` is `+inf`, and `-1.0/0.0` is
+`-inf` (probed on both compilers). `NaN` is unordered — `NaN == NaN` is `false`,
+and every ordering comparison with a `NaN` operand is `false`. The float *values*
+are fully defined by IEEE-754; only the *textual* form `str` produces for
+`NaN`/`inf` (e.g. `-nan`) derives from the C library and is implementation-defined
+([Appendix F](appendix-f-impl-defined.md)).
 
 ### 5.2.3 `bool`
 
@@ -70,10 +72,10 @@ narrowly with `int`: `char ± int` has type `char`. `char` is comparable and
 ordered (§5.6) but is **not** accepted by `str` — an intentional asymmetry
 (§8).
 
-> Editor's note (punch-list #22): the runtime byte-domain behavior of
-> `char ± int` when the result leaves `0..255` (e.g. `'a' + 300`) is to be
-> pinned; the type-checker fixes the result type to `char` but the wrap rule is
-> not yet stated.
+The result has type `char`, but its numeric value is the ordinary integer result
+and is **not** reduced to `0..255`: `'a' + 300` is a `char` holding `397` (probed
+on both compilers). A `char` produced by arithmetic is therefore not guaranteed to
+lie in `0..255`.
 
 ### 5.2.5 `string`
 
@@ -134,9 +136,9 @@ bounds-checked (out-of-bounds aborts). Element types `void` and `bool` are
 (a `[bool]` is rejected at type-parse); a `bool` array is expressed through
 other means where needed.
 
-> Editor's note (punch-list F): the `[bool]` type-position restriction
-> (`src/tychoc.c:1688`) is a real rule to confirm and reconcile against the
-> reference docs, which give only positive array examples.
+> Note: confirmed in source (dynamic `[T]` `src/tychoc.c:1688-1689`, fixed `[N]T`
+> `:1671-1673`); detailed in
+> [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
 
@@ -219,7 +221,7 @@ declared C free function that runs at scope exit. A handle value cannot be
 copied, stored in any aggregate, captured by a closure or `parallel for`, or
 returned from a Tycho function (§25, forthcoming). The concurrency handle types
 `Task(T)` and `Channel(T)` are similarly affine and non-storable
-([§13](13-concurrency.md), forthcoming).
+([§20](13-concurrency.md), forthcoming).
 
 ## 5.4 Newtypes
 

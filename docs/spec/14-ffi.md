@@ -22,11 +22,14 @@ Only these may appear in an `extern` signature; a composite (array, map, struct)
 is **rejected** at the boundary:
 
 - **Scalars** `int`, `float`, `bool`.
-- **Sized integers** `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64` — valid
-  **only** in an `extern` signature (a by-value parameter or the return). They
-  are `int` on the Tycho side; the emitted C prototype uses the real fixed-width
-  C type, so the call matches the C ABI. A value narrows to the C width on the way
-  in and widens back to `int` on return.
+- **Sized integers.** The first-class sized types `u32`, `u64`, and `f32`
+  ([§5.2](03-types.md#52-scalar-types)) cross as themselves — an `extern`
+  parameter or return of one of these types takes or produces a value of that
+  exact type. The narrower spellings `u8`, `u16`, `i8`, `i16`, `i32`, `i64` are
+  valid **only** in an `extern` signature (a by-value parameter or the return)
+  and are `int` on the Tycho side; the emitted C prototype uses the real
+  fixed-width C type, so the call matches the C ABI, with the round-trip rule
+  below.
 - **`string`** — passed as a C `char*`. A `string` **returned** from C is copied
   into the caller's storage at the call site, so Tycho never retains a pointer
   into C memory. A nullable C return is declared `-> Option(string)`.
@@ -41,10 +44,15 @@ Every value returned from C that carries storage (`string`, `bytes`, an array) i
 **deep-copied into the caller's storage at the call site**; a program never holds
 a live pointer into C-owned memory.
 
-> Editor's note (punch-list #20, unresolved): the Tycho-observable result of a
-> sized-integer round-trip — e.g. passing a negative `int` to a `u32` parameter
-> and reading the returned value — must be pinned (sign-extension vs.
-> reinterpretation) rather than left at "C's defined conversion."
+The extern-only sized spellings round-trip as follows (probed on both compilers).
+On the way **in**, the Tycho `int` argument is narrowed to the C fixed-width type
+modulo `2^width` (its low bits). On the way **back**, the C result widens to Tycho
+`int` — **sign-extended** for the signed spellings (`i8`/`i16`/`i32`/`i64`) and
+**zero-extended** for the unsigned (`u8`/`u16`): e.g. `i32(-1)` → `-1`,
+`i32(2^32)` → `0`, `u8(-1)` → `255`, `u8(256)` → `0`, `i8(200)` → `-56`. The
+first-class `u32`/`u64`/`f32` do **not** narrow at the call — an extern parameter
+of one of those types requires an argument of that exact type (a bare `int` is a
+type error).
 
 ### 24.2 Linking
 

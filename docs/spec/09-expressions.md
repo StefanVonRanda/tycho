@@ -122,5 +122,4 @@ function that has an `inout` parameter cannot be used as a first-class value
   short-circuits out of the enclosing function ([§19](12-aggregates.md),
   forthcoming); it binds tighter than any binary operator.
 - **`spawn`**, **`channel(…)`**, and the concurrency operators are specified in
-  [§13-concurrency](13-concurrency.md) (forthcoming); each has grammar
-  restrictions noted in §4.4.
+  [§20](13-concurrency.md); each has grammar restrictions noted in §4.4.

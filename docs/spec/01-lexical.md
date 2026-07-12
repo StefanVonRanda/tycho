@@ -169,7 +169,7 @@ Boolean negation is the keyword `not`, not `!`. The braces `{` and `}` are
 **not** tokens of the language; they are significant only inside an f-string
 literal (§3.9.5). There is no range operator (`..`); ranges are written with the
 `range(…)` form in a `for` head (§4). Operator precedence and associativity are
-defined with the expression grammar in [§4](02-grammar.md#expression-precedence).
+defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
 > Provenance: `src/tychoc.c:398-433`. `::` is lexed at `:402` but no grammar
 > production consumes it.

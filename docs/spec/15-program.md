@@ -80,8 +80,8 @@ extern [ "Lib" ] fn name(p: T, …) [ -> T ]
 The following rules are normative (`parse_extern_fn`
 `src/tychoc.c:3212-3282`):
 
-- An `extern` declaration has **no body**: it MUST end at the newline after its
-  signature, and an implementation MUST reject a following indented block.
+- An `extern` declaration has **no body**: it ends at the newline after its
+  signature (`:3280`), so a following indented block is a parse error.
 - Its `name` is the **literal C symbol** and is **not** package-mangled (§28.3),
   because a C symbol is global (`:3222`). Two `extern` declarations naming the
   same C symbol therefore refer to the same foreign function regardless of the
@@ -108,8 +108,8 @@ The invocation has the shape:
 
 ```
 cc {-O3 | -O0 -g} -fwrapv [-march=native] -pthread -o OUT gen.c \
-   <auto shims> <-lLib per extern lib> <-L/-I/--link/--pkg passthrough> \
-   -lm <pkg-config flags from deps>
+   <auto shims> -lm <-lLib per extern lib> \
+   <-L/-I/--link/--pkg passthrough> <pkg-config flags from deps>
 ```
 
 with these normative properties:
@@ -123,7 +123,7 @@ with these normative properties:
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation (`:10604`, `:3728`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
-  ([§13](13-concurrency.md), forthcoming).
+  ([§20](13-concurrency.md), forthcoming).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
   (unoptimized with debug info) instead (`:10601`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST
@@ -225,7 +225,7 @@ mangling. `extern` C symbols are the sole exception and are never prefixed
 with `_` is **private to its own package**: it is usable from any file *within*
 that package, but a qualified `pkg._name` from another package MUST be rejected
 with a diagnostic (`check_pkg_private` `src/tychoc.c:3580-3587`; enforced at the
-qualified-reference sites `:1724`, `:2427`, `:4323`). Every other top-level
+qualified-reference sites `:1724`, `:2427`, `:4323`, `:4562`). Every other top-level
 symbol is exported and visible to importers. There is no visibility keyword;
 the underscore convention is the whole of the rule.
 
@@ -313,7 +313,8 @@ when the package is imported (`merge_pkg` `src/tychoc.c:10300-10303`):
   implementation runs `pkg-config --cflags --libs <name>` and splices the result
   onto the C compiler line (§27.4), so a shim that `#include`s a system header
   builds against the right flags (`add_pkg_deps` `:3759-3775`). A `deps` name
-  that pkg-config cannot resolve surfaces as an error (`:3772`). Note that
+  that pkg-config cannot resolve prints a diagnostic (`:3772`); the missing library
+  then surfaces as a link error at the `cc` stage. Note that
   `deps` is consulted **only alongside a shim** (`:10303`); a `deps` file with
   no companion shim contributes nothing.
 
@@ -323,4 +324,5 @@ tier**: a conforming implementation **MAY** omit them and still conform at the
 **core tier**, but a program that imports an absent extended package **MUST** be
 diagnosed rather than silently mis-linked. The reference test harness embodies
 this split — it probes the same `deps` and **skips** (rather than fails) a
-package's tests when the external library is unavailable (`src/tychoc.c:3754-3756`).
+package's tests when the external library is unavailable (`corelib/run.sh`, per
+the note at `src/tychoc.c:3754-3756`).

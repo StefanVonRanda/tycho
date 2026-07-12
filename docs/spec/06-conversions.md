@@ -76,13 +76,11 @@ The following are compile-time type errors, not conversions:
 
 ## 8.5 Out-of-range conversions
 
-For `to_int(f)` the result is `f` truncated toward zero. The behavior of a
-conversion whose source value is not representable in the destination type — a
-`float` outside the `int` range for `to_int`, or a value that does not fit the
-target width for `to_u32`/`to_u64`/`to_f32` — is not yet pinned.
-
-> Editor's note (punch-list #19, unresolved): the out-of-range behavior of each
-> narrowing conversion (`saturate` / `wrap` / `truncate` / `reinterpret`) MUST
-> be pinned by probing both implementations before this chapter leaves draft.
-> Until then, a conforming program SHOULD NOT rely on the result of an
-> out-of-range conversion.
+For an in-range operand, `to_int(f)` truncates `f` toward zero, and each sized
+conversion narrows by the modular/reinterpreting rule of §8.2. The result of a
+conversion whose source value is **not representable** in the destination type —
+a `float` outside the `int` range for `to_int`, or a value that does not fit the
+target width for `to_u32`/`to_u64`/`to_f32` — is **unspecified** (probed: it
+currently inherits the C target's out-of-range float-to-integer behavior, which
+is undefined). A conforming program MUST NOT rely on the result of an
+out-of-range conversion ([Appendix F](appendix-f-impl-defined.md)).

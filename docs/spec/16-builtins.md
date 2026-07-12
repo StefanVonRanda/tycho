@@ -65,7 +65,7 @@ follows observable behavior: `str` is polymorphic and is marked **magic**;
 
 > Editor's note (Appendix H): the reference page `docs/reference/builtins.md` is
 > **incomplete** — it omits `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`,
-> `to_u64`, `to_f32`, `to_under`, and `keys`. This chapter is the complete set;
+> `to_u64`, `to_f32`, and `keys`. This chapter is the complete set;
 > the gap is logged for Appendix H and the reference page is to be updated to
 > match.
 
@@ -208,7 +208,7 @@ applied to it ([§7.5](05-generics.md)).
 ## 29.9 Concurrency
 
 The concurrency model — tasks, channels, and their ordering guarantees — is
-[§13](13-concurrency.md) (forthcoming); this section catalogs only the builtins
+[§20](13-concurrency.md) (forthcoming); this section catalogs only the builtins
 and their static rules. `Task(T)` and `Channel(T)` are affine, non-storable
 handle types with no type syntax ([§5.3.9](03-types.md#539-typed-handles)); the
 builtins below are their only consumers.
@@ -233,7 +233,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 
 ## 29.10 Filesystem and time
 
-All six are `Sig` builtins with fixed signatures. The file and directory
+All five are `Sig` builtins with fixed signatures. The file and directory
 builtins **fail soft** — an unopenable path yields the empty result rather than
 aborting.
 

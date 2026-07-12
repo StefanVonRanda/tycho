@@ -98,7 +98,7 @@ not here.) `docs/corelib.md:55-58`.
 
 ### 32.2 `fmath`
 
-Float-only helpers (pure Tycho): constants `pi`, `e`; `round` (half away from
+Float-only helpers (pure Tycho): constant-valued nullary functions `pi()`, `e()`; `round` (half away from
 zero), `trunc`, `lerp(a, b, t)`, `approx_eq(a, b, eps)`. No trig (no libm sin/cos
 builtin). `docs/corelib.md:59-61`.
 

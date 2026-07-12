@@ -13,7 +13,7 @@ are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:1671-1673`,`:1688-1689`;
 > `pop`-empty abort `:9641`,`:9960`; `reserve` `:4906-4917`,`:9625-9630`; tuple
-> arity `:1613`, index `:4154-4156`; destructuring `:2829-2837`,`:5816-5838`;
+> arity `:1613`,`:1617`, index `:4154-4156`; destructuring `:2829-2837`,`:5816-5838`;
 > map read (pure `map_get`, no insert) `:4282-4297`; map place insert+zero
 > `:9926-9935`; `keys()` insertion order `:9918`,`:9931`; `delete` → `map_del`
 > `:2624-2640`,`:4835-4841`; subscript parse + rules `:3092-3143`, dispatch
@@ -29,8 +29,12 @@ are in [§11](07-memory-model.md#11-inout).
 An **array literal** `[e1, …, en]` constructs a `[T]` whose element type `T` is
 the common type of the elements ([§6](04-inference.md)); every element MUST have
 the same type `T`. An **empty literal** carries no elements from which to infer
-`T`, so it MUST be written with an explicit element type — `[]int`, `[]string`,
-`[][int]` — and a bare `[]` is a compile error. Binding an array deep-copies it:
+`T`, so it MAY be written with an explicit element type — `[]int`, `[]string`,
+`[][int]`. A bare `[]` used as a `:=` initializer is instead *pending*: it is
+grounded by the element type expected at its first use in the block (`xs := []`
+then `push(xs, 1)` fixes `xs` to `[int]`), and is a compile error only if never
+grounded ([§6.4](04-inference.md#64-pending-types)). Binding an array
+deep-copies it:
 
 ```
 xs := [10, 20, 30]      # a [int]
@@ -117,8 +121,11 @@ from `[T]` on three points:
   fixed-size array, in which case it coerces (element count and element types
   checked).
 - **No growth or slicing.** `push`, `pop`, `reserve`, and slice expressions
-  (§16.6) do **not** apply to a `[N]T`; use a dynamic `[T]` when the length
-  varies.
+  (§16.6) are not meaningful on a `[N]T`; use a dynamic `[T]` when the length
+  varies. (In the reference compiler a fixed array is not caught by a dedicated
+  Tycho diagnostic here — it reaches the C backend, which emits no growth/slice
+  operation for it, so the misuse surfaces as a C-compiler error rather than a
+  clean language-level rejection.)
 - **`len` is a compile-time constant.** `len(v)` for `v: [N]T` is the constant
   `N`, with no runtime length field. Indexing is bounds-checked against the
   static `N`; `==` compares element-wise.
@@ -159,8 +166,10 @@ viewed buffer.
 
 A **string slice** `s[a:b]` (with the same `s[a:]` / `s[:b]` / `s[:]` forms)
 also exists, but unlike an array view it **always copies** into a fresh
-substring: there is no zero-copy string view. `substr(s, a, b)` is the
-equivalent function form (§29, forthcoming).
+substring: there is no zero-copy string view. A string slice also **clamps**
+out-of-range bounds rather than aborting (`start < 0` → `0`, `end > len` → `len`,
+`end < start` → empty) — unlike an array slice, which aborts — because it is
+exactly `substr(s, a, b)`, the equivalent function form (§29, forthcoming).
 
 ### 16.7 Element-type restriction
 
@@ -171,10 +180,10 @@ form). This applies only to the direct element of a bracket type; a `bool` may
 appear inside an array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
-> Editor's note (punch-list F): the `bool`/`void` element restriction is
-> verified against `src/tychoc.c:1688`, but the reference pages
-> (`docs/reference/arrays-slices.md`) give only positive array examples and do
-> not state it. The two are to be reconciled — see also
+> Note: this restriction is confirmed in source (dynamic `[T]` `:1688-1689`,
+> fixed `[N]T` `:1671-1673`); the reference page `docs/reference/arrays-slices.md`
+> gives only positive array examples and does not state it — an
+> under-documentation gap, not a contradiction. See also
 > [§5.3.1](03-types.md#531-arrays-t).
 
 ---
@@ -231,7 +240,7 @@ sized. This is a type-formation rule; it is stated normatively in
 
 A tuple `(T1, …, Tn)` is the anonymous product of
 [§5.3.3](03-types.md#533-tuples), with **2 to 8** elements (a 1-element or
-9-element tuple is a compile error, `src/tychoc.c:1613`). Tuples are first-class
+9-element tuple is a compile error, `src/tychoc.c:1617` (min) and `:1613` (max)). Tuples are first-class
 values, not merely a return convention:
 
 - **Construction.** A parenthesized list `(10, 20)`, or a bare `return a, b`,
@@ -402,8 +411,7 @@ closed (the subscript is rejected, never silently mis-projected)
 - **Yields a place.** The body MUST be a single `yield &<place>`, where
   `<place>` is a field/index spine; a non-place operand is rejected.
 - **Type match.** The yielded place's type MUST equal the declared `-> inout U`;
-  a mismatch is rejected at the call site (`src/tychoc.c:3115-3117`, dispatch
-  `:4424`,`:4500`).
+  a mismatch is rejected at the call site (dispatch `:4422-4426`,`:4497-4502`).
 - **Rooted in a parameter.** The yielded place MUST be rooted in one of the
   subscript's parameters — it projects *into* an argument, so it cannot dangle. A
   place rooted in a fresh local is rejected.
@@ -427,8 +435,10 @@ a stored-reference facility.
 An `enum` is the nominal sum type of
 [§5.3.6](03-types.md#536-enums-option-result): a value that is exactly one of
 several named **variants**, each carrying a payload of zero to eight types.
-Variant names are **global**: a variant is written bare (`Circle`, not
-`Shape.Circle`), and **no two enums may share a variant name**.
+Variant names are **package-scoped**: a variant is written bare (`Circle`, not
+`Shape.Circle`), and **no two enums in one package may share a variant name**
+(enums in different packages may reuse a bare name, disambiguated by the package
+qualifier).
 
 ```
 enum Shape:
@@ -505,7 +515,10 @@ an absent value is *typed* absent and cannot be read without an exhaustive
 `None` carries no type of its own, so a bare `None` is permitted **only where the
 expected type is already known** — a return type, a declaration annotation
 (`box: Option(string) = None`), an assignment target, or a call argument. A bare
-`x := None` is a compile error, because nothing fixes `T`. This context-grounding
+`x := None` with no annotation is instead *pending* — grounded by its first use
+(e.g. `x = Some(5)`), and a compile error only if never grounded. (Unlike `None`,
+a bare `x := Ok(1)` or `x := Err(e)` *is* rejected immediately; the `Result`
+constructors are not part of the pending set.) This context-grounding
 of type-incomplete literals is specified in [§6.4](04-inference.md).
 
 ### 19.6 `Result(T, E)`

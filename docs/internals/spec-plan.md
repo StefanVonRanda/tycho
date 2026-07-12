@@ -9,10 +9,18 @@
 >
 > **Drafting phases 0–4 done + phase-5 artifacts stubbed.** What remains before
 > the draft is release-ready:
-> 1. Resolve the remaining `Editor's note` corners — mostly concurrency ordering
->    (#23 channel MPMC order, #24 select fairness, #25 happens-before, #26 wait
->    re-entrancy) and the FFI sized-int round-trip (#20); these need careful (and
->    for concurrency, non-deterministic) probing.
+> 1. ~~Resolve the remaining `Editor's note` corners~~ — **DONE.** Concurrency
+>    ordering (#23 channel delivery = send-linearization/ticket order; #24 select
+>    = listed-order, not fair; #25 happens-before via the cell `seq`
+>    release/acquire; #26 cross-thread wait unexpressible — affine handle) pinned
+>    from `runtime/tycho_rt.c`; FFI sized-int round-trip (#20) pinned by a shim
+>    probe (extern-only spellings narrow-in / sign-or-zero-extend-out; first-class
+>    `u32`/`u64`/`f32` take a value of that type). Also **source-audited all four
+>    delegated chapters** (12/15/16/18) against `src/tychoc.c` — fixed ~15
+>    findings incl. two WRONG claims (`x := []`/`x := None` are pending, not
+>    errors) and a real error in my own FFI chapter (u32/u64 are first-class, not
+>    extern-only). Verified all internal anchor links + `§`-labels resolve (fixed
+>    4 broken anchors, 4 mislabeled `[§13]`→`[§20]`).
 > 2. **Build the `make spec-check` gate** and populate the Appendix E coverage
 >    matrix (Phase 5) — a build-system change, do with care.
 > 3. ~~Fix the tychoc0 `inout`-exclusivity fail-open~~ — **DONE** (§6a; locked by

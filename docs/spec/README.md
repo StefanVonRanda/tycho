@@ -6,13 +6,17 @@
 > [docs/internals/spec-plan.md](../internals/spec-plan.md).
 >
 > Last synced against `src/tychoc.c` + `compiler/tychoc0.ty`: **2026-07-12**.
-> A complete first draft of all chapters (1–33) and appendices (A–H) now exists.
-> It is a **draft**: it has not yet been through the Phase-5 conformance pass
-> (`make spec-check` + the coverage matrix), a handful of corners carry
-> `Editor's note` markers pending further probing, and the reference-doc drifts
-> in [Appendix H](appendix-h-differences.md) remain to be back-ported. For any
-> area, the [language reference](../reference/index.md) remains a useful
-> companion.
+> A complete first draft of all chapters (1–33) and appendices (A–H) exists and
+> has been **source-audited**: every chapter — including the four originally
+> drafted by subagents — was cross-checked against `src/tychoc.c`, all internal
+> section links and `§`-cross-references were verified mechanically, and the
+> previously-open behavioral corners (float/`char` semantics, evaluation order,
+> the concurrency ordering guarantees, the FFI sized-int round-trip) were pinned
+> by differential probing. What remains before it is a *finished* spec: the
+> Phase-5 conformance pass (`make spec-check` + the coverage matrix), back-porting
+> the reference-doc drifts logged in [Appendix H](appendix-h-differences.md), and
+> flattening the collected grammar (Appendix A). The remaining `Editor's note`
+> blocks are informative reconciliation notes, not open questions.
 
 ## What this document is
 
@@ -30,7 +34,7 @@ governs**, and the divergence is logged in [Appendix H](appendix-h-differences.m
 ## How to read it
 
 The files are numbered in normative reading order. Requirement keywords (MUST,
-SHOULD, MAY) follow [RFC 2119/8174](00-conventions.md#requirement-keywords).
+SHOULD, MAY) follow [RFC 2119/8174](00-conventions.md#14-requirement-keywords).
 The grammar is W3C-style EBNF over lexer-produced tokens (Tycho is
 indentation-sensitive; see [§3](01-lexical.md)).
 
@@ -76,4 +80,4 @@ byte-identical program output — for the language and the pure-Tycho + libc-onl
 corelib. The **extended tier** additionally provides the `deps`/pkg-config
 corelib packages (`http`, `crypto`, `compress`, `image`, `tls`); an
 implementation MAY omit them and still conform at the core tier
-([§1](00-conventions.md#conformance)).
+([§1](00-conventions.md#13-conformance)).

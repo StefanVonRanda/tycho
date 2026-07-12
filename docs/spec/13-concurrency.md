@@ -6,9 +6,10 @@ a private arena per activation ([§9](07-memory-model.md)) — is already a soun
 thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
-> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:286-610`.
-> Ordering corners marked *(unresolved)* are open punch-list items (spec-plan.md
-> §6, group D) to be pinned by further probing before this chapter leaves draft.
+> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:286-610`
+> (channel ring `:381-545`, ordering via the cell `seq` release/acquire `:509`,`:521`).
+> The ordering guarantees below (channel delivery order, `select` arm order,
+> happens-before, cross-thread `wait`) were pinned from that runtime.
 
 ## 20. The concurrency model
 
@@ -27,9 +28,18 @@ guarantee covers Tycho values only and **does not extend across the FFI
 boundary** ([§26](14-ffi.md), forthcoming): a C function that touches process
 global or `static` state can race exactly as it would in C.
 
-> Editor's note (punch-list #25, unresolved): the happens-before relationship a
-> deep copy establishes across `spawn`→body, `send`→`recv`, and task→`wait` is to
-> be stated as explicit ordering axioms once probed.
+**Ordering (happens-before).** Each cross-thread transfer establishes a
+synchronizes-with relationship, so the transferred value — and everything the
+source sequenced before it — is visible to the receiving side:
+
+- **`spawn` → body:** a task's arguments are deep-copied before its thread
+  starts, so the body observes them and every write sequenced before the `spawn`.
+- **`send` → `recv`:** a `recv` that returns a value `v` synchronizes-with the
+  `send` that produced `v` (a release store paired with an acquire load on the
+  ring cell), so every write the sender sequenced before that `send` is visible
+  to the receiver after that `recv` returns.
+- **task → `wait`:** a task's body runs-before the `wait` (or implicit join) that
+  observes its result, so the waiter sees all of the task's writes.
 
 ## 21. `spawn`, `Task`, `wait`
 
@@ -57,8 +67,11 @@ fork-bomb fails closed rather than exhausting the system. It is a ceiling, not a
 pool: every admitted task runs immediately, so a task blocked waiting for another
 cannot be starved.
 
-> Editor's note (punch-list #26, unresolved): whether a task may be waited from a
-> thread other than its spawner is to be pinned.
+A `Task` handle cannot be copied, reassigned, stored in a container, captured by
+a closure, or passed as an argument (it is affine and non-storable). It therefore
+can never reach a thread other than the one that created it, so a task is always
+waited on its spawning thread; waiting a task from another thread is not
+expressible in the language.
 
 ## 22. `parallel for`
 
@@ -102,10 +115,14 @@ joins).
 Channel memory is bounded by `capacity × payload`: payload storage is per-cell
 and reclaimed as ring slots are reused.
 
-> Editor's note (punch-list #23, unresolved): the message-ordering guarantee
-> under multiple producers/consumers (per-sender order? total order?) is to be
-> pinned; the ring is FIFO per ticket but a cross-sender guarantee is not yet
-> stated.
+**Ordering.** A channel delivers each sent value exactly once, and values are
+received in the order their `send` calls linearized: each `send` atomically
+acquires the next enqueue ticket, and each `recv` takes the next dequeue ticket
+in that same order. Consequently a **single** sender's values are received in the
+order it sent them (FIFO). Among **concurrent** senders, the relative order of
+their values is whichever order those sends linearized — a race the language does
+not otherwise order. With multiple receivers, each value is delivered to exactly
+one receiver, in ticket order.
 
 ### 23.2 `select`
 
@@ -118,6 +135,8 @@ and reclaimed as ring slots are reused.
 
 A `select` MUST have at least one arm.
 
-> Editor's note (punch-list #24, unresolved): whether ready `recv` arms are
-> chosen in listed order or fairly is to be pinned (the reference scans in listed
-> order).
+Ready arms are tried in **listed (lexical) order**, and the first ready arm is
+taken; `select` is not fair, so an earlier-listed ready channel is always
+preferred over a later one. When no `recv` arm is ready and no `default` is
+present, `select` blocks (spinning, then yielding, then briefly sleeping) until
+one becomes ready or the `closed` condition holds.
