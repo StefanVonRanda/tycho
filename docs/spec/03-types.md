@@ -250,13 +250,19 @@ Unwrapping to the underlying value uses the base-specific `to_int`/`to_float`/
 ## 5.5 Equality and ordering
 
 **Equality (`==`, `!=`).** Two values may be compared iff they have the **same
-type** (§5.1); `void` values are not comparable. For every type except function
-types, equality is **structural and deep**: scalars compare by value; `string`,
-`bytes`, arrays, structs, tuples, maps, enums, `Option`, and `Result` compare by
-content, recursing through nesting — so `a == b` holds exactly when `b` is an
-independent deep copy of `a`. **Function values are the sole exception:** they
-compare by **identity** (same underlying function and captured environment), not
-structurally. Comparing values of two different types is a compile error.
+type** (§5.1); `void` values are not comparable. Equality is **structural and
+deep**: scalars compare by value; `string`, `bytes`, arrays, structs, tuples,
+maps, enums, `Option`, and `Result` compare by content, recursing through nesting
+— so `a == b` holds exactly when `b` is an independent deep copy of `a`.
+**Function values are not comparable:** a closure has no structural equality (two
+closures with different captured environments but identical behavior are
+indistinguishable, and comparing thunk pointers would be a non-structural leak),
+so applying `==`/`!=` directly to a function value is a **compile error** — Go,
+Swift, and Odin all reject `fn == fn`. Compare the values a function produces
+instead. A function stored *inside* an aggregate does not block that aggregate's
+equality: the aggregate still compares structurally, and a function field within
+it compares by identity. Comparing values of two different types is a compile
+error.
 
 **Ordering (`<`, `>`, `<=`, `>=`).** Both operands MUST have the same type, and
 that type's underlying scalar MUST be one of `int`, `char`, `float`, `string`,

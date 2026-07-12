@@ -1,0 +1,13 @@
+# Functions have no structural equality: two closures with different captured
+# envs but identical behavior are indistinguishable, and comparing thunk
+# pointers is a non-structural leak. Comparing two fn values must be rejected
+# (Go/Swift/Odin all reject fn == fn). Both compilers must refuse this.
+fn a(x: int) -> int:
+    return x
+fn b(x: int) -> int:
+    return x
+fn main():
+    f := a
+    g := b
+    if f == g:
+        println("unreachable")

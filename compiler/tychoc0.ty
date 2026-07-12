@@ -5599,6 +5599,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             elif op == "==" or op == "!=":
                 if not ((rlt == frlt and sl == sr) or num_lit_ok):   # a u32/u64/f32 also compares against an adapting numeric literal (like tychoc)
                     die_at(dc, _el, "cannot compare " + lt + " with " + frt)
+                if is_func(rlt):   # functions have no structural equality (Go/Swift/Odin all reject fn==fn)
+                    die_at(dc, _el, "functions are not comparable -- closures have no structural equality; compare the values they produce instead")
             elif op == "<<" or op == ">>":        # shifts: an integer value (int/u32/u64) by any integer count
                 lint := (rlt == "int" or rlt == "u32" or rlt == "u64") and sl == ""
                 rint := (frlt == "int" or frlt == "u32" or frlt == "u64") and sr == ""

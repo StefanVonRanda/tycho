@@ -5095,6 +5095,13 @@ static Type resolve_expr_inner(Expr *e) {
                     if (lt != rt)
                         die_at(e->line, "cannot compare %s with %s", type_name(lt), type_name(rt));
                     if (lt == T_VOID) die_at(e->line, "cannot compare void");
+                    /* functions are the one type with no structural equality: two
+                     * closures with different captured envs but identical behavior
+                     * are indistinguishable, and comparing thunk pointers is a
+                     * non-structural leak. Reject it (Go/Swift/Odin all do). */
+                    if (IS_FUNC(lt))
+                        die_at(e->line, "functions are not comparable -- closures have no structural equality; "
+                               "compare the values they produce instead");
                 } else {
                     /* ordering: two ints, two floats, two strings, or two values
                      * of the SAME numeric/string newtype. An int LITERAL adapts to a
