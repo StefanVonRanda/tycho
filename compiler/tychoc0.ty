@@ -4000,7 +4000,7 @@ fn struct_is_heap(dc: Decls, ctx: Ctx, sname: string) -> bool:
             j := 0
             for j < len(dc.structs[i].fields):
                 ft := dc.structs[i].fields[j].ty
-                if ft == "str":
+                if ft == "str" or ft == "bytes":     # a bytes field owns a heap buffer too (same length-headered repr as str)
                     return true
                 if is_array(ft):
                     return true
@@ -6034,7 +6034,7 @@ fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> s
 # Scalars / non-heap structs pass through; everything heap routes to its _copy.
 fn cp_field(dc: Decls, ctx: Ctx, ty: string, ar: string, src: string) -> string:
     rt := resolve_ginst(resolve_nt(dc, ctx, ty), dc, ctx)   # resolve a generic application (Box(int)) to its instance (Box__int) so is_enum/is_struct dispatch picks the real deep-copier; an unresolved app falls through to a fail-open shallow copy (aliases a freed channel cell)
-    if rt == "str":
+    if rt == "str" or rt == "bytes":                 # bytes shares str's length-headered buffer; scopy is length-based (interior NULs survive)
         return "scopy(" + ar + ", " + src + ")"
     if is_func(rt):                                  # a fn value: re-home its env into `ar`
         return "({ Fn_" + func_suffix(rt) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
@@ -8378,7 +8378,7 @@ fn gen_struct_copy(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     i := 0
     for i < len(sd.fields):
         f := sd.fields[i]
-        if f.ty == "str":
+        if f.ty == "str" or f.ty == "bytes":         # bytes shares str's length-headered buffer; deep-copy it too
             out = out + "    r." + uf(f.name) + " = scopy(ar, s." + uf(f.name) + ");\n"
         elif is_array(f.ty):
             out = out + "    r." + uf(f.name) + " = " + afam(f.ty) + "_copy(ar, s." + uf(f.name) + ");\n"
@@ -8497,7 +8497,7 @@ fn gen_tuple_copy(dc: Decls, ctx: Ctx, ty: string) -> string:
     i := 0
     for i < len(parts):
         p := parts[i]
-        if p == "str":
+        if p == "str" or p == "bytes":               # bytes shares str's length-headered buffer; deep-copy it too
             out = out + "    r.f" + str(i) + " = scopy(ar, s.f" + str(i) + ");\n"
         elif is_array(p):
             out = out + "    r.f" + str(i) + " = " + afam(p) + "_copy(ar, s.f" + str(i) + ");\n"

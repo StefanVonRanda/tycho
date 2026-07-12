@@ -1,0 +1,45 @@
+# core:image -- PNG decode/encode via libpng (simplified png_image API, libpng
+# >= 1.6). The `deps` manifest names `libpng`; pkg-config supplies the headers +
+# -lpng, so it is turnkey where libpng is installed and its test is skipped where
+# it is not. Import with `import "core:image"`.
+#
+# Images are 8-bit RGBA (4 bytes/pixel), row-major, top-to-bottom -- decode always
+# hands back RGBA regardless of the PNG's internal format. Pixel data crosses as
+# `bytes` (binary-safe).
+#
+#   image.decode(png_bytes) -> Image        Decode; a 0x0 Image on any error
+#                                           (not a PNG / corrupt) -- check width > 0.
+#   image.encode(img)       -> bytes        Encode to PNG; empty bytes on a bad image.
+#   image.make(w, h, pixels) -> Image       Build an Image from w*h*4 RGBA bytes.
+package image
+
+struct Image:
+    width: int
+    height: int
+    pixels: bytes          # RGBA, row-major, width*height*4 bytes
+
+# ---- shim externs (libpng; defined in image_shim.c) ----
+extern fn imgx_decode(data: bytes) -> ptr        # opaque decoded-image handle; null on failure
+extern fn imgx_width(h: ptr) -> int
+extern fn imgx_height(h: ptr) -> int
+extern fn imgx_pixels(h: ptr) -> bytes           # RGBA copy, width*height*4 bytes
+extern fn imgx_free(h: ptr)
+extern fn imgx_encode(pixels: bytes, w: int, h: int) -> bytes   # RGBA -> PNG bytes
+
+fn make(width: int, height: int, pixels: bytes) -> Image:
+    return Image(width, height, pixels)
+
+# Decode PNG bytes to an RGBA Image. On any error (not a PNG, corrupt data) returns
+# a 0x0 Image with empty pixels -- fail closed; check width > 0.
+fn decode(data: bytes) -> Image:
+    h := imgx_decode(data)
+    if is_null(h):
+        return Image(0, 0, to_bytes(""))
+    img := Image(imgx_width(h), imgx_height(h), imgx_pixels(h))   # copy fields out...
+    imgx_free(h)                                                  # ...before releasing the handle
+    return img
+
+# Encode an RGBA Image (width*height*4 pixel bytes) to PNG bytes. Empty bytes on a
+# bad image (dimensions <= 0, or fewer pixels than width*height*4).
+fn encode(img: Image) -> bytes:
+    return imgx_encode(img.pixels, img.width, img.height)

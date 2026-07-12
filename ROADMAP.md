@@ -191,9 +191,13 @@ alloc/free paths.
   `core:bignum` (a `Big` coefficient × 10^(-scale)) so decimal fractions are EXACT
   (`0.1 + 0.2 == 0.3`). `from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/
   `abs`, `rescale` (truncating). Division deferred (needs a rounding policy).
+- **image (PNG) — `core:image`.** PNG decode/encode via libpng's simplified
+  `png_image` API (a `deps` pkg-config module). `decode(bytes) -> Image{width,
+  height, pixels}` (8-bit RGBA) and `encode(Image) -> bytes`; fail-closed on a
+  non-PNG. JPEG (lossy, libjpeg) is a demand-gated follow-up.
 
-Still open and genuinely missing: **TLS** and **image decode/encode (PNG, JPEG)** —
-each demand-gated.
+Still open and genuinely missing: **TLS** (image decode/encode is now covered for
+PNG) — demand-gated.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
