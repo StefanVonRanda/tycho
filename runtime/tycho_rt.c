@@ -1020,6 +1020,16 @@ TychoArrInt tycho_arr_int_with_cap(Arena *a, long cap) {
     return r;
 }
 
+/* FFI: copy a C-owned (ptr, len) long buffer (from an extern `-> [int]`, out-param
+ * shim) into an arena array, then free it -- the [int] analogue of
+ * tycho_bytes_from_c. NULL p yields the empty array (nothing to free). */
+TychoArrInt tycho_arr_int_from_c(Arena *a, long *p, long n) {
+    if (n < 0) n = 0;
+    TychoArrInt r = tycho_arr_int_with_cap(a, p ? n : 0);
+    if (p) { if (n > 0) memcpy(r.data, p, (size_t)n * sizeof(long)); r.len = n; free(p); }
+    return r;
+}
+
 /* Preallocate to exact capacity `n` (no-op if already that big). Lets a caller
  * that knows the final size build a list with ZERO geometric growth -- no
  * abandoned buffers, no 2x slack -- the arena-friendly way to build a long-lived,
@@ -1111,6 +1121,15 @@ TychoArrFloat tycho_arr_float_with_cap(Arena *a, long cap) {
     r.len = 0;
     r.cap = cap;
     r.data = cap > 0 ? (double *)arena_alloc(a, (size_t)cap * sizeof(double)) : NULL;
+    return r;
+}
+
+/* FFI: copy a C-owned (ptr, len) double buffer (from an extern `-> [float]`) into
+ * an arena array, then free it. NULL p yields the empty array. */
+TychoArrFloat tycho_arr_float_from_c(Arena *a, double *p, long n) {
+    if (n < 0) n = 0;
+    TychoArrFloat r = tycho_arr_float_with_cap(a, p ? n : 0);
+    if (p) { if (n > 0) memcpy(r.data, p, (size_t)n * sizeof(double)); r.len = n; free(p); }
     return r;
 }
 

@@ -16,6 +16,8 @@ extern "ffidemo" fn ffi_neg() -> int                     # returns a negative 32
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
 extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
 extern "ffidemo" fn ffi_favg(xs: [float]) -> float       # [float] param -> (const double*, long)
+extern "ffidemo" fn ffi_iota(n: int) -> [int]            # [int] RETURN via the out-param shim
+extern "ffidemo" fn ffi_dscale(xs: [float], k: float) -> [float]   # [float] param AND return
 
 handle FRes:                                             # FFI R2: a typed C handle, freed by ffi_res_close at scope exit
     free: ffi_res_close
@@ -94,6 +96,11 @@ fn main():
     println(f"wrapnullen={len(wn)}")
     # Stage R1c -- [int]/[float] cross as (const T*, long), empty array -> len 0
     println(f"isum={ffi_isum([10, 20, 30, 42])} isum0={ffi_isum([]int)} favg={ffi_favg([2.0, 4.0, 6.0])}")   # 102 0 4.0
+    # Stage R1d -- array RETURN via the out-param shim (and param+return together)
+    io := ffi_iota(4)
+    println(f"iota=[{io[0]},{io[1]},{io[2]},{io[3]}] iolen={len(io)} empty={len(ffi_iota(0))}")   # [0,1,2,3] 4 0
+    ds := ffi_dscale([1.0, 2.0, 3.0], 10.0)
+    println(f"dscale=[{ds[0]},{ds[1]},{ds[2]}] dslen={len(ds)}")   # [10.0,20.0,30.0] 3
     # Stage R2 — a typed handle freed (exactly once) by its destructor at scope exit
     println(f"live0={ffi_res_live()}")          # 0 before
     use_res()                                   # opens a handle, uses it, auto-frees at its scope exit

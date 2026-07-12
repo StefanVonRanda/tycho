@@ -83,3 +83,19 @@ long ffi_ptrval(void *p)  { return (long)p; }
  * [float]. Proves [int]/[float] params reach C as a flat (pointer, length) pair. */
 long   ffi_isum(const long *xs, long n)   { long s = 0; for (long i = 0; i < n; i++) s += xs[i]; return s; }
 double ffi_favg(const double *xs, long n) { if (n == 0) return 0.0; double s = 0; for (long i = 0; i < n; i++) s += xs[i]; return s / (double)n; }
+
+/* array RETURN via the out-param shim: ffi_iota returns [0..n) as an [int];
+ * ffi_dscale takes a [float] and returns a scaled [float] (param AND return). The
+ * shim malloc's *out; tycho_arr_*_from_c copies into the arena and frees it. */
+void ffi_iota(long n, long **out, long *outlen) {
+    if (n < 0) n = 0;
+    long *p = (long *)malloc(n ? (size_t)n * sizeof(long) : 1);
+    for (long i = 0; i < n; i++) p[i] = i;
+    *out = p; *outlen = n;
+}
+void ffi_dscale(const double *xs, long n, double k, double **out, long *outlen) {
+    if (n < 0) n = 0;
+    double *p = (double *)malloc(n ? (size_t)n * sizeof(double) : 1);
+    for (long i = 0; i < n; i++) p[i] = xs[i] * k;
+    *out = p; *outlen = n;
+}

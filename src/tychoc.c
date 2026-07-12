@@ -3273,7 +3273,7 @@ static Proc *parse_extern_fn(Parser *ps) {
          * (vs `-> string` which maps NULL to ""), so a nullable C getter need not use
          * a sentinel. The C symbol still returns char*; the wrapper does the NULL test. */
         int ret_opt_str = (IS_OPT(pr->ret) && opt_inner(pr->ret) == T_STRING);
-        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !IS_HANDLE(pr->ret) && !ret_opt_str) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, Option(string), a handle, or omitted", pr->name);
+        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !ffi_arr_ptr_ctype(pr->ret) && !IS_HANDLE(pr->ret) && !ret_opt_str) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -7462,10 +7462,11 @@ static char *gen_call(Expr *e, const char *arena) {
          * built in the current scope (tycho str is already a char*, so a string
          * arg passes zero-cost). A string RETURN is C-owned, so copy it into the
          * destination arena (NULL -> "") so tycho never holds a foreign pointer. */
-        if (base_of(cs->ret) == T_BYTES) {
-            /* out-param shim: synthesize (unsigned char** out, long* outlen), call,
-             * then copy the C-owned buffer into an arena `bytes` and free it.
-             * The shim must malloc(*out); tycho_bytes_from_c frees it after copying. */
+        Type _retb = base_of(cs->ret);
+        if (_retb == T_BYTES || _retb == T_ARRAY_INT || _retb == T_ARRAY_FLOAT) {
+            /* out-param shim: synthesize (T** out, long* outlen), call, then copy the
+             * C-owned buffer into an arena bytes/array and free it. The shim must
+             * malloc(*out); tycho_{bytes,arr_int,arr_float}_from_c frees it after. */
             char *decls = sfmt("%s", ""), *args = sfmt("%s", "");
             int emitted = 0, nb = 0;
             for (int i = 0; i < e->nargs; i++) {
@@ -7485,8 +7486,10 @@ static char *gen_call(Expr *e, const char *arena) {
                 }
             }
             int id = g_blk++;
-            return sfmt("({ %sunsigned char *_o%d = 0; long _ol%d = 0; %s(%s%s&_o%d, &_ol%d); tycho_bytes_from_c(%s, _o%d, _ol%d); })",
-                        decls, id, id, e->sval, args, emitted ? ", " : "", id, id, arena, id, id);
+            const char *octype = _retb == T_BYTES ? "unsigned char" : _retb == T_ARRAY_INT ? "long" : "double";
+            const char *fromc  = _retb == T_BYTES ? "tycho_bytes_from_c" : _retb == T_ARRAY_INT ? "tycho_arr_int_from_c" : "tycho_arr_float_from_c";
+            return sfmt("({ %s%s *_o%d = 0; long _ol%d = 0; %s(%s%s&_o%d, &_ol%d); %s(%s, _o%d, _ol%d); })",
+                        decls, octype, id, id, e->sval, args, emitted ? ", " : "", id, id, fromc, arena, id, id);
         }
         char *xc = gen_extern_raw(e);
         /* FFI R3a: `-> Option(string)` — NULL becomes None, a real pointer becomes
@@ -8926,10 +8929,13 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
      * two trailing out-params (unsigned char** out, long* outlen) — the out-param
      * shim convention. */
     int bret = (pr->ret == T_BYTES);
+    /* an array return (`-> [int]`/`-> [float]`) uses the same out-param convention
+     * as bytes: a void C fn with two trailing out-params (T** out, long* outlen). */
+    const char *aret = ffi_arr_ptr_ctype(pr->ret);
     /* FFI R3a: an `Option(string)` return is a char* at the C ABI (the wrapper at
      * the call site turns NULL into None); declare the real C return, not TychoOpt. */
     int optstr = (IS_OPT(pr->ret) && opt_inner(pr->ret) == T_STRING);
-    fprintf(o, "extern %s%s(", bret ? "void " : optstr ? "char *" : pr->ret_ffi_ct ? pr->ret_ffi_ct : c_type(pr->ret), pr->name);
+    fprintf(o, "extern %s%s(", (bret || aret) ? "void " : optstr ? "char *" : pr->ret_ffi_ct ? pr->ret_ffi_ct : c_type(pr->ret), pr->name);
     int emitted = 0;
     for (int i = 0; i < pr->nparams; i++) {
         const char *arrp = ffi_arr_ptr_ctype(pr->params[i].type);
@@ -8943,6 +8949,7 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
             fprintf(o, "%s%s", emitted++ ? ", " : "", pr->params[i].ffi_ct ? pr->params[i].ffi_ct : c_type(pr->params[i].type));
     }
     if (bret) fprintf(o, "%sunsigned char **, long *", emitted++ ? ", " : "");
+    else if (aret) fprintf(o, "%s%s **, long *", emitted++ ? ", " : "", pr->ret == T_ARRAY_INT ? "long" : "double");
     if (emitted == 0) fprintf(o, "void");
     fprintf(o, ");\n");
 }

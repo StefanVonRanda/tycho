@@ -5873,6 +5873,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     if emitted > 0:
                         pre = ", "
                     return "({ " + edecls + "unsigned char* _bo = 0; long _bol = 0; " + name + "(" + xa + pre + "&_bo, &_bol); b_from_c(" + ctx.owner + ", _bo, _bol); })"
+                if ert == "[int]" or ert == "[float]":   # out-param shim: call, copy the C buffer into an arena array, free it
+                    pre := ""
+                    if emitted > 0:
+                        pre = ", "
+                    ep := "long"
+                    if ert == "[float]":
+                        ep = "double"
+                    at := cty(dc, ctx, ert)           # Arr_int / Arr_float
+                    return "({ " + edecls + ep + "* _ao = 0; long _aol = 0; " + name + "(" + xa + pre + "&_ao, &_aol); " + at + " _ar; _ar.len = _ao ? _aol : 0; _ar.cap = _ar.len; _ar.data = _ar.len ? (" + ep + "*)amem(" + ctx.owner + ", sizeof(" + ep + ")*_ar.len) : 0; if (_ao) { if (_aol > 0) memcpy(_ar.data, _ao, sizeof(" + ep + ")*_aol); free(_ao); } _ar; })"
                 xc := name + "(" + xa + ")"
                 if edecls != "":                      # bytes args need single-eval temps -> wrap the call in a stmt-expr
                     xc = "({ " + edecls + name + "(" + xa + "); })"
@@ -8053,10 +8062,11 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
     # bytes crosses as (ptr,len): a bytes param -> two C args (const unsigned char*, long);
     # a bytes return -> a void function with two trailing out-params (out, outlen).
     bret := f.ret == "bytes"
+    aret := f.ret == "[int]" or f.ret == "[float]"    # array return -> out-param, void C return
     rc := ffi_sized_cty(f.ret)          # FFI-boundary sized return -> real C ABI type
     if rc == "":
         rc = ret_cty(dc, ctx, f.ret)
-    if bret:
+    if bret or aret:
         rc = "void "
     if is_option(f.ret) and option_inner(f.ret) == "str":   # FFI R3a: the C symbol returns char*, not HOption (the call site wraps NULL -> None)
         rc = "char* "
@@ -8083,6 +8093,14 @@ fn gen_extern_proto(f: Func, dc: Decls, ctx: Ctx) -> string:
         if emitted > 0:
             out = out + ", "
         out = out + "unsigned char**, long*"
+        emitted = emitted + 1
+    elif aret:
+        if emitted > 0:
+            out = out + ", "
+        if f.ret == "[int]":
+            out = out + "long**, long*"
+        else:
+            out = out + "double**, long*"
         emitted = emitted + 1
     if emitted == 0:
         out = out + "void"

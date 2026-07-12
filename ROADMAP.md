@@ -438,10 +438,11 @@ non-goals: variadics, callbacks-into-Tycho, struct-by-value, auto-bindgen.
 **What improves FFI without touching any non-goal:**
 - **Sized integer types (1.1)** — the single biggest FFI correctness win, full
   stop. Do this first; it's already Tier 1.
-- **Richer handle/type mapping** — **`[int]`/`[float]` params now cross** as a
-  `(const T*, long)` pair (like `bytes`), both compilers, byte-identical fixpoint,
-  locked by `tests/ffi`. Still open: the array-**return** direction (an out-param
-  shim + `tycho_arr_*_from_c`), more faithful `const`-correctness, `f32`.
+- **Richer handle/type mapping** — **`[int]`/`[float]` now cross the FFI both ways.**
+  A param passes as `(const T*, long)`; a return uses the out-param shim
+  (`T** out, long* outlen`) + `tycho_arr_*_from_c`, exactly like `bytes`. Both
+  compilers, byte-identical fixpoint, locked by `tests/ffi`. Still open: more
+  faithful `const`-correctness, and `f32` element arrays.
 - **Linking/build ergonomics** and clearer FFI docs (CONTRIBUTING notes
   "read-once-borrow docs" are thin).
 
