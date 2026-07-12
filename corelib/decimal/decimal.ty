@@ -1,0 +1,101 @@
+# core:decimal -- arbitrary-precision decimal (base-10 fixed point). Import with
+# `import "core:decimal"`. Built on core:bignum: a Decimal is an integer coefficient
+# (a bignum.Big, arbitrary size) times 10^(-scale), so it represents decimal
+# fractions EXACTLY -- `0.1 + 0.2` is `0.3`, not a float's `0.30000000000000004`.
+# That makes it the right type for money and any base-10-exact arithmetic.
+#
+# add/sub/mul/cmp are exact; the stored scale is preserved (1.50 stays "1.50").
+# rescale truncates toward zero. Division is deferred (it needs a target scale +
+# rounding policy) -- use rescale after a scaled multiply, or add it on demand.
+package decimal
+import "core:bignum"
+
+struct Decimal:
+    coeff: bignum.Big      # signed integer coefficient
+    scale: int             # digits after the decimal point (>= 0); value = coeff * 10^(-scale)
+
+# Multiply a coefficient by 10^k (k >= 0): the scale-alignment primitive.
+fn scale_up(c: bignum.Big, k: int) -> bignum.Big:
+    if k <= 0:
+        return c
+    return bignum.mul(c, bignum.pow(bignum.from_int(10), k))
+
+fn from_int(n: int) -> Decimal:
+    return Decimal(bignum.from_int(n), 0)
+
+# Parse "[-|+]digits[.digits]". No point -> scale 0; a trailing point -> scale 0;
+# a leading point (".5") -> integer part 0. Delegates the digit parsing to bignum.
+fn from_str(s: string) -> Decimal:
+    n := len(s)
+    point := 0 - 1
+    i := 0
+    for i < n and point < 0:
+        if s[i] == 46:                 # '.'
+            point = i
+        i = i + 1
+    if point < 0:
+        return Decimal(bignum.from_str(s), 0)
+    coeffstr := substr(s, 0, point) + substr(s, point + 1, n)   # drop the '.'
+    sc := n - point - 1                # digits after the point
+    return Decimal(bignum.from_str(coeffstr), sc)
+
+fn neg(a: Decimal) -> Decimal:
+    return Decimal(bignum.neg(a.coeff), a.scale)
+
+fn abs(a: Decimal) -> Decimal:
+    return Decimal(bignum.abs(a.coeff), a.scale)
+
+fn is_zero(a: Decimal) -> bool:
+    return bignum.is_zero(a.coeff)
+
+# Align both to the larger scale, then add the coefficients (exact).
+fn add(a: Decimal, b: Decimal) -> Decimal:
+    s := a.scale
+    if b.scale > s:
+        s = b.scale
+    ca := scale_up(a.coeff, s - a.scale)
+    cb := scale_up(b.coeff, s - b.scale)
+    return Decimal(bignum.add(ca, cb), s)
+
+fn sub(a: Decimal, b: Decimal) -> Decimal:
+    return add(a, neg(b))
+
+# Coefficients multiply; scales add -- exact, no rounding.
+fn mul(a: Decimal, b: Decimal) -> Decimal:
+    return Decimal(bignum.mul(a.coeff, b.coeff), a.scale + b.scale)
+
+# Total order by value: -1 / 0 / 1. Aligns scales first, so 1.5 == 1.50.
+fn cmp(a: Decimal, b: Decimal) -> int:
+    s := a.scale
+    if b.scale > s:
+        s = b.scale
+    ca := scale_up(a.coeff, s - a.scale)
+    cb := scale_up(b.coeff, s - b.scale)
+    return bignum.cmp(ca, cb)
+
+# Change the scale. Increasing is exact (append zeros); decreasing TRUNCATES toward
+# zero (the extra digits are dropped, not rounded).
+fn rescale(a: Decimal, newscale: int) -> Decimal:
+    if newscale == a.scale:
+        return a
+    if newscale > a.scale:
+        return Decimal(scale_up(a.coeff, newscale - a.scale), newscale)
+    factor := bignum.pow(bignum.from_int(10), a.scale - newscale)
+    return Decimal(bignum.div(a.coeff, factor), newscale)
+
+# "[-]int[.frac]", frac left-zero-padded to `scale`. The stored scale is shown, so a
+# value at scale 2 always prints two fractional digits (e.g. "1.50", "0.00").
+fn to_str(a: Decimal) -> string:
+    mag := bignum.to_str(bignum.abs(a.coeff))     # magnitude digits ("0" or positive)
+    sign := ""
+    if bignum.cmp(a.coeff, bignum.from_int(0)) < 0:
+        sign = "-"
+    if a.scale <= 0:
+        return sign + mag
+    L := len(mag)
+    if L > a.scale:
+        return sign + substr(mag, 0, L - a.scale) + "." + substr(mag, L - a.scale, L)
+    frac := mag                                   # fewer digits than the scale -> "0.<pad>mag"
+    for len(frac) < a.scale:
+        frac = "0" + frac
+    return sign + "0." + frac

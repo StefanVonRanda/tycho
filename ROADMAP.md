@@ -187,9 +187,13 @@ alloc/free paths.
 - **datetime timezones — `core:datetime`.** Pure FIXED offsets (`from_unix_at`,
   `to_unix_at`, `format_iso_tz`) plus DST-aware SYSTEM/zone offsets via a libc shim
   (`local_offset`, `offset_at`, `now_local`). No IANA tz database.
+- **decimal — `core:decimal`.** Arbitrary-precision base-10 fixed point, composed on
+  `core:bignum` (a `Big` coefficient × 10^(-scale)) so decimal fractions are EXACT
+  (`0.1 + 0.2 == 0.3`). `from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/
+  `abs`, `rescale` (truncating). Division deferred (needs a rounding policy).
 
-Still open and genuinely missing: **TLS**, **image decode/encode (PNG, JPEG)**, and
-a **decimal** type — each demand-gated.
+Still open and genuinely missing: **TLS** and **image decode/encode (PNG, JPEG)** —
+each demand-gated.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion
