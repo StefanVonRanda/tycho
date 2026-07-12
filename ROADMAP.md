@@ -213,8 +213,8 @@ bignum `gcd`, an HTTP server, a CLI-arg parser — each to be built on a real ne
   (**shipped** — `find_occurrences` descends `{...}`); cross-package completion +
   hover on imported members (`strings.trim`) also **shipped** — the LSP resolves
   `import "core:X"` by running `--symbols` on the file in its real directory
-  (package-aware; needs `TYCHO_CORELIB` in the server env). Still open —
-  semanticTokens (additive, demand-gated; signatureHelp + workspace-symbol shipped — below), and
+  (package-aware; needs `TYCHO_CORELIB` in the server env). signatureHelp,
+  workspace-symbol, and **semanticTokens** are shipped (below). Still open —
   package-aware *diagnostics* (today the buffer compiles single-file, so a
   package file's diagnostics are empty rather than wrong — a safe gap).
   **signatureHelp — shipped:** typing inside a call shows the callee's signature
@@ -231,8 +231,14 @@ bignum `gcd`, an HTTP server, a CLI-arg parser — each to be built on a real ne
   empty query returns everything; each result's location carries its own buffer
   uri. Reuses documentSymbol's SymbolInformation emit across the parallel
   uris/syms arrays (`handle_workspace_symbol`, `tools/lsp.ty`). Gated by the
-  `wsym` assertion in `scripts/tools_check.sh`. Still open — semanticTokens
-  (editors already highlight via TextMate grammars — low marginal value).
+  `wsym` assertion in `scripts/tools_check.sh`.
+  **semanticTokens — shipped:** a whole-buffer lexical classifier (comments,
+  strings/char literals, numbers, keywords, built-in types, functions via a
+  trailing `(`, else variables) emitted as the delta-encoded token array. Coarser
+  than a full symbol resolve, but it nails what a TextMate grammar can't: exact
+  string/comment boundaries and the type/function/variable split
+  (`handle_semantic_tokens`, `tools/lsp.ty`). Gated by the `semtok` assertion in
+  `scripts/tools_check.sh`.
 - **Debugging story** — **shipped.** `tychoc -g` emits `#line N "src.ty"`
   directives (single-file builds) and compiles with `-O0 -g`, so `gdb`/`lldb`
   step the `.ty` source via DWARF. Default builds emit no `#line` (byte-identical

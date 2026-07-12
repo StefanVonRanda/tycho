@@ -64,6 +64,7 @@ msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
         + frame({"jsonrpc":"2.0","id":9,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///ok.ty"},"range":{}}})
         + tp(11, "textDocument/signatureHelp", 5, 16)   # cursor in f(1) -> f's signature, active param 0
         + frame({"jsonrpc":"2.0","id":12,"method":"workspace/symbol","params":{"query":"f"}})   # -> fn f in ok.ty
+        + frame({"jsonrpc":"2.0","id":13,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///ok.ty"}}})   # `fn`=keyword, `f`=function
         + frame({"jsonrpc":"2.0","id":10,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///fstr.ty"},"position":{"line":1,"character":4},"newName":"y"}})
         + frame({"jsonrpc":"2.0","method":"exit"}))
 p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, TYCHOC="./tychoc"))
@@ -100,14 +101,17 @@ sig_ok = (bool(sig) and sig.get("activeParameter") == 0
           and [p["label"] for p in sig.get("signatures", [{}])[0].get("parameters", [])] == ["x: int"])
 wsym = res.get(12) or []
 wsym_ok = any(s.get("name") == "f" and s.get("location", {}).get("uri") == "file:///ok.ty" for s in wsym)
+stok = (res.get(13) or {}).get("data", [])
+# ok.ty line 0 is "fn f(x: int) -> int:" -> token 0 is `fn` (keyword=0), token 1 is `f` before `(` (function=2)
+stok_ok = len(stok) % 5 == 0 and len(stok) >= 10 and stok[3] == 0 and stok[8] == 2
 fren = ((res.get(10) or {}).get("changes", {})).get("file:///fstr.ty", [])
 fcols = sorted((e["range"]["start"]["line"], e["range"]["start"]["character"]) for e in fren)
 _hl = fstr.split("\n")[2]                                              # 'print(f"x is {x} now")' line
 fstr_ok = len(fren) == 2 and (1, 4) in fcols and (2, _hl.index("{x}") + 1) in fcols \
           and not any(l == 2 and c == _hl.index("x is") for (l, c) in fcols)   # hole renamed, literal `x is` skipped
 print("    init=%s  diag(valid->[]=%s invalid->diag=%s loop-warn=%s)  hover(local=%s fn=%s)  def=%s" % (init, clean, flagged, warn_ok, loc_ok, fn_ok, def_ok))
-print("    docsym=%s  completion=%s  references=%s  rename=%s  inlay=%s  fstr-rename=%s  sighelp=%s  wsym=%s" % (sym_ok, comp_ok, refs_ok, ren_ok, inlay_ok, fstr_ok, sig_ok, wsym_ok))
-sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok and sym_ok and comp_ok and refs_ok and ren_ok and inlay_ok and fstr_ok and sig_ok and wsym_ok) else 1)
+print("    docsym=%s  completion=%s  references=%s  rename=%s  inlay=%s  fstr-rename=%s  sighelp=%s  wsym=%s  semtok=%s" % (sym_ok, comp_ok, refs_ok, ren_ok, inlay_ok, fstr_ok, sig_ok, wsym_ok, stok_ok))
+sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok and sym_ok and comp_ok and refs_ok and ren_ok and inlay_ok and fstr_ok and sig_ok and wsym_ok and stok_ok) else 1)
 PY
 
 echo ">>> loop-warning: tychoc + tychoc0 both warn on a non-advancing for-loop"

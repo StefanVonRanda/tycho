@@ -1063,6 +1063,90 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
                     nd = nd + 1
     send_result(id, "[" + out + "]")
 
+# ---- semanticTokens: a lexical classifier -----------------------------------
+# A whole-buffer tokenizer: comments (`#`..EOL), strings ("..." / '...' with \-esc),
+# numbers, keywords, built-in types, functions (an identifier directly before `(`),
+# else variables. Emitted as the LSP delta-encoded int array -- 5 per token:
+# (deltaLine, deltaChar, length, tokenType, 0). Coarser than a full symbol resolve,
+# but it fixes what a TextMate grammar can't reliably see: string/comment
+# boundaries and the type/function/variable split. Legend order MUST match the
+# tokenTypes list in the initialize capability (keyword,type,function,variable,
+# string,number,comment).
+fn sem_is_keyword(w: string) -> bool:
+    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa"
+
+fn sem_is_type(w: string) -> bool:
+    return w == "int" or w == "float" or w == "string" or w == "bool" or w == "char" or w == "bytes" or w == "ptr" or w == "void" or w == "u8" or w == "u16" or w == "u32" or w == "u64" or w == "i8" or w == "i16" or w == "i32" or w == "i64" or w == "f32"
+
+fn sem_push(data: string, nd: int, dline: int, dchar: int, length: int, ty: int) -> string:
+    sep := ""
+    if nd > 0:
+        sep = ","
+    return data + sep + str(dline) + "," + str(dchar) + "," + str(length) + "," + str(ty) + ",0"
+
+fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Json):
+    uri := as_str(get(get(params, "textDocument"), "uri"))
+    text := doc_get(uris, texts, uri)
+    data := ""
+    nd := 0
+    pline := 0                                       # previous token's line/char (for the delta)
+    pchar := 0
+    lines := split(text, "\n")
+    for li in range(len(lines)):
+        s := lines[li]
+        n := len(s)
+        i := 0
+        for i < n:
+            c := s[i]
+            start := i
+            ty := 0 - 1                              # -1 -> not a token (advance one char)
+            if c == 35:                              # '#' -> comment to end of line
+                i = n
+                ty = 6
+            elif c == 34 or c == 39:                 # '"'/'\'' string or char literal
+                q := c
+                j := i + 1
+                for j < n and s[j] != q:
+                    if s[j] == 92 and j + 1 < n:     # backslash escapes the next char
+                        j = j + 1
+                    j = j + 1
+                i = j + 1
+                if i > n:
+                    i = n
+                ty = 4
+            elif c >= 48 and c <= 57:                # number (digits + a decimal point)
+                j := i
+                for j < n and ((s[j] >= 48 and s[j] <= 57) or s[j] == 46):
+                    j = j + 1
+                i = j
+                ty = 5
+            elif is_ident_ch(c):                     # identifier (digits already handled above)
+                j := i
+                for j < n and is_ident_ch(s[j]):
+                    j = j + 1
+                w := substr(s, i, j)
+                i = j
+                if sem_is_keyword(w):
+                    ty = 0
+                elif sem_is_type(w):
+                    ty = 1
+                elif j < n and s[j] == 40:           # directly before '(' -> a call/definition
+                    ty = 2
+                else:
+                    ty = 3
+            else:
+                i = i + 1
+            if ty >= 0:
+                dline := li - pline
+                dchar := start
+                if dline == 0:
+                    dchar = start - pchar
+                data = sem_push(data, nd, dline, dchar, i - start, ty)
+                nd = nd + 1
+                pline = li
+                pchar = start
+    send_result(id, "{\"data\":[" + data + "]}")
+
 fn main():
     cc := compiler()
     uris := []string
@@ -1079,7 +1163,7 @@ fn main():
         id := get(msg, "id")
         params := get(msg, "params")
         if method == "initialize":
-            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"workspaceSymbolProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
+            send_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"referencesProvider\":true,\"documentHighlightProvider\":true,\"renameProvider\":true,\"inlayHintProvider\":true,\"workspaceSymbolProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\"]},\"semanticTokensProvider\":{\"legend\":{\"tokenTypes\":[\"keyword\",\"type\",\"function\",\"variable\",\"string\",\"number\",\"comment\"],\"tokenModifiers\":[]},\"full\":true}}}")
         elif method == "textDocument/didOpen":
             td := get(params, "textDocument")
             u := as_str(get(td, "uri"))
@@ -1111,6 +1195,8 @@ fn main():
             handle_rename(id, uris, texts, params)
         elif method == "textDocument/inlayHint":
             handle_inlay(id, uris, texts, syms, params)
+        elif method == "textDocument/semanticTokens/full":
+            handle_semantic_tokens(id, uris, texts, params)
         elif method == "shutdown":
             send_result(id, "null")
         elif method == "exit":
