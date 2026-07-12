@@ -12,18 +12,12 @@
 # ~1.0e18, well under 9.2e18. It also makes decimal I/O a per-limb print.
 package bignum
 
+const BASE = 1000000000        # 10^9 -- one limb
+const WIDTH = 9                # decimal digits per limb
+
 struct Big:
     sign: int                  # -1, 0, +1  (0 iff the value is zero)
     limbs: [int]               # base-10^9, little-endian, normalized (top limb != 0; empty iff zero)
-
-# Base and limb width as nullary functions rather than `const`: a module-level
-# `const` is (as of this writing) not visible inside the functions of an IMPORTED
-# package -- it resolves only in `package main`. A nullary fn works cross-package.
-# base() = 10^9 (one limb); width() = its 9 decimal digits.
-fn base() -> int:
-    return 1000000000
-fn width() -> int:
-    return 9
 
 fn zero() -> Big:
     return Big(0, []int)
@@ -65,8 +59,8 @@ fn mag_add(x: [int], y: [int]) -> [int]:
             s = s + x[i]
         if i < len(y):
             s = s + y[i]
-        push(r, s % base())
-        carry = s / base()
+        push(r, s % BASE)
+        carry = s / BASE
         i = i + 1
     if carry > 0:
         push(r, carry)
@@ -82,7 +76,7 @@ fn mag_sub(x: [int], y: [int]) -> [int]:
         if i < len(y):
             d = d - y[i]
         if d < 0:
-            d = d + base()
+            d = d + BASE
             borrow = 1
         else:
             borrow = 0
@@ -104,8 +98,8 @@ fn mag_mul(x: [int], y: [int]) -> [int]:
         j := 0
         for j < len(y):
             cur := r[i + j] + x[i] * y[j] + carry   # < 1.0e18, no overflow (see header)
-            r[i + j] = cur % base()
-            carry = cur / base()
+            r[i + j] = cur % BASE
+            carry = cur / BASE
             j = j + 1
         r[i + len(y)] = r[i + len(y)] + carry
         i = i + 1
@@ -124,8 +118,8 @@ fn from_int(n: int) -> Big:
         m = 0 - n
     ls := []int
     for m > 0:
-        push(ls, m % base())
-        m = m / base()
+        push(ls, m % BASE)
+        m = m / BASE
     return Big(sg, ls)
 
 # Parse a decimal string: optional '-'/'+', then digits. Non-digits after the sign
@@ -144,8 +138,8 @@ fn from_str(s: string) -> Big:
         end = end + 1
     ls := []int
     hi := end
-    for hi > i:                          # build limbs from the RIGHT, width() digits each
-        lo := hi - width()
+    for hi > i:                          # build limbs from the RIGHT, WIDTH digits each
+        lo := hi - WIDTH
         if lo < i:
             lo = i
         v := 0
@@ -207,9 +201,9 @@ fn mul(a: Big, b: Big) -> Big:
 
 # ---- formatting ------------------------------------------------------------
 
-fn pad_limb(v: int) -> string:            # zero-pad a non-top limb to width() digits
+fn pad_limb(v: int) -> string:            # zero-pad a non-top limb to WIDTH digits
     s := str(v)
-    for len(s) < width():
+    for len(s) < WIDTH:
         s = "0" + s
     return s
 

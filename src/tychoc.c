@@ -4179,7 +4179,13 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", e->sval);
                 return e->type = lv->type;
             }
-            Expr *clit = consts_find(e->sval);    /* precedence: local var -> const -> variant -> fn */
+            /* precedence: local var -> const -> variant -> fn. Look the const up
+             * under the SAME package-qualified key parse_const registered it with
+             * (pkg_mangle). At resolve time g_cur_pkg_prefix is already reset to "",
+             * so use the per-expr e->pkg (stamped at parse) -- else an imported
+             * package's `const K` (stored "<pkg>K") is missed here and misresolves
+             * as an unknown variable. Main has an empty prefix -> the bare name. */
+            Expr *clit = consts_find((e->pkg && e->pkg[0]) ? sfmt("%s%s", e->pkg, e->sval) : e->sval);
             if (clit) {                           /* a top-level const: fold into its literal */
                 e->kind = clit->kind; e->ival = clit->ival; e->fval = clit->fval; e->sval = clit->sval;
                 return e->type = lit_type(clit);
