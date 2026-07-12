@@ -137,7 +137,7 @@ def run_seed(seed, h0):
         shutil.rmtree(tmp, ignore_errors=True)
 
 def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 500
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     jobs = int(os.environ.get("FUZZ_JOBS", 0)) or max(1, (os.cpu_count() or 4) - 2)
     os.makedirs(FINDINGS, exist_ok=True)

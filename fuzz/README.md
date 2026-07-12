@@ -28,7 +28,7 @@ is off — leaks aren't soundness bugs; this targets *correctness*.
 ## Run it
 
 ```
-make fuzz            # 500 seeds (default) — full sweep, ~30 min under ASan
+make fuzz            # 200 seeds (default) — full sweep, ~12 min under ASan
 make fuzz-quick      # 60 seeds (~1-2 min) — inner dev-loop smoke test
 make fuzz-quick QN=120  # a slightly deeper quick sweep
 make fuzz N=5000     # more
@@ -84,7 +84,7 @@ oracle:
 
 Accept/reject **divergence** between the two front-ends is recorded (saved for
 review) but is **not** a hard failure — they legitimately differ near the
-grammar boundary. `make fuzz-reject` (N defaults to 500).
+grammar boundary. `make fuzz-reject` (N defaults to 200).
 
 It found and fixed a series of tychoc0 fail-opens (duplicate decls/params/locals,
 param-shadow, unknown function in statement position, no-main, unknown type

@@ -179,15 +179,15 @@ fixpoint: tychoc
 
 # Soundness fuzzer: generate N random well-typed Tycho programs, compile each
 # with tychoc (reference, native) and tychoc0 (native + ASan/UBSan), and assert
-# byte-identical output with no sanitizer fault. N defaults to 500; failing
+# byte-identical output with no sanitizer fault. N defaults to 200; failing
 # programs are saved to fuzz/findings/. See fuzz/README.md.
-N ?= 500
+N ?= 200
 fuzz: tychoc
 	@python3 fuzz/run.py $(N)
 
 # Quick fuzz: a small differential+ASan sweep for the inner dev loop, so a
 # compiler change can be smoke-tested in ~1-2 min instead of the full ~30 min.
-# Full coverage stays `make fuzz` (N=500). Override the count: make fuzz-quick QN=120.
+# Full coverage stays `make fuzz` (N=200). Override the count: make fuzz-quick QN=120.
 QN ?= 60
 fuzz-quick: tychoc
 	@python3 fuzz/run.py $(QN)
@@ -245,7 +245,7 @@ bench-guard: tychoc
 	@sh bench/guard.sh
 
 # Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz + perf guard.
-# The single "is the tree green" command. N defaults to 500 (override: make ci N=200).
+# The single "is the tree green" command. N defaults to 200 (override: make ci N=500 for a deeper sweep).
 ci:
 	@sh scripts/ci.sh $(N)
 

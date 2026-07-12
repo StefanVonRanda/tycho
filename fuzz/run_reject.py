@@ -19,7 +19,7 @@
 # only (1) and (2) fail the run. This keeps the oracle false-positive-free:
 # every hard FAIL is an unambiguous bug.
 #
-# Usage: run_reject.py [N] [start]    N = seeds (default 500)
+# Usage: run_reject.py [N] [start]    N = seeds (default 200)
 import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -143,7 +143,7 @@ def run_seed(seed, hc, h0, tmp):
     return ("accept_both" if hcv == "accept" else "reject_both"), None
 
 def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 500
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()

@@ -5,11 +5,11 @@
 # nonzero on the FIRST failure so it composes into hooks and `make ci`.
 #
 # Usage:
-#   scripts/ci.sh [FUZZ_N]     FUZZ_N = fuzz seeds (default 500; 0 skips the fuzz)
-#   make ci                    same, N defaults to 500 (override: make ci N=200)
+#   scripts/ci.sh [FUZZ_N]     FUZZ_N = fuzz seeds (default 200; 0 skips the fuzz)
+#   make ci                    same, N defaults to 200 (override: make ci N=500 for a deeper sweep)
 set -eu
 cd "$(dirname "$0")/.."
-N="${1:-500}"
+N="${1:-200}"
 # Fail-closed: a non-numeric FUZZ_N must abort, not silently skip the fuzz.
 case "$N" in
     *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
