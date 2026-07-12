@@ -105,6 +105,60 @@ fn mag_mul(x: [int], y: [int]) -> [int]:
         i = i + 1
     return strip(r)
 
+# r * BASE + digit (0 <= digit < BASE): shift the magnitude up one limb and drop
+# `digit` into the new low limb -- i.e. prepend it (little-endian).
+fn shift_add(r: [int], digit: int) -> [int]:
+    if len(r) == 0:
+        if digit == 0:
+            return []int
+        return [digit]
+    out := []int
+    push(out, digit)
+    k := 0
+    for k < len(r):
+        push(out, r[k])
+        k = k + 1
+    return out                       # r was normalized, so the (unchanged) top limb is non-zero
+
+fn reverse(a: [int]) -> [int]:
+    out := []int
+    i := len(a) - 1
+    for i >= 0:
+        push(out, a[i])
+        i = i - 1
+    return out
+
+# Long division of magnitudes: u / v (v non-empty). Returns (quotient, remainder),
+# both stripped. Schoolbook base-BASE long division; each quotient limb is found by
+# BINARY SEARCH for the largest d with v*d <= running-remainder -- simpler and
+# obviously correct vs Knuth's estimate-and-correct. The invariant remainder < v
+# after each step bounds d to [0, BASE), so the search range is [0, BASE-1].
+fn mag_divmod(u: [int], v: [int]) -> ([int], [int]):
+    if mag_cmp(u, v) < 0:
+        y := u                        # copy the read-only param for the remainder
+        return ([]int, y)
+    r := []int                        # running remainder, kept < v after each step
+    qhi := []int                      # quotient limbs, most-significant first
+    i := len(u) - 1
+    for i >= 0:
+        r = shift_add(r, u[i])        # bring down the next limb
+        lo := 0
+        hi := BASE - 1
+        d := 0
+        for lo <= hi:                 # largest d with v*d <= r
+            mid := (lo + hi) / 2
+            if mag_cmp(mag_mul(v, [mid]), r) <= 0:
+                d = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        push(qhi, d)
+        if d > 0:
+            r = mag_sub(r, mag_mul(v, [d]))
+        i = i - 1
+    q := strip(reverse(qhi))
+    return (q, r)
+
 # ---- construction ----------------------------------------------------------
 
 # NB: INT_MIN is not representable (0 - INT_MIN overflows); callers pass in-range ints.
@@ -198,6 +252,29 @@ fn mul(a: Big, b: Big) -> Big:
     if a.sign == 0 or b.sign == 0:
         return zero()
     return Big(a.sign * b.sign, mag_mul(a.limbs, b.limbs))
+
+# Truncated division (quotient toward zero; remainder takes the DIVIDEND's sign),
+# matching tycho's int `/` and `%`: a == q*b + r with |r| < |b|. Division by zero
+# returns (0, 0) -- guard with is_zero(b). Returns (quotient, remainder).
+fn divmod(a: Big, b: Big) -> (Big, Big):
+    if b.sign == 0 or a.sign == 0:
+        return (zero(), zero())
+    qm, rm := mag_divmod(a.limbs, b.limbs)
+    q := zero()
+    if len(qm) > 0:
+        q = Big(a.sign * b.sign, qm)
+    r := zero()
+    if len(rm) > 0:
+        r = Big(a.sign, rm)
+    return (q, r)
+
+fn div(a: Big, b: Big) -> Big:
+    q, r := divmod(a, b)
+    return q
+
+fn mod(a: Big, b: Big) -> Big:
+    q, r := divmod(a, b)
+    return r
 
 # ---- formatting ------------------------------------------------------------
 

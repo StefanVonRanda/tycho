@@ -53,3 +53,24 @@ fn main():
         k = k + 1
     fact := "93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000"
     println("100!_ok=" + str(b2i(bignum.to_str(f) == fact)))
+
+    # --- division (truncated toward zero, like int / and %): a = q*b + r ---
+    println("dm=" + bignum.to_str(bignum.div(bignum.from_int(17), bignum.from_int(5))) + " " + bignum.to_str(bignum.mod(bignum.from_int(17), bignum.from_int(5))))                     # 3 2
+    println("dm_aneg=" + bignum.to_str(bignum.div(bignum.from_int(0 - 17), bignum.from_int(5))) + " " + bignum.to_str(bignum.mod(bignum.from_int(0 - 17), bignum.from_int(5))))        # -3 -2
+    println("dm_bneg=" + bignum.to_str(bignum.div(bignum.from_int(17), bignum.from_int(0 - 5))) + " " + bignum.to_str(bignum.mod(bignum.from_int(17), bignum.from_int(0 - 5))))        # -3 2
+    # 2^100 / 2^50 == 2^50 exactly (p = 2^100, two = 2 from above)
+    h := bignum.from_int(1)
+    j := 0
+    for j < 50:
+        h = bignum.mul(h, two)
+        j = j + 1
+    println("pow_div_ok=" + str(b2i(bignum.cmp(bignum.div(p, h), h) == 0)))       # 2^100 / 2^50 == 2^50
+    println("pow_mod_ok=" + str(b2i(bignum.is_zero(bignum.mod(p, h)))))           # exact -> remainder 0
+    # invariant on a messy multi-limb division: a == q*b + r and 0 <= r < b
+    aa := bignum.from_str("123456789012345678901234567890123456789")
+    bb := bignum.from_str("98765432109876543")
+    qq, rr := bignum.divmod(aa, bb)
+    recon := bignum.add(bignum.mul(qq, bb), rr)
+    println("div_invariant=" + str(b2i(bignum.cmp(recon, aa) == 0 and bignum.cmp(rr, bb) < 0)))   # 1
+    # division by zero -> 0 (documented fail-closed)
+    println("divzero=" + bignum.to_str(bignum.div(bignum.from_int(5), bignum.from_int(0))))        # 0
