@@ -1559,7 +1559,12 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             return "[" + str(fixn) + "]" + felem
         # [W]T where W is an int `const` name (resolved to its literal in the mangle pass,
         # which always runs when a const is present). Encoded "[#W]T" until then.
-        if toks[pos].kind == TIdent and toks[pos + 1].kind == TRBracket and tok_starts_type(toks[pos + 2].kind):
+        # Exclude a trailing `where`: after a complete return type `[int]` the one
+        # non-type IDENT that can follow is `where` (a generic constraint clause), so
+        # `[int] where ...` must parse as the dynamic array `[int]`, NOT as `[int]where`
+        # (const-size `int`, element `where`). The sibling [$N]T check below has the same
+        # guard; it was missing here (1.6A), which broke `-> [int] where` in tychoc0.
+        if toks[pos].kind == TIdent and toks[pos + 1].kind == TRBracket and tok_starts_type(toks[pos + 2].kind) and not (toks[pos + 2].kind == TIdent and toks[pos + 2].text == "where"):
             cnm := toks[pos].text
             pos = pos + 2                            # past IDENT and ']'
             felem := parse_type_d(toks, &pos, depth + 1)
