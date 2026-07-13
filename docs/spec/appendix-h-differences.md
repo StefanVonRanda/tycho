@@ -17,7 +17,7 @@ and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
 | H1 | `reference/packages.md:23`: packages have **"no privacy"** — everything visible. | Cross-package access to a `_`-prefixed name is **rejected** (leading-underscore package privacy). | [§28](15-program.md) | `check_pkg_private`, `src/tychoc.c:3580-3587`; matches `docs/packages.md:17-20` |
 | H2 | A stale **compiler diagnostic** ("int-keyed maps support only int/float values"). *(Not a reference-doc drift — `reference/maps.md` already states V is any type.)* | A map's **value type is unrestricted**; only the *key* type is constrained. The false message clause should be removed. | [§5.3.5](03-types.md#535-maps-k-v) | `map_of`, `src/tychoc.c:1037-1065`; stale message `:1684`,`:4247` |
 | H3 | `reference/types.md:77`: f-string holes must be int/float/bool/string. | A hole may also be `u32`/`u64`/`f32` (it desugars to `str`, which accepts them). | [§8.2](06-conversions.md#82-explicit-conversion-builtins) | `str` resolve `src/tychoc.c:4722-4724` |
-| H4 | `reference/types.md:50`: `char ± int` "stays within a byte." | The result has type `char` but its value is **not** reduced to `0..255` (`'a' + 300` → `char` holding `397`). | [§5.2.4](03-types.md#524-char) | probed both compilers (spec-plan §6a) |
+| H4 | *(resolved)* `reference/types.md:50`: `char ± int` "stays within a byte." | Now **correct**: `char` arithmetic wraps to a byte (`0..255`, like `u8`), so the reference matches the language. | [§5.2.4](03-types.md#524-char) | tightening campaign; `tests/char_byte` |
 | H5 | `docs/generics.md`: discusses `empty$` as though it were a builtin. | `empty$` is **not** a builtin; only `zero$(T)` is special-cased. `name$(…)` is the generic explicit-type-argument form. | [§7.5](05-generics.md#75-zerot-and-namet-) | resolve at `src/tychoc.c:4355-4371` |
 | H6 | `reference/builtins.md` — the builtin catalog. | It is **incomplete**: it omits `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`, `to_u64`, and `to_f32` (`to_under` and `keys` are cross-referenced on the newtypes/maps pages). | [§29](16-builtins.md) | `register_builtins` + magic cases, `src/tychoc.c:3818-3849`,`:4716-4906` |
 | H7 | `docs/corelib.md` — the corelib package list. | Six packages exist in the tree but are **absent** from the doc: `bignum`, `decimal`, `net`, `compress`, `image`, `tls`. | [§32–§33](18-library.md) | `corelib/` tree |
@@ -28,8 +28,9 @@ and has been **fixed** (`compiler/tychoc0.ty` `check_call_args`; locked by
 - **H1 is a genuine behavioral correction, not just wording:** an implementation
   that allowed cross-package `_`-name access would be non-conforming. The
   reference page understates the language.
-- **H4 was resolved by differential probing**, not by reading either doc; both
-  compilers agree on the un-masked value.
+- **H4 is now resolved**: `char` arithmetic was changed to wrap to a byte
+  (tightening campaign), so the reference's "stays within a byte" is accurate;
+  both compilers agree.
 - Corrections H2–H8 do not change any accept/reject or output behavior of a
   *conforming* program; they align the reference prose with what the compilers
   already do. H1 changes what a program may write.

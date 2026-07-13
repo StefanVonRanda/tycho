@@ -28,11 +28,11 @@ fixtures. A clause with no fixture is flagged, exactly as an untested branch is.
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §3.4 | indentation / mixed-tabs-spaces rejected | `tests/tab_indent`, a reject fixture |
-| §5.5 | structural `==`; function identity | `tests/*_eq`, `eqparity` |
+| §5.5 | structural `==`; functions not comparable | `tests/*_eq`, `eqparity`, `tests/reject/fn_eq` |
 | §7.2 | `where` predicate rejection | `tests/reject/where_*` |
 | §11.2 | `inout` exclusivity rejected | *new fixture — also covers the tychoc0 gap (spec-plan §6a)* |
 | §13.4 | `match` subject evaluated once | *new probe fixture* |
-| §14.4 | `range` step 0 → empty loop | *new probe fixture* |
+| §14.4 | `range` step 0 → reject (literal) / abort (runtime) | `tests/reject/range_step_zero_lit`, `tests/abort/range_step_zero` |
 | §30.2 | the abort set (div0, bounds, …) | `tests/reject/*`, runtime probes |
 | … | *(remaining clauses populated in Phase 5)* | … |
 

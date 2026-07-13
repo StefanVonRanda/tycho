@@ -93,7 +93,7 @@ The following rules are normative (`parse_extern_fn`
   fn …`), which the implementation adds to the link line as `-lLib` (§27.4).
 
 The set of types an `extern` parameter or return may name — including the
-FFI-only sized-integer spellings (`u8`, `u16`, `i8`, `i16`, `i32`, `i64`),
+fixed-width integer types (`u8`, `u16`, `i8`, `i16`, `i32`, `i64`),
 `inout` out-parameters, and the `Option(string)` nullable return — is defined by
 the FFI chapter ([§24](14-ffi.md)), which is the single normative
 home for the crossable-type rules. This section governs only the *declaration

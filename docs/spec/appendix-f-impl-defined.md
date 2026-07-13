@@ -46,8 +46,9 @@ an implementation MUST NOT vary them, even where its backend's native types
 differ:
 
 - the width and overflow behavior of every scalar (`int` = 64-bit two's
-  complement, `u32`/`u64` = exactly 32/64-bit, `f32`/`float` = IEEE-754
-  binary32/binary64) — [§5.2](03-types.md#52-scalar-types);
+  complement, the fixed-width integers `u8`…`u64` / `i8`…`i64` = exactly
+  8/16/32/64-bit, `f32`/`float` = IEEE-754 binary32/binary64) —
+  [§5.2](03-types.md#52-scalar-types);
 - the defined signed-overflow wrap and the div/mod-by-zero abort;
 - the deep-copy value semantics and the no-dangling / no-leak storage guarantees
   — [§9](07-memory-model.md), [§10.3](07-memory-model.md#103-observable-storage-guarantees);

@@ -66,8 +66,8 @@ re-homed into the caller's storage on return
 ([§13.6](09-expressions.md#136-closures-and-function-values)). Two things cannot
 be taken as function values: a **builtin** name (`len`, `push`, `str`, …), and a
 function with an **`inout`** parameter (an `inout` borrow is call-scoped and
-cannot be deferred through an indirect call). Function values compare by
-identity.
+cannot be deferred through an indirect call). Function values are **not
+comparable** (§5.5).
 
 ## 15.5 Methods (UFCS)
 

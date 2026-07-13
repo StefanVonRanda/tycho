@@ -35,16 +35,15 @@ consulted (so a newtype over the listed base is accepted).
 
 | Builtin | Accepts | Yields | Notes |
 |---|---|---|---|
-| `str(x)` | `int`, `u32`, `u64`, `f32`, `bool`, `float`, `string` (through `base_of`) | `string` | polymorphic; identity on `string`; **rejects `char`** |
-| `to_int(x)` | `float`, `u32`, `u64`, `f32`, or an `int`-newtype | `int` | truncates toward zero for `float` |
-| `to_float(n)` | `int`, `u32`, `u64`, `f32`, or a `float`-newtype | `float` | |
-| `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | any numeric scalar: `int`, `char`, `float`, `u32`, `u64`, `f32` (through `base_of`) | `u32` / `u64` / `f32` | narrowing / reinterpretation |
+| `str(x)` | `int`, any sized int, `f32`, `bool`, `float`, `string`, `char` (through `base_of`) | `string` | polymorphic; identity on `string`; a `char` → its one-byte glyph |
+| `to_int(x)` | `float`, any sized int, `f32`, `char`, or an `int`-newtype | `int` | truncates toward zero for `float`; a `NaN`/out-of-range `float` **aborts** (§8.5) |
+| `to_float(n)` | `int`, any sized int, `f32`, or a `float`-newtype | `float` | |
+| `to_u8` … `to_i64`, `to_f32` | any numeric scalar: `int`, `char`, `float`, or any sized int/float (through `base_of`) | the named fixed-width type | narrowing / reinterpretation; **total** (defined for every input). `to_i32` recovers a 32-bit C `int` return over FFI |
 | `to_str(x)` | `bytes`, or a `string`-newtype | `string` | zero-cost reinterpret (same buffer) |
 | `to_bytes(x)` | `string`, `bytes` (through `base_of`) | `bytes` | same buffer, distinct type |
 | `to_bool(x)` | a `bool`-newtype | `bool` | newtype unwrap |
 | `to_under(x)` | any newtype | its underlying type | generic newtype unwrap, zero-cost |
 | `to_ptr(n)` | `int` | `ptr` | FFI sentinel pointer; never dereferenced |
-| `to_i32(n)` | `int` | `int` | FFI: sign-extend the low 32 bits of a returned C `int` |
 
 Each takes exactly one argument. `str` is the conversion used by f-string
 interpolation ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals)):
@@ -69,8 +68,6 @@ The following are compile-time type errors, not conversions:
 - an arithmetic, comparison, or bitwise operation mixing two distinct scalar
   types (`int + float`, `int == char`, a bitwise/shift/modulo op on mixed
   integer widths) — the operands MUST already share a type;
-- `str(c)` for a `char` `c` (an intentional asymmetry — `char` is orderable but
-  not string-convertible, [§5.5](03-types.md#55-equality-and-ordering));
 - passing a value of a newtype's underlying type where the newtype is expected,
   or vice versa, without an explicit construct/unwrap.
 

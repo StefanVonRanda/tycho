@@ -116,9 +116,8 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
 An `ExternFn` is bodyless and binds to a C symbol; its optional `STR` names a
 link library. Its parameter and return types are restricted to the
 FFI-crossable set — the scalars (`int`, `char`, `float`, `bool`), `string`,
-`bytes`, `ptr`, `[int]`/`[float]`, typed handles, the first-class sized numerics
-`u32`/`u64`/`f32`, and the extern-only sized-integer spellings
-`u8`/`u16`/`i8`/`i16`/`i32`/`i64`, plus `inout` **scalar** out-parameters (not
+`bytes`, `ptr`, `[int]`/`[float]`, typed handles, the first-class fixed-width
+numerics `u8`…`u64` / `i8`…`i64` / `f32`, plus `inout` **scalar** out-parameters (not
 `string`) and an `Option(string)` return ([§24](14-ffi.md)).
 
 A `Subscript` declares a user-defined projection: it yields a place (an lvalue)

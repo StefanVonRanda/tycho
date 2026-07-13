@@ -23,14 +23,11 @@ diagnostic text is not ([§1.1](00-conventions.md)).
   It never traps. (The reference realizes this by compiling with `-fwrapv`.)
 - **Unsigned overflow** (`u32`, `u64`) wraps modulo `2^32` / `2^64`, by
   definition.
-- **`chr(n)`** uses the low 8 bits of `n` (`n & 0xff`); it does **not** abort or
-  reject an out-of-range `n`. So `chr(256)` is the `NUL` byte and `chr(-1)` is
-  byte `255` (probed on both compilers).
-
-Integer overflow, `chr` masking, and an over-wide shift count (`≥` the operand's
-bit width, defined as `0`) are the arithmetic conditions that are fully defined
-rather than aborting; every other numeric edge either aborts (§30.2 — including a
-negative shift count) or is unspecified (§30.5).
+Integer overflow and an over-wide shift count (`≥` the operand's bit width,
+defined as `0`) are the arithmetic conditions that are fully defined rather than
+aborting; every other numeric edge either aborts (§30.2 — including a negative
+shift count, an out-of-range `chr`, and an out-of-range `to_int(float)`) or is
+unspecified (§30.5).
 
 ## 30.2 Conditions that abort
 
@@ -85,9 +82,6 @@ a conforming program MUST NOT depend on them. They are collected in
 
 - **Argument / operand / place evaluation order** within one expression
   (§13.4; *probed* — inherited from the target, not sequenced by Tycho).
-- **An out-of-range narrowing conversion** — `to_int(f)` for a `float` outside the
-  `int` range, or a `to_u32`/`to_u64`/`to_f32` whose source does not fit
-  (*probed*). In-range `to_int(float)` truncates toward zero.
 - **Floating-point reduction reassociation** in `parallel for` (§22): a
   floating-point reduction result MAY differ across thread counts. (An integer
   reduction is deterministic and is *not* unspecified.)

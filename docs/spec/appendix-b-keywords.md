@@ -5,18 +5,19 @@ for the normative definitions.
 
 ## B.1 Reserved words
 
-These 34 words are reserved; none may be used as an identifier.
+These 40 words are reserved; none may be used as an identifier.
 
 ```
 and     bool    break   bytes   continue elif    else    enum
-f32     false   float   fn      for      handle  if      in
-inout   int     match   not     null     or      or_return  parallel
-ptr     return  select  spawn   string   struct  true    type
-u32     u64
+f32     false   float   fn      for      handle  i8      i16
+i32     i64     if      in      inout    int     match   not
+null    or      or_return parallel ptr    return  select  spawn
+string  struct  true    type    u8      u16     u32     u64
 ```
 
 Of these, the **type keywords** are `int`, `float`, `bool`, `string`, `ptr`,
-`bytes`, `u32`, `u64`, `f32`. There is no `while`, `char`, or `void` keyword.
+`bytes`, the fixed-width integers `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`,
+`i64`, and `f32`. There is no `while`, `char`, or `void` keyword.
 
 ## B.2 Contextual identifiers
 

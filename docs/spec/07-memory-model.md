@@ -47,9 +47,10 @@ copy is what guarantees a value outlives every place that holds it.
 
 Equality (`==`) is the mirror image of the deep copy: it compares by content,
 recursing through the same structure ([§5.5](03-types.md#55-equality-and-ordering)).
-Therefore `a == b` holds exactly when `b` is an independent deep copy of `a`. The
-sole exception — function values, compared by identity — is the one place the
-copy/equality symmetry does not apply.
+Therefore `a == b` holds exactly when `b` is an independent deep copy of `a`.
+Function values are the exception: a bare function is **not comparable** at all
+(§5.5), and a function embedded in a comparable aggregate compares by **identity**,
+not content — the one place the copy/equality symmetry does not apply.
 
 ### 9.4 Uniqueness
 

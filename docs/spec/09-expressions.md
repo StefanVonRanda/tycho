@@ -30,9 +30,8 @@ aborts ([§30](17-runtime.md)). Division or modulo by an **integer literal `0`**
 a compile error regardless of operand type (so `x / 0` is rejected even when `x`
 is `float`); `float`/`f32` division by a zero *value* or by the float literal
 `0.0` never traps and follows IEEE-754 (`x/0.0` → `±inf`/`NaN`). Integer overflow wraps (two's-complement for `int`, modulo `2^32`/`2^64`
-for `u32`/`u64`). `char ± int` has type `char` but its value is the ordinary
-integer result and is **not** reduced to `0..255` (probed: `'a' + 300` yields a
-`char` holding `397`).
+for `u32`/`u64`). `char ± int` has type `char` and **wraps to a byte** (`0..255`,
+like `u8`), so the value never escapes the type's range.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -126,7 +125,7 @@ when the closure is formed, so later mutation of the originals is not observed b
 the closure (value semantics). A returned closure's captured environment is
 deep-copied into the caller's storage on return, like any escaping value. A
 function that has an `inout` parameter cannot be used as a first-class value
-(§15). Function values compare by identity
+(§15). Function values are **not comparable**
 ([§5.5](03-types.md#55-equality-and-ordering)).
 
 ## 13.7 Other expression forms

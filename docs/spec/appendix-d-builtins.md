@@ -30,7 +30,7 @@ alphabetical locator only.
 | `recv`, `send`, `wait` | concurrency | §29 / [§21](13-concurrency.md)–[§23](13-concurrency.md) |
 | `split`, `substr` | string | §29 |
 | `str` | conversion | §29 / §8.2 |
-| `to_bool`, `to_bytes`, `to_float`, `to_i32`, `to_int`, `to_ptr`, `to_str`, `to_u32`, `to_u64`, `to_f32`, `to_under` | conversion | §29 / §8.2 |
+| `to_bool`, `to_bytes`, `to_float`, `to_i8`, `to_i16`, `to_i32`, `to_i64`, `to_int`, `to_ptr`, `to_str`, `to_u8`, `to_u16`, `to_u32`, `to_u64`, `to_f32`, `to_under` | conversion | §29 / §8.2 |
 | `write_file` | filesystem | §29 |
 | `zero$` | type / generics | §29 / [§7.5](05-generics.md#75-zerot-and-namet-) |
 

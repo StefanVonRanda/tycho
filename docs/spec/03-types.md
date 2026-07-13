@@ -74,11 +74,6 @@ is comparable and ordered (§5.5). `str(char)` yields the one-byte **glyph**
 string (so a `char` interpolates in an f-string); `to_int(char)` / `to_u32(char)`
 yield the byte **value**.
 
-The result has type `char`, but its numeric value is the ordinary integer result
-and is **not** reduced to `0..255`: `'a' + 300` is a `char` holding `397` (probed
-on both compilers). A `char` produced by arithmetic is therefore not guaranteed to
-lie in `0..255`.
-
 ### 5.2.5 `string`
 
 `string` is an **immutable, length-counted, byte-safe** sequence of bytes. Its
@@ -215,8 +210,8 @@ field in its own backing array (§17).
 
 `fn(P1, …, Pn) -> R` is a **first-class function type** (up to 8 parameters),
 identified structurally. A parameter type may not be `void`. A function *value*
-is a closure over captured state (§15); function values compare by
-**identity**, not structurally (§5.5). A function that has an `inout` parameter
+is a closure over captured state (§15); function values are **not comparable**
+(§5.5). A function that has an `inout` parameter
 cannot be used as a first-class value.
 
 ### 5.3.9 Typed handles
@@ -275,8 +270,9 @@ that type's underlying scalar MUST be one of `int`, `char`, `float`, `string`,
 arrays, maps, enums, and `bool` are **not** ordered. String ordering is
 byte-lexicographic.
 
-Two asymmetries follow and are intentional: `char` is comparable and ordered but
-is not accepted by `str`; `bool` is comparable and `str`-able but is not ordered.
+One asymmetry follows and is intentional: `bool` is comparable and `str`-able but
+is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
+one-byte glyph.)
 
 > Provenance: `src/tychoc.c:5088-5114` (equality/ordering resolver); function-
 > value identity equality `:7115`.

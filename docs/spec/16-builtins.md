@@ -61,7 +61,9 @@ Builtins fall into two kinds, and each entry below is marked with one:
 Three names — `str`, `to_ptr`, `to_i32` — carry **both** a `Sig` registration
 and a `resolve_expr` special-case; the special-case governs. Classification here
 follows observable behavior: `str` is polymorphic and is marked **magic**;
-`to_ptr` and `to_i32` keep a single fixed `int` signature and are marked **Sig**.
+`to_ptr` keeps a single fixed `int` signature and is marked **Sig**; the
+fixed-width conversions `to_u8`…`to_i64`/`to_f32` (including `to_i32`) are
+numeric-polymorphic like `str`.
 
 > Editor's note (Appendix H): the reference page `docs/reference/builtins.md` is
 > **incomplete** — it omits `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`,
@@ -113,9 +115,8 @@ duplicated here; this section states only each builtin's kind and one-line role.
 
 The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 `to_under` are the newtype unwrappers ([§8.3](06-conversions.md#83-newtype-unwrapping),
-[§5.4](03-types.md#54-newtypes)). `str(char)` is a hard error, an intentional
-asymmetry ([§5.5](03-types.md#55-equality-and-ordering),
-[§8.4](06-conversions.md#84-hard-errors)).
+[§5.4](03-types.md#54-newtypes)). `str(char)` yields the char's one-byte glyph
+string ([§5.2.4](03-types.md#524-char)).
 
 > Provenance: conversion magic `src/tychoc.c:4716-4787`; `chr`/`to_ptr`/`to_i32`/
 > `is_null` `Sig` `:3830`,`:3841-3843`.
