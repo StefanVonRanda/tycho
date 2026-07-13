@@ -17,6 +17,10 @@ fn main():
     println("orig=" + jn(keys))                       # orig=30,10,20,10 (input untouched)
     names := ["carol", "alice", "bob", "alice"]
     println("strs=" + jn(sort.argsort(names)))        # strs=1,3,2,0 (generic argsort over strings)
+    # asc/desc: sort the VALUES directly (the common case), generic over comparable
+    println("asc2=" + jn(sort.asc(keys)))             # asc2=10,10,20,30 (stable)
+    println("desc2=" + jn(sort.desc(keys)))           # desc2=30,20,10,10
+    println("ascs=" + str(sort.asc(names)))           # ascs=[alice, alice, bob, carol]
     # parallel-array use: order words by count descending
     words := ["the", "fox", "jumps"]
     counts := [3, 7, 1]

@@ -10912,6 +10912,15 @@ int main(int argc, char **argv) {
     const char *pkg = detect_package(toks.v);
     ProcVec prog = pkg ? compile_package(input, pkg)   /* package: merge the whole directory */
                        : parse_program(toks.v);        /* single file: unchanged */
+    /* F8: a bare (package-less) file parses its `import`s but the single-file path
+     * never loads them, so `pkg.symbol` would fail later with a misleading "package
+     * has no symbol". Point at the real fix — every file that imports must name its
+     * own package (Odin-style), e.g. `package main`. */
+    if (!pkg && g_nimports > 0) {
+        fprintf(stderr, "%s:%d: error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line\n",
+                input, g_imports[0].line);
+        return 1;
+    }
     if (debug && !pkg) {   /* -g: line info only for single-file builds -- merged packages lose per-node filenames */
         g_line_info = 1;
         g_line_file = c_escape_path(input);

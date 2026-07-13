@@ -1,7 +1,10 @@
 package sort
 
-# Sorting beyond core:arrays. The centerpiece is argsort: it returns the index
-# permutation that orders the KEYS -- the way to order data by a derived value.
+# Sorting beyond core:arrays. For the common case -- "sort these values" -- reach
+# for sort.asc(xs) / sort.desc(xs): generic over any comparable element (int,
+# float, string, char), stable, returns a new array. The centerpiece for ordering
+# DATA by a derived value is argsort: it returns the index permutation that orders
+# the KEYS.
 # Keep your data in parallel arrays, argsort one, and walk every array through
 # the permutation:
 #   ord := sort.argsort_desc(counts)
@@ -35,6 +38,28 @@ fn argsort_desc(keys: [$T]) -> [int] where comparable(T):   # descending, stable
             j = j - 1
         ord[j + 1] = cur
     return ord
+
+fn asc(xs: [$T]) -> [$T] where comparable(T):       # sort the VALUES ascending, stable, new array (the common case)
+    out := xs
+    for i in range(1, len(out)):
+        cur := out[i]
+        j := i - 1
+        for j >= 0 and out[j] > cur:
+            out[j + 1] = out[j]
+            j = j - 1
+        out[j + 1] = cur
+    return out
+
+fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending, stable, new array
+    out := xs
+    for i in range(1, len(out)):
+        cur := out[i]
+        j := i - 1
+        for j >= 0 and out[j] < cur:
+            out[j + 1] = out[j]
+            j = j - 1
+        out[j + 1] = cur
+    return out
 
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable
     out := xs

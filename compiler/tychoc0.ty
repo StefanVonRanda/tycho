@@ -14327,10 +14327,16 @@ fn main():
     src := ""
     if len(a) > 1:                                  # `tychoc0 path` : compile that file or package
         content := read_file(a[1])
-        if is_package(lex(content)):
+        ftoks := lex(content)
+        if is_package(ftoks):
             seen := []string
             src = bundle(dir_of(a[1]), true, &seen)
         else:
+            # F8: a bare (package-less) file's imports are never loaded, so a
+            # `pkg.symbol` later fails with a misleading "no symbol". Point at the
+            # real fix -- every file that imports must name its own package.
+            if len(scan_imports(ftoks)) > 0:
+                die(a[1] + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
             src = content
     else:                                           # no argument : read stdin (the bootstrap path)
         src = read_all()

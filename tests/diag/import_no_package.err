@@ -1,0 +1,1 @@
+tests/diag/import_no_package.ty:1: error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line

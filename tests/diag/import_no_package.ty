@@ -1,0 +1,4 @@
+import "core:strings"
+
+fn main():
+    println(strings.to_upper("hi"))
