@@ -372,6 +372,7 @@ fn lex(src: string) -> [Token]:
     line := 1
     linestart := 0                                # byte offset of the current line's start (for token columns)
     at_bol := true
+    bracket_depth := 0                            # (...) / [...] nesting: >0 joins physical lines (implicit continuation)
     for i < n:
         if at_bol:
             ind := 0
@@ -384,18 +385,21 @@ fn lex(src: string) -> [Token]:
                     ws_tab = true
                 ind = ind + 1
                 i = i + 1
-            if ws_sp and ws_tab:
+            if ws_sp and ws_tab and bracket_depth == 0:
                 lex_err(src, i, "lex: mixed tabs and spaces in indentation")
             if i >= n:
                 at_bol = false
             elif src[i] == 10:
-                push(toks, Token(TNewline, "", line, 0))
+                if bracket_depth == 0:                # inside (...) / [...] : join lines, emit no NEWLINE
+                    push(toks, Token(TNewline, "", line, 0))
                 i = i + 1
                 line = line + 1
                 linestart = i
             elif src[i] == 35:
                 for i < n and src[i] != 10:
                     i = i + 1
+            elif bracket_depth > 0:                   # continuation line inside brackets: ignore indentation
+                at_bol = false
             elif ind > stack[sp - 1]:
                 if sp >= 256:                        # H2: cap block nesting (mirrors tychoc's indent_stack[256]); else parse_block recursion overflows the C stack
                     lex_err(src, i, "lex: indentation too deep")
@@ -415,13 +419,21 @@ fn lex(src: string) -> [Token]:
                 at_bol = false
         else:
             if src[i] == 10:
-                push(toks, Token(TNewline, "", line, 0))
+                if bracket_depth == 0:
+                    push(toks, Token(TNewline, "", line, 0))
                 i = i + 1
                 line = line + 1
                 linestart = i
                 at_bol = true
             else:
+                before := len(toks)
                 i = scan_token(src, n, i, &toks, line, linestart)
+                if len(toks) > before:               # scan_token skips whitespace/comments without pushing
+                    lk := toks[len(toks) - 1].kind
+                    if lk == TLParen or lk == TLBracket:
+                        bracket_depth = bracket_depth + 1
+                    elif (lk == TRParen or lk == TRBracket) and bracket_depth > 0:
+                        bracket_depth = bracket_depth - 1
     push(toks, Token(TNewline, "", line, 0))
     for sp > 1:
         sp = sp - 1
@@ -841,12 +853,34 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
                 die("parse: map_get was removed; use m.get(k, default)")
             pos = pos + 1
             args := []Expr
+            anames := []string                                   # F4: per-arg field name ("" = positional)
+            any_named := false
             if toks[pos].kind != TRParen:
+                an0 := ""
+                if toks[pos].kind == TIdent and toks[pos + 1].kind == TColon:
+                    an0 = toks[pos].text
+                    any_named = true
+                    pos = pos + 2
+                push(anames, an0)
                 push(args, parse_expr_d(toks, &pos, nd))
                 for toks[pos].kind == TComma:
                     pos = pos + 1
+                    an := ""
+                    if toks[pos].kind == TIdent and toks[pos + 1].kind == TColon:
+                        an = toks[pos].text
+                        any_named = true
+                        pos = pos + 2
+                    push(anames, an)
                     push(args, parse_expr_d(toks, &pos, nd))
             expect(toks, &pos, TRParen)
+            if any_named:                                        # F4: encode as `@nc:Name` + interleaved [EStr(field), value, ...]
+                inter := []Expr
+                aj := 0
+                for aj < len(args):
+                    push(inter, EStr(anames[aj], _el))
+                    push(inter, args[aj])
+                    aj = aj + 1
+                return ECall("@nc:" + name, inter, _el)
             return ECall(name, args, _el)
         return EVar(name, _el)
     elif t.kind == TLParen:
@@ -886,6 +920,8 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
             push(vals, parse_expr_d(toks, &pos, nd))
             for toks[pos].kind == TComma:
                 pos = pos + 1
+                if toks[pos].kind == TRBracket:      # trailing comma
+                    break
                 push(keys, parse_expr_d(toks, &pos, nd))
                 expect(toks, &pos, TColon)
                 push(vals, parse_expr_d(toks, &pos, nd))
@@ -895,6 +931,8 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
         push(elems, first)
         for toks[pos].kind == TComma:
             pos = pos + 1
+            if toks[pos].kind == TRBracket:      # trailing comma
+                break
             push(elems, parse_expr_d(toks, &pos, nd))
         expect(toks, &pos, TRBracket)
         return EArrLit(elems, "", _el)
@@ -13693,6 +13731,199 @@ fn pack_stmt(s: Stmt, fnames: [string], fnparam: [int], flastpt: [string]) -> St
         SValDecl(n, ty, c, _sl):
             return SValDecl(n, ty, pack_stmt(c, fnames, fnparam, flastpt), _sl)
 
+# ---- F4: named struct construction  P(x: 1, y: 2) ----
+# The parser emits `ECall("@nc:" + StructName, [EStr(field), value, ...], loc)` for a
+# call with any `name: value` argument (a sentinel -- no real callee is named "@nc:...").
+# This pass, run right after parse (before every other pass), validates the field names
+# against the struct and rewrites each to a positional `ECall(StructName, ordered, loc)`,
+# so no later pass ever sees the sentinel. tychoc0.ty itself uses no named construction,
+# so this is a no-op over it and the fixpoint stays byte-identical.
+fn nc_estr(e: Expr) -> string:
+    match e:
+        EStr(s, _el):
+            return s
+        _:
+            die("internal: named-ctor field marker expected")
+            return ""
+
+fn nc_find_struct(structs: [StructDef], name: string) -> int:
+    i := 0
+    for i < len(structs):
+        if structs[i].name == name:
+            return i
+        i = i + 1
+    return -1
+
+fn nc_exprs(es: [Expr], structs: [StructDef]) -> [Expr]:
+    out := []Expr
+    i := 0
+    for i < len(es):
+        push(out, nc_expr(es[i], structs))
+        i = i + 1
+    return out
+
+fn nc_expr(e: Expr, structs: [StructDef]) -> Expr:
+    match e:
+        EInt(s, _el):
+            return e
+        EFloat(s, _el):
+            return e
+        EStr(s, _el):
+            return e
+        EBool(s, _el):
+            return e
+        EChar(s, _el):
+            return e
+        EVar(s, _el):
+            return e
+        EArrEmpty(t, _el):
+            return e
+        EMapEmpty(k, v, _el):
+            return e
+        EBin(o, l, r, _el):
+            return EBin(o, nc_expr(l, structs), nc_expr(r, structs), _el)
+        ECall(nm, a, _el):
+            if has_prefix(nm, "@nc:"):
+                sname := substr(nm, 4, len(nm))
+                si := nc_find_struct(structs, sname)
+                if si < 0:
+                    die("resolve: named arguments are only valid for struct construction (unknown struct '" + sname + "')")
+                flds := structs[si].fields
+                nf := len(flds)
+                npairs := len(a) / 2
+                nms := []string
+                vals := []Expr
+                j := 0
+                for j < npairs:
+                    push(nms, nc_estr(a[j * 2]))
+                    push(vals, nc_expr(a[j * 2 + 1], structs))
+                    j = j + 1
+                k := 0
+                for k < npairs:
+                    if nms[k] == "":
+                        die("resolve: " + sname + ": cannot mix named and positional fields")
+                    ok := false
+                    fk := 0
+                    for fk < nf:
+                        if flds[fk].name == nms[k]:
+                            ok = true
+                        fk = fk + 1
+                    if not ok:
+                        die("resolve: " + sname + " has no field '" + nms[k] + "'")
+                    k = k + 1
+                if npairs != nf:
+                    die("resolve: " + sname + ": named construction must set all " + str(nf) + " field(s), got " + str(npairs))
+                ordered := []Expr
+                f := 0
+                for f < nf:
+                    found := -1
+                    g := 0
+                    for g < npairs:
+                        if nms[g] == flds[f].name:
+                            if found >= 0:
+                                die("resolve: " + sname + ": field '" + flds[f].name + "' set more than once")
+                            found = g
+                        g = g + 1
+                    push(ordered, vals[found])
+                    f = f + 1
+                return ECall(sname, ordered, _el)
+            return ECall(nm, nc_exprs(a, structs), _el)
+        EField(b, f, _el):
+            return EField(nc_expr(b, structs), f, _el)
+        EIndex(b, ix, _el):
+            return EIndex(nc_expr(b, structs), nc_expr(ix, structs), _el)
+        EArrLit(es, ft, _el):
+            return EArrLit(nc_exprs(es, structs), ft, _el)
+        EMapLit(ks, vs, _el):
+            return EMapLit(nc_exprs(ks, structs), nc_exprs(vs, structs), _el)
+        ETuple(es, _el):
+            return ETuple(nc_exprs(es, structs), _el)
+        ESlice(b, lo, hi, _el):
+            return ESlice(nc_expr(b, structs), nc_expr(lo, structs), nc_expr(hi, structs), _el)
+        EAddr(x, _el):
+            return EAddr(nc_expr(x, structs), _el)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            return ELambda(id, ps, pts, ret, nc_expr(body, structs), cn, ct, _el)
+        ECallV(callee, cargs, _el):
+            return ECallV(nc_expr(callee, structs), nc_exprs(cargs, structs), _el)
+        ESpawn(id, nm, a, _el):
+            return ESpawn(id, nm, nc_exprs(a, structs), _el)
+        ESpread(x, _el):
+            return ESpread(nc_expr(x, structs), _el)
+
+fn nc_block(stmts: [Stmt], structs: [StructDef]) -> [Stmt]:
+    out := []Stmt
+    i := 0
+    for i < len(stmts):
+        push(out, nc_stmt(stmts[i], structs))
+        i = i + 1
+    return out
+
+fn nc_stmt(s: Stmt, structs: [StructDef]) -> Stmt:
+    match s:
+        SDecl(n, e, _sl):
+            return SDecl(n, nc_expr(e, structs), _sl)
+        SAssign(n, e, _sl):
+            return SAssign(n, nc_expr(e, structs), _sl)
+        SFieldAssign(lv, r, _sl):
+            return SFieldAssign(nc_expr(lv, structs), nc_expr(r, structs), _sl)
+        SPrint(e, _sl):
+            return SPrint(nc_expr(e, structs), _sl)
+        SReturn(e, _sl):
+            return SReturn(nc_expr(e, structs), _sl)
+        SReturnVoid:
+            return s
+        SBreak:
+            return s
+        SContinue:
+            return s
+        SConst(n, e, _sl):
+            return SConst(n, nc_expr(e, structs), _sl)
+        SIf(c, t, el, _sl):
+            return SIf(nc_expr(c, structs), nc_block(t, structs), nc_block(el, structs), _sl)
+        SWhile(c, b, _sl):
+            return SWhile(nc_expr(c, structs), nc_block(b, structs), _sl)
+        SForRange(v, a, b, st, body, _sl):
+            return SForRange(v, nc_expr(a, structs), nc_expr(b, structs), nc_expr(st, structs), nc_block(body, structs), _sl)
+        SExpr(e, _sl):
+            return SExpr(nc_expr(e, structs), _sl)
+        STypedDecl(n, ty, e, _sl):
+            return STypedDecl(n, ty, nc_expr(e, structs), _sl)
+        SOrReturn(n, e, _sl):
+            return SOrReturn(n, nc_expr(e, structs), _sl)
+        SDestructure(ns, e, _sl):
+            return SDestructure(ns, nc_expr(e, structs), _sl)
+        SMultiAssign(ns, e, _sl):
+            return SMultiAssign(ns, nc_expr(e, structs), _sl)
+        SMatch(subj, vars, binds, bodies, _sl):
+            nb := [][Stmt]
+            k := 0
+            for k < len(bodies):
+                push(nb, nc_block(bodies[k], structs))
+                k = k + 1
+            return SMatch(nc_expr(subj, structs), vars, binds, nb, _sl)
+        SParFor(v, a, b, body, pid, _sl):
+            return SParFor(v, nc_expr(a, structs), nc_expr(b, structs), nc_block(body, structs), pid, _sl)
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
+            nch := nc_exprs(schans, structs)
+            nb := [][Stmt]
+            sk := 0
+            for sk < len(sbodies):
+                push(nb, nc_block(sbodies[sk], structs))
+                sk = sk + 1
+            return SSelect(uid, svars, nch, sbinds, nb, _sl)
+        SValDecl(n, ty, c, _sl):
+            return SValDecl(n, ty, nc_stmt(c, structs), _sl)
+
+fn resolve_named_ctors(prog: Program) -> Program:
+    funcs := []Func
+    i := 0
+    for i < len(prog.funcs):
+        f := prog.funcs[i]
+        push(funcs, Func(f.name, f.params, f.ptypes, f.ret, nc_block(f.body, prog.structs), f.is_extern, f.lib, f.constraints))
+        i = i + 1
+    return Program(prog.structs, prog.enums, funcs, prog.ntnames, prog.ntunder, prog.handles)
+
 # Rewrite every variadic call site, then normalize each variadic param's own
 # ptype "...T" -> the in-body array type "[T]" so no later pass ever sees "...".
 fn pack_program(prog: Program) -> Program:
@@ -13957,6 +14188,7 @@ fn main():
     pos := 0
     prog0 := parse_program(toks, &pos)
     check_dups(prog0)                                 # fail-closed: reject duplicate decls before codegen
+    prog0 = resolve_named_ctors(prog0)                # F4: rewrite named struct construction P(x:1,y:2) -> positional before any other pass
     prog0 = pack_program(prog0)                       # variadic (2.2a): fold each `f(a,b,c)`/`f(x...)` trailing args into one [T] arg; normalize "...T" params to "[T]"; reject every spread misuse
     sigs0 := []Sig                                    # sigs over the ORIGINAL funcs: capture-type lookups during the lift
     sigmap0 := []string: int

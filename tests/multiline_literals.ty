@@ -1,0 +1,32 @@
+# F1: collection literals span multiple physical lines (implicit line-join
+# inside (...) / [...]), optional trailing comma. Verified on both transpilers.
+struct Pt:
+    x: int
+    y: int
+
+fn sum3(a: int, b: int, c: int) -> int:
+    return a + b + c
+
+fn main():
+    xs := [
+        1,
+        2,
+        3,
+    ]
+    m := [
+        "a": 10,
+        "b": 20,
+    ]
+    pts := [
+        Pt(1, 2),
+        Pt(3, 4),
+    ]
+    # multi-line call: line-join inside (...) works too (no trailing comma)
+    total := sum3(
+        4,
+        5,
+        6)
+    println(str(len(xs)))
+    println(str(m["a"] + m["b"]))
+    println(str(pts[1].x + pts[1].y))
+    println(str(total))

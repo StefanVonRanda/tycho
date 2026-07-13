@@ -207,6 +207,7 @@ static TokVec lex(const char *src) {
     int sp = 0;
     indent_stack[0] = 0;
     int line = 0;
+    int bracket_depth = 0;   /* (...) / [...] nesting: >0 joins physical lines (implicit continuation) */
 
     const char *p = src;
     while (*p) {
@@ -222,7 +223,7 @@ static TokVec lex(const char *src) {
             if (*p == ' ') ws_sp = 1; else ws_tab = 1;
             col++; p++;
         }
-        if (ws_sp && ws_tab)
+        if (ws_sp && ws_tab && bracket_depth == 0)
             die_at(line, "mixed tabs and spaces in indentation; use one consistently");
 
         /* blank or comment-only line: skip without touching indentation */
@@ -232,18 +233,22 @@ static TokVec lex(const char *src) {
             continue;
         }
 
-        /* emit INDENT / DEDENT for this logical line */
-        if (col > indent_stack[sp]) {
-            if (sp + 1 >= 256) die_at(line, "indentation too deep");
-            indent_stack[++sp] = col;
-            tv_push(&out, (Tok){TK_INDENT, NULL, 0, line, 0, 0});
-        } else {
-            while (col < indent_stack[sp]) {
-                sp--;
-                tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0, 0});
+        /* emit INDENT / DEDENT for this logical line -- only at bracket depth 0.
+         * Inside (...) / [...] a physical line is a continuation (Python-style
+         * implicit line-join), so its leading whitespace is not indentation. */
+        if (bracket_depth == 0) {
+            if (col > indent_stack[sp]) {
+                if (sp + 1 >= 256) die_at(line, "indentation too deep");
+                indent_stack[++sp] = col;
+                tv_push(&out, (Tok){TK_INDENT, NULL, 0, line, 0, 0});
+            } else {
+                while (col < indent_stack[sp]) {
+                    sp--;
+                    tv_push(&out, (Tok){TK_DEDENT, NULL, 0, line, 0, 0});
+                }
+                if (col != indent_stack[sp])
+                    die_at(line, "inconsistent indentation");
             }
-            if (col != indent_stack[sp])
-                die_at(line, "inconsistent indentation");
         }
 
         /* lex the rest of the line */
@@ -405,6 +410,7 @@ static TokVec lex(const char *src) {
             /* operators (two-char first) */
             char c2 = p[1];
             TokKind k; int len = 1;
+            if (c == '/' && c2 == '/') { g_err_col = tcol; die_at(line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division"); }
             if (c == '.' && c2 == '.' && p[2] == '.') { k = TK_ELLIPSIS; len = 3; }  /* variadic `...T` / spread `x...` */
             else if (c == ':' && c2 == ':')      { k = TK_COLONCOLON; len = 2; }
             else if (c == ':' && c2 == '=') { k = TK_COLONEQ;    len = 2; }
@@ -436,11 +442,14 @@ static TokVec lex(const char *src) {
             else if (c == '~') k = TK_TILDE;
             else if (c == '$') k = TK_DOLLAR;   /* generics: `$T` introduces a type parameter */
             else { g_err_col = tcol; die_at(line, "unexpected character '%c'", c); }
+            if (k == TK_LPAREN || k == TK_LBRACKET) bracket_depth++;
+            else if ((k == TK_RPAREN || k == TK_RBRACKET) && bracket_depth > 0) bracket_depth--;
             tv_push(&out, (Tok){k, NULL, 0, line, 0, tcol});
             p += len;
         }
 
-        tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0, (int)(p - ls) + 1});
+        if (bracket_depth == 0)   /* inside (...) / [...] : join lines, emit no NEWLINE */
+            tv_push(&out, (Tok){TK_NEWLINE, NULL, 0, line, 0, (int)(p - ls) + 1});
         if (*p == '#') while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
     }
@@ -1286,6 +1295,7 @@ struct Expr {
     TokKind  op;       /* E_BINOP */
     Expr    *lhs, *rhs;
     Expr   **args; int nargs;   /* E_CALL */
+    char   **argnames; /* E_CALL: parallel to args -- non-NULL entry = named field (struct construction `P(x: 1)`); NULL ptr / all-NULL entries = positional */
     const char *pkg;   /* E_CALL: prefix of the package this call appears in ("" = main); used to resolve a package-local name */
     const char *qual;  /* E_CALL: explicit qualifier of `pkg.name(...)` (the source ident, e.g. "geom"); NULL if unqualified */
     Type   *typeargs; int ntypeargs;   /* E_CALL: explicit call-site type args `name$(int, ...)`; 0 = none (inferred) */
@@ -2169,15 +2179,28 @@ static Expr *parse_primary(Parser *ps) {
             e->sval = t->text;
             e->pkg  = g_cur_pkg_prefix;   /* the package this call appears in; resolver tries <pkg>name first */
             int cap = 0;
+            int any_named = 0;
             while (!at(ps, TK_RPAREN)) {
                 if (e->nargs == cap) {
                     cap = cap ? cap * 2 : 4;
                     e->args = (Expr **)xrealloc(e->args, (size_t)cap * sizeof(Expr *));
+                    e->argnames = (char **)xrealloc(e->argnames, (size_t)cap * sizeof(char *));
                 }
+                /* F4: a `name: value` argument is a named struct field. `IDENT ':'`
+                 * right here is unambiguous -- no other construct starts that way
+                 * inside a call arg (a lambda arg starts with `fn`, a map with `[`). */
+                char *aname = NULL;
+                if (at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_COLON) {
+                    aname = cur(ps)->text;
+                    ps->p += 2;   /* consume IDENT and ':' */
+                    any_named = 1;
+                }
+                e->argnames[e->nargs] = aname;
                 e->args[e->nargs++] = parse_expr(ps);
                 if (!accept(ps, TK_COMMA)) break;
             }
             eat(ps, TK_RPAREN, "')'");
+            if (!any_named) e->argnames = NULL;   /* all-positional: match every other call site */
             return e;
         }
         Expr *e = new_expr(E_IDENT, t->line);  /* variable (or a bare payload-less enum variant) */
@@ -4656,6 +4679,44 @@ static Type resolve_expr_inner(Expr *e) {
             }
             /* a call whose name is a struct is positional construction */
             int sid = struct_find(e->sval);
+            /* F4: named field construction `P(x: 1, y: 2)` -- validate and reorder
+             * into positional field order; the positional binding below then
+             * type-checks it exactly like `P(1, 2)`. Works for generic structs too
+             * (field names are independent of the type arguments). */
+            {
+                int has_named = 0;
+                if (e->argnames) for (int i = 0; i < e->nargs; i++) if (e->argnames[i]) { has_named = 1; break; }
+                if (has_named) {
+                    if (sid < 0)
+                        die_at(e->line, "named arguments are only valid for struct construction");
+                    StructDef *nsd = &g_structs[sid];
+                    for (int i = 0; i < e->nargs; i++) {
+                        if (!e->argnames[i])
+                            die_at(e->line, "%s: cannot mix named and positional fields", nsd->name);
+                        int ok = 0;
+                        for (int f = 0; f < nsd->nfields; f++)
+                            if (!strcmp(e->argnames[i], nsd->fields[f].name)) { ok = 1; break; }
+                        if (!ok)
+                            die_at(e->line, "%s has no field '%s'", nsd->name, e->argnames[i]);
+                    }
+                    if (e->nargs != nsd->nfields)
+                        die_at(e->line, "%s: named construction must give all %d field(s), got %d",
+                               nsd->name, nsd->nfields, e->nargs);
+                    Expr **ord = (Expr **)xmalloc((size_t)nsd->nfields * sizeof(Expr *));
+                    for (int f = 0; f < nsd->nfields; f++) {
+                        int found = -1;
+                        for (int i = 0; i < e->nargs; i++)
+                            if (!strcmp(e->argnames[i], nsd->fields[f].name)) {
+                                if (found >= 0) die_at(e->line, "%s: field '%s' given more than once", nsd->name, nsd->fields[f].name);
+                                found = i;
+                            }
+                        ord[f] = e->args[found];
+                    }
+                    e->args = ord;
+                    e->nargs = nsd->nfields;
+                    e->argnames = NULL;
+                }
+            }
             if (sid >= 0 && g_structs[sid].generic) {   /* generic struct: infer the type args from the field values */
                 StructDef *t = &g_structs[sid];
                 if (e->nargs != t->nfields)
@@ -4799,6 +4860,8 @@ static Type resolve_expr_inner(Expr *e) {
             if (!strcmp(e->sval, "to_int")) {   /* float/u32/u64/f32 -> int (truncate), or unwrap an int newtype */
                 if (e->nargs != 1) die_at(e->line, "to_int(x) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
+                if (at_ == T_INT)   /* F3: the common `to_int(s[i])` confusion -- s[i] is already the byte value as int */
+                    die_at(e->line, "to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string");
                 if (at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32 && at_ != T_CHAR && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
                     die_at(e->line, "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype");
                 return e->type = T_INT;
@@ -5058,9 +5121,18 @@ static Type resolve_expr_inner(Expr *e) {
                 } else if (e->args[i]->kind == E_ADDR) {
                     die_at(e->line, "argument %d of '%s' is not inout; remove the '&'", i + 1, e->sval);
                 }
-                if (at_ != s->params[i])
+                if (at_ != s->params[i]) {
+                    /* F6: a print-family (or other builtin) string param handed a
+                     * str()-able scalar -- point at the fix instead of just the type. */
+                    Type ab = base_of(at_);
+                    int strable = (ab == T_INT || ab == T_BOOL || ab == T_FLOAT || ab == T_CHAR ||
+                                   is_sized_int(ab) || ab == T_F32);
+                    if (s->builtin && s->params[i] == T_STRING && strable)
+                        die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
+                               i + 1, e->sval, type_name(at_), e->sval);
                     die_at(e->line, "argument %d of '%s' is %s, expected %s",
                            i + 1, e->sval, type_name(at_), type_name(s->params[i]));
+                }
             }
             /* exclusivity (Law of Exclusivity): the same variable may not be
              * passed to two inout params of one call — that would be two
