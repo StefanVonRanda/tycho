@@ -2,19 +2,18 @@
 
 > Multi-agent audit of language semantics (semantic corner-cases + value-semantics/
 > determinism), run across both compilers with live repros and adversarial
-> verification; resolutions defer to Odin/Swift/Go. **Status column added after the
-> fix campaign** — see the resolution log below.
+> verification; resolutions defer to Odin/Swift/Go. **Status + resolution log
+> reflect the completed fix campaign.**
 
 ## Summary
 
-**19 confirmed inconsistencies** (12 high · 5 medium · 2 low) across all 11 dimensions; 4 dismissed.
+**19 confirmed inconsistencies** (12 high · 5 medium · 2 low); 4 dismissed.
 
-**Resolution status: 11 FIXED, 8 OPEN.** The fix campaign closed **every
-memory-safety / undefined-behaviour item** — the self-hosted tychoc0 now enforces the
-checks the C reference tychoc does (closure/array-map UAF, aliased-Task SIGSEGV,
-channel escape, silent lossy coercion, inout alias, wildcard/dup match, literal
-overflow). The 8 open items are quality / type-spelling divergences (no memory
-unsafety), left for a later pass.
+**All 19 are resolved.** Every genuine cross-compiler divergence is fixed so the
+two compilers agree; the few that turned out to be consistent-across-compilers were
+closed by amending the spec (the used `string + char` ergonomic) or recorded as a
+deferred enhancement (array/tuple expected-type push, u64-literal widening — both
+spec-level, no memory unsafety).
 
 ### Resolution log
 
@@ -24,14 +23,17 @@ unsafety), left for a later pass.
 | `b51786b` | UB-2 | scalar-array element inout codegen crash |
 | `f78a80b` | UB-3 | `_`-not-last + duplicate match arms |
 | `40c019e` | UB-4 | out-of-range integer literal wrap |
-| `2ed088c` | UB-6 | silent scalar coercion (float↔int/bool/array-mix) |
+| `2ed088c` | UB-6 | silent scalar coercion + explicit-typearg arg mismatch |
 | `538f9e3` | UB-7 | inout + by-value same-var alias |
 | `a63f026` | UB-5 | affine Task + channel-escape + send payload |
+| `a27e19b` | — | map-key read/get/delete; bare Some/Ok/Err payload; char-as-type; string+char spec |
 
-Still open (documented per finding below): explicit-typearg-skips-arg-matching,
-map key type-check on read/get/delete, char/Task/Channel not spellable as type
-annotations, string+char asymmetry, bare-sum-ctor nested payload, array/tuple
-expected-type push, u64-literal widening (spec amend).
+### Newly surfaced (follow-up, not one of the 19)
+
+- **tychoc0 does not type-check an aggregate Some/Ok/Err payload against an
+  annotation** — `x : Option(int) = Some("hi")` is accepted by tychoc0 (rejected by
+  tychoc). Pre-existing; made visible by the bare-sum-ctor fix. A distinct gap
+  (tychoc0's annotated-decl check is scalar-only) for a later pass.
 
 ## Confirmed inconsistencies
 
@@ -138,7 +140,29 @@ fn main():
 - **Recommendation:** Port tychoc's affine-Task checker into tychoc0 so the copy/reassign/store/capture of a `Task(T)` are front-end rejected. The rule is already normative (spec §21: "MUST NOT be copied, reassigned, stored in a container, captured by a closure"); tychoc is the reference — tychoc0 is the divergent side. Add a conc affine-parity CI lane (none of these are covered by the existing parforparity lane).
 - **Verifier note:** Real cross-compiler divergence (accept vs reject) + spec mismatch + UB. Spec §21 at docs/spec/13-concurrency.md:70 explicitly says "A Task handle cannot be copied, reassigned, stored in a container, captured by..."; docs/spec/03-types.md:223 and 16-builtins.md:213 reinforce that Task(T) is "affine, non-storable". tychoc enforces this rule statically with the exact message quoted; tychoc0 silently accepts the copy `u := t`, emits C, and the resulting binary SIGSEGVs (exit 139) from the double-owned/double-joined Task. This is unsound: a program the spec forbids is miscompiled into a runtime crash. Swift precedent: ~Copyable + consuming types reject a second use of a consumed value at compile time rather than crashing at runtime — tychoc matches Swift, tychoc0 must too. Severity high stands: silent acceptance of memory-unsafe UB is the worst class. Note: I verified only the copy case (`u := t`) end-to-end; the claim's sibling cases (reassign/container/capture) are plausible and consistent with the same missing check but I did not run them — the confirmed copy case alone establishes the inconsistency.
 
-### C5. [HIGH] tychoc0 silently accepts out-of-range integer literals and wraps them; tychoc rejects
+### C5. [HIGH] tychoc0 skips argument/parameter matching on explicit-type-argument generic calls, silently coercing (float→int) and emitting ill-typed C
+
+- **Status:** **RESOLVED** — closed by 2ed088c (UB-6): tychoc0's argument type-check now catches the mismatch on explicit-typearg calls; both compilers agree.
+- **Dimension:** `generics-newtype` · **Kind:** cross-compiler-divergence
+- **Repro:**
+
+```tycho
+fn id(x: $T) -> $T:
+    return x
+fn main():
+    f := 3.9
+    r := id$(int)(f)
+    println(str(r))
+```
+
+- **tychoc (C reference):** Rejects all four cases at compile time with a clean Tycho diagnostic. Primary: `prog.ty:5: error: argument 1 of 'id' is float, which does not fit the parameter pattern`. Mirrors: `id$(float)(7)` -> "argument 1 of 'id' is int..."; `id$(string)(42)` -> "argument 1 of 'id' is int..."; `pair$(int,string)(5,9)` -> "argument 2 of 'pair' is int...". Exit 1 in every case, no binary produced.
+- **tychoc0 (self-hosted):** Accepts all four, skipping argument/parameter type-checking on explicit-type-arg generic calls. `id$(int)(3.9)` -> emits C, compiles clean, RUNS and prints "3" (3.9 silently truncated to int). `id$(float)(7)` -> compiles clean, runs, prints "7.0" (int silently widened to float). `id$(string)(42)` and `pair$(int,string)(5,9)` -> emit ill-typed C (int passed where char* expected) that fails only at the cc stage with a raw GCC error ("In function 'h_main'": -Wint-conversion), never a Tycho diagnostic. c0 gen exit is 0 in all four.
+- **Evidence:** compiler/tychoc0.ty:12667 `if len(explicit) > 0:` branch binds the explicit params and SKIPS the match_typaram_str inference loop (else branch, tychoc0.ty:12694-12698) that structurally validates each value arg against its parameter pattern; the only remaining per-arg guard, nt_check (tychoc0.ty:9778-9787), compares newtype *skins* only (it catches UserId-vs-int but es==ask=='' for raw float-vs-int, so it passes). tychoc's instantiate_generic runs match_type for EVERY value arg unconditionally (src/tychoc.c:6524-6530) even after explicit typeargs bind the params (src/tychoc.c:6517-6523), so it catches the base-type mismatch. Observed: /tmp/pr/p24.ty (float var), p20.ty (float literal), p21.ty (int->float), p18.ty, p26.ty.
+- **Precedent (Odin/Swift/Go):** Go generics are the closest precedent (identical shape: explicit instantiation `f[T](args)`). `func id[T any](x T) T { return x }; id[int](3.9)` is a compile error — once T is fixed by the explicit type argument, each value argument must be assignable to the instantiated parameter type, and float→int is not implicitly assignable. Go rejects; tychoc's reject matches Go. Swift and Odin likewise forbid implicit Double/Float→Int narrowing.
+- **Recommendation:** In tychoc0's mono_instantiate, when explicit type args are supplied, still run match_typaram_str (or an equivalent base-type + newtype-identity check) of each value argument against the now-concrete parameter type, exactly as tychoc's instantiate_generic does — do not rely on nt_check (skin-only) or the downstream C compiler. Defer to Go: the argument must be assignable to the instantiated parameter type; no implicit numeric coercion.
+- **Verifier note:** Real cross-compiler divergence (accept-vs-reject) AND unsoundness. tychoc fixes the type parameter to the explicit arg then checks each value arg against the instantiated parameter pattern; tychoc0 binds the explicit type args but never re-checks the value arguments, so it coerces float<->int silently and emits ill-typed C for pointer-repr mismatches. The float/int cases are worse than a cc-stage failure: they compile clean and run with wrong values (truncation/widening). Any two types sharing a C representation would compile+run silently wrong. Precedent: Go generics are the exact shape -- `func id[T any](x T) T; id[int](3.9)` is a compile error because once T is fixed by the explicit type argument each value arg must be assignable to the instantiated parameter type, and float->int is not implicitly assignable. tychoc matches Go; tychoc0 does not. Swift/Odin likewise forbid implicit Double->Int narrowing. Fix belongs in tychoc0: instantiate then run the same arg/param match tychoc does.
+
+### C6. [HIGH] tychoc0 silently accepts out-of-range integer literals and wraps them; tychoc rejects
 
 - **Status:** **FIXED** — 40c019e (UB-4).
 - **Dimension:** `integer-overflow` · **Kind:** cross-compiler-divergence
@@ -157,7 +181,28 @@ fn main():
 - **Recommendation:** Add the same accumulation overflow check to tychoc0's integer lexer/lit_to_int that tychoc has (src/tychoc.c:279-294), so an out-of-range literal is a compile error in both compilers. Defer to Go/Swift/Odin: reject at compile time, never wrap. This is also a spec mismatch — docs/spec/01-lexical.md:205 names the check (`src/tychoc.c:279-285 accumulation + overflow check`) as the normative rule, and tychoc0 does not implement it.
 - **Verifier note:** Real cross-compiler divergence, reproduced. tychoc fails closed (rejects out-of-range int literal); tychoc0 silently accepts and wraps to an arbitrary runtime value. One compiler rejects, the other accepts and runs the same program with garbage output — category (a). The C constant folding relies on implementation-defined/UB-adjacent handling of an out-of-range integer constant. Precedent: Go rejects ("constant overflows int"), Swift rejects ("integer literal overflows when stored into 'Int'"), Odin rejects — closest fix is to make tychoc0 match tychoc/Go/Swift/Odin and reject at compile time. Severity high stands: silent wrong runtime value with no diagnostic.
 
-### C6. [HIGH] `_` wildcard in non-last position: tychoc rejects, tychoc0 silently accepts (and emits uncompilable C for Option)
+### C7. [HIGH] tychoc0 skips map-key type-checking on rvalue read (m[k]), m.get, and delete m[k] — accepts wrong-typed keys that tychoc rejects
+
+- **Status:** **FIXED** — a27e19b (tychoc0 checks read/get/delete keys).
+- **Dimension:** `maps` · **Kind:** cross-compiler-divergence
+- **Repro:**
+
+```tycho
+type Slot = int
+fn main():
+    m : [Slot: int] = []
+    m[Slot(3)] = 30
+    println(str(m[3]))
+```
+
+- **tychoc (C reference):** Rejects wrong-typed map keys at compile time on ALL read/query/delete sites, exactly as claimed. Primary repro `m[3]` on `[Slot:int]`: `prog.ty:5: error: map key must be Slot, got int` (compile_exit=1, no binary produced). Siblings all reject too: `m.get(3,0)` -> "map_get key must be Slot"; `delete m[3]` -> "map_del key must be Slot"; raw `i32` key on `[int:int]` -> "map key must be int, got i32"; `m[B(1)]` on `[A:int]` -> "map key must be A, got B".
+- **tychoc0 (self-hosted):** Silently ACCEPTS all wrong-typed keys on read/get/delete, compiles clean, runs. Primary `m[3]`: c0_gen=0, prints "30". Siblings: `m.get(3,0)` prints "30"; `delete m[3]` -> len "0" (deletion succeeded via reinterpreted key); raw `i32` read on `[int:int]` prints "50"; `m[B(1)]` cross-newtype read on `[A:int]` prints "10". BUT tychoc0's write-place and `in` DO reject: `m[3]=30` -> "line 4: map key expects Slot, got a plain int value (newtype identity differs)"; `3 in m` -> "line 5: `in` key must be Slot".
+- **Evidence:** tychoc reject sites: src/tychoc.c:4527,:5112,:5131,:5376. tychoc0 key-check sites exist only at compiler/tychoc0.ty:9787 (write) and :5670 (`in`); read lowers via :5515/:5624 and delete via :1188/:1220 with no check. Spec rule violated: docs/spec/03-types.md:166-180 (legal key types are exactly the declared K) and tests/reject/newtype_key_mix.ty ("BOTH compilers reject ... a raw base-typed key").
+- **Precedent (Odin/Swift/Go):** Go statically rejects an index/delete/get whose key type differs from the map's key type (map[MyInt]int cannot be indexed by an int variable; map[int32]int cannot be indexed by an int without conversion). Odin distinct types require an explicit cast between a distinct type and its base in both directions. Both make tychoc's reject the correct behavior; tychoc0's base-representation coercion is the defect.
+- **Recommendation:** Defer to Go/Odin: tychoc's reject is correct. Add the map_key(mt) identity check to tychoc0's map_get lowering (compiler/tychoc0.ty:5515/5624) and to the delete→map_del desugar (:1188/:1220), mirroring the existing write-place check at :9787 and the `in` check at :5670, so all five key positions (read, write, get, in, delete) enforce identical key-type identity. This closes both the cross-compiler divergence and tychoc0's own internal write-vs-read inconsistency. Consider a parity lane covering wrong-key rvalue read/get/delete, which the current typeparity/eqparity lanes miss.
+- **Verifier note:** Confirmed on both axes. (a) Cross-compiler divergence: for identical programs, tychoc rejects at compile time while tychoc0 accepts, compiles, and runs — 5/5 repros. (b) Internal inconsistency within tychoc0: for the SAME wrong key on the SAME map, its write-place and `in` reject, but its read/get/delete accept — arbitrary, not a documented choice. The base-representation reinterpretation is unsound (newtype identity silently coerced away on read). Reference: Go statically rejects indexing/deleting/getting a map with a key of the wrong type (`map[MyInt]int` cannot be indexed by a plain `int`; `map[int32]int` needs explicit conversion) — closest precedent, makes tychoc's reject correct. Odin distinct types likewise require explicit casts both directions. MEMORY note hier-newtype-identity claims tychoc0 "now ENFORCES newtype identity through its checker at 8 boundaries (SHIPPED 2026-06-28)" — the map read/get/delete key sites are a gap in that enforcement. Fix: tychoc0 should emit the key-type check at the read-lowering-to-map_get and delete->map_del sites, matching its own write-place/`in` checks and tychoc's behavior.
+
+### C8. [HIGH] `_` wildcard in non-last position: tychoc rejects, tychoc0 silently accepts (and emits uncompilable C for Option)
 
 - **Status:** **FIXED** — f78a80b (UB-3).
 - **Dimension:** `match` · **Kind:** cross-compiler-divergence
@@ -183,7 +228,7 @@ fn main():
 - **Recommendation:** Pick one rule and make both compilers agree. Recommend deferring to Swift/reference-compiler discipline (fail-closed): teach tychoc0's check_match to require `_` be the last arm and reject arms after it, matching tychoc:6225, and add that rule to spec §14.3. Independently, tychoc0 must never emit uncompilable C — the Option `_`-not-last codegen path (gen_match_optres) is an outright bug even under the current lax frontend.
 - **Verifier note:** Genuine cross-compiler divergence (accept vs reject) AND unsoundness (tychoc0 emits uncompilable C for Option; silently reorders arm semantics for enums, printing "green" for an arm that follows the catch-all). Reproduced both repros exactly as claimed; output quoted above. Spec §14.3 (docs/spec/10-statements.md:41) only requires a `_` arm be "present"/"a `_` arm MUST be present" — it does NOT state it must be last, so tychoc is stricter than spec and tychoc0 is looser+broken. Precedent: defer to Swift — a case rendered unreachable by an earlier catch-all is a compile error ("case is already handled by previous patterns"). Go's `default` is position-independent but Go never miscompiles; Swift is the closer cousin (Option/fail-closed lineage per project memory) and matches tychoc's reject. Fix direction: tychoc0's check_match (compiler/tychoc0.ty:9940) should adopt the position check tychoc has, rejecting non-last `_`; the spec should also be tightened to say "last".
 
-### C7. [HIGH] tychoc0 annotated binding does no declared-vs-value type check — silently narrows float→int and widens int→float; tychoc rejects
+### C9. [HIGH] tychoc0 annotated binding does no declared-vs-value type check — silently narrows float→int and widens int→float; tychoc rejects
 
 - **Status:** **FIXED** — 2ed088c (UB-6).
 - **Dimension:** `numeric-coercion` · **Kind:** cross-compiler-divergence
@@ -203,7 +248,53 @@ fn main():
 - **Recommendation:** Fix tychoc0: STypedDecl (and the arg/return/array-element expected-type paths) must reject an initializer whose type is not identical to the declared type, except for the literal adaptations enumerated in spec §8.1 (int-lit→float/u32/u64/f32, float-lit→f32). Spec §8 opening line is explicit: "no value silently widens or narrows" and §8.4 lists mixed-scalar ops as hard errors. Defer to Swift/Go: silent float→int truncation is banned; require to_int()/to_float(). This is the highest-severity item: it is silent lossy data conversion that passes the self-hosted compiler, a value-semantics/determinism violation.
 - **Verifier note:** Real cross-compiler divergence (type (a)) AND unsoundness (type (d)): tychoc0's annotated-binding / argument / return / array-element checkers perform no declared-vs-value compatibility check, so lossy narrowing (float->int truncation, bool->int) and silent widening (int->float) are miscompiled instead of rejected. tychoc rejects all of them. Divergence spans 5+ positions, all reproduced with quoted output above; only the binop-unifier position agrees. Precedent (all reject, tychoc matches, tychoc0 is the outlier): Go — `var x int = f` (f float64) is a compile error, and even `var x int = 3.5` errors "constant truncated to integer"; Swift — `let x: Int = someDouble` requires explicit `Int(...)`, no implicit numeric conversion; Odin — assigning f64 to `int` requires an explicit cast. Closest cousin precedent is Swift/Odin (distinct types + explicit casts). tychoc0 should fail-closed and reject; fix belongs in its STypedDecl/expected-type path plus the arg/return/array-element checks.
 
-### C8. [HIGH] Same variable passed as inout AND by-value in one call leaks the mutation (value-semantics violation, both compilers)
+### C10. [HIGH] Bare None/Ok/Err as the payload of an enclosing Some/Ok/Err: tychoc rejects, tychoc0 accepts (correctly)
+
+- **Status:** **FIXED** — a27e19b (tychoc's resolve_exp pushes the inner type; both accept, identical output).
+- **Dimension:** `option-result-none` · **Kind:** cross-compiler-divergence
+- **Repro:**
+
+```tycho
+fn main():
+    x : Option(Option(int)) = Some(None)
+    match x:
+        Some(inner):
+            match inner:
+                Some(v): println("v " + str(v))
+                None: println("inner none")
+        None: println("outer none")
+
+(also diverges: `return Some(None)` -> Option(Option(int)); `x : Result(Option(int), string) = Ok(None)`; `x : Option(Result(int,string)) = Some(Ok(1))`)
+```
+
+- **tychoc (C reference):** REJECT (compile-fail) on all four variants. Some(None): "prog.ty:2: error: Some(...) needs a concrete value". Ok(None): "error: Ok(...) needs a concrete value". Some(Ok(1)): "error: declared type Option(Result(int, string)) but value is Option(Ok(...))". return Some(None): "error: Some(...) needs a concrete value". Reject site: src/tychoc.c:4374 (die_at "Some(...) needs a concrete value") and :4381 (generic "%s(...) needs a concrete value"). tychoc does not flow the enclosing contextual Option/Result type into a bare nullary/inner variant payload.
+- **tychoc0 (self-hosted):** ACCEPT + compile + run cleanly on all four, run_exit=0, semantically-sound output. Option(Option(int))=Some(None) -> "inner none"; Result(Option(int),string)=Ok(None) -> "inner none"; Option(Result(int,string))=Some(Ok(1)) -> "ok 1"; return Some(None) -> "inner none". Emitted C compiled with cc -O2 -fwrapv and ran without error. tychoc0 flows the declared/return contextual type into the nested constructor.
+- **Evidence:** tychoc E_SOME handler synthesizes its argument and dies on a bare None/partial: src/tychoc.c:4371-4376 (`Type inner = resolve_expr(e->lhs); if (inner==T_VOID||inner==T_NONE) die_at(..."Some(...) needs a concrete value")`), E_OK/E_ERR same at :4377-4382. The check-mode fn resolve_exp (:5499-5556) calls resolve_expr(e) at :5549 FIRST and only fixes a *top-level* T_NONE/partial at :5550-5555 — it has no E_SOME/E_OK/E_ERR case that threads want's payload type into the constructor argument, so the inner bare None dies before context can reach it. tychoc0 threads the expected payload type inward (accepts). Spec §6.2 rule 6 (docs/spec/04-inference.md:49-50): a bare None/Ok/Err takes its missing type param from the expected T.
+- **Precedent (Odin/Swift/Go):** Swift: contextual type flows through `.some(...)` into a nested Optional — `let x: Int?? = .some(nil)` and `let x: Int?? = .some(.none)` both compile, nil/`.none` taking Optional<Int> from context. Swift is the closest precedent (built-in Optional with the same one-free-param shape); it matches tychoc0's accept. tychoc0 is also the spec-faithful reading of §6.2 rule 6.
+- **Recommendation:** Defer to Swift/tychoc0: tychoc should accept. Give resolve_exp (src/tychoc.c:5499) an E_SOME/E_OK/E_ERR check-mode case that recurses resolve_exp(e->lhs, payload_of(want)) when want is the matching Option/Result, instead of falling through to synthesis-only E_SOME at :4371. This makes a bare None/Ok/Err fixable at any nesting depth, matching the top-level behavior already at :5550-5555.
+- **Verifier note:** CONFIRMED cross-compiler divergence (type (a): accept vs reject on the same program), reproduced on all four cited variants via actual runs. tychoc rejects a bare inner None/Ok/Err as the payload of an enclosing Some/Ok/Err at src/tychoc.c:4374/4381 because it demands a syntactically-concrete payload and does not propagate the enclosing contextual type inward. tychoc0 accepts, flows the declared type in, and produces sound output (verified by compiling+running the emitted C). Precedent: Swift is closest (built-in Optional, same one-free-param shape) — `let x: Int?? = .some(nil)` and `.some(.none)` both compile, the inner nil/.none taking its Optional type from context; this matches tychoc0's accepting, contextual-type-flow behavior. So tychoc0 is the correct side and tychoc is the over-strict outlier. High severity: it is an accept-vs-reject fork on a legitimate, common nested-Option/Result construct (including `return Some(None)`), not a mere output nuance.
+
+### C11. [HIGH] tychoc0 accepts `char` as a spellable type keyword everywhere; tychoc rejects it as an unknown type
+
+- **Status:** **FIXED** — a27e19b (tychoc0 rejects `char` as a written type).
+- **Dimension:** `strings-char` · **Kind:** cross-compiler-divergence
+- **Repro:**
+
+```tycho
+fn f(c: char) -> char:
+  return c
+fn main():
+  println(str(f('a')))
+```
+
+- **tychoc (C reference):** Rejected at compile: `prog.ty:1: error: unknown type 'char'` (cc_compile_exit=1, no binary produced). Matches spec: char has no spellable type keyword.
+- **tychoc0 (self-hosted):** Accepted: emitted C, cc compiled clean (c0_cc_exit=0), ran and printed `a` (c0_run_exit=0). char used as a spellable type in param/return positions.
+- **Evidence:** src/tychoc.c:1863-1864 (unknown-type die); compiler/tychoc0.ty:2663 (char in builtin-scalar list); docs/spec/03-types.md:68-70; docs/spec/01-lexical.md:116-117. Observed: 4 separate repros (param/return, local annotation, []char, struct field) all reject on tychoc, all accept+run on tychoc0.
+- **Precedent (Odin/Swift/Go):** Go makes the one-byte type spellable (`byte` = alias for `uint8`, `rune` = alias for `int32`); Odin has `u8`/`byte`/`rune`; Swift has `UInt8`/`Character`. All three give the byte/char type a written name. But Tycho's own spec deliberately forbids it: docs/spec/03-types.md:68-70 "`char` ... arises by inference; there is no `char` type keyword" and docs/spec/01-lexical.md:116-117 "there is no `char` or `void` type keyword".
+- **Recommendation:** The two compilers must agree. Two ways to resolve: (a) align tychoc0 to the current spec by removing "char" from its spellable-type-name set (tychoc0.ty:2663 and the type-parse path) so it also rejects `char` annotations — matches tychoc + spec today; or (b) if deferring to Go/Odin/Swift precedent (which all name the byte type), promote `char` to a real type keyword in tychoc and update docs/spec/03-types.md:68 and 01-lexical.md:116. Either is fine, but pick one — right now tychoc0 compiles programs tychoc cannot, breaking parity.
+- **Verifier note:** Real cross-compiler divergence (accept vs reject on identical program) AND a spec mismatch. docs/spec/03-types.md:70: "there is no `char` type keyword" and docs/spec/01-lexical.md:116-117: "there is no `char` or `void` type keyword (the char type arises only from character literals and inference)". tychoc enforces the spec (src/tychoc.c die_at "unknown type 'char'"); tychoc0 lists "char" among builtin scalar type names (tychoc0.ty:2663) so its type parser accepts it everywhere. tychoc0 is the buggy side. Precedent doesn't rescue it: Go/Odin/Swift all give the byte type a written name, but Tycho's spec is a DELIBERATE choice to omit one, and both compilers must agree with the spec. Fix = make tychoc0 reject `char` in type positions (arises by inference only). Verified by direct run of both compilers; outputs quoted above.
+
+### C12. [HIGH] Same variable passed as inout AND by-value in one call leaks the mutation (value-semantics violation, both compilers)
 
 - **Status:** **FIXED** — 538f9e3 (UB-7).
 - **Dimension:** `value-semantics` · **Kind:** unsound-or-ub
@@ -234,7 +325,7 @@ Precedent: Swift, cited correctly. This is a Law of Exclusivity violation — `f
 
 Severity high (kept): silent wrong-value miscompile with no diagnostic, and it breaks value semantics — the language's core thesis/soundness guarantee — rather than a peripheral feature. Mitigating factor is that it requires deliberately naming the same variable as both inout and by-value in one call, but the correct outcome per the language's own model is a compile-time rejection, and instead it compiles clean and corrupts the read.
 
-### C9. [MEDIUM] tychoc0 does not type-check the send() payload against the channel element type; a wrong-typed send passes the front-end and emits invalid C
+### C13. [MEDIUM] tychoc0 does not type-check the send() payload against the channel element type; a wrong-typed send passes the front-end and emits invalid C
 
 - **Status:** **FIXED** — a63f026 (UB-5).
 - **Dimension:** `concurrency-determinism` · **Kind:** cross-compiler-divergence
@@ -254,7 +345,7 @@ fn main():
 - **Recommendation:** Add the send-payload element-type check to tychoc0 (match tychoc's "send on Channel(T) needs a T value"). Relying on cc to catch it is not sound in general (a same-C-representation mismatch, e.g. two distinct newtypes over int, would slip through cc silently). Defer to Go's front-end typed-send rule.
 - **Verifier note:** Real cross-compiler divergence (category a): tychoc rejects the mistyped send in the front-end; tychoc0's front-end fails open and defers the type error to the backend C compiler. The two compilers disagree on where/whether the program is rejected — tychoc gives a clean Tycho diagnostic, tychoc0 leaks a raw cc -Wint-conversion error at the deep-copy send-cell store (the exact value-semantics thread-boundary site). Not silent UB here because cc happens to catch it via -Wint-conversion being an error, but that is incidental (a payload type that C would silently coerce, e.g. a differently-shaped int, could slip through). Precedent: Go statically rejects `ch <- \"nope\"` on `chan int` ("cannot use ... as int value in send"); Swift/Odin likewise reject typed sends in the front end. Fix belongs in tychoc0's send() checker to mirror tychoc's "send on Channel(int) needs a int value". Severity medium confirmed: caught before producing a bad binary in this case, but it is a genuine front-end type-hole across the thread/channel boundary.
 
-### C10. [MEDIUM] Duplicate match arms: tychoc rejects, tychoc0 accepts (first arm wins)
+### C14. [MEDIUM] Duplicate match arms: tychoc rejects, tychoc0 accepts (first arm wins)
 
 - **Status:** **FIXED** — f78a80b (UB-3).
 - **Dimension:** `match` · **Kind:** cross-compiler-divergence
@@ -281,7 +372,48 @@ fn main():
 - **Recommendation:** Defer to Go/Odin (reject). Add a seen-variant set to tychoc0's check_match so a repeated arm name (enum variant, or Some/None/Ok/Err) is rejected with the same message as tychoc:6238/6261/6288, restoring parity.
 - **Verifier note:** Real cross-compiler accept-vs-reject divergence, reproduced independently for BOTH the enum and Option forms exactly as claimed. tychoc's duplicate-arm check (src/tychoc.c) fires; tychoc0's check_match never detects repeated arm names, silently taking the first arm. This is precisely the class of divergence the accept/reject parity lanes can't catch (fixpoint is output-only). Reference precedent: Go rejects duplicate switch cases ("duplicate case"), Odin rejects duplicate case, Swift diagnoses "case is already handled by previous patterns" — all three of the user's cousin languages reject. tychoc is the correct side; fix is to add the duplicate-arm check to tychoc0's check_match so it also rejects. Severity medium is fair: not unsound/UB (deterministic first-arm-wins), but a silent accept of a program the reference compiler and all three reference languages reject.
 
-### C11. [MEDIUM] Taking `&arr[i]` of a scalar-element array as an inout argument: tychoc emits invalid C (build fails); tychoc0 accepts and runs
+### C15. [MEDIUM] tychoc0 accepts `char` as an annotatable type (and adapts int literal → char); tychoc rejects `char` as an unknown type
+
+- **Status:** **FIXED** — a27e19b (char-as-type rejected) + 2ed088c (int→char coercion rejected, UB-6).
+- **Dimension:** `numeric-coercion` · **Kind:** cross-compiler-divergence
+- **Repro:**
+
+```tycho
+fn main():
+    c: char = 65
+    println(str(c))
+```
+
+- **tychoc (C reference):** REJECTS. Both `c: char = 65` and `fn f(c: char)` die at compile: `prog.ty:2: error: unknown type 'char'` (cc_compile_exit=1, no binary produced). tychoc has an internal T_CHAR (src/tychoc.c:477) reachable only via inference (c := 'A'); its type-name parser never maps the identifier `char`.
+- **tychoc0 (self-hosted):** ACCEPTS + runs. `c: char = 65; println(str(c))` compiles clean and prints `A`. `fn f(c: char) -> int: return to_int(c)` called as `f('Z')` prints `90`. tychoc0 lists `char` as a builtin scalar in its type-name parser (compiler/tychoc0.ty:2663) and adapts the int literal 65 into the char slot.
+- **Evidence:** cc unknown-type: src/tychoc.c:1863-1864; internal T_CHAR exists: src/tychoc.c:477,:1046,:3299. c0 char as type-name: compiler/tychoc0.ty:2663. Grammar omission: docs/spec/02-grammar.md:151. Literal-adaptation rules: docs/spec/06-conversions.md:11-28 (char literals do not adapt; int-lit→char absent). Reproduced runs quoted above.
+- **Precedent (Odin/Swift/Go):** Grammar PrimType (docs/spec/02-grammar.md:151) lists `int|float|bool|string|ptr|bytes` and omits `char`, so tychoc matches the published grammar; but spec prose (03-types.md §5.2) treats `char` as a first-class type, making the omission itself inconsistent. On the int-lit→char adaptation: Swift (`Character` is not initializable from an integer literal) and Odin (distinct types, explicit casts — an int does not become a rune/byte implicitly) both require an explicit conversion; the repo's own idiom is `chr(65)`.
+- **Recommendation:** Reconcile the two compilers. Either (a) add `char` to PrimType in the grammar and to tychoc's type-name parser so both accept the annotation, or (b) remove it from tychoc0's type-name set so both reject. Given `char` is a real type in tychoc's type system and throughout the spec prose, (a) is the natural fix — but if adopted, tychoc0 must stop silently adapting an int literal into a `char` annotation (deferring to Swift/Odin: require chr()/an explicit cast), otherwise it reintroduces the silent-coercion class from the first finding.
+- **Verifier note:** Real cross-compiler divergence, reproduced: tychoc rejects `char` as an unknown type; tychoc0 accepts it and prints "A" (diff shows non-IDENTICAL: cc errors vs c0 output "A"). Spec resolves it AGAINST tychoc0: docs/spec/03-types.md:70 (§5.2.4) states verbatim "there is no `char` type keyword" — char "arises by inference" only. Grammar PrimType (docs/spec/02-grammar.md:151) lists int|float|bool|string|ptr|bytes and omits char, consistent with that. So tychoc's rejection is spec-correct; tychoc0 both (1) admits an unsanctioned type keyword and (2) performs an int-lit→char adaptation the spec's narrow char/int interop (§5.2.4: only `char ± int`) never grants. Precedent aligns with the spec: Swift's Character is not initializable from an integer literal, Odin uses distinct types with explicit casts (int does not implicitly become a rune/byte); repo idiom is chr(65). Fix = tychoc0 should reject the `char` keyword to match tychoc and the spec. Severity medium is fair: not just cosmetic — tychoc0 silently coerces int→char with no spec basis.
+
+### C16. [MEDIUM] Dynamic array/tuple literal does not push the declared element type into a bare None element (order-dependent; both compilers, contra spec)
+
+- **Status:** **RESOLVED** — not a cross-compiler divergence (both reject `[None]`); the Swift expected-type-push (accept `xs : [Option(int)] = [None]`) is a deferred type-inference enhancement, not a soundness gap.
+- **Dimension:** `option-result-none` · **Kind:** spec-mismatch
+- **Repro:**
+
+```tycho
+fn main():
+    xs : [Option(int)] = [None]        # rejected
+    # xs : [Option(int)] = [Some(1), None]   # ACCEPTED (None fixed from sibling Some)
+    # xs : [Option(int)] = [None, Some(1)]   # rejected (None first)
+    # t  : (Option(int), int) = (None, 5)    # rejected
+    println(str(len(xs)))
+```
+
+- **tychoc (C reference):** Rejects [None] and [None, Some(1)] with "error: cannot infer the array's element type from None — put a Some(...) first"; rejects (None, 5) with "error: tuple element 1 needs a concrete value". Accepts [Some(1), None] (element type synthesized from the leading Some), prints len 2. Order-dependent: identical element set accepted or rejected purely on whether a concrete sibling comes first.
+- **tychoc0 (self-hosted):** Same accept/reject decisions as tychoc: rejects [None], [None, Some(1)], and (None, 5), each with the generic "type: unknown type ''"; accepts [Some(1), None], emits C that compiles and prints len 2. No cross-compiler divergence in accept/reject or output.
+- **Evidence:** E_ARRLIT synthesizes the element type from args[0] (src/tychoc.c:4509 `Type elem = resolve_expr(e->args[0])`) and explicitly rejects a leading None (:4512-4513 "the first element fixes the type, so it can't be a bare None"); siblings are then checked against that (:4514-4515). resolve_exp (:5499) only pushes want into a *bare []* (:5508) or a *fixed-size* array literal (:5516) — there is no case pushing want's element type into a non-empty dynamic array literal's elements, so the `[Option(int)]` annotation never reaches them. E_TUPLE synthesizes every element and rejects a bare None (:4384-4394). Spec §6.1 (docs/spec/04-inference.md:29-30) lists "a tuple or array literal's element type" as an expected-type context, and §6.2 rule 6 (:49-50) fixes a bare None from T — so `x:[Option(int)]=[None]` should type. Implementation ignores the annotation and infers order-dependently.
+- **Precedent (Odin/Swift/Go):** Swift: array-literal element type comes from the contextual type — `let a: [Int?] = [nil]` and `let a: [Int?] = [nil, .some(1)]` both compile regardless of order; tuple `let t: (Int?, Int) = (nil, 5)` compiles. Odin similarly propagates the declared element type into a compound literal. Both make element inference position-independent, unlike Tycho.
+- **Recommendation:** Defer to Swift: when a dynamic array/tuple literal is checked against a known type, push the expected element/slot type into each element via resolve_exp before synthesizing from args[0] (add the E_ARRLIT-non-empty and E_TUPLE cases to resolve_exp at src/tychoc.c:5499, and mirror in tychoc0). This removes the order-dependence and honors §6.1/§6.2. Consistency argument: bare None is already coercible in return/arg/struct-field/map-value/assignment positions (verified: all accept) — array/tuple literal elements are the lone exception.
+- **Verifier note:** Not a cross-compiler divergence — both compilers agree. It is a genuine spec mismatch plus internal (order-dependent) inconsistency. Spec 04-inference.md:26-30 states an expected type flows into "a tuple or array literal's element type," and 04-inference.md:49-50 rule 6 states a bare None "takes its missing type parameter from T (an Option/Result)." Composing these, `xs : [Option(int)] = [None]` should push Option(int) into the element position and fix each None from it — spec says ACCEPT. Both compilers instead synthesize the element type from the sibling elements (accepting only when a concrete Some appears first), so the explicit annotation is ignored for the bare-None case. Same for the tuple (None,5) despite (Option(int),int). Closest precedent is Swift, which the claim cites correctly: `let a:[Int?]=[nil]`, `let a:[Int?]=[nil,.some(1)]`, and `let t:(Int?,Int)=(nil,5)` all compile, position-independent. Severity medium is fair: contradicts the spec's stated inference rule and is ergonomically surprising, but sound and has an easy workaround (annotate or lead with Some). Separately, tychoc0's "unknown type ''" message is unhelpful vs tychoc's targeted diagnostic, but that is a known diagnostic-quality gap, not the semantic finding.
+
+### C17. [MEDIUM] Taking `&arr[i]` of a scalar-element array as an inout argument: tychoc emits invalid C (build fails); tychoc0 accepts and runs
 
 - **Status:** **FIXED** — b51786b (UB-2).
 - **Dimension:** `value-semantics` · **Kind:** cross-compiler-divergence
@@ -303,139 +435,9 @@ fn main():
 - **Recommendation:** Fix tychoc's gen_lvalue for E_INDEX at src/tychoc.c:8398: it unconditionally emits `tycho_arr_C%d_ptr` with ARRC_ID(e->lhs->type), but scalar-element arrays ([int]/[string]) have no registered composite id, so ARRC_ID yields a garbage negative token (-1020) and no such helper is declared (helpers emitted only for composite arrays, src/tychoc.c:9880-10060). Emit the scalar-array element-pointer helper (the `tycho_arr_%s_ptr` / arr_fn family used elsewhere) for scalar element types, matching tychoc0's working output. Lock with a differential golden.
 - **Verifier note:** Real cross-compiler divergence on a spec-legal program. docs/spec/07-memory-model.md:171-173 states two `inout` args must not share a root variable, giving `&a[i]`/`&a[j]` as the REJECTED overlap case — which entails a single `&a[i]` inout is LEGAL. tychoc0 correctly compiles+runs it (prints 6); tychoc mangles the array-element-pointer helper name (`tycho_arr_C-1020_ptr`, a stray `-` breaking the identifier) and cc rejects the emitted C. This is a compiler codegen defect, not a design fork. Precedent: Swift fully supports `inout` to an array element (`inc(&a[i])`); the value-semantics contract and the Tycho spec both admit it. tychoc must match tychoc0 and the spec. Severity downgraded from high to medium: tychoc fails LOUDLY at C-compile time (fail-closed, no binary, no silent miscompile, no data corruption or UB) — it blocks a legal construct rather than mis-running it. Note the name mangling glitch (negative-number-like `C-1020`) suggests the array type id is being formatted with a sign; the actual defect is in tychoc's `&a[i]`-as-inout-arg codegen path in src/tychoc.c.
 
-### C12. [HIGH] tychoc0 skips argument/parameter matching on explicit-type-argument generic calls, silently coercing (float→int) and emitting ill-typed C
-
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
-- **Dimension:** `generics-newtype` · **Kind:** cross-compiler-divergence
-- **Repro:**
-
-```tycho
-fn id(x: $T) -> $T:
-    return x
-fn main():
-    f := 3.9
-    r := id$(int)(f)
-    println(str(r))
-```
-
-- **tychoc (C reference):** Rejects all four cases at compile time with a clean Tycho diagnostic. Primary: `prog.ty:5: error: argument 1 of 'id' is float, which does not fit the parameter pattern`. Mirrors: `id$(float)(7)` -> "argument 1 of 'id' is int..."; `id$(string)(42)` -> "argument 1 of 'id' is int..."; `pair$(int,string)(5,9)` -> "argument 2 of 'pair' is int...". Exit 1 in every case, no binary produced.
-- **tychoc0 (self-hosted):** Accepts all four, skipping argument/parameter type-checking on explicit-type-arg generic calls. `id$(int)(3.9)` -> emits C, compiles clean, RUNS and prints "3" (3.9 silently truncated to int). `id$(float)(7)` -> compiles clean, runs, prints "7.0" (int silently widened to float). `id$(string)(42)` and `pair$(int,string)(5,9)` -> emit ill-typed C (int passed where char* expected) that fails only at the cc stage with a raw GCC error ("In function 'h_main'": -Wint-conversion), never a Tycho diagnostic. c0 gen exit is 0 in all four.
-- **Evidence:** compiler/tychoc0.ty:12667 `if len(explicit) > 0:` branch binds the explicit params and SKIPS the match_typaram_str inference loop (else branch, tychoc0.ty:12694-12698) that structurally validates each value arg against its parameter pattern; the only remaining per-arg guard, nt_check (tychoc0.ty:9778-9787), compares newtype *skins* only (it catches UserId-vs-int but es==ask=='' for raw float-vs-int, so it passes). tychoc's instantiate_generic runs match_type for EVERY value arg unconditionally (src/tychoc.c:6524-6530) even after explicit typeargs bind the params (src/tychoc.c:6517-6523), so it catches the base-type mismatch. Observed: /tmp/pr/p24.ty (float var), p20.ty (float literal), p21.ty (int->float), p18.ty, p26.ty.
-- **Precedent (Odin/Swift/Go):** Go generics are the closest precedent (identical shape: explicit instantiation `f[T](args)`). `func id[T any](x T) T { return x }; id[int](3.9)` is a compile error — once T is fixed by the explicit type argument, each value argument must be assignable to the instantiated parameter type, and float→int is not implicitly assignable. Go rejects; tychoc's reject matches Go. Swift and Odin likewise forbid implicit Double/Float→Int narrowing.
-- **Recommendation:** In tychoc0's mono_instantiate, when explicit type args are supplied, still run match_typaram_str (or an equivalent base-type + newtype-identity check) of each value argument against the now-concrete parameter type, exactly as tychoc's instantiate_generic does — do not rely on nt_check (skin-only) or the downstream C compiler. Defer to Go: the argument must be assignable to the instantiated parameter type; no implicit numeric coercion.
-- **Verifier note:** Real cross-compiler divergence (accept-vs-reject) AND unsoundness. tychoc fixes the type parameter to the explicit arg then checks each value arg against the instantiated parameter pattern; tychoc0 binds the explicit type args but never re-checks the value arguments, so it coerces float<->int silently and emits ill-typed C for pointer-repr mismatches. The float/int cases are worse than a cc-stage failure: they compile clean and run with wrong values (truncation/widening). Any two types sharing a C representation would compile+run silently wrong. Precedent: Go generics are the exact shape -- `func id[T any](x T) T; id[int](3.9)` is a compile error because once T is fixed by the explicit type argument each value arg must be assignable to the instantiated parameter type, and float->int is not implicitly assignable. tychoc matches Go; tychoc0 does not. Swift/Odin likewise forbid implicit Double->Int narrowing. Fix belongs in tychoc0: instantiate then run the same arg/param match tychoc does.
-
-### C13. [HIGH] tychoc0 skips map-key type-checking on rvalue read (m[k]), m.get, and delete m[k] — accepts wrong-typed keys that tychoc rejects
-
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
-- **Dimension:** `maps` · **Kind:** cross-compiler-divergence
-- **Repro:**
-
-```tycho
-type Slot = int
-fn main():
-    m : [Slot: int] = []
-    m[Slot(3)] = 30
-    println(str(m[3]))
-```
-
-- **tychoc (C reference):** Rejects wrong-typed map keys at compile time on ALL read/query/delete sites, exactly as claimed. Primary repro `m[3]` on `[Slot:int]`: `prog.ty:5: error: map key must be Slot, got int` (compile_exit=1, no binary produced). Siblings all reject too: `m.get(3,0)` -> "map_get key must be Slot"; `delete m[3]` -> "map_del key must be Slot"; raw `i32` key on `[int:int]` -> "map key must be int, got i32"; `m[B(1)]` on `[A:int]` -> "map key must be A, got B".
-- **tychoc0 (self-hosted):** Silently ACCEPTS all wrong-typed keys on read/get/delete, compiles clean, runs. Primary `m[3]`: c0_gen=0, prints "30". Siblings: `m.get(3,0)` prints "30"; `delete m[3]` -> len "0" (deletion succeeded via reinterpreted key); raw `i32` read on `[int:int]` prints "50"; `m[B(1)]` cross-newtype read on `[A:int]` prints "10". BUT tychoc0's write-place and `in` DO reject: `m[3]=30` -> "line 4: map key expects Slot, got a plain int value (newtype identity differs)"; `3 in m` -> "line 5: `in` key must be Slot".
-- **Evidence:** tychoc reject sites: src/tychoc.c:4527,:5112,:5131,:5376. tychoc0 key-check sites exist only at compiler/tychoc0.ty:9787 (write) and :5670 (`in`); read lowers via :5515/:5624 and delete via :1188/:1220 with no check. Spec rule violated: docs/spec/03-types.md:166-180 (legal key types are exactly the declared K) and tests/reject/newtype_key_mix.ty ("BOTH compilers reject ... a raw base-typed key").
-- **Precedent (Odin/Swift/Go):** Go statically rejects an index/delete/get whose key type differs from the map's key type (map[MyInt]int cannot be indexed by an int variable; map[int32]int cannot be indexed by an int without conversion). Odin distinct types require an explicit cast between a distinct type and its base in both directions. Both make tychoc's reject the correct behavior; tychoc0's base-representation coercion is the defect.
-- **Recommendation:** Defer to Go/Odin: tychoc's reject is correct. Add the map_key(mt) identity check to tychoc0's map_get lowering (compiler/tychoc0.ty:5515/5624) and to the delete→map_del desugar (:1188/:1220), mirroring the existing write-place check at :9787 and the `in` check at :5670, so all five key positions (read, write, get, in, delete) enforce identical key-type identity. This closes both the cross-compiler divergence and tychoc0's own internal write-vs-read inconsistency. Consider a parity lane covering wrong-key rvalue read/get/delete, which the current typeparity/eqparity lanes miss.
-- **Verifier note:** Confirmed on both axes. (a) Cross-compiler divergence: for identical programs, tychoc rejects at compile time while tychoc0 accepts, compiles, and runs — 5/5 repros. (b) Internal inconsistency within tychoc0: for the SAME wrong key on the SAME map, its write-place and `in` reject, but its read/get/delete accept — arbitrary, not a documented choice. The base-representation reinterpretation is unsound (newtype identity silently coerced away on read). Reference: Go statically rejects indexing/deleting/getting a map with a key of the wrong type (`map[MyInt]int` cannot be indexed by a plain `int`; `map[int32]int` needs explicit conversion) — closest precedent, makes tychoc's reject correct. Odin distinct types likewise require explicit casts both directions. MEMORY note hier-newtype-identity claims tychoc0 "now ENFORCES newtype identity through its checker at 8 boundaries (SHIPPED 2026-06-28)" — the map read/get/delete key sites are a gap in that enforcement. Fix: tychoc0 should emit the key-type check at the read-lowering-to-map_get and delete->map_del sites, matching its own write-place/`in` checks and tychoc's behavior.
-
-### C14. [HIGH] Bare None/Ok/Err as the payload of an enclosing Some/Ok/Err: tychoc rejects, tychoc0 accepts (correctly)
-
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
-- **Dimension:** `option-result-none` · **Kind:** cross-compiler-divergence
-- **Repro:**
-
-```tycho
-fn main():
-    x : Option(Option(int)) = Some(None)
-    match x:
-        Some(inner):
-            match inner:
-                Some(v): println("v " + str(v))
-                None: println("inner none")
-        None: println("outer none")
-
-(also diverges: `return Some(None)` -> Option(Option(int)); `x : Result(Option(int), string) = Ok(None)`; `x : Option(Result(int,string)) = Some(Ok(1))`)
-```
-
-- **tychoc (C reference):** REJECT (compile-fail) on all four variants. Some(None): "prog.ty:2: error: Some(...) needs a concrete value". Ok(None): "error: Ok(...) needs a concrete value". Some(Ok(1)): "error: declared type Option(Result(int, string)) but value is Option(Ok(...))". return Some(None): "error: Some(...) needs a concrete value". Reject site: src/tychoc.c:4374 (die_at "Some(...) needs a concrete value") and :4381 (generic "%s(...) needs a concrete value"). tychoc does not flow the enclosing contextual Option/Result type into a bare nullary/inner variant payload.
-- **tychoc0 (self-hosted):** ACCEPT + compile + run cleanly on all four, run_exit=0, semantically-sound output. Option(Option(int))=Some(None) -> "inner none"; Result(Option(int),string)=Ok(None) -> "inner none"; Option(Result(int,string))=Some(Ok(1)) -> "ok 1"; return Some(None) -> "inner none". Emitted C compiled with cc -O2 -fwrapv and ran without error. tychoc0 flows the declared/return contextual type into the nested constructor.
-- **Evidence:** tychoc E_SOME handler synthesizes its argument and dies on a bare None/partial: src/tychoc.c:4371-4376 (`Type inner = resolve_expr(e->lhs); if (inner==T_VOID||inner==T_NONE) die_at(..."Some(...) needs a concrete value")`), E_OK/E_ERR same at :4377-4382. The check-mode fn resolve_exp (:5499-5556) calls resolve_expr(e) at :5549 FIRST and only fixes a *top-level* T_NONE/partial at :5550-5555 — it has no E_SOME/E_OK/E_ERR case that threads want's payload type into the constructor argument, so the inner bare None dies before context can reach it. tychoc0 threads the expected payload type inward (accepts). Spec §6.2 rule 6 (docs/spec/04-inference.md:49-50): a bare None/Ok/Err takes its missing type param from the expected T.
-- **Precedent (Odin/Swift/Go):** Swift: contextual type flows through `.some(...)` into a nested Optional — `let x: Int?? = .some(nil)` and `let x: Int?? = .some(.none)` both compile, nil/`.none` taking Optional<Int> from context. Swift is the closest precedent (built-in Optional with the same one-free-param shape); it matches tychoc0's accept. tychoc0 is also the spec-faithful reading of §6.2 rule 6.
-- **Recommendation:** Defer to Swift/tychoc0: tychoc should accept. Give resolve_exp (src/tychoc.c:5499) an E_SOME/E_OK/E_ERR check-mode case that recurses resolve_exp(e->lhs, payload_of(want)) when want is the matching Option/Result, instead of falling through to synthesis-only E_SOME at :4371. This makes a bare None/Ok/Err fixable at any nesting depth, matching the top-level behavior already at :5550-5555.
-- **Verifier note:** CONFIRMED cross-compiler divergence (type (a): accept vs reject on the same program), reproduced on all four cited variants via actual runs. tychoc rejects a bare inner None/Ok/Err as the payload of an enclosing Some/Ok/Err at src/tychoc.c:4374/4381 because it demands a syntactically-concrete payload and does not propagate the enclosing contextual type inward. tychoc0 accepts, flows the declared type in, and produces sound output (verified by compiling+running the emitted C). Precedent: Swift is closest (built-in Optional, same one-free-param shape) — `let x: Int?? = .some(nil)` and `.some(.none)` both compile, the inner nil/.none taking its Optional type from context; this matches tychoc0's accepting, contextual-type-flow behavior. So tychoc0 is the correct side and tychoc is the over-strict outlier. High severity: it is an accept-vs-reject fork on a legitimate, common nested-Option/Result construct (including `return Some(None)`), not a mere output nuance.
-
-### C15. [HIGH] tychoc0 accepts `char` as a spellable type keyword everywhere; tychoc rejects it as an unknown type
-
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
-- **Dimension:** `strings-char` · **Kind:** cross-compiler-divergence
-- **Repro:**
-
-```tycho
-fn f(c: char) -> char:
-  return c
-fn main():
-  println(str(f('a')))
-```
-
-- **tychoc (C reference):** Rejected at compile: `prog.ty:1: error: unknown type 'char'` (cc_compile_exit=1, no binary produced). Matches spec: char has no spellable type keyword.
-- **tychoc0 (self-hosted):** Accepted: emitted C, cc compiled clean (c0_cc_exit=0), ran and printed `a` (c0_run_exit=0). char used as a spellable type in param/return positions.
-- **Evidence:** src/tychoc.c:1863-1864 (unknown-type die); compiler/tychoc0.ty:2663 (char in builtin-scalar list); docs/spec/03-types.md:68-70; docs/spec/01-lexical.md:116-117. Observed: 4 separate repros (param/return, local annotation, []char, struct field) all reject on tychoc, all accept+run on tychoc0.
-- **Precedent (Odin/Swift/Go):** Go makes the one-byte type spellable (`byte` = alias for `uint8`, `rune` = alias for `int32`); Odin has `u8`/`byte`/`rune`; Swift has `UInt8`/`Character`. All three give the byte/char type a written name. But Tycho's own spec deliberately forbids it: docs/spec/03-types.md:68-70 "`char` ... arises by inference; there is no `char` type keyword" and docs/spec/01-lexical.md:116-117 "there is no `char` or `void` type keyword".
-- **Recommendation:** The two compilers must agree. Two ways to resolve: (a) align tychoc0 to the current spec by removing "char" from its spellable-type-name set (tychoc0.ty:2663 and the type-parse path) so it also rejects `char` annotations — matches tychoc + spec today; or (b) if deferring to Go/Odin/Swift precedent (which all name the byte type), promote `char` to a real type keyword in tychoc and update docs/spec/03-types.md:68 and 01-lexical.md:116. Either is fine, but pick one — right now tychoc0 compiles programs tychoc cannot, breaking parity.
-- **Verifier note:** Real cross-compiler divergence (accept vs reject on identical program) AND a spec mismatch. docs/spec/03-types.md:70: "there is no `char` type keyword" and docs/spec/01-lexical.md:116-117: "there is no `char` or `void` type keyword (the char type arises only from character literals and inference)". tychoc enforces the spec (src/tychoc.c die_at "unknown type 'char'"); tychoc0 lists "char" among builtin scalar type names (tychoc0.ty:2663) so its type parser accepts it everywhere. tychoc0 is the buggy side. Precedent doesn't rescue it: Go/Odin/Swift all give the byte type a written name, but Tycho's spec is a DELIBERATE choice to omit one, and both compilers must agree with the spec. Fix = make tychoc0 reject `char` in type positions (arises by inference only). Verified by direct run of both compilers; outputs quoted above.
-
-### C16. [MEDIUM] tychoc0 accepts `char` as an annotatable type (and adapts int literal → char); tychoc rejects `char` as an unknown type
-
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
-- **Dimension:** `numeric-coercion` · **Kind:** cross-compiler-divergence
-- **Repro:**
-
-```tycho
-fn main():
-    c: char = 65
-    println(str(c))
-```
-
-- **tychoc (C reference):** REJECTS. Both `c: char = 65` and `fn f(c: char)` die at compile: `prog.ty:2: error: unknown type 'char'` (cc_compile_exit=1, no binary produced). tychoc has an internal T_CHAR (src/tychoc.c:477) reachable only via inference (c := 'A'); its type-name parser never maps the identifier `char`.
-- **tychoc0 (self-hosted):** ACCEPTS + runs. `c: char = 65; println(str(c))` compiles clean and prints `A`. `fn f(c: char) -> int: return to_int(c)` called as `f('Z')` prints `90`. tychoc0 lists `char` as a builtin scalar in its type-name parser (compiler/tychoc0.ty:2663) and adapts the int literal 65 into the char slot.
-- **Evidence:** cc unknown-type: src/tychoc.c:1863-1864; internal T_CHAR exists: src/tychoc.c:477,:1046,:3299. c0 char as type-name: compiler/tychoc0.ty:2663. Grammar omission: docs/spec/02-grammar.md:151. Literal-adaptation rules: docs/spec/06-conversions.md:11-28 (char literals do not adapt; int-lit→char absent). Reproduced runs quoted above.
-- **Precedent (Odin/Swift/Go):** Grammar PrimType (docs/spec/02-grammar.md:151) lists `int|float|bool|string|ptr|bytes` and omits `char`, so tychoc matches the published grammar; but spec prose (03-types.md §5.2) treats `char` as a first-class type, making the omission itself inconsistent. On the int-lit→char adaptation: Swift (`Character` is not initializable from an integer literal) and Odin (distinct types, explicit casts — an int does not become a rune/byte implicitly) both require an explicit conversion; the repo's own idiom is `chr(65)`.
-- **Recommendation:** Reconcile the two compilers. Either (a) add `char` to PrimType in the grammar and to tychoc's type-name parser so both accept the annotation, or (b) remove it from tychoc0's type-name set so both reject. Given `char` is a real type in tychoc's type system and throughout the spec prose, (a) is the natural fix — but if adopted, tychoc0 must stop silently adapting an int literal into a `char` annotation (deferring to Swift/Odin: require chr()/an explicit cast), otherwise it reintroduces the silent-coercion class from the first finding.
-- **Verifier note:** Real cross-compiler divergence, reproduced: tychoc rejects `char` as an unknown type; tychoc0 accepts it and prints "A" (diff shows non-IDENTICAL: cc errors vs c0 output "A"). Spec resolves it AGAINST tychoc0: docs/spec/03-types.md:70 (§5.2.4) states verbatim "there is no `char` type keyword" — char "arises by inference" only. Grammar PrimType (docs/spec/02-grammar.md:151) lists int|float|bool|string|ptr|bytes and omits char, consistent with that. So tychoc's rejection is spec-correct; tychoc0 both (1) admits an unsanctioned type keyword and (2) performs an int-lit→char adaptation the spec's narrow char/int interop (§5.2.4: only `char ± int`) never grants. Precedent aligns with the spec: Swift's Character is not initializable from an integer literal, Odin uses distinct types with explicit casts (int does not implicitly become a rune/byte); repo idiom is chr(65). Fix = tychoc0 should reject the `char` keyword to match tychoc and the spec. Severity medium is fair: not just cosmetic — tychoc0 silently coerces int→char with no spec basis.
-
-### C17. [MEDIUM] Dynamic array/tuple literal does not push the declared element type into a bare None element (order-dependent; both compilers, contra spec)
-
-- **Status:** **OPEN — the scalar-mix case is now rejected by UB-6 (2ed088c) array homogeneity; the expected-type push into a bare element is a separate, still-open item.
-- **Dimension:** `option-result-none` · **Kind:** spec-mismatch
-- **Repro:**
-
-```tycho
-fn main():
-    xs : [Option(int)] = [None]        # rejected
-    # xs : [Option(int)] = [Some(1), None]   # ACCEPTED (None fixed from sibling Some)
-    # xs : [Option(int)] = [None, Some(1)]   # rejected (None first)
-    # t  : (Option(int), int) = (None, 5)    # rejected
-    println(str(len(xs)))
-```
-
-- **tychoc (C reference):** Rejects [None] and [None, Some(1)] with "error: cannot infer the array's element type from None — put a Some(...) first"; rejects (None, 5) with "error: tuple element 1 needs a concrete value". Accepts [Some(1), None] (element type synthesized from the leading Some), prints len 2. Order-dependent: identical element set accepted or rejected purely on whether a concrete sibling comes first.
-- **tychoc0 (self-hosted):** Same accept/reject decisions as tychoc: rejects [None], [None, Some(1)], and (None, 5), each with the generic "type: unknown type ''"; accepts [Some(1), None], emits C that compiles and prints len 2. No cross-compiler divergence in accept/reject or output.
-- **Evidence:** E_ARRLIT synthesizes the element type from args[0] (src/tychoc.c:4509 `Type elem = resolve_expr(e->args[0])`) and explicitly rejects a leading None (:4512-4513 "the first element fixes the type, so it can't be a bare None"); siblings are then checked against that (:4514-4515). resolve_exp (:5499) only pushes want into a *bare []* (:5508) or a *fixed-size* array literal (:5516) — there is no case pushing want's element type into a non-empty dynamic array literal's elements, so the `[Option(int)]` annotation never reaches them. E_TUPLE synthesizes every element and rejects a bare None (:4384-4394). Spec §6.1 (docs/spec/04-inference.md:29-30) lists "a tuple or array literal's element type" as an expected-type context, and §6.2 rule 6 (:49-50) fixes a bare None from T — so `x:[Option(int)]=[None]` should type. Implementation ignores the annotation and infers order-dependently.
-- **Precedent (Odin/Swift/Go):** Swift: array-literal element type comes from the contextual type — `let a: [Int?] = [nil]` and `let a: [Int?] = [nil, .some(1)]` both compile regardless of order; tuple `let t: (Int?, Int) = (nil, 5)` compiles. Odin similarly propagates the declared element type into a compound literal. Both make element inference position-independent, unlike Tycho.
-- **Recommendation:** Defer to Swift: when a dynamic array/tuple literal is checked against a known type, push the expected element/slot type into each element via resolve_exp before synthesizing from args[0] (add the E_ARRLIT-non-empty and E_TUPLE cases to resolve_exp at src/tychoc.c:5499, and mirror in tychoc0). This removes the order-dependence and honors §6.1/§6.2. Consistency argument: bare None is already coercible in return/arg/struct-field/map-value/assignment positions (verified: all accept) — array/tuple literal elements are the lone exception.
-- **Verifier note:** Not a cross-compiler divergence — both compilers agree. It is a genuine spec mismatch plus internal (order-dependent) inconsistency. Spec 04-inference.md:26-30 states an expected type flows into "a tuple or array literal's element type," and 04-inference.md:49-50 rule 6 states a bare None "takes its missing type parameter from T (an Option/Result)." Composing these, `xs : [Option(int)] = [None]` should push Option(int) into the element position and fix each None from it — spec says ACCEPT. Both compilers instead synthesize the element type from the sibling elements (accepting only when a concrete Some appears first), so the explicit annotation is ignored for the bare-None case. Same for the tuple (None,5) despite (Option(int),int). Closest precedent is Swift, which the claim cites correctly: `let a:[Int?]=[nil]`, `let a:[Int?]=[nil,.some(1)]`, and `let t:(Int?,Int)=(nil,5)` all compile, position-independent. Severity medium is fair: contradicts the spec's stated inference rule and is ergonomically surprising, but sound and has an easy workaround (annotate or lead with Some). Separately, tychoc0's "unknown type ''" message is unhelpful vs tychoc's targeted diagnostic, but that is a known diagnostic-quality gap, not the semantic finding.
-
 ### C18. [LOW] tychoc rejects valid u64 literals >= 2^63 and the minimal int literal; tychoc0 accepts them
 
-- **Status:** **OPEN — low; needs a spec amendment (widen the literal range to full u64 / spell INT_MIN in docs/spec/01-lexical.md). Deliberately not bundled with UB-4.
+- **Status:** **RESOLVED** — the divergence is closed by 40c019e (UB-4): both compilers now reject a literal > 2^63-1. Widening the bound to the full u64 range (Go/Swift precedent) is a separate spec amendment (docs/spec/01-lexical.md), deliberately deferred.
 - **Dimension:** `integer-overflow` · **Kind:** cross-compiler-divergence
 - **Repro:**
 
@@ -454,7 +456,7 @@ fn main():
 
 ### C19. [LOW] `string + char` is accepted (appends one byte) but `char + string` is rejected — asymmetric, and unsanctioned by the spec's same-type rule
 
-- **Status:** **OPEN** — not a memory-safety item; deferred to a later pass.
+- **Status:** **RESOLVED** — consistent between both compilers (both accept `s + c`, both reject `c + s`) and load-bearing (char_basic, json); documented as the explicit exception to the same-type rule in docs/spec/09-expressions.md §13.2 (a27e19b) rather than removed.
 - **Dimension:** `strings-char` · **Kind:** spec-mismatch
 - **Repro:**
 
