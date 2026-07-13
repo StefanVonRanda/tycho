@@ -1,0 +1,4 @@
+fn main():
+    x := 3
+    y := 2.0
+    println(str(x / y))

@@ -3031,6 +3031,8 @@ static Stmt *parse_stmt(Parser *ps) {
      * A bare identifier / index / field / `or_return` has no effect and is almost
      * always an incomplete statement (e.g. a truncated `p.x = ...`). Reject it,
      * matching tychoc0, whose statement grammar only accepts `name(args)` here. */
+    if (e->kind == E_IDENT && !strcmp(e->sval, "while"))   /* F9: `while cond:` — Tycho has no while keyword */
+        die_at(t->line, "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)");
     if (e->kind != E_CALL)
         die_at(t->line, "a statement must be a declaration, assignment, or call -- a bare expression has no effect");
     Stmt *s = new_stmt(S_EXPR, t->line);
@@ -5348,7 +5350,7 @@ static Type resolve_expr_inner(Expr *e) {
                 e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; e->lhs->type = T_FLOAT;
                 return e->type = T_FLOAT;
             }
-            die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s)",
+            die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints",
                    type_name(lt), type_name(rt));
         }
     }

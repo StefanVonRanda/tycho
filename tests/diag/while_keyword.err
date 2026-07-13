@@ -1,0 +1,2 @@
+tests/diag/while_keyword.ty:3: error: Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)
+     3 |     while i < 3:
