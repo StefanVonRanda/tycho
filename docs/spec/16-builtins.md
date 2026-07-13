@@ -98,7 +98,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 
 | Builtin | Role | Kind |
 |---|---|---|
-| `str(x)` | Polymorphic value → `string` for `int`, `u32`, `u64`, `f32`, `bool`, `float`, `string` (through `base_of`); identity on `string`; **rejects `char`**. | magic |
+| `str(x)` | Polymorphic value → `string` for `int`, any sized int, `f32`, `bool`, `float`, `string` (through `base_of`); identity on `string`; a **`char` → its one-byte glyph** string. | magic |
 | `to_int(x)` | `float`/`u32`/`u64`/`f32` or an `int`-newtype → `int` (float truncates toward zero). | magic |
 | `to_float(n)` | `int`/`u32`/`u64`/`f32` or a `float`-newtype → `float`. | magic |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | Any numeric scalar (`int`/`char`/`float`/`u32`/`u64`/`f32`, through `base_of`) → the sized type. | magic |

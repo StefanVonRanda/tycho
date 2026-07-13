@@ -4784,9 +4784,9 @@ static Type resolve_expr_inner(Expr *e) {
             if (!strcmp(e->sval, "str")) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
                 Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
-                if (b != T_INT && b != T_BOOL && b != T_FLOAT && b != T_STRING &&
-                    !is_sized_int(b) && b != T_F32)   /* string: identity (for interpolation) */
-                    die_at(e->line, "str(x) takes an int, a sized int, f32, a bool, a float, or a string");
+                if (b != T_INT && b != T_BOOL && b != T_FLOAT && b != T_STRING && b != T_CHAR &&
+                    !is_sized_int(b) && b != T_F32)   /* string: identity (for interpolation); char -> its one-byte glyph */
+                    die_at(e->line, "str(x) takes an int, a sized int, f32, a bool, a float, a char, or a string");
                 return e->type = T_STRING;
             }
             if (!strcmp(e->sval, "to_float")) {   /* int/u32/u64/f32 -> float, or unwrap a float newtype */
@@ -4799,8 +4799,8 @@ static Type resolve_expr_inner(Expr *e) {
             if (!strcmp(e->sval, "to_int")) {   /* float/u32/u64/f32 -> int (truncate), or unwrap an int newtype */
                 if (e->nargs != 1) die_at(e->line, "to_int(x) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32 && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
-                    die_at(e->line, "to_int(x) takes a float (truncates toward zero), a sized int, f32, or an int newtype");
+                if (at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32 && at_ != T_CHAR && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
+                    die_at(e->line, "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype");
                 return e->type = T_INT;
             }
             if (is_sized_conv(e->sval)) {   /* to_u8..to_i64, to_f32: any numeric scalar -> the named sized type */
@@ -7492,6 +7492,7 @@ static char *gen_call(Expr *e, const char *arena) {
         char *a = gen_expr(e->args[0], arena);
         Type b = base_of(e->args[0]->type);
         if (b == T_STRING) return a;                 /* str(string) is identity (interpolation) */
+        if (b == T_CHAR)   return sfmt("tycho_chr(%s, %s)", arena, a);   /* char -> its one-byte glyph string (value is a byte 0..255) */
         if (b == T_BOOL)   return sfmt("tycho_bool_to_str(%s, %s)", arena, a);
         if (b == T_FLOAT || b == T_F32) return sfmt("tycho_float_to_str(%s, %s)", arena, a);   /* f32 promotes to double */
         if (is_uint(b))   return sfmt("tycho_uint_to_str(%s, %s)", arena, a);   /* u8/u16/u32/u64 print unsigned */
@@ -7596,6 +7597,7 @@ static char *gen_call(Expr *e, const char *arena) {
  * harmless redundant cast. Non-sized types pass through unchanged. */
 static char *trunc_result(Type t, char *expr) {
     Type b = base_of(t);
+    if (b == T_CHAR) return sfmt("((long)(unsigned char)(%s))", expr);   /* char arithmetic stays a byte 0..255 (char is one byte, like u8) */
     return is_sized_int(b) ? sfmt("(%s)(%s)", c_type(b), expr) : expr;
 }
 

@@ -68,9 +68,11 @@ and usable with `str` (via `has_str`), but is **not ordered** (§5.5).
 `char` is a single **byte**, an integer value `0` through `255`. It is written
 as a character literal ([§3.9.3](01-lexical.md#393-character-literals)) and
 arises by inference; there is no `char` type keyword. `char` interoperates
-narrowly with `int`: `char ± int` has type `char`. `char` is comparable and
-ordered (§5.5) but is **not** accepted by `str` — an intentional asymmetry
-(§8).
+narrowly with `int`: `char ± int` has type `char`, and the result **wraps to a
+byte** (`0..255`, like `u8`) so the value never escapes the type's range. `char`
+is comparable and ordered (§5.5). `str(char)` yields the one-byte **glyph**
+string (so a `char` interpolates in an f-string); `to_int(char)` / `to_u32(char)`
+yield the byte **value**.
 
 The result has type `char`, but its numeric value is the ordinary integer result
 and is **not** reduced to `0..255`: `'a' + 300` is a `char` holding `397` (probed

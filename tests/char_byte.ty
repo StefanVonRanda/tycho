@@ -1,0 +1,16 @@
+# char is one byte: char arithmetic masks to 0..255 (like u8), so the type never
+# lies about its value. str(char) yields the one-byte glyph; to_int(char) yields
+# the byte value; a char interpolates in an f-string.
+fn main():
+    # arithmetic wraps at the byte boundary
+    println(str(to_int('a' + 300)))   # (97+300) & 0xff = 141
+    println(str(to_int('a' + 200)))   # (97+200) & 0xff = 41
+    println(str(to_int('a' - 100)))   # (97-100) & 0xff = 253
+    # in-range char arithmetic is unchanged
+    println(str('0' + 5))             # '5'
+    println(str(to_int('9' - '0')))   # 9
+    # glyph + value round-trips
+    println(str('a'))                 # a
+    println(str(to_int('A')))         # 65
+    c := 'Z'
+    println(f"{c}={to_int(c)}")       # Z=90

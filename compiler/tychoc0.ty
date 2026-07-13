@@ -3810,6 +3810,8 @@ fn sized_cty(ty: string) -> string:
 # cast an operation's result back to its sized-int C type (narrow types promote to
 # int; the wider ones take a harmless redundant cast). Non-sized pass through.
 fn trunc_result(ty: string, expr: string) -> string:
+    if ty == "char":   # char arithmetic stays a byte 0..255 (char is one byte, like u8)
+        return "((long)(unsigned char)(" + expr + "))"
     if is_sized_int(ty):
         return "(" + sized_cty(ty) + ")(" + expr + ")"
     return expr
@@ -5738,6 +5740,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return trunc_result(rlt, "hi_shrn(" + gl + ", " + gr + ", " + str(int_width(rlt)) + ", " + str(sgn) + ")")
             if is_cmp(op):   # ordering -> bool; never truncated to an operand's width
                 return "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")"
+            if (op == "+" or op == "-") and (rlt == "char" or frlt == "char"):   # char arithmetic -> masked byte, regardless of operand order (int+char, char+int, char+char)
+                return trunc_result("char", "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")")
             return trunc_result(rlt, "(" + gen_expr(l, names, types, dc, ctx) + " " + op + " " + gen_expr(r, names, types, dc, ctx) + ")")
         ECall(name, args, _el):
             zmk := find(name, "$<")
@@ -5820,6 +5824,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if at == "bool":
                     return "b2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                if resolve_nt(dc, ctx, at) == "char":   # char -> its one-byte glyph string (value is a byte 0..255)
+                    return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if is_uint(resolve_nt(dc, ctx, at)):   # u8/u16/u32/u64 print unsigned
                     return "u2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if resolve_nt(dc, ctx, at) != "int" and not is_sized_int(resolve_nt(dc, ctx, at)):   # int + signed sized (i8/i16/i32/i64) -> i2s; reject char/ptr/enum/etc. (fail closed like tychoc)
