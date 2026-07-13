@@ -15,21 +15,23 @@
 > guarantees, the FFI sized-int round-trip) is pinned by differential probing on
 > both compilers. The content is verified against the implementation.
 >
-> It is a *draft*, not the ratified 1.0, because one item of finishing work
-> remains (not correctness): extending the `make spec-check` gate from grammar +
-> citation consistency to running every fenced example. The reference-doc drifts
-> logged in [Appendix H](appendix-h-differences.md) are all reconciled. The
-> remaining `Editor's note` blocks are informative reconciliation notes, not open
-> questions.
+> It is a *draft*, not the ratified 1.0, because of remaining polish, not
+> correctness: the fenced code blocks are now tagged and a `make spec-check` gate
+> runs every runnable example, but that gate builds only the reference compiler
+> (dual-compiler example execution, Tier 2b, is the last mechanical item). The
+> reference-doc drifts logged in [Appendix H](appendix-h-differences.md) are all
+> reconciled. The remaining `Editor's note` blocks are informative reconciliation
+> notes, not open questions.
 >
 > **Landed (2026-07-13):** the collected grammar ([Appendix A](appendix-a-grammar.md))
 > is flattened into a single EBNF listing generated verbatim from the defining
-> chapters §3/§4 by `scripts/gen_grammar.sh`; the conformance coverage matrix
+> chapters §3/§4; the conformance coverage matrix
 > ([Appendix E](appendix-e-conformance.md)) is populated, binding every major
-> normative clause of §3–§30 to a verified fixture; and the `make spec-check`
-> gate (CI step 17) enforces both — it diffs the collected grammar against the
-> chapters and asserts every fixture the matrix cites actually exists, so neither
-> can silently rot.
+> normative clause of §3–§30 to a verified fixture; every code fence carries a
+> language tag ([§2.3](00-conventions.md#23-examples-and-code-fences)); and the
+> `make spec-check` gate (CI step 17) enforces all three — it diffs the collected
+> grammar against the chapters, asserts every cited fixture exists, and compiles
+> and runs every runnable `tycho`/`output` example against its shown output.
 
 ## What this document is
 

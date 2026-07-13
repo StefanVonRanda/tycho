@@ -7,7 +7,7 @@ for the normative definitions.
 
 These 40 words are reserved; none may be used as an identifier.
 
-```
+```text
 and     bool    break   bytes   continue elif    else    enum
 f32     false   float   fn      for      handle  i8      i16
 i32     i64     if      in      inout    int     match   not

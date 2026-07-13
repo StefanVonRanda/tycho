@@ -63,4 +63,13 @@ else
     fail=1
 fi
 
+# --- Check 3 (tier 2): runnable examples compile, run, match their output ----
+# Every ```tycho block paired with a following ```output block is built and run;
+# its stdout must equal the output block. See scripts/spec_examples.sh.
+if sh "$root/scripts/spec_examples.sh"; then
+    :
+else
+    fail=1
+fi
+
 exit $fail

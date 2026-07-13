@@ -34,7 +34,7 @@ generic enum variant).
 
 ## 7.2 Constraints (`where`)
 
-```
+```ebnf
 WhereClause ::= "where" Constraint ( "," Constraint )*
 Constraint  ::= Predicate "(" IDENT ")" | IDENT ":" Type ( "|" Type )*
 Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"

@@ -28,7 +28,7 @@ value form may be an expression or a tail-position value `if`/`match`
 
 ## 12.2 Constants
 
-```
+```text
 const NAME = ConstExpr
 ```
 

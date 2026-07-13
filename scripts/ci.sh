@@ -79,7 +79,7 @@ sh bench/guard.sh
 step "[16/17] make recursion  (deep input fails closed in both compilers -- no stack-overflow DoS)"
 make -s recursion
 
-step "[17/17] make spec-check  (spec Appendix A collected grammar == defining chapters §3/§4)"
+step "[17/17] make spec-check  (spec: Appendix A grammar == §3/§4 · Appendix E fixtures exist · runnable examples match output)"
 make -s spec-check
 
 bar

@@ -225,7 +225,7 @@ returned from a Tycho function (§25). The concurrency handle types
 
 ## 5.4 Newtypes
 
-```
+```ebnf
 TypeDecl ::= "type" IDENT "=" Type NEWLINE
 ```
 

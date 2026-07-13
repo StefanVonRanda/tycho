@@ -209,10 +209,15 @@ The gate exists (`scripts/spec_check.sh`, CI step 17) and grows in tiers:
   grammar; (b) every fixture cited in the E.2 coverage matrix is asserted to
   exist, so a renamed or removed fixture breaks the build instead of leaving a
   dangling citation.
-- **Tier 2 — example execution (pending).** The gate MUST additionally assert
-  that every fenced Tycho example in `docs/spec/` compiles and runs on **both**
-  compilers with the shown output — the same discipline the reference pages
-  satisfy. A failing example is a specification defect (the rule or the example
-  is wrong) and blocks release. This tier is gated on giving the spec's examples
-  a machine-readable output convention (today's fences are untagged, so
-  distinguishing runnable Tycho from EBNF/output blocks is not yet mechanical).
+- **Tier 2 — example execution (landed).** `scripts/spec_examples.sh` extracts
+  every runnable example — a ` ```tycho ` block immediately followed by a
+  ` ```output ` block ([§2.3](00-conventions.md#23-examples-and-code-fences)) —
+  compiles it with the reference `tychoc`, runs it, and asserts its stdout equals
+  the `output` block. A failing example is a specification defect (the rule or
+  the example is wrong) and blocks the build. Most spec code blocks are
+  illustrative fragments or grammar and are correctly skipped; new complete
+  programs added with an `output` block are gated automatically.
+- **Tier 2b — dual-compiler execution (pending).** Tier 2 runs the reference
+  compiler only; extending it to also build and run each example through the
+  self-hosted `tychoc0` would make example execution match the two-compiler
+  oracle of E.1 exactly.

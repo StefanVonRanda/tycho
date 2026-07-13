@@ -36,7 +36,7 @@ through indented blocks (§3.4), not through bracket-spanning continuations.
 
 ## 3.3 Comments
 
-```
+```ebnf
 Comment ::= "#" (any byte except newline)*
 ```
 
@@ -98,7 +98,7 @@ then `=`).
 The following words are **reserved**. A reserved word is never an identifier;
 using one where a name is expected is a syntax error.
 
-```
+```text
 and     bool    break   continue elif    else    enum    f32
 false   float   fn      for      handle  if      in      inout
 int     match   not     null     or      or_return  parallel  ptr
@@ -185,7 +185,7 @@ counterpart to the indentation-depth bound (§3.4).
 
 ### 3.9.1 Integer literals
 
-```
+```ebnf
 IntLit ::= [0-9]+
 ```
 
@@ -206,7 +206,7 @@ type system (§8); it does not change the literal's syntax.
 
 ### 3.9.2 Float literals
 
-```
+```ebnf
 FloatLit ::= [0-9]+ "." [0-9]+ Exp?
            | [0-9]+ Exp
            | "." [0-9]+ Exp?          /* leading-dot form, position-restricted */
@@ -238,7 +238,7 @@ Two disambiguation rules are normative:
 
 ### 3.9.3 Character literals
 
-```
+```ebnf
 CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
 CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" )
 ```
@@ -252,7 +252,7 @@ one holding more than one byte is a lexical error.
 
 ### 3.9.4 String literals
 
-```
+```ebnf
 StrLit ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
 StrEscape ::= "\" ( "n" | "t" | "\" | '"' )

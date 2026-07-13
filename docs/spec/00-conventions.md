@@ -163,11 +163,28 @@ highlighter. It does not model indentation and is known to diverge from the
 language in several places (enumerated in [§3.10](01-lexical.md#310-non-normative-tree-sitter-grammar));
 it MUST NOT be treated as a grammar of record.
 
-### 2.3 Examples
+### 2.3 Examples and code fences
 
-Every fenced Tycho example in this specification is a complete or clearly
-excerpted program that compiles and runs on both reference implementations and
-produces the output shown in its trailing comment. A forthcoming `make
-spec-check` gate enforces this, as the reference pages are already enforced.
-Examples are illustrative; a conflict between an example and a normative rule
-is a defect to be corrected in favor of the rule.
+Fenced code blocks carry a language tag identifying their kind:
+
+- **`ebnf`** — a grammar production (see §2.1). The collected grammar in
+  [Appendix A](appendix-a-grammar.md) is generated from these blocks.
+- **`tycho`** — Tycho source. Most such blocks are *illustrative fragments* — a
+  declaration, an expression, or a few statements shown in isolation, often
+  referring to names defined in the surrounding prose. A fragment is not a
+  complete program and is not executed.
+- **`output`** — the exact expected standard output of the immediately preceding
+  `tycho` block.
+- **`text`** — a keyword list, a shell/`cc` invocation, or *meta-syntax*: prose
+  notation that is not literal Tycho. Meta-syntax uses `…` for elision, `<name>`
+  for a placeholder, `{ a | b }` for a choice, and `[ x ]` for an optional part.
+
+A **runnable example** is a `tycho` block immediately followed (blank lines
+permitted) by an `output` block: the `tycho` block is then a complete program
+and its standard output MUST equal the `output` block byte-for-byte. The `make
+spec-check` gate ([Appendix E.3](appendix-e-conformance.md)) compiles and runs
+every runnable example and asserts this, the same discipline the reference pages
+satisfy through their golden fixtures.
+
+Examples are illustrative; a conflict between an example and a normative rule is
+a defect to be corrected in favor of the rule.

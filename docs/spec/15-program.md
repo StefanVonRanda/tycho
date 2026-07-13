@@ -31,6 +31,17 @@ diagnoses `no 'main' procedure`) and MUST reject a `main` that declares any
 parameter or a non-`void` return type (`src/tychoc.c:6354-6355`,
 `:6379-6380`).
 
+A minimal complete program is therefore:
+
+```tycho
+fn main():
+    println("hello from tycho")
+```
+
+```output
+hello from tycho
+```
+
 `main` is the sole entry point: execution begins by calling it and the program
 terminates when it returns (the runtime allocates the program's root arena
 around this call — [§10](07-memory-model.md)). `main` is an
@@ -73,7 +84,7 @@ the same entry-point rule (§27.1) and is a degenerate one-package unit.
 An `extern` declaration introduces a procedure that is **bodyless** and bound to
 a foreign **C symbol** rather than to Tycho code:
 
-```
+```text
 extern [ "Lib" ] fn name(p: T, …) [ -> T ]
 ```
 
@@ -106,7 +117,7 @@ reference implementation compiles the emitted C and links it into the output
 executable with a single C-compiler invocation (`src/tychoc.c:10592-10606`).
 The invocation has the shape:
 
-```
+```text
 cc {-O3 | -O0 -g} -fwrapv [-march=native] -pthread -o OUT gen.c \
    <auto shims> -lm <-lLib per extern lib> \
    <-L/-I/--link/--pkg passthrough> <pkg-config flags from deps>
@@ -188,7 +199,7 @@ that name with an empty prefix, `:10355-10358`).
 
 An import is a top-level declaration in a package's file:
 
-```
+```tycho
 import "geom"          # binds the package's own name  ->  geom.symbol
 import g "geom"         # aliases the prefix            ->  g.symbol
 ```

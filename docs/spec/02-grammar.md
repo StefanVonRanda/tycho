@@ -19,7 +19,7 @@ is valid only if it parses **and** satisfies every static-semantic rule.
 A compilation input is a sequence of top-level declarations. Blank lines
 between them are insignificant.
 
-```
+```ebnf
 Program   ::= TopDecl*
 TopDecl   ::= PackageDecl | ImportDecl | ExternFn | ConstDecl
             | Subscript | Struct | Enum | Handle | TypeDecl | Fn
@@ -30,7 +30,7 @@ identifiers, §3.7), `extern` (contextual, when not immediately followed by `(`)
 and the keywords `struct`, `enum`, `handle`, `type` each select their
 declaration; anything else begins a function.
 
-```
+```ebnf
 PackageDecl ::= "package" IDENT NEWLINE
 ImportDecl  ::= "import" IDENT? STR NEWLINE
 ConstDecl   ::= "const" IDENT "=" ConstExpr NEWLINE
@@ -48,7 +48,7 @@ visibility, and merging are specified in §28.
 
 ### 4.1.1 Functions
 
-```
+```ebnf
 Fn         ::= "fn" IDENT "(" ParamList? ")" ( "->" Type )? WhereClause? ":" NEWLINE Block
 ParamList  ::= Param ( "," Param )*
 Param      ::= IDENT ":" ( "inout" | "sink" )? "..."? Type
@@ -66,7 +66,7 @@ Type parameters are introduced *inside* `Type` by the `$` sigil (§4.2); a
 function that mentions any `$T` type parameter or `$N` size parameter in its
 signature is **generic**. A `WhereClause` constrains a generic function:
 
-```
+```ebnf
 WhereClause ::= "where" Constraint ( "," Constraint )*
 Constraint  ::= Predicate "(" IDENT ")"
               | IDENT ":" Type ( "|" Type )*
@@ -84,7 +84,7 @@ constraints are allowed.
 
 ### 4.1.2 Structs, enums, newtypes, handles
 
-```
+```ebnf
 Struct     ::= "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
 FieldDecl  ::= IDENT ":" Type NEWLINE
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
@@ -107,7 +107,7 @@ only via a container (e.g. `[Node]`), never as a direct by-value self-field
 
 ### 4.1.3 Extern functions and subscripts
 
-```
+```ebnf
 ExternFn   ::= "extern" STR? "fn" IDENT "(" ExternParamList? ")" ( "->" Type )? NEWLINE
 Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLINE
                INDENT "yield" "&" Place NEWLINE DEDENT
@@ -130,7 +130,7 @@ parameter, each parameter used at most once — are given in §18.
 
 ## 4.2 Types
 
-```
+```ebnf
 Type      ::= "$" IDENT                                        /* type parameter */
             | "soa" "[" Type "]"                               /* struct-of-arrays */
             | "fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?
@@ -174,7 +174,7 @@ Notes (constrained further in §5–§7):
 
 A block is a newline-introduced, indentation-delimited sequence of statements:
 
-```
+```ebnf
 Block ::= INDENT Stmt+ DEDENT
 Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue
         | Select | Match | If | ParallelFor | For
@@ -185,7 +185,7 @@ Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue
 
 ### 4.3.1 Simple statements
 
-```
+```ebnf
 ConstStmt      ::= "const" IDENT "=" ConstExpr NEWLINE
 DeleteStmt     ::= "delete" Postfix NEWLINE            /* Postfix MUST be an index m[k] */
 Return         ::= "return" ( Expr ( "," Expr )* )? NEWLINE
@@ -222,7 +222,7 @@ ExprStmt       ::= Call NEWLINE
 
 ### 4.3.2 Compound statements
 
-```
+```ebnf
 If          ::= "if" Expr ":" NEWLINE Block
                 ( "elif" Expr ":" NEWLINE Block )*
                 ( "else" ":" NEWLINE Block )?
@@ -267,7 +267,7 @@ The expression grammar encodes precedence and associativity by nesting: each
 level parses the next-tighter level and then, left-associatively, its own
 operators (except the prefix levels, which are right-recursive).
 
-```
+```ebnf
 Expr      ::= OrExpr
 OrExpr    ::= AndExpr ( "or" AndExpr )*
 AndExpr   ::= NotExpr ( "and" NotExpr )*
@@ -290,13 +290,13 @@ The **place** grammar (assignable lvalues, §4.3.1) is the subset of `Postfix`
 whose spine is an index, field, tuple-index, or subscript call rooted in a
 variable:
 
-```
+```ebnf
 Place ::= IDENT ( "[" Expr "]" | "." IDENT | "." INT | "(" ArgList? ")" )*
 ```
 
 Primary expressions:
 
-```
+```ebnf
 Primary ::= INT | FLOAT | STR | CHAR
           | "true" | "false" | "null"
           | "(" Expr ")"                                /* grouping */

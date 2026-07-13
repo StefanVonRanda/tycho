@@ -36,7 +36,7 @@ then `push(xs, 1)` fixes `xs` to `[int]`), and is a compile error only if never
 grounded ([§6.4](04-inference.md#64-pending-types)). Binding an array
 deep-copies it:
 
-```
+```tycho
 xs := [10, 20, 30]      # a [int]
 ys := []int             # empty; element type required
 zs := xs                # zs is an independent deep copy — mutating zs never touches xs
@@ -71,7 +71,7 @@ rebuilding the whole element. Writing through an element is a *projection* into
 the backing buffer; no pointer is exposed to Tycho, and the projection is
 bounds-checked exactly as a read is (§16.2). The following are all places:
 
-```
+```tycho
 a[i] = v                 # replace an element
 ps[0].x = 10             # a field of a struct element
 push(ps[0].tags, "x")    # grow an array-valued field of an element, in place
@@ -200,7 +200,7 @@ MUST match its field's type. Binding a struct deep-copies its whole tree — eve
 heap-owning field (`string`, array, map, nested struct, at any depth) is
 duplicated — so two struct variables never share storage.
 
-```
+```tycho
 struct Point:
     x: int
     y: int
@@ -215,7 +215,7 @@ A field is read with `p.x` and written with `p.x = v`. Writes compose through
 nesting and through array-valued fields, and a field MAY be taken as an `inout`
 argument; all of these are **places**:
 
-```
+```tycho
 r.lo.x = 100             # a nested-struct field, in place
 p.tags[0] = "x"          # an element of an array-valued field
 push(p.tags, "y")        # grow an array-valued field, in place
@@ -271,7 +271,7 @@ tuple's arity; a mismatch is a compile error, as is a duplicate name in a `:=`
 destructuring list (`src/tychoc.c:5816-5838`). At most 8 targets are permitted.
 Each name receives its element deep-copied, preserving value semantics.
 
-```
+```tycho
 fn divmod(a: int, b: int) -> (int, int):
     q := a / b
     return q, a - q * b            # builds (quotient, remainder)
@@ -300,7 +300,7 @@ The legal **key types** `K` and the unrestricted **value type** `V` are defined
 in §5.3.5 and are not re-derived here. The map type follows from a literal or an
 annotation:
 
-```
+```tycho
 counts := ["ada": 1, "alan": 2]   # a [string: int]
 empty := []string: int            # empty; key and value types required
 ```
@@ -323,7 +323,7 @@ This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
 total, not O(n²):
 
-```
+```tycho
 counts[w] += 1                    # zero-initialized on first sight, then incremented
 push(index[term], doc)            # grow a [string: [int]] value in place
 totals[user].balance = 0          # mutate a struct-valued entry's field in place
@@ -360,7 +360,7 @@ a deep copy of it) for an absent key and never inserts. `m.get(k, default)`
 returns `default` on a miss instead of the zero value — the same read, spelled as
 a method:
 
-```
+```tycho
 counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
 ```
 
@@ -372,7 +372,7 @@ runtime threads entries on an insertion-ordered link chain). It is the way to
 iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum
 key type, `keys` returns the wrapped key values.
 
-```
+```tycho
 for k in keys(counts):
     println(k + " = " + str(counts[k]))
 ```
@@ -383,7 +383,7 @@ A `subscript` declares a **compile-time place-macro**: a reusable, zero-copy
 place into one of its parameters, generalizing the built-in `&m[k]`. Its grammar
 is given in [§4.1.3](02-grammar.md#413-extern-functions-and-subscripts):
 
-```
+```text
 subscript <name>(<recv>: T, <params>…) -> inout U:
     yield &<place>
 ```
@@ -395,7 +395,7 @@ surrounding read or write flows through the ordinary place machinery. It is
 therefore usable both as a **place** and as an **rvalue**, and callable as a
 **method** on its first parameter, whose type selects the subscript:
 
-```
+```tycho
 subscript edge(g: Graph, i: int) -> inout Node:
     yield &g.nodes[i]
 
@@ -440,7 +440,7 @@ Variant names are **package-scoped**: a variant is written bare (`Circle`, not
 (enums in different packages may reuse a bare name, disambiguated by the package
 qualifier).
 
-```
+```tycho
 enum Shape:
     Circle(float)            # a variant with a payload
     Rect(float, float)
@@ -472,7 +472,7 @@ make it safe:
 - **Arm-local bindings.** A payload binding exists only inside its own arm;
   there is no way to read a payload that does not belong to the current variant.
 
-```
+```tycho
 match s:
     Circle(r):               # r bound to the payload
         …
@@ -498,7 +498,7 @@ match s:
   requires an `else` (every path must produce a value). This desugars to the
   declare-then-assign-in-each-arm form (§14).
 
-```
+```tycho
 label := match status:          # value match — arms are single expressions
     Active:  "on"
     Idle:    "waiting"
@@ -552,7 +552,7 @@ caller's storage, so it outlives the return
 appear inside a `parallel for` body — a chunk has no early exit
 (`src/tychoc.c:5306`).
 
-```
+```tycho
 fn add_two(a: string, b: string) -> Result(int, string):
     x := parse_digit(a) or_return    # Ok → bind x; Err → return it from add_two
     y := parse_digit(b) or_return

@@ -19,7 +19,7 @@ expression is rejected as having no effect.
 
 ## 14.2 `if` / `elif` / `else`
 
-```
+```text
 if C1: … elif C2: … else: …
 ```
 
@@ -31,7 +31,7 @@ single nested `if`. A value-producing `if` (in tail position) is defined in
 
 ## 14.3 `match`
 
-```
+```text
 match E: <arm>+
 ```
 
