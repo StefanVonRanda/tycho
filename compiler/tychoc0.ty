@@ -3772,6 +3772,21 @@ fn ty_has_handle(dc: Decls, ctx: Ctx, ty: string) -> bool:
                 return false
         return false
     return false
+fn is_spawn(e: Expr) -> bool:
+    match e:
+        ESpawn(_i, _n, _a, _el):
+            return true
+        _:
+            return false
+
+# a `channel(T, cap)` creation call (the element type rides the name: "channel:int")
+fn is_channel_call(e: Expr) -> bool:
+    match e:
+        ECall(nm, _a, _el):
+            return has_prefix(nm, "channel:")
+        _:
+            return false
+
 fn is_chan(ty: string) -> bool:                   # Channel(T): the bounded queue handle (CC-4)
     return has_prefix(ty, "Channel(")
 fn chan_inner(ty: string) -> string:              # "Channel(T)" -> "T"
@@ -3820,7 +3835,23 @@ fn is_scalar_num(t: string) -> bool:
 # literal adaptation (int-lit -> float/f32/sized, float-lit -> f32). Mirrors tychoc's
 # expected-type equality (src/tychoc.c:6108/etc.). Newtype identity + aggregate
 # compatibility are handled separately (nt_check), so this uses resolve_nt.
+# type_of cannot resolve a same-package scalar UFCS (`n.triple()`) at this stage --
+# it is rewritten later -- and would die "int is not a struct". Such a call returns
+# its signature type anyway (no silent coercion at the binding), so skip the scalar
+# check for a field access or a call-on-expression. (Mirrors nt_check using the safe
+# nt_skin_of rather than full type_of.)
+fn scalar_check_safe(e: Expr) -> bool:
+    match e:
+        EField(_b, _f, _el):
+            return false
+        ECallV(_c, _a, _el):
+            return false
+        _:
+            return true
+
 fn scalar_coercion_bad(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string]) -> bool:
+    if not scalar_check_safe(e):
+        return false
     rwant := resolve_nt(dc, ctx, want)
     rat := resolve_nt(dc, ctx, type_of(e, names, types, dc, ctx))
     lit_ok := (is_int_lit(e) and (rwant == "float" or rwant == "f32" or is_sized_int(rwant))) or (is_float_lit(e) and rwant == "f32")
@@ -6026,6 +6057,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # deep-copy the payload into the CLAIMED cell's arena -- exclusive
                 # between claim and commit, no lock held (CC-5); every element type
                 sty := chan_inner(type_of(args[0], names, types, dc, ctx))
+                if scalar_check_safe(args[1]):   # AUDIT: the payload type must match the channel element type (skip UFCS: type_of resolves it later)
+                    pat := type_of(args[1], names, types, dc, ctx)
+                    rsty := resolve_ginst(resolve_nt(dc, ctx, sty), dc, ctx)   # normalize a generic application (Box(int)) to its instance (Box__int) so it compares to the mono'd payload type
+                    rpat := resolve_ginst(resolve_nt(dc, ctx, pat), dc, ctx)
+                    if rpat != rsty and not (is_int_lit(args[1]) and (sty == "float" or sty == "f32" or is_sized_int(sty))) and not (is_float_lit(args[1]) and sty == "f32"):
+                        die("type: send on Channel(" + sty + ") needs a " + sty + " value, got " + pat)
                 sct := cty(dc, ctx, sty)
                 return "({ HChan* _ch = " + gen_expr(args[0], names, types, dc, ctx) + "; HCell* _c = tycho_chan_send_cell(_ch); " + sct + "* _p = (" + sct + "*)amem(&_c->arena, sizeof(" + sct + ")); *_p = " + cp_field(dc, ctx, sty, "(&_c->arena)", gen_expr(args[1], names, types, dc, ctx)) + "; tycho_chan_send_commit(_ch, _c, _p); })"
             if name == "recv" and len(args) == 1 and is_chan(type_of(args[0], names, types, dc, ctx)):
@@ -7741,6 +7778,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             ty := type_of(e, names, types, dc, ctx)
             if ty_has_handle(dc, ctx, ty) and not is_handle(dc, ty):   # FFI R2: a handle nested in a container/aggregate could be aliased into a double-free
                 die_at(dc, _sl, "a handle cannot be stored in a container or aggregate -- it is freed at the end of its scope")
+            if is_task(ty) and not is_spawn(e):   # AUDIT: an affine task handle is born from spawn and dies at its wait; copying/re-binding it would double-join (SIGSEGV) or orphan it
+                die_at(dc, _sl, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))")
             if has_str(ctx.saccums, name):        # string accumulator: buffer in the var's arena + len/cap sidecars
                 push(names, name)
                 push(types, ty)
@@ -7803,6 +7842,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
         SAssign(name, e, _sl):
             if is_handle(dc, var_type(names, types, name)):   # FFI R2: rebinding orphans the old handle (freed once, at scope exit)
                 die_at(dc, _sl, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope")
+            if is_task(var_type(names, types, name)) or is_chan(var_type(names, types, name)):   # AUDIT: reassigning an affine task/channel orphans the running task / the created queue
+                die_at(dc, _sl, "a task or channel variable cannot be reassigned")
             lhs := gen_expr(EVar(name, _el), names, types, dc, ctx)
             if is_scalar_ty(dc, ctx, type_of(EVar(name, _el), names, types, dc, ctx)) and expr_has_call(e):   # transient placement
                 return scalar_transient(dc, ctx, e, names, types, lhs + " = ")
@@ -8519,6 +8560,8 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
     # a param may be a BARE handle (a borrow) but never a composite carrying one.
     if ty_has_handle(dc, ctx, f.ret):
         die("type: fn '" + f.name + "' cannot return a handle -- a handle is freed at the end of its scope and cannot escape it")
+    if is_chan(f.ret):   # AUDIT: a channel is freed at its creating scope; returning it dangles -- create it in the owner and pass it down
+        die("type: fn '" + f.name + "' cannot return a channel -- create it in the owning scope and pass it down")
     hpi := 0
     for hpi < len(f.ptypes):
         if ty_has_handle(dc, ctx, f.ptypes[hpi]) and not is_handle(dc, f.ptypes[hpi]):
@@ -10052,7 +10095,7 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
             for j < len(elems):
                 collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
-            if len(elems) > 0:                             # AUDIT: reject a silent scalar mix ([1, 2.5, 3]); elements share a type
+            if len(elems) > 0 and scalar_check_safe(elems[0]):   # AUDIT: reject a silent scalar mix ([1, 2.5, 3]); elements share a type
                 e0 := type_of(elems[0], names, types, dc, ctx)
                 m := 1
                 for m < len(elems):
@@ -10080,6 +10123,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
             collect_expr(&acc, l, names, types, dc, ctx)
             collect_expr(&acc, r, names, types, dc, ctx)
         ECall(nm, args, _el):
+            if has_prefix(nm, "channel:"):              # AUDIT: a channel() is legal ONLY as a bare `ch := channel(...)`; reached here means it is nested in a container/arg/return -> escape
+                die_at(dc, _el, "a channel must be created directly in a declaration: ch := channel(T, cap)")
             check_call_args(dc, ctx, nm, args, names, types, _el)   # reject `inout` arg not `&variable` + newtype-identity arg mismatch (matches tychoc)
             if is_struct(dc, ctx, nm):                  # struct constructor: each field init must match the field's newtype
                 check_struct_ctor(dc, ctx, nm, args, names, types, _el)
@@ -10148,7 +10193,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             okerr := call_callee(e)
             if okerr == "Ok" or okerr == "Err":
                 die("type: cannot infer the Result type of " + okerr + "(...) -- annotate it (x : Result(T, E) = " + okerr + "(...))")
-            collect_expr(&acc, e, names, types, dc, ctx)
+            if not is_channel_call(e):                  # a bare `ch := channel(...)` is the ONE legal channel() position -- don't let collect_expr's channel ban reject it
+                collect_expr(&acc, e, names, types, dc, ctx)
             ty := type_of(e, names, types, dc, ctx)
             push(names, n)
             push(types, ty)
@@ -11506,6 +11552,8 @@ fn lift_expr(e: Expr, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
                 elif has_str(names, fv):             # an enclosing local -> capture by value (heap: deep-copied at creation)
                     if is_handle(dc, var_type(names, types, fv)):   # FFI R2: capturing a handle would alias it into the env, outliving its destructor
                         die("type: a closure cannot capture a handle -- it is freed at the end of its scope")
+                    if is_task(var_type(names, types, fv)) or is_chan(var_type(names, types, fv)):   # AUDIT: capturing an affine task/channel aliases it into the env, past its wait/creating scope
+                        die("type: a closure cannot capture a task or channel handle")
                     push(capnames, fv)
                     push(captypes, var_type(names, types, fv))
                 # else: a top-level fn / enum / None -> resolves inside the lifted proc, not a capture

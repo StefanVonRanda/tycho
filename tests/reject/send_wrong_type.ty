@@ -1,0 +1,5 @@
+# send payload must match the channel element type. Both reject.
+fn main():
+    ch := channel(int, 2)
+    send(ch, "hi")
+    print("x")

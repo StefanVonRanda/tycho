@@ -1,0 +1,7 @@
+# an affine task handle cannot be copied/re-bound -- double-join SIGSEGV. Both reject.
+fn f(n: int) -> int:
+    return n
+fn main():
+    t := spawn f(1)
+    u := t
+    print(str(wait(u)))
