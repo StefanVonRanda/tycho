@@ -1,0 +1,4 @@
+# a decimal integer literal that overflows i64 must be rejected at compile time
+fn main():
+    x := 99999999999999999999999999
+    println(str(x))

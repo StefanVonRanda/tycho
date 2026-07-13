@@ -243,7 +243,16 @@ fn scan_token(src: string, n: int, i: int, toks: inout [Token], line: int, lines
         if isf:
             push(toks, Token(TFloat, substr(src, start, i), line, col))
             return i
-        push(toks, Token(TInt, substr(src, start, i), line, col))
+        ilit := substr(src, start, i)                 # AUDIT: reject a decimal int literal that
+        acc := 0                                      # overflows i64 (mirror tychoc's lexer LONG_MAX
+        di := 0                                       # accumulation guard) -- fail closed at compile
+        for di < len(ilit):                           # time instead of silently wrapping at runtime.
+            d := ilit[di] - 48
+            if acc > (9223372036854775807 - d) / 10:
+                die("lex: line " + str(line) + ": integer literal out of range")
+            acc = acc * 10 + d
+            di = di + 1
+        push(toks, Token(TInt, ilit, line, col))
         return i
     elif is_alpha(c):
         start := i
