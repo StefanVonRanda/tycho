@@ -9944,6 +9944,20 @@ fn enum_variant_names(dc: Decls, ename: string) -> [string]:
 # so an uncovered case shipped instead of being caught. `sty` should be resolve_ginst'd.
 fn check_match(dc: Decls, ctx: Ctx, sty: string, vars: [string], el: int):
     wild := has_str(vars, "_")
+    # AUDIT: a `_` wildcard must be the LAST arm (arms after it are unreachable, and
+    # the Option/Result codegen emits uncompilable C for a non-last `_`); and no arm
+    # may be duplicated. tychoc enforces both (src/tychoc.c:6225, per-variant dup
+    # checks) -- port them so tychoc0 rejects instead of silently reordering/miscompiling.
+    ai := 0
+    for ai < len(vars):
+        if vars[ai] == "_" and ai != len(vars) - 1:
+            die_at(dc, el, "a `_` wildcard must be the last match arm")
+        bi := ai + 1
+        for bi < len(vars):
+            if vars[bi] == vars[ai] and vars[ai] != "_":
+                die_at(dc, el, "duplicate arm for " + vars[ai])
+            bi = bi + 1
+        ai = ai + 1
     if is_option(sty):
         j := 0
         for j < len(vars):
