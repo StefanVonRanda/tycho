@@ -28,12 +28,13 @@ spec-level, no memory unsafety).
 | `a63f026` | UB-5 | affine Task + channel-escape + send payload |
 | `a27e19b` | — | map-key read/get/delete; bare Some/Ok/Err payload; char-as-type; string+char spec |
 
-### Newly surfaced (follow-up, not one of the 19)
+### Newly surfaced (follow-up, not one of the 19) — FIXED
 
-- **tychoc0 does not type-check an aggregate Some/Ok/Err payload against an
-  annotation** — `x : Option(int) = Some("hi")` is accepted by tychoc0 (rejected by
-  tychoc). Pre-existing; made visible by the bare-sum-ctor fix. A distinct gap
-  (tychoc0's annotated-decl check is scalar-only) for a later pass.
+- **tychoc0 did not type-check an aggregate Some/Ok/Err payload against an
+  annotation** — `x : Option(int) = Some("hi")` was accepted by tychoc0 (rejected by
+  tychoc). Pre-existing; made visible by the bare-sum-ctor fix. **FIXED — d829375**
+  (recursive `check_sum_annot` mirroring tychoc's `resolve_exp`; only a concrete leaf
+  is compared, bare `None`/`Ok`/`Err` still adapt from context).
 
 ## Confirmed inconsistencies
 
