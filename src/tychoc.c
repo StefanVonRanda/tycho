@@ -5325,6 +5325,24 @@ static Type resolve_expr_inner(Expr *e) {
                         die_at(e->line, "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)", ri->sval, e->sval);
                 }
             }
+            /* Also forbid passing a WHOLE variable inout AND by value in the same
+             * call: value semantics makes the by-value arg an independent copy, but
+             * it would alias the value the inout mutates (the copy is not taken
+             * before the mutation). Swift forbids this overlapping access; reject it.
+             * Scoped to a BARE by-value variable (f(&a, a)) -- a sub-element like
+             * a[i]/a.f is a distinct extracted value and is left alone. */
+            for (int i = 0; i < e->nargs; i++) {
+                if (!s->inout[i]) continue;
+                Expr *ri = e->args[i]->lhs;
+                while (ri->kind == E_FIELD || ri->kind == E_INDEX) ri = ri->lhs;
+                if (ri->kind != E_IDENT) continue;
+                for (int j = 0; j < e->nargs; j++) {
+                    if (j == i || s->inout[j]) continue;       /* only a by-value arg */
+                    Expr *rj = e->args[j];                     /* the WHOLE variable, not a sub-place */
+                    if (rj->kind == E_IDENT && !strcmp(rj->sval, ri->sval))
+                        die_at(e->line, "variable '%s' is passed to an inout parameter and also by value in the same call to '%s' (overlapping access — the by-value copy would alias the inout'd value)", ri->sval, e->sval);
+                }
+            }
             /* A slice argument views its source's buffer; an inout of that same
              * variable in the same call could reallocate the buffer (e.g. push),
              * leaving the slice dangling. Forbid the overlap. */

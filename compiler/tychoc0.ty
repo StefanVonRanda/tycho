@@ -9871,6 +9871,14 @@ fn eaddr_root_name(e: Expr) -> string:
         _:
             return ""
 
+# is `e` the bare variable `name` (not a sub-place like name[i]/name.f)?
+fn is_bare_var(e: Expr, name: string) -> bool:
+    match e:
+        EVar(vnm, _el):
+            return vnm == name
+        _:
+            return false
+
 # Root variable of a place spine that may include a slice (v / v.f / v[i] /
 # v[a:b]), or "" if not a plain variable. place_root_name does not descend a
 # slice; this one does, for the slice-vs-inout overlap check (src/tychoc.c:5027).
@@ -9929,6 +9937,22 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
                         die_at(dc, el, "variable '" + ri + "' passed to two inout parameters of '" + nm + "' (overlapping mutable access)")
                     j = j + 1
         i = i + 1
+    # inout + whole-variable-by-value overlap: passing a bare variable by value
+    # while an inout of it rides the same call would alias the inout'd value (the
+    # copy isn't taken before the mutation). Swift forbids this; reject (parity with
+    # tychoc). Scoped to a bare EVar by-value arg -- a sub-element (a[i]/a.f) is left
+    # alone, matching how tychoc0 itself passes sinsts[i].f alongside &sinsts.
+    bi := 0
+    for bi < len(args) and bi < len(pp):
+        if is_inout(pp[bi]):
+            ri := eaddr_root_name(args[bi])
+            if ri != "":
+                bj := 0
+                for bj < len(args) and bj < len(pp):
+                    if bj != bi and not is_inout(pp[bj]) and not is_sink(pp[bj]) and is_bare_var(args[bj], ri):
+                        die_at(dc, el, "variable '" + ri + "' is passed to an inout parameter and also by value in the same call to '" + nm + "' (overlapping access)")
+                    bj = bj + 1
+        bi = bi + 1
     # slice-vs-inout overlap: a slice argument views its source's buffer; an inout
     # of that same variable in the same call could reallocate it (e.g. push),
     # leaving the slice dangling. Parity with tychoc (src/tychoc.c:5022-5038).

@@ -1,0 +1,9 @@
+# passing a variable inout AND by value in the same call is overlapping access
+# (the by-value copy would alias the inout-mutated value). Both compilers reject.
+fn f(x: inout [int], y: [int]) -> int:
+    x[0] = 99
+    return y[0]
+fn main():
+    a := [5]
+    r := f(&a, a)
+    println(str(r))
