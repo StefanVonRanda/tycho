@@ -6186,7 +6186,7 @@ fn var_index(names: [string], name: string) -> int:
 #   - array (nested [[T]]) -> the inner Arr_*_copy, forward-declared by gen_arr_type.
 #   - tuple / heap struct -> Tup_*_copy / Struct_copy, forward-declared (step 5b).
 #   - option / result -> re-boxed via hbox/hsome/... (preamble; payload shared,
-#     immortal, so shallow). map/non-heap-struct elements stay shallow memcpy.
+#     immortal, so shallow). non-heap-struct elements stay shallow memcpy.
 fn elem_deepcopy(dc: Decls, ctx: Ctx, et: string) -> bool:
     if resolve_nt(dc, ctx, et) == "str" or et == "bytes":   # bytes shares str's heap buffer -> deep-copy on value binding
         return true
@@ -6194,6 +6194,8 @@ fn elem_deepcopy(dc: Decls, ctx: Ctx, et: string) -> bool:
         return true
     if is_array(et):
         return true
+    if is_map(et):                                           # a map owns heap buckets: deep-copy (cp_field routes to mfam_copy).
+        return true                                          # without this a captured/array-element map aliases the original or dangles (UAF)
     if is_tuple(et):
         return true
     if is_option(et) or is_result(et):                       # re-box into the array's arena
@@ -6227,6 +6229,8 @@ fn elem_copy_expr(dc: Decls, ctx: Ctx, et: string, ar: string, src: string) -> s
         return "({ Fn_" + func_suffix(et) + " _t = (" + src + "); if (_t.env) _t.env = _t.copyenv(" + ar + ", _t.env); _t; })"
     if is_array(et):
         return afam(et) + "_copy(" + ar + ", " + src + ")"
+    if is_map(et):                                   # a map owns heap buckets: deep-copy (mirrors cp_field)
+        return mfam(et) + "_copy(" + ar + ", " + src + ")"
     if is_tuple(et):
         return "Tup_" + tup_suffix(et) + "_copy(" + ar + ", " + src + ")"
     if is_option(et):                                # re-box the payload into `ar`; box_payload

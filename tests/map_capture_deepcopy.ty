@@ -1,0 +1,33 @@
+# A captured / array-element map must be DEEP-COPIED (it owns heap buckets), like
+# arrays already are. Regression for the tychoc0 elem_deepcopy/elem_copy_expr gap
+# that left captured & array-of-map elements shallow (closure UAF + aliasing, and
+# array-of-map aliasing). Both compilers must agree with value semantics.
+
+fn make() -> fn(int) -> int:
+    m := []int: int
+    m[10] = 1
+    m[20] = 2
+    return fn(k: int) -> int: m[k]
+
+fn main():
+    # escaping closure captures the map: it survives the function arena (no UAF)
+    f := make()
+    println(str(f(10)) + " " + str(f(20)))        # 1 2
+
+    # closure captures its OWN deep copy at creation; later mutation of the
+    # original is invisible to it
+    m := []string: int
+    m["a"] = 1
+    cl := fn(k: string) -> int: m[k]
+    m["a"] = 99
+    m["b"] = 2
+    println(str(cl("a")) + " " + str(cl("b")))    # 1 0
+    println(str(m["a"]) + " " + str(m["b"]))      # 99 2
+
+    # array element that is a map deep-copies on bind
+    n := []int: int
+    n[1] = 10
+    xs := [n]
+    ys := xs
+    xs[0][1] = 99
+    println(str(ys[0][1]) + " " + str(xs[0][1]))  # 10 99
