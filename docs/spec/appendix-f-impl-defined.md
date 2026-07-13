@@ -21,9 +21,11 @@ count** (count ≥ width → `0`, negative → abort — [§13.2](09-expressions
 and an out-of-range **`to_int(float)`** (NaN / out-of-range → abort — [§8.5](06-conversions.md#85-out-of-range-conversions);
 the sized conversions are total).
 
-Item 1 (evaluation order) is the remaining candidate for future tightening —
-pinning left-to-right evaluation by emitting sequenced temporaries — which would
-move it into the normative body; until then it is unspecified.
+Item 1 (evaluation order) is **deliberately** unspecified, matching Swift and
+Odin (see §13.4): Tycho emits C and defers operand/argument order to the C
+compiler rather than lifting every argument into a sequenced temporary. The two
+reference compilers agree by construction (both emit arguments in source order);
+a conforming implementation need not.
 
 ## F.2 Implementation-defined behavior
 

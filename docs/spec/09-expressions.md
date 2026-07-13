@@ -82,10 +82,15 @@ both compilers):
   is inherited from the target and MUST NOT be relied on. A program that needs a
   particular order MUST introduce explicit intermediate bindings.
 
-> Editor's note (punch-list #9, design option): a future version MAY pin
-> left-to-right evaluation by emitting sequenced temporaries. Until it does, the
-> order is unspecified as stated. Appendix F lists this in the
-> unspecified-behavior register.
+> **Design decision.** Leaving evaluation order unspecified is deliberate and
+> matches **Swift** and **Odin**, which do the same. (Go pins left-to-right for
+> function arguments; Tycho emits C and defers order to the C compiler, so
+> matching Go would require lifting every argument into a sequenced temporary at
+> every call site — a pervasive codegen change for a hole that is not practically
+> open: the two reference compilers already produce identical results because both
+> emit arguments in source order to the same C compiler. A conforming third
+> implementation need not.) Appendix F lists this in the unspecified-behavior
+> register.
 
 ## 13.5 Expression-valued `if` and `match`
 
