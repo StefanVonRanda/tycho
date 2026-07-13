@@ -523,25 +523,12 @@ the project's own honest-limits culture (thesis §5).
   small-value stack promotion, SIMD in hot corelib paths. All measurable against
   the existing `bench-guard`. **Priority: opportunistic, evidence-gated** — the
   `bench/*/RESULTS.md` discipline is already the right filter.
-- **Type-homogeneous sub-pools** (allocator locality — *not* a new model). Prior art:
-  Flint's DIMA, which pools every value of a type in contiguous slots. Note that
-  Tycho *already pools*: a thread-local block pool (`runtime/tycho_rt.c:196,207`) and
-  per-arena size-classed recycle freelists (`arena_recycle`, `:258`) — both sound
-  *because* value semantics guarantees no aliasing (`:59`). The candidate here is
-  partitioning an arena by element type so same-type nodes (recursive-enum ASTs,
-  trie/graph nodes) sit contiguously, buying cache locality, lower fragmentation, and
-  a possible data-oriented `parallel_foreach`. **Stays on-thesis only while it keeps
-  all three:** automatic (no user knob — the `reserve`-is-a-hint line, 1.4), value-
-  preserving (still deep-copy on bind, no sharing/refcount), and arena-scoped (bulk
-  free at scope exit). The instant it shares or refcounts to shrink memory it *is*
-  DIMA's model, which is Tier-3-rejected (GC/refcount/COW). **Honest ceiling:** this
-  buys *locality*, not *storage* — the trie ~3× gap is fundamental to value-semantic
-  non-sharing (Hylo hits the identical wall; Tier-3 note), and no allocator layout
-  closes it; the idiomatic fix for graph *storage* stays the index-pool idiom, already
-  expressible. And the arena is already contiguous *per scope*, so whether type-
-  grouping beats scope-grouping is an open empirical question. **Priority:
-  opportunistic, benchmark-gated** — earns its complexity only if the `bench/*` suite
-  (interp, trie, dijkstra) shows the locality win; it will not move the storage number.
+- **Type-homogeneous sub-pools — investigated and rejected on evidence (2026-07-13).**
+  cachegrind on the pointer-heavy benches showed last-level data-cache miss rates are
+  already low (interp 0.9%, trie 1.8%) and interp's locality *beats* C's (0.9% vs 2.6%),
+  so a locality optimization has nothing to reclaim: the tycho slowdowns are compute-bound
+  (boxing, tag dispatch, value-copy), not memory-latency-bound. Typed pools also cannot
+  touch the trie storage gap. Not built.
 - **Alternate backends** (WASM, native/LLVM). Interesting reach, but C-as-target is
   part of the PoC's leverage (portability, DWARF, ASan verification). **Verdict:
   out of scope unless the PoC's goal changes** from "prove the model" to "ship a
