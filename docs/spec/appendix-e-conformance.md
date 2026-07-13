@@ -38,7 +38,17 @@ fixtures. A clause with no fixture is flagged, exactly as an untested branch is.
 
 ## E.3 The `make spec-check` gate
 
-A gate (to be added) MUST assert that every fenced Tycho example in `docs/spec/`
-compiles and runs on **both** compilers with the shown output — the same
-discipline the reference pages already satisfy. A failing example is a
-specification defect (the rule or the example is wrong) and blocks release.
+The gate exists (`scripts/spec_check.sh`, CI step 17) and grows in tiers:
+
+- **Tier 1 — grammar consistency (landed).** The collected grammar of
+  [Appendix A](appendix-a-grammar.md) is regenerated from the defining chapters
+  §3/§4 by `scripts/gen_grammar.sh` and diffed against the committed listing;
+  any drift fails the build, so the appendix cannot become a stale second copy
+  of the grammar.
+- **Tier 2 — example execution (pending).** The gate MUST additionally assert
+  that every fenced Tycho example in `docs/spec/` compiles and runs on **both**
+  compilers with the shown output — the same discipline the reference pages
+  satisfy. A failing example is a specification defect (the rule or the example
+  is wrong) and blocks release. This tier is gated on giving the spec's examples
+  a machine-readable output convention (today's fences are untagged, so
+  distinguishing runnable Tycho from EBNF/output blocks is not yet mechanical).

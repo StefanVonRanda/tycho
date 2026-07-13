@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion spec-check ci hooks clean
 
 all: tychoc
 
@@ -55,6 +55,11 @@ tools: tycho tychofmt tycho-lsp
 # (emit-C identical before/after) and an LSP JSON-RPC smoke test. Part of `make ci`.
 tools-check: tychoc
 	@sh scripts/tools_check.sh
+
+# Spec consistency gate: the collected grammar (spec Appendix A) must stay
+# byte-identical to the defining chapters §3/§4. See scripts/spec_check.sh.
+spec-check:
+	@sh scripts/spec_check.sh
 
 demo: tychoc
 	./tychoc examples/hello.ty

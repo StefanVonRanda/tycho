@@ -16,11 +16,17 @@
 > both compilers. The content is verified against the implementation.
 >
 > It is a *draft*, not the ratified 1.0, because the following remain (finishing
-> work, not correctness): the `make spec-check` conformance gate, the
-> collected-grammar flattening (Appendix A), the conformance coverage matrix
+> work, not correctness): extending the `make spec-check` gate from grammar
+> consistency to running every fenced example, the conformance coverage matrix
 > (Appendix E), and back-porting the reference-doc drifts logged in
 > [Appendix H](appendix-h-differences.md). The remaining `Editor's note` blocks
 > are informative reconciliation notes, not open questions.
+>
+> **Landed (2026-07-13):** the collected grammar ([Appendix A](appendix-a-grammar.md))
+> is now flattened into a single EBNF listing, generated verbatim from the
+> defining chapters §3/§4 by `scripts/gen_grammar.sh`; and the first tier of the
+> `make spec-check` gate (CI step 17) diffs that listing against the chapters on
+> every run, so the appendix cannot silently drift from the grammar it collects.
 
 ## What this document is
 
