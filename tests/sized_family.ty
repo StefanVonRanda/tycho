@@ -1,0 +1,33 @@
+# The full fixed-width integer family (F): u8/u16/i8/i16/i32/i64 as first-class
+# types, on parity with u32/u64. Covers construction (to_XXX), wrapping
+# arithmetic, cross-width conversion, comparison, shifts, and str().
+fn main():
+    # unsigned narrow: wrap at width
+    a := to_u8(200)
+    b := to_u8(100)
+    println(str(a + b))              # 300 mod 256 = 44
+    println(str(a * to_u8(2)))       # 400 mod 256 = 144
+    println(str(to_u16(70000)))      # 70000 mod 65536 = 4464
+    # signed narrow: truncate + sign
+    println(str(to_i8(200)))         # 200 -> -56
+    println(str(to_i16(-1)))         # -1
+    c := to_i8(100)
+    println(str(c + c))              # 200 -> -56 (i8 overflow wraps)
+    # i32 / i64: native-width wrap
+    println(str(to_i32(1000000) * to_i32(1000000)))   # 10^12 wraps i32 -> -727379968
+    println(str(to_i64(1) << to_i64(40)))             # 1099511627776
+    # shifts: over-width -> 0, in-range exact
+    println(str(to_u8(1) << to_u8(8)))    # over-width (>=8) -> 0
+    println(str(to_u8(1) << to_u8(7)))    # 128
+    println(str(to_i16(-2) >> to_i16(1))) # arithmetic >> -> -1
+    # bitwise + unary ~ truncate to width
+    println(str(to_u8(240) | to_u8(15)))   # 255
+    println(str(to_u8(0)))                     # 0
+    d: u8 = 0
+    println(str(~d))                 # ~0 at width 8 -> 255
+    # comparison + literal adaptation
+    e: i32 = 5
+    println(str(e < 10))             # true
+    println(str(e == 5))             # true
+    # round-trip through int
+    println(str(to_int(to_u8(255)) + 1))   # 256

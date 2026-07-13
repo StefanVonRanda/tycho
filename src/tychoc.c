@@ -118,7 +118,8 @@ typedef enum {
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT, TK_ELLIPSIS, TK_DOLLAR,
     TK_KW_INT, TK_KW_BOOL, TK_KW_STRING, TK_KW_FLOAT, TK_KW_PTR, TK_KW_BYTES,
-    TK_KW_U32, TK_KW_U64, TK_KW_F32
+    TK_KW_U32, TK_KW_U64, TK_KW_F32,
+    TK_KW_U8, TK_KW_U16, TK_KW_I8, TK_KW_I16, TK_KW_I32, TK_KW_I64
 } TokKind;
 
 typedef struct {
@@ -188,6 +189,12 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "u32"))    return TK_KW_U32;
     if (!strcmp(s, "u64"))    return TK_KW_U64;
     if (!strcmp(s, "f32"))    return TK_KW_F32;
+    if (!strcmp(s, "u8"))     return TK_KW_U8;
+    if (!strcmp(s, "u16"))    return TK_KW_U16;
+    if (!strcmp(s, "i8"))     return TK_KW_I8;
+    if (!strcmp(s, "i16"))    return TK_KW_I16;
+    if (!strcmp(s, "i32"))    return TK_KW_I32;
+    if (!strcmp(s, "i64"))    return TK_KW_I64;
     return TK_IDENT;
 }
 
@@ -465,6 +472,11 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
        T_U32, /* first-class 32-bit unsigned: C `unsigned int`, wraps at 2^32 natively (crypto/bit-twiddling) */
        T_U64, /* first-class 64-bit unsigned: C `unsigned long long`, wraps at 2^64 natively */
        T_F32, /* first-class 32-bit float: C `float` */
+       /* the rest of the fixed-width integer family (first-class). u8/u16/i8/i16
+        * are sub-int width, so C promotes them to `int` in arithmetic -- every
+        * op producing one is cast back to its C type (trunc_ctype) to hold the
+        * width invariant. i32/i64 map to C int/long long and wrap natively (-fwrapv). */
+       T_U8, T_U16, T_I8, T_I16, T_I32, T_I64,
        T_PENDING /* B-3 (bidirectional inference): a bare `xs := []` / `x := None` decl, awaiting its
                   * first grounding use in the same block; never survives resolve */ };
 #define T_STRUCT_BASE   64
@@ -818,6 +830,40 @@ static int newtype_find(const char *name) {
 static Type nt_under(Type t) { return g_newtypes[NT_ID(t)].under; }
 /* the underlying type seen through any newtype (else the type itself) */
 static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
+/* fixed-width integer family (F). unsigned = u8/u16/u32/u64; the whole sized set
+ * also includes signed i8/i16/i32/i64. `narrow` = sub-int width (u8/u16/i8/i16):
+ * C promotes these to `int` in arithmetic, so an op producing one is cast back
+ * to its C type (see trunc_result) to keep the value within its width. The
+ * native `int` (C long) and i32/i64 (C int/long long) wrap on their own via
+ * -fwrapv; u32/u64 wrap natively as unsigned. */
+static int is_uint(Type t)      { return t == T_U8 || t == T_U16 || t == T_U32 || t == T_U64; }
+static int is_sized_int(Type t) { return is_uint(t) || t == T_I8 || t == T_I16 || t == T_I32 || t == T_I64; }
+/* bit width of a sized/native integer type (for shift over-width guards). */
+static int int_width(Type t) {
+    if (t == T_U8  || t == T_I8)  return 8;
+    if (t == T_U16 || t == T_I16) return 16;
+    if (t == T_U32 || t == T_I32) return 32;
+    return 64;   /* int, u64, i64 */
+}
+/* the sized-conversion builtins: to_u8/to_u16/to_u32/to_u64, to_i8/to_i16/to_i32/
+ * to_i64, to_f32. Each casts any numeric scalar to the named type (truncate /
+ * sign- or zero-extend, per the C cast). */
+static Type sized_conv_target(const char *n) {
+    if (!strcmp(n, "to_u8"))  return T_U8;
+    if (!strcmp(n, "to_u16")) return T_U16;
+    if (!strcmp(n, "to_u32")) return T_U32;
+    if (!strcmp(n, "to_u64")) return T_U64;
+    if (!strcmp(n, "to_i8"))  return T_I8;
+    if (!strcmp(n, "to_i16")) return T_I16;
+    if (!strcmp(n, "to_i32")) return T_I32;
+    if (!strcmp(n, "to_i64")) return T_I64;
+    return T_F32;   /* to_f32 */
+}
+static int is_sized_conv(const char *n) {
+    return !strcmp(n,"to_u8")||!strcmp(n,"to_u16")||!strcmp(n,"to_u32")||!strcmp(n,"to_u64")||
+           !strcmp(n,"to_i8")||!strcmp(n,"to_i16")||!strcmp(n,"to_i32")||!strcmp(n,"to_i64")||
+           !strcmp(n,"to_f32");
+}
 
 /* SOA arrays: `soa [Struct]` is stored struct-of-arrays — one growable arena
  * buffer per struct field plus a shared len/cap — instead of one array of
@@ -1119,6 +1165,12 @@ static const char *c_type(Type t) {
         case T_U32:          return "unsigned int ";        /* wraps at 2^32 natively */
         case T_U64:          return "unsigned long long ";  /* wraps at 2^64 natively */
         case T_F32:          return "float ";
+        case T_U8:           return "unsigned char ";
+        case T_U16:          return "unsigned short ";
+        case T_I8:           return "signed char ";
+        case T_I16:          return "short ";
+        case T_I32:          return "int ";
+        case T_I64:          return "long long ";
         case T_FLOAT:        return "double ";
         case T_BOOL:         return "int ";
         case T_PTR:          return "void *";
@@ -1171,6 +1223,12 @@ static const char *type_name(Type t) {
         case T_U32:          return "u32";
         case T_U64:          return "u64";
         case T_F32:          return "f32";
+        case T_U8:           return "u8";
+        case T_U16:          return "u16";
+        case T_I8:           return "i8";
+        case T_I16:          return "i16";
+        case T_I32:          return "i32";
+        case T_I64:          return "i64";
         case T_FLOAT:        return "float";
         case T_BOOL:         return "bool";
         case T_PTR:          return "ptr";
@@ -1805,6 +1863,12 @@ static Type parse_type_inner(Parser *ps) {
         case TK_KW_U32:    ps->p++; return T_U32;
         case TK_KW_U64:    ps->p++; return T_U64;
         case TK_KW_F32:    ps->p++; return T_F32;
+        case TK_KW_U8:     ps->p++; return T_U8;
+        case TK_KW_U16:    ps->p++; return T_U16;
+        case TK_KW_I8:     ps->p++; return T_I8;
+        case TK_KW_I16:    ps->p++; return T_I16;
+        case TK_KW_I32:    ps->p++; return T_I32;
+        case TK_KW_I64:    ps->p++; return T_I64;
         default: die_at(t->line, "expected a type (int, float, bool, string, [int], or a struct)");
     }
     return T_VOID; /* unreachable */
@@ -3178,7 +3242,7 @@ static Subscript *find_subscript(const char *name, Type recv, int nargs) {
  * stable C ABI — reject them (fail closed). void is allowed as a return only. */
 static int ffi_scalar_type(Type t) {
     return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING || t == T_PTR ||
-           t == T_U32 || t == T_U64 || t == T_F32;   /* first-class sized numerics cross as their real C type */
+           t == T_F32 || is_sized_int(t);   /* first-class sized numerics cross as their real C type */
 }
 /* A scalar array (`[int]`/`[float]`) crosses the FFI as a `(const T*, long)` pair,
  * exactly like `bytes` crosses as (ptr,len). Returns the C element-pointer type, or
@@ -3842,7 +3906,6 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="getenv", .ret=T_STRING,       .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="is_null",.ret=T_BOOL,         .params={ T_PTR },                   .nparams=1, .builtin=1 };   /* FFI: opaque-handle NULL test */
     g_sigs[g_nsigs++] = (Sig){ .name="to_ptr", .ret=T_PTR,          .params={ T_INT },                   .nparams=1, .builtin=1 };   /* FFI: int -> opaque ptr (sentinel pointers like SQLITE_TRANSIENT = (void*)-1) */
-    g_sigs[g_nsigs++] = (Sig){ .name="to_i32", .ret=T_INT,          .params={ T_INT },                   .nparams=1, .builtin=1 };   /* FFI: sign-extend a 32-bit C int return (a negative int read as 64-bit would otherwise be a huge positive) */
     /* float math (libm) -- the irreducible numeric stdlib (min/max are trivial in-language) */
     g_sigs[g_nsigs++] = (Sig){ .name="sqrt",   .ret=T_FLOAT,        .params={ T_FLOAT },                 .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="pow",    .ret=T_FLOAT,        .params={ T_FLOAT, T_FLOAT },        .nparams=2, .builtin=1 };
@@ -4722,30 +4785,30 @@ static Type resolve_expr_inner(Expr *e) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
                 Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
                 if (b != T_INT && b != T_BOOL && b != T_FLOAT && b != T_STRING &&
-                    b != T_U32 && b != T_U64 && b != T_F32)   /* string: identity (for interpolation) */
-                    die_at(e->line, "str(x) takes an int, a u32/u64/f32, a bool, a float, or a string");
+                    !is_sized_int(b) && b != T_F32)   /* string: identity (for interpolation) */
+                    die_at(e->line, "str(x) takes an int, a sized int, f32, a bool, a float, or a string");
                 return e->type = T_STRING;
             }
             if (!strcmp(e->sval, "to_float")) {   /* int/u32/u64/f32 -> float, or unwrap a float newtype */
                 if (e->nargs != 1) die_at(e->line, "to_float(n) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_INT && at_ != T_U32 && at_ != T_U64 && at_ != T_F32 && !(IS_NEWTYPE(at_) && nt_under(at_) == T_FLOAT))
-                    die_at(e->line, "to_float(n) takes an int, a u32/u64/f32, or a float newtype");
+                if (at_ != T_INT && !is_sized_int(at_) && at_ != T_F32 && !(IS_NEWTYPE(at_) && nt_under(at_) == T_FLOAT))
+                    die_at(e->line, "to_float(n) takes an int, a sized int, f32, or a float newtype");
                 return e->type = T_FLOAT;
             }
             if (!strcmp(e->sval, "to_int")) {   /* float/u32/u64/f32 -> int (truncate), or unwrap an int newtype */
                 if (e->nargs != 1) die_at(e->line, "to_int(x) takes one argument");
                 Type at_ = resolve_expr(e->args[0]);
-                if (at_ != T_FLOAT && at_ != T_U32 && at_ != T_U64 && at_ != T_F32 && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
-                    die_at(e->line, "to_int(x) takes a float (truncates toward zero), a u32/u64/f32, or an int newtype");
+                if (at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32 && !(IS_NEWTYPE(at_) && nt_under(at_) == T_INT))
+                    die_at(e->line, "to_int(x) takes a float (truncates toward zero), a sized int, f32, or an int newtype");
                 return e->type = T_INT;
             }
-            if (!strcmp(e->sval, "to_u32") || !strcmp(e->sval, "to_u64") || !strcmp(e->sval, "to_f32")) {
+            if (is_sized_conv(e->sval)) {   /* to_u8..to_i64, to_f32: any numeric scalar -> the named sized type */
                 if (e->nargs != 1) die_at(e->line, "%s(x) takes one argument", e->sval);
-                Type at_ = base_of(resolve_expr(e->args[0]));   /* any numeric scalar -> the sized type */
-                if (at_ != T_INT && at_ != T_CHAR && at_ != T_FLOAT && at_ != T_U32 && at_ != T_U64 && at_ != T_F32)
-                    die_at(e->line, "%s(x) takes a numeric value (int/char/float/u32/u64/f32)", e->sval);
-                return e->type = !strcmp(e->sval, "to_u32") ? T_U32 : !strcmp(e->sval, "to_u64") ? T_U64 : T_F32;
+                Type at_ = base_of(resolve_expr(e->args[0]));
+                if (at_ != T_INT && at_ != T_CHAR && at_ != T_FLOAT && !is_sized_int(at_) && at_ != T_F32)
+                    die_at(e->line, "%s(x) takes a numeric value", e->sval);
+                return e->type = sized_conv_target(e->sval);
             }
             if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype, OR reinterpret bytes -> string */
                 if (e->nargs != 1) die_at(e->line, "to_str(x) takes one argument");
@@ -4759,12 +4822,6 @@ static Type resolve_expr_inner(Expr *e) {
                 if (resolve_expr(e->args[0]) != T_INT)
                     die_at(e->line, "to_ptr(n) takes an int");
                 return e->type = T_PTR;
-            }
-            if (!strcmp(e->sval, "to_i32")) {   /* reinterpret the low 32 bits of an int as a signed C `int`, sign-extended -- for extern fns that return a 32-bit `int` (esp. a negative one). */
-                if (e->nargs != 1) die_at(e->line, "to_i32(n) takes one argument");
-                if (resolve_expr(e->args[0]) != T_INT)
-                    die_at(e->line, "to_i32(n) takes an int");
-                return e->type = T_INT;
             }
             if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes: same byte buffer, distinct type (FFI crosses as (ptr,len)) */
                 if (e->nargs != 1) die_at(e->line, "to_bytes(s) takes one argument");
@@ -5054,9 +5111,9 @@ static Type resolve_expr_inner(Expr *e) {
             }
             if (e->op == TK_TILDE) {   /* unary bitwise NOT: operand in lhs, rhs NULL */
                 Type ot = resolve_expr(e->lhs);
-                if (ot != T_INT && ot != T_U32 && ot != T_U64)
-                    die_at(e->line, "unary `~` needs an int, u32, or u64");
-                return e->type = ot;   /* ~u32 is a u32 (32-bit NOT via C `unsigned int`) */
+                if (ot != T_INT && !is_sized_int(ot))
+                    die_at(e->line, "unary `~` needs an integer");
+                return e->type = ot;   /* ~u32 is a u32; ~u8 is a u8 (truncated to its width) */
             }
             Type lt = resolve_expr(e->lhs);
             Type rt = resolve_expr(e->rhs);
@@ -5077,8 +5134,8 @@ static Type resolve_expr_inner(Expr *e) {
              * typed variable never changes width), value-directional — mirrors the
              * int->float rule. Lets `w + 1`, `k == 0`, `x & 7` work when w/k/x are
              * u32/u64/f32 without a cast on every constant. */
-            if (e->lhs->kind == E_INT && (rt == T_U32 || rt == T_U64)) { e->lhs->type = rt; lt = rt; }
-            if (e->rhs->kind == E_INT && (lt == T_U32 || lt == T_U64)) { e->rhs->type = lt; rt = lt; }
+            if (e->lhs->kind == E_INT && is_sized_int(rt)) { e->lhs->type = rt; lt = rt; }
+            if (e->rhs->kind == E_INT && is_sized_int(lt)) { e->rhs->type = lt; rt = lt; }
             if (rt == T_F32 && (e->lhs->kind == E_INT || e->lhs->kind == E_FLOAT)) {
                 if (e->lhs->kind == E_INT) { e->lhs->kind = E_FLOAT; e->lhs->fval = (double)e->lhs->ival; }
                 e->lhs->type = T_F32; lt = T_F32;
@@ -5114,7 +5171,7 @@ static Type resolve_expr_inner(Expr *e) {
                     }
                     Type b = base_of(lt);
                     int ok = lt == rt && (b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING ||
-                                          b == T_U32 || b == T_U64 || b == T_F32);
+                                          b == T_F32 || is_sized_int(b));
                     if (!ok)
                         die_at(e->line, "ordering compares two ints, two floats, two strings, "
                                "or two values of the same numeric newtype");
@@ -5136,8 +5193,8 @@ static Type resolve_expr_inner(Expr *e) {
              * u32/u64 shift within their C width (`unsigned int`/`unsigned long long`),
              * so `>>` is logical and `<<` wraps — exactly what bit-twiddling wants. */
             if (e->op == TK_SHL || e->op == TK_SHR) {
-                int lok = (lt == T_INT || lt == T_U32 || lt == T_U64);
-                int rok = (rt == T_INT || rt == T_U32 || rt == T_U64);
+                int lok = (lt == T_INT || is_sized_int(lt));
+                int rok = (rt == T_INT || is_sized_int(rt));
                 if (!lok || !rok)
                     die_at(e->line, "shift operators require integer operands (got %s, %s)",
                            type_name(lt), type_name(rt));
@@ -5146,8 +5203,8 @@ static Type resolve_expr_inner(Expr *e) {
             /* modulo / bitwise: integer-only, both operands the same integer type
              * (int, u32, or u64) — no implicit int/u32 mixing beyond literal adaptation. */
             if (e->op == TK_PERCENT || e->op == TK_AMP || e->op == TK_PIPE || e->op == TK_CARET) {
-                if ((lt != T_INT && lt != T_U32 && lt != T_U64) || lt != rt)
-                    die_at(e->line, "modulo / bitwise operators require two ints, two u32, or two u64 (got %s, %s)",
+                if ((lt != T_INT && !is_sized_int(lt)) || lt != rt)
+                    die_at(e->line, "modulo / bitwise operators require two matching integers (got %s, %s)",
                            type_name(lt), type_name(rt));
                 return e->type = lt;
             }
@@ -5159,8 +5216,7 @@ static Type resolve_expr_inner(Expr *e) {
             /* sized numerics: `+ - * /` on two same-width values. u32/u64 wrap at their
              * C width (defined, no `-fwrapv` needed for unsigned); f32 is single-precision.
              * No implicit mixing with int/float — literal adaptation above covers constants. */
-            if (lt == T_U32 && rt == T_U32) return e->type = T_U32;
-            if (lt == T_U64 && rt == T_U64) return e->type = T_U64;
+            if (lt == rt && is_sized_int(lt)) return e->type = lt;   /* u8/u16/u32/u64/i8/i16/i32/i64 wrap at their width */
             if (lt == T_F32 && rt == T_F32) return e->type = T_F32;
             /* char arithmetic stays in the byte domain: char±int, int±char, char±char
              * -> char (so `'0' + d` is a char, ready for an in-place string append). */
@@ -5227,7 +5283,7 @@ static Type resolve_exp(Expr *e, Type want) {
     }
     /* sized-numeric literal adapts to a u32/u64/f32 context (a decl annotation,
      * return type, or arg) — `w: u32 = 5`, `return 0u64`, `f(3.0)` where f wants f32. */
-    if (e->kind == E_INT && (want == T_U32 || want == T_U64)) return e->type = want;
+    if (e->kind == E_INT && is_sized_int(want)) return e->type = want;
     if ((e->kind == E_INT || e->kind == E_FLOAT) && want == T_F32) {
         if (e->kind == E_INT) { e->kind = E_FLOAT; e->fval = (double)e->ival; }
         return e->type = T_F32;
@@ -7436,8 +7492,8 @@ static char *gen_call(Expr *e, const char *arena) {
         if (b == T_STRING) return a;                 /* str(string) is identity (interpolation) */
         if (b == T_BOOL)   return sfmt("tycho_bool_to_str(%s, %s)", arena, a);
         if (b == T_FLOAT || b == T_F32) return sfmt("tycho_float_to_str(%s, %s)", arena, a);   /* f32 promotes to double */
-        if (b == T_U32 || b == T_U64)   return sfmt("tycho_uint_to_str(%s, %s)", arena, a);
-        return sfmt("tycho_int_to_str(%s, %s)", arena, a);
+        if (is_uint(b))   return sfmt("tycho_uint_to_str(%s, %s)", arena, a);   /* u8/u16/u32/u64 print unsigned */
+        return sfmt("tycho_int_to_str(%s, %s)", arena, a);   /* int + signed sized (i8/i16/i32/i64) */
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
@@ -7445,14 +7501,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
         return sfmt("((void*)(long)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_i32"))      /* FFI: sign-extend a 32-bit C int return (low 32 bits are valid; the cast recovers the sign) */
-        return sfmt("((long)(int)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_u32"))      /* -> u32 (truncate to low 32 bits) */
-        return sfmt("((unsigned int)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_u64"))      /* -> u64 */
-        return sfmt("((unsigned long long)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_f32"))      /* -> f32 (single precision) */
-        return sfmt("((float)%s)", gen_expr(e->args[0], arena));
+    if (is_sized_conv(e->sval))          /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
+        return sfmt("((%s)%s)", c_type(sized_conv_target(e->sval)), gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
@@ -7532,6 +7582,15 @@ static char *gen_call(Expr *e, const char *arena) {
         }
     }
     return sfmt("%s)", out);
+}
+
+/* F: cast an operation's result back to its sized-int C type. Sub-int types
+ * (u8/u16/i8/i16) promote to `int` in C arithmetic, so a sub-expression would
+ * otherwise hold the un-truncated promoted value; the wider sized types take a
+ * harmless redundant cast. Non-sized types pass through unchanged. */
+static char *trunc_result(Type t, char *expr) {
+    Type b = base_of(t);
+    return is_sized_int(b) ? sfmt("(%s)(%s)", c_type(b), expr) : expr;
 }
 
 static const char *op_str(TokKind op) {
@@ -7832,8 +7891,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("(!%s)", gen_expr(e->lhs, arena));
             if (e->op == TK_MINUS && e->rhs == NULL)   /* unary negation */
                 return sfmt("(-%s)", gen_expr(e->lhs, arena));
-            if (e->op == TK_TILDE)                     /* unary bitwise NOT */
-                return sfmt("(~%s)", gen_expr(e->lhs, arena));
+            if (e->op == TK_TILDE)                     /* unary bitwise NOT (truncated to width for a sized int) */
+                return trunc_result(e->type, sfmt("(~%s)", gen_expr(e->lhs, arena)));
             /* multi-piece string concat: flatten an all-string left-spine chain
              * of 3..6 pieces to one tycho_str_concatN (one alloc + one copy per
              * piece) instead of N-2 chained tycho_str_concat intermediates. A char
@@ -7879,19 +7938,36 @@ static char *gen_expr(Expr *e, const char *arena) {
              * Route int `/` and `%` (incl. an int newtype) through the runtime guard,
              * which aborts cleanly with a tycho: message. Float `/` is IEEE
              * (x/0.0 = inf), so it stays a raw C operator. */
-            if ((e->op == TK_SLASH || e->op == TK_PERCENT) && base_of(e->type) == T_INT)
-                return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
-            if ((e->op == TK_SLASH || e->op == TK_PERCENT) && (base_of(e->type) == T_U32 || base_of(e->type) == T_U64))
-                return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", l, r);
-            /* shifts route through the runtime guard: count >= width -> 0, negative
-             * count -> clean abort (both are C undefined behavior otherwise). Helper
-             * is keyed on the result width (= the shifted value's type). */
-            if (e->op == TK_SHL || e->op == TK_SHR) {
-                const char *w = base_of(e->type) == T_U32 ? "u32"
-                              : base_of(e->type) == T_U64 ? "u64" : "i";
-                return sfmt("tycho_sh%c_%s(%s, %s)", e->op == TK_SHL ? 'l' : 'r', w, l, r);
+            /* integer division/modulo guard: -fwrapv makes signed overflow wrap,
+             * but x/0, x%0, and MIN/-1 still trap. Route through the runtime guard.
+             * Signed native/sized -> tycho_idiv/imod; unsigned sized -> udiv/umod.
+             * A sized result is truncated to its C width (narrow types promote). */
+            if (e->op == TK_SLASH || e->op == TK_PERCENT) {
+                Type b = base_of(e->type);
+                if (b == T_INT)
+                    return sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r);
+                if (is_uint(b))
+                    return trunc_result(e->type, sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", l, r));
+                if (is_sized_int(b))   /* signed sized: i8/i16/i32/i64 */
+                    return trunc_result(e->type, sfmt("%s(%s, %s)", e->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", l, r));
+                /* float / falls through to the raw operator below */
             }
-            return sfmt("(%s %s %s)", l, op_str(e->op), r);
+            /* shifts route through the runtime guard: count >= width -> 0, negative
+             * count -> clean abort (both C UB otherwise). int/u32/u64 have dedicated
+             * helpers; the narrow and i32/i64 types use the generic width+sign guard,
+             * then truncate the result to their C width. */
+            if (e->op == TK_SHL || e->op == TK_SHR) {
+                Type b = base_of(e->type);
+                char c = e->op == TK_SHL ? 'l' : 'r';
+                if (b == T_INT) return sfmt("tycho_sh%c_i(%s, %s)", c, l, r);
+                if (b == T_U32) return sfmt("tycho_sh%c_u32(%s, %s)", c, l, r);
+                if (b == T_U64) return sfmt("tycho_sh%c_u64(%s, %s)", c, l, r);
+                char *g = e->op == TK_SHL
+                    ? sfmt("tycho_shln(%s, %s, %d)", l, r, int_width(b))
+                    : sfmt("tycho_shrn(%s, %s, %d, %d)", l, r, int_width(b), !is_uint(b));
+                return trunc_result(e->type, g);
+            }
+            return trunc_result(e->type, sfmt("(%s %s %s)", l, op_str(e->op), r));
         }
     }
     return sfmt("0");

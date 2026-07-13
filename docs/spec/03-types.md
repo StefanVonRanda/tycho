@@ -95,15 +95,21 @@ representation as `string` but a **distinct type**. It is produced by
 primarily to cross the FFI boundary as a `(pointer, length)` pair
 ([§24](14-ffi.md)).
 
-### 5.2.7 `u32` and `u64`
+### 5.2.7 Fixed-width integers `u8`/`u16`/`u32`/`u64`, `i8`/`i16`/`i32`/`i64`
 
-`u32` and `u64` are **unsigned integers of exactly 32 and 64 bits**, with values
-`0 .. 2^32 − 1` and `0 .. 2^64 − 1`. Arithmetic wraps modulo `2^32` / `2^64`
-(defined); the right shift `>>` is logical; division and modulo by zero abort.
-They are distinct types from `int` and from each other; they do not mix
-implicitly with `int` or with each other and are produced by the `to_u32` /
-`to_u64` conversions or by adapting an integer literal in a `u32`/`u64` context
-(§8).
+The fixed-width integer family gives **unsigned** (`u8`, `u16`, `u32`, `u64`) and
+**signed** (`i8`, `i16`, `i32`, `i64`) integers of exactly 8, 16, 32, and 64 bits.
+Each is a distinct type from `int` and from every other; they do **not** mix
+implicitly with `int` or with each other. Arithmetic **wraps at the type's width**
+(defined — modular for the unsigned types, two's-complement for the signed via
+`-fwrapv`). The right shift `>>` is **logical** on the unsigned types and
+**arithmetic** (sign-preserving) on the signed; a shift count `≥` the width yields
+`0` and a negative count aborts ([§13.2](09-expressions.md#132-operators));
+division and modulo by zero abort. A value is produced by the matching `to_u8` …
+`to_i64` conversion or by adapting an integer literal in that type's context (§8).
+`int` (64-bit signed) remains the default for general arithmetic; the fixed-width
+types are for bit-level work, packing, and matching a C ABI. They cross the FFI
+boundary as their exact C width ([§24](14-ffi.md)).
 
 ### 5.2.8 `f32`
 
@@ -116,9 +122,6 @@ in an `f32` context (§8); it promotes to `float` (binary64) for `str`.
 `ptr` is an **opaque FFI pointer** (`void*`). Tycho never dereferences it; it
 supports only the `null` literal, being passed to and returned from `extern`
 functions, `null`-comparison, and `is_null` ([§24](14-ffi.md)).
-The sized-integer spellings other than the first-class `u32`/`u64`/`f32` (namely
-`u8`, `u16`, `i8`, `i16`, `i32`, `i64`) are **not** first-class types; they are
-valid only as `extern` signature spellings (§24).
 
 ## 5.3 Composite types
 

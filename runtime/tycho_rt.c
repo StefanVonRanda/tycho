@@ -151,6 +151,22 @@ static unsigned long long tycho_shr_u64(unsigned long long x, long long n) {
     if (n >= 64) return 0;
     return x >> n;
 }
+/* Generic width-parameterized shift for the narrow sized ints (u8/u16/i8/i16) and
+ * i32/i64: `w` is the type's bit width; the caller truncates the returned value to
+ * the exact C type. Same guard as above (count >= width -> 0, negative -> abort).
+ * shrn's `sgn` selects arithmetic (signed) vs logical (unsigned) fill; the caller
+ * passes x already widened with the correct sign. */
+static long long tycho_shln(long long x, long long n, int w) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= w) return 0;
+    return (long long)((unsigned long long)x << n);
+}
+static long long tycho_shrn(long long x, long long n, int w, int sgn) {
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n >= w) return 0;
+    if (sgn) return x >> n;
+    return (long long)((unsigned long long)x >> n);
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */

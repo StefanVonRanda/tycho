@@ -22,14 +22,13 @@ Only these may appear in an `extern` signature; a **map, struct, or non-scalar
 array** is rejected at the boundary:
 
 - **Scalars** `int`, `char`, `float`, `bool`.
-- **Sized integers.** The first-class sized types `u32`, `u64`, and `f32`
-  ([§5.2](03-types.md#52-scalar-types)) cross as themselves — an `extern`
-  parameter or return of one of these types takes or produces a value of that
-  exact type. The narrower spellings `u8`, `u16`, `i8`, `i16`, `i32`, `i64` are
-  valid **only** in an `extern` signature (a by-value parameter or the return)
-  and are `int` on the Tycho side; the emitted C prototype uses the real
-  fixed-width C type, so the call matches the C ABI, with the round-trip rule
-  below.
+- **Sized integers.** The whole fixed-width integer family — `u8`/`u16`/`u32`/
+  `u64` and `i8`/`i16`/`i32`/`i64` — and `f32` ([§5.2](03-types.md#52-scalar-types))
+  are first-class types that cross as themselves: an `extern` parameter or return
+  of one of these takes or produces a value of that exact type, emitted as the
+  matching fixed-width C type so the call matches the C ABI. An argument of a
+  different type is a type error — use the `to_uN` / `to_iN` / `to_f32` conversion
+  to produce the sized value.
 - **`string`** — passed as a C `char*`. A `string` **returned** from C is copied
   into the caller's storage at the call site, so Tycho never retains a pointer
   into C memory. A nullable C return is declared `-> Option(string)`.
@@ -49,15 +48,13 @@ Every value returned from C that carries storage (`string`, `bytes`, an array) i
 **deep-copied into the caller's storage at the call site**; a program never holds
 a live pointer into C-owned memory.
 
-The extern-only sized spellings round-trip as follows (probed on both compilers).
-On the way **in**, the Tycho `int` argument is narrowed to the C fixed-width type
-modulo `2^width` (its low bits). On the way **back**, the C result widens to Tycho
-`int` — **sign-extended** for the signed spellings (`i8`/`i16`/`i32`/`i64`) and
-**zero-extended** for the unsigned (`u8`/`u16`): e.g. `i32(-1)` → `-1`,
-`i32(2^32)` → `0`, `u8(-1)` → `255`, `u8(256)` → `0`, `i8(200)` → `-56`. The
-first-class `u32`/`u64`/`f32` do **not** narrow at the call — an extern parameter
-of one of those types requires an argument of that exact type (a bare `int` is a
-type error).
+The sized-integer conversions truncate or extend by the C cast (probed on both
+compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening
+back with `to_int` **sign-extends** the signed types (`i8`/`i16`/`i32`/`i64`) and
+**zero-extends** the unsigned (`u8`/`u16`/`u32`/`u64`): e.g. `to_i32(-1)` → `-1`,
+`to_i32(2^32)` → `0`, `to_u8(-1)` → `255`, `to_u8(256)` → `0`, `to_i8(200)` →
+`-56`. An `extern` parameter of a sized type requires an argument of that exact
+type (a bare `int` is a type error).
 
 ### 24.2 Linking
 
