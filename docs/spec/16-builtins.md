@@ -65,12 +65,6 @@ follows observable behavior: `str` is polymorphic and is marked **magic**;
 fixed-width conversions `to_u8`…`to_i64`/`to_f32` (including `to_i32`) are
 numeric-polymorphic like `str`.
 
-> Editor's note (Appendix H): the reference page `docs/reference/builtins.md` is
-> **incomplete** — it omits `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`,
-> `to_u64`, and `to_f32`. This chapter is the complete set;
-> the gap is logged for Appendix H and the reference page is to be updated to
-> match.
-
 ## 29.3 I/O and process
 
 | Builtin | Signature | Kind | Semantics |

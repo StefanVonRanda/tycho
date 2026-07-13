@@ -123,8 +123,7 @@ functions, `null`-comparison, and `is_null` ([§24](14-ffi.md)).
 ## 5.3 Composite types
 
 The type-level definition of each composite is given here; its construction,
-indexing, mutation, and place semantics are specified in Part VI (§16–§19,
-forthcoming) and its arena behavior in [§9–§11](07-memory-model.md).
+indexing, mutation, and place semantics are specified in Part VI (§16–§19) and its arena behavior in [§9–§11](07-memory-model.md).
 
 ### 5.3.1 Arrays `[T]`
 
@@ -180,11 +179,6 @@ All other key types are rejected, including a bare `float`, `bool`, `char`, or
 `bytes` key, an enum variant carrying a payload, and a map-typed key. Note that
 `char` and `bytes` are hashable as composite *leaves* but are **not** permitted
 as a top-level key type.
-
-> Editor's note (punch-list #33): a stale diagnostic
-> (`src/tychoc.c:1684`,`:4247`) claims "int-keyed maps support only int/float
-> values." That message is misleading — `V` is unrestricted. Appendix H logs the
-> correction; the reference `maps.md` page is to be updated to match this rule.
 
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.

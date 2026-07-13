@@ -22,8 +22,7 @@ and never converts a value at run time. The permitted adaptations are:
 - otherwise the literal keeps its own type (`int` or `float`).
 
 A `char` literal does **not** adapt. Division or modulo by a **literal** zero is
-a compile-time error (a zero *value* at run time aborts, [§30](17-runtime.md),
-forthcoming). There is no source-level numeric suffix
+a compile-time error (a zero *value* at run time aborts, [§30](17-runtime.md)). There is no source-level numeric suffix
 ([§3.9.1](01-lexical.md#391-integer-literals)); the destination type drives
 adaptation.
 
@@ -48,10 +47,6 @@ consulted (so a newtype over the listed base is accepted).
 Each takes exactly one argument. `str` is the conversion used by f-string
 interpolation ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals)):
 because a hole desugars to `str(hole)`, a hole MUST have a type `str` accepts.
-
-> Editor's note (punch-list #34): `str` accepts `u32`/`u64`/`f32`, so an
-> f-string hole of those types is valid, though `types.md` lists only
-> int/float/bool/string. Reconciled in Appendix H.
 
 ## 8.3 Newtype unwrapping
 

@@ -74,8 +74,7 @@ Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable
 ```
 
 The predicate set is **closed** (exactly the five names above; an unknown
-predicate is rejected) — this is the deliberate anti-traits stance (§7,
-forthcoming). The type-set form `T: A | B | …` constrains `T` to one of a listed
+predicate is rejected) — this is the deliberate anti-traits stance (§7). The type-set form `T: A | B | …` constrains `T` to one of a listed
 set (up to 16 types). A `where` clause requires a generic function; at most 8
 constraints are allowed.
 
@@ -328,8 +327,7 @@ operation is a call `(...)`. A `Subscript` (§4.1.3) parameter is likewise plain
   creation (§13).
 - `IDENT $ ( Type … )` supplies explicit type arguments to a generic call (e.g.
   `zero$(int)`); it is the only use of `$` in expression position.
-- `spawn` and `channel(…)` are restricted in where they may appear (§23,
-  forthcoming): `spawn` takes a direct call; `channel(T, cap)` is legal only as
+- `spawn` and `channel(…)` are restricted in where they may appear (§23): `spawn` takes a direct call; `channel(T, cap)` is legal only as
   the direct right-hand side of a declaration.
 - Assignment (`=`), declare-and-infer (`:=`), and compound assignment are
   **statement-level** (§4.3.1); they are **not** expression operators and never
@@ -359,8 +357,7 @@ This is **Go's precedence**: the shift operators (`<<`, `>>`) and bitwise-AND
 additive level — so every bitwise operator binds *tighter* than any comparison.
 Consequently `a & b == c` parses as `(a & b) == c`. The unary `&` (address-of /
 `inout` argument) and binary `&` (bitwise-AND) share a spelling but occupy
-different precedence levels (2 and 3). `and`/`or` short-circuit (§13,
-forthcoming). Evaluation order within a precedence level, and the order of
+different precedence levels (2 and 3). `and`/`or` short-circuit (§13). Evaluation order within a precedence level, and the order of
 argument and place sub-expression evaluation, is pinned in §13 —
 the grammar fixes only associativity, not side-effect order.
 

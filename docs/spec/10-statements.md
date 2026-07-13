@@ -92,7 +92,7 @@ a bare variable, a field, or a nested place). Deleting an absent key is a no-op.
 `die(msg)` prints `msg` to standard error and terminates the program with a
 non-zero status; it never returns and is typed `void`, so a non-`void` function
 that `die`s in one branch still type-checks. `die` is the only user-callable
-abort ([§29](16-builtins.md), forthcoming; there is no `assert`/`panic`). Other
+abort ([§29](16-builtins.md); there is no `assert`/`panic`). Other
 terminating conditions (division by zero, out-of-bounds access, and the like) are
 the defined runtime aborts of [§30](17-runtime.md). Normal
 termination occurs when `main` returns, after which all program storage is

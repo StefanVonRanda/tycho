@@ -71,7 +71,7 @@ check is normative and always active in a conforming implementation — it is no
 an optional hardening pass. (Rationale: every value lives in one arena block, so
 an unchecked out-of-range access would silently land on other live data rather
 than fault; the check is what makes the abort observable. Program-abort
-semantics are specified in §30, forthcoming.)
+semantics are specified in §30.)
 
 Read as an rvalue, `a[i]` yields the element **by copy** for a composite element
 and by value for a scalar one. Used on the left of an assignment or as the spine

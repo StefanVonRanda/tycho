@@ -160,15 +160,15 @@ untrusted source cannot inject a shell command (`cc_safe_name`
 shims, and the `deps` flags are contributed automatically by the sources they
 belong to (§27.3, §28.6); the CLI options above are the manual escape hatch.
 
-> Editor's note: the exact command line — flag spelling and order, the choice of
-> `cc`, and the `--native`/`-g` couplings — is the reference implementation's
-> and is expressly outside the language proper
-> ([§1.1](00-conventions.md#11-scope) excludes the CLI and generated-C layout).
-> The **normative** content of this section is narrow: `-fwrapv` two's-complement
-> wrapping is the language's integer contract, and a program that names an
-> external link library (via `extern "Lib"`, a `deps` entry, or `--link`/`--pkg`)
-> depends on that library being present at link time. The precise realization is
-> implementation-defined ([Appendix F](appendix-f-impl-defined.md)).
+The exact command line — flag spelling and order, the choice of `cc`, and the
+`--native`/`-g` couplings — belongs to the reference implementation and is outside
+the language proper ([§1.1](00-conventions.md#11-scope) excludes the CLI and the
+generated-C layout). The **normative** content of this section is narrow:
+`-fwrapv` two's-complement wrapping is the language's integer contract, and a
+program that names an external link library (via `extern "Lib"`, a `deps` entry,
+or `--link`/`--pkg`) depends on that library being present at link time. The
+precise realization is implementation-defined
+([Appendix F](appendix-f-impl-defined.md)).
 
 ## 28. Packages and modules
 
@@ -239,22 +239,6 @@ with a diagnostic (`check_pkg_private` `src/tychoc.c:3580-3587`; enforced at the
 qualified-reference sites `:1724`, `:2427`, `:4323`, `:4562`). Every other top-level
 symbol is exported and visible to importers. There is no visibility keyword;
 the underscore convention is the whole of the rule.
-
-> Editor's note (reference-doc conflict): the reference page
-> [reference/packages.md](../reference/packages.md) states "There's no privacy:
-> everything in a package is visible to its importers." That sentence is
-> **stale** — it contradicts both the reference transpiler
-> (`check_pkg_private`, `src/tychoc.c:3580-3587`, which *rejects* a
-> cross-package `pkg._name`) and the longer design note
-> [docs/packages.md](../packages.md) (its "Privacy is by leading underscore"
-> rule), which documents leading-underscore privacy. This specification follows
-> the source and the design note: a
-> leading-underscore top-level name is package-private. The reference page is to
-> be corrected; the divergence is logged in
-> [Appendix H](appendix-h-differences.md). The precise surface still to pin: the
-> rule keys on the **name text at the qualified reference**, so it governs
-> qualified access from another package and does not add any in-package
-> restriction.
 
 ### 28.4 Import resolution
 

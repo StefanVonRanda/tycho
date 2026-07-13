@@ -108,9 +108,6 @@ one built-in that consumes it specially. There is **no** `empty$(T)` builtin: an
 `empty()` returning `[$T]` is an ordinary user-written generic, and `empty$(int)`
 is just `name$(…)` applied to it.
 
-> Editor's note (punch-list #27): `docs/generics.md` discusses `empty$` in a way
-> that reads as a builtin; it is not. Appendix H logs the reconciliation.
-
 ## 7.6 UFCS and generic method-style calls
 
 A generic free function is callable in method position: `x.f(a)` means `f(x, a)`,

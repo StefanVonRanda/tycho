@@ -1,37 +1,26 @@
 # The Tycho language specification
 
-> **Status: source-audited draft (2026-07-12).** The formal specification of the
-> Tycho language — the normative contract a conforming implementation must
-> satisfy. Written per [ROADMAP §1.8](../../ROADMAP.md); build plan in
-> [docs/internals/spec-plan.md](../internals/spec-plan.md).
+> **Status: ratified — Tycho 1.0 (2026-07-13).** The formal specification of the
+> Tycho language: the normative contract a conforming implementation must satisfy
+> ([ROADMAP §1.8](../../ROADMAP.md)).
 >
-> **Every chapter (1–33) and appendix (A–H) has been cross-checked against the
-> reference compiler `src/tychoc.c`** — the four chapters originally drafted by
-> subagents and the eight core chapters alike, one adversarial auditor per
-> chapter, with each finding re-verified against source before it was applied.
-> All internal links, `§`-labels, and section cross-references are verified
-> mechanically, and every open behavioral corner (float/`char` semantics,
-> evaluation order, `>>` sign behavior, `range` step 0, the concurrency ordering
-> guarantees, the FFI sized-int round-trip) is pinned by differential probing on
-> both compilers. The content is verified against the implementation.
+> **Every chapter (1–33) and appendix (A–H) is cross-checked against the reference
+> compiler `src/tychoc.c`**, one adversarial audit per chapter with each finding
+> re-verified against source. Internal links, `§`-labels, and section
+> cross-references are verified mechanically; every behavioral corner (float/`char`
+> semantics, evaluation order, `>>` sign behavior, `range` step 0, the concurrency
+> ordering guarantees, the FFI sized-int round-trip) is pinned by differential
+> probing on both compilers. The content is verified against the implementation,
+> not merely asserted.
 >
-> It is a *draft*, not the ratified 1.0, because what remains is content polish,
-> not correctness or mechanism: broadening how many complete `tycho`/`output`
-> examples the spec carries (the runner gates any that are added). The
-> reference-doc drifts logged in [Appendix H](appendix-h-differences.md) are all
-> reconciled. The remaining `Editor's note` blocks are informative reconciliation
-> notes, not open questions.
->
-> **Landed (2026-07-13):** the collected grammar ([Appendix A](appendix-a-grammar.md))
-> is flattened into a single EBNF listing generated verbatim from the defining
-> chapters §3/§4; the conformance coverage matrix
-> ([Appendix E](appendix-e-conformance.md)) is populated, binding every major
-> normative clause of §3–§30 to a verified fixture; every code fence carries a
-> language tag ([§2.3](00-conventions.md#23-examples-and-code-fences)); and the
-> `make spec-check` gate (CI step 17) enforces all of it — it diffs the collected
-> grammar against the chapters, asserts every cited fixture exists, and builds and
-> runs every runnable `tycho`/`output` example on **both** compilers (`tychoc` and
-> the self-hosted `tychoc0`) against its shown output.
+> The specification is kept honest by the `make spec-check` gate (CI step 17): it
+> regenerates the collected grammar ([Appendix A](appendix-a-grammar.md)) from the
+> defining chapters §3/§4 and diffs it, asserts every fixture the conformance
+> matrix ([Appendix E](appendix-e-conformance.md)) cites exists, and builds and
+> runs every runnable `tycho`/`output` example
+> ([§2.3](00-conventions.md#23-examples-and-code-fences)) on **both** compilers
+> (`tychoc` and the self-hosted `tychoc0`) against its shown output. New material
+> is gated automatically.
 
 ## What this document is
 
@@ -58,33 +47,33 @@ indentation-sensitive; see [§3](01-lexical.md)).
 | # | File | Chapters | Status |
 |---|------|----------|--------|
 | — | [README](README.md) | index | — |
-| 00 | [Conventions](00-conventions.md) | 1 Scope & conformance · 2 Notation | **draft** |
-| 01 | [Lexical structure](01-lexical.md) | 3 Source text, tokens, indentation | **draft** |
-| 02 | [Grammar](02-grammar.md) | 4 The phrase grammar | **draft** |
-| 03 | [Types](03-types.md) | 5 | **draft** |
-| 04 | [Type inference](04-inference.md) | 6 | **draft** |
-| 05 | [Generics](05-generics.md) | 7 | **draft** |
-| 06 | [Conversions](06-conversions.md) | 8 | **draft** |
-| 07 | [Memory & object model](07-memory-model.md) | 9 Value semantics · 10 Arenas · 11 `inout` | **draft** |
-| 08 | [Declarations & scoping](08-declarations.md) | 12 | **draft** |
-| 09 | [Expressions](09-expressions.md) | 13 | **draft** |
-| 10 | [Statements & control flow](10-statements.md) | 14 | **draft** |
-| 11 | [Functions](11-functions.md) | 15 | **draft** |
-| 12 | [Aggregates](12-aggregates.md) | 16 arrays · 17 structs/tuples · 18 maps · 19 enums/match | **draft** |
-| 13 | [Concurrency](13-concurrency.md) | 20–23 | **draft** |
-| 14 | [FFI](14-ffi.md) | 24–26 | **draft** |
-| 15 | [Program & packages](15-program.md) | 27 Program structure · 28 Packages & modules | **draft** |
-| 16 | [Builtins](16-builtins.md) | 29 | **draft** |
-| 17 | [Runtime behavior](17-runtime.md) | 30 | **draft** |
-| 18 | [Standard library](18-library.md) | 31–33 corelib | **draft** |
-| A | [Collected grammar](appendix-a-grammar.md) | pointer to §3–§4 | **draft** |
-| B | [Keywords](appendix-b-keywords.md) | reserved + contextual | **draft** |
-| C | [Precedence](appendix-c-precedence.md) | operator table | **draft** |
-| D | [Builtin index](appendix-d-builtins.md) | locator | **draft** |
-| E | [Conformance map](appendix-e-conformance.md) | clause → fixture | **draft** |
-| F | [Impl-defined register](appendix-f-impl-defined.md) | unspecified + impl-defined | **draft** |
-| G | [Glossary](appendix-g-glossary.md) | terms | **draft** |
-| H | [Differences](appendix-h-differences.md) | reference-doc drift log | **draft** |
+| 00 | [Conventions](00-conventions.md) | 1 Scope & conformance · 2 Notation | **1.0** |
+| 01 | [Lexical structure](01-lexical.md) | 3 Source text, tokens, indentation | **1.0** |
+| 02 | [Grammar](02-grammar.md) | 4 The phrase grammar | **1.0** |
+| 03 | [Types](03-types.md) | 5 | **1.0** |
+| 04 | [Type inference](04-inference.md) | 6 | **1.0** |
+| 05 | [Generics](05-generics.md) | 7 | **1.0** |
+| 06 | [Conversions](06-conversions.md) | 8 | **1.0** |
+| 07 | [Memory & object model](07-memory-model.md) | 9 Value semantics · 10 Arenas · 11 `inout` | **1.0** |
+| 08 | [Declarations & scoping](08-declarations.md) | 12 | **1.0** |
+| 09 | [Expressions](09-expressions.md) | 13 | **1.0** |
+| 10 | [Statements & control flow](10-statements.md) | 14 | **1.0** |
+| 11 | [Functions](11-functions.md) | 15 | **1.0** |
+| 12 | [Aggregates](12-aggregates.md) | 16 arrays · 17 structs/tuples · 18 maps · 19 enums/match | **1.0** |
+| 13 | [Concurrency](13-concurrency.md) | 20–23 | **1.0** |
+| 14 | [FFI](14-ffi.md) | 24–26 | **1.0** |
+| 15 | [Program & packages](15-program.md) | 27 Program structure · 28 Packages & modules | **1.0** |
+| 16 | [Builtins](16-builtins.md) | 29 | **1.0** |
+| 17 | [Runtime behavior](17-runtime.md) | 30 | **1.0** |
+| 18 | [Standard library](18-library.md) | 31–33 corelib | **1.0** |
+| A | [Collected grammar](appendix-a-grammar.md) | collected EBNF (§3–§4) | **1.0** |
+| B | [Keywords](appendix-b-keywords.md) | reserved + contextual | **1.0** |
+| C | [Precedence](appendix-c-precedence.md) | operator table | **1.0** |
+| D | [Builtin index](appendix-d-builtins.md) | locator | **1.0** |
+| E | [Conformance map](appendix-e-conformance.md) | clause → fixture | **1.0** |
+| F | [Impl-defined register](appendix-f-impl-defined.md) | unspecified + impl-defined | **1.0** |
+| G | [Glossary](appendix-g-glossary.md) | terms | **1.0** |
+| H | [Differences](appendix-h-differences.md) | reference-doc drift log | **1.0** |
 
 ## Conformance in one paragraph
 

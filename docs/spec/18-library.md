@@ -167,10 +167,6 @@ The calendar core is pure Tycho, but the package now carries a **libc-only shim*
 and `dtx_offset_at(tz, secs)`. Core tier. `docs/corelib.md:107-115`; shim
 `corelib/datetime/datetime_shim.c`.
 
-> Editor's note: `docs/corelib.md` describes `datetime` as fully pure; the
-> `datetime_shim.c` timezone helpers (`dtx_local_offset`, `dtx_offset_at`)
-> post-date that text. The doc drift is logged for [Appendix H](appendix-h-differences.md).
-
 ### 32.12 `json`
 
 Recursive-descent JSON parser + serializer (pure Tycho). Value-semantic `Json`
@@ -266,9 +262,6 @@ ephemeral), `accept(fd)`, `connect(host, port)`, `port_of(fd)`, `write(fd, data)
 `udp_send(fd, host, port, data)`, `udp_read(fd, max)`. Source
 `corelib/net/net.ty`, `corelib/net/net_shim.c`.
 
-> Editor's note: `core:net` is not described in `docs/corelib.md`; this section
-> is authored from the package source. Logged for [Appendix H](appendix-h-differences.md).
-
 ### 32.25 `bignum`
 
 Arbitrary-precision integers (pure Tycho, no FFI, no floats). A `Big` is a sign
@@ -277,9 +270,6 @@ plus a little-endian array of base-10^9 limbs; every op returns a fresh `Big`
 `from_str(s)`; predicates/queries `is_zero`, `cmp(a, b)`, `neg`, `abs`; arithmetic
 `add`, `sub`, `mul`, `divmod(a, b) -> (Big, Big)`, `div`, `mod`, `pow(a, e)`;
 conversions `to_str`, `to_int`. Source `corelib/bignum/bignum.ty`.
-
-> Editor's note: `core:bignum` is not described in `docs/corelib.md`; this section
-> is authored from the package source. Logged for [Appendix H](appendix-h-differences.md).
 
 ### 32.26 `decimal`
 
@@ -290,9 +280,6 @@ base-10 exact (`0.1 + 0.2 == 0.3`) — the right type for money. `from_int(n)`,
 scale-preserving); `rescale(a, newscale)` (truncates toward zero); `to_str`.
 Division is deferred (needs a target scale + rounding policy). Source
 `corelib/decimal/decimal.ty`.
-
-> Editor's note: `core:decimal` is not described in `docs/corelib.md`; this
-> section is authored from the package source. Logged for [Appendix H](appendix-h-differences.md).
 
 ## 33. Extended-tier packages
 
@@ -331,9 +318,6 @@ stream; empty bytes on corrupt/truncated input — fails closed). Binary-safe
 (`bytes`, interior NUL preserved). Source `corelib/compress/compress.ty`,
 `corelib/compress/deps`.
 
-> Editor's note: `core:compress` is not described in `docs/corelib.md`; authored
-> from the package source. Logged for [Appendix H](appendix-h-differences.md).
-
 ### 33.4 `image` — libpng
 
 PNG decode/encode over **libpng** ≥ 1.6 (simplified `png_image` API; `deps` →
@@ -342,9 +326,6 @@ PNG decode/encode over **libpng** ≥ 1.6 (simplified `png_image` API; `deps` �
 (a 0×0 Image on any error — check `width > 0`), `encode(img) -> bytes` (empty on
 a bad image), `make(w, h, pixels) -> Image`. The libpng decode handle is freed
 internally (not exposed). Source `corelib/image/image.ty`, `corelib/image/deps`.
-
-> Editor's note: `core:image` is not described in `docs/corelib.md`; authored
-> from the package source. Logged for [Appendix H](appendix-h-differences.md).
 
 ### 33.5 `tls` — openssl
 
@@ -356,6 +337,3 @@ with `is_null`/`tls.ok`). `connect(host, port) -> ptr`, `write(conn, data) -> in
 (bytes sent or −1), `read(conn, max) -> bytes` (empty on close/error),
 `close_conn(conn)` (safe on null), `ok(conn) -> bool`. Payloads are binary-safe
 `bytes`. Source `corelib/tls/tls.ty`, `corelib/tls/deps`.
-
-> Editor's note: `core:tls` is not described in `docs/corelib.md`; authored from
-> the package source. Logged for [Appendix H](appendix-h-differences.md).

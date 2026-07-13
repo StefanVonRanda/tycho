@@ -14,8 +14,7 @@ forms.
 
 A **place** (lvalue) designates storage that can be read and assigned. The places
 are: a variable; an array or map index `a[i]` / `m[k]`; a struct field `p.f`; a
-tuple element `t.0`; and a user-defined subscript call ([§18](12-aggregates.md),
-forthcoming). A place is required as the target of an assignment, a compound
+tuple element `t.0`; and a user-defined subscript call ([§18](12-aggregates.md)). A place is required as the target of an assignment, a compound
 assignment, and the operand of `&` (`inout` argument). Reading a place yields a
 value (a deep copy where the value is heap-bearing and must be independent);
 writing a place stores into that storage.
@@ -141,7 +140,6 @@ function that has an `inout` parameter cannot be used as a first-class value
   ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals)); a hole MUST have
   a type `str` accepts ([§8.2](06-conversions.md#82-explicit-conversion-builtins)).
 - **`or_return`** is a postfix operator that unwraps an `Option`/`Result` or
-  short-circuits out of the enclosing function ([§19](12-aggregates.md),
-  forthcoming); it binds tighter than any binary operator.
+  short-circuits out of the enclosing function ([§19](12-aggregates.md)); it binds tighter than any binary operator.
 - **`spawn`**, **`channel(…)`**, and the concurrency operators are specified in
   [§20](13-concurrency.md); each has grammar restrictions noted in §4.4.

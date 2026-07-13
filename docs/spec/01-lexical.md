@@ -283,8 +283,7 @@ An f-string is **syntactic sugar**: at parse time `f"a{e}b"` becomes the
 concatenation `"a" + str(e) + "b"`. There is no distinct f-string AST node.
 Because the desugaring wraps each hole in `str(…)`, a hole expression MUST be of
 a type accepted by `str` (the numeric and string scalars); other hole types are
-rejected with the same diagnostic `str` gives ([§29](16-builtins.md),
-forthcoming).
+rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
 > Provenance: lexing `src/tychoc.c:289`,`:297-367`; desugar `interp_join` /
 > `desugar_interp`, `:1826-1866`.
@@ -293,8 +292,7 @@ forthcoming).
 
 `true` and `false` are the two `bool` literals (§3.6). `null` is the literal of
 the opaque FFI pointer type `ptr`; it denotes a null pointer and participates
-only in FFI passing, `null`-comparison, and `is_null` ([§24](14-ffi.md),
-forthcoming). There is no `bytes` literal — a `bytes` value is produced by
+only in FFI passing, `null`-comparison, and `is_null` ([§24](14-ffi.md)). There is no `bytes` literal — a `bytes` value is produced by
 `to_bytes` from a `string`.
 
 ## 3.10 Non-normative tree-sitter grammar
