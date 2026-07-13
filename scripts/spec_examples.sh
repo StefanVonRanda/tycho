@@ -52,8 +52,12 @@ check_c() {
 # Pass 1: carve out each tycho+output pair into $TMP/ex_N.ty / .out, and print
 # "N<TAB>file<TAB>line" per pair on stdout.
 index=$(
+  fi=0
   for f in docs/spec/*.md; do
-    awk -v OUT="$TMP" -v F="$f" '
+    fi=$((fi+1))
+    # P (per-file prefix) keeps carved ids globally unique — a per-file counter
+    # alone would collide (ex_1 from two files clobber each other).
+    awk -v OUT="$TMP" -v F="$f" -v P="$fi" '
       /^```tycho[ \t]*$/     { mode="ty"; tybuf=""; tystart=NR; next }
       mode=="ty" && /^```[ \t]*$/ { mode="wait"; next }
       mode=="ty"             { tybuf=tybuf $0 "\n"; next }
@@ -61,11 +65,11 @@ index=$(
       mode=="wait" && /^```output[ \t]*$/ { mode="out"; obuf=""; next }
       mode=="wait"           { mode="" }
       mode=="out" && /^```[ \t]*$/ {
-        n++
-        printf "%s", tybuf > (OUT "/ex_" n ".ty")
-        printf "%s", obuf  > (OUT "/ex_" n ".out")
-        close(OUT "/ex_" n ".ty"); close(OUT "/ex_" n ".out")
-        print n "\t" F "\t" tystart
+        n++; id = P "_" n
+        printf "%s", tybuf > (OUT "/ex_" id ".ty")
+        printf "%s", obuf  > (OUT "/ex_" id ".out")
+        close(OUT "/ex_" id ".ty"); close(OUT "/ex_" id ".out")
+        print id "\t" F "\t" tystart
         mode=""; next
       }
       mode=="out"            { obuf=obuf $0 "\n"; next }
@@ -76,22 +80,22 @@ index=$(
 # Pass 2: build + run + compare each carved example on BOTH compilers. The while
 # loop runs in a subshell (it reads from a pipe), so failures are recorded by
 # touching a marker file rather than a shell variable.
-echo "$index" | while IFS='	' read -r n f line; do
-  [ -n "${n:-}" ] || continue
-  src="$TMP/ex_$n.ty"; exp="$TMP/ex_$n.out"; efail=0
+echo "$index" | while IFS='	' read -r id f line; do
+  [ -n "${id:-}" ] || continue
+  src="$TMP/ex_$id.ty"; exp="$TMP/ex_$id.out"; efail=0
 
-  # tychoc (C reference): --emit-c -o writes ex_$n.c
-  if "$TYCHOC" "$src" --emit-c -o "$TMP/ex_$n" >"$TMP/ex_$n.log" 2>&1; then
-    check_c "$TMP/ex_$n.c" tychoc "$f" "$line" "$exp" || efail=1
+  # tychoc (C reference): --emit-c -o writes ex_$id.c
+  if "$TYCHOC" "$src" --emit-c -o "$TMP/ex_$id" >"$TMP/ex_$id.log" 2>&1; then
+    check_c "$TMP/ex_$id.c" tychoc "$f" "$line" "$exp" || efail=1
   else
-    echo "spec-examples: FAIL $f:$line [tychoc] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$n.log" >&2; efail=1
+    echo "spec-examples: FAIL $f:$line [tychoc] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$id.log" >&2; efail=1
   fi
 
   # tychoc0 (self-hosted): stdin -> C on stdout
-  if "$T0" <"$src" >"$TMP/ex_$n.t0.c" 2>"$TMP/ex_$n.t0.log"; then
-    check_c "$TMP/ex_$n.t0.c" tychoc0 "$f" "$line" "$exp" || efail=1
+  if "$T0" <"$src" >"$TMP/ex_$id.t0.c" 2>"$TMP/ex_$id.t0.log"; then
+    check_c "$TMP/ex_$id.t0.c" tychoc0 "$f" "$line" "$exp" || efail=1
   else
-    echo "spec-examples: FAIL $f:$line [tychoc0] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$n.t0.log" >&2; efail=1
+    echo "spec-examples: FAIL $f:$line [tychoc0] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$id.t0.log" >&2; efail=1
   fi
 
   if [ "$efail" -eq 0 ]; then

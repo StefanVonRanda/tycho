@@ -42,6 +42,21 @@ ys := []int             # empty; element type required
 zs := xs                # zs is an independent deep copy — mutating zs never touches xs
 ```
 
+A complete program that sums an array by iterating it:
+
+```tycho
+fn main():
+    xs := [2, 4, 6, 8]
+    total := 0
+    for x in xs:
+        total = total + x
+    println("sum = " + str(total))
+```
+
+```output
+sum = 20
+```
+
 `T` MAY be any storable type (`int`, `float`, `string`, a struct, an enum, a
 tuple, a map, another array, …), nested to any depth; the sole exclusions are
 `void` and `bool` in element-type position (§16.7). `len(a)` yields the current
@@ -207,6 +222,22 @@ struct Point:
 
 a := Point(1, 2)         # positional, in declaration order
 b := a                   # deep copy; b.x, b.y independent of a
+```
+
+As a complete program:
+
+```tycho
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    p := Point(3, 4)
+    println("(" + str(p.x) + ", " + str(p.y) + ")")
+```
+
+```output
+(3, 4)
 ```
 
 ### 17.2 Field access and places
@@ -377,6 +408,22 @@ for k in keys(counts):
     println(k + " = " + str(counts[k]))
 ```
 
+A complete program building a map, updating a value in place, and iterating it
+in insertion order ([§30.4](17-runtime.md#304-defined-string-and-map-behavior)):
+
+```tycho
+fn main():
+    counts := ["ada": 1, "alan": 2]
+    counts["ada"] += 1
+    for k in keys(counts):
+        println(k + " = " + str(counts[k]))
+```
+
+```output
+ada = 2
+alan = 2
+```
+
 ### 18.7 Subscripts — user-defined projections
 
 A `subscript` declares a **compile-time place-macro**: a reusable, zero-copy
@@ -505,6 +552,28 @@ label := match status:          # value match — arms are single expressions
     Done:    "finished"
 ```
 
+The same value `match` as a complete program, returned from a function:
+
+```tycho
+enum Status:
+    Active
+    Idle
+    Done
+
+fn label(s: Status) -> string:
+    return match s:
+        Active: "on"
+        Idle: "waiting"
+        Done: "finished"
+
+fn main():
+    println(label(Idle))
+```
+
+```output
+waiting
+```
+
 ### 19.5 `Option(T)`
 
 `Option(T)` is the built-in enum with variants `Some(T)` and `None`
@@ -557,4 +626,28 @@ fn add_two(a: string, b: string) -> Result(int, string):
     x := parse_digit(a) or_return    # Ok → bind x; Err → return it from add_two
     y := parse_digit(b) or_return
     return Ok(x + y)
+```
+
+A complete program using `or_return` to thread `Result` and `match` to consume
+it:
+
+```tycho
+fn checked(n: int) -> Result(int, string):
+    if n < 0:
+        return Err("negative")
+    return Ok(n)
+
+fn add(a: int, b: int) -> Result(int, string):
+    x := checked(a) or_return
+    y := checked(b) or_return
+    return Ok(x + y)
+
+fn main():
+    match add(3, 4):
+        Ok(v): println("ok " + str(v))
+        Err(e): println("err " + e)
+```
+
+```output
+ok 7
 ```
