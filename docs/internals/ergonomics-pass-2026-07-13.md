@@ -28,11 +28,34 @@ smoothing literals, comments, printing, and a handful of diagnostics.
 
 ## Status of fixes (updated 2026-07-13, same day)
 
-**All ten findings are now addressed** (F1–F10). The remaining language-shape
-choices (byte `s[i]`, no `while` keyword, no implicit int/float mixing,
-`package` required to import) are kept by design; where they bite a newcomer the
-error now names the fix. What's left is the deeper stdlib-discoverability work
-(F8's export audit was clean), not these surface papercuts.
+**All ten findings are now addressed** (F1–F10), plus the deeper
+stdlib-discoverability follow-up to F8. The remaining language-shape choices
+(byte `s[i]`, no `while` keyword, no implicit int/float mixing, `package`
+required to import) are kept by design; where they bite a newcomer the error now
+names the fix.
+
+### F8 follow-up — stdlib discoverability (tychoc)
+
+The finding's "lean on the did-you-mean hints" turned into two corelib-aware
+diagnostics:
+
+- **Unknown bare call → the stdlib.** On an unknown procedure, tychoc scans the
+  corelib (only on this terminal error path) and, if the name is a package or an
+  exported function, names it: `sort(xs)` → *core:arrays provides `sort` — add
+  `import "core:arrays"` and call `arrays.sort(...)`*; `upper(s)` →
+  *core:strings provides `to_upper` …* (matches an `_`-boundary suffix);
+  `strings(x)` → *`strings` is a corelib package …*. A **strong** match
+  (exact/suffix fn, or a package name) outranks a weak local typo; a
+  Levenshtein-only corelib guess yields to a closer user-fn/builtin suggestion,
+  so `totl` still means the local `total`, not `md5.rotl`. Fail-safe: no corelib
+  found → the generic error stands.
+- **`pkg.badfn` → did-you-mean within the package.** `strings.to_uppercase` →
+  *did you mean `to_upper`?* (Levenshtein over the package's loaded symbols, plus
+  a prefix-relation fallback for longer near-misses).
+
+Both are tychoc-only diagnostics (tychoc0's stay simpler); accept/reject is
+unchanged, so parity and fixpoint are untouched. Golden
+`tests/diag/corelib_call_hint`.
 
 | # | Finding | Status |
 |---|---|---|

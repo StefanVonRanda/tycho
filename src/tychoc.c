@@ -4026,6 +4026,133 @@ static const char *suggest_fn(const char *name) {
     return dym_pick(name, best, bestd);
 }
 
+/* closest EXPORTED symbol of an already-imported package to a mistyped `name`
+ * (F8 discoverability): the package's fns are in g_sigs mangled `pkg__real`, so
+ * compare against the unprefixed tail. `qual` is the source qualifier. */
+static char *pkg_prefix_for(const char *qualifier);   /* defined below the import table */
+static const char *suggest_pkg_symbol(const char *qual, const char *name) {
+    char *prefix = pkg_prefix_for(qual);              /* e.g. "strings__" */
+    size_t pl = strlen(prefix), nl = strlen(name);
+    const char *best = NULL; int bestd = 99;
+    const char *rel = NULL;                            /* related name: one is a prefix of the other (to_uppercase ~ to_upper) */
+    for (int i = 0; i < g_nsigs; i++) {
+        if (strncmp(g_sigs[i].name, prefix, pl) || !g_sigs[i].name[pl]) continue;
+        const char *s = g_sigs[i].name + pl;
+        dym(name, s, &best, &bestd);
+        size_t sl = strlen(s);
+        if (!rel && sl >= 4 && nl >= 4 &&
+            ((nl >= sl && !strncmp(name, s, sl)) || (sl >= nl && !strncmp(s, name, nl))))
+            rel = s;
+    }
+    const char *lv = dym_pick(name, best, bestd);
+    return lv ? lv : rel;
+}
+
+/* -------- corelib discoverability (F8): point an unknown bare call at the stdlib.
+ * The unknown-procedure path is terminal (about to die), so we can afford to scan
+ * the corelib for a package or exported function matching the name the user
+ * reached for -- turning `sort(xs)` -> core:sort and `upper(s)` -> core:strings.
+ * to_upper. Fail-safe: any misstep returns NULL and the caller's generic error
+ * stands. Only a col-0 `fn NAME(` (a top-level export) is considered; a leading
+ * underscore is package-private and skipped. */
+static const char *corelib_root(void);   /* defined below */
+static char *read_file(const char *path);   /* defined near main */
+
+static char *cl_line_fn(const char *ln) {   /* the exported fn a `fn NAME(` line names, else NULL */
+    if (strncmp(ln, "fn ", 3)) return NULL;
+    const char *p = ln + 3;
+    while (*p == ' ') p++;
+    const char *s = p;
+    while (isalnum((unsigned char)*p) || *p == '_') p++;
+    if (p == s || *p != '(') return NULL;
+    return xstrndup(s, (size_t)(p - s));
+}
+static char *cl_first_fn(const char *pdir) {   /* an example exported fn from a package dir, or NULL */
+    DIR *pd = opendir(pdir);
+    if (!pd) return NULL;
+    struct dirent *fe; char *found = NULL;
+    while (!found && (fe = readdir(pd)) != NULL) {
+        const char *f = fe->d_name; size_t L = strlen(f);
+        if (L < 4 || strcmp(f + L - 3, ".ty")) continue;
+        FILE *fh = fopen(sfmt("%s/%s", pdir, f), "rb");
+        if (!fh) continue;
+        char line[512];
+        while (fgets(line, sizeof line, fh)) {
+            char *fn = cl_line_fn(line);
+            if (fn && fn[0] != '_') { found = fn; break; }
+        }
+        fclose(fh);
+    }
+    closedir(pd);
+    return found;
+}
+/* On return, *strong is 1 for a high-confidence match (an exact/`_`-suffix fn or a
+ * package name) that should outrank a weak local typo, 0 for a Levenshtein-only
+ * guess (which a local user-fn/builtin suggestion should win over). */
+static const char *corelib_hint(const char *name, int *strong) {
+    *strong = 0;
+    const char *root = corelib_root();
+    if (!root) return NULL;
+    DIR *d = opendir(root);
+    if (!d) return NULL;
+    const char *fn_best = NULL, *fn_pkg = NULL; int fn_rank = 99;   /* 0 exact, 1 `_`-suffix (upper->to_upper) */
+    const char *lv_best = NULL, *lv_pkg = NULL; int lv_d = 99;      /* Levenshtein pool (typos) */
+    char *pkg_match = NULL;                                          /* the name IS a package */
+    struct dirent *de; int npkg = 0;
+    while ((de = readdir(d)) != NULL && npkg < 256) {
+        const char *pk = de->d_name;
+        if (pk[0] == '.') continue;
+        char *pdir = sfmt("%s/%s", root, pk);
+        if (!dir_exists(pdir)) continue;
+        npkg++;
+        if (!strcmp(pk, name)) pkg_match = xstrndup(pk, strlen(pk));
+        DIR *pd = opendir(pdir);
+        if (!pd) continue;
+        struct dirent *fe; int nf = 0;
+        while ((fe = readdir(pd)) != NULL && nf < 32) {
+            const char *f = fe->d_name; size_t L = strlen(f);
+            if (L < 4 || strcmp(f + L - 3, ".ty")) continue;
+            nf++;
+            FILE *fh = fopen(sfmt("%s/%s", pdir, f), "rb");
+            if (!fh) continue;
+            char line[512];
+            while (fgets(line, sizeof line, fh)) {
+                char *fn = cl_line_fn(line);
+                if (!fn || fn[0] == '_') continue;
+                size_t nl = strlen(name), fl = strlen(fn);
+                int rank = 99;
+                if (!strcmp(fn, name)) rank = 0;
+                else if (fl > nl + 1 && !strcmp(fn + fl - nl, name) && fn[fl - nl - 1] == '_') rank = 1;
+                if (rank < fn_rank) { fn_rank = rank; fn_best = fn; fn_pkg = pkg_match && !strcmp(pk,name) ? pkg_match : xstrndup(pk, strlen(pk)); }
+                int ed = edit_dist(name, fn);
+                if (ed < lv_d) { lv_d = ed; lv_best = fn; lv_pkg = xstrndup(pk, strlen(pk)); }
+            }
+            fclose(fh);
+        }
+        closedir(pd);
+    }
+    closedir(d);
+    /* priority: an exact/`_`-suffix fn match, then the name-is-a-package case,
+     * then a close typo of some fn. (Leaks a few strings on the die path -- fine.) */
+    if (fn_best && fn_rank <= 1) {
+        *strong = 1;
+        return sfmt("core:%s provides `%s` -- add `import \"core:%s\"` and call `%s.%s(...)`",
+                    fn_pkg, fn_best, fn_pkg, fn_pkg, fn_best);
+    }
+    if (pkg_match) {
+        *strong = 1;
+        char *ex = cl_first_fn(sfmt("%s/%s", root, pkg_match));
+        if (ex) return sfmt("`%s` is a corelib package -- add `import \"core:%s\"` and call e.g. `%s.%s(...)`",
+                            pkg_match, pkg_match, pkg_match, ex);
+        return sfmt("`%s` is a corelib package -- add `import \"core:%s\"` and qualify its functions as `%s.NAME(...)`",
+                    pkg_match, pkg_match, pkg_match);
+    }
+    if (lv_best && lv_d <= (strlen(name) <= 4 ? 1 : 2))   /* weak: a typo of some corelib fn */
+        return sfmt("core:%s has `%s` -- add `import \"core:%s\"` and call `%s.%s(...)`",
+                    lv_pkg, lv_best, lv_pkg, lv_pkg, lv_best);
+    return NULL;
+}
+
 
 /* --------------------------------------------------------- type resolve */
 
@@ -4686,8 +4813,11 @@ static Type resolve_expr_inner(Expr *e) {
                     e->sval = q;
                 else if (generic_find(q))     /* a generic template lives in the generics registry, not a Sig */
                     { e->sval = q; e->qual = NULL; }   /* adopt the mangled name + drop qual so the generic dispatch below instantiates it */
-                else
+                else {
+                    const char *sg = suggest_pkg_symbol(e->qual, e->sval);   /* F8: did-you-mean within the package */
+                    if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?", e->qual, e->sval, sg);
                     die_at(e->line, "package '%s' has no symbol '%s'", e->qual, e->sval);
+                }
             } else if (e->pkg && e->pkg[0]) {
                 int _vi;
                 char *q = sfmt("%s%s", e->pkg, e->sval);
@@ -5133,8 +5263,12 @@ static Type resolve_expr_inner(Expr *e) {
               else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", e->sval); }
             Sig *s = sig_find(e->sval);
             if (!s) {
-                const char *sg = suggest_fn(e->sval);
+                int cl_strong = 0;
+                const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
+                if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", e->sval, cl);   /* high-confidence stdlib match beats a weak local typo */
+                const char *sg = suggest_fn(e->sval);                 /* a user fn / builtin typo */
                 if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", e->sval, sg);
+                if (cl) die_at(e->line, "unknown procedure '%s' -- %s", e->sval, cl);   /* weak stdlib guess, but nothing local matched */
                 die_at(e->line, "unknown procedure '%s'", e->sval);
             }
             if (e->nargs != s->nparams)

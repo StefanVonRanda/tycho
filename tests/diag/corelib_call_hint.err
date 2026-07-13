@@ -1,0 +1,2 @@
+tests/diag/corelib_call_hint.ty:2: error: unknown procedure 'sort' -- core:arrays provides `sort` -- add `import "core:arrays"` and call `arrays.sort(...)`
+     2 |     xs := sort([3, 1, 2])
