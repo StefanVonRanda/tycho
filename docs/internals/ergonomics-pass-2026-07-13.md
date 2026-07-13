@@ -184,6 +184,31 @@ Principled (Odin/Go-style, keep it). The error is clear; a *did-you-mean
 None of these touch the memory model, the thesis, or codegen. They're all
 surface — which is exactly where a strong language loses newcomers.
 
+## F5 implementation plan (the remaining pass)
+
+`str()` / `println` of aggregates. Ship the whole thing (no scalar-only subset)
+by adding a per-type recursive `str` generator that mirrors the existing
+eq/copy helper families.
+
+- **Template to copy:** the per-type helper emitter emits `tycho_eq_S_%s`,
+  `tycho_*_copy`, `tycho_hash_S_` etc. — forward decls at `src/tychoc.c:9620`,
+  bodies from `src/tychoc.c:9702`. Add a parallel `tycho_str_*` family there:
+  `tycho_str_S_<name>` (struct, field-wise), `tycho_str_E_<name>` (enum,
+  variant-wise), array kinds (element-wise loop), `tycho_mapc%d_str` / map,
+  tuples, options/results — each recursing via `gen_str(fieldType, expr)`
+  the way `gen_eq` (`src/tychoc.c:7225`) dispatches by type.
+- **Dispatch:** the `str()` codegen at `src/tychoc.c:7563` currently handles
+  scalars; add an aggregate branch that calls the generated `tycho_str_*`.
+  Also relax the resolve-time reject at `src/tychoc.c:4785` (str takes
+  int/float/bool/char/string) to accept structs/arrays/maps/enums.
+- **Both compilers:** mirror the whole family in `compiler/tychoc0.ty`
+  (its codegen already emits the eq/copy helpers — follow that), then
+  `make fixpoint` must stay B==C. Add a golden (`tests/str_aggregate.ty`).
+- **Format choice:** settle on one (e.g. `Point(1, 2)`, `[1, 2, 3]`,
+  `[a: 1, b: 2]`, `Some(3)`) and match it byte-for-byte across both
+  transpilers — that is what the golden locks.
+- **Size/risk:** largest of the six, ~300+ lines per compiler, in codegen.
+
 ## Appendix — raw case results
 
 24-case battery (RUN-OK = compiled and ran correctly):
