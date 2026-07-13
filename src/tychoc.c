@@ -8395,8 +8395,12 @@ static char *gen_lvalue(Expr *e, const char *arena) {
         }
         if (index_in_range(e->lhs, e->rhs))   /* monotone loop index: project without the bounds check */
             return sfmt("((%s).data[%s])", gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
-        return sfmt("(*tycho_arr_C%d_ptr(&(%s), %s))",
-                    ARRC_ID(e->lhs->type), gen_lvalue(e->lhs, arena),
+        /* element-pointer projection: arr_fn dispatches to the built-in scalar
+         * families (tycho_arr_int/str/float_ptr) or a composite tycho_arr_C<id>_ptr.
+         * The scalar ones previously did not exist, so a scalar-element inout
+         * (`inc(&a[i])`) emitted a bogus tycho_arr_C<garbage>_ptr and failed to build. */
+        return sfmt("(*tycho_arr_%s_ptr(&(%s), %s))",
+                    arr_fn(e->lhs->type), gen_lvalue(e->lhs, arena),
                     gen_expr(e->rhs, arena));
     }
     return gen_expr(e, arena);

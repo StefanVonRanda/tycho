@@ -1330,6 +1330,24 @@ char *tycho_arr_str_get(TychoArrStr xs, long i) {
     return xs.data[i];
 }
 
+/* Bounds-checked element-pointer projection for the SCALAR array families, so an
+ * `inout` on a scalar element (`inc(&a[i])`) has a mutable lvalue -- the composite
+ * arrays already emit a per-type tycho_arr_C<id>_ptr for this, but the built-in
+ * int/float/str arrays had none, so gen_lvalue emitted a bogus tycho_arr_C<garbage>
+ * _ptr and the C failed to compile. Mirrors the composite _ptr contract. */
+long *tycho_arr_int_ptr(TychoArrInt *xs, long i) {
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %ld out of bounds (len %ld)\n", i, xs->len); exit(1); }
+    return &xs->data[i];
+}
+double *tycho_arr_float_ptr(TychoArrFloat *xs, long i) {
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %ld out of bounds (len %ld)\n", i, xs->len); exit(1); }
+    return &xs->data[i];
+}
+char **tycho_arr_str_ptr(TychoArrStr *xs, long i) {
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %ld out of bounds (len %ld)\n", i, xs->len); exit(1); }
+    return &xs->data[i];
+}
+
 void tycho_arr_str_set(Arena *a, TychoArrStr *xs, long i, const char *v) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %ld out of bounds (len %ld)\n", i, xs->len);
