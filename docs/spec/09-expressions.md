@@ -33,6 +33,13 @@ is `float`); `float`/`f32` division by a zero *value* or by the float literal
 for `u32`/`u64`). `char ± int` has type `char` and **wraps to a byte** (`0..255`,
 like `u8`), so the value never escapes the type's range.
 
+**String concatenation.** `+` on two `string`s concatenates them. As the one
+documented exception to the same-type rule, `string + char` appends the char's
+single byte to the string and yields a `string` (`"ab" + 'c'` → `"abc"`). It is
+deliberately **one-directional**: `char + string` is a type error — you append to
+a string, you do not prepend to a char. For symmetric composition, convert
+explicitly with `str(c)`. Both compilers implement exactly this.
+
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
 values; ordering applies only to the ordered set

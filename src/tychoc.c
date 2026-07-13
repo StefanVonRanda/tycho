@@ -5564,6 +5564,24 @@ static Type resolve_exp(Expr *e, Type want) {
             }
         }
     }
+    /* AUDIT: Some(x)/Ok(x)/Err(x) checked against a matching Option/Result — push the
+     * expected inner type into the payload so a bare None/Ok/Err at ANY nesting depth
+     * is fixed from context (Some(None) : Option(Option(int)), Ok(None), Some(Ok(1))).
+     * Without this the synthesis-only E_SOME (:4371) dies on a bare payload. Swift. */
+    if (e->kind == E_SOME && IS_OPT(want)) {
+        Type in = resolve_exp(e->lhs, opt_inner(want));
+        if (in != opt_inner(want))
+            die_at(e->line, "declared type %s but value is Some(%s)", type_name(want), type_name(in));
+        return e->type = want;
+    }
+    if ((e->kind == E_OK || e->kind == E_ERR) && IS_RES(want)) {
+        Type half = e->kind == E_OK ? res_ok(want) : res_err(want);
+        Type in = resolve_exp(e->lhs, half);
+        if (in != half)
+            die_at(e->line, "declared type %s but value is %s(%s)", type_name(want),
+                   e->kind == E_OK ? "Ok" : "Err", type_name(in));
+        return e->type = want;
+    }
     Type t = resolve_expr(e);
     if (t == T_NONE && IS_OPT(want)) return e->type = want;
     /* Ok(v)/Err(e): the value fixes one of Result's two params; `want` must be a

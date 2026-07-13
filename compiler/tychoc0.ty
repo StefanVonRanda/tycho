@@ -1710,6 +1710,8 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         expect(toks, &pos, TRParen)
         return "Result(" + t + "," + e + ")"
     else:
+        if name == "char":                       # AUDIT/spec (03-types.md §5.2.4): there is no `char` type keyword -- a char arises by INFERENCE (c := 'x'), never as a written type. tychoc rejects it ("unknown type 'char'"); match that.
+            die("type: there is no `char` type keyword -- a char arises by inference (e.g. c := 'x'), not as a written type annotation")
         if toks[pos].kind == TLParen:            # generics: `Box(int)` generic-struct instance in type position
             pos = pos + 1
             targs := []string
@@ -4076,6 +4078,20 @@ fn krt(dc: Decls, ctx: Ctx, mt: string, ke: string) -> string:   # a map key as 
         return "((" + ke + ")->tag)"
     return ke
 
+# AUDIT: a map key expression must have the map's exact key type (newtype identity
+# included). tychoc enforces this on read/get/delete/in/write; tychoc0 only did so on
+# write + `in`, silently reinterpreting a wrong-typed key on read/get/delete. Mirrors
+# tychoc (src/tychoc.c map-key checks) and the existing `in` check (tychoc0 ~5724).
+fn check_mkey(dc: Decls, ctx: Ctx, mt: string, ke: Expr, names: [string], types: [string], el: int):
+    want := map_key(mt)
+    # base type must match (int key on a string map, etc.) -- resolve_nt so a newtype
+    # array element whose identity type_of erased (keys()[i]) still compares by base.
+    if resolve_nt(dc, ctx, type_of(ke, names, types, dc, ctx)) != resolve_nt(dc, ctx, want):
+        die_at(dc, el, "map key must be " + want + ", got " + type_of(ke, names, types, dc, ctx))
+    # newtype identity must match too (reject a raw base value on a newtype-keyed map),
+    # via the identity-preserving nt_skin_of the same way nt_check does.
+    nt_check(dc, ctx, want, ke, names, types, "map key", el)
+
 fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
     if is_newtype(dc, ctx, ty):
         return cty(dc, ctx, resolve_nt(dc, ctx, ty))
@@ -5574,6 +5590,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     z = "(" + cty(dc, ctx, vt) + "){0}"      # value slotptr inserts (empty array / zeroed struct)
                 # Write targets / push / reserve route through gen_place -> the slot
                 # lvalue instead, so reaching gen_expr here is always a read.
+                check_mkey(dc, ctx, bt, idx, names, types, _el)   # AUDIT: read key must be the map's key type
                 return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
             if is_fixarr(bt):                               # [N]T fixed read a[i]: inline .v[], static bound N (1.6)
                 return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.v[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", " + str(fixarr_size(bt)) + ")]; })"
@@ -5993,14 +6010,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return mfam(type_of(args[0], names, types, dc, ctx)) + "_set(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, type_of(args[0], names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ", " + gen_rhs(args[2], names, types, dc, ctx) + ")"
             if name == "map_get":
                 mt := type_of(args[0], names, types, dc, ctx)
+                check_mkey(dc, ctx, mt, args[1], names, types, _el)   # AUDIT: get key must be the map's key type
                 g := mfam(mt) + "_get(" + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, mt, gen_expr(args[1], names, types, dc, ctx)) + ", " + gen_expr(args[2], names, types, dc, ctx) + ")"
                 return cp_field(dc, ctx, map_val(mt), ctx.owner, g)   # get returns a borrow into the map (or default) -> deep-copy into the caller's arena (passthrough for scalar values)
             if name == "keys":
                 return mfam(type_of(args[0], names, types, dc, ctx)) + "_keys(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "map_del":
-                return mfam(type_of(args[0], names, types, dc, ctx)) + "_del(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, type_of(args[0], names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ")"
+                mdt := type_of(args[0], names, types, dc, ctx)
+                check_mkey(dc, ctx, mdt, args[1], names, types, _el)   # AUDIT: delete key must be the map's key type
+                return mfam(mdt) + "_del(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, mdt, gen_expr(args[1], names, types, dc, ctx)) + ")"
             if name == "map_has":
-                return mfam(type_of(args[0], names, types, dc, ctx)) + "_has(" + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, type_of(args[0], names, types, dc, ctx), gen_expr(args[1], names, types, dc, ctx)) + ")"
+                mht := type_of(args[0], names, types, dc, ctx)
+                check_mkey(dc, ctx, mht, args[1], names, types, _el)   # AUDIT: has key must be the map's key type
+                return mfam(mht) + "_has(" + gen_expr(args[0], names, types, dc, ctx) + ", " + krt(dc, ctx, mht, gen_expr(args[1], names, types, dc, ctx)) + ")"
             if name == "chr":
                 return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "die":
