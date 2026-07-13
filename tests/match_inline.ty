@@ -1,0 +1,48 @@
+# F7: inline (one-line) match-arm bodies — `Variant: stmt` / `Variant: expr`.
+# Works for the statement form and the value form, mixes freely with block arms,
+# and the `_` wildcard. Behaviour is identical to the multi-line block form.
+
+enum Color:
+    Red
+    Green
+    Blue
+
+fn name(c: Color) -> string:
+    match c:
+        Red: return "red"
+        Green: return "green"
+        _: return "other"
+
+fn describe(o: Option(int)) -> string:
+    # value form with inline arms
+    return match o:
+        Some(i): "some"
+        None: "none"
+
+fn main():
+    println(name(Red))
+    println(name(Green))
+    println(name(Blue))
+
+    println(describe(Some(3)))
+    println(describe(None))
+
+    # value-form assigned, inline arms
+    o := Some(21)
+    v := match o:
+        Some(i): i * 2
+        None: 0
+    println(str(v))
+
+    # mixed inline + block arms in one statement match
+    match o:
+        Some(i):
+            println("got")
+            println(str(i))
+        None: println("nothing")
+
+    # inline arm with a compound value (tuple) and a call
+    r : Result(int, string) = Ok(5)
+    match r:
+        Ok(x): println(str(x))
+        Err(e): println(e)

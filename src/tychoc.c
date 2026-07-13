@@ -2411,6 +2411,7 @@ static Expr *parse_expr(Parser *ps) {           /* logical-or: the top level */
 }
 
 static Stmt **parse_block(Parser *ps, int *count);
+static Stmt **parse_arm_inline(Parser *ps, int value, int *count);   /* F7: one-line match-arm body */
 
 static Stmt *new_stmt(StmtKind k, int line) {
     Stmt *s = (Stmt *)xmalloc(sizeof(Stmt));
@@ -2530,9 +2531,11 @@ static Stmt *parse_match(Parser *ps, int line, int value) {
             eat(ps, TK_RPAREN, "')'");
         }
         eat(ps, TK_COLON, "':' after the arm pattern");
-        eat(ps, TK_NEWLINE, "newline");
-        arm->body = value ? parse_value_block(ps, &arm->nbody)
-                          : parse_block(ps, &arm->nbody);
+        if (accept(ps, TK_NEWLINE))          /* block arm: indented body on the next line */
+            arm->body = value ? parse_value_block(ps, &arm->nbody)
+                              : parse_block(ps, &arm->nbody);
+        else                                 /* F7: inline arm body — `Some(i): return i` on one line */
+            arm->body = parse_arm_inline(ps, value, &arm->nbody);
     }
     eat(ps, TK_DEDENT, "end of the match arms");
     if (s->narms == 0) die_at(line, "match needs at least one arm");
@@ -3052,6 +3055,33 @@ static Stmt **parse_block(Parser *ps, int *count) {
         body[n++] = st;
     }
     eat(ps, TK_DEDENT, "dedent");
+    *count = n;
+    return body;
+}
+
+/* F7: a one-line match-arm body (`Some(i): return i` / value `Some(i): i*2`),
+ * used when the arm pattern's `:` is NOT followed by a newline. Statement form
+ * parses a single statement (draining any foreach collection-temp it queues, as
+ * parse_block does); value form parses a single expression. The arm loop's
+ * top-of-iteration `accept(NEWLINE)` absorbs the end-of-line token. */
+static Stmt **parse_arm_inline(Parser *ps, int value, int *count) {
+    if (value) {
+        Expr *tail = parse_expr(ps);
+        Stmt *se = new_stmt(S_EXPR, tail->line);
+        se->expr = tail;
+        Stmt **body = (Stmt **)xmalloc(sizeof(Stmt *));
+        body[0] = se; *count = 1;
+        return body;
+    }
+    Stmt *st = parse_stmt(ps);
+    Stmt **body = NULL; int n = 0, cap = 0;
+    for (int k = 0; k < g_npending; k++) {   /* a foreach queued a collection-temp decl to emit first */
+        if (n == cap) { cap = cap ? cap * 2 : 4; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
+        body[n++] = g_pending[k];
+    }
+    g_npending = 0;
+    if (n == cap) { cap = cap ? cap * 2 : 4; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
+    body[n++] = st;
     *count = n;
     return body;
 }

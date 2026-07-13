@@ -36,7 +36,7 @@ smoothing literals, comments, printing, and a handful of diagnostics.
 | F4 | No named struct fields | **Fixed, both compilers** — `Point(x: 1, y: 2)`, order-independent; rejects unknown field / mixed named+positional / named-on-function. `make fixpoint` green. `tests/named_fields.ty`. |
 | F6 | `println` only takes string | **Fixed (tychoc)** — str()-able scalar to a builtin string param now suggests `str(...)`. |
 | F5 | No `str()`/print of aggregates | **Fixed, both compilers** — recursive `str()` for structs/enums/arrays/maps/tuples/options/results (nested + newtypes); nested strings print raw. Format `Point(1, 2)` · `[1, 2, 3]` · `[a: 1]` · `Some(3)` · `Ok(4)`. Per-type generator mirrors the eq/copy families (tychoc: runtime `tycho_arr_*_str`/`tycho_map_*_str` for built-in containers + generated `tycho_str_S_`/`_E_`/`arr_C`/`mapc`; tychoc0: generated `_str` family). `make test`/`fixpoint`/eq+type+parfor+unary parity all green; golden `tests/str_aggregate.ty`. `println(aggregate)` still routes through the F6 `str(...)` hint (kept string-only by design). |
-| F7 | Match arm bodies can't be inline | Open (minor). |
+| F7 | Match arm bodies can't be inline | **Fixed, both compilers** — `Some(i): return i` / value `Some(i): i*2` on one line; mixes with block arms and the `_` wildcard; fail-closed on two statements per line (`expected newline`). Golden `tests/match_inline.ty`. |
 | F8 | stdlib not guessable / no `sort(xs)` | Open. |
 | F9/F10 | `while` / int-float mix cryptic errors | Open (diagnostics polish). |
 

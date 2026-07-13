@@ -2364,6 +2364,35 @@ fn parse_value_ctrl(toks: [Token], pos: inout int) -> Stmt:
         return parse_value_if(toks, &pos, _sl)
     return parse_match(toks, &pos, true)
 
+# F7: a one-line match-arm body (`Some(i): return i` / value `Some(i): i*2`),
+# used when the arm ':' is not followed by a newline. Statement form parses one
+# statement (draining any hoisted-temp prelude); value form parses a single
+# expression. Fail-closed on a trailing non-newline (mirrors parse_block), so
+# `Some: print(x) print(y)` is rejected rather than silently misparsed.
+fn parse_arm_inline(toks: [Token], pos: inout int, value: bool) -> [Stmt]:
+    body := []Stmt
+    if value:
+        _tl := tloc(toks[pos])
+        tail := parse_expr(toks, &pos)
+        if toks[pos].kind != TNewline and toks[pos].kind != TDedent:
+            die("parse: line " + str(toks[pos].line) + ": a value arm is a single expression")
+        push(body, SExpr(tail, _tl))
+        return body
+    firstkw := ""
+    if toks[pos].kind == TIdent:
+        firstkw = toks[pos].text
+    pend := []Stmt
+    st := parse_stmt(toks, &pos, &pend)
+    pj := 0
+    for pj < len(pend):
+        push(body, pend[pj])
+        pj = pj + 1
+    push(body, st)
+    cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select" or firstkw == "parallel" or stmt_self_terminates(st)
+    if not cmpd and toks[pos].kind != TNewline and toks[pos].kind != TDedent:
+        die("parse: line " + str(toks[pos].line) + ": expected newline")
+    return body
+
 fn parse_match(toks: [Token], pos: inout int, value: bool) -> Stmt:
     _sl := tloc(toks[pos])
     expect_ident(toks, &pos, "match")
@@ -2402,7 +2431,9 @@ fn parse_match(toks: [Token], pos: inout int, value: bool) -> Stmt:
                 expect(toks, &pos, TRParen)
             expect(toks, &pos, TColon)
             push(allbinds, binds)
-            if value:
+            if toks[pos].kind != TNewline:       # F7: inline arm body on the same line
+                push(bodies, parse_arm_inline(toks, &pos, value))
+            elif value:
                 push(bodies, parse_value_block(toks, &pos))
             else:
                 push(bodies, parse_block(toks, &pos))
