@@ -2134,3 +2134,76 @@ int tycho_map_if_eq(TychoMapIF x, TychoMapIF y) {
     }
     return 1;
 }
+
+/* ---- str() of built-in containers (F5) ------------------------------------
+ * Render an aggregate to a length-headered Tycho string for str()/println.
+ * Format: arrays `[e0, e1]`, maps `[k: v]` (string keys raw, no quotes -- str
+ * of a string is identity), elements joined by ", ". Maps iterate in insertion
+ * order (the nxt/head list), so output is deterministic and seed-invariant.
+ * Composite-element arrays/maps get a generated tycho_str_* helper instead;
+ * these four fixed-element families live here (shared, one definition). Built
+ * by folding tycho_str_concat -- O(n^2) in piece count, fine for a debug print. */
+char *tycho_arr_int_str(Arena *a, TychoArrInt xs) {
+    char *r = tycho_str_from_c(a, "[");
+    for (long i = 0; i < xs.len; i++) {
+        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", "));
+        r = tycho_str_concat(a, r, tycho_int_to_str(a, xs.data[i]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_arr_float_str(Arena *a, TychoArrFloat xs) {
+    char *r = tycho_str_from_c(a, "[");
+    for (long i = 0; i < xs.len; i++) {
+        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", "));
+        r = tycho_str_concat(a, r, tycho_float_to_str(a, xs.data[i]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_arr_str_str(Arena *a, TychoArrStr xs) {
+    char *r = tycho_str_from_c(a, "[");
+    for (long i = 0; i < xs.len; i++) {
+        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", "));
+        r = tycho_str_concat(a, r, xs.data[i]);   /* string element: raw (str is identity) */
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_map_si_str(Arena *a, TychoMapSI m) {
+    char *r = tycho_str_from_c(a, "["); int first = 1;
+    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {
+        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", ")); first = 0;
+        r = tycho_str_concat(a, r, m.keys[s]);
+        r = tycho_str_concat(a, r, tycho_str_from_c(a, ": "));
+        r = tycho_str_concat(a, r, tycho_int_to_str(a, m.vals[s]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_map_sf_str(Arena *a, TychoMapSF m) {
+    char *r = tycho_str_from_c(a, "["); int first = 1;
+    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {
+        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", ")); first = 0;
+        r = tycho_str_concat(a, r, m.keys[s]);
+        r = tycho_str_concat(a, r, tycho_str_from_c(a, ": "));
+        r = tycho_str_concat(a, r, tycho_float_to_str(a, m.vals[s]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_map_ii_str(Arena *a, TychoMapII m) {
+    char *r = tycho_str_from_c(a, "["); int first = 1;
+    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {
+        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", ")); first = 0;
+        r = tycho_str_concat(a, r, tycho_int_to_str(a, m.keys[s]));
+        r = tycho_str_concat(a, r, tycho_str_from_c(a, ": "));
+        r = tycho_str_concat(a, r, tycho_int_to_str(a, m.vals[s]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}
+char *tycho_map_if_str(Arena *a, TychoMapIF m) {
+    char *r = tycho_str_from_c(a, "["); int first = 1;
+    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {
+        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, ", ")); first = 0;
+        r = tycho_str_concat(a, r, tycho_int_to_str(a, m.keys[s]));
+        r = tycho_str_concat(a, r, tycho_str_from_c(a, ": "));
+        r = tycho_str_concat(a, r, tycho_float_to_str(a, m.vals[s]));
+    }
+    return tycho_str_concat(a, r, tycho_str_from_c(a, "]"));
+}

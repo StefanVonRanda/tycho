@@ -1,0 +1,63 @@
+# F5: str() / println of aggregates. Every aggregate kind renders recursively
+# to a Tycho string. Format: Point(1, 2) / [1, 2, 3] / [a: 1] / Some(3) / Ok(4).
+# Nested strings print raw (str(s) is identity). Verified byte-identical across
+# both compilers.
+
+struct Point:
+    x: int
+    y: int
+
+struct Line:
+    a: Point
+    b: Point
+    label: string
+
+enum Shape:
+    Circle(float)
+    Rect(int, int)
+    Dot
+
+fn none_int() -> Option(int):
+    return None
+
+fn ok_val() -> Result(int, string):
+    return Ok(42)
+
+fn err_val() -> Result(int, string):
+    return Err("bad")
+
+fn main():
+    # structs (nested)
+    println(str(Point(1, 2)))
+    println(str(Line(Point(0, 0), Point(3, 4), "diag")))
+
+    # arrays (int / float / string / composite)
+    println(str([1, 2, 3]))
+    println(str([1.5, 2.5]))
+    println(str(["a", "b", "c"]))
+    println(str([Point(1, 1), Point(2, 2)]))
+    empty := []int
+    println(str(empty))
+
+    # maps (string-keyed / int-keyed), insertion order
+    println(str(["a": 1, "b": 2]))
+    println(str([1: 10, 2: 20]))
+
+    # tuples
+    println(str((1, "hi", true)))
+
+    # option / result
+    println(str(Some(7)))
+    println(str(none_int()))
+    println(str(ok_val()))
+    println(str(err_val()))
+    println(str(Some(Point(5, 6))))
+
+    # enums
+    println(str(Circle(2.0)))
+    println(str(Rect(3, 4)))
+    println(str(Dot))
+
+    # scalars still work
+    println(str(true))
+    println(str(42))

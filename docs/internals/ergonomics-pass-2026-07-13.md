@@ -35,7 +35,7 @@ smoothing literals, comments, printing, and a handful of diagnostics.
 | F3 | `s[i]` yields int byte | **Fixed (tychoc diagnostic)** — kept Go-style byte semantics (deliberate); `to_int(s[i])` now says *x is already an int … use `chr(x)`*. Docs already document `s[i]`-as-byte + `chr`. |
 | F4 | No named struct fields | **Fixed, both compilers** — `Point(x: 1, y: 2)`, order-independent; rejects unknown field / mixed named+positional / named-on-function. `make fixpoint` green. `tests/named_fields.ty`. |
 | F6 | `println` only takes string | **Fixed (tychoc)** — str()-able scalar to a builtin string param now suggests `str(...)`. |
-| F5 | No `str()`/print of aggregates | **Open** — largest item; needs a per-type recursive `str()` generator (mirrors the `tycho_eq_S_*`/`_copy` families) across both compilers. Its own pass. |
+| F5 | No `str()`/print of aggregates | **Fixed, both compilers** — recursive `str()` for structs/enums/arrays/maps/tuples/options/results (nested + newtypes); nested strings print raw. Format `Point(1, 2)` · `[1, 2, 3]` · `[a: 1]` · `Some(3)` · `Ok(4)`. Per-type generator mirrors the eq/copy families (tychoc: runtime `tycho_arr_*_str`/`tycho_map_*_str` for built-in containers + generated `tycho_str_S_`/`_E_`/`arr_C`/`mapc`; tychoc0: generated `_str` family). `make test`/`fixpoint`/eq+type+parfor+unary parity all green; golden `tests/str_aggregate.ty`. `println(aggregate)` still routes through the F6 `str(...)` hint (kept string-only by design). |
 | F7 | Match arm bodies can't be inline | Open (minor). |
 | F8 | stdlib not guessable / no `sort(xs)` | Open. |
 | F9/F10 | `while` / int-float mix cryptic errors | Open (diagnostics polish). |
@@ -184,11 +184,31 @@ Principled (Odin/Go-style, keep it). The error is clear; a *did-you-mean
 None of these touch the memory model, the thesis, or codegen. They're all
 surface — which is exactly where a strong language loses newcomers.
 
-## F5 implementation plan (the remaining pass)
+## F5 implementation — SHIPPED (2026-07-13)
 
-`str()` / `println` of aggregates. Ship the whole thing (no scalar-only subset)
-by adding a per-type recursive `str` generator that mirrors the existing
-eq/copy helper families.
+`str()` of aggregates shipped both compilers exactly as planned below (recursive
+per-type generator mirroring the eq/copy families; no scalar-only subset). Notes
+on how it landed vs the original plan:
+
+- **Built-in containers** (`[int]`/`[float]`/`[string]` arrays, `si`/`sf`/`ii`/`if`
+  maps) get **runtime** `tycho_*_str` helpers in `runtime/tycho_rt.c` (shared, one
+  definition) rather than generated code — matches how `tycho_arr_int_eq` lives in
+  the runtime. Composite arrays/maps + structs/enums are generated.
+- **tychoc0** generates every array/map family uniformly (`Arr_`/`map_`), so its
+  `_str` family is all generated (no runtime split); it uses the `m.ord[]`
+  insertion-order array (not a slot linked-list) to iterate maps.
+- **Decoupling:** the two compilers need only agree on *printed output*, not
+  emitted C (parity is output-only), so their `_str` implementations differ.
+- **option/result/tuple** are inlined via `concat`, not a named helper (mirrors
+  how `gen_eq` inlines them).
+- **Non-renderable** types (fn/soa/handle) are rejected at the top level; as a
+  *nested field* they print an honest `<typename>` placeholder.
+- Golden: `tests/str_aggregate.ty` / `.out`. Format locked byte-for-byte.
+
+### Original plan (for reference)
+
+Ship the whole thing (no scalar-only subset) by adding a per-type recursive `str`
+generator that mirrors the existing eq/copy helper families.
 
 - **Template to copy:** the per-type helper emitter emits `tycho_eq_S_%s`,
   `tycho_*_copy`, `tycho_hash_S_` etc. — forward decls at `src/tychoc.c:9620`,

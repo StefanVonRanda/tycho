@@ -5866,9 +5866,15 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if is_uint(resolve_nt(dc, ctx, at)):   # u8/u16/u32/u64 print unsigned
                     return "u2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
-                if resolve_nt(dc, ctx, at) != "int" and not is_sized_int(resolve_nt(dc, ctx, at)):   # int + signed sized (i8/i16/i32/i64) -> i2s; reject char/ptr/enum/etc. (fail closed like tychoc)
-                    die_at(dc, ctx.line, "str(x) takes an int, a sized int, f32, a bool, a float, or a string")
-                return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                rat := resolve_nt(dc, ctx, at)
+                if rat == "int" or is_sized_int(rat):   # int + signed sized (i8/i16/i32/i64) -> i2s
+                    return "i2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
+                # F5: aggregates (and bytes) stringify recursively via a generated <T>_str.
+                # Bind the value once (option/result/tuple renderers read it repeatedly).
+                if rat == "bytes" or is_array(rat) or is_map(rat) or is_struct(dc, ctx, rat) or is_enum(dc, ctx, rat) or is_tuple(rat) or is_option(rat) or is_result(rat):
+                    return "({ " + cty(dc, ctx, at) + "_sv = " + gen_expr(args[0], names, types, dc, ctx) + "; " + str_field(dc, ctx, at, ctx.owner, "_sv") + "; })"
+                die_at(dc, ctx.line, "str(x) can't stringify a " + at)   # fn/soa/ptr/etc.: fail closed like tychoc
+                return ""
             if name == "sqrt" or name == "floor" or name == "fabs":
                 return name + "(" + gen_expr(args[0], names, types, dc, ctx) + ")"
             if name == "pow":
@@ -8816,6 +8822,119 @@ fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
     if is_func(ty):                              # fn values: identity equality (same thunk + env) — closures aren't structurally comparable
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     return "(" + a + " == " + b + ")"            # int/bool/float by value
+
+# C expression that renders value `v` of type `ty` to a Tycho string in arena `ar`
+# (F5, str() of aggregates). Mirrors eq_field's dispatch. Scalars go to the runtime
+# to_str helpers; a string/bytes is identity (str(s) == s, so nested strings print
+# raw); aggregates call a generated <T>_str helper or inline (option/result) via sc.
+fn str_field(dc: Decls, ctx: Ctx, ty: string, ar: string, v: string) -> string:
+    b := resolve_nt(dc, ctx, ty)                 # see through a newtype (string newtype -> "str", etc.)
+    if b == "str" or b == "bytes":
+        return v                                 # identity
+    if b == "char":
+        return "hi_chr(" + ar + ", " + v + ")"
+    if b == "bool":
+        return "b2s(" + ar + ", " + v + ")"
+    if b == "float" or b == "f32":
+        return "f2s(" + ar + ", " + v + ")"
+    if is_uint(b):
+        return "u2s(" + ar + ", " + v + ")"
+    if b == "int" or is_sized_int(b):
+        return "i2s(" + ar + ", " + v + ")"
+    if is_array(b):
+        return afam(b) + "_str(" + ar + ", " + v + ")"
+    if is_map(b):
+        return mfam(b) + "_str(" + ar + ", " + v + ")"
+    if is_enum(dc, ctx, b):
+        return uet(b) + "_str(" + ar + ", " + v + ")"
+    if is_struct(dc, ctx, b):
+        return ust(b) + "_str(" + ar + ", " + v + ")"
+    if is_tuple(b):
+        return "Tup_" + tup_suffix(b) + "_str(" + ar + ", " + v + ")"
+    if is_option(b):
+        ct := cty(dc, ctx, option_inner(b))
+        pv := "(*(" + ct + "*)(" + v + ".val))"   # boxed payload deref; parens so a nested Opt/Res .tag/.val binds right
+        inner := str_field(dc, ctx, option_inner(b), ar, pv)
+        return "(" + v + ".tag == 0 ? s_from_c(" + ar + ", \"None\") : sc(" + ar + ", sc(" + ar + ", s_from_c(" + ar + ", \"Some(\"), " + inner + "), s_from_c(" + ar + ", \")\")))"
+    if is_result(b):
+        cto := cty(dc, ctx, result_ok(b))
+        cte := cty(dc, ctx, result_err(b))
+        ov := "(*(" + cto + "*)(" + v + ".ok))"
+        ev := "(*(" + cte + "*)(" + v + ".err))"
+        oin := str_field(dc, ctx, result_ok(b), ar, ov)
+        ein := str_field(dc, ctx, result_err(b), ar, ev)
+        return "(" + v + ".tag == 1 ? sc(" + ar + ", sc(" + ar + ", s_from_c(" + ar + ", \"Ok(\"), " + oin + "), s_from_c(" + ar + ", \")\")) : sc(" + ar + ", sc(" + ar + ", s_from_c(" + ar + ", \"Err(\"), " + ein + "), s_from_c(" + ar + ", \")\")))"
+    return "s_from_c(" + ar + ", \"<?>\")"       # fn/soa/etc.: honest placeholder (top-level str is rejected)
+
+fn gen_struct_str(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
+    nm := ust(sd.name)
+    out := "static char* " + nm + "_str(Arena* ar, " + nm + " v) {\n"
+    out = out + "    char* r = s_from_c(ar, \"" + sd.name + "(\");\n"
+    j := 0
+    for j < len(sd.fields):
+        if j > 0:
+            out = out + "    r = sc(ar, r, s_from_c(ar, \", \"));\n"
+        f := sd.fields[j]
+        out = out + "    r = sc(ar, r, " + str_field(dc, ctx, f.ty, "ar", "v." + uf(f.name)) + ");\n"
+        j = j + 1
+    return out + "    return sc(ar, r, s_from_c(ar, \")\"));\n}\n"
+
+fn gen_tuple_str(dc: Decls, ctx: Ctx, ty: string) -> string:
+    nm := "Tup_" + tup_suffix(ty)
+    parts := tuple_parts(ty)
+    out := "static char* " + nm + "_str(Arena* ar, " + nm + " v) {\n"
+    out = out + "    char* r = s_from_c(ar, \"(\");\n"
+    i := 0
+    for i < len(parts):
+        if i > 0:
+            out = out + "    r = sc(ar, r, s_from_c(ar, \", \"));\n"
+        out = out + "    r = sc(ar, r, " + str_field(dc, ctx, parts[i], "ar", "v.f" + str(i)) + ");\n"
+        i = i + 1
+    return out + "    return sc(ar, r, s_from_c(ar, \")\"));\n}\n"
+
+fn gen_enum_str(ed: EnumDef, dc: Decls, ctx: Ctx) -> string:
+    nm := uet(ed.name)
+    out := "static char* " + nm + "_str(Arena* ar, " + nm + "* v) {\n"
+    i := 0
+    for i < len(ed.variants):
+        vv := ed.variants[i]
+        if len(vv.ptypes) == 0:
+            out = out + "    if (v->tag == " + str(i) + ") return s_from_c(ar, \"" + vv.name + "\");\n"
+        else:
+            out = out + "    if (v->tag == " + str(i) + ") {\n"
+            out = out + "        char* r = s_from_c(ar, \"" + vv.name + "(\");\n"
+            j := 0
+            for j < len(vv.ptypes):
+                if j > 0:
+                    out = out + "        r = sc(ar, r, s_from_c(ar, \", \"));\n"
+                out = out + "        r = sc(ar, r, " + str_field(dc, ctx, vv.ptypes[j], "ar", efield("v", vv.name, j)) + ");\n"
+                j = j + 1
+            out = out + "        return sc(ar, r, s_from_c(ar, \")\"));\n    }\n"
+        i = i + 1
+    return out + "    return s_from_c(ar, \"<?>\");\n}\n"
+
+fn gen_arr_str(dc: Decls, ctx: Ctx, et: string) -> string:
+    nm := "Arr_" + mangle(et)
+    if is_fixarr(et):                            # fixed [N]T: inline storage xs.v[i], compile-time length
+        fet := elem_ty(et)
+        n := str(fixarr_size(et))
+        return "static char* " + nm + "_str(Arena* ar, " + nm + " xs) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < " + n + "; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); r = sc(ar, r, " + str_field(dc, ctx, fet, "ar", "xs.v[i]") + "); } return sc(ar, r, s_from_c(ar, \"]\")); }\n"
+    return "static char* " + nm + "_str(Arena* ar, " + nm + " xs) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < xs.len; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); r = sc(ar, r, " + str_field(dc, ctx, et, "ar", "xs.data[i]") + "); } return sc(ar, r, s_from_c(ar, \"]\")); }\n"
+
+# Map str: iterate insertion order (m.ord[i] is the key), look up the value slot via
+# <s>_slot. Mirrors gen_map_fns' key handling (enum key -> singleton table).
+fn gen_map_str(dc: Decls, ctx: Ctx, ty: string) -> string:
+    k := map_key(ty)
+    v := map_val(ty)
+    M := mstruct(ty)
+    f := mfam(ty)
+    s := "m" + mtag(k) + "_" + mangle(v)
+    kexpr := "m.ord[i]"
+    if enum_fieldless(dc, ctx, k):
+        kexpr = f + "_ktab[m.ord[i]]"
+    out := "static char* " + f + "_str(Arena* ar, " + M + " m) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < m.nord; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); "
+    out = out + "r = sc(ar, r, " + str_field(dc, ctx, k, "ar", kexpr) + "); r = sc(ar, r, s_from_c(ar, \": \")); long _t = " + s + "_slot(m, m.ord[i]); r = sc(ar, r, " + str_field(dc, ctx, v, "ar", "m.vals[_t]") + "); }"
+    return out + " return sc(ar, r, s_from_c(ar, \"]\")); }\n"
 
 # Recursive deep-copy of an enum node into arena `ar`: fresh node, same tag, and
 # each present variant's payload fields copied by type (cp_field recurses through
@@ -14376,6 +14495,26 @@ fn main():
             out = out + "static " + mm + " " + mangle(ets[i]) + "_copy(Arena* ar, " + mm + " m);\n"
             out = out + "static int " + mangle(ets[i]) + "_eq(" + mm + " a, " + mm + " b);\n"
         i = i + 1
+    i = 0                                        # str() FORWARD DECLS (F5): all before any str body so recursion/mutual refs resolve
+    for i < len(ets):
+        if not is_soa(ets[i]):                   # every Arr_<et> family (arrays of scalar/struct/tuple/map) gets a _str
+            out = out + "static char* Arr_" + mangle(ets[i]) + "_str(Arena* ar, Arr_" + mangle(ets[i]) + " xs);\n"
+        i = i + 1
+    i = 0
+    for i < len(ets):
+        if is_map(ets[i]):
+            out = out + "static char* " + mfam(ets[i]) + "_str(Arena* ar, " + mstruct(ets[i]) + " m);\n"
+        elif is_tuple(ets[i]):
+            out = out + "static char* Tup_" + tup_suffix(ets[i]) + "_str(Arena* ar, Tup_" + tup_suffix(ets[i]) + " v);\n"
+        i = i + 1
+    i = 0
+    for i < len(prog.enums):
+        out = out + "static char* " + uet(prog.enums[i].name) + "_str(Arena* ar, " + uet(prog.enums[i].name) + "* v);\n"
+        i = i + 1
+    i = 0
+    for i < len(prog.structs):
+        out = out + "static char* " + ust(prog.structs[i].name) + "_str(Arena* ar, " + ust(prog.structs[i].name) + " v);\n"
+        i = i + 1
     i = 0
     for i < len(ets):
         if is_map(ets[i]):
@@ -14414,6 +14553,26 @@ fn main():
             out = out + gen_struct_hash(dc, ctx, prog.structs[i])
         if struct_is_heap(dc, ctx, prog.structs[i].name):
             out = out + gen_struct_copy(dc, ctx, prog.structs[i])
+        i = i + 1
+    i = 0                                        # 8b. str() BODIES (F5): after all typedefs, eq/copy, map-slot fns + the protos above
+    for i < len(ets):
+        if not is_soa(ets[i]):
+            out = out + gen_arr_str(dc, ctx, ets[i])
+        i = i + 1
+    i = 0
+    for i < len(ets):
+        if is_map(ets[i]):
+            out = out + gen_map_str(dc, ctx, ets[i])
+        elif is_tuple(ets[i]):
+            out = out + gen_tuple_str(dc, ctx, ets[i])
+        i = i + 1
+    i = 0
+    for i < len(prog.enums):
+        out = out + gen_enum_str(prog.enums[i], dc, ctx)
+        i = i + 1
+    i = 0
+    for i < len(prog.structs):
+        out = out + gen_struct_str(dc, ctx, prog.structs[i])
         i = i + 1
     i = 0                                        # 9. prototypes
     for i < len(funcs):

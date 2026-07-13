@@ -4844,10 +4844,16 @@ static Type resolve_expr_inner(Expr *e) {
              * they bypass the fixed-signature Sig table. */
             if (!strcmp(e->sval, "str")) {
                 if (e->nargs != 1) die_at(e->line, "str(x) takes one argument");
-                Type b = base_of(resolve_expr(e->args[0]));   /* sees through a newtype */
-                if (b != T_INT && b != T_BOOL && b != T_FLOAT && b != T_STRING && b != T_CHAR &&
-                    !is_sized_int(b) && b != T_F32)   /* string: identity (for interpolation); char -> its one-byte glyph */
-                    die_at(e->line, "str(x) takes an int, a sized int, f32, a bool, a float, a char, or a string");
+                Type at_ = resolve_expr(e->args[0]);
+                Type b = base_of(at_);   /* sees through a newtype */
+                int scalar_ok = b == T_INT || b == T_BOOL || b == T_FLOAT || b == T_STRING ||
+                                b == T_CHAR || b == T_BYTES || is_sized_int(b) || b == T_F32;
+                /* F5: aggregates stringify recursively via a generated tycho_str_* helper.
+                 * fn/soa/handle/channel/task are not renderable at the top level. */
+                int aggr_ok = is_array(b) || is_map(b) || IS_STRUCT(b) || IS_ENUM(b) ||
+                              IS_TUP(b) || IS_OPT(b) || IS_RES(b);
+                if (!scalar_ok && !aggr_ok)
+                    die_at(e->line, "str(x) can't stringify a %s", type_name(at_));
                 return e->type = T_STRING;
             }
             if (!strcmp(e->sval, "to_float")) {   /* int/u32/u64/f32 -> float, or unwrap a float newtype */
@@ -5126,7 +5132,10 @@ static Type resolve_expr_inner(Expr *e) {
                      * str()-able scalar -- point at the fix instead of just the type. */
                     Type ab = base_of(at_);
                     int strable = (ab == T_INT || ab == T_BOOL || ab == T_FLOAT || ab == T_CHAR ||
-                                   is_sized_int(ab) || ab == T_F32);
+                                   is_sized_int(ab) || ab == T_F32 ||
+                                   /* F5: aggregates are str()-able too */
+                                   is_array(ab) || is_map(ab) || IS_STRUCT(ab) || IS_ENUM(ab) ||
+                                   IS_TUP(ab) || IS_OPT(ab) || IS_RES(ab));
                     if (s->builtin && s->params[i] == T_STRING && strable)
                         die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
                                i + 1, e->sval, type_name(at_), e->sval);
@@ -7256,6 +7265,53 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
+/* C expression that renders a value `v` of type `t` to a length-headered Tycho
+ * string (arena `ar`), for str()/println of an aggregate (F5). Scalars go
+ * straight to the runtime to_str helpers; strings are identity (str(s) == s, so
+ * a nested string prints raw, no quotes). Aggregates dispatch to a generated
+ * tycho_str_* helper (struct/enum/composite array+map) or a fixed runtime one
+ * (built-in [int]/[float]/[string] arrays and si/sf/ii/if maps). option/result/
+ * tuple are built inline via tycho_str_concat, mirroring gen_eq's structure, so
+ * arbitrary nesting works. Format: Point(1, 2) · [1, 2, 3] · [a: 1] · Some(3). */
+static char *gen_str(Type t, const char *ar, const char *v) {
+    if (IS_NEWTYPE(t))       return gen_str(nt_under(t), ar, v);
+    if (t == T_STRING || t == T_BYTES) return sfmt("%s", v);   /* identity: str(s) == s */
+    if (t == T_CHAR)         return sfmt("tycho_chr(%s, %s)", ar, v);
+    if (t == T_BOOL)         return sfmt("tycho_bool_to_str(%s, %s)", ar, v);
+    if (t == T_FLOAT || t == T_F32) return sfmt("tycho_float_to_str(%s, %s)", ar, v);
+    if (is_uint(t))          return sfmt("tycho_uint_to_str(%s, %s)", ar, v);
+    if (t == T_INT || is_sized_int(t)) return sfmt("tycho_int_to_str(%s, %s)", ar, v);
+    if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_str(%s, %s)", ar, v);
+    if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_str(%s, %s)", ar, v);
+    if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_str(%s, %s)", ar, v);
+    if (IS_ARRC(t))          return sfmt("tycho_str_arr_C%d(%s, %s)", ARRC_ID(t), ar, v);
+    if (IS_MAPC(t))          return sfmt("tycho_str_mapc%d(%s, %s)", MAPC_ID(t), ar, v);
+    if (is_map(t))           return sfmt("tycho_map_%s_str(%s, %s)", map_fn(t), ar, v);
+    if (IS_STRUCT(t))        return sfmt("tycho_str_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, ar, v);
+    if (IS_ENUM(t))          return sfmt("tycho_str_E_%s(%s, %s)", g_enums[ENUM_ID(t)].name, ar, v);
+    if (IS_OPT(t)) {
+        Type in = opt_inner(t);
+        return sfmt("((%s).has ? tycho_str_concat(%s, tycho_str_concat(%s, tycho_str_from_c(%s, \"Some(\"), %s), tycho_str_from_c(%s, \")\")) : tycho_str_from_c(%s, \"None\"))",
+                    v, ar, ar, ar, gen_str(in, ar, sfmt("(%s).val", v)), ar, ar);
+    }
+    if (IS_RES(t)) {
+        return sfmt("((%s).ok ? tycho_str_concat(%s, tycho_str_concat(%s, tycho_str_from_c(%s, \"Ok(\"), %s), tycho_str_from_c(%s, \")\")) : tycho_str_concat(%s, tycho_str_concat(%s, tycho_str_from_c(%s, \"Err(\"), %s), tycho_str_from_c(%s, \")\")))",
+                    v, ar, ar, ar, gen_str(res_ok(t), ar, sfmt("(%s).okv", v)), ar,
+                    ar, ar, ar, gen_str(res_err(t), ar, sfmt("(%s).errv", v)), ar);
+    }
+    if (IS_TUP(t)) {         /* (e0, e1, ...) folded through tycho_str_concat */
+        char *s = sfmt("tycho_str_from_c(%s, \"(\")", ar);
+        for (int i = 0; i < tup_n(t); i++) {
+            if (i) s = sfmt("tycho_str_concat(%s, %s, tycho_str_from_c(%s, \", \"))", ar, s, ar);
+            s = sfmt("tycho_str_concat(%s, %s, %s)", ar, s, gen_str(tup_elem(t, i), ar, sfmt("(%s)._%d", v, i)));
+        }
+        return sfmt("tycho_str_concat(%s, %s, tycho_str_from_c(%s, \")\"))", ar, s, ar);
+    }
+    /* fn/soa/handle/ptr as a nested field: no faithful rendering — print the type
+     * name honestly (the top-level str() of such a value is rejected at resolve). */
+    return sfmt("tycho_str_from_c(%s, \"<%s>\")", ar, type_name(t));
+}
+
 /* Drop ONE redundant outer paren layer when a gen_expr result is emitted as an
  * if/while condition: `if ((a == b))` -> `if (a == b)`. gen_expr wraps every
  * binop in parens, and the `if (%s)` / `while (%s)` site adds its own required
@@ -7561,14 +7617,17 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("tycho_die(%s)", gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "str")) {
+        Type at = e->args[0]->type;
         char *a = gen_expr(e->args[0], arena);
-        Type b = base_of(e->args[0]->type);
-        if (b == T_STRING) return a;                 /* str(string) is identity (interpolation) */
+        Type b = base_of(at);
+        if (b == T_STRING || b == T_BYTES) return a;  /* str(string) is identity (interpolation); a string newtype/bytes print their bytes raw */
         if (b == T_CHAR)   return sfmt("tycho_chr(%s, %s)", arena, a);   /* char -> its one-byte glyph string (value is a byte 0..255) */
         if (b == T_BOOL)   return sfmt("tycho_bool_to_str(%s, %s)", arena, a);
         if (b == T_FLOAT || b == T_F32) return sfmt("tycho_float_to_str(%s, %s)", arena, a);   /* f32 promotes to double */
         if (is_uint(b))   return sfmt("tycho_uint_to_str(%s, %s)", arena, a);   /* u8/u16/u32/u64 print unsigned */
-        return sfmt("tycho_int_to_str(%s, %s)", arena, a);   /* int + signed sized (i8/i16/i32/i64) */
+        if (b == T_INT || is_sized_int(b)) return sfmt("tycho_int_to_str(%s, %s)", arena, a);   /* int + signed sized (i8/i16/i32/i64) */
+        /* F5 aggregate: bind the value ONCE (opt/result/tuple renderers read it repeatedly), then recurse via gen_str */
+        return sfmt("({ %s_sv = %s; %s; })", c_type(at), a, gen_str(at, arena, "_sv"));
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
@@ -9678,6 +9737,18 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static TychoMapC%d tycho_mapc%d_copy(Arena*, TychoMapC%d);\n", i, i, i);
         fprintf(o, "static int tycho_mapc%d_eq(TychoMapC%d, TychoMapC%d);\n", i, i, i);
     }
+    for (int i = 0; i < g_nstructs; i++)            /* (4) str() prototypes (F5): forward so recursive/mutual str refs resolve */
+        if (!g_structs[i].generic)
+            fprintf(o, "static char *tycho_str_S_%s(Arena*, S_%s);\n", g_structs[i].name, g_structs[i].name);
+    for (int i = 0; i < g_nenums; i++)
+        if (!g_enums[i].generic)
+            fprintf(o, "static char *tycho_str_E_%s(Arena*, E_%s*);\n", g_enums[i].name, g_enums[i].name);
+    for (int i = 0; i < g_narrtypes; i++)
+        if (!has_typaram(T_ARRC_BASE + i))
+            fprintf(o, "static char *tycho_str_arr_C%d(Arena*, TychoArrC%d);\n", i, i);
+    for (int i = 0; i < g_nmaptypes; i++)
+        if (!has_typaram(T_MAPC_BASE + i))
+            fprintf(o, "static char *tycho_str_mapc%d(Arena*, TychoMapC%d);\n", i, i);
     fputs("\n", o);
     /* (5) deep-copy body per heap-bearing struct: re-home every heap field into
      * arena `a`. Non-heap fields are copied by the initial `r = v`. */
@@ -10228,6 +10299,75 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, "    return 1;\n}\n\n");
     }
+    /* (9b) str() bodies (F5): render each aggregate to a Tycho string. Emitted for
+     * every non-generic type (like eq), forward-declared above, so recursion and
+     * mutual references resolve. Each folds tycho_str_concat; gen_str recurses for
+     * fields/elements. Format: Point(1, 2) · [1, 2, 3] · [a: 1] · Some(3). */
+    for (int i = 0; i < g_nstructs; i++) {
+        if (g_structs[i].generic) continue;
+        StructDef *sd = &g_structs[i];
+        fprintf(o, "static char *tycho_str_S_%s(Arena *a, S_%s v) {\n", sd->name, sd->name);
+        fprintf(o, "    char *r = tycho_str_from_c(a, \"%s(\");\n", sd->name);
+        for (int j = 0; j < sd->nfields; j++) {
+            if (j) fprintf(o, "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
+            fprintf(o, "    r = tycho_str_concat(a, r, %s);\n",
+                    gen_str(sd->fields[j].type, "a", sfmt("v.f_%s", sd->fields[j].name)));
+        }
+        fprintf(o, "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n");
+    }
+    for (int i = 0; i < g_nenums; i++) {
+        if (g_enums[i].generic) continue;
+        EnumDef *ed = &g_enums[i];
+        fprintf(o, "static char *tycho_str_E_%s(Arena *a, E_%s *v) {\n", ed->name, ed->name);
+        for (int v2 = 0; v2 < ed->nvariants; v2++) {
+            Variant *var = &ed->variants[v2];
+            if (var->npayload == 0) {
+                fprintf(o, "    if (v->tag == %d) return tycho_str_from_c(a, \"%s\");\n", v2, var->name);
+            } else {
+                fprintf(o, "    if (v->tag == %d) {\n", v2);
+                fprintf(o, "        char *r = tycho_str_from_c(a, \"%s(\");\n", var->name);
+                for (int f = 0; f < var->npayload; f++) {
+                    if (f) fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
+                    fprintf(o, "        r = tycho_str_concat(a, r, %s);\n",
+                            gen_str(var->payload[f], "a", sfmt("v->u.%s.f%d", var->name, f)));
+                }
+                fprintf(o, "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n");
+            }
+        }
+        fprintf(o, "    return tycho_str_from_c(a, \"<?>\");\n}\n");   /* unreachable: tag always matches a variant */
+    }
+    for (int i = 0; i < g_narrtypes; i++) {
+        if (has_typaram(T_ARRC_BASE + i)) continue;
+        Type et = g_arrtypes[i].elem;
+        fprintf(o, "static char *tycho_str_arr_C%d(Arena *a, TychoArrC%d xs) {\n", i, i);
+        fprintf(o, "    char *r = tycho_str_from_c(a, \"[\");\n");
+        if (g_arrtypes[i].size > 0) {   /* fixed [N]T: inline storage xs.v[i] */
+            fprintf(o, "    for (long i = 0; i < %ld; i++) {\n", (long)g_arrtypes[i].size);
+            fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
+            fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));
+        } else {
+            fprintf(o, "    for (long i = 0; i < xs.len; i++) {\n");
+            fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
+            fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.data[i]"));
+        }
+        fprintf(o, "    }\n    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n");
+    }
+    for (int i = 0; i < g_nmaptypes; i++) {
+        if (has_typaram(T_MAPC_BASE + i)) continue;
+        Type kt = g_maptypes[i].key, vt = g_maptypes[i].val;
+        Type kb = base_of(kt);   /* fieldless-enum key is stored as a tag: rebuild the value via the singleton table */
+        char *kexpr = IS_ENUM(kb) ? sfmt("_sing_tab_%s[m.keys[s]]", g_enums[ENUM_ID(kb)].name)
+                                  : sfmt("m.keys[s]");
+        fprintf(o, "static char *tycho_str_mapc%d(Arena *a, TychoMapC%d m) {\n", i, i);
+        fprintf(o, "    char *r = tycho_str_from_c(a, \"[\"); int first = 1;\n");
+        fprintf(o, "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {\n");
+        fprintf(o, "        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \")); first = 0;\n");
+        fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(kt, "a", kexpr));
+        fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \": \"));\n");
+        fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(vt, "a", "m.vals[s]"));
+        fprintf(o, "    }\n    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n");
+    }
+    fputs("\n", o);
     for (int i = 0; i < g_nlaminfo; i++) {   /* closure env structs (one per capturing lambda) + its env-copy thunk */
         LamInfo *li = &g_laminfo[i];
         if (li->ftype == T_VOID || li->ncap == 0) continue;
