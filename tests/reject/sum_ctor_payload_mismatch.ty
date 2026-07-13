@@ -1,0 +1,5 @@
+# an annotated Option/Result must type-check its Some/Ok/Err payload (aggregate, not
+# just scalar). Both compilers must reject a wrong-typed payload.
+fn main():
+    x : Option(int) = Some("hi")
+    println("x")

@@ -3859,6 +3859,75 @@ fn scalar_coercion_bad(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [strin
     lit_ok := (is_int_lit(e) and (rwant == "float" or rwant == "f32" or is_sized_int(rwant))) or (is_float_lit(e) and rwant == "f32")
     return rat != rwant and is_scalar_num(rat) and is_scalar_num(rwant) and not lit_ok
 
+fn is_sum_ctor(e: Expr) -> bool:
+    match e:
+        ECall(cn, _ca, _el):
+            return cn == "Some" or cn == "None" or cn == "Ok" or cn == "Err"
+        _:
+            return false
+
+# AUDIT follow-up: an annotated Option/Result binding must type-check its Some/Ok/Err/
+# None payload against the annotation, RECURSIVELY -- a bare None/Ok/Err is fixed from
+# context at any depth, a concrete payload of the wrong type is rejected. Mirrors
+# tychoc's resolve_exp. Only a clearly-concrete LEAF is type_of'd; sum-ctor nesting is
+# walked, and adapting payloads (int/float literals, bare []/{}, UFCS, field exprs) are
+# skipped so they are never compared raw (they get grounded elsewhere).
+fn check_sum_annot(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string], el: int):
+    match e:
+        EVar(vn, _vel):                          # a bare `None` is an EVar, not an ECall; it adapts to any Option
+            if vn == "None":
+                if not is_option(want):
+                    die_at(dc, el, "declared type " + want + " but value is None")
+                return
+            check_sum_leaf(dc, ctx, want, e, names, types, el)
+        ECall(cn, ca, _el):
+            if cn == "None":
+                if not is_option(want):
+                    die_at(dc, el, "declared type " + want + " but value is None")
+                return
+            if cn == "Some":
+                if not is_option(want):
+                    die_at(dc, el, "declared type " + want + " but value is a Some(...)")
+                if len(ca) == 1:
+                    check_sum_annot(dc, ctx, option_inner(want), ca[0], names, types, el)
+                return
+            if cn == "Ok":
+                if not is_result(want):
+                    die_at(dc, el, "declared type " + want + " but value is an Ok(...)")
+                if len(ca) == 1:
+                    check_sum_annot(dc, ctx, result_ok(want), ca[0], names, types, el)
+                return
+            if cn == "Err":
+                if not is_result(want):
+                    die_at(dc, el, "declared type " + want + " but value is an Err(...)")
+                if len(ca) == 1:
+                    check_sum_annot(dc, ctx, result_err(want), ca[0], names, types, el)
+                return
+            check_sum_leaf(dc, ctx, want, e, names, types, el)
+        _:
+            check_sum_leaf(dc, ctx, want, e, names, types, el)
+
+fn check_sum_leaf(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string], el: int):
+    ok := false                                  # only a definitely-concrete, non-adapting payload is compared
+    match e:
+        EStr(_t, _l):
+            ok = true
+        EBool(_t, _l):
+            ok = true
+        EChar(_t, _l):
+            ok = true
+        EVar(_n, _l):
+            ok = true
+        ECall(_cn, _ca, _l):                     # a ctor / fn call (reliably typed post-mono; generics via resolve_ginst)
+            ok = true
+        _:
+            ok = false
+    if not ok or not scalar_check_safe(e):
+        return
+    vt := type_of(e, names, types, dc, ctx)
+    if resolve_ginst(resolve_nt(dc, ctx, vt), dc, ctx) != resolve_ginst(resolve_nt(dc, ctx, want), dc, ctx):
+        die_at(dc, el, "declared type " + want + " but value is " + vt)
+
 fn is_tuple(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 40           # "(T,U,...)"
 
@@ -10251,6 +10320,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
             if scalar_coercion_bad(dc, ctx, t, e, names, types):        # AUDIT: no silent scalar widen/narrow
                 die_at(dc, _sl, "declared type " + t + " but value is " + type_of(e, names, types, dc, ctx))
+            if is_sum_ctor(e) and (is_option(t) or is_result(t)):       # AUDIT follow-up: check an aggregate Some/Ok/Err payload against the annotation
+                check_sum_annot(dc, ctx, t, e, names, types, _sl)
             push(names, n)
             push(types, t)
         SOrReturn(n, e, _sl):
