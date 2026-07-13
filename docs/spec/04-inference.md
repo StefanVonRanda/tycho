@@ -71,10 +71,20 @@ bare `None`. When used as a declaration initializer without an annotation, the
 variable's type is **pending** and is grounded by the type expected at its first
 use within the same block; a pending type that is **never** grounded is rejected
 (a program MUST annotate or ground it, e.g. `x : [int] = []`, `x : Option(int) =
-None`). The `Result` constructors behave differently: `x := Ok(v)` and
-`x := Err(e)` are **not** pending — only one of `Result`'s two type parameters is
-known, so they are rejected **immediately** at the declaration and MUST be
-annotated (`x : Result(int, string) = Ok(v)`).
+None`). The pending mechanism resolves a type with exactly **one** free parameter
+that a single later use can pin — `[]` is `[?T]` and `None` is `Option(?T)`.
+
+The `Result` constructors are a **deliberate exception**: `x := Ok(v)` and
+`x := Err(e)` are **not** pending. A bare constructor pins only one of `Result`'s
+two parameters (`Ok(v)` gives the ok type, `Err(e)` the err type), leaving the
+other free, which a single grounding use in the same block does not generally fix;
+so they are rejected **immediately** at the declaration and MUST be annotated
+(`x : Result(int, string) = Ok(v)`). This is the one place the inference asymmetry
+is visible; the compiler's diagnostic names the required annotation. (Pure
+precedent — Go, Swift, and Odin all reject a bare `nil`/`None` declaration outright
+— would argue for rejecting `None` too, but that would remove the deliberate `[]`
+/ `None` pending convenience, so Tycho keeps it and documents the `Result` limit
+instead.)
 
 > Provenance: pending deferral `src/tychoc.c:5784-5791`, grounding `pend_ground`
 > `:4006-4025`; rejection of ungrounded `None` / immediate rejection of bare
