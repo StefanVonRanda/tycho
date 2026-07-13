@@ -41,4 +41,26 @@ else
     fail=1
 fi
 
+# --- Check 2: every fixture cited in Appendix E exists ----------------------
+# The conformance matrix is worthless if it points at fixtures that were
+# renamed or removed. Extract each `code`-quoted fixture path and assert it
+# resolves to a real file/dir (bare reject//abort/ are under tests/).
+econf="$root/docs/spec/appendix-e-conformance.md"
+missing=$(
+    grep -oE '`(tests/[A-Za-z0-9_/.]+|reject/[A-Za-z0-9_]+|abort/[A-Za-z0-9_]+|corelib/test/[A-Za-z0-9_]+|examples/[A-Za-z0-9_/.]+)`' "$econf" \
+    | tr -d '`' | sort -u | while read -r p; do
+        case "$p" in reject/*|abort/*) rel="tests/$p" ;; *) rel="$p" ;; esac
+        if [ ! -e "$root/$rel" ] && [ ! -e "$root/$rel.ty" ] && [ ! -d "$root/$rel" ]; then
+            echo "$p"
+        fi
+    done
+)
+if [ -z "$missing" ]; then
+    echo "spec-check: all Appendix E fixture citations resolve (ok)"
+else
+    echo "spec-check: FAIL — Appendix E cites fixtures that do not exist:" >&2
+    echo "$missing" | sed 's/^/    /' >&2
+    fail=1
+fi
+
 exit $fail
