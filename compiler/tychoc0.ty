@@ -3811,6 +3811,21 @@ fn result_err(ty: string) -> string:               # "Result(T,E)" -> "E"
     inner := substr(ty, 7, len(ty) - 1)
     return substr(inner, top_comma(inner) + 1, len(inner))
 
+# a base scalar numeric/bool/char type (the set that must never silently coerce)
+fn is_scalar_num(t: string) -> bool:
+    return t == "int" or t == "float" or t == "bool" or t == "char" or t == "f32" or is_sized_int(t)
+
+# AUDIT: is passing value `e` where scalar type `want` is expected an illegal SILENT
+# coercion? True when both sides are scalar-numeric, differ, and it is not a legal
+# literal adaptation (int-lit -> float/f32/sized, float-lit -> f32). Mirrors tychoc's
+# expected-type equality (src/tychoc.c:6108/etc.). Newtype identity + aggregate
+# compatibility are handled separately (nt_check), so this uses resolve_nt.
+fn scalar_coercion_bad(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string]) -> bool:
+    rwant := resolve_nt(dc, ctx, want)
+    rat := resolve_nt(dc, ctx, type_of(e, names, types, dc, ctx))
+    lit_ok := (is_int_lit(e) and (rwant == "float" or rwant == "f32" or is_sized_int(rwant))) or (is_float_lit(e) and rwant == "f32")
+    return rat != rwant and is_scalar_num(rat) and is_scalar_num(rwant) and not lit_ok
+
 fn is_tuple(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 40           # "(T,U,...)"
 
@@ -9896,6 +9911,8 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
             die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is inout; pass it as '&variable'")
         elif not is_inout(pp[k]) and not is_sink(pp[k]):
             nt_check(dc, ctx, pp[k], args[k], names, types, "argument " + str(k + 1) + " of '" + nm + "'", el)
+            if scalar_coercion_bad(dc, ctx, pp[k], args[k], names, types):   # AUDIT: no silent scalar coercion of an argument
+                die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is " + type_of(args[k], names, types, dc, ctx) + ", expected " + pp[k])
         k = k + 1
     # exclusivity (Law of Exclusivity): the same variable may not be passed to two
     # inout params of one call -- overlapping mutable access breaks the x = f(x)
@@ -10011,6 +10028,13 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
             for j < len(elems):
                 collect_expr(&acc, elems[j], names, types, dc, ctx)
                 j = j + 1
+            if len(elems) > 0:                             # AUDIT: reject a silent scalar mix ([1, 2.5, 3]); elements share a type
+                e0 := type_of(elems[0], names, types, dc, ctx)
+                m := 1
+                for m < len(elems):
+                    if scalar_coercion_bad(dc, ctx, e0, elems[m], names, types):
+                        die_at(dc, _el, "array elements must all have the same type")
+                    m = m + 1
         EArrEmpty(ety, _el):
             note_arr_types(&acc, "[" + ety + "]")
         EMapEmpty(k, v, _el):
@@ -10117,6 +10141,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
         SReturn(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, ctx.rettype, e, names, types, "return value", _sl)   # newtype identity vs the declared return type
+            if scalar_coercion_bad(dc, ctx, ctx.rettype, e, names, types):          # AUDIT: no silent scalar coercion of a return value
+                die_at(dc, _sl, "returning " + type_of(e, names, types, dc, ctx) + " but this function returns " + ctx.rettype)
         SConst(n, e, _sl):
             j := 0
         SReturnVoid:
@@ -10131,6 +10157,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             note_arr_types(&acc, t)
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
+            if scalar_coercion_bad(dc, ctx, t, e, names, types):        # AUDIT: no silent scalar widen/narrow
+                die_at(dc, _sl, "declared type " + t + " but value is " + type_of(e, names, types, dc, ctx))
             push(names, n)
             push(types, t)
         SOrReturn(n, e, _sl):

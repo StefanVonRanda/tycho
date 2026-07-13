@@ -1,0 +1,5 @@
+# no silent float->int narrowing in an annotated binding (must reject, both compilers)
+fn main():
+    y := 2.5
+    x: int = y
+    println(str(x))
