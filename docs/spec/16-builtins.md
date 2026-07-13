@@ -106,9 +106,9 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type). | magic |
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
-| `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`). | Sig |
+| `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |
 | `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md)). | Sig |
-| `to_i32(n)` | `int -> int`: sign-extend the low 32 bits of a returned C `int` (FFI, [§24](14-ffi.md)). | Sig |
+| `to_u8`…`to_i64`, `to_f32` | numeric `-> ` the named fixed-width type ([§5.2.7](03-types.md#527-fixed-width-integers-u8u16u32u64-i8i16i32i64)); narrow/reinterpret, total. | Sig |
 | `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ([§24](14-ffi.md)). | Sig |
 
 The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic

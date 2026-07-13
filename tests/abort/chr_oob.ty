@@ -1,0 +1,5 @@
+# chr of a value outside 0..255 must abort cleanly, not silently mask to a byte.
+fn main():
+    z := []int
+    push(z, 300)
+    print(chr(z[0]))

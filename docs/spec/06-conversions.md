@@ -77,10 +77,9 @@ The following are compile-time type errors, not conversions:
 ## 8.5 Out-of-range conversions
 
 For an in-range operand, `to_int(f)` truncates `f` toward zero, and each sized
-conversion narrows by the modular/reinterpreting rule of §8.2. The result of a
-conversion whose source value is **not representable** in the destination type —
-a `float` outside the `int` range for `to_int`, or a value that does not fit the
-target width for `to_u32`/`to_u64`/`to_f32` — is **unspecified** (probed: it
-currently inherits the C target's out-of-range float-to-integer behavior, which
-is undefined). A conforming program MUST NOT rely on the result of an
-out-of-range conversion ([Appendix F](appendix-f-impl-defined.md)).
+conversion narrows by the modular/reinterpreting rule of §8.2. A **`to_int` of a
+`float`/`f32` that is `NaN` or outside the signed 64-bit range aborts** (`tycho:
+float-to-int conversion out of range`) rather than inheriting C's undefined
+float-to-integer behavior — the fail-closed discipline. The sized integer/float
+conversions (`to_u8` … `to_i64`, `to_f32`) are **total**: they narrow by taking
+the low bits or reinterpreting (§8.2), so every input has a defined result.

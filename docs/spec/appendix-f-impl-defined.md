@@ -12,19 +12,18 @@ program MUST NOT depend on anything in the "unspecified" list.
 | # | Behavior | Reference | Status |
 |---|---|---|---|
 | 1 | **Argument / operand / place evaluation order** within one expression (order of side effects among a call's arguments, a binary operator's operands, or a place's sub-expressions). | [§13.4](09-expressions.md#134-evaluation-order) | probed; inherited from the target, not sequenced by Tycho |
-| 2 | **Out-of-range narrowing conversion** — `to_int(f)` for `f` outside `int` range; `to_u32`/`to_u64`/`to_f32` whose source does not fit. (In-range `to_int(float)` truncates toward zero.) | [§8.5](06-conversions.md#85-out-of-range-conversions) | probed |
-| 3 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
-| 4 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
-| 5 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
+| 2 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
+| 3 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
+| 4 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
 
-An out-of-range **shift count** was formerly in this list; it is now defined
-(count ≥ width → `0`, negative count → runtime abort — [§13.2](09-expressions.md#132-operators)).
+Two items were formerly in this list and are now defined: an out-of-range **shift
+count** (count ≥ width → `0`, negative → abort — [§13.2](09-expressions.md#132-operators))
+and an out-of-range **`to_int(float)`** (NaN / out-of-range → abort — [§8.5](06-conversions.md#85-out-of-range-conversions);
+the sized conversions are total).
 
-Items 1–2 are candidates for future tightening (for example, pinning
-left-to-right evaluation by emitting sequenced temporaries, or defining the
-out-of-range narrowing conversion). Any such change would move the item from this
-list into the normative body; until then it is unspecified. (The out-of-range
-shift count was such a candidate and has since been defined — §13.2.)
+Item 1 (evaluation order) is the remaining candidate for future tightening —
+pinning left-to-right evaluation by emitting sequenced temporaries — which would
+move it into the normative body; until then it is unspecified.
 
 ## F.2 Implementation-defined behavior
 

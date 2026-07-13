@@ -167,6 +167,18 @@ static long long tycho_shrn(long long x, long long n, int w, int sgn) {
     if (sgn) return x >> n;
     return (long long)((unsigned long long)x >> n);
 }
+/* Float-to-int guard. Casting a NaN or an out-of-range float to an integer is C
+ * undefined behavior; the determinism contract requires a defined result, so
+ * abort cleanly instead (Swift traps here too). In-range values still truncate
+ * toward zero. The valid interval is [-2^63, 2^63); 2^63 is not a representable
+ * long. The negated `>=/<` form also catches NaN (both comparisons are false). */
+static long tycho_f2i(double x) {
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
+        fprintf(stderr, "tycho: float-to-int conversion out of range\n");
+        exit(1);
+    }
+    return (long)x;
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */
@@ -987,12 +999,14 @@ char *tycho_read_file(Arena *a, const char *path) {
 static int    tycho_argc = 0;
 static char **tycho_argv = NULL;
 
-/* chr(n): the one-byte string for code point n (0..255) — the inverse of the
- * `s[i] -> int` byte read. n==0 yields the empty string (strings are
- * NUL-terminated), which is fine: codegen never emits a NUL byte. */
+/* chr(n): the one-byte string for byte value n (0..255) — the inverse of the
+ * `s[i] -> int` byte read. A value outside 0..255 is a program error and aborts
+ * cleanly (like a bad index), rather than silently masking to a byte. n==0 is a
+ * real NUL byte, one byte long: strings are byte-safe. */
 char *tycho_chr(Arena *a, long n) {
-    char *r = tycho_str_alloc(a, 1);          /* always one byte, incl. n==0 (a real NUL): strings are byte-safe */
-    r[0] = (char)(n & 0xff);
+    if (n < 0 || n > 255) { fprintf(stderr, "tycho: chr(%ld) out of byte range 0..255\n", n); exit(1); }
+    char *r = tycho_str_alloc(a, 1);
+    r[0] = (char)n;
     return r;
 }
 

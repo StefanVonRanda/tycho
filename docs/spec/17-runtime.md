@@ -41,6 +41,11 @@ A conforming implementation MUST abort on each of the following:
   not abort.
 - **A negative shift count** (`<<`, `>>`). A count `≥` the operand's bit width
   does *not* abort — it is defined as `0` (§30.1, §13.2).
+- **A `range` step of zero** — a literal `0` step is a compile error; a step that
+  evaluates to `0` at run time aborts (§10).
+- **`chr(n)` with `n` outside `0..255`** — the byte value is out of range (§16).
+- **`to_int(f)` of a `NaN` or out-of-range `float`/`f32`** (§8.5). The sized
+  integer conversions are total (no abort).
 - **Array index out of bounds**, on both read (`a[i]`) and write (`a[i] = v`).
 - **String index out of bounds** (`s[i]`). (`s[i] = v` is a *compile* error —
   strings are immutable.)

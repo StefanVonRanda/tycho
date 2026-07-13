@@ -5832,6 +5832,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "to_float":
                 return "((double)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_int":
+                ai := resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
+                if ai == "float" or ai == "f32":   # float -> long via the range/NaN guard (traps); sized/u32/u64 -> long is a defined plain cast
+                    return "hi_f2i(" + gen_expr(args[0], names, types, dc, ctx) + ")"
                 return "((long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if is_sized_conv(name):                       # to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend)
                 return "((" + sized_cty(sized_conv_target(name)) + ")(" + gen_expr(args[0], names, types, dc, ctx) + "))"
@@ -7964,6 +7967,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 return inner
             return "    {\n" + decls + inner + flush + "    }\n"
         SForRange(name, start, stop, step, body, _sl):
+            if is_zero_int_lit(step):   # a literal-0 step never terminates; reject at compile time (matches tychoc). A runtime-0 step aborts (guard emitted below).
+                die_at(dc, _sl, "range step is zero (the loop would never terminate)")
             fnm, fsf, fty := fuse_detect(body, names, types, dc, ctx, start, false)
             bn := names                           # loop var is scoped to body
             bt := types
@@ -7985,6 +7990,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             sx := "_stop_" + un(name)
             px := "_step_" + un(name)
             header := "    { long " + sx + " = " + gen_expr(stop, names, types, dc, ctx) + ", " + px + " = " + gen_expr(step, names, types, dc, ctx) + ";\n"
+            header = header + "    if (" + px + " == 0) { fprintf(stderr, \"tycho: range step is zero\\n\"); exit(1); }\n"
             header = header + "    for (long " + un(name) + " = " + gen_expr(start, names, types, dc, ctx) + "; " + px + " > 0 ? " + un(name) + " < " + sx + " : " + un(name) + " > " + sx + "; " + un(name) + " += " + px + ") {\n"
             inner := header + "        Arena _b" + d1 + " = arena_child(" + cur_arena(dc, ctx) + ");\n" + gen_block(body, bn, bt, dc, bc) + "        arena_free(&_b" + d1 + ");\n    } }\n"
             if len(fnm) == 0:
@@ -8987,6 +8993,7 @@ fn preamble() -> string:
     out = out + "static unsigned long long hi_shr_u64(unsigned long long x, long long n) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= 64) return 0; return x >> n; }\n"
     out = out + "static long long hi_shln(long long x, long long n, int w) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= w) return 0; return (long long)((unsigned long long)x << n); }\n"
     out = out + "static long long hi_shrn(long long x, long long n, int w, int sgn) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= w) return 0; if (sgn) return x >> n; return (long long)((unsigned long long)x >> n); }\n"
+    out = out + "static long hi_f2i(double x) { if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) { fprintf(stderr, \"tycho: float-to-int conversion out of range\\n\"); exit(1); } return (long)x; }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
     out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"
@@ -9008,7 +9015,7 @@ fn preamble() -> string:
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = ((const long*)s)[-1]; if (a < 0) a = 0; if (b > n) b = n; if (b < a) b = a; long m = b - a; char* r = hs(ar, m); memcpy(r, s + a, (size_t)m); return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { long ls = ((const long*)s)[-1], lsub = ((const long*)sub)[-1]; if (lsub == 0) return 0; for (long i = 0; i + lsub <= ls; i++) if (memcmp(s + i, sub, (size_t)lsub) == 0) return i; return -1; }\n"
     out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
-    out = out + "static char* hi_chr(Arena* ar, long n) { char* r = hs(ar, 1); r[0] = (char)(n & 0xff); return r; }\n"
+    out = out + "static char* hi_chr(Arena* ar, long n) { if (n < 0 || n > 255) { fprintf(stderr, \"tycho: chr(%ld) out of byte range 0..255\\n\", n); exit(1); } char* r = hs(ar, 1); r[0] = (char)n; return r; }\n"
     out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return s_from_c(ar, v ? v : \"\"); }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static void hi_eprint(const char* m) { fputs(m, stderr); }\n"

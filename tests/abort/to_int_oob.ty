@@ -1,0 +1,5 @@
+# to_int of a float outside the signed 64-bit range must abort, not be C UB.
+fn main():
+    z := []float
+    push(z, 1e30)
+    print(str(to_int(z[0])))

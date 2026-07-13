@@ -6094,6 +6094,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 resolve_expr(s->r_stop)  != T_INT ||
                 (s->r_step && resolve_expr(s->r_step) != T_INT))
                 die_at(s->line, "range(...) arguments must be int");
+            if (s->r_step && s->r_step->kind == E_INT && s->r_step->ival == 0)
+                die_at(s->line, "range step is zero (the loop would never terminate)");
             int m = vars_mark();
             vars_push(s->name, T_INT, 1);   /* loop variable is int, scoped to the loop */
             resolve_block(s->body, s->nbody, ret);
@@ -7497,8 +7499,12 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "to_float"))    /* int -> double */
         return sfmt("((double)%s)", gen_expr(e->args[0], arena));
-    if (!strcmp(e->sval, "to_int"))      /* double -> long, truncates toward zero */
+    if (!strcmp(e->sval, "to_int")) {    /* float -> long via the range/NaN guard (traps out-of-range); sized/u32/u64 -> long is defined, plain cast */
+        Type at = base_of(e->args[0]->type);
+        if (at == T_FLOAT || at == T_F32)
+            return sfmt("tycho_f2i(%s)", gen_expr(e->args[0], arena));
         return sfmt("((long)%s)", gen_expr(e->args[0], arena));
+    }
     if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
         return sfmt("((void*)(long)%s)", gen_expr(e->args[0], arena));
     if (is_sized_conv(e->sval))          /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
@@ -8942,6 +8948,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
             indent(o, ind + 1); fprintf(o, "long _stop%d = %s, _step%d = %s;\n", id, stop, id, step);
+            indent(o, ind + 1); fprintf(o, "if (_step%d == 0) { fprintf(stderr, \"tycho: range step is zero\\n\"); exit(1); }\n", id);
             indent(o, ind + 1);
             fprintf(o, "for (long h_%s = %s; _step%d > 0 ? h_%s < _stop%d : h_%s > _stop%d; h_%s += _step%d) {\n",
                     s->name, start, id, s->name, id, s->name, id, s->name, id);

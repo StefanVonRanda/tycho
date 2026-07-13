@@ -55,12 +55,10 @@ valid in every shape and are errors outside a loop.
 **Counting form** — `for i in range(a, b, step):` binds `i` (an `int`, scoped to
 the loop) to successive values from `a` toward `b`, stepping by `step`. `range(n)`
 means `range(0, n, 1)`; `range(a, b)` means step `1`. The bound `b` is exclusive.
-A **negative step** counts downward. A **zero step is not guarded**: the loop
-test is `a < b` when `step > 0` and `a > b` otherwise, so a zero step takes the
-`a > b` test — it yields **no iterations when `a <= b`** (probed: `range(0, 3, 0)`
-runs the body zero times) but is a **non-terminating loop when `a > b`** (e.g.
-`range(3, 0, 0)`, since the counter never advances). A program MUST NOT use a
-zero step.
+A **negative step** counts downward. A **zero step** never advances the counter,
+so it is a program error: a literal `0` step is **rejected at compile time**, and
+a step that evaluates to `0` at run time **aborts** (`tycho: range step is zero`)
+— the same fail-closed discipline as division by zero.
 
 **Foreach form** — `for x in xs:` iterates a collection: an array (binding each
 element) or a `string` (binding each byte as an `int`). The **collection is
