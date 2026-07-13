@@ -15,10 +15,9 @@
 > guarantees, the FFI sized-int round-trip) is pinned by differential probing on
 > both compilers. The content is verified against the implementation.
 >
-> It is a *draft*, not the ratified 1.0, because of remaining polish, not
-> correctness: the fenced code blocks are now tagged and a `make spec-check` gate
-> runs every runnable example, but that gate builds only the reference compiler
-> (dual-compiler example execution, Tier 2b, is the last mechanical item). The
+> It is a *draft*, not the ratified 1.0, because what remains is content polish,
+> not correctness or mechanism: broadening how many complete `tycho`/`output`
+> examples the spec carries (the runner gates any that are added). The
 > reference-doc drifts logged in [Appendix H](appendix-h-differences.md) are all
 > reconciled. The remaining `Editor's note` blocks are informative reconciliation
 > notes, not open questions.
@@ -29,9 +28,10 @@
 > ([Appendix E](appendix-e-conformance.md)) is populated, binding every major
 > normative clause of §3–§30 to a verified fixture; every code fence carries a
 > language tag ([§2.3](00-conventions.md#23-examples-and-code-fences)); and the
-> `make spec-check` gate (CI step 17) enforces all three — it diffs the collected
-> grammar against the chapters, asserts every cited fixture exists, and compiles
-> and runs every runnable `tycho`/`output` example against its shown output.
+> `make spec-check` gate (CI step 17) enforces all of it — it diffs the collected
+> grammar against the chapters, asserts every cited fixture exists, and builds and
+> runs every runnable `tycho`/`output` example on **both** compilers (`tychoc` and
+> the self-hosted `tychoc0`) against its shown output.
 
 ## What this document is
 

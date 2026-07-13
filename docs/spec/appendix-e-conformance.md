@@ -209,15 +209,15 @@ The gate exists (`scripts/spec_check.sh`, CI step 17) and grows in tiers:
   grammar; (b) every fixture cited in the E.2 coverage matrix is asserted to
   exist, so a renamed or removed fixture breaks the build instead of leaving a
   dangling citation.
-- **Tier 2 — example execution (landed).** `scripts/spec_examples.sh` extracts
-  every runnable example — a ` ```tycho ` block immediately followed by a
-  ` ```output ` block ([§2.3](00-conventions.md#23-examples-and-code-fences)) —
-  compiles it with the reference `tychoc`, runs it, and asserts its stdout equals
-  the `output` block. A failing example is a specification defect (the rule or
-  the example is wrong) and blocks the build. Most spec code blocks are
-  illustrative fragments or grammar and are correctly skipped; new complete
-  programs added with an `output` block are gated automatically.
-- **Tier 2b — dual-compiler execution (pending).** Tier 2 runs the reference
-  compiler only; extending it to also build and run each example through the
-  self-hosted `tychoc0` would make example execution match the two-compiler
-  oracle of E.1 exactly.
+- **Tier 2 — example execution on both compilers (landed).**
+  `scripts/spec_examples.sh` extracts every runnable example — a ` ```tycho `
+  block immediately followed by a ` ```output ` block
+  ([§2.3](00-conventions.md#23-examples-and-code-fences)) — and builds it with
+  **both** the reference `tychoc` and the self-hosted `tychoc0`, runs each, and
+  asserts both produce stdout equal to the `output` block. This is the
+  two-compiler oracle of E.1 applied to the spec's own examples: a divergence
+  between the compilers, or between either compiler and the shown output, is a
+  defect that blocks the build. Most spec code blocks are illustrative fragments
+  or grammar and are correctly skipped; new complete programs added with an
+  `output` block are gated automatically. (Building `tychoc0` from source each
+  run is why this check dominates `make spec-check`'s wall time.)

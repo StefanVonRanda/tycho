@@ -182,9 +182,10 @@ Fenced code blocks carry a language tag identifying their kind:
 A **runnable example** is a `tycho` block immediately followed (blank lines
 permitted) by an `output` block: the `tycho` block is then a complete program
 and its standard output MUST equal the `output` block byte-for-byte. The `make
-spec-check` gate ([Appendix E.3](appendix-e-conformance.md)) compiles and runs
-every runnable example and asserts this, the same discipline the reference pages
-satisfy through their golden fixtures.
+spec-check` gate ([Appendix E.3](appendix-e-conformance.md)) builds and runs
+every runnable example on **both** the reference `tychoc` and the self-hosted
+`tychoc0` and asserts this — the two-compiler oracle of
+[§1.3](#13-conformance) applied to the spec's own examples.
 
 Examples are illustrative; a conflict between an example and a normative rule is
 a defect to be corrected in favor of the rule.

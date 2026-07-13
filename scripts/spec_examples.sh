@@ -21,6 +21,34 @@ CC="${CC:-cc}"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
+# Tier 2b: build the self-hosted tychoc0 once, so each example is exercised on
+# BOTH compilers (the two-compiler oracle of Appendix E.1). tychoc0 compiles a
+# single file from stdin to C on stdout.
+T0="$TMP/tychoc0"
+if ! "$TYCHOC" compiler/tychoc0.ty -o "$T0" >"$TMP/t0build.log" 2>&1; then
+    echo "spec-examples: FAIL — could not build tychoc0 for the dual-compiler check" >&2
+    sed 's/^/    /' "$TMP/t0build.log" >&2
+    exit 2
+fi
+
+# compile a C file, run it, diff stdout against the expected block.
+# args: <cfile> <compiler-tag> <docfile> <docline> <expected.out>; returns 0/1.
+check_c() {
+    cf=$1; tag=$2; ff=$3; ll=$4; ex=$5; bin="$cf.bin"
+    if ! $CC -O2 -fwrapv -std=c11 -o "$bin" "$cf" -lm >"$cf.cc.log" 2>&1; then
+        echo "spec-examples: FAIL $ff:$ll [$tag] — C compile error" >&2; sed 's/^/    /' "$cf.cc.log" >&2; return 1
+    fi
+    "$bin" </dev/null >"$cf.got" 2>/dev/null; rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "spec-examples: FAIL $ff:$ll [$tag] — program exited $rc" >&2; return 1
+    fi
+    if ! diff -u "$ex" "$cf.got" >"$cf.diff" 2>&1; then
+        echo "spec-examples: FAIL $ff:$ll [$tag] — output mismatch (--- expected / +++ got)" >&2
+        sed 's/^/    /' "$cf.diff" >&2; return 1
+    fi
+    return 0
+}
+
 # Pass 1: carve out each tycho+output pair into $TMP/ex_N.ty / .out, and print
 # "N<TAB>file<TAB>line" per pair on stdout.
 index=$(
@@ -45,27 +73,32 @@ index=$(
   done
 )
 
-# Pass 2: build + run + compare each carved example. The while loop runs in a
-# subshell (it reads from a pipe), so failures are recorded by touching a marker
-# file rather than a shell variable.
+# Pass 2: build + run + compare each carved example on BOTH compilers. The while
+# loop runs in a subshell (it reads from a pipe), so failures are recorded by
+# touching a marker file rather than a shell variable.
 echo "$index" | while IFS='	' read -r n f line; do
   [ -n "${n:-}" ] || continue
-  src="$TMP/ex_$n.ty"; exp="$TMP/ex_$n.out"
-  if ! "$TYCHOC" "$src" --emit-c -o "$TMP/ex_$n" >"$TMP/ex_$n.log" 2>&1; then
-    echo "spec-examples: FAIL $f:$line — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$n.log" >&2; : >"$TMP/failed"; continue
+  src="$TMP/ex_$n.ty"; exp="$TMP/ex_$n.out"; efail=0
+
+  # tychoc (C reference): --emit-c -o writes ex_$n.c
+  if "$TYCHOC" "$src" --emit-c -o "$TMP/ex_$n" >"$TMP/ex_$n.log" 2>&1; then
+    check_c "$TMP/ex_$n.c" tychoc "$f" "$line" "$exp" || efail=1
+  else
+    echo "spec-examples: FAIL $f:$line [tychoc] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$n.log" >&2; efail=1
   fi
-  if ! $CC -O2 -fwrapv -std=c11 -o "$TMP/ex_$n.bin" "$TMP/ex_$n.c" -lm >"$TMP/ex_$n.log" 2>&1; then
-    echo "spec-examples: FAIL $f:$line — C compile error" >&2; sed 's/^/    /' "$TMP/ex_$n.log" >&2; : >"$TMP/failed"; continue
+
+  # tychoc0 (self-hosted): stdin -> C on stdout
+  if "$T0" <"$src" >"$TMP/ex_$n.t0.c" 2>"$TMP/ex_$n.t0.log"; then
+    check_c "$TMP/ex_$n.t0.c" tychoc0 "$f" "$line" "$exp" || efail=1
+  else
+    echo "spec-examples: FAIL $f:$line [tychoc0] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$n.t0.log" >&2; efail=1
   fi
-  "$TMP/ex_$n.bin" </dev/null >"$TMP/ex_$n.got" 2>/dev/null; rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "spec-examples: FAIL $f:$line — program exited $rc" >&2; : >"$TMP/failed"; continue
+
+  if [ "$efail" -eq 0 ]; then
+    echo "spec-examples: ok $f:$line (tychoc + tychoc0)"
+  else
+    : >"$TMP/failed"
   fi
-  if ! diff -u "$exp" "$TMP/ex_$n.got" >"$TMP/ex_$n.diff" 2>&1; then
-    echo "spec-examples: FAIL $f:$line — output mismatch (--- expected / +++ got)" >&2
-    sed 's/^/    /' "$TMP/ex_$n.diff" >&2; : >"$TMP/failed"; continue
-  fi
-  echo "spec-examples: ok $f:$line"
 done
 
 runs=$(ls "$TMP"/ex_*.ty 2>/dev/null | wc -l | tr -d ' ')
