@@ -15,10 +15,10 @@
 > guarantees, the FFI sized-int round-trip) is pinned by differential probing on
 > both compilers. The content is verified against the implementation.
 >
-> It is a *draft*, not the ratified 1.0, because the following remain (finishing
-> work, not correctness): extending the `make spec-check` gate from grammar +
-> citation consistency to running every fenced example, and back-porting the
-> reference-doc drifts logged in [Appendix H](appendix-h-differences.md). The
+> It is a *draft*, not the ratified 1.0, because one item of finishing work
+> remains (not correctness): extending the `make spec-check` gate from grammar +
+> citation consistency to running every fenced example. The reference-doc drifts
+> logged in [Appendix H](appendix-h-differences.md) are all reconciled. The
 > remaining `Editor's note` blocks are informative reconciliation notes, not open
 > questions.
 >
