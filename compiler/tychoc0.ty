@@ -9122,11 +9122,11 @@ fn gen_map_str(dc: Decls, ctx: Ctx, ty: string) -> string:
     M := mstruct(ty)
     f := mfam(ty)
     s := "m" + mtag(k) + "_" + mangle(v)
-    kexpr := "m.ord[i]"
+    kexpr := "m.ekeys[e]"
     if enum_fieldless(dc, ctx, k):
-        kexpr = f + "_ktab[m.ord[i]]"
-    out := "static char* " + f + "_str(Arena* ar, " + M + " m) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < m.nord; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); "
-    out = out + "r = sc(ar, r, " + str_field(dc, ctx, k, "ar", kexpr) + "); r = sc(ar, r, s_from_c(ar, \": \")); long _t = " + s + "_slot(m, m.ord[i]); r = sc(ar, r, " + str_field(dc, ctx, v, "ar", "m.vals[_t]") + "); }"
+        kexpr = f + "_ktab[m.ekeys[e]]"
+    out := "static char* " + f + "_str(Arena* ar, " + M + " m) { char* r = s_from_c(ar, \"[\"); int first = 1; for (long e = 0; e < m.ecount; e++) if (m.elive[e]) { if (!first) r = sc(ar, r, s_from_c(ar, \", \")); first = 0; "
+    out = out + "r = sc(ar, r, " + str_field(dc, ctx, k, "ar", kexpr) + "); r = sc(ar, r, s_from_c(ar, \": \")); r = sc(ar, r, " + str_field(dc, ctx, v, "ar", "m.evals[e]") + "); }"
     return out + " return sc(ar, r, s_from_c(ar, \"]\")); }\n"
 
 # Recursive deep-copy of an enum node into arena `ar`: fresh node, same tag, and
@@ -9724,10 +9724,10 @@ fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     if mapkey_composite(dc, ctx, k):             # struct keys: stored by value, deep hash/eq, occupancy array (no null sentinel, like int keys)
         cks := cty(dc, ctx, k)
         ck := substr(cks, 0, len(cks) - 1)
-        return "struct " + M + "_ { " + ck + "* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; " + ck + "* ord; long nord; long ocap; };\n"
+        return "struct " + M + "_ { " + ck + "* ekeys; " + cv + "* evals; unsigned char* elive; int* idx; long len; long ecount; long ecap; long icap; };\n"
     if resolve_nt(dc, ctx, k) == "int" or enum_fieldless(dc, ctx, k):   # int(-rep) keys incl. enum tags: a value array + occupancy bytes (0 is a real key)
-        return "struct " + M + "_ { long* keys; " + cv + "* vals; unsigned char* occ; long len; long cap; long* ord; long nord; long ocap; };\n"
-    return "struct " + M + "_ { char** keys; " + cv + "* vals; long len; long cap; char** ord; long nord; long ocap; };\n"
+        return "struct " + M + "_ { long* ekeys; " + cv + "* evals; unsigned char* elive; int* idx; long len; long ecount; long ecap; long icap; };\n"
+    return "struct " + M + "_ { char** ekeys; " + cv + "* evals; unsigned char* elive; int* idx; long len; long ecount; long ecap; long icap; };\n"
 
 # Map family monomorphized over key k (str/int) and value v (int/float). The C
 # value type cv is long/double. String keys use mhash + strcmp + a NULL-empty key
@@ -9743,7 +9743,7 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
     f := "map_" + mangle(k) + "_" + mangle(v)
     s := "m" + mtag(k) + "_" + mangle(v)
     ka := "Arr_" + mangle(k)                     # keys() returns [K] (a newtype/enum key stays wrapped)
-    kv := "m.ord[i]"                             # the value keys() pushes (walked in insertion order)
+    kv := "m.ekeys[e]"                            # the value keys() pushes (walked in insertion order)
     pre := ""
     if enum_fieldless(dc, ctx, k):               # enum key: tags are stored; keys() rebuilds the
         ei := 0                                  # wrapped values from a tag -> singleton table.
@@ -9759,68 +9759,68 @@ fn gen_map_fns(dc: Decls, ctx: Ctx, ty: string) -> string:
                     vj = vj + 1
                 pre = pre + tab + " };\n"
             ei = ei + 1
-        kv = f + "_ktab[m.ord[i]]"
+        kv = f + "_ktab[m.ekeys[e]]"
     vcopy := cp_field(dc, ctx, v, "ar", "val")   # deep-copy the value into ar (passthrough for scalars)
-    vcmp := " || !(" + eq_field(dc, ctx, v, "b.vals[t]", "a.vals[i]") + ")"   # heap value: deep equality
+    vcmp := " || !(" + eq_field(dc, ctx, v, "b.evals[t]", "a.evals[e]") + ")"   # heap value: deep inequality
     if v == "int" or v == "float" or v == "char":
-        vcmp = " || b.vals[t] != a.vals[i]"      # scalar: byte-identical to before
-    if mapkey_composite(dc, ctx, k):             # struct keys: occupancy scheme like int keys, but K stored by value, deep-hashed and deep-compared; key deep-copied on put
+        vcmp = " || b.evals[t] != a.evals[e]"                                    # scalar: byte-compare
+    # ---- per-key-variant pieces (compact indexed-dict; preserves each key's exact hash/match/copy) ----
+    kslot := "char*"                                                             # key slot C type (string default)
+    hpre := "mhash("
+    hsuf := ")"
+    mpre := "str_cmp("
+    mmid := ", "
+    msuf := ") == 0"
+    kcopy := "scopy(ar, k)"
+    kpush := "scopy(ar, m.ekeys[e])"
+    if resolve_nt(dc, ctx, k) == "int" or enum_fieldless(dc, ctx, k):            # int(-rep) / enum-tag keys
+        kslot = "long"
+        hpre = "ikhash("
+        hsuf = ")"
+        mpre = ""
+        mmid = " == "
+        msuf = ""
+        kcopy = "k"
+        kpush = kv
+    if mapkey_composite(dc, ctx, k):                                             # struct/tuple/array keys: deep hash/eq, key deep-copied on put
         cks := cty(dc, ctx, k)
-        ck := substr(cks, 0, len(cks) - 1)        # struct C type
+        ck := substr(cks, 0, len(cks) - 1)
         rk := resolve_nt(dc, ctx, k)
-        heq := teq(dc, ctx, k)                    # deep-eq fn name (struct/enum via teq; tuple below)
-        hh := ust(rk) + "_hash"                   # deep-hash fn name
-        if is_tuple(rk):                          # tuples name their eq/hash by suffix, not ust
+        heq := teq(dc, ctx, k)
+        hh := ust(rk) + "_hash"
+        if is_tuple(rk):
             heq = "Tup_" + tup_suffix(rk) + "_eq"
             hh = "Tup_" + tup_suffix(rk) + "_hash"
-        if is_array(rk):                          # arrays name their eq/hash by mangled element
+        if is_array(rk):
             heq = "Arr_" + mangle(elem_ty(rk)) + "_eq"
             hh = "Arr_" + mangle(elem_ty(rk)) + "_hash"
-        kcopy := cp_field(dc, ctx, k, "ar", "k")  # deep-copy the key into ar (passthrough for scalar-field structs/tuples)
-        out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(" + ck + ") * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
-        out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
-        out = out + "static void " + s + "_op(Arena* ar, " + ck + "** ord, long* nord, long* ocap, " + ck + " k) { if (*nord == *ocap) { long nc = *ocap ? *ocap * 2 : 8; " + ck + "* nb = amem(ar, sizeof(" + ck + ") * nc); for (long i = 0; i < *nord; i++) nb[i] = (*ord)[i]; *ord = nb; *ocap = nc; } (*ord)[(*nord)++] = k; }\n"
-        out = out + "static long " + s + "_slot(" + M + " m, " + ck + " k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(" + hh + "(k) & mask); while (m.occ[i] != 0) { if (" + heq + "(m.keys[i], k)) return i; i = (long)((i + 1) & mask); } return i; }\n"
-        out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, " + ck + " k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = " + kcopy + "; m->len++; " + s + "_op(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); } m->vals[t] = " + vcopy + "; }\n"
-        out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, " + ck + " k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = " + kcopy + "; m->len++; " + s + "_op(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
-        out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.nord; i++) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-        out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, " + ck + " k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
-        out = out + "static " + cv + " " + f + "_get(" + M + " m, " + ck + " k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.occ[t] ? m.vals[t] : def; }\n"
-        out = out + "static int " + f + "_has(" + M + " m, " + ck + " k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.occ[t] != 0; }\n"
-        out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, " + ck + " k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.nord; i++) if (!" + heq + "(m.ord[i], k)) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-        out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.nord; i++) " + ka + "_push(ar, &r, " + cp_field(dc, ctx, k, "ar", "m.ord[i]") + "); return r; }\n"
-        out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.occ[i]) { long t = " + s + "_slot(b, a.keys[i]); if (b.occ[t] == 0" + vcmp + ") return 0; } return 1; }\n"
-        return out
-    if resolve_nt(dc, ctx, k) == "int" or enum_fieldless(dc, ctx, k):
-        out := pre + "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; } m.keys = amem(ar, sizeof(long) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); m.occ = amem(ar, c); for (long i = 0; i < c; i++) m.occ[i] = 0; return m; }\n"
-        out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
-        out = out + "static long " + s + "_slot(" + M + " m, long k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(ikhash(k) & mask); while (m.occ[i] != 0) { if (m.keys[i] == k) return i; i = (long)((i + 1) & mask); } return i; }\n"
-        out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, long k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = k; m->len++; ord_push_i(ar, &m->ord, &m->nord, &m->ocap, k); } m->vals[t] = " + vcopy + "; }\n"
-        # in-place value projection: find-or-insert, return &slot value (#2). dormant until step 2 routes m[k] here.
-        out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, long k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->occ[i]) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.occ[t] = 1; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (!m->occ[t]) { m->occ[t] = 1; m->keys[t] = k; m->len++; ord_push_i(ar, &m->ord, &m->nord, &m->ocap, k); m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
-        out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.nord; i++) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-        out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, long k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
-        out = out + "static " + cv + " " + f + "_get(" + M + " m, long k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.occ[t] ? m.vals[t] : def; }\n"
-        out = out + "static int " + f + "_has(" + M + " m, long k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.occ[t] != 0; }\n"
-        out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, long k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.nord; i++) if (m.ord[i] != k) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-        out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.nord; i++) " + ka + "_push(ar, &r, " + kv + "); return r; }\n"
-        out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.occ[i]) { long t = " + s + "_slot(b, a.keys[i]); if (b.occ[t] == 0" + vcmp + ") return 0; } return 1; }\n"
-        return out
-    out := "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0; m.cap = c; m.len = 0; m.ord = 0; m.nord = 0; m.ocap = 0; if (c == 0) { m.keys = 0; m.vals = 0; return m; } m.keys = amem(ar, sizeof(char*) * c); m.vals = amem(ar, sizeof(" + cv + ") * c); for (long i = 0; i < c; i++) m.keys[i] = 0; return m; }\n"
+        kslot = ck
+        hpre = hh + "("
+        hsuf = ")"
+        mpre = heq + "("
+        mmid = ", "
+        msuf = ")"
+        kcopy = cp_field(dc, ctx, k, "ar", "k")
+        kpush = cp_field(dc, ctx, k, "ar", "m.ekeys[e]")
+    kpar := kslot + " k"
+    # ---- emit the compact family: int32 index table -> dense insertion-ordered entries ----
+    out := pre
+    out = out + "static " + M + " " + s + "_cap(Arena* ar, long cap) { " + M + " m; m.len = 0; m.ecount = 0; if (cap <= 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; } long ec = 4; while (ec < cap) ec *= 2; long ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic; m.ekeys = amem(ar, sizeof(" + kslot + ") * ec); m.evals = amem(ar, sizeof(" + cv + ") * ec); m.elive = amem(ar, ec); m.idx = amem(ar, sizeof(int) * ic); for (long i = 0; i < ic; i++) m.idx[i] = 0; return m; }\n"
     out = out + "static " + M + " " + f + "_new(void) { return " + s + "_cap(0, 0); }\n"
-    out = out + "static long " + s + "_slot(" + M + " m, const char* k) { unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(mhash(k) & mask); while (m.keys[i] != 0) { if (str_cmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); } return i; }\n"
-    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, char* k, " + cv + " val) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; ord_push_s(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); } m->vals[t] = " + vcopy + "; }\n"
-    # in-place value projection: find-or-insert, return &slot value (#2). dormant until step 2 routes m[k] here.
-    out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, const char* k) { if (m->cap == 0 || (m->len + 1) * 2 > m->cap) { long nc = m->cap ? m->cap * 2 : 4; " + M + " n = " + s + "_cap(ar, nc); for (long i = 0; i < m->cap; i++) if (m->keys[i] != 0) { long t = " + s + "_slot(n, m->keys[i]); n.keys[t] = m->keys[i]; n.vals[t] = m->vals[i]; n.len++; } n.ord = m->ord; n.nord = m->nord; n.ocap = m->ocap; *m = n; } long t = " + s + "_slot(*m, k); if (m->keys[t] == 0) { m->keys[t] = scopy(ar, k); m->len++; ord_push_s(ar, &m->ord, &m->nord, &m->ocap, m->keys[t]); m->vals[t] = (" + cv + "){0}; } return &m->vals[t]; }\n"
-    out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len * 2 : 0); for (long i = 0; i < m.nord; i++) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-    out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, char* k, " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
-    out = out + "static " + cv + " " + f + "_get(" + M + " m, char* k, " + cv + " def) { if (m.cap == 0) return def; long t = " + s + "_slot(m, k); return m.keys[t] ? m.vals[t] : def; }\n"
-    out = out + "static int " + f + "_has(" + M + " m, char* k) { if (m.cap == 0) return 0; long t = " + s + "_slot(m, k); return m.keys[t] != 0; }\n"
-    out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, char* k) { " + M + " r = " + f + "_new(); for (long i = 0; i < m.nord; i++) if (str_cmp(m.ord[i], k) != 0) { long t = " + s + "_slot(m, m.ord[i]); " + f + "_put(ar, &r, m.ord[i], m.vals[t]); } return r; }\n"
-    out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long i = 0; i < m.nord; i++) " + ka + "_push(ar, &r, scopy(ar, m.ord[i])); return r; }\n"
-    # structural equality: same length, and every live key in a present in b with
-    # an equal value (same len + a's keys ⊆ b with equal values ⟹ equal).
-    out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.cap; i++) if (a.keys[i] != 0) { long t = " + s + "_slot(b, a.keys[i]); if (b.keys[t] == 0" + vcmp + ") return 0; } return 1; }\n"
+    out = out + "static long " + s + "_find(" + M + " m, " + kpar + ") { if (m.icap == 0) return -1; unsigned long mask = (unsigned long)m.icap - 1; long i = (long)(" + hpre + "k" + hsuf + " & mask); int e; while ((e = m.idx[i]) != 0) { if (" + mpre + "m.ekeys[e - 1]" + mmid + "k" + msuf + ") return e - 1; i = (long)((i + 1) & mask); } return -1; }\n"
+    out = out + "static void " + s + "_ixput(" + M + "* m, long ei) { unsigned long mask = (unsigned long)m->icap - 1; long i = (long)(" + hpre + "m->ekeys[ei]" + hsuf + " & mask); while (m->idx[i] != 0) i = (long)((i + 1) & mask); m->idx[i] = (int)(ei + 1); }\n"
+    out = out + "static void " + s + "_ixgrow(Arena* ar, " + M + "* m) { long ic = m->icap ? m->icap * 2 : 8; int* ni = amem(ar, sizeof(int) * ic); for (long i = 0; i < ic; i++) ni[i] = 0; m->idx = ni; m->icap = ic; for (long e = 0; e < m->ecount; e++) if (m->elive[e]) " + s + "_ixput(m, e); }\n"
+    out = out + "static void " + s + "_comp(" + M + "* m) { long w = 0; for (long r = 0; r < m->ecount; r++) if (m->elive[r]) { if (w != r) { m->ekeys[w] = m->ekeys[r]; m->evals[w] = m->evals[r]; m->elive[w] = 1; } w = w + 1; } m->ecount = w; for (long i = 0; i < m->icap; i++) m->idx[i] = 0; for (long e = 0; e < m->ecount; e++) " + s + "_ixput(m, e); }\n"
+    out = out + "static long " + s + "_app(Arena* ar, " + M + "* m, " + kpar + ", " + cv + " v) { if (m->ecount == m->ecap) { long dead = m->ecount - m->len; if (dead > m->ecap / 2) " + s + "_comp(m); else { long nc = m->ecap ? m->ecap * 2 : 4; " + kslot + "* nk = amem(ar, sizeof(" + kslot + ") * nc); " + cv + "* nv = amem(ar, sizeof(" + cv + ") * nc); unsigned char* nl = amem(ar, nc); for (long e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; } m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } } long e = m->ecount; m->ecount = m->ecount + 1; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e; }\n"
+    out = out + "static void " + f + "_put(Arena* ar, " + M + "* m, " + kpar + ", " + cv + " val) { long e = " + s + "_find(*m, k); if (e >= 0) { m->evals[e] = " + vcopy + "; return; } if ((m->len + 1) * 2 > m->icap) " + s + "_ixgrow(ar, m); long ne = " + s + "_app(ar, m, " + kcopy + ", " + vcopy + "); m->len = m->len + 1; " + s + "_ixput(m, ne); }\n"
+    out = out + "static inline " + cv + "* " + s + "_slotptr(Arena* ar, " + M + "* m, " + kpar + ") { long e = " + s + "_find(*m, k); if (e >= 0) return &m->evals[e]; if ((m->len + 1) * 2 > m->icap) " + s + "_ixgrow(ar, m); long ne = " + s + "_app(ar, m, " + kcopy + ", (" + cv + "){0}); m->len = m->len + 1; " + s + "_ixput(m, ne); return &m->evals[ne]; }\n"
+    out = out + "static " + M + " " + f + "_copy(Arena* ar, " + M + " m) { " + M + " r = " + s + "_cap(ar, m.len ? m.len : 0); for (long e = 0; e < m.ecount; e++) if (m.elive[e]) " + f + "_put(ar, &r, m.ekeys[e], m.evals[e]); return r; }\n"
+    out = out + "static " + M + " " + f + "_set(Arena* ar, " + M + " m, " + kpar + ", " + cv + " val) { " + M + " r = " + f + "_copy(ar, m); " + f + "_put(ar, &r, k, val); return r; }\n"
+    out = out + "static " + cv + " " + f + "_get(" + M + " m, " + kpar + ", " + cv + " def) { long e = " + s + "_find(m, k); return e < 0 ? def : m.evals[e]; }\n"
+    out = out + "static int " + f + "_has(" + M + " m, " + kpar + ") { return " + s + "_find(m, k) >= 0; }\n"
+    out = out + "static " + M + " " + f + "_del(Arena* ar, " + M + " m, " + kpar + ") { " + M + " r = " + f + "_new(); for (long e = 0; e < m.ecount; e++) if (m.elive[e] && !(" + mpre + "m.ekeys[e]" + mmid + "k" + msuf + ")) " + f + "_put(ar, &r, m.ekeys[e], m.evals[e]); return r; }\n"
+    out = out + "static " + ka + " " + f + "_keys(Arena* ar, " + M + " m) { " + ka + " r = " + ka + "_new(); for (long e = 0; e < m.ecount; e++) if (m.elive[e]) " + ka + "_push(ar, &r, " + kpush + "); return r; }\n"
+    out = out + "static int " + f + "_eq(" + M + " a, " + M + " b) { if (a.len != b.len) return 0; for (long e = 0; e < a.ecount; e++) if (a.elive[e]) { long t = " + s + "_find(b, a.ekeys[e]); if (t < 0" + vcmp + ") return 0; } return 1; }\n"
     return out
 
 fn has_str(xs: [string], s: string) -> bool:
