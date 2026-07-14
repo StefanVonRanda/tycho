@@ -619,6 +619,20 @@ fn expect_ident(toks: [Token], pos: inout int, name: string):
         die("parse: line " + str(toks[pos].line) + ": expected a keyword")
     pos = pos + 1
 
+# A built-in type name is a reserved keyword (tychoc lexes these as keyword tokens):
+# it names a type in a type position but can NEVER be used as an identifier (loop
+# variable, local, parameter, function name, ...). tychoc0's lexer makes everything
+# a TIdent, so this is enforced here to keep tychoc/tychoc0 accept/reject parity.
+# The set mirrors tychoc's lexer keyword table (src/tychoc.c ~183-197). `char` is
+# NOT here (there is no `char` type keyword -- it arises by inference); Option/
+# Result/Channel/soa are contextual, not keywords, so they stay usable as identifiers.
+fn is_reserved_tyname(s: string) -> bool:
+    return s == "int" or s == "bool" or s == "string" or s == "float" or s == "ptr" or s == "bytes" or s == "u8" or s == "u16" or s == "u32" or s == "u64" or s == "i8" or s == "i16" or s == "i32" or s == "i64" or s == "f32"
+
+fn ck_ident(name: string, line: int):   # reject a reserved type name used as an identifier
+    if is_reserved_tyname(name):
+        die("parse: line " + str(line) + ": '" + name + "' is a built-in type name and cannot be used as an identifier")
+
 # Open an indented block: a newline, then any number of blank/comment-only
 # lines (each a stray NEWLINE), then the INDENT.
 fn open_block(toks: [Token], pos: inout int):
@@ -742,6 +756,7 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        ck_ident(name, t.line)                   # a built-in type name is reserved: never a value/identifier
         if name == "fn" and toks[pos].kind == TLParen:   # lambda literal `fn(p: T, ...) [-> R]: expr`
             return parse_lambda(toks, &pos, nd)
         if name == "soa":                        # soa []Struct : empty SOA literal
@@ -1301,6 +1316,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         pos = pos + 1
         if toks[pos].kind == TIdent and toks[pos + 1].kind == TIdent and toks[pos + 1].text == "in":
             pvar := toks[pos].text
+            ck_ident(pvar, toks[pos].line)
             pos = pos + 1
             expect_ident(toks, &pos, "in")
             if toks[pos].kind == TIdent and toks[pos].text == "range" and toks[pos + 1].kind == TLParen:
@@ -1336,6 +1352,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
         pos = pos + 1
         if toks[pos].kind == TIdent and toks[pos + 1].kind == TIdent and toks[pos + 1].text == "in":
             varname := toks[pos].text       # counting form: for i in range(...)
+            ck_ident(varname, toks[pos].line)
             pos = pos + 1
             expect_ident(toks, &pos, "in")
             expect_ident(toks, &pos, "range")
@@ -1370,6 +1387,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
     elif t.kind == TIdent:
         name := t.text
         pos = pos + 1
+        ck_ident(name, t.line)                   # a built-in type name can't lead a statement (decl/assign/call target)
         if toks[pos].kind == TComma:             # destructure: a, b := tuple_expr
             names := []string
             push(names, name)
@@ -1377,6 +1395,7 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 pos = pos + 1
                 if toks[pos].kind != TIdent:
                     die("parse: line " + str(toks[pos].line) + ": expected a name in destructure")
+                ck_ident(toks[pos].text, toks[pos].line)   # nor a destructure target
                 push(names, toks[pos].text)
                 pos = pos + 1
             if toks[pos].kind == TWalrus:        # `:=` declares new vars
@@ -1738,6 +1757,7 @@ fn parse_param(toks: [Token], pos: inout int) -> Param:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a parameter name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)               # a parameter cannot be named after a built-in type
     pos = pos + 1
     expect(toks, &pos, TColon)
     if toks[pos].kind == TIdent and toks[pos].text == "inout":
@@ -1816,6 +1836,7 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a function name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)               # a function cannot be named after a built-in type
     pos = pos + 1
     expect(toks, &pos, TLParen)
     params := []string
@@ -2141,6 +2162,7 @@ fn parse_lambda(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     if toks[pos].kind != TRParen:
         # B-2: the `: T` is elidable -- "" is filled from the expected fn type
         # by ground_pre before the lift (or dies with a local error there)
+        ck_ident(toks[pos].text, toks[pos].line)
         push(params, toks[pos].text)
         pos = pos + 1
         lt0 := ""
@@ -2150,6 +2172,7 @@ fn parse_lambda(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
         push(ptypes, lt0)
         for toks[pos].kind == TComma:
             pos = pos + 1
+            ck_ident(toks[pos].text, toks[pos].line)
             push(params, toks[pos].text)
             pos = pos + 1
             lt1 := ""
@@ -2175,6 +2198,7 @@ fn parse_handle(toks: [Token], pos: inout int) -> string:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a handle name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)
     pos = pos + 1
     expect(toks, &pos, TColon)
     open_block(toks, &pos)
@@ -2198,6 +2222,7 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a struct name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)
     pos = pos + 1
     typeparams := []string                       # generics: `struct Box($T, $U)` type parameters
     if toks[pos].kind == TLParen:
@@ -2222,6 +2247,7 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
             if toks[pos].kind != TIdent:
                 die("parse: line " + str(toks[pos].line) + ": expected a field name")
             fname := toks[pos].text
+            ck_ident(fname, toks[pos].line)
             pos = pos + 1
             expect(toks, &pos, TColon)
             fty := parse_type(toks, &pos)
@@ -2456,6 +2482,7 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected an enum name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)
     pos = pos + 1
     typeparams := []string                       # generics: `enum Tree($T, $U)` type parameters
     if toks[pos].kind == TLParen:
@@ -2480,6 +2507,7 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
             if toks[pos].kind != TIdent:
                 die("parse: line " + str(toks[pos].line) + ": expected a variant name")
             vname := toks[pos].text
+            ck_ident(vname, toks[pos].line)
             pos = pos + 1
             ptypes := []string
             if toks[pos].kind == TLParen:
@@ -2511,6 +2539,7 @@ fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Under
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a newtype name")
     name := toks[pos].text
+    ck_ident(name, toks[pos].line)
     pos = pos + 1
     expect(toks, &pos, TEq)
     return Param(name, parse_type(toks, &pos))

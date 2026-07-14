@@ -129,12 +129,14 @@ if ! { "$T/h0" "$T/sz.ty" > "$T/sz_h0.c" 2>/dev/null && \
 else
     [ "$("$T/sz_h0" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc0 output"; fail=1; }
 fi
-# reject: a boundary-ONLY sized type (i16 etc.) is valid only in an extern signature,
-# not as a general Tycho type (fail-closed, both compilers). u32/u64/f32 ARE first-class
-# now, so they are deliberately NOT rejected here.
-printf 'fn main():\n    x: i16 = 3\n    print(str(x))\n' > "$T/szrej.ty"
-if "$TYCHOC" "$T/szrej.ty" --emit-c -o "$T/szrej" >/dev/null 2>&1; then echo "FAIL: non-extern i16 accepted by tychoc"; fail=1; fi
-if "$T/h0" "$T/szrej.ty" >/dev/null 2>&1; then echo "FAIL: non-extern i16 accepted by tychoc0"; fail=1; fi
+# first-class: the WHOLE fixed-width integer family (u8/u16/u32/u64/i8/i16/i32/i64,
+# and f32) is a first-class Tycho type per the spec (docs/spec/14-ffi.md §5.2.7),
+# usable anywhere a type is written -- not only in extern signatures. Both compilers
+# must ACCEPT a non-extern sized annotation. (A sized name is a reserved type keyword,
+# so it cannot be used as an identifier -- covered by the type-parity lane.)
+printf 'fn main():\n    x: i16 = 3\n    if x > 0:\n        println("pos")\n' > "$T/szok.ty"
+if ! "$TYCHOC" "$T/szok.ty" --emit-c -o "$T/szok" >/dev/null 2>&1; then echo "FAIL: first-class i16 rejected by tychoc"; fail=1; fi
+if ! "$T/h0" "$T/szok.ty" >/dev/null 2>&1; then echo "FAIL: first-class i16 rejected by tychoc0"; fail=1; fi
 
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
