@@ -7197,6 +7197,65 @@ static int name_escapes(const char *nm) {
     return 0;
 }
 
+/* --- return-only escape (precise, intra-procedural) ----------------------
+ * The bare `return x` escape set (collect_escapes) misses a local EMBEDDED in a
+ * returned constructor (`return Bin(k, l, r)`), so a recursive tree/list builder
+ * re-homes its children on every return (O(n*depth) deep copies). We add such a
+ * local to the escape set ONLY when it provably ALWAYS becomes part of the
+ * returned value — never built-and-discarded — so promoting it to _parent costs
+ * zero retention (the failure mode of the naive "any ident in any return"). The
+ * test is entirely local to one function body (no call graph): a top-level heap
+ * decl x qualifies iff (0) the fn returns a heap type, (1) x is read at least
+ * once, (2) EVERY read of x is inside a return expression, and (3) EVERY return
+ * after x's declaration contains x. gen's `l`/`r` pass (only ever returned, on
+ * both paths); fold's `fl` fails (read by is_lit, discarded when folded away). */
+static const char **g_ret_alias; static int g_ret_alias_cap = 0; static int g_nret_alias = 0;
+static int in_ret_alias(const char *nm) {
+    for (int i = 0; i < g_nret_alias; i++)
+        if (!strcmp(g_ret_alias[i], nm)) return 1;
+    return 0;
+}
+static int reads_in_returns_b(Stmt **body, int n, const char *nm) {
+    int c = 0;
+    for (int i = 0; i < n; i++) { Stmt *s = body[i];
+        if (s->kind == S_RETURN && s->expr) c += count_reads_e(s->expr, nm);
+        c += reads_in_returns_b(s->body, s->nbody, nm) + reads_in_returns_b(s->els, s->nels, nm);
+        for (int a = 0; a < s->narms; a++) c += reads_in_returns_b(s->arms[a].body, s->arms[a].nbody, nm);
+    }
+    return c;
+}
+/* 0 iff some return in the subtree does NOT read nm (a bare/void return, or an
+ * expression without nm — i.e. nm is discarded on that path); else 1. */
+static int every_return_has(Stmt **body, int n, const char *nm) {
+    for (int i = 0; i < n; i++) { Stmt *s = body[i];
+        if (s->kind == S_RETURN) {
+            if (!s->expr || count_reads_e(s->expr, nm) == 0) return 0;
+        }
+        if (!every_return_has(s->body, s->nbody, nm)) return 0;
+        if (!every_return_has(s->els, s->nels, nm)) return 0;
+        for (int a = 0; a < s->narms; a++)
+            if (!every_return_has(s->arms[a].body, s->arms[a].nbody, nm)) return 0;
+    }
+    return 1;
+}
+/* Populate g_esc (+ g_ret_alias) with the return-only-escaping top-level locals
+ * of pr, per the rule above. Additive to collect_escapes' bare-return set. */
+static void collect_ret_alias(Proc *pr) {
+    g_nret_alias = 0;
+    if (!type_is_heap(pr->ret)) return;
+    for (int i = 0; i < pr->nbody; i++) {
+        Stmt *s = pr->body[i];
+        if (s->kind != S_DECL || !s->name || !type_is_heap(s->decl_type)) continue;
+        int tot = count_reads_b(pr->body, pr->nbody, s->name);
+        int inr = reads_in_returns_b(pr->body, pr->nbody, s->name);
+        if (tot > 0 && tot == inr
+            && every_return_has(pr->body + i + 1, pr->nbody - i - 1, s->name)) {
+            TBL_ENSURE(g_esc, g_nesc, g_esc_cap); g_esc[g_nesc++] = s->name;
+            TBL_ENSURE(g_ret_alias, g_nret_alias, g_ret_alias_cap); g_ret_alias[g_nret_alias++] = s->name;
+        }
+    }
+}
+
 /* --- accumulator analysis (in-place string append) ----------------------
  * A string variable that is the target of a self-append `v = v + e` (v on the
  * LEFT of +; concat is not commutative) can grow in place instead of
@@ -7375,6 +7434,28 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
             v = copy_into(t, arena, v);
     }
     return v;
+}
+
+/* Construction-arg alias (generalizes the return-slot move to embedded locals).
+ * Skip the redundant deep-copy when `arg` is a return-only-escaping local
+ * already living in _parent (its whole value is where the caller will read it)
+ * AND it occurs exactly ONCE among `args` — so no two slots of the fresh
+ * aggregate ever share one buffer (which would break value semantics on a later
+ * mutation). Sound because such a local is provably dead after the return (it is
+ * read only inside returns, and every return contains it — collect_ret_alias).
+ * `args`/`nargs` are the sibling args of the SAME aggregate; pass NULL for a
+ * single-payload construction (Some/Ok/Err), trivially unique. Falls back to
+ * arg_into. Applies only when constructing into _parent (a returned value). */
+static char *alias_arg(Type t, const char *arena, Expr *arg, Expr **args, int nargs) {
+    if (arena && !strcmp(arena, "_parent") && arg->kind == E_IDENT && arg->sval
+        && in_ret_alias(arg->sval) && cv_in_parent(arg->sval)) {
+        int occ = 0;
+        if (!args) occ = 1;
+        else for (int j = 0; j < nargs; j++)
+            if (args[j]->kind == E_IDENT && args[j]->sval && !strcmp(args[j]->sval, arg->sval)) occ++;
+        if (occ == 1) return gen_expr(arg, arena);   /* alias: elide the deep copy */
+    }
+    return arg_into(t, arena, arg);
 }
 
 /* arg_into for a `sink` parameter: a fresh value (non-place) is already owned in
@@ -7615,7 +7696,7 @@ static char *gen_call(Expr *e, const char *arena) {
                          en, en, arena, en, en, var->name, vi);
         for (int i = 0; i < var->npayload; i++)
             out = sfmt("%s _p->u.%s.f%d = %s;", out, var->name, i,
-                       arg_into(var->payload[i], arena, e->args[i]));
+                       alias_arg(var->payload[i], arena, e->args[i], e->args, e->nargs));
         return sfmt("%s _p; })", out);
     }
     if (!strcmp(e->sval, "len")) {
@@ -7988,14 +8069,14 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_NONE: return sfmt("(%s){0}", c_type(e->type));   /* has = 0 */
         case E_SOME: {
             Type inner = opt_inner(e->type);   /* move/copy the value into the option */
-            return sfmt("(%s){ 1, %s }", c_type(e->type), arg_into(inner, arena, e->lhs));
+            return sfmt("(%s){ 1, %s }", c_type(e->type), alias_arg(inner, arena, e->lhs, NULL, 0));
         }
         case E_OK:    /* designated init: errv auto-zeroes, dodging -Wmissing-field-initializers */
             return sfmt("(%s){ .ok = 1, .okv = %s }", c_type(e->type),
-                        arg_into(res_ok(e->type), arena, e->lhs));
+                        alias_arg(res_ok(e->type), arena, e->lhs, NULL, 0));
         case E_ERR:
             return sfmt("(%s){ .ok = 0, .errv = %s }", c_type(e->type),
-                        arg_into(res_err(e->type), arena, e->lhs));
+                        alias_arg(res_err(e->type), arena, e->lhs, NULL, 0));
         case E_ORRETURN: {
             /* ({ Tmp _or = <src>; if (!_or.ok) { promote err to _parent, free
              * the live arenas, return Err from the enclosing fn; } _or.okv; })
@@ -8016,7 +8097,7 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_TUPLE: {   /* (e1, ..., en): positional struct literal; heap places deep-copied in */
             char *out = sfmt("(%s){ ", c_type(e->type));
             for (int i = 0; i < e->nargs; i++) {
-                char *a = arg_into(tup_elem(e->type, i), arena, e->args[i]);
+                char *a = alias_arg(tup_elem(e->type, i), arena, e->args[i], e->args, e->nargs);
                 out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
             }
             return sfmt("%s }", out);
@@ -8180,7 +8261,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 Type felem = arr_elem(e->type);
                 char *out = sfmt("({ %s_l%d;", c_type(e->type), id);
                 for (int i = 0; i < e->nargs; i++)
-                    out = sfmt("%s _l%d.v[%d] = %s;", out, id, i, arg_into(felem, arena, e->args[i]));
+                    out = sfmt("%s _l%d.v[%d] = %s;", out, id, i, alias_arg(felem, arena, e->args[i], e->args, e->nargs));
                 return sfmt("%s _l%d; })", out, id);
             }
             /* array literal: build with_cap, then store each element. copy_into
@@ -8192,7 +8273,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                              c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
                 out = sfmt("%s _l%d.data[%d] = %s;", out, id, i,
-                           arg_into(elem, arena, e->args[i]));
+                           alias_arg(elem, arena, e->args[i], e->args, e->nargs));
             return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
         }
         case E_FIELD: {
@@ -8219,7 +8300,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             StructDef *sd = &g_structs[STRUCT_ID(e->type)];
             char *out = sfmt("((S_%s){ ", sd->name);
             for (int i = 0; i < e->nargs; i++) {
-                char *a = arg_into(sd->fields[i].type, arena, e->args[i]);
+                char *a = alias_arg(sd->fields[i].type, arena, e->args[i], e->args, e->nargs);
                 out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
             }
             return sfmt("%s })", out);
@@ -9406,6 +9487,7 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* return-slot optimization: which top-level locals escape via return */
     g_nesc = 0;
     collect_escapes(pr->body, pr->nbody);
+    collect_ret_alias(pr);   /* + return-only-escaping embedded locals (precise, no retention) */
     /* in-place append: which string locals are self-append accumulators */
     g_naccum = 0;
     collect_accums(pr->body, pr->nbody);
