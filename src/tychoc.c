@@ -9782,6 +9782,39 @@ static Proc *ginst_to_proc(GInst *gi) {
     return p;
 }
 
+/* ---- compact-dict (indexed-dict) map emit helpers: shared by every TychoMapC
+ * key variant (composite / int-rep / string); each preserves that variant's
+ * exact key hashing, matching, and copy semantics. ---- */
+static const char *mapc_kslot(Type k) {   /* C type of one key slot in ekeys[] */
+    if (mapkey_intrep(k)) return "long ";
+    if (!mapkey_composite(k)) return "char *";
+    return c_type(k);
+}
+static char *mapc_kparam(Type k) {        /* the key function parameter */
+    if (mapkey_intrep(k)) return sfmt("long k");
+    if (!mapkey_composite(k)) return sfmt("const char *k");
+    return sfmt("%sk", c_type(k));
+}
+static char *mapc_khash(Type k, const char *e) {   /* hash of a key expression e */
+    if (mapkey_composite(k)) return gen_hash(k, e);
+    if (mapkey_intrep(k))    return sfmt("tycho_ik_hash(%s)", e);
+    return sfmt("tycho_si_hash(%s)", e);
+}
+static char *mapc_kmatch(Type k, const char *ek, const char *q) {   /* stored key ek == query q */
+    if (mapkey_composite(k)) return gen_eq(k, ek, q);
+    if (mapkey_intrep(k))    return sfmt("%s == %s", ek, q);
+    return sfmt("strcmp(%s, %s) == 0", ek, q);
+}
+static char *mapc_kcopy(Type k) {   /* own the key k into arena a on insert */
+    if (mapkey_composite(k)) return copy_into(k, "a", "k");
+    if (mapkey_intrep(k))    return sfmt("k");
+    return sfmt("tycho_str_copy(a, k)");
+}
+static char *mapc_keyelem(Type k) {   /* keys() element rebuilt from ekeys[e] */
+    if (mapkey_intrep(k) && IS_ENUM(k)) return sfmt("_sing_tab_%s[m.ekeys[e]]", g_enums[ENUM_ID(k)].name);
+    return sfmt("m.ekeys[e]");
+}
+
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(TYCHO_RUNTIME, o);
     fputs("\n/* ---- generated from Tycho source ---- */\n\n", o);
@@ -9871,16 +9904,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         else
             fprintf(o, "struct TychoArrC%d_ { %s*data; long len; long cap; };\n",
                     i, c_type(g_arrtypes[i].elem));
-    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] */
-        if (mapkey_composite(g_maptypes[i].key))    /* struct keys: stored by value, deep hash/eq, occupancy array */
-            fprintf(o, "struct TychoMapC%d_ { %s*keys; %s*vals; unsigned char *occ; long len; long cap; long used; long *nxt; long *prv; long head; long tail; };\n",
-                    i, c_type(g_maptypes[i].key), c_type(g_maptypes[i].val));
-        else if (mapkey_intrep(g_maptypes[i].key))  /* int(-rep) keys incl. enum tags: occupancy array (0 is a real key) */
-            fprintf(o, "struct TychoMapC%d_ { long *keys; %s*vals; unsigned char *occ; long len; long cap; long used; long *nxt; long *prv; long head; long tail; };\n",
-                    i, c_type(g_maptypes[i].val));
-        else
-            fprintf(o, "struct TychoMapC%d_ { char **keys; %s*vals; long len; long cap; long used; long *nxt; long *prv; long head; long tail; };\n",
-                    i, c_type(g_maptypes[i].val));
+    for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
+        fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; long len; long ecount; long ecap; long icap; };\n",
+                i, mapc_kslot(g_maptypes[i].key), c_type(g_maptypes[i].val));
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
      * enough — this can precede struct bodies, letting a struct embed a soa by
@@ -10211,261 +10237,107 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * bodies so a struct/array value type's copy fn is already available. */
     for (int i = 0; i < g_nmaptypes; i++) {
         if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
-        const char *ct = c_type(g_maptypes[i].val);
-        char *vcopy = copy_into(g_maptypes[i].val, "a", "v");   /* deep-copy the value into arena a */
-        if (mapkey_composite(g_maptypes[i].key)) {   /* struct keys: occupancy scheme like int keys, but K stored by value, deep-hashed (tycho_hash_S_*) and deep-compared (tycho_eq_S_*); key deep-copied into the map arena on put */
-            Type keyt = g_maptypes[i].key;
-            const char *kt = c_type(keyt);
-            Type kat = arr_of(keyt);            /* keys() returns [K] */
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-                "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
-                "    m.cap = c; m.len = 0; m.used = 0; m.nxt = 0; m.prv = 0; m.head = -1; m.tail = -1; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
-                "    m.keys = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
-                "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
-                "    m.occ = (unsigned char *)arena_alloc(a, (size_t)c);\n"
-                "    m.nxt = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-                "    m.prv = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-                "    for (long i = 0; i < c; i++) m.occ[i] = 0; return m;\n}\n", i, i, i, kt, kt, ct, ct);
-            fprintf(o,
-                "static long tycho_mapc%d_find(TychoMapC%d m, %sk) {\n"
-                "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(%s & mask);\n"
-                "    while (m.occ[i] != 0) { if (m.occ[i] == 1 && %s) return i; i = (long)((i + 1) & mask); }\n"
-                "    return -1;\n}\n", i, i, kt, gen_hash(keyt, "k"), gen_eq(keyt, "m.keys[i]", "k"));
-            fprintf(o,
-                "static long tycho_mapc%d_slot(TychoMapC%d m, %sk) {\n"
-                "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(%s & mask), tomb = -1;\n"
-                "    while (m.occ[i] != 0) { if (m.occ[i] == 2) { if (tomb < 0) tomb = i; } else if (%s) return i; i = (long)((i + 1) & mask); }\n"
-                "    return tomb >= 0 ? tomb : i;\n}\n", i, i, kt, gen_hash(keyt, "k"), gen_eq(keyt, "m.keys[i]", "k"));
-            fprintf(o,
-                "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %sk, %sv) {\n"
-                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-                "        *m = n;\n    }\n"
-                "    long s = tycho_mapc%d_slot(*m, k);\n"
-                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
-                "    m->vals[s] = %s;\n}\n", i, i, kt, ct, i, i, i, i, copy_into(keyt, "a", "k"), vcopy);
-            fprintf(o,
-                "static void tycho_mapc%d_del(TychoMapC%d *m, %sk) {\n"
-                "    long s = tycho_mapc%d_find(*m, k); if (s < 0) return;\n"
-                "    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s); m->len--; m->used--;\n"
-                "    unsigned long mask = (unsigned long)m->cap - 1; long i = s, j = s;\n"
-                "    for (;;) { m->occ[i] = 0;\n"
-                "        for (;;) { j = (long)((j + 1) & mask); if (m->occ[j] == 0) return;\n"
-                "            long h = (long)(%s & mask);\n"
-                "            if (i <= j) { if (i < h && h <= j) continue; } else { if (i < h || h <= j) continue; } break; }\n"
-                "        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j]; m->occ[i] = 1;\n"
-                "        long pp = m->prv[j], nn = m->nxt[j]; m->nxt[i] = nn; m->prv[i] = pp;\n"
-                "        if (pp >= 0) m->nxt[pp] = i; else m->head = i; if (nn >= 0) m->prv[nn] = i; else m->tail = i; i = j; }\n}\n",
-                i, i, kt, i, gen_hash(keyt, "m->keys[j]"));
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-                "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
-                "    return r;\n}\n", i, i, i, i, i, i);
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, %sk, %sv) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, kt, ct, i, i, i);
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, %sk) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, kt, i, i, i);
-            fprintf(o,
-                "static %stycho_mapc%d_get(TychoMapC%d m, %sk, %sdflt) {\n"
-                "    long s = tycho_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, kt, ct, i);
-            fprintf(o,
-                "static int tycho_mapc%d_has(TychoMapC%d m, %sk) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, kt, i);
-            fprintf(o,
-                "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
-                "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
-                "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
-            fprintf(o,
-                "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
-                "    if (x.len != y.len) return 0;\n"
-                "    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) { long s = tycho_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
-                "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
-            fprintf(o,   /* in-place value projection: find-or-insert, return &slot value */
-                "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %sk) {\n"
-                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-                "        *m = n;\n    }\n"
-                "    long s = tycho_mapc%d_slot(*m, k);\n"
-                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = %s; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
-                "    return &m->vals[s];\n}\n\n", ct, i, i, kt, i, i, i, i, copy_into(keyt, "a", "k"), ct);
-            continue;
-        }
-        if (mapkey_intrep(g_maptypes[i].key)) {   /* int(-rep) keys incl. enum tags: occupancy-array scheme (mirror TychoMapII; 0 is a real key) */
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-                "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
-                "    m.cap = c; m.len = 0; m.used = 0; m.nxt = 0; m.prv = 0; m.head = -1; m.tail = -1; if (c == 0) { m.keys = 0; m.vals = 0; m.occ = 0; return m; }\n"
-                "    m.keys = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-                "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
-                "    m.occ = (unsigned char *)arena_alloc(a, (size_t)c);\n"
-                "    m.nxt = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-                "    m.prv = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-                "    for (long i = 0; i < c; i++) m.occ[i] = 0; return m;\n}\n", i, i, i, ct, ct);
-            fprintf(o,
-                "static long tycho_mapc%d_find(TychoMapC%d m, long k) {\n"
-                "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(tycho_ik_hash(k) & mask);\n"
-                "    while (m.occ[i] != 0) { if (m.occ[i] == 1 && m.keys[i] == k) return i; i = (long)((i + 1) & mask); }\n"
-                "    return -1;\n}\n", i, i);
-            fprintf(o,
-                "static long tycho_mapc%d_slot(TychoMapC%d m, long k) {\n"
-                "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(tycho_ik_hash(k) & mask), tomb = -1;\n"
-                "    while (m.occ[i] != 0) { if (m.occ[i] == 2) { if (tomb < 0) tomb = i; } else if (m.keys[i] == k) return i; i = (long)((i + 1) & mask); }\n"
-                "    return tomb >= 0 ? tomb : i;\n}\n", i, i);
-            fprintf(o,
-                "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, long k, %sv) {\n"
-                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-                "        *m = n;\n    }\n"
-                "    long s = tycho_mapc%d_slot(*m, k);\n"
-                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
-                "    m->vals[s] = %s;\n}\n", i, i, ct, i, i, i, i, vcopy);
-            fprintf(o,
-                "static void tycho_mapc%d_del(TychoMapC%d *m, long k) {\n"
-                "    long s = tycho_mapc%d_find(*m, k); if (s < 0) return;\n"
-                "    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s); m->len--; m->used--;\n"
-                "    unsigned long mask = (unsigned long)m->cap - 1; long i = s, j = s;\n"
-                "    for (;;) { m->occ[i] = 0;\n"
-                "        for (;;) { j = (long)((j + 1) & mask); if (m->occ[j] == 0) return;\n"
-                "            long h = (long)(tycho_ik_hash(m->keys[j]) & mask);\n"
-                "            if (i <= j) { if (i < h && h <= j) continue; } else { if (i < h || h <= j) continue; } break; }\n"
-                "        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j]; m->occ[i] = 1;\n"
-                "        long pp = m->prv[j], nn = m->nxt[j]; m->nxt[i] = nn; m->prv[i] = pp;\n"
-                "        if (pp >= 0) m->nxt[pp] = i; else m->head = i; if (nn >= 0) m->prv[nn] = i; else m->tail = i; i = j; }\n}\n", i, i, i);
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-                "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
-                "    return r;\n}\n", i, i, i, i, i, i);
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, long k, %sv) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, ct, i, i, i);
-            fprintf(o,
-                "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, long k) {\n"
-                "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, i, i, i);
-            fprintf(o,
-                "static %stycho_mapc%d_get(TychoMapC%d m, long k, %sdflt) {\n"
-                "    long s = tycho_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
-            fprintf(o,
-                "static int tycho_mapc%d_has(TychoMapC%d m, long k) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, i);
-            {   /* keys() returns [K] — TychoArrInt, TychoArrC<n> for a newtype, or [E] for a
-                 * fieldless-enum key, rebuilt from the singleton table (tags are stored) */
-                Type kt = g_maptypes[i].key;
-                Type kat = arr_of(kt);
-                char *kv = IS_ENUM(kt) ? sfmt("_sing_tab_%s[m.keys[s]]", g_enums[ENUM_ID(kt)].name)
-                                       : sfmt("m.keys[s]");
-                fprintf(o,
-                    "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
-                    "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                    "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, %s);\n"
-                    "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat), kv);
-            }
-            fprintf(o,
-                "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
-                "    if (x.len != y.len) return 0;\n"
-                "    for (long i = 0; i < x.cap; i++) if (x.occ[i] == 1) { long s = tycho_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
-                "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
-            fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
-                "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, long k) {\n"
-                "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-                "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-                "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-                "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.occ[s] = 1; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-                "        *m = n;\n    }\n"
-                "    long s = tycho_mapc%d_slot(*m, k);\n"
-                "    if (m->occ[s] != 1) { if (m->occ[s] == 0) m->used++; m->occ[s] = 1; m->keys[s] = k; m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
-                "    return &m->vals[s];\n}\n\n", ct, i, i, i, i, i, i, ct);
-            continue;
-        }
+        Type keyt = g_maptypes[i].key;
+        const char *ct = c_type(g_maptypes[i].val);   /* value C type -- stored inline in the dense entries (the [int:Trie] win) */
+        const char *ks = mapc_kslot(keyt);
+        char *kp = mapc_kparam(keyt);
+        char *kcopy = mapc_kcopy(keyt);
+        char *vcopy = copy_into(g_maptypes[i].val, "a", "v");
+        Type kat = arr_of(keyt); const char *katc = c_type(kat), *katf = arr_fn(kat);
+        char *kelem = mapc_keyelem(keyt);
+        /* --- compact indexed-dict family (mirrors runtime tycho_map_ii): int32 index
+         * table -> dense insertion-ordered entries; tombstone + backward-shift-index
+         * delete + allocation-free in-place compaction (churn bound). --- */
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
-            "    TychoMapC%d m; long c = 4; while (c < cap) c *= 2; if (cap == 0) c = 0;\n"
-            "    m.cap = c; m.len = 0; m.used = 0; m.nxt = 0; m.prv = 0; m.head = -1; m.tail = -1; if (c == 0) { m.keys = 0; m.vals = 0; return m; }\n"
-            "    m.keys = (char **)arena_alloc(a, (size_t)c * sizeof(char *));\n"
-            "    m.vals = (%s*)arena_alloc(a, (size_t)c * sizeof(%s));\n"
-            "    m.nxt = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-            "    m.prv = (long *)arena_alloc(a, (size_t)c * sizeof(long));\n"
-            "    for (long i = 0; i < c; i++) m.keys[i] = 0; return m;\n}\n", i, i, i, ct, ct);
+            "    TychoMapC%d m; m.len = 0; m.ecount = 0;\n"
+            "    if (cap <= 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; }\n"
+            "    long ec = 4; while (ec < cap) ec *= 2; long ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n"
+            "    m.ekeys = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
+            "    m.evals = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
+            "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
+            "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
+            "    for (long i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
         fprintf(o,
-            "static long tycho_mapc%d_find(TychoMapC%d m, const char *k) {\n"
-            "    if (m.cap == 0) return -1; unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(tycho_si_hash(k) & mask);\n"
-            "    while (m.keys[i] != 0) { if (m.keys[i] != TYCHO_MAP_TOMB && strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); }\n"
-            "    return -1;\n}\n", i, i);
+            "static long tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
+            "    if (m.icap == 0) return -1; unsigned long mask = (unsigned long)m.icap - 1; long i = (long)(%s & mask); int e;\n"
+            "    while ((e = m.idx[i]) != 0) { if (%s) return e - 1; i = (long)((i + 1) & mask); }\n"
+            "    return -1;\n}\n", i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m.ekeys[e - 1]", "k"));
         fprintf(o,
-            "static long tycho_mapc%d_slot(TychoMapC%d m, const char *k) {\n"
-            "    unsigned long mask = (unsigned long)m.cap - 1; long i = (long)(tycho_si_hash(k) & mask); long tomb = -1;\n"
-            "    while (m.keys[i] != 0) { if (m.keys[i] == TYCHO_MAP_TOMB) { if (tomb < 0) tomb = i; } else if (strcmp(m.keys[i], k) == 0) return i; i = (long)((i + 1) & mask); }\n"
-            "    return tomb >= 0 ? tomb : i;\n}\n", i, i);
+            "static void tycho_mapc%d_idxput(TychoMapC%d *m, long ei) {\n"
+            "    unsigned long mask = (unsigned long)m->icap - 1; long i = (long)(%s & mask);\n"
+            "    while (m->idx[i] != 0) i = (long)((i + 1) & mask); m->idx[i] = (int)(ei + 1);\n}\n",
+            i, i, mapc_khash(keyt, "m->ekeys[ei]"));
         fprintf(o,
-            "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, const char *k, %sv) {\n"
-            "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-            "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-            "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-            "        *m = n;\n    }\n"
-            "    long s = tycho_mapc%d_slot(*m, k);\n"
-            "    if (!tycho_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = tycho_str_copy(a, k); m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); }\n"
-            "    m->vals[s] = %s;\n}\n", i, i, ct, i, i, i, i, vcopy);
+            "static void tycho_mapc%d_idxgrow(Arena *a, TychoMapC%d *m) {\n"
+            "    long ic = m->icap ? m->icap * 2 : 8; int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
+            "    for (long i = 0; i < ic; i++) ni[i] = 0; m->idx = ni; m->icap = ic;\n"
+            "    for (long e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
         fprintf(o,
-            "static void tycho_mapc%d_del(TychoMapC%d *m, const char *k) {\n"
-            "    long s = tycho_mapc%d_find(*m, k); if (s < 0) return;\n"
-            "    tycho_ord_unlink(m->nxt, m->prv, &m->head, &m->tail, s); m->len--; m->used--;\n"
-            "    unsigned long mask = (unsigned long)m->cap - 1; long i = s, j = s;\n"
-            "    for (;;) { m->keys[i] = 0;\n"
-            "        for (;;) { j = (long)((j + 1) & mask); if (m->keys[j] == 0) return;\n"
-            "            long h = (long)(tycho_si_hash(m->keys[j]) & mask);\n"
-            "            if (i <= j) { if (i < h && h <= j) continue; } else { if (i < h || h <= j) continue; } break; }\n"
-            "        m->keys[i] = m->keys[j]; m->vals[i] = m->vals[j];\n"
-            "        long pp = m->prv[j], nn = m->nxt[j]; m->nxt[i] = nn; m->prv[i] = pp;\n"
-            "        if (pp >= 0) m->nxt[pp] = i; else m->head = i; if (nn >= 0) m->prv[nn] = i; else m->tail = i; i = j; }\n}\n", i, i, i);
+            "static void tycho_mapc%d_compact(TychoMapC%d *m) {\n"
+            "    long w = 0; for (long r = 0; r < m->ecount; r++) if (m->elive[r]) { if (w != r) { m->ekeys[w] = m->ekeys[r]; m->evals[w] = m->evals[r]; m->elive[w] = 1; } w++; }\n"
+            "    m->ecount = w; for (long i = 0; i < m->icap; i++) m->idx[i] = 0;\n"
+            "    for (long e = 0; e < m->ecount; e++) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
+        fprintf(o,
+            "static long tycho_mapc%d_append(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+            "    if (m->ecount == m->ecap) { long dead = m->ecount - m->len;\n"
+            "        if (dead > m->ecap / 2) tycho_mapc%d_compact(m);\n"
+            "        else { long nc = m->ecap ? m->ecap * 2 : 4;\n"
+            "            %s*nk = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); %s*nv = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)nc);\n"
+            "            for (long e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
+            "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n"
+            "    long e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
+            i, i, kp, ct, i, ks, ks, ks, ct, ct, ct);
+        fprintf(o,
+            "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+            "    long e = tycho_mapc%d_find(*m, k); if (e >= 0) { m->evals[e] = %s; return; }\n"
+            "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
+            "    long ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
+            i, i, kp, ct, i, vcopy, i, i, kcopy, vcopy, i);
+        fprintf(o,
+            "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %s) {\n"
+            "    long e = tycho_mapc%d_find(*m, k); if (e >= 0) return &m->evals[e];\n"
+            "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
+            "    long ne = tycho_mapc%d_append(a, m, %s, (%s){0}); m->len++; tycho_mapc%d_idxput(m, ne);\n"
+            "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, kcopy, ct, i);
+        fprintf(o,
+            "static void tycho_mapc%d_del(TychoMapC%d *m, %s) {\n"
+            "    if (m->icap == 0) return; unsigned long mask = (unsigned long)m->icap - 1; long i = (long)(%s & mask), found = -1;\n"
+            "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (long)((i + 1) & mask); }\n"
+            "    if (found < 0) return; long ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n"
+            "    long g = found;\n"
+            "    for (;;) { m->idx[g] = 0; long j = g;\n"
+            "        for (;;) { j = (long)((j + 1) & mask); if (m->idx[j] == 0) return;\n"
+            "            long h = (long)(%s & mask);\n"
+            "            if (g <= j) { if (g < h && h <= j) continue; } else { if (g < h || h <= j) continue; } break; }\n"
+            "        m->idx[g] = m->idx[j]; g = j; }\n}\n",
+            i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"), mapc_khash(keyt, "m->ekeys[m->idx[j] - 1]"));
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
-            "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len * 2 : 0);\n"
-            "    for (long s = src.cap ? src.head : -1; s >= 0; s = src.nxt[s]) tycho_mapc%d_put(a, &r, src.keys[s], src.vals[s]);\n"
+            "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len : 0);\n"
+            "    for (long e = 0; e < src.ecount; e++) if (src.elive[e]) tycho_mapc%d_put(a, &r, src.ekeys[e], src.evals[e]);\n"
             "    return r;\n}\n", i, i, i, i, i, i);
         fprintf(o,
-            "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, const char *k, %sv) {\n"
-            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, ct, i, i, i);
+            "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, %s, %sv) {\n"
+            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, kp, ct, i, i, i);
         fprintf(o,
-            "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, const char *k) {\n"
-            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, i, i, i);
+            "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, %s) {\n"
+            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, kp, i, i, i);
         fprintf(o,
-            "static %stycho_mapc%d_get(TychoMapC%d m, const char *k, %sdflt) {\n"
-            "    long s = tycho_mapc%d_find(m, k); return s < 0 ? dflt : m.vals[s];\n}\n", ct, i, i, ct, i);
+            "static %stycho_mapc%d_get(TychoMapC%d m, %s, %sdflt) {\n"
+            "    long e = tycho_mapc%d_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n", ct, i, i, kp, ct, i);
         fprintf(o,
-            "static int tycho_mapc%d_has(TychoMapC%d m, const char *k) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, i);
-        {   /* keys() returns [K] — TychoArrStr, or TychoArrC<n> when K is a newtype */
-            Type kat = arr_of(g_maptypes[i].key);
-            fprintf(o,
-                "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
-                "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-                "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) tycho_arr_%s_push(a, &r, m.keys[s]);\n"
-                "    return r;\n}\n", c_type(kat), i, i, c_type(kat), arr_fn(kat), arr_fn(kat));
-        }
+            "static int tycho_mapc%d_has(TychoMapC%d m, %s) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, kp, i);
+        fprintf(o,
+            "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
+            "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
+            "    for (long e = 0; e < m.ecount; e++) if (m.elive[e]) tycho_arr_%s_push(a, &r, %s);\n"
+            "    return r;\n}\n", katc, i, i, katc, katf, katf, kelem);
         fprintf(o,
             "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
             "    if (x.len != y.len) return 0;\n"
-            "    for (long i = 0; i < x.cap; i++) if (tycho_map_live(x.keys[i])) { long s = tycho_mapc%d_find(y, x.keys[i]); if (s < 0 || !(%s)) return 0; }\n"
-            "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.vals[s]", "x.vals[i]"));
-        fprintf(o,   /* in-place value projection: find-or-insert, return &slot value (#2) */
-            "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, const char *k) {\n"
-            "    if (m->cap == 0 || (m->used + 1) * 2 > m->cap) {\n"
-            "        long nc = ((m->len + 1) * 2 > m->cap) ? (m->cap ? m->cap * 2 : 4) : (m->cap ? m->cap : 4);\n"
-            "        TychoMapC%d n = tycho_mapc%d_with_cap(a, nc);\n"
-            "        for (long o = m->cap ? m->head : -1; o >= 0; o = m->nxt[o]) { long s = tycho_mapc%d_slot(n, m->keys[o]); n.keys[s] = m->keys[o]; n.vals[s] = m->vals[o]; n.len++; n.used++; tycho_ord_link(n.nxt, n.prv, &n.head, &n.tail, s); }\n"
-            "        *m = n;\n    }\n"
-            "    long s = tycho_mapc%d_slot(*m, k);\n"
-            "    if (!tycho_map_live(m->keys[s])) { if (m->keys[s] == 0) m->used++; m->keys[s] = tycho_str_copy(a, k); m->len++; tycho_ord_link(m->nxt, m->prv, &m->head, &m->tail, s); m->vals[s] = (%s){0}; }\n"
-            "    return &m->vals[s];\n}\n\n", ct, i, i, i, i, i, i, ct);
+            "    for (long e = 0; e < x.ecount; e++) if (x.elive[e]) { long s = tycho_mapc%d_find(y, x.ekeys[e]); if (s < 0 || !(%s)) return 0; }\n"
+            "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.evals[s]", "x.evals[e]"));
     }
     /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
      * field (named f<idx>) plus a shared len/cap. push grows every buffer in the
@@ -10644,15 +10516,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (has_typaram(T_MAPC_BASE + i)) continue;
         Type kt = g_maptypes[i].key, vt = g_maptypes[i].val;
         Type kb = base_of(kt);   /* fieldless-enum key is stored as a tag: rebuild the value via the singleton table */
-        char *kexpr = IS_ENUM(kb) ? sfmt("_sing_tab_%s[m.keys[s]]", g_enums[ENUM_ID(kb)].name)
-                                  : sfmt("m.keys[s]");
+        char *kexpr = IS_ENUM(kb) ? sfmt("_sing_tab_%s[m.ekeys[e]]", g_enums[ENUM_ID(kb)].name)
+                                  : sfmt("m.ekeys[e]");
         fprintf(o, "static char *tycho_str_mapc%d(Arena *a, TychoMapC%d m) {\n", i, i);
         fprintf(o, "    char *r = tycho_str_from_c(a, \"[\"); int first = 1;\n");
-        fprintf(o, "    for (long s = m.cap ? m.head : -1; s >= 0; s = m.nxt[s]) {\n");
+        fprintf(o, "    for (long e = 0; e < m.ecount; e++) if (m.elive[e]) {\n");
         fprintf(o, "        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \")); first = 0;\n");
         fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(kt, "a", kexpr));
         fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \": \"));\n");
-        fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(vt, "a", "m.vals[s]"));
+        fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(vt, "a", "m.evals[e]"));
         fprintf(o, "    }\n    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n");
     }
     fputs("\n", o);
