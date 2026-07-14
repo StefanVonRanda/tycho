@@ -1,22 +1,32 @@
 # Compact-dict map representation — design note / ready-to-pick-up task
 
-> **STATUS: IN PROGRESS — Step 1 (map_ii) SHIPPED + verified (2026-07-14).**
-> The compact indexed-dict layout + tombstone/compaction delete is now live for
-> the `[int:int]` runtime family (`runtime/tycho_rt.c` `tycho_map_ii`), behind
-> its existing API — tychoc-only (tychoc0 emits its own families, untouched).
-> Verified: standalone prototype ASan/UBSan-clean + 8M-op differential fuzz vs a
-> reference model (every-op len/has/get + keys() insertion-order) + memory-bounded
-> under churn + seed-invisible; end-to-end `[int:int]` program through tychoc
-> matches expected (incl. a Python-checked churn); 9 map goldens pass; emitted
-> runtime ASan/UBSan-clean; **`bench/lru` checksum identical to baseline, peak RSS
-> 40.4 → ~32.5 MB (bounded — no regression to the pre-fix 222 MB cliff)**; tychoc0
-> rebuilds cleanly through the new-runtime tychoc (fixpoint proxy). The cheap-bail
-> gate (§7 step 2: delete holds on lru) is GREEN. **Remaining (the bulk):** roll
-> the layout out to `tycho_mapc%d` (tychoc, the composite generator that backs the
-> `[int:Trie]` trie win) + tychoc0's generic `map_<k>_<v>` generator + the other
-> fixed families (si/sf/if), then the full gate (`make fuzz`/`fixpoint`/4 parity
-> lanes/all benches). The trie memory win lands with the composite generator, not
-> map_ii. See §7 sequence.
+> **STATUS: COMPLETE + verified (2026-07-15).** The compact indexed-dict layout
+> (int32 index table → dense insertion-ordered entries) + tombstone/backward-shift
+> delete + allocation-free in-place compaction is now live across **all four code
+> sites**: the runtime fixed families `tycho_map_{ii,si,sf,if}` (`runtime/tycho_rt.c`),
+> the tychoc composite generator `tycho_mapc%d` (`src/tychoc.c`, all 3 key variants),
+> and the tychoc0 generic `map_<k>_<v>` generator (`compiler/tychoc0.ty`). The
+> `nxt/prv` intrusive order list (and tychoc0's separate `ord` key array) are gone —
+> the entries array IS the insertion order.
+>
+> **Measured wins (this machine — AMD Ryzen 7 7735HS, x86-64, Linux; tycho via `tychoc`):**
+>
+> | bench | RAM before | RAM after | Δ | checksum |
+> |---|---|---|---|---|
+> | trie (`[int:Trie]`) | 119.2 MB | 58.8 MB | **−51%** (3.2×C → ~1.55×C) | identical |
+> | invindex (`[string:V]`) | 127 MB | 59.5 MB | **−53%** | identical |
+> | lru (`[int:int]`, delete-churn) | 40.4 MB | 32.7 MB | **−19%** (bounded, no 222 MB cliff) | identical |
+> | json (small values) | 37.0 MB | 37.1 MB | flat (no regression) | identical |
+> | dijkstra (value-shaped) | 41.0 MB | 40.3 MB | flat | identical |
+>
+> **Gate:** `make fixpoint` GREEN (B==C byte-identical + split E==F self-host);
+> `make test` 334/0; typeparity 4608/4608, eqparity 512/512, parforparity 25/25,
+> unaryparity 30/30; corelib GREEN; conc 36/0. `make fuzz` — the only failures (48)
+> and the `ffi` lane failure are the **pre-existing** sized-int-identifier
+> tychoc/tychoc0 divergence (confirmed at the base commit; 0 map-related). Plus a
+> standalone prototype (`bench/trie/compact_proof.c` companion) that was
+> ASan/UBSan-clean + 8M-op differential-fuzzed vs a reference model. Delete/churn
+> bound re-derived and re-verified on `bench/lru`.
 >
 > **STATUS (original): PROPOSED, not started (2026-07-14).** A proof-of-concept C model
 > (below) says a compact/indexed map layout roughly **halves** the per-node map
