@@ -1,6 +1,24 @@
 # Compact-dict map representation — design note / ready-to-pick-up task
 
-> **STATUS: PROPOSED, not started (2026-07-14).** A proof-of-concept C model
+> **STATUS: IN PROGRESS — Step 1 (map_ii) SHIPPED + verified (2026-07-14).**
+> The compact indexed-dict layout + tombstone/compaction delete is now live for
+> the `[int:int]` runtime family (`runtime/tycho_rt.c` `tycho_map_ii`), behind
+> its existing API — tychoc-only (tychoc0 emits its own families, untouched).
+> Verified: standalone prototype ASan/UBSan-clean + 8M-op differential fuzz vs a
+> reference model (every-op len/has/get + keys() insertion-order) + memory-bounded
+> under churn + seed-invisible; end-to-end `[int:int]` program through tychoc
+> matches expected (incl. a Python-checked churn); 9 map goldens pass; emitted
+> runtime ASan/UBSan-clean; **`bench/lru` checksum identical to baseline, peak RSS
+> 40.4 → ~32.5 MB (bounded — no regression to the pre-fix 222 MB cliff)**; tychoc0
+> rebuilds cleanly through the new-runtime tychoc (fixpoint proxy). The cheap-bail
+> gate (§7 step 2: delete holds on lru) is GREEN. **Remaining (the bulk):** roll
+> the layout out to `tycho_mapc%d` (tychoc, the composite generator that backs the
+> `[int:Trie]` trie win) + tychoc0's generic `map_<k>_<v>` generator + the other
+> fixed families (si/sf/if), then the full gate (`make fuzz`/`fixpoint`/4 parity
+> lanes/all benches). The trie memory win lands with the composite generator, not
+> map_ii. See §7 sequence.
+>
+> **STATUS (original): PROPOSED, not started (2026-07-14).** A proof-of-concept C model
 > (below) says a compact/indexed map layout roughly **halves** the per-node map
 > memory and cuts wall **~40%** on the trie workload — closing most of both the
 > value-semantic 3× memory gap *and* the trie/lru wall gap to Go in one change.
