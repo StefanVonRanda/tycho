@@ -33,7 +33,7 @@ is semantics-preserving.)
 ## Verdict — the arena WINS on recursive enums (~0.5× C, ~0.47× Go)
 
 This is the inverse of the trie. There, each node owned an `int -> child` **map**, whose
-header + backing arrays made tycho ~3.2× C. Here each node is a plain recursive cell with
+header + backing arrays made tycho ~1.55× C (was ~3.2× before the compact map layout). Here each node is a plain recursive cell with
 no per-node map — a **value-shaped, arena-friendly** structure — and tycho uses **half the
 memory of C and Go**:
 

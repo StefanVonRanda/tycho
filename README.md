@@ -112,8 +112,9 @@ high-performance engines choose on purpose. See
 [docs/arrays-structs.md](docs/arrays-structs.md) §2.
 
 **Pointer-shaped data costs more, measured.** Storing children by value, a
-recursive trie is ~3.2× C's memory and a fixed-capacity LRU ~5× (no sharing). The
-flat-pool idiom above brings the graph analog back to ~1.3× C. Arenas reclaim at
+recursive trie is ~1.55× C's memory (halved by the compact indexed-dict map
+layout) and a fixed-capacity LRU ~2.8× (no sharing). The flat-pool idiom above
+brings the graph analog to ~1.3× C. Arenas reclaim at
 *scope exit*, not incrementally, so a long-lived scope holds its transients until
 it returns — scope them in an inner function. The full loss column, with the idiom
 for each case, is in

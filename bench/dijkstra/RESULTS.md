@@ -38,8 +38,10 @@ pointer-linked trie cost. The reason is representational:
   there is **no `push` doubling waste** here — `reserve` doesn't move the number (we tried).
 
 So the dogfood validates the idiom: rewriting a graph from pointer-linked nodes to
-index-into-pool adjacency moves tycho from ~3.2× C (trie) to ~1.3× C (this) — the model is
-competitive on graph algorithms when the graph is expressed the value-semantic way.
+index-into-pool adjacency lands at ~1.3× C — competitive. The by-value recursive form of the
+same shape (trie) is ~1.55× C after the compact map layout (~3.2× before), so the idiom's
+memory edge is now modest; its decisive value is expressing cyclic/shared graphs the
+value-semantic way at all, where the model is competitive on graph algorithms.
 
 ## Notes / honest limits
 

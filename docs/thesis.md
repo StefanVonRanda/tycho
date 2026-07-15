@@ -173,11 +173,14 @@ of it:
   CSR adjacency arrays plus a `visited[]` array. (BFS over a literal 3-cycle
   works; this is also how cache-efficient graph code is written anyway.) Value
   semantics forbids *pointer* cycles, not *modeled* cycles. *Measured*: a
-  by-value recursive trie costs **~3.2× C's memory** (children stored inline,
-  not shared by pointer); the same algorithm as a flat `[Node]` pool linked by
-  integer indices lands at **~1.3× C** on a 300k-node graph (`bench/trie`,
-  `bench/dijkstra`) — the idiom, not a model change, is the gap. The full
-  measured loss column with the idiom for each case is in
+  by-value recursive trie costs **~1.55× C's memory** (children stored inline,
+  not shared by pointer — down from ~3.2× once its per-node maps moved to a
+  compact indexed-dict layout), and the same shape as a flat `[Node]` pool
+  linked by integer indices is **~1.3× C** on a 300k-node graph (`bench/trie`,
+  `bench/dijkstra`). Even the naive by-value form is now within a small factor
+  of C; the index-pool idiom closes the rest and is what makes genuine *sharing*
+  (DAGs, cycles) expressible at all. The full measured loss column with the
+  idiom for each case is in
   [the value-semantics limits note](internals/value-semantics-limits.md).
 
 - The real, narrow wall is **shared mutable state threaded through function

@@ -21,41 +21,42 @@ Peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Run: `sh bench/lru
 
 | lang  | peak RSS | time   | checksum (hits sum)      |
 |-------|----------|--------|--------------------------|
-| tycho | 40.4 MB  | 569 ms | `1076255 536832857539`   |
-| C     | 11.2 MB  | 178 ms | `1076255 536832857539`   |
-| go    | 21.3 MB  | 432 ms | `1076255 536832857539`   |
+| tycho | 32.6 MB  | 303 ms | `1076255 536832857539`   |
+| C     | 11.5 MB  | 150 ms | `1076255 536832857539`   |
+| go    | 21.4 MB  | 336 ms | `1076255 536832857539`   |
 
-## Verdict — time-competitive, memory ~4× C after two fixes
+## Verdict — ahead of Go on both, memory ~2.8× C
 
-tycho's value-semantic LRU is **time-competitive** (~3× C, ahead of Go) and its memory is
-**~4× C** — in the same band as the trie and dijkstra, no longer an outlier. Getting here
-took two fixes, both driven by this bench:
+tycho's value-semantic LRU is now **ahead of Go on both memory and wall** (32.6 MB / 303 ms
+vs Go 21.4 MB / 336 ms) and sits at **~2.8× C memory / ~2× C wall** — in the same band as
+the trie and dijkstra, no longer an outlier. Getting here took three fixes, all driven by
+this bench:
 
 1. **O(n) → O(1) map delete.** `delete m[k]` was O(map size): the in-place tombstone is
    O(1), but maintaining the insertion-ordered `keys()` (the hash-flooding-DoS hardening)
    linearly scanned + compacted a flat `ord` key-array on every delete. With ~1.4M
-   evictions on a 200k map this was O(n·deletes) — **39.8 s**. Replacing `ord` with an
-   intrusive doubly-linked list over the table slots made it an O(1) unlink (now 0.57 s).
+   evictions on a 200k map this was O(n·deletes) — **39.8 s**. It became O(1) once insertion
+   order stopped living in a compacted flat array.
 
-2. **Delete-churn memory — tombstone-free deletion.** Even with O(1) delete, the first
-   version held **222 MB** (~19× C). The live set is only ~200k entries (~7 MB of backing),
-   so this was an arena *hold-cost*, not a data-shape cost: deletes left **tombstones**
-   (`occ=2`), `used` climbed to cap/2, and the map *rehashed-at-same-cap to purge them* —
-   each purge allocating a fresh table in the map's owning arena (`main`'s scope, never
-   reset in the loop) and abandoning the old, so ~13 generations of ~17 MB accumulated.
-   The fix removes the cause: delete now does **linear-probe backward-shift** (the same
-   tombstone-free deletion the C port uses), pulling later entries back into the gap and
-   relinking the slot order-list on each move. With no tombstones, `used == live`, so the
-   table never rehashes-to-purge — it only grows with the live set. Peak RSS dropped to
-   **40 MB**. (An interim `arena_recycle`-the-purged-table mitigation reached 57 MB; it is
-   superseded and removed, since backward-shift eliminates the purge rehashing entirely.)
+2. **Delete-churn memory.** Even with O(1) delete, an early version held **222 MB** (~19× C).
+   The live set is only ~200k entries (~7 MB of backing), so this was an arena *hold-cost*,
+   not a data-shape cost: same-cap rehash-to-purge left ~13 abandoned table generations of
+   ~17 MB in `main`'s never-reset arena. Bounding the purge (so `used` tracks the live set,
+   never rehashing-to-purge) dropped peak to **~40 MB**.
+
+3. **Compact indexed-dict layout (latest).** Folding insertion order into a *dense* entries
+   array removed the per-slot order list entirely, and delete moved to a **tombstone +
+   amortized compaction** scheme — the index is rebuilt when tombstones exceed a fraction of
+   the entries, preserving `keys()` order and the churn bound. Peak dropped **40 → 32.6 MB**
+   and wall **569 → 303 ms**, now under Go. Internals:
+   `docs/internals/compact-dict-map-design.md`.
 
 Proof the remaining cost is the churn-free live set, not the delete volume: a no-eviction
-variant holding 600k *live* entries uses ~98 MB, while this 200k-live delete-heavy run uses
-40 MB — memory tracks the live set. The residual ~4× C is the open-addressing backing
-(load-factor slack + the order list), the same header-cost family as the trie.
+variant holding 600k *live* entries uses more memory than this 200k-live delete-heavy run —
+memory tracks the live set. The residual ~2.8× C is the index table's open-addressing
+load-factor slack, the same header-cost family as the trie, not a pointer blowup.
 
-Both fixes ship in **all map families** — the four fixed ones (`[string:int/float]`,
+These fixes ship in **all map families** — the four fixed ones (`[string:int/float]`,
 `[int:int/float]`) and the composite `[K: struct]` / struct-key families — so a struct-valued
 or struct-keyed map under equally heavy delete-churn stays bounded too.
 

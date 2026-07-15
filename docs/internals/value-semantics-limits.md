@@ -40,13 +40,14 @@ Measured (`bench/trie`, a prefix tree, each node owning an `int -> child` map):
 
 | | tycho | C | Go |
 |---|--:|--:|--:|
-| peak RSS | 119 MB | 38 MB | 34 MB |
+| peak RSS | 58.7 MB | 37.8 MB | 33.8 MB |
 
-~3.2× C, the opposite of the JSON result (up from ~2.7× / 103 MB once each map gained an
-O(1)-delete order list — +16 B/slot that the trie's millions of tiny maps pay with no
-deletes). (The composite-map initial capacity was already
-tuned 8→4 for this — see `bench/trie/RESULTS.md`; the gap below is what remains and is
-structural.)
+~1.55× C — down from ~3.2× (119 MB) once the map moved to a **compact indexed-dict**
+layout: an `int32` index table pointing at dense value entries sized to the live child
+count (a 1-child node no longer carries three empty inline-struct slots), and no per-slot
+insertion-order list. That roughly halved the trie and, at ~59 ms, brought its wall below
+Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural — see
+`bench/trie/RESULTS.md`.
 
 **Idiom — a flat node pool with integer-index children.** Keep all nodes in one array and
 make children indices into it, so an "edge" is an 8-byte `int`, sharing is just two indices
@@ -85,30 +86,29 @@ shared pointers.
 
 This is measured, not asserted: `bench/dijkstra` runs single-source shortest paths on a
 300k-node graph stored as an **adjacency list of indices** (`[[Edge]]`), and tycho lands at
-**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*, the opposite of the trie's 3.2×.
-Expressed the value-semantic way (indices, not pointers), the graph is value-shaped — the
-edge arrays are flat in every language — so the residual gap is just a 24-byte array
-descriptor per node, not the pointer-vs-struct blowup. The idiom is the difference between
-~3.2× and ~1.3×.
+**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*. Expressed the value-semantic way
+(indices, not pointers), the graph is value-shaped — the edge arrays are flat in every
+language — so the residual gap is just a 24-byte array descriptor per node, not the
+pointer-vs-struct blowup. The index idiom still edges out the by-value recursive form
+(~1.3× vs the trie's ~1.55× C), but since the compact map layout roughly halved the
+recursive trie the memory delta is now modest — the idiom's decisive payoff is expressing
+*sharing* (DAGs, cycles) that by-value storage cannot represent at all.
 
 `bench/lru` is a second index-pool case: a fixed-capacity LRU cache as a `[Node]` pool
 (`prev`/`next` are `int` indices) plus an `[int: int]` map, the tail slot recycled on
 eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped. It lands at
-**~5× C memory / ~5× wall, ahead of Go**, after two map-runtime costs it surfaced and that
-were then fixed: (1) `delete m[k]` was **O(map size)** because the insertion-ordered `keys()`
-vector was a flat array compacted on every delete — now an O(1) unlink on an intrusive
-slot-linked list (`nxt`/`prv` over the table slots); (2) delete-churn held ~4× more memory
-because same-cap tombstone-purge rehashes leaked table generations into the arena — now
-bounded by handing the purged table back (`arena_recycle`). The residual ~5× is the map's
-open-addressing backing (load-factor slack + the order list), the same header-cost family as
-the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
+**~2.8× C memory, ~2× C wall, and now ahead of Go on both** (32.6 MB / 303 ms vs Go's
+21.4 MB / 336 ms), after the map costs it surfaced were fixed: an O(1) churn-bounded delete
+(deletes were once O(map size) via a flat order vector, and delete-churn once held ~19× C
+until rehash-to-purge was bounded), and most recently the **compact indexed-dict** layout,
+which dropped it from ~40 MB by deleting the per-slot insertion-order list entirely. The
+residual ~2.8× is the index table's open-addressing load-factor slack, the same header-cost
+family as the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
 
-Measured on the same 150k-word workload, the flat-pool trie above lands well below the
-by-value recursive version (now **119 MB**) by pooling the nodes — its last absolute figure
-was ~69 MB, before the per-map order-list change (+16 B/slot) nudged every map up, so both
-are now somewhat higher; the *gap* between them is what matters and is unchanged. Correct on
-both compilers. It does
-*not* reach C's 38 MB, because each node still owns an `[int: int]` child map and that
+Measured on the same 150k-word workload, the by-value recursive version is now **~59 MB**
+(the compact indexed-dict layout roughly halved it). The flat-pool trie stays below that by
+pooling the nodes and holding an 8-byte index per edge instead of an inline child struct; it
+still does *not* reach C's 38 MB, because each node keeps an `[int: int]` child map whose
 header + backing arrays dominate. The most compact tries drop the per-node map entirely for
 **first-child / next-sibling links** (each node is a handful of `int`s: child index, sibling
 index, key, flag), which gets within a small factor of C at the cost of linked-list child
