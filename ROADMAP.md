@@ -80,8 +80,11 @@ not a redundant `byte` alias.
 - *Literal suffixes* (`123u32`) — **YAGNI**; typed bindings (`x: u32 = 123`)
   already cover the need.
 - *Signed/small int family first-class* (`u8`/`i8`/`i16`/`i32`/`i64` outside an
-  `extern`) — **YAGNI**; the FFI boundary covers the correctness motive and no
-  in-language program has needed them. Add on first real demand.
+  `extern`) — **SHIPPED (commit `f824a2a`).** The whole fixed-width family is now a
+  first-class in-language type, not extern-only. Every type-keyword name (`i8`…`u64`) is
+  reserved as an identifier in **both** compilers (tychoc0 gained an identifier check at
+  each binding/use site), which also closed a fuzz divergence. **With this, 1.1 is fully
+  shipped** (only the YAGNI'd literal suffixes remain unbuilt, by choice).
 
 ### 1.2 `const` bindings and compile-time constants — **shipped**
 `const NAME = <literal>` works at module top-level AND inside function bodies, for
@@ -518,11 +521,19 @@ the project's own honest-limits culture (thesis §5).
 
 ## Cross-cutting axes (not language features)
 
-- **More codegen optimizations.** The two thesis-carrying ones shipped (return-slot
-  move §4a, in-place append §4b). Next candidates that fit: inlining hints,
-  small-value stack promotion, SIMD in hot corelib paths. All measurable against
-  the existing `bench-guard`. **Priority: opportunistic, evidence-gated** — the
-  `bench/*/RESULTS.md` discipline is already the right filter.
+- **More codegen / runtime-layout optimizations.** Three thesis-carrying ones have
+  shipped: return-slot move (§4a), in-place append (§4b), and — newest — the
+  **compact indexed-dict map layout** (2026-07-15). It replaces the value-inline hash
+  table + `nxt`/`prv` insertion-order list with an `int32` index table over *dense*
+  insertion-ordered entries, across all four map sites (runtime `ii`/`si`/`sf`/`if`,
+  tychoc `mapc%d`, tychoc0's generator). Measured, checksums byte-identical: **trie
+  119 → 58.7 MB** (3.2× → 1.55× C, wall now below Go's), **lru 40 → 32.6 MB** (ahead of
+  Go on both memory and wall), map-native invindex 127 → 64 MB; `json`/`dijkstra` flat.
+  This is what superseded typed sub-pools for the memory story (next bullet). Design +
+  full gate: [docs/internals/compact-dict-map-design.md](docs/internals/compact-dict-map-design.md).
+  Remaining candidates that fit: inlining hints, small-value stack promotion, SIMD in hot
+  corelib paths. All measurable against the existing `bench-guard`. **Priority:
+  opportunistic, evidence-gated** — the `bench/*/RESULTS.md` discipline is the right filter.
 - **Type-homogeneous sub-pools — investigated and rejected on evidence (2026-07-13).**
   cachegrind on the pointer-heavy benches showed last-level data-cache miss rates are
   already low (interp 0.9%, trie 1.8%) and interp's locality *beats* C's (0.9% vs 2.6%),
@@ -546,11 +557,38 @@ the project's own honest-limits culture (thesis §5).
 
 ---
 
-## If you do three things this cycle
+## Where things stand — and what's next
 
-1. **Sized/unsigned integer types (1.1)** — unblocks FFI correctness *and* corelib
-   crypto in one stroke; pure thesis-fit.
-2. **Compiler diagnostics (1.3)** — cheapest compounding ergonomics win.
-3. **Decide the expression-orientation question (2.1)** — the *real* item hiding
-   behind "ternary." Block-valued `if`/`match` if yes; write the premise into
-   STATUS if no. Either way, resolve it as a principle, not a syntax skirmish.
+The three items this roadmap last flagged as the cycle's priorities have **all shipped**:
+
+1. **Sized/unsigned integer types (1.1)** — done. The whole fixed-width family (`u8`…`i64`,
+   plus `u32`/`u64`/`f32`) is first-class in-language, not only at the FFI boundary
+   (commit `f824a2a`); type-keyword names are reserved as identifiers in both compilers.
+2. **Compiler diagnostics (1.3)** — substantially shipped (line + caret, did-you-mean
+   incl. struct fields, fall-off-the-end lint); only semantic-error carets are deferred.
+3. **Expression-orientation (2.1)** — resolved: `if`/`match` are value-producing in tail
+   position, both compilers, byte-identical fixpoint. (Not C's `?:` — the sound version.)
+
+Two more foundational deliverables landed alongside:
+
+- **Formal specification (1.8) — ratified as Tycho 1.0** (commit `9f97ada`): grammar,
+  per-construct semantics, conformance matrix, and a spec-check gate. The self-host is no
+  longer the *only* contract.
+- **Compact indexed-dict map layout** — closed the value-semantic ~3× RAM story on the
+  pointer-shaped benchmarks (see Cross-cutting axes; trie 1.55× C, lru ahead of Go).
+
+**What's next — the thesis is proven and the pillars are in place; remaining work is
+demand-gated polish, not new language identity.** Foundation before feature breadth:
+
+1. **Hold spec + two-compiler parity in lockstep** as any new feature lands. With 1.0
+   ratified, the spec is now a contract to keep byte-identical, not just documentation —
+   this is the standing foundational task, ahead of any single feature.
+2. **Demand-gated corelib / tooling extras** — package-aware LSP *diagnostics* (1.5, the
+   one real open LSP gap), plus 1.4 leftovers (JPEG/other image formats, `datetime`
+   parsing, an HTTP server, a CLI-arg parser). Each built against a real program, never
+   ahead of one.
+3. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
+   small-value stack promotion, SIMD in hot corelib paths — all evidence-gated against
+   `bench-guard`.
+
+No open item here requires reopening a thesis non-goal; Tier 3 stays decided.
