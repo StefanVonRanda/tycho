@@ -32,12 +32,16 @@ superseded. Verified by probing tychoc **and** tychoc0:
   use `to_int`). Not an open fork. *(Corrected 2026-07-15: an earlier refresh of this
   file wrongly called B open by checking only that `'a' + 300` didn't abort, not its
   value — it wraps to 141. RULE-9 miss.)*
-- **A5 — evaluation order — PARTLY resolved.** The audit found a real tychoc-vs-tychoc0
-  **divergence** on `arr[f()] = g()` (index-vs-RHS order) and **fixed** it (commit
-  `cd66270`): a side-effecting place index is now sequenced **left-to-right** in both
-  compilers, locked by `tests/eval_order`. Spec `17-runtime.md` updated to specify that
-  case. **Remaining:** call-argument order is `b,a` in both compilers (consistent, not a
-  divergence) but not explicitly sequenced — the only live A5 follow-up.
+- **A5 — evaluation order — RESOLVED (decided).** The audit found a real
+  tychoc-vs-tychoc0 **divergence** on `arr[f()] = g()` and **fixed** it (`cd66270`):
+  the place index is now sequenced **left-to-right** in both compilers, locked by
+  `tests/eval_order` and specified in §13.4 / Appendix F. **Call-argument order stays
+  deliberately unspecified** (decision 2026-07-15, reaffirming `fe1cf15`): it is
+  consistent across both compilers (not a divergence), and pinning it soundly needs a
+  *per-call-site* sequenced temporary — a statement-level hoist is **unsound** because
+  an argument may sit inside a short-circuit (`f(x, cond and g())`) that must not run —
+  a cost not worth closing a hypothetical hole. Documented in §13.4 / Appendix F. **A5
+  closed.**
 
 ## Where the spec stands (context for the next session)
 

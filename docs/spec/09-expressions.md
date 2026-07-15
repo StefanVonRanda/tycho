@@ -81,21 +81,28 @@ both compilers):
 - **`for x in xs` — the collection is evaluated exactly once**, before the loop.
 - **Compound assignment** — a **side-effecting call inside the place is evaluated
   once** (*probed*); a pure index sub-expression may be evaluated twice.
-- **Argument evaluation order is *unspecified*** (*probed*). Tycho does not
-  sequence the arguments of a call, the operands of a binary operator, or the
-  sub-expressions of a place relative to one another; their order of side effects
-  is inherited from the target and MUST NOT be relied on. A program that needs a
-  particular order MUST introduce explicit intermediate bindings.
+- **A side-effecting index in an assignment place is sequenced left-to-right**
+  (*probed*): in `a[f()] = g()` the index `f()` is evaluated **before** the RHS
+  `g()`, on both compilers.
+- **Argument and operand evaluation order is *unspecified*** (*probed*). Tycho
+  does not sequence the arguments of a call or the operands of a binary operator
+  relative to one another; their order of side effects is inherited from the
+  target and MUST NOT be relied on. A program that needs a particular order MUST
+  introduce explicit intermediate bindings.
 
-> **Design decision.** Leaving evaluation order unspecified is deliberate and
-> matches **Swift** and **Odin**, which do the same. (Go pins left-to-right for
-> function arguments; Tycho emits C and defers order to the C compiler, so
-> matching Go would require lifting every argument into a sequenced temporary at
-> every call site — a pervasive codegen change for a hole that is not practically
-> open: the two reference compilers already produce identical results because both
-> emit arguments in source order to the same C compiler. A conforming third
-> implementation need not.) Appendix F lists this in the unspecified-behavior
-> register.
+> **Design decision.** Leaving *argument and operand* order unspecified is
+> deliberate and matches **Swift** and **Odin**. (Go pins left-to-right for
+> function arguments; Tycho emits C and defers order to the C compiler.) Pinning
+> would mean lifting every side-effecting argument into a sequenced temporary — and
+> it must be lifted *at the call site*, not to statement level, because an argument
+> may sit inside a short-circuit (`f(x, cond and g())`) that must not evaluate it.
+> That per-call-site cost was judged not worth closing a hole that is not a live
+> divergence: both reference compilers currently emit arguments in the same order.
+> The **assignment-place index** was the one case that *did* diverge between the
+> two compilers — and it is cheap and sound to sequence (a place index is never
+> short-circuited), so it is pinned left-to-right (above). A conforming third
+> implementation still need not match the unspecified argument/operand order.
+> Appendix F lists this in the unspecified-behavior register.
 
 ## 13.5 Expression-valued `if` and `match`
 
