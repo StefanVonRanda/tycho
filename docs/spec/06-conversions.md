@@ -39,7 +39,7 @@ consulted (so a newtype over the listed base is accepted).
 | `to_float(n)` | `int`, any sized int, `f32`, or a `float`-newtype | `float` | |
 | `to_u8` … `to_i64`, `to_f32` | any numeric scalar: `int`, `char`, `float`, or any sized int/float (through `base_of`) | the named fixed-width type | narrowing / reinterpretation; **total** (defined for every input). `to_i32` recovers a 32-bit C `int` return over FFI |
 | `to_str(x)` | `bytes`, or a `string`-newtype | `string` | zero-cost reinterpret (same buffer) |
-| `to_bytes(x)` | `string`, `bytes` (through `base_of`) | `bytes` | same buffer, distinct type |
+| `to_bytes(x)` | `string`, `bytes` (through `base_of`), or `[int]` | `bytes` | `string`/`bytes`: same buffer, distinct type (zero-cost reinterpret). `[int]`: each element truncated `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior `0x00` allowed) |
 | `to_bool(x)` | a `bool`-newtype | `bool` | newtype unwrap |
 | `to_under(x)` | any newtype | its underlying type | generic newtype unwrap, zero-cost |
 | `to_ptr(n)` | `int` | `ptr` | FFI sentinel pointer; never dereferenced |

@@ -293,7 +293,7 @@ rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 `true` and `false` are the two `bool` literals (§3.6). `null` is the literal of
 the opaque FFI pointer type `ptr`; it denotes a null pointer and participates
 only in FFI passing, `null`-comparison, and `is_null` ([§24](14-ffi.md)). There is no `bytes` literal — a `bytes` value is produced by
-`to_bytes` from a `string`.
+`to_bytes` from a `string` or from an `[int]` of byte values (§8).
 
 ## 3.10 Non-normative tree-sitter grammar
 

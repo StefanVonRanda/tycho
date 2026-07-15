@@ -88,7 +88,9 @@ detailed in §16.
 
 `bytes` is an **immutable binary buffer** — the same length-counted, byte-safe
 representation as `string` but a **distinct type**. It is produced by
-`to_bytes` from a `string` (§8); there is no `bytes` literal. `bytes` exists
+`to_bytes` from a `string` (a zero-cost reinterpret) or from an `[int]` of byte
+values (each truncated `& 0xFF`; §8) — the latter being the only way to construct
+a binary `bytes` with interior `0x00` bytes. There is no `bytes` literal. `bytes` exists
 primarily to cross the FFI boundary as a `(pointer, length)` pair
 ([§24](14-ffi.md)).
 

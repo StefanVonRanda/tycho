@@ -99,7 +99,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_float(n)` | `int`/`u32`/`u64`/`f32` or a `float`-newtype → `float`. | magic |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | Any numeric scalar (`int`/`char`/`float`/`u32`/`u64`/`f32`, through `base_of`) → the sized type. | magic |
 | `to_str(x)` | `bytes`, or a `string`-newtype → `string` (zero-cost reinterpret). | magic |
-| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type). | magic |
+| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type — zero-cost reinterpret); **or `[int]` → `bytes`**, each element truncated `& 0xFF` into a fresh buffer (the only way to construct a binary `bytes` with interior `0x00`). | magic |
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |

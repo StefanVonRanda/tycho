@@ -29,6 +29,7 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `to_float(n)` | `int -> float` | Widen. |
 | `to_int(x)` | `float -> int` | Truncate toward zero. |
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |
+| `to_bytes(xs)` | `[int] -> bytes` | Each element `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior NULs and all) that a `string` can't hold. |
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (`0`–`255`). |
 
 (A newtype's `to_int` / `to_float` / `to_str` / `to_bool` / `to_under` unwrappers are on the

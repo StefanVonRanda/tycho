@@ -66,7 +66,9 @@ and `int`) are type errors, so the byte/number distinction is never lost by acci
 
 `bytes` is an immutable binary buffer. Unlike `string`, it is not NUL-terminated, so
 interior `\0` bytes survive — which is what you want for hashing, crypto, and binary I/O.
-`to_bytes(s)` and `to_str(b)` bridge the two. `bytes` also crosses the [FFI](ffi.md)
+`to_bytes(s)` and `to_str(b)` bridge the two; `to_bytes(xs)` over an `[int]` (each
+element `& 0xFF`) builds a binary buffer from computed bytes — the way to produce a
+`bytes` with interior NULs in pure Tycho. `bytes` also crosses the [FFI](ffi.md)
 boundary as a `(pointer, length)` pair.
 
 ## String interpolation
