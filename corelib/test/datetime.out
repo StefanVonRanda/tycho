@@ -14,6 +14,13 @@ tzroundtrip=1234567890 ok=1
 off = Z +05:30 -08:00 +05:45
 et_jan=-18000 et_jul=-14400 utc0=0
 nyc = 2009-02-13T18:31:30-05:00
+parse ok=1 iso=2009-02-13T23:31:30 wd=Fri
+parse_rt=1
+parse_space=1
+parse_tz unix=1234567890 ok=1
+parse_neg ok=1
+parse_z unix=1234567890
+fail short=0 sep=0 month=0 day=0 off=0
 local_off_ok = 1
 now_local_valid = 1
 now_valid = 1

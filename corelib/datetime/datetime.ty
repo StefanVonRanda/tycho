@@ -181,6 +181,99 @@ fn format_offset(offset_secs: int) -> string:
 fn format_iso_tz(dt: DateTime, offset_secs: int) -> string:
     return format_iso(dt) + format_offset(offset_secs)
 
+# ---- parsing ---------------------------------------------------------------
+# Parse ISO-8601 "YYYY-MM-DDTHH:MM:SS" back into fields -- the inverse of
+# format_iso. Fail-closed: a malformed or out-of-range string yields a DateTime
+# whose `year` is -1 (which a real parse, being 4 digits, can never produce), so
+# `datetime.ok(dt)` is the validity check. No floats; pure integer scanning.
+
+fn ok(dt: DateTime) -> bool:                    # did a parse succeed?
+    return dt.year >= 0
+
+fn bad() -> DateTime:                           # the fail-closed sentinel
+    return DateTime(-1, 0, 0, 0, 0, 0, 0)
+
+fn is_digit(c: int) -> bool:
+    return c >= 48 and c <= 57
+
+fn all_digits(s: string, a: int, b: int) -> bool:
+    for i in range(a, b):
+        if not is_digit(s[i]):
+            return false
+    return true
+
+fn digits_val(s: string, a: int, b: int) -> int:   # [a, b) assumed all digits
+    v := 0
+    for i in range(a, b):
+        v = v * 10 + (s[i] - 48)
+    return v
+
+# Parse the wall-clock fields of an ISO-8601 timestamp, IGNORING any trailing
+# zone suffix (`Z`, `+HH:MM`, `-HH:MM`). The date/time separator may be `T` or a
+# space. Returns the civil fields; use parse_iso_tz to fold an offset into UTC.
+fn parse_iso(s: string) -> DateTime:
+    if len(s) < 19:
+        return bad()
+    if s[4] != 45 or s[7] != 45:                # '-' '-'
+        return bad()
+    sep := s[10]
+    if sep != 84 and sep != 32:                 # 'T' or ' '
+        return bad()
+    if s[13] != 58 or s[16] != 58:              # ':' ':'
+        return bad()
+    if not (all_digits(s, 0, 4) and all_digits(s, 5, 7) and all_digits(s, 8, 10)):
+        return bad()
+    if not (all_digits(s, 11, 13) and all_digits(s, 14, 16) and all_digits(s, 17, 19)):
+        return bad()
+    y := digits_val(s, 0, 4)
+    mo := digits_val(s, 5, 7)
+    da := digits_val(s, 8, 10)
+    ho := digits_val(s, 11, 13)
+    mi := digits_val(s, 14, 16)
+    se := digits_val(s, 17, 19)
+    if mo < 1 or mo > 12:
+        return bad()
+    if da < 1 or da > days_in_month(y, mo):
+        return bad()
+    if ho > 23 or mi > 59 or se > 60:           # 60 allows a leap second
+        return bad()
+    return DateTime(y, mo, da, ho, mi, se, weekday(y, mo, da))
+
+# Parse "+HH:MM" / "-HH:MM" / "Z" at index `at`; returns (offset_secs, ok). A
+# missing suffix (end of string) is treated as UTC (offset 0, ok).
+fn parse_offset(s: string, at: int) -> (int, bool):
+    n := len(s)
+    if at >= n:
+        return (0, true)
+    c := s[at]
+    if c == 90:                                 # 'Z'
+        return (0, true)
+    sign := 1
+    if c == 45:                                 # '-'
+        sign = -1
+    elif c != 43:                               # not '+'
+        return (0, false)
+    if at + 6 > n or s[at + 3] != 58:           # need "+HH:MM"
+        return (0, false)
+    if not (all_digits(s, at + 1, at + 3) and all_digits(s, at + 4, at + 6)):
+        return (0, false)
+    hh := digits_val(s, at + 1, at + 3)
+    mm := digits_val(s, at + 4, at + 6)
+    return (sign * (hh * 3600 + mm * 60), true)
+
+# Parse an ISO-8601 timestamp WITH a zone suffix and return the UTC civil
+# fields (the instant, normalized to UTC). A `Z` or absent suffix means UTC; a
+# `+HH:MM` / `-HH:MM` is folded out. Fail-closed (year -1) on a bad date or a
+# malformed suffix.
+fn parse_iso_tz(s: string) -> DateTime:
+    dt := parse_iso(s)
+    if not ok(dt):
+        return bad()
+    off, good := parse_offset(s, 19)
+    if not good:
+        return bad()
+    return from_unix(to_unix_at(dt, off))       # local+offset -> UTC instant
+
 # ---- system / zone local time (libc) ---------------------------------------
 # The ONLY FFI in this package (companion datetime_shim.c, pure libc). libc knows
 # the real UTC offset -- DST included -- for a zone at an instant; the pure

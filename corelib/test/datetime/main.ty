@@ -79,6 +79,38 @@ fn main():
     # compose the pure + libc layers: ts1234 as US-Eastern wall-clock, DST applied
     nyc := datetime.format_iso_tz(datetime.from_unix_at(1234567890, etjan), etjan)
     println("nyc = " + nyc)                              # 2009-02-13T18:31:30-05:00
+
+    # ---- parsing: inverse of format_iso / format_iso_tz ----
+    p1 := datetime.parse_iso("2009-02-13T23:31:30")
+    p1ok := b2i(datetime.ok(p1))
+    p1iso := datetime.format_iso(p1)
+    p1wd := datetime.weekday_name(p1.weekday)
+    println(f"parse ok={p1ok} iso={p1iso} wd={p1wd}")     # 1 ... Fri
+    # round-trip: format_iso(parse_iso(x)) == x
+    x := "2026-06-17T08:09:10"
+    xrt := b2i(datetime.format_iso(datetime.parse_iso(x)) == x)
+    println(f"parse_rt={xrt}")                            # 1
+    # a space date/time separator is accepted
+    spok := b2i(datetime.ok(datetime.parse_iso("2000-01-01 00:00:00")))
+    println(f"parse_space={spok}")                        # 1
+    # with a zone suffix -> the UTC instant (ts1234 in three zones)
+    ptz := datetime.parse_iso_tz("2009-02-14T05:01:30+05:30")
+    ptzu := datetime.to_unix(ptz)
+    ptzok := b2i(ptzu == 1234567890)
+    println(f"parse_tz unix={ptzu} ok={ptzok}")           # 1234567890 1
+    pneg := datetime.parse_iso_tz("2009-02-13T15:31:30-08:00")
+    pnegok := b2i(datetime.to_unix(pneg) == 1234567890)
+    println(f"parse_neg ok={pnegok}")                     # 1
+    pz := datetime.parse_iso_tz("2009-02-13T23:31:30Z")
+    pzu := datetime.to_unix(pz)
+    println(f"parse_z unix={pzu}")                        # 1234567890
+    # fail-closed: too short, bad separator, month 13, day 30 in Feb, bad offset
+    bshort := b2i(datetime.ok(datetime.parse_iso("2009-02-13")))
+    bsep := b2i(datetime.ok(datetime.parse_iso("2009/02/13T00:00:00")))
+    bmon := b2i(datetime.ok(datetime.parse_iso("2009-13-01T00:00:00")))
+    bday := b2i(datetime.ok(datetime.parse_iso("2009-02-30T00:00:00")))
+    boff := b2i(datetime.ok(datetime.parse_iso_tz("2009-02-13T23:31:30+5")))
+    println(f"fail short={bshort} sep={bsep} month={bmon} day={bday} off={boff}")  # all 0
     # system local_offset() is host-dependent -- assert invariants, not the value
     lo := datetime.local_offset(1234567890)
     println("local_off_ok = " + str(b2i(lo >= 0 - 50400 and lo <= 50400 and lo % 900 == 0)))

@@ -1,0 +1,27 @@
+method = POST
+path   = /submit?id=7
+version= HTTP/1.1
+host   = localhost
+ctype  = application/json
+clen   = 13
+missing= []
+body   = {"a":"hello"}
+bodylen= 13
+bad_method_empty = 1
+--- render ---
+HTTP/1.1 404 Not Found
+Content-Length: 4
+Content-Type: text/plain
+
+nope
+net_ok = 1
+srv_method = POST
+srv_path   = /submit?id=7
+srv_body   = {"a":"hello"}
+srv_bodylen= 13
+wrote_ok = 1
+status = HTTP/1.1 200 OK
+has_extra = 1
+has_clen  = 1
+has_ctype = 1
+rbody = pong

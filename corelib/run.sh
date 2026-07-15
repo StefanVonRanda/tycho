@@ -17,20 +17,24 @@ for entry in corelib/test/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="corelib/test/$name.out"
-    # FFI: tychoc auto-discovers a module's <mod>_shim.c; the tychoc0 paths emit C
-    # that WE link, so pass the shim here too (convention: test <name> imports core:<name>).
-    shim="corelib/$name/${name}_shim.c"; [ -f "$shim" ] || shim=""
-    # FFI deps: a `corelib/$name/deps` lists pkg-config names. If any is absent,
-    # SKIP this module (keeps `make ci` green on platforms without the lib);
-    # otherwise pass its --cflags --libs on the tychoc0 link paths (tychoc reads
-    # the same `deps` itself, so the two stay in lockstep across platforms).
-    deps="corelib/$name/deps"; depflags=""
-    if [ -f "$deps" ]; then
-        pkgs="$(grep -vE '^[[:space:]]*(#|$)' "$deps")"
+    # FFI: tychoc auto-discovers each imported module's <mod>_shim.c and reads its
+    # `deps`; the tychoc0 paths emit C that WE link, so gather the shim AND the
+    # pkg-config deps of EVERY core:X the test imports -- not just the same-name one
+    # (e.g. core:httpd wraps core:net, so net_shim.c is needed even though the test
+    # is named "httpd"). If any dep is absent, SKIP (keeps `make ci` green on
+    # platforms without the lib); tychoc reads the same `deps` itself, so the two
+    # stay in lockstep across platforms.
+    shim=""; allpkgs=""
+    for mod in $(grep -oE 'core:[a-z0-9_]+' "$entry" | sed 's/core://' | sort -u); do
+        s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
+        d="corelib/$mod/deps"; [ -f "$d" ] && allpkgs="$allpkgs $(grep -vE '^[[:space:]]*(#|$)' "$d")"
+    done
+    depflags=""
+    if [ -n "$allpkgs" ]; then
         missing=""
-        for pkg in $pkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
+        for pkg in $allpkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
         if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
-        depflags="$(pkg-config --cflags --libs $pkgs 2>/dev/null)"
+        depflags="$(pkg-config --cflags --libs $allpkgs 2>/dev/null)"
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1

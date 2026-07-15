@@ -1,0 +1,91 @@
+# corelib: command-line argument parsing. Pure string math -- no FFI. Import with
+# `import "core:cli"`, parse with `cli.parse(argv)`.
+#
+# parse(argv) sorts a raw argument vector into three buckets:
+#   - options     `--key=value`             -> (key, value) pairs   (cli.get)
+#   - flags       `--flag`, `-f`, `-abc`     -> boolean presence     (cli.flag)
+#   - positional  everything else + all args after a bare `--`       (cli.positionals)
+#
+# Values are ALWAYS attached with `=` (`--out=file`), so the parser needs no
+# schema of which options take a value: `--verbose` is unambiguously a flag and
+# `--out=x` unambiguously an option. A short cluster `-abc` sets flags a, b, c.
+# A lone `-` is a positional (the stdin convention). `--` ends option parsing;
+# every argument after it is positional even if it looks like an option.
+#
+# The argv you pass is your program's own arguments -- do NOT include argv[0]
+# (the program name). `cli.parse(args)` where `args` is the builtin arg vector.
+package cli
+
+struct Cli:
+    keys: [string]        # option names, parallel to vals
+    vals: [string]        # option values, parallel to keys
+    flags: [string]       # flag names present (long and short)
+    positional: [string]  # positional arguments, in order
+
+# `--` prefix test (a long option or long flag).
+fn is_long(s: string) -> bool:
+    return len(s) >= 2 and s[0] == 45 and s[1] == 45
+
+# a single-dash short cluster like `-v` or `-abc` (but not `-` alone).
+fn is_short(s: string) -> bool:
+    return len(s) >= 2 and s[0] == 45 and s[1] != 45
+
+# Parse an argument vector into a Cli.
+fn parse(argv: [string]) -> Cli:
+    keys := []string
+    vals := []string
+    flags := []string
+    pos := []string
+    n := len(argv)
+    only_pos := false
+    for i in range(n):
+        a := argv[i]
+        if only_pos:
+            push(pos, a)
+        elif a == "--":
+            only_pos = true
+        elif is_long(a):
+            body := a[2:len(a)]                 # strip the leading "--"
+            eq := find(body, "=")
+            if eq >= 0:
+                push(keys, body[0:eq])
+                push(vals, body[eq + 1:len(body)])
+            else:
+                push(flags, body)               # `--verbose`
+        elif is_short(a):
+            for j in range(1, len(a)):          # `-abc` -> a, b, c
+                push(flags, chr(a[j]))
+        else:
+            push(pos, a)                        # positional, incl. a lone "-"
+    return Cli(keys, vals, flags, pos)
+
+# The value of option `key`, or `dflt` if it was not supplied. Last one wins if
+# an option is repeated.
+fn get(c: Cli, key: string, dflt: string) -> string:
+    out := dflt
+    for i in range(len(c.keys)):
+        if c.keys[i] == key:
+            out = c.vals[i]
+    return out
+
+# Was option `key` (a `--key=value`) supplied at all?
+fn has(c: Cli, key: string) -> bool:
+    for i in range(len(c.keys)):
+        if c.keys[i] == key:
+            return true
+    return false
+
+# Was flag `name` present? Long (`--name`) and short (`-n` -> name "n") both count.
+fn flag(c: Cli, name: string) -> bool:
+    for i in range(len(c.flags)):
+        if c.flags[i] == name:
+            return true
+    return false
+
+# The positional arguments, in the order they appeared.
+fn positionals(c: Cli) -> [string]:
+    return c.positional
+
+# How many positionals were parsed.
+fn count(c: Cli) -> int:
+    return len(c.positional)

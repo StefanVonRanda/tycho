@@ -1,0 +1,16 @@
+out    = build/app
+level  = 3
+missing= DEFAULT
+has out= yes
+has mis= no
+verbose= yes
+flag x = yes
+flag z = yes
+flag q = no
+npos   = 4
+pos[0]= input.txt
+pos[1]= -
+pos[2]= --not-an-option
+pos[3]= last.txt
+empty n= 0
+repeat = b
