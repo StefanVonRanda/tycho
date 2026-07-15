@@ -2998,6 +2998,12 @@ static Stmt *parse_stmt(Parser *ps) {
         Stmt *s = new_stmt(sk, t->line);
         s->target = e;
         s->expr = parse_expr(ps);
+        /* A5 (evaluation order): pin left-to-right — a side-effecting index in the
+         * place runs BEFORE the RHS. Without this the index and RHS are emitted
+         * inline and the C compiler picks the order (tychoc got RHS-first), which
+         * diverged from tychoc0 on `arr[f()] = g()`. Hoisting the index into a
+         * pending temp sequences it first, matching tychoc0. Pure indices untouched. */
+        hoist_index_calls(e, t->line);
         eat(ps, TK_NEWLINE, "newline");
         return s;
     }

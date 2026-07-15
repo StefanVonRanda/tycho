@@ -80,8 +80,12 @@ The following are **unspecified**: this specification imposes no requirement, an
 a conforming program MUST NOT depend on them. They are collected in
 [Appendix F](appendix-f-impl-defined.md).
 
-- **Argument / operand / place evaluation order** within one expression
-  (§13.4; *probed* — inherited from the target, not sequenced by Tycho).
+- **Argument and operand evaluation order** within one expression (§13.4;
+  *probed* — inherited from the target, not sequenced by Tycho). **Exception:** a
+  side-effecting **index in an assignment place** (`a[f()] = g()`) IS sequenced
+  **left-to-right** — the index runs before the RHS, identically in both
+  compilers — so that one case is specified, not target-inherited, and a program
+  MAY depend on it.
 - **Floating-point reduction reassociation** in `parallel for` (§22): a
   floating-point reduction result MAY differ across thread counts. (An integer
   reduction is deterministic and is *not* unspecified.)

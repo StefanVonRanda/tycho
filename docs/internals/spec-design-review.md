@@ -4,8 +4,34 @@
 > the Tycho 1.0 spec. Writing a spec forces a decision on every corner, which is
 > the chance to reconcile the language with its own stated identity. This is the
 > ledger of what the audit surfaced: what to **change**, what to **decide**, and
-> what to **keep**. It is a decision record to work against, not a set of applied
-> changes — nothing here is implemented yet.
+> what to **keep**. It began as a decision record with nothing implemented; most
+> of the fail-closed cluster has since shipped — see **Status** immediately below.
+
+## Status — audited 2026-07-15 (both compilers re-probed)
+
+Most of this ledger has landed; the original "nothing implemented yet" framing is
+superseded. Verified by probing tychoc **and** tychoc0:
+
+- **A1–A4 (fail-closed gaps) — RESOLVED, parity-clean.** `range` step 0 rejects a
+  literal and **aborts** on a runtime 0; `chr(n)` **aborts** outside `0..255`
+  ("out of byte range 0..255"); a **negative shift aborts** and `≥ width` yields 0
+  (spec §5.2.7); an out-of-range `to_int(float)` **aborts** ("float-to-int out of
+  range"). Both compilers agree, with descriptive messages.
+- **C1 — RESOLVED.** The sized-int family is first-class (`i8`…`i64`, commit
+  `f824a2a`); no longer extern-only.
+- **C3 — RESOLVED.** `fn == fn` is **rejected** ("functions are not comparable"),
+  not compared by identity.
+- **C2 — addressed.** Both `x := None` and `x := Ok(1)` **reject with a clear
+  "annotate the type" diagnostic** — symmetric and fail-closed.
+- The `str(char)` papercut is gone — `str` of a char prints its glyph.
+
+**Still open:**
+- **A5 — evaluation order.** *Not* pinned; spec `17-runtime.md:83` documents it as
+  target-inherited (not sequenced by Tycho). The sharpest remaining item for the
+  two-implementations thesis — the live work.
+- **B — the `char`/byte-type fork.** `char + int` still yields a `char` whose value
+  can exceed 255 (verified both compilers). A genuine design decision (reopens a
+  STATUS discipline), pending a call; `ord(c)` is still unbuilt.
 
 ## Where the spec stands (context for the next session)
 
