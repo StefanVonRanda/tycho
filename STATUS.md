@@ -116,8 +116,10 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
 ## Known limits & open work
 
 - **Fundamental (accepted, documented):** pointer-shaped / structurally-shared data (tries, graphs)
-  costs ~3× C in RAM because children are stored by value (no sharing). I've benched it honestly; the
-  recommended idiom (flat index-pool) is documented but on purpose not "the model." See
+  costs ~1.55× C in RAM (down from ~3× since the compact indexed-dict map layout — the removable
+  empty-slot waste is gone, the value-inline residue is not) because children are stored by value
+  (no sharing). I've benched it honestly; the recommended idiom (flat index-pool) is documented but
+  on purpose not "the model." See
   `docs/internals/value-semantics-limits.md`.
 - No larger open backlog: an audit (2026-06-27) cross-checked every "deferred/not-yet" marker in
   `docs/internals/` against the shipped transpilers — all mapped to shipped or decided. (The last
