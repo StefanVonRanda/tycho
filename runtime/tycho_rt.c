@@ -1087,6 +1087,20 @@ TychoArrInt tycho_arr_int_with_cap(Arena *a, long cap) {
     return r;
 }
 
+/* Build a bytes value from an [int] array, each element truncated to a byte
+ * (`& 0xFF`). The dual of `s[i]` reads: lets pure Tycho assemble a binary buffer
+ * -- interior 0x00 included -- that a string can't hold. `to_bytes([int])`. */
+char *tycho_bytes_from_intarr(Arena *a, TychoArrInt arr) {
+    long n = arr.len; if (n < 0) n = 0;
+    unsigned char *p = NULL;
+    if (n > 0) {
+        p = (unsigned char *)malloc((size_t)n);
+        if (!p) tycho_oom();
+        for (long i = 0; i < n; i++) p[i] = (unsigned char)(arr.data[i] & 0xFF);
+    }
+    return tycho_bytes_from_c(a, p, n);
+}
+
 /* FFI: copy a C-owned (ptr, len) long buffer (from an extern `-> [int]`, out-param
  * shim) into an arena array, then free it -- the [int] analogue of
  * tycho_bytes_from_c. NULL p yields the empty array (nothing to free). */

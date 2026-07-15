@@ -6091,6 +6091,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "((" + sized_cty(sized_conv_target(name)) + ")(" + gen_expr(args[0], names, types, dc, ctx) + "))"
             if name == "to_ptr":                          # FFI: int -> opaque ptr sentinel (e.g. SQLITE_TRANSIENT = (void*)-1); never deref'd in tycho
                 return "((void*)(long)(" + gen_expr(args[0], names, types, dc, ctx) + "))"
+            if name == "to_bytes" and resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx)) == "[int]":   # [int] -> bytes: real conversion (each elem & 0xFF), single-eval temp
+                return "({ " + cty(dc, ctx, "[int]") + " _bt = " + gen_expr(args[0], names, types, dc, ctx) + "; bi_from_ints(" + ctx.owner + ", _bt.data, _bt.len); })"
             if name == "to_str" or name == "to_bool" or name == "to_under" or name == "to_bytes":   # zero-cost newtype unwrap / bytes<->str reinterpret (same char* repr)
                 return gen_expr(args[0], names, types, dc, ctx)
             if name == "substr":
@@ -9393,6 +9395,7 @@ fn preamble() -> string:
     out = out + "static char* s_from_c(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     # FFI: copy a C-owned (ptr,len) byte buffer (extern returning bytes, out-param shim) into an arena bytes, then free it. Length-carried, so interior 0x00 survives.
     out = out + "static char* b_from_c(Arena* ar, unsigned char* p, long n) { if (n < 0) n = 0; char* r = hs(ar, p ? n : 0); if (p) { if (n > 0) memcpy(r, p, (size_t)n); free(p); } return r; }\n"
+    out = out + "static char* bi_from_ints(Arena* ar, const long* p, long n) { if (n < 0) n = 0; unsigned char* q = n > 0 ? (unsigned char*)malloc((size_t)n) : 0; if (q) { for (long i = 0; i < n; i++) q[i] = (unsigned char)(p[i] & 0xFF); } return b_from_c(ar, q, n); }\n"
     out = out + "static void hi_puts(const char* s) { fwrite(s, 1, (size_t)((const long*)s)[-1], stdout); }\n"
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"

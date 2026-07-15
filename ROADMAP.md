@@ -205,9 +205,21 @@ alloc/free paths.
   stream. Deterministic offline test (dead-port -> null, the http pattern); the live
   handshake is verified manually.
 
-With TLS, **the explicit 1.4 corelib gaps are all shipped.** What remains is
-demand-gated extras only — JPEG/other image formats, `datetime` string parsing,
-bignum `gcd`, an HTTP server, a CLI-arg parser — each to be built on a real need.
+With TLS, **the explicit 1.4 corelib gaps are all shipped.** Several of the
+"demand-gated extras" then landed too (2026-07-15), each verified 3-way (tychoc ==
+tychoc0 == golden): **core:cli** (arg parser), **core:datetime** ISO-8601 parsing
+(`parse_iso`/`parse_iso_tz`), **core:httpd** (HTTP/1.1 server over core:net,
+ASan-clean), and **core:raster** (pure-Tycho BMP + QOI codecs, round-trip lossless).
+
+`core:raster` needed a small language addition — **`to_bytes([int])`**, a builtin
+that packs an int array (each elem `& 0xFF`) into a binary `bytes` buffer. Pure Tycho
+otherwise can't assemble a binary buffer (strings drop interior 0x00, `bytes` is
+immutable), so this is the enabler for *any* pure-Tycho binary output. Both compilers
++ runtime; gated by fixpoint + typeparity + corelib.
+
+Still open, genuinely demand-gated: JPEG (needs libjpeg — absent on the dev box;
+BMP/QOI cover the pure-Tycho raster need), richer `datetime` formatting beyond ISO,
+bignum `gcd` — each to be built on a real need.
 
 ### 1.5 Tooling maturity
 - **LSP completeness** — hover-types, go-to-def, find-refs, rename, completion

@@ -5054,11 +5054,11 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "to_ptr(n) takes an int");
                 return e->type = T_PTR;
             }
-            if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes: same byte buffer, distinct type (FFI crosses as (ptr,len)) */
+            if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes (same byte buffer); or [int] -> bytes (each elem & 0xFF: build a binary buffer a string can't hold) */
                 if (e->nargs != 1) die_at(e->line, "to_bytes(s) takes one argument");
                 Type at_ = base_of(resolve_expr(e->args[0]));
-                if (at_ != T_STRING && at_ != T_BYTES)
-                    die_at(e->line, "to_bytes(x) takes a string");
+                if (at_ != T_STRING && at_ != T_BYTES && at_ != T_ARRAY_INT)
+                    die_at(e->line, "to_bytes(x) takes a string or [int]");
                 return e->type = T_BYTES;
             }
             if (!strcmp(e->sval, "to_bool")) {   /* unwrap a bool newtype -> bool */
@@ -7924,6 +7924,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("((void*)(long)%s)", gen_expr(e->args[0], arena));
     if (is_sized_conv(e->sval))          /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
         return sfmt("((%s)%s)", c_type(sized_conv_target(e->sval)), gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT)   /* [int] -> bytes: real conversion (each elem & 0xFF into a fresh binary buffer) */
+        return sfmt("tycho_bytes_from_intarr(%s, %s)", arena, gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
