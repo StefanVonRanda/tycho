@@ -23,7 +23,7 @@ the model wins and loses, see `docs/internals/value-semantics-limits.md`.
 | `tychoc` | `src/tychoc.c` (~9.5k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
 | `tychoc0` | `compiler/tychoc0.ty` (~11.7k LoC) | **Self-hosted** transpiler, written in Tycho — a subset that includes itself. |
 | runtime | `runtime/tycho_rt.c` (~2k LoC) | Arena allocator + string/map/channel primitives, embedded into emitted C. |
-| corelib | `corelib/` (25 packages) | Stdlib, imported `core:<name>` (resolved via `TYCHO_CORELIB`). |
+| corelib | `corelib/` (34 packages) | Stdlib, imported `core:<name>` (resolved via `TYCHO_CORELIB`). |
 | tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code/Zed extensions. |
 
 **Self-hosting relationship (the fixpoint):** `A = tychoc·tychoc0.ty`, `B = A·tychoc0.ty`,

@@ -110,9 +110,12 @@ element type instead of a family of per-type siblings.
   (`year`/`month`/`day`/`hour`/`minute`/`second`/`weekday`, all UTC). `from_unix(secs)`
   and its exact inverse `to_unix(dt)`; `days_from_civil`/`civil_from_days`/
   `weekday_from_days` (the day-count core); `weekday(y,m,d)` (0=Sun..6=Sat), `is_leap`,
-  `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); and formatting
-  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`. The
-  core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
+  `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); formatting
+  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`; and its
+  inverse **parsing** `parse_iso` (wall-clock fields; `T` or space separator, trailing zone
+  ignored) / `parse_iso_tz` (`+HH:MM` / `-HH:MM` / `Z` folded to the UTC instant), both
+  fail-closed via a `year = -1` sentinel that `ok(dt)` checks (a real 4-digit parse is never
+  negative). The core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
   `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
   small libc shim (`local_offset`, `offset_at`, `now_local`). There is no IANA tz database.
 - **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
@@ -228,6 +231,33 @@ element type instead of a family of per-type siblings.
   no `deps`, nothing to install). `listen`/`accept`/`connect`/`port_of`/`write`/`read`/
   `close_fd` and `udp_bind`/`udp_send`/`udp_read`; fds are `int` (negative = failure),
   payloads are binary-safe `bytes`.
+- **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
+  dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
+  accept loop. `parse_request(raw) -> Request` (method/path/version, case-insensitive
+  `header(r, name)`, honors Content-Length; `method == ""` on a malformed line);
+  `response(status, body)` / `with_header(r, k, v)` / `render(r)` (Content-Length and a
+  default `text/plain` Content-Type are added automatically); and the socket glue
+  `read_request(fd)` (reads until the header terminator, then exactly Content-Length body
+  bytes, bounded so a hostile peer can't spin) / `write_response(fd, r)`. **Text bodies** —
+  they cross as tycho strings, the same interior-`0x00` limit `core:http` notes (fine for
+  HTML/JSON/form APIs, not binary blobs). CRLF is built with `chr(13)` (tycho strings have no
+  `\r` escape).
+- **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` (pass
+  your arguments **without** `argv[0]`) sorts the vector into three buckets: `--key=value`
+  **options**, boolean **flags** (`--flag`, and short clusters `-abc` → `a`/`b`/`c`), and
+  **positionals** (everything else, plus everything after a bare `--`). Values always attach
+  with `=`, so the parser needs no schema of which options take a value — `--verbose` is
+  unambiguously a flag. Accessors: `get(c, key, default)`, `has(c, key)`, `flag(c, name)`
+  (long or short), `positionals(c)`, `count(c)`. Uses parallel arrays, not maps.
+- **`raster`** — pure-Tycho raster image codecs, **BMP** and **QOI**, with no external
+  dependency (unlike `core:image`'s libpng-backed PNG). An `Image` is 8-bit RGBA (4
+  bytes/pixel, row-major, top-to-bottom); pixel data is `bytes`. `encode_bmp`/`decode_bmp`
+  (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or 32-bpp `BI_RGB`) and
+  `encode_qoi`/`decode_qoi` (all six QOI chunk types, spec-exact 14-byte header and end
+  marker). Both **round-trip losslessly**; the decoders **fail closed** to a 0×0 Image on a
+  malformed / truncated / wrong-format input (check `width > 0`). Assembling the binary
+  output is what the `to_bytes([int])` builtin enables — pure Tycho otherwise can't build a
+  `bytes` with an interior `0x00` (a black or transparent pixel is `0x00` components).
 
 ## C-shim (FFI-backed) modules
 
