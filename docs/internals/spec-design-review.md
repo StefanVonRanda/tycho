@@ -25,13 +25,19 @@ superseded. Verified by probing tychoc **and** tychoc0:
   "annotate the type" diagnostic** — symmetric and fail-closed.
 - The `str(char)` papercut is gone — `str` of a char prints its glyph.
 
-**Still open:**
-- **A5 — evaluation order.** *Not* pinned; spec `17-runtime.md:83` documents it as
-  target-inherited (not sequenced by Tycho). The sharpest remaining item for the
-  two-implementations thesis — the live work.
-- **B — the `char`/byte-type fork.** `char + int` still yields a `char` whose value
-  can exceed 255 (verified both compilers). A genuine design decision (reopens a
-  STATUS discipline), pending a call; `ord(c)` is still unbuilt.
+**Status of the items once thought open:**
+- **B (`char`/byte type) — RESOLVED.** Decided as option (a): `char ± int` **wraps to
+  a byte** 0..255 (`'a' + 300` = 141, both compilers), so the type keeps its invariant.
+  `str(char)` prints the glyph and `to_int(char)` gives the value (no `ord` builtin —
+  use `to_int`). Not an open fork. *(Corrected 2026-07-15: an earlier refresh of this
+  file wrongly called B open by checking only that `'a' + 300` didn't abort, not its
+  value — it wraps to 141. RULE-9 miss.)*
+- **A5 — evaluation order — PARTLY resolved.** The audit found a real tychoc-vs-tychoc0
+  **divergence** on `arr[f()] = g()` (index-vs-RHS order) and **fixed** it (commit
+  `cd66270`): a side-effecting place index is now sequenced **left-to-right** in both
+  compilers, locked by `tests/eval_order`. Spec `17-runtime.md` updated to specify that
+  case. **Remaining:** call-argument order is `b,a` in both compilers (consistent, not a
+  divergence) but not explicitly sequenced — the only live A5 follow-up.
 
 ## Where the spec stands (context for the next session)
 
