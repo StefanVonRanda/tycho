@@ -25,7 +25,7 @@ for entry in corelib/test/*/main.ty; do
     # platforms without the lib); tychoc reads the same `deps` itself, so the two
     # stay in lockstep across platforms.
     shim=""; allpkgs=""
-    for mod in $(grep -oE 'core:[a-z0-9_]+' "$entry" | sed 's/core://' | sort -u); do
+    for mod in $(grep -E '^[[:space:]]*import' "$entry" | grep -oE 'core:[a-z0-9_]+' | sed 's/core://' | sort -u); do
         s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
         d="corelib/$mod/deps"; [ -f "$d" ] && allpkgs="$allpkgs $(grep -vE '^[[:space:]]*(#|$)' "$d")"
     done

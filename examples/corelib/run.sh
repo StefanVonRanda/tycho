@@ -20,16 +20,21 @@ for entry in examples/corelib/*/main.ty; do
     [ -e "$entry" ] || continue
     name="$(basename "$(dirname "$entry")")"
     golden="examples/corelib/$name.out"
-    # convention: example <name> imports core:<name>, so its shim/deps (if any)
-    # live under corelib/<name>/ -- the same lookup the corelib test harness uses.
-    shim="corelib/$name/${name}_shim.c"; [ -f "$shim" ] || shim=""
-    deps="corelib/$name/deps"; depflags=""
-    if [ -f "$deps" ]; then
-        pkgs="$(grep -vE '^[[:space:]]*(#|$)' "$deps")"
+    # Gather the C shim AND pkg-config deps of EVERY core:X the example imports --
+    # not just the same-name one (e.g. an httpd example wraps core:net, so
+    # net_shim.c is needed). Same lookup the corelib test harness uses. If any dep
+    # is absent, SKIP (keeps the deps-gated modules green on platforms without them).
+    shim=""; allpkgs=""
+    for mod in $(grep -E '^[[:space:]]*import' "$entry" | grep -oE 'core:[a-z0-9_]+' | sed 's/core://' | sort -u); do
+        s="corelib/$mod/${mod}_shim.c"; [ -f "$s" ] && shim="$shim $s"
+        d="corelib/$mod/deps"; [ -f "$d" ] && allpkgs="$allpkgs $(grep -vE '^[[:space:]]*(#|$)' "$d")"
+    done
+    depflags=""
+    if [ -n "$allpkgs" ]; then
         missing=""
-        for pkg in $pkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
+        for pkg in $allpkgs; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
         if [ -n "$missing" ]; then echo "skip $name (missing dependency:$missing)"; continue; fi
-        depflags="$(pkg-config --cflags --libs $pkgs 2>/dev/null)"
+        depflags="$(pkg-config --cflags --libs $allpkgs 2>/dev/null)"
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
     "$T/c" > "$T/co" 2>&1

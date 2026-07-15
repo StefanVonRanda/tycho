@@ -1,0 +1,43 @@
+# Example: core:httpd -- parse an HTTP request, build a response, and serve one
+# request over the loopback interface (single thread, ephemeral port, so the run
+# is self-contained and deterministic). You own the accept loop.
+package main
+import "core:net"
+import "core:httpd"
+
+fn crlf() -> string:                    # tycho strings have no \r escape
+    return chr(13) + chr(10)
+
+fn main():
+    nl := crlf()
+
+    # --- parse a request (no socket needed) ---
+    raw := "GET /hello?name=ada HTTP/1.1" + nl + "Host: localhost" + nl + "Accept: text/plain" + nl + nl
+    req := httpd.parse_request(raw)
+    println("method = " + req.method)                    # GET
+    println("path   = " + req.path)                      # /hello?name=ada
+    println("host   = " + httpd.header(req, "host"))      # localhost  (lookup is case-insensitive)
+
+    # --- build + render a response (Content-Length + default Content-Type added) ---
+    resp := httpd.with_header(httpd.response(200, "hi\n"), "X-Demo", "1")
+    wire := httpd.render(resp)
+    println("status ok = " + str(find(wire, "HTTP/1.1 200 OK") == 0))   # true
+
+    # --- a real one-request round trip to ourselves over 127.0.0.1 ---
+    srv := net.listen("127.0.0.1", 0)                    # port 0 -> kernel picks one
+    port := net.port_of(srv)
+    conn_out := net.connect("127.0.0.1", port)
+    conn_in := net.accept(srv)
+
+    net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl))
+    served := httpd.read_request(conn_in)
+    println("served = " + served.method + " " + served.path)   # GET /
+    httpd.write_response(conn_in, httpd.response(200, "pong"))
+    net.close_fd(conn_in)
+
+    reply := to_str(net.read(conn_out, 512))
+    body := reply[find(reply, nl + nl) + 4:len(reply)]
+    println("reply  = " + body)                          # pong
+
+    net.close_fd(conn_out)
+    net.close_fd(srv)
