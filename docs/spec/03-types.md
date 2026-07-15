@@ -94,6 +94,23 @@ a binary `bytes` with interior `0x00` bytes. There is no `bytes` literal. `bytes
 primarily to cross the FFI boundary as a `(pointer, length)` pair
 ([§24](14-ffi.md)).
 
+Constructing a `bytes` from computed byte values — including an interior `0x00`,
+which a `string` cannot hold — and reading it back by reinterpreting to `string`
+(the two share the length-counted buffer):
+
+```tycho
+fn main():
+    b := to_bytes([72, 105, 0, 255])     # 'H' 'i' NUL 0xFF; each element & 0xFF
+    s := to_str(b)                        # reinterpret: same buffer, byte-safe
+    println(str(len(b)))                  # 4 — the interior NUL is preserved
+    println(str(s[0]) + " " + str(s[2]) + " " + str(s[3]))
+```
+
+```output
+4
+72 0 255
+```
+
 ### 5.2.7 Fixed-width integers `u8`/`u16`/`u32`/`u64`, `i8`/`i16`/`i32`/`i64`
 
 The fixed-width integer family gives **unsigned** (`u8`, `u16`, `u32`, `u64`) and
