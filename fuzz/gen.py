@@ -333,6 +333,12 @@ class Gen:
         if ind <= 1:
             kinds += ["spawn_use", "parfor_use", "chan_use"]
         kinds += ["infer_ground", "infer_lambda", "float_adapt"]
+        # drift-hunt surface (2026-07): the fixed-width int family ([]u8.. arrays,
+        # wrap arith / shifts / bitwise / cross-width convert) and dynamic bool
+        # arrays. The generator emitted NEITHER before, which is exactly why three
+        # tychoc/tychoc0 divergences hid there (sized []T parse gap, conversion-arg
+        # fail-open, bool-array). Self-contained + deterministic + bounded.
+        kinds += ["sized_use", "bool_arr_use"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -400,6 +406,52 @@ class Gen:
             self.emit(ind, "if not \"a\" in " + sm + ":")
             self.emit(ind+1, "acc = acc + 8")
             self.emit(ind, "acc = acc + len(" + sm + ")")
+            return
+        if k == "sized_use":           # fixed-width int family: ctor / wrapping arith /
+            # shift / bitwise / compare / []T sized array / cross-width convert. Sized
+            # ops wrap deterministically at their C width (-fwrapv + unsigned wrap), so
+            # the differential oracle holds; every value folds into acc masked to a byte
+            # (& 255) so acc stays bounded (UBSan). str(sized > sized) exercises str(bool).
+            ut = self.r.choice(["u8", "u16", "u32", "u64"])
+            it = self.r.choice(["i8", "i16", "i32", "i64"])
+            rv = lambda: str(self.r.randint(0, 300))
+            a = self.fresh("uz"); b = self.fresh("iz")
+            self.emit(ind, a + " := to_" + ut + "(" + rv() + ")")
+            self.emit(ind, b + " := to_" + it + "(" + rv() + ")")
+            self.emit(ind, "acc = acc + (to_int(" + a + " + to_" + ut + "(" + rv() + ")) & 255)")   # unsigned wrap add
+            self.emit(ind, "acc = acc + (to_int(" + b + " - to_" + it + "(" + rv() + ")) & 255)")   # signed wrap sub
+            self.emit(ind, "acc = acc + (to_int(" + a + " << to_" + ut + "(" + str(self.r.randint(0, 3)) + ")) & 255)")  # in-range shift
+            self.emit(ind, "acc = acc + (to_int(" + a + " & to_" + ut + "(" + rv() + ")))")         # bitwise (already small)
+            self.emit(ind, "acc = acc + len(str(" + a + " > to_" + ut + "(" + rv() + ")))")         # sized compare -> str(bool)
+            arr = self.fresh("sa")                                                                  # []T sized-array literal (the []u8.. parse surface)
+            self.emit(ind, arr + " := []" + ut)
+            self.emit(ind, "push(" + arr + ", " + a + ")")
+            self.emit(ind, "push(" + arr + ", to_" + ut + "(" + rv() + "))")
+            self.emit(ind, "acc = acc + (to_int(" + arr + "[0]) & 255) + len(" + arr + ")")
+            self.emit(ind, "acc = acc + (to_int(to_" + it + "(to_int(" + a + "))) & 255)")           # cross-width round-trip
+            return
+        if k == "bool_arr_use":        # dynamic bool arrays: literal / []bool / push /
+            # index-write / iterate / str(array) / ==. str(bool) is "true"/"false" (both
+            # compilers must agree on the words), so the true-count and the str lengths
+            # fold deterministically into acc; a formatting/codegen divergence skews it.
+            be = lambda: self.r.choice(["true", "false",
+                "(" + str(self.r.randint(0, 5)) + " > " + str(self.r.randint(0, 5)) + ")"])
+            a = self.fresh("ba"); cnt = self.fresh("bc"); x = self.fresh("bx")
+            self.loop_vars.add(x)
+            self.emit(ind, a + " := [" + be() + ", " + be() + ", " + be() + "]")
+            self.emit(ind, cnt + " := 0")
+            self.emit(ind, "for " + x + " in " + a + ":")
+            self.emit(ind+1, "if " + x + ":")
+            self.emit(ind+2, cnt + " = " + cnt + " + 1")
+            self.emit(ind, "acc = acc + " + cnt + " + len(" + a + ") + len(str(" + a + "))")   # count + len + str(whole array)
+            bb = self.fresh("bd")
+            self.emit(ind, bb + " := []bool")
+            self.emit(ind, "push(" + bb + ", " + be() + ")")
+            self.emit(ind, "push(" + bb + ", " + be() + ")")
+            self.emit(ind, bb + "[0] = " + be())
+            self.emit(ind, "acc = acc + len(str(" + bb + "[1])) + len(" + bb + ")")            # str(bool element) + len
+            self.emit(ind, "if [true, false] == [true, false]:")                               # bool-array structural ==
+            self.emit(ind+1, "acc = acc + 1")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
