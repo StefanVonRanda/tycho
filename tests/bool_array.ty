@@ -1,0 +1,40 @@
+# Dynamic bool arrays. tychoc used to reject every array-of-bool ([]bool,
+# [true, false], a [bool] field) while tychoc0 accepted and correctly compiled
+# them -- a divergence found by the drift hunt. tychoc now accepts dynamic bool
+# arrays (matching tychoc0 + Go/Swift/Odin). Fixed-size [N]bool stays rejected on
+# both. Exercises literal, push, index-write, iteration, str, ==, fields, nesting.
+struct Flags:
+    bits: [bool]
+
+fn count_true(xs: [bool]) -> int:
+    n := 0
+    for x in xs:
+        if x:
+            n = n + 1
+    return n
+
+fn main():
+    a := [true, false, true]
+    println(str(a[0]))                 # true
+    println(str(a))                    # [true, false, true]
+    println(str(count_true(a)))        # 2
+
+    b := []bool
+    push(b, true)
+    push(b, false)
+    b[1] = true
+    println(str(b[1]))                 # true
+    println(str(len(b)))               # 2
+
+    c := [true, false]
+    d := [true, false]
+    println(str(c == d))               # true
+
+    s := Flags(bits: [false, true])
+    println(str(s.bits[1]))            # true
+
+    m := ["k": [true, false]]
+    println(str(m["k"][0]))            # true
+
+    n := [[true], [false, true]]
+    println(str(n[1][1]))              # true

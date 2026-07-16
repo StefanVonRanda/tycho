@@ -10075,6 +10075,29 @@ fn slice_root(e: Expr) -> string:
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
 # every user call: collect_elem_types walks every body, so this is universal.
 fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string], types: [string], el: int):
+    # Numeric-conversion builtins: validate the single argument's type, matching
+    # tychoc (src/tychoc.c:5036-5051). tychoc0 had NO check here, so to_int(int),
+    # to_int("x"), to_float(2.5), to_u8([...]) etc. fail-opened into a pointer/
+    # garbage cast miscompile instead of a clean error. Reject them, fail-closed.
+    if len(args) == 1:
+        if nm == "to_int":
+            resi := resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
+            skini := nt_skin_of(args[0], names, types, dc, ctx)   # "" for a plain (non-newtype) value
+            if resi == "int" and skini == "":            # F3: a PLAIN int (an int newtype is allowed); s[i] is already the byte value as int
+                die_at(dc, el, "to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string")
+            # allowed exactly: a PLAIN float, a sized int, f32, a char, or an INT newtype (a float newtype is rejected, matching tychoc)
+            if not (resi == "float" and skini == "") and not is_sized_int(resi) and resi != "f32" and resi != "char" and not (resi == "int" and skini != ""):
+                die_at(dc, el, "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype")
+        elif nm == "to_float":
+            resf := resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
+            skinf := nt_skin_of(args[0], names, types, dc, ctx)
+            # allowed exactly: a PLAIN int, a sized int, f32, or a FLOAT newtype (matches tychoc: plain float and an int newtype are both rejected)
+            if not (resf == "int" and skinf == "") and not is_sized_int(resf) and resf != "f32" and not (resf == "float" and skinf != ""):
+                die_at(dc, el, "to_float(n) takes an int, a sized int, f32, or a float newtype")
+        elif is_sized_conv(nm):
+            ress := resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
+            if ress != "int" and ress != "char" and ress != "float" and ress != "f32" and not is_sized_int(ress):
+                die_at(dc, el, nm + "(x) takes a numeric value")
     si := dc.sigmap.get(nm, -1)                  # user fn? (builtins/ctors aren't in sigmap)
     if si < 0:
         return

@@ -1,0 +1,5 @@
+# to_int(x) takes a numeric/char value, not a string. Both compilers must reject:
+# tychoc0 used to fail-open and cast the string's char* to a long (a miscompile).
+fn main():
+    s := "hi"
+    println(str(to_int(s)))

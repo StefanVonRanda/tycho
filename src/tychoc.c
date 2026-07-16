@@ -1626,7 +1626,8 @@ static Expr *consts_find(const char *name);   /* fwd: a `[W]T` fixed-array size 
 static int tok_starts_type(TokKind k) {
     return k == TK_IDENT || k == TK_LBRACKET || k == TK_DOLLAR || k == TK_LPAREN ||
            k == TK_KW_INT || k == TK_KW_FLOAT || k == TK_KW_BOOL || k == TK_KW_STRING ||
-           k == TK_KW_PTR || k == TK_KW_BYTES || k == TK_KW_U32 || k == TK_KW_U64 || k == TK_KW_F32;
+           k == TK_KW_PTR || k == TK_KW_BYTES || k == TK_KW_U32 || k == TK_KW_U64 || k == TK_KW_F32 ||
+           k == TK_KW_U8 || k == TK_KW_U16 || k == TK_KW_I8 || k == TK_KW_I16 || k == TK_KW_I32 || k == TK_KW_I64;
 }
 static Type parse_type(Parser *ps) {
     if (++ps->depth > TYCHO_MAX_PARSE_DEPTH) die_at(cur(ps)->line, "type nesting too deep");
@@ -1717,7 +1718,7 @@ static Type parse_type_inner(Parser *ps) {
             long enc = sizeparam_enc(snm->text);
             eat(ps, TK_RBRACKET, "']'");
             Type felem = parse_type(ps);
-            if (felem == T_VOID || felem == T_BOOL)
+            if (felem == T_VOID || felem == T_BOOL)   /* fixed-size [N]bool stays rejected on both compilers (tychoc0 has no fixarr-bool codegen) */
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
             return arrc_sized(felem, enc);
         }
@@ -1736,7 +1737,7 @@ static Type parse_type_inner(Parser *ps) {
             if (fixn <= 0) die_at(t->line, "a fixed-size array length must be positive");
             eat(ps, TK_RBRACKET, "']'");
             Type felem = parse_type(ps);
-            if (felem == T_VOID || felem == T_BOOL)
+            if (felem == T_VOID || felem == T_BOOL)   /* fixed-size [N]bool stays rejected on both compilers (tychoc0 has no fixarr-bool codegen) */
                 die_at(t->line, "array elements must be int, float, string, a struct, or an array");
             return fixarr_of(felem, fixn);
         }
@@ -1753,8 +1754,8 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID || elem == T_BOOL)
-            die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+        if (elem == T_VOID)
+            die_at(t->line, "array elements must be int, float, bool, string, a struct, or an array");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
     if (t->kind == TK_IDENT && !strcmp(t->text, "Option")) {   /* Option(T) */
@@ -2037,6 +2038,7 @@ static Expr *parse_primary(Parser *ps) {
             TokKind nk = cur(ps)->kind;
             if (nk != TK_KW_INT && nk != TK_KW_BOOL && nk != TK_KW_STRING && nk != TK_KW_FLOAT
                 && nk != TK_KW_PTR && nk != TK_KW_BYTES && nk != TK_KW_U32 && nk != TK_KW_U64 && nk != TK_KW_F32
+                && nk != TK_KW_U8 && nk != TK_KW_U16 && nk != TK_KW_I8 && nk != TK_KW_I16 && nk != TK_KW_I32 && nk != TK_KW_I64
                 && nk != TK_IDENT && nk != TK_LBRACKET && nk != TK_LPAREN && nk != TK_FN) {
                 e->ival = T_VOID;            /* the "untyped" marker */
                 return e;
@@ -2050,8 +2052,8 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID || elem == T_BOOL)
-                die_at(t->line, "array elements must be int, float, string, a struct, or an array");
+            if (elem == T_VOID)
+                die_at(t->line, "array elements must be int, float, bool, string, a struct, or an array");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
         }
@@ -4513,8 +4515,8 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = (Type)e->ival;
             }
             Type elem = resolve_expr(e->args[0]);
-            if (elem == T_VOID || elem == T_BOOL)
-                die_at(e->line, "array elements must be int, float, string, a struct, an array, or an Option");
+            if (elem == T_VOID)
+                die_at(e->line, "array elements must be int, float, bool, string, a struct, an array, or an Option");
             if (elem == T_NONE)   /* the first element fixes the type, so it can't be a bare None */
                 die_at(e->line, "cannot infer the array's element type from None — put a Some(...) first");
             for (int i = 1; i < e->nargs; i++)

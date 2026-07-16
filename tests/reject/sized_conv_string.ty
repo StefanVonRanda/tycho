@@ -1,0 +1,6 @@
+# a sized-conversion builtin (to_u8..to_i64, to_f32) takes a numeric value, not
+# a string. Both compilers must reject; tychoc0 had no arg-type check here and
+# fail-opened into a pointer-cast miscompile.
+fn main():
+    s := "hi"
+    println(str(to_u8(s)))
