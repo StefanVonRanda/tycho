@@ -339,6 +339,10 @@ class Gen:
         # tychoc/tychoc0 divergences hid there (sized []T parse gap, conversion-arg
         # fail-open, bool-array). Self-contained + deterministic + bounded.
         kinds += ["sized_use", "bool_arr_use"]
+        # deepen two under-covered surfaces (ROADMAP what's-next): f-string holes of
+        # every value type (str() through the interpolation desugar) and richer closures
+        # (multi-param, multi-capture, composite capture, heap-return, nesting).
+        kinds += ["fstring_types", "closure_rich"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -452,6 +456,63 @@ class Gen:
             self.emit(ind, "acc = acc + len(str(" + bb + "[1])) + len(" + bb + ")")            # str(bool element) + len
             self.emit(ind, "if [true, false] == [true, false]:")                               # bool-array structural ==
             self.emit(ind+1, "acc = acc + 1")
+            return
+        if k == "fstring_types":       # f-string holes of many value types: each {x} lowers
+            # to str(x), so this exercises str(float/bool/char/sized/array/option/tuple/
+            # struct) through the INTERPOLATION desugar specifically (the plain `fstring`
+            # kind only interpolates int/string). Deterministic -> the string LENGTH folds
+            # into acc; a wrong str() for any one hole type skews it. (A string literal in a
+            # hole would end the f-string at the lexer, so holes are vars/exprs only.)
+            fv = self.fresh("fv"); av = self.fresh("fa"); ov = self.fresh("fo")
+            tv = self.fresh("ft"); uv = self.fresh("fu"); cv = self.fresh("fc")
+            self.emit(ind, fv + " := " + self.r.choice(["1.5", "2.0", "3.25", "4.5"]))
+            self.emit(ind, av + " := [" + str(self.r.randint(0, 9)) + ", " + str(self.r.randint(0, 9)) + "]")
+            self.emit(ind, ov + " := Some(" + str(self.r.randint(0, 9)) + ")")
+            self.emit(ind, tv + ' := (' + str(self.r.randint(0, 9)) + ', "' + self.r.choice(["a", "bb", "cc"]) + '")')
+            self.emit(ind, uv + " := to_u8(" + str(self.r.randint(0, 300)) + ")")
+            self.emit(ind, cv + " := '" + self.r.choice(["A", "z", "0", "-"]) + "'")
+            holes = ("f={" + fv + "} a={" + av + "} o={" + ov + "} t={" + tv + "} u={" + uv
+                     + "} c={" + cv + "} b={" + str(self.r.randint(0, 5)) + " > " + str(self.r.randint(0, 5)) + "}")
+            if self.structs:                                    # a struct hole -> str(struct)
+                sn = self.r.choice(list(self.structs.keys()))
+                sv = self.fresh("fsv")
+                self.emit(ind, sv + " := " + self.gen_expr(sn, env, 1))
+                holes = holes + " s={" + sv + "}"
+            self.emit(ind, 'acc = acc + len(f"' + holes + '")')
+            return
+        if k == "closure_rich":        # deeper closures: multi-param, multi-capture, capture
+            # a composite (tuple), a heap-RETURNING closure (array/string), and a nested
+            # closure literal. Captures are by value (deep copy); all deterministic -> the
+            # results fold into acc. Complements `closure`/`escclosure` (scalar/array/string
+            # single-capture) with the multi-param / composite / heap-return / nesting paths.
+            r = self.r.random()
+            g = self.fresh("cr")
+            if r < 0.3:                                         # multi-param + multi-capture
+                a = self.fresh("cc"); b = self.fresh("cc")
+                self.emit(ind, a + " := " + str(self.r.randint(0, 9)))
+                self.emit(ind, b + " := " + str(self.r.randint(0, 9)))
+                self.emit(ind, g + " := fn(x: int, y: int) -> int: x + y + " + a + " + " + b)
+                self.emit(ind, "acc = acc + " + g + "(" + str(self.r.randint(0, 9)) + ", " + str(self.r.randint(0, 9)) + ")")
+            elif r < 0.5:                                       # capture a composite value (tuple)
+                tv = self.fresh("ct")
+                self.emit(ind, tv + " := (" + str(self.r.randint(0, 9)) + ", " + str(self.r.randint(0, 9)) + ")")
+                self.emit(ind, g + " := fn() -> int: " + tv + ".0 + " + tv + ".1")
+                self.emit(ind, "acc = acc + " + g + "()")
+            elif r < 0.7:                                       # heap-returning closure (array)
+                v = self.fresh("cv")
+                self.emit(ind, g + " := fn(n: int) -> [int]: [n, n + 1, n + 2]")
+                self.emit(ind, v + " := " + g + "(" + str(self.r.randint(0, 9)) + ")")
+                self.emit(ind, "acc = acc + len(" + v + ") + " + v + "[0]")
+            elif r < 0.85:                                      # heap-returning closure (string)
+                s = self.fresh("cs")
+                self.emit(ind, s + ' := "' + self.r.choice(["a", "bb", "cc"]) + '"')
+                self.emit(ind, g + ' := fn() -> string: ' + s + ' + "!!"')
+                self.emit(ind, "acc = acc + len(" + g + "())")
+            else:                                              # nested closure literal (inner captures the outer var)
+                a = self.fresh("cn")
+                self.emit(ind, a + " := " + str(self.r.randint(0, 9)))
+                self.emit(ind, g + " := fn(x: int) -> int: (fn(y: int) -> int: y + " + a + ")(x)")
+                self.emit(ind, "acc = acc + " + g + "(" + str(self.r.randint(0, 9)) + ")")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
