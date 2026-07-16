@@ -117,16 +117,19 @@ fn replace(s: string, old: string, new: string) -> string:
     # never an infinite insertion).
     if len(old) == 0:
         return s
+    n := len(s)
+    ol := len(old)
     r := ""
+    span := 0                                  # start of the current copy-through run
     i := 0
-    for i < len(s):
-        if i + len(old) <= len(s) and substr(s, i, i + len(old)) == old:
-            r = r + new
-            i = i + len(old)
+    for i < n:
+        if i + ol <= n and substr(s, i, i + ol) == old:
+            r = r + substr(s, span, i) + new    # flush the run in one substr, then the replacement
+            i = i + ol
+            span = i
         else:
-            r = r + substr(s, i, i + 1)
-            i = i + 1
-    return r
+            i = i + 1                           # extend the run (no per-char append)
+    return r + substr(s, span, n)               # trailing run
 
 fn count(s: string, sub: string) -> int:     # non-overlapping occurrences of sub (0 if sub == "")
     if len(sub) == 0:

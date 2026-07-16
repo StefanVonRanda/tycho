@@ -31,9 +31,11 @@ fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
                     else:
                         pos = pos + 1           # closing quote
                         break
-                else:
-                    field = field + chr(s[pos])
-                    pos = pos + 1
+                else:                           # copy the run of non-quote bytes in one substr
+                    qstart := pos
+                    for pos < n and s[pos] != 34:
+                        pos = pos + 1
+                    field = field + substr(s, qstart, pos)
         else:                                   # an unquoted field: take the whole span in one substr
             fstart := pos
             for pos < n and s[pos] != d and s[pos] != 10 and s[pos] != 13:
