@@ -6,26 +6,24 @@ fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v 
     return c == 32 or c == 9 or c == 10 or c == 11 or c == 12 or c == 13
 
 fn to_upper(s: string) -> string:
-    r := ""
-    i := 0
+    cs := []int                              # build the bytes, materialize once (no per-char chr()+append)
     for i in range(len(s)):
         c := s[i]
         if c >= 97 and c <= 122:             # a-z -> A-Z
-            r = r + chr(c - 32)
+            push(cs, c - 32)
         else:
-            r = r + chr(c)
-    return r
+            push(cs, c)
+    return to_str(to_bytes(cs))
 
 fn to_lower(s: string) -> string:
-    r := ""
-    i := 0
+    cs := []int
     for i in range(len(s)):
         c := s[i]
         if c >= 65 and c <= 90:              # A-Z -> a-z
-            r = r + chr(c + 32)
+            push(cs, c + 32)
         else:
-            r = r + chr(c)
-    return r
+            push(cs, c)
+    return to_str(to_bytes(cs))
 
 fn starts_with(s: string, prefix: string) -> bool:
     if len(prefix) > len(s):

@@ -7,10 +7,10 @@
 # characters yourself. `encode_form` / `decode_form` use the
 # application/x-www-form-urlencoded convention where a space is `+`.
 #
-# Byte-safety caveat (the same tycho string-model limit as core:base64/hex):
-# `encode` is byte-safe (output is ASCII), but `decode` builds its result with
-# `chr()`, and a tycho string can't hold an interior 0x00, so `decode("%00")` is
-# "" -- a decoded NUL byte is dropped. Exact for text and any non-NUL binary.
+# Byte-safety: both `encode` (ASCII output) and `decode` are fully byte-safe.
+# decode materializes through `to_bytes([int])`, which preserves an interior
+# 0x00, so `decode("%00")` yields a NUL byte -- exact for arbitrary binary
+# (an earlier chr()-append implementation dropped NUL).
 #
 # `decode` is lenient: a `%` not followed by two hex digits is emitted literally.
 package url
@@ -34,16 +34,18 @@ fn up_hex(n: int) -> int:                  # nibble (0..15) -> uppercase hex byt
     return 65 + (n - 10)                   # 'A'..'F'
 
 fn encode_impl(s: string, plus_space: bool) -> string:
-    out := ""
+    cs := []int                                # gather the output bytes, materialize once
     for i in range(len(s)):
         c := s[i]
         if is_unreserved(c):
-            out = out + chr(c)
+            push(cs, c)
         elif c == 32 and plus_space:
-            out = out + "+"
+            push(cs, 43)                       # '+'
         else:
-            out = out + "%" + chr(up_hex(c / 16)) + chr(up_hex(c % 16))
-    return out
+            push(cs, 37)                       # '%'
+            push(cs, up_hex(c / 16))
+            push(cs, up_hex(c % 16))
+    return to_str(to_bytes(cs))
 
 # Percent-encode a component; a space becomes %20.
 fn encode(s: string) -> string:
@@ -54,7 +56,7 @@ fn encode_form(s: string) -> string:
     return encode_impl(s, true)
 
 fn decode_impl(s: string, plus_space: bool) -> string:
-    out := ""
+    bs := []int                            # to_bytes preserves 0x00 (a %00 escape round-trips)
     n := len(s)
     i := 0
     for i < n:
@@ -63,18 +65,18 @@ fn decode_impl(s: string, plus_space: bool) -> string:
             h := char.hex_val(s[i + 1])
             l := char.hex_val(s[i + 2])
             if h >= 0 and l >= 0:
-                out = out + chr(h * 16 + l)
+                push(bs, h * 16 + l)
                 i = i + 3
             else:
-                out = out + chr(c)         # malformed escape -> literal '%'
+                push(bs, c)                # malformed escape -> literal '%'
                 i = i + 1
         elif c == 43 and plus_space:       # '+' -> space (form only)
-            out = out + " "
+            push(bs, 32)                   # ' '
             i = i + 1
         else:
-            out = out + chr(c)
+            push(bs, c)
             i = i + 1
-    return out
+    return to_str(to_bytes(bs))
 
 # Decode percent-escapes; '+' is left as-is.
 fn decode(s: string) -> string:

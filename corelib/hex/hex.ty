@@ -4,11 +4,10 @@
 # Each byte becomes two hex digits. Pure arithmetic over the unsigned 0..255
 # that `s[i]` returns; decoding reuses `core:char`'s `hex_val` classifier.
 #
-# Byte-safety caveat (the same tycho string-model limit as core:base64): `encode`
-# is fully byte-safe (its output is ASCII), but `decode` builds its result with
-# `chr()`, and a tycho string can't hold an interior 0x00 (`chr(0)` appends
-# nothing), so `decode("00")` is "" -- a decoded NUL byte is dropped. decode is
-# exact for text and any non-NUL binary, lossy only for data containing 0x00.
+# Byte-safety: both `encode` (ASCII output) and `decode` are fully byte-safe.
+# decode materializes its result through `to_bytes([int])`, which preserves an
+# interior 0x00, so `decode("00")` yields a single NUL byte -- decode is EXACT
+# for arbitrary binary (an earlier chr()-append implementation dropped NUL).
 package hex
 import "core:char"
 
@@ -21,12 +20,12 @@ fn hex_digit(n: int, upper: bool) -> int:
     return 97 + (n - 10)               # 'a'..'f'
 
 fn encode_impl(s: string, upper: bool) -> string:
-    out := ""
+    cs := []int                                # gather digits, materialize once (to_bytes/to_str)
     for i in range(len(s)):
         b := s[i]
-        out = out + chr(hex_digit(b / 16, upper))
-        out = out + chr(hex_digit(b % 16, upper))
-    return out
+        push(cs, hex_digit(b / 16, upper))
+        push(cs, hex_digit(b % 16, upper))
+    return to_str(to_bytes(cs))
 
 # Lowercase hex (two digits per byte).
 fn encode(s: string) -> string:
@@ -45,13 +44,13 @@ fn decode(s: string) -> string:
         v := char.hex_val(s[i])
         if v >= 0:
             push(nibs, v)
-    out := ""
+    bs := []int                                # to_bytes preserves 0x00 (decode is exact for binary)
     m := len(nibs)
     j := 0
     for j + 2 <= m:
-        out = out + chr(nibs[j] * 16 + nibs[j + 1])
+        push(bs, nibs[j] * 16 + nibs[j + 1])
         j = j + 2
-    return out
+    return to_str(to_bytes(bs))
 
 # True if `s` is a clean hex string: an even number of digits, all hex, with no
 # separators. (`decode` is more lenient; this is the strict check.)

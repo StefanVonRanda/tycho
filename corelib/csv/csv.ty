@@ -34,10 +34,11 @@ fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
                 else:
                     field = field + chr(s[pos])
                     pos = pos + 1
-        else:                                   # an unquoted field
+        else:                                   # an unquoted field: take the whole span in one substr
+            fstart := pos
             for pos < n and s[pos] != d and s[pos] != 10 and s[pos] != 13:
-                field = field + chr(s[pos])
                 pos = pos + 1
+            field = field + substr(s, fstart, pos)
         push(fields, field)
         field = ""
         if pos >= n:
@@ -80,14 +81,17 @@ fn needs_quote(f: string, d: int) -> bool:
 
 # Wrap a field in quotes, doubling any internal quote.
 fn quote_field(f: string) -> string:
-    out := "\""
+    cs := []int                                # gather bytes, materialize once
+    push(cs, 34)                               # opening "
     for i in range(len(f)):
         c := f[i]
         if c == 34:
-            out = out + "\"\""
+            push(cs, 34)                        # "" -> two quotes
+            push(cs, 34)
         else:
-            out = out + chr(c)
-    return out + "\""
+            push(cs, c)
+    push(cs, 34)                               # closing "
+    return to_str(to_bytes(cs))
 
 # Serialize rows with an arbitrary single-byte delimiter; each row ends in '\n'.
 fn stringify_delim(rows: [[string]], d: int) -> string:
