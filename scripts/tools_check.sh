@@ -238,5 +238,19 @@ print("    pkg real-err flagged=%s   clean pkg empty=%s" % (bad_ok, clean_ok))
 sys.exit(0 if bad_ok and clean_ok else 1)
 PY
 
+echo ">>> pkgsnip: a package-build parse error names the RIGHT file + shows its source snippet"
+# Regression: g_src was left pointing at the last-lexed file, so a parse error in a
+# package printed the correct name:line but a source snippet from the wrong (corelib)
+# file, or none at all. The error below is on main.ty:6; assert both name:line and the
+# offending source line appear together.
+mkdir -p "$TMP/pkgsnip"
+printf 'package main\nimport "core:strings"\n\nfn main():\n    println(strings.trim("hi"))\n    q := 1 +\n' > "$TMP/pkgsnip/main.ty"
+TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/pkgsnip/main.ty" -o "$TMP/pkgsnip/out" 2>"$TMP/pkgsnip.err"
+if grep -q 'pkgsnip/main.ty:6:' "$TMP/pkgsnip.err" && grep -q 'q := 1 +' "$TMP/pkgsnip.err"; then
+    echo "    package parse error: right file:line + source snippet"
+else
+    echo "    package parse error: WRONG file/line or missing snippet"; sed 's/^/      /' "$TMP/pkgsnip.err"; fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

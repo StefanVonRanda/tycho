@@ -10789,12 +10789,18 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in package");
 
-    /* lex every file once; collect this package's imports from the headers */
+    /* lex every file once; collect this package's imports from the headers.
+     * Keep each file's source text (srcs[i]) so the parse loop below can point
+     * g_src at the RIGHT file for die_at's snippet -- otherwise g_src is left at
+     * whatever lex saw last (a corelib file), and a parse error in this file
+     * prints the correct name:line but a snippet from the wrong source. */
     TokVec toks[512];
+    char *srcs[512];
     char *imp_paths[256]; int n_imp = 0;
     for (int i = 0; i < nf; i++) {
         g_srcname = files[i];
         char *s = read_file(files[i]);
+        srcs[i] = s;
         toks[i] = lex(s);
         scan_imports(toks[i].v, imp_paths, &n_imp, 256);
     }
@@ -10811,6 +10817,7 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     /* now full-parse this package's files: imported types are registered */
     for (int i = 0; i < nf; i++) {
         g_srcname = files[i];
+        g_src = srcs[i];                 /* snippet from THIS file, not the last one lexed */
         g_cur_pkg_prefix = prefix;
         ProcVec pv = parse_program(toks[i].v);
         if (!g_parsed_package) {

@@ -26,10 +26,11 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 Ordered roughly by value. The tool compiles and runs identically on **both**
 compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
-deterministic. Four of these have since been fixed by the dogfood: finding 1 (a
-`core:io` streaming reader), finding 2 (a `core:datetime` CLF parser), finding 3
-(`core:regex` capture groups), and finding 4 (a real tychoc0 compiler bug). Only
-finding 5 remains open.
+deterministic. All five findings have since been addressed by the dogfood:
+finding 1 (a `core:io` streaming reader), finding 2 (a `core:datetime` CLF
+parser), finding 3 (`core:regex` capture groups), finding 4 (a real tychoc0
+compiler bug), and finding 5 (`tychoc` package-mode diagnostics — fixed for the
+parse phase, with a documented resolve-phase residual).
 
 1. **`core:io` had no streaming line reader — fixed.** Originally the only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
@@ -74,11 +75,18 @@ finding 5 remains open.
    parity/soundness bug that the whole test + fuzz + fixpoint gate had missed,
    caught by writing one real program.
 
-5. **`tychoc` package-mode diagnostics misattribute.** Every parse error in this
-   package build printed the wrong file, line, and source snippet (e.g. a field-
-   name error in `main.ty` rendered as a line from `corelib/sort/sort.ty`). The
-   error *category* was right; the location was not. Single-file builds are fine —
-   this is specific to the merged package build. (Still open.)
+5. **`tychoc` package-mode diagnostics misattributed — fixed (parse phase).** In a
+   package build, a parse error printed the correct `file:line` but a source
+   snippet from the wrong file (whichever corelib file was lexed last), or none —
+   e.g. a field-name error in `main.ty` rendered against a line from
+   `corelib/sort/sort.ty`. Root cause: the snippet source pointer (`g_src`) was set
+   only during lexing and left on the last-lexed file, while the parse loop reset
+   only the filename. Fixed by keeping each file's source and pointing `g_src` at
+   the file being parsed, so parse errors now show the right file + snippet + caret
+   (regression-locked by the `pkgsnip` assertion in `scripts/tools_check.sh`).
+   Residual: a *resolve*-phase error in a non-entry sibling file can still be
+   attributed to the entry file — AST nodes carry no per-file origin, so fixing
+   that is a deeper change, left open.
 
 6. **Map "increment-or-insert" is a three-line idiom.** `if k in m: m[k] = m[k] + 1
    else: m[k] = 1`, repeated for every counter. A tiny ergonomic (a `map_inc`
