@@ -252,5 +252,20 @@ else
     echo "    package parse error: WRONG file/line or missing snippet"; sed 's/^/      /' "$TMP/pkgsnip.err"; fail=1
 fi
 
+echo ">>> pkgresolve: a package-build RESOLVE error names the sibling file it's in"
+# Regression: resolve/codegen ran on the merged program with g_srcname resting on
+# the last-parsed file, so a semantic error in a non-entry sibling was attributed to
+# the entry file. Each proc now carries its source file; the error below is in
+# helper.ty, not the entry main.ty.
+mkdir -p "$TMP/pkgres"
+printf 'package main\nfn helper() -> int:\n    return undefined_here\n' > "$TMP/pkgres/helper.ty"
+printf 'package main\nfn main():\n    println(str(helper()))\n' > "$TMP/pkgres/main.ty"
+TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/pkgres/main.ty" -o "$TMP/pkgres/out" 2>"$TMP/pkgres.err"
+if grep -q 'pkgres/helper.ty:3:' "$TMP/pkgres.err" && grep -q 'return undefined_here' "$TMP/pkgres.err"; then
+    echo "    package resolve error: right sibling file + snippet"
+else
+    echo "    package resolve error: WRONG file or missing snippet"; sed 's/^/      /' "$TMP/pkgres.err"; fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

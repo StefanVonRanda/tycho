@@ -29,8 +29,8 @@ compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
 deterministic. All five findings have since been addressed by the dogfood:
 finding 1 (a `core:io` streaming reader), finding 2 (a `core:datetime` CLF
 parser), finding 3 (`core:regex` capture groups), finding 4 (a real tychoc0
-compiler bug), and finding 5 (`tychoc` package-mode diagnostics — fixed for the
-parse phase, with a documented resolve-phase residual).
+compiler bug), and finding 5 (`tychoc` package-mode diagnostics — now correct
+across parse, resolve, and codegen errors).
 
 1. **`core:io` had no streaming line reader — fixed.** Originally the only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
@@ -75,18 +75,19 @@ parse phase, with a documented resolve-phase residual).
    parity/soundness bug that the whole test + fuzz + fixpoint gate had missed,
    caught by writing one real program.
 
-5. **`tychoc` package-mode diagnostics misattributed — fixed (parse phase).** In a
-   package build, a parse error printed the correct `file:line` but a source
-   snippet from the wrong file (whichever corelib file was lexed last), or none —
-   e.g. a field-name error in `main.ty` rendered against a line from
-   `corelib/sort/sort.ty`. Root cause: the snippet source pointer (`g_src`) was set
-   only during lexing and left on the last-lexed file, while the parse loop reset
-   only the filename. Fixed by keeping each file's source and pointing `g_src` at
-   the file being parsed, so parse errors now show the right file + snippet + caret
-   (regression-locked by the `pkgsnip` assertion in `scripts/tools_check.sh`).
-   Residual: a *resolve*-phase error in a non-entry sibling file can still be
-   attributed to the entry file — AST nodes carry no per-file origin, so fixing
-   that is a deeper change, left open.
+5. **`tychoc` package-mode diagnostics misattributed — fixed.** In a package build,
+   an error printed the correct `file:line` but a source snippet from the wrong file
+   (whichever was lexed last), or none — e.g. a field-name error in `main.ty`
+   rendered against a line from `corelib/sort/sort.ty`. Two causes, both fixed:
+   (a) the *parse*-phase snippet pointer (`g_src`) was set only during lexing and
+   left on the last-lexed file — now each file's source is kept and `g_src` points
+   at the file being parsed; (b) *resolve*/*codegen* ran on the merged program with
+   the filename resting on the last-parsed file, so a semantic error in a non-entry
+   sibling was blamed on the entry file — each proc now carries its own source file
+   (a proc lives in one file), and diagnostics switch to it per proc. Parse,
+   resolve, and codegen errors all now name the right file + snippet + caret, in any
+   package file. Regression-locked by the `pkgsnip` and `pkgresolve` assertions in
+   `scripts/tools_check.sh`.
 
 6. **Map "increment-or-insert" is a three-line idiom.** `if k in m: m[k] = m[k] + 1
    else: m[k] = 1`, repeated for every counter. A tiny ergonomic (a `map_inc`

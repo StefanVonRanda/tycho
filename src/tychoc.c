@@ -1355,9 +1355,19 @@ typedef struct {
     int     ntyparams;     /* for mapping explicit call-site type args `f$(int, ...)` by position */
     char   *sizeparams[16];/* const generics 1.6B: `[$N]T` size-param names, first-appearance order (bound to an int const in the body) */
     int     nsizeparams;
+    const char *srcfile;   /* package mode: the file this proc was parsed from, for diagnostics (NULL = use the global) */
+    const char *srctext;   /* package mode: that file's source text, for die_at's snippet (NULL = use the global) */
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
+
+/* Package mode: point diagnostics (g_srcname / g_src for die_at) at a proc's own
+ * source file -- a proc lives entirely in one file, so this is the right grain
+ * for resolve/codegen errors. A NULL srcfile (single-file build, or a synthesized
+ * proc) leaves the globals as they are. */
+static void diag_use_proc(const Proc *pr) {
+    if (pr && pr->srcfile) { g_srcname = pr->srcfile; g_src = pr->srctext; }
+}
 
 /* A user-defined projection (2.4): `subscript name(p...) -> inout U: yield &<place>`.
  * Not a function -- it yields a PLACE into one of its arguments. At a call site the
@@ -6669,6 +6679,7 @@ static void resolve_program(ProcVec *prog) {
     /* register every user proc up front so calls can be forward refs */
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
+        diag_use_proc(pr);   /* package mode: name THIS proc's file in any error below */
         if (pr->generic) {   /* a `$T` template: not a callable Sig -- stash it; instances are made per call */
             if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name))
                 die_at(pr->line, "'%s' is already defined", pr->name);
@@ -6713,6 +6724,7 @@ static void resolve_program(ProcVec *prog) {
     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_srcname); exit(1); }
     for (int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
+        diag_use_proc(pr);   /* package mode: body-resolve errors name THIS proc's file */
         if (pr->is_extern) continue;   /* FFI: no body to resolve */
         if (pr->generic) continue;     /* generics: the template body is resolved+emitted per instance (gen_program) */
         g_nvars = 0;
@@ -9485,6 +9497,7 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
 }
 
 static void gen_proc(FILE *o, Proc *pr) {
+    diag_use_proc(pr);   /* package mode: codegen errors name THIS proc's file */
     gen_signature(o, pr);
     fprintf(o, " {\n");
     indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
@@ -10829,6 +10842,8 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
             exit(1);
         }
         for (int j = 0; j < pv.n; j++) {
+            pv.v[j]->srcfile = files[i];   /* so resolve/codegen diagnostics name THIS file, not the last-parsed one */
+            pv.v[j]->srctext = srcs[i];
             if (prog->n == prog->cap) {
                 prog->cap = prog->cap ? prog->cap * 2 : 8;
                 prog->v = (Proc **)xrealloc(prog->v, (size_t)prog->cap * sizeof(Proc *));
