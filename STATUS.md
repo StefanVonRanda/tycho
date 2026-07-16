@@ -20,8 +20,8 @@ the model wins and loses, see `docs/internals/value-semantics-limits.md`.
 
 | Piece | Path | Role |
 |---|---|---|
-| `tychoc` | `src/tychoc.c` (~9.5k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
-| `tychoc0` | `compiler/tychoc0.ty` (~11.7k LoC) | **Self-hosted** transpiler, written in Tycho — a subset that includes itself. |
+| `tychoc` | `src/tychoc.c` (~11k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
+| `tychoc0` | `compiler/tychoc0.ty` (~15k LoC) | **Self-hosted** transpiler, written in Tycho — a subset that includes itself. |
 | runtime | `runtime/tycho_rt.c` (~2k LoC) | Arena allocator + string/map/channel primitives, embedded into emitted C. |
 | corelib | `corelib/` (34 packages) | Stdlib, imported `core:<name>` (resolved via `TYCHO_CORELIB`). |
 | tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code/Zed extensions. |
@@ -38,39 +38,46 @@ newtypes, and a newtype from its base, exactly as tychoc does.
 
 ## The verification surface (gate map)
 
-`make ci` runs all of these (16 steps). What each proves:
+`make ci` runs all of these (18 steps). What each proves:
 
 | Gate | Proves |
 |---|---|
 | `make tychoc` | the reference transpiler builds. |
-| `make test` | **248** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
+| `make test` | **343** golden-output tests pass under ASan/UBSan/LSan (incl. `tests/reject/` = must-fail, differential). |
 | `make fixpoint` | self-host `B==C` + single files + packages + standalone driver + tychoc0 self-split. |
-| `make corelib` | every corelib package + examples + the site dogfood: C transpiler vs tychoc0, goldens match (3-way). |
+| `make corelib` | every corelib package + examples + the `site` dogfood: C transpiler vs tychoc0, goldens match (3-way). |
+| `make raytrace` / `make mandelbrot` | dogfood apps stressing float struct value-semantics (ray tracer → QOI) and float inside a `parallel for` reduction (Mandelbrot): tychoc == tychoc0 == ASan (+ TSan for the parallel one), golden-locked. |
 | `make conc` | spawn / parallel-for / channels under ASan+TSan + tychoc0 parity. |
 | `make ffi` | `extern` FFI: both transpilers vs golden, ASan-clean. |
-| `make fuzz` | differential tychoc-vs-tychoc0 on random valid programs + ASan/UBSan (`make fuzz-quick` = fast 60-seed loop). |
+| `make fuzz` | differential tychoc-vs-tychoc0 on random valid programs + ASan/UBSan. Generates sized ints, bool arrays, f-strings, closures, generics (incl. over tuples), a wider FFI vocabulary (`make fuzz-quick` = fast 60-seed loop). |
 | `make fuzz-reject` | malformed input: both transpilers fail closed (never crash). |
 | `make fuzz-leak` | LeakSanitizer: no arena / owner-0 leaks. |
-| `make tools-check` | formatter idempotence + semantic preservation + LSP smoke. |
+| `make fuzz-pkg` | cross-package differential: random two-package programs compiled three ways (tychoc / tychoc0 `--bundle` / tychoc0 standalone) must match — the package-mangling surface the single-file fuzzer can't reach. |
+| `make tools-check` | formatter idempotence + semantic preservation + LSP smoke (incl. package-aware diagnostics). |
 | `make typeparity` / `parforparity` / `eqparity` / `unaryparity` | tychoc and tychoc0 **agree on accept/reject** for binops / parallel-for gates / composite `==` / unary ops (the fixpoint is output-only and blind to accept/reject divergence — these lanes close that hole). |
 | `bench-guard` | tree-alloc wall: Tycho must beat C (perf-regression gate). |
 | `make recursion` | deep input fails closed in both transpilers (no stack-overflow DoS). |
+| `make spec-check` | the spec's Appendix A grammar == §3/§4, Appendix E fixtures exist, and the runnable examples match output on both transpilers. |
 
-Local-only CI (no hosted CI by policy): `make ci`, or the `make hooks` pre-push gate (test + fixpoint).
+Local-only CI (no hosted CI by policy): `make ci`. The `make hooks` pre-push gate runs the full
+deterministic lane set (`make ci N=0` — every lane except the ~20-min fuzz campaign) plus a
+`fuzz-quick` smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a green tree.
 Fast inner loop while editing the compiler: `make fuzz-quick` (~1–2 min) + `make test`.
 
-**Last full-gate run:** `make ci` GREEN end-to-end from a fresh `make clean`, 2026-06-28 — all 16
-steps (test 248 · fuzz 500/500 · fuzz-reject 436 · fuzz-leak 150 · typeparity 1800 · parforparity 25 ·
-eqparity 512 (0 skipped) · unaryparity 30 (0 skipped) · tools-check · bench-guard · recursion). The fast gates
-(`test`/`fixpoint`/`fuzz-quick`) are *not* a substitute: running the full gate before release caught
-two tychoc0 fail-opens they had missed — a `inout` argument accepted without `&` (the `fuzz-reject`
-lane) and a `tychofmt` float-literal drift, `.25e3` → `.25 e3` (the `tools-check` lane) — both fixed
-(commits `dd973f0`, `2c11c4e`). Lesson I keep relearning: run the full `make ci` before any release.
+**Last full-gate run:** `make ci` GREEN end-to-end, 2026-07-16 — all 18 steps (test 343 · fuzz 200 ·
+fuzz-reject 200 · fuzz-leak 150 · fuzz-pkg 200 · typeparity 4608 · parforparity 25 · eqparity 512
+(0 skipped) · unaryparity 30 (0 skipped) · corelib + raytrace + mandelbrot · tools-check · bench-guard
+· recursion · spec-check). Running the full gate before release keeps catching what the fast gates
+miss: this cycle a differential drift hunt plus the extended fuzzer found and fixed six tychoc/tychoc0
+divergences (a sized-int `[]T` parse gap, `type_of` binop typing, conversion-arg checks, bool arrays,
+package `mangle_type`, a generic-over-tuple instance mangle) plus a pre-existing `make site` link
+break. Lesson I keep relearning: run the full `make ci` before any release.
 
 ## Shipped (capabilities)
 
-Types: int/float/bool/string/char/bytes, **u32/u64/f32** (first-class fixed-width numerics —
-defined wrap, own arithmetic/printing/`[T]` arrays; `corelib/sha256` is written in `u32`),
+Types: int/float/bool/string/char/bytes, the **full fixed-width numeric family**
+(`u8`/`u16`/`u32`/`u64`, `i8`/`i16`/`i32`/`i64`, `f32` — first-class, defined wrap, own
+arithmetic/printing/`[T]` arrays incl. `[]u8`…`[]i64`; `corelib/sha256` is written in `u32`),
 arrays + nested, maps (`[K:V]`, scalar **and composite
 keys** — struct/tuple/array/fieldless-enum/newtype — and composite values), tuples, structs,
 enums, `Option`/`Result`, soa (struct-of-arrays), newtypes (`type X = …`), typed FFI handles.
@@ -125,6 +132,15 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
   `docs/internals/` against the shipped transpilers — all mapped to shipped or decided. (The last
   "genuinely open (minor)" item, explicit early `close(h)` on a typed handle, shipped in both
   compilers — see `docs/internals/typed-handles-design.md`.)
+- Parity is now enforced, not just intended (2026-07): the differential fuzzer was extended to emit
+  every surface that had hidden a bug (sized ints, bool arrays, f-strings, closures, generics incl.
+  over tuples, a wider FFI vocabulary), a `fuzz-pkg` harness added for the cross-package mangling the
+  single-file fuzzer can't reach, and both transpilers + the corelib audited for the "fixed-width
+  family added but this site still enumerates u32/u64 only" bug class — six divergences found + fixed.
+  The pre-push gate was widened to the full deterministic ci lane set so a red `make ci` can't reach
+  `main`. Hot corelib string-building paths (json, base64, hex, url, csv, strings) were profiled and
+  de-`append`-ed against `bench-guard` (1.5–2.2×), and two dogfood examples (`raytrace`, `mandelbrot`)
+  now stress float value-semantics on real workloads.
 
 ## Doc index (status-tagged)
 

@@ -623,8 +623,13 @@ Foundation before feature breadth:
 2. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG / other image
    formats needing `libjpeg`, richer `datetime` formatting beyond ISO, bignum `gcd`). Each
    built against a real program, never ahead of one.
-3. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
-   small-value stack promotion, SIMD in hot corelib paths — all evidence-gated against
-   `bench-guard`.
+3. **Opportunistic perf, evidence-gated against `bench-guard`.** The corelib-*source* half is
+   done: profiling (the `tools/prof` sampler) found a `tycho_str_append`-per-char hotspot in the
+   string-building paths, swept across json / base64 / hex / url / csv / strings by building into an
+   int array + one `to_bytes`/`substr` pass (1.5–2.2×, +three latent NUL-drop decode bugs fixed).
+   Two dogfood examples (`raytrace`, `mandelbrot`) now exercise float value-semantics on real
+   workloads. What's left is *compiler* codegen — inlining hints, small-value stack promotion, SIMD
+   in hot loops — worth it only if a real workload's profile shows the emitted C leaving cycles on
+   the table; otherwise the arena-model perf story is settled.
 
 No open item here requires reopening a thesis non-goal; Tier 3 stays decided.
