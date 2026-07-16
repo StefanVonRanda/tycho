@@ -36,6 +36,7 @@ step "[4/17] make corelib  (corelib packages + examples + the site dogfood: C co
 make -s corelib
 make -s corelib-examples
 make -s site
+make -s raytrace
 
 step "[5/17] make conc  (spawn/parallel-for/channels: ASan+TSan + tychoc0 parity)"
 make -s conc

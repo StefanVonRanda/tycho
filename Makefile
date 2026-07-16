@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion spec-check ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace ffi recursion spec-check ci hooks clean
 
 all: tychoc
 
@@ -165,6 +165,12 @@ fetch: tychoc
 # ASan against a fixture site, asserting the build report. See examples/site/run.sh.
 site: tychoc
 	@sh examples/site/run.sh
+
+# raytrace: a small ray tracer -> QOI, stressing float-heavy Vec3 value semantics.
+# Deterministic, so tychoc == tychoc0 == ASan on the summary line. See
+# examples/raytrace/run.sh. In `make ci`.
+raytrace: tychoc
+	@sh examples/raytrace/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
