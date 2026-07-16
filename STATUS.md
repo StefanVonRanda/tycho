@@ -139,8 +139,11 @@ FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen · hosted 
   family added but this site still enumerates u32/u64 only" bug class — six divergences found + fixed.
   The pre-push gate was widened to the full deterministic ci lane set so a red `make ci` can't reach
   `main`. Hot corelib string-building paths (json, base64, hex, url, csv, strings) were profiled and
-  de-`append`-ed against `bench-guard` (1.5–2.2×), and two dogfood examples (`raytrace`, `mandelbrot`)
-  now stress float value-semantics on real workloads.
+  de-`append`-ed against `bench-guard` (1.5–2.2×), and the float axis was added to the
+  cross-language bench suite: `raytrace` (sequential, `Vec3` structs by value) and
+  `mandelbrot` (a 16-core `parallel for` reduction over a chaotic `f64` map) both land
+  ≈1.0× C — byte-identical output across tycho/tychoc0/C/Go(/Rust) — confirming
+  value-semantics costs nothing on flat numeric compute (`bench/raytrace`, `bench/conc`).
 
 ## Doc index (status-tagged)
 

@@ -596,6 +596,12 @@ Two more foundational deliverables landed alongside:
   longer the *only* contract.
 - **Compact indexed-dict map layout** — closed the value-semantic ~3× RAM story on the
   pointer-shaped benchmarks (see Cross-cutting axes; trie 1.55× C, lru ahead of Go).
+- **Float axis added to the bench suite** — `raytrace` (sequential `Vec3`-by-value) and
+  `mandelbrot` (a 16-core `parallel for` reduction over a chaotic `f64` map) both land
+  ≈1.0× C/Go/Rust, byte-identical output across all ports incl. tychoc0. The suite's memory
+  shapes (dijkstra index, trie pointer, interp enum, json node) now have a compute-bound
+  float counterpart; it confirms the model's cost is representational, not computational —
+  there is no float-codegen gap to chase.
 
 **What's next — the thesis is proven and the pillars are in place; remaining work is
 keeping the two compilers honest plus demand-gated polish, not new language identity.**
