@@ -12598,6 +12598,19 @@ fn gen_inst_mangle(ty: string) -> string:
                 fout = fout + "_" + gen_inst_mangle(fps[fj])
                 fj = fj + 1
             return fout + "_ret_" + gen_inst_mangle(substr(fin, far + 2, len(fin)))
+    if n > 1 and ty[0] == 40 and ty[n - 1] == 41:    # "(T0, T1, ...)" tuple -> tup_<T0>_<T1>_...
+        # A bare tuple's '(' is at position 0, so the Name(args) arm below (which needs
+        # '(' > 0) never caught it -> it fell through to `return ty`, emitting the raw
+        # "(int,int)" as a C function-name suffix (invalid C). Matches the arr_/map_/fn_
+        # C-identifier-safe style; the name need only be valid + deterministic (the
+        # differential compares output, not C names; fixpoint is tychoc0-vs-tychoc0).
+        tout := "tup"
+        tparts := split_type_args(substr(ty, 1, n - 1))
+        tj := 0
+        for tj < len(tparts):
+            tout = tout + "_" + gen_inst_mangle(tparts[tj])
+            tj = tj + 1
+        return tout
     p := -1
     i := 0
     for i < n:
