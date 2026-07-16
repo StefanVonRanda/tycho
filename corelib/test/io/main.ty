@@ -21,6 +21,9 @@ fn jn(xs: [string]) -> string:                 # join with '|' for stable printi
         out = out + xs[i]
     return out
 
+fn addlen(acc: int, line: string) -> int:      # a fold_lines reducer
+    return acc + len(line)
+
 fn main():
     tmp := "/tmp/tycho_corelib_io_selftest.txt"
 
@@ -36,6 +39,30 @@ fn main():
     w3 := io.write_lines(tmp, ["a", "b", "c"])
     rl := io.read_lines(tmp)
     println(f"wl={b2i(w3)} rl={len(rl)} " + jn(rl))
+
+    # streaming line reader: one line at a time (bounded memory), round-tripping
+    # the content write_lines wrote. An empty middle line stays Some("").
+    w4 := io.write_lines(tmp, ["one", "", "three"])
+    lr := io.open_lines(tmp)
+    sn := 0
+    sj := ""
+    if not is_null(lr):
+        d := false
+        for not d:
+            match io.read_line(lr):
+                Some(s):
+                    if sn > 0:
+                        sj = sj + "|"
+                    sj = sj + s
+                    sn = sn + 1
+                None:
+                    d = true
+        io.close_lines(lr)
+    println(f"open={b2i(w4)} stream_lines={sn} " + sj)
+    # fold_lines: bounded streaming reduce; a missing file folds to init
+    tot := io.fold_lines(tmp, 0, addlen)
+    missfold := io.fold_lines("/tmp/tycho_corelib_io_absent.xyz", 7, addlen)
+    println(f"fold_sumlen={tot} fold_missing={missfold}")
 
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")

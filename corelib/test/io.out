@@ -1,6 +1,8 @@
 write=1 bytes=12 append=1 lines=3
 joined=hello|world|again
 wl=1 rl=3 a|b|c
+open=1 stream_lines=3 one||three
+fold_sumlen=8 fold_missing=7
 missing=[] len=0
 exists_self=1 exists_no=0
 exists_mk=1 list_ge1=1

@@ -6,6 +6,11 @@
 # This is the first corelib module to COMPOSE other core modules: it imports
 # core:strings (line splitting) and core:path (dir/base for `exists`).
 #
+# For large inputs it also provides a BOUNDED-MEMORY streaming line reader
+# (open_lines / read_line / close_lines, and a fold_lines convenience) over a
+# tiny libc getline shim (io_shim.c) -- unlike read_lines, which slurps the whole
+# file into an array.
+#
 # Error model matches the builtins: a read of a missing/unreadable file is ""
 # (indistinguishable from an empty file); a write returns false if the path
 # can't be opened. Nothing here aborts.
@@ -38,6 +43,48 @@ fn write_lines(p: string, lines: [string]) -> bool:
     for i in range(len(lines)):
         out = out + lines[i] + "\n"
     return write_file(p, out)
+
+# ---- streaming line reader (shim: libc getline, in io_shim.c) ---------------
+# read_lines() above slurps the WHOLE file into an array, so peak memory tracks
+# the file size. This reader pulls ONE line at a time into a single reused
+# buffer, so peak memory is O(longest line) -- the right tool for a large log.
+extern fn iox_open_lines(path: string) -> ptr        # null if the path can't be opened
+extern fn iox_read_line(r: ptr) -> Option(string)    # next line (no trailing newline/CRLF); None at EOF
+extern fn iox_close_lines(r: ptr)
+
+# Open a streaming line reader over `path`. Returns a null ptr (check is_null) if
+# the file can't be opened. Pair every successful open with close_lines(r).
+fn open_lines(path: string) -> ptr:
+    return iox_open_lines(path)
+
+# The next line, without its trailing newline (or CRLF), or None at end of file.
+# An empty line is Some("") -- distinct from EOF's None.
+fn read_line(r: ptr) -> Option(string):
+    return iox_read_line(r)
+
+# Close a reader opened with open_lines (frees the file handle + line buffer).
+fn close_lines(r: ptr):
+    iox_close_lines(r)
+
+# Bounded-memory streaming fold: reduce every line of `path` into `init` via
+# f(acc, line), one line at a time (peak memory O(longest line), not O(file)).
+# Best for scalar / small accumulators -- a large heap accumulator copied per
+# line is O(n^2); for that, use an open_lines/read_line loop that mutates in
+# place. A path that can't be opened folds to `init` unchanged.
+fn fold_lines(path: string, init: $A, f: fn($A, string) -> $A) -> $A:
+    r := iox_open_lines(path)
+    acc := init
+    if is_null(r):
+        return acc
+    done := false
+    for not done:
+        match iox_read_line(r):
+            Some(line):
+                acc = f(acc, line)
+            None:
+                done = true
+    iox_close_lines(r)
+    return acc
 
 # Directory entry names (basenames, not full paths); [] if not a directory.
 fn list(p: string) -> [string]:

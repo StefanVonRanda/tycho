@@ -219,7 +219,10 @@ element type instead of a family of per-type siblings.
   `write(p, s)` (truncate, returns false if unopenable), `append(p, s)` (read-rewrite,
   not atomic), `read_lines(p)` / `write_lines(p, lines)` (newline-terminated round-trip),
   `list(p)` (entry basenames), `exists(p)` (no exists builtin, so it lists the parent and
-  checks membership). Error model mirrors the builtins — nothing aborts.
+  checks membership). For inputs too large to slurp, a **bounded-memory streaming line
+  reader** over a libc `getline` shim: `open_lines(p)` → `read_line(r)` (`Some(line)` /
+  `None` at EOF) → `close_lines(r)`, plus `fold_lines(p, init, f)` — peak memory is
+  O(longest line), not O(file). Error model mirrors the builtins — nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
