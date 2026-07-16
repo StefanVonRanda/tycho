@@ -54,6 +54,8 @@ if [ "$N" -gt 0 ]; then
     LN="$N"; [ "$LN" -gt 150 ] && LN=150
     step "[9/17] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
     python3 fuzz/run_leak.py "$LN"
+    step "[9b/17] make fuzz-pkg N=$N  (cross-package differential: tychoc vs tychoc0 bundle vs standalone)"
+    python3 fuzz/run_pkg.py "$N"
 else
     step "[7/17] fuzz lanes skipped (N=0)"
 fi

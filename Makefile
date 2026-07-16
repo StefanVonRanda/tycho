@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion spec-check ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site ffi recursion spec-check ci hooks clean
 
 all: tychoc
 
@@ -189,6 +189,13 @@ fixpoint: tychoc
 N ?= 200
 fuzz: tychoc
 	@python3 fuzz/run.py $(N)
+
+# Package differential lane: random two-package programs compiled THREE ways
+# (tychoc, tychoc0 --bundle, tychoc0 standalone) and asserted byte-identical --
+# the cross-package mangling paths the single-file fuzzer can't reach (where the
+# mangle_type / generic-instance-over-tuple bugs hid). In `make ci`.
+fuzz-pkg: tychoc
+	@python3 fuzz/run_pkg.py $(N)
 
 # Quick fuzz: a small differential+ASan sweep for the inner dev loop, so a
 # compiler change can be smoke-tested in ~1-2 min instead of the full ~30 min.
