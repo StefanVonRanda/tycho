@@ -598,16 +598,28 @@ Two more foundational deliverables landed alongside:
   pointer-shaped benchmarks (see Cross-cutting axes; trie 1.55× C, lru ahead of Go).
 
 **What's next — the thesis is proven and the pillars are in place; remaining work is
-demand-gated polish, not new language identity.** Foundation before feature breadth:
+keeping the two compilers honest plus demand-gated polish, not new language identity.**
+Foundation before feature breadth:
 
-1. **Hold spec + two-compiler parity in lockstep** as any new feature lands. With 1.0
-   ratified, the spec is now a contract to keep byte-identical, not just documentation —
-   this is the standing foundational task, ahead of any single feature.
-2. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG/other image
-   formats needing `libjpeg`, richer `datetime` formatting beyond ISO, bignum `gcd`).
-   Each built against a real program, never ahead of one. (Package-aware LSP diagnostics
-   — the last standing open LSP gap — shipped; see 1.5.)
-3. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
+1. **Hold spec + two-compiler parity in lockstep** — the standing foundational task, and
+   an active one. A differential drift hunt found and fixed four tychoc/tychoc0 divergences
+   of a single recurring shape: the fixed-width integer family was made first-class, but
+   individual sites still enumerated only `u32/u64/f32` — the `[]T` parser lookahead,
+   `type_of`'s binary-op result, the conversion-arg checks, and package `mangle_type`. The
+   durable fix was to make the differential fuzzer *emit* that surface (sized ints, bool
+   arrays) so the gap can't silently reopen, then audit every `u32/u64` enumeration across
+   both compilers and the corelib (the crypto/raster uses are fixed-width by spec, not gaps).
+   Next: extend the same differential coverage to the other under-fuzzed surface — f-strings,
+   closures, generic instantiation, FFI types, multi-file packages — before a real program
+   trips it.
+2. **CI-hygiene** — `make ci` went red unnoticed (a `datetime`-FFI link break in the `site`
+   dogfood) because the pre-push hook runs only `test + fixpoint`. A green `make test` is not
+   a green tree; decide whether to widen the pre-push gate or run the full `make ci` on a
+   cadence.
+3. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG / other image
+   formats needing `libjpeg`, richer `datetime` formatting beyond ISO, bignum `gcd`). Each
+   built against a real program, never ahead of one.
+4. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
    small-value stack promotion, SIMD in hot corelib paths — all evidence-gated against
    `bench-guard`.
 
