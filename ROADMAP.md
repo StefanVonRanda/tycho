@@ -601,17 +601,21 @@ Two more foundational deliverables landed alongside:
 keeping the two compilers honest plus demand-gated polish, not new language identity.**
 Foundation before feature breadth:
 
-1. **Hold spec + two-compiler parity in lockstep** — the standing foundational task, and
-   an active one. A differential drift hunt found and fixed four tychoc/tychoc0 divergences
-   of a single recurring shape: the fixed-width integer family was made first-class, but
+1. **Hold spec + two-compiler parity in lockstep** — the standing foundational task. A
+   differential drift hunt this cycle found and fixed several tychoc/tychoc0 divergences,
+   most of one recurring shape: the fixed-width integer family was made first-class, but
    individual sites still enumerated only `u32/u64/f32` — the `[]T` parser lookahead,
-   `type_of`'s binary-op result, the conversion-arg checks, and package `mangle_type`. The
-   durable fix was to make the differential fuzzer *emit* that surface (sized ints, bool
-   arrays) so the gap can't silently reopen, then audit every `u32/u64` enumeration across
-   both compilers and the corelib (the crypto/raster uses are fixed-width by spec, not gaps).
-   Next: extend the same differential coverage to the other under-fuzzed surface — f-strings,
-   closures, generic instantiation, FFI types, multi-file packages — before a real program
-   trips it.
+   `type_of`'s binary-op result, the conversion-arg checks, and package `mangle_type` — plus
+   a generic instance mangled over a *tuple* that emitted invalid C. The durable fix is that
+   the differential fuzzer now *emits* every one of these surfaces, so a regression can't
+   silently reopen the gap: sized ints, bool arrays, f-strings, closures, generic
+   instantiation (including over composite and tuple type args), a wider FFI vocabulary
+   (bytes / `[int]` / sized params / nullable returns), and — via a new three-way harness
+   (`fuzz/run_pkg.py`: tychoc vs tychoc0 `--bundle` vs standalone) — multi-file packages, the
+   cross-package mangling surface the single-file fuzzer can't reach. Both compilers and the
+   corelib were audited for the same class (the crypto/raster sized-int uses are fixed-width
+   by spec, not gaps). Ongoing: keep this coverage in lockstep as new features land, and
+   adversarially fuzz each new construct before shipping it.
 2. **CI-hygiene** — `make ci` went red unnoticed (a `datetime`-FFI link break in the `site`
    dogfood) because the pre-push hook runs only `test + fixpoint`. A green `make test` is not
    a green tree; decide whether to widen the pre-push gate or run the full `make ci` on a
