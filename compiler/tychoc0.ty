@@ -4738,24 +4738,22 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return "f32"
                 if lt == "float" or rt == "float":
                     return "float"
-                if lt == "u32" or rt == "u32":
-                    return "u32"
-                if lt == "u64" or rt == "u64":
-                    return "u64"
+                if is_sized_int(lt):                  # any fixed-width int keeps its width (u8..i64, not just u32/u64);
+                    return lt                         # both operands are the same width in a valid program (tychoc src/tychoc.c:5492)
+                if is_sized_int(rt):                  # a bare int literal on the other side adapts to the sized operand
+                    return rt
                 return "int"
             if is_cmp(op) or op == "in" or op == "&&" or op == "||":
                 return "bool"                     # comparisons / `in` / and / or -> bool
-            if op == "<<" or op == ">>":          # shift result = the shifted value's width
-                if lt == "u32":
-                    return "u32"
-                if lt == "u64":
-                    return "u64"
+            if op == "<<" or op == ">>":          # shift result = the shifted value's width (tychoc src/tychoc.c:5474)
+                if is_sized_int(lt):
+                    return lt
                 return "int"
-            if lt == "u32" or rt == "u32":        # %, &, |, ^ on u32/u64 keep the width
-                return "u32"
-            if lt == "u64" or rt == "u64":
-                return "u64"
-            return "int"                          # %, <<, >>, &, |, ^ -> int
+            if is_sized_int(lt):                   # %, &, |, ^ on a fixed-width int keep the width (both operands same width; tychoc:5482)
+                return lt
+            if is_sized_int(rt):
+                return rt
+            return "int"                          # otherwise %, &, |, ^ -> int
         ECall(name, args, _el):
             tm0 := find(name, "$<")
             if tm0 >= 0:

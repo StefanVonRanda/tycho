@@ -37,4 +37,11 @@ fn main():
     push(h, to_u64(10000000000))
     println(str(h[0]))                 # 1e10
 
+    # to_int of a sized BINARY OP: tychoc0 typed every sized binop as plain int
+    # (its type_of recognized only u32/u64/f32), so to_int(sized_binop) was wrongly
+    # rejected. The type_of fix keeps the operand width through +,-,*,/,shift,bitwise.
+    ub := to_u8(200)
+    println(str(to_int(ub + to_u8(100))))    # u8 binop wraps -> 44
+    println(str(to_int(e[0] * e[0])))        # to_int of an i32 binop (var operands) wraps -> -727379968
+
     println(str(len(a) + len(b) + len(c)))   # 2 + 1 + 1 = 4
