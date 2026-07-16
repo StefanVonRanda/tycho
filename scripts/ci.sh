@@ -37,6 +37,7 @@ make -s corelib
 make -s corelib-examples
 make -s site
 make -s raytrace
+make -s mandelbrot
 
 step "[5/17] make conc  (spawn/parallel-for/channels: ASan+TSan + tychoc0 parity)"
 make -s conc

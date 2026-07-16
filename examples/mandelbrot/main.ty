@@ -1,0 +1,70 @@
+package main
+
+# A parallel Mandelbrot. Stresses a corner neither the (int-only) concurrency
+# benchmarks nor the sequential ray tracer reach: FLOAT compute inside a
+# `parallel for` reduction. Each pixel's escape count is a pure function of its
+# coordinates, so the row sums reduce order-independently -- the result is
+# deterministic regardless of worker count or interleaving, which is exactly what
+# makes tychoc == tychoc0 == TSan a valid check on the reduction + thread boundary.
+
+fn escape(cx: float, cy: float, maxit: int) -> int:
+    zx := 0.0
+    zy := 0.0
+    i := 0
+    for i < maxit:
+        x2 := zx * zx
+        y2 := zy * zy
+        if x2 + y2 > 4.0:
+            return i
+        zy = 2.0 * zx * zy + cy
+        zx = x2 - y2 + cx
+        i = i + 1
+    return maxit
+
+fn main():
+    w := 900
+    h := 600
+    maxit := 200
+    xmin := 0.0 - 2.5
+    xmax := 1.0
+    ymin := 0.0 - 1.25
+    ymax := 1.25
+
+    # Parallel pass: K = ncpu() workers each own whole rows; the per-row sums
+    # reduce into total/inset. Interleaving-independent -> deterministic.
+    total := 0
+    inset := 0
+    parallel for py in range(h):
+        cy := ymin + (ymax - ymin) * to_float(py) / to_float(h)
+        rowsum := 0
+        rowin := 0
+        for px in range(w):
+            cx := xmin + (xmax - xmin) * to_float(px) / to_float(w)
+            e := escape(cx, cy, maxit)
+            rowsum = rowsum + e
+            if e >= maxit:
+                rowin = rowin + 1
+        total += rowsum
+        inset += rowin
+
+    # A coarse ASCII preview (sequential, deterministic) so the render is visible.
+    ramp := " .:-=+*#%@"
+    pw := 74
+    ph := 30
+    art := ""
+    for ry in range(ph):
+        cy := ymin + (ymax - ymin) * to_float(ry) / to_float(ph)
+        for rx in range(pw):
+            cx := xmin + (xmax - xmin) * to_float(rx) / to_float(pw)
+            e := escape(cx, cy, maxit)
+            idx := e * 9 / maxit
+            if idx > 9:
+                idx = 9
+            art = art + substr(ramp, idx, idx + 1)
+        art = art + "\n"
+    print(art)
+    # stdout is the DETERMINISTIC render (art + these counts) -- machine-independent,
+    # so it can be golden-locked and diffed tychoc-vs-tychoc0.
+    println("mandelbrot " + str(w) + "x" + str(h) + " maxit=" + str(maxit) + " total_iters=" + str(total) + " in_set=" + str(inset))
+    # worker count is machine-dependent -> stderr only (informational, not in the golden).
+    eprint("mandelbrot: rendered by " + str(ncpu()) + " parallel workers\n")

@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace ffi recursion spec-check ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check ci hooks clean
 
 all: tychoc
 
@@ -171,6 +171,12 @@ site: tychoc
 # examples/raytrace/run.sh. In `make ci`.
 raytrace: tychoc
 	@sh examples/raytrace/run.sh
+
+# mandelbrot: a parallel Mandelbrot -- float compute inside a `parallel for`
+# reduction. Deterministic, so tychoc == tychoc0 == TSan == ASan on stdout. See
+# examples/mandelbrot/run.sh. In `make ci`.
+mandelbrot: tychoc
+	@sh examples/mandelbrot/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
