@@ -1,0 +1,155 @@
+package main
+import "core:raster"
+
+# A small deterministic ray tracer -- diffuse + specular + one reflection bounce,
+# rendered to a QOI image. Chosen to stress a corner the benchmarks/tests don't:
+# FLOAT-heavy struct value semantics. Every Vec3 op returns a fresh struct BY
+# VALUE, copied through deep call chains and recursion (reflect), so the arena +
+# value-semantic model carries the whole render. Deterministic -> tychoc and
+# tychoc0 must emit a byte-identical QOI (a real-program float differential).
+
+struct Vec3:
+    x: float
+    y: float
+    z: float
+
+fn v_add(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+
+fn v_sub(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+
+fn v_scale(v: Vec3, s: float) -> Vec3:
+    return Vec3(v.x * s, v.y * s, v.z * s)
+
+fn v_mul(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x * b.x, a.y * b.y, a.z * b.z)
+
+fn v_dot(a: Vec3, b: Vec3) -> float:
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+fn v_len(v: Vec3) -> float:
+    return sqrt(v_dot(v, v))
+
+fn v_norm(v: Vec3) -> Vec3:
+    l := v_len(v)
+    if l == 0.0:
+        return v
+    return v_scale(v, 1.0 / l)
+
+fn v_reflect(d: Vec3, n: Vec3) -> Vec3:
+    return v_sub(d, v_scale(n, 2.0 * v_dot(d, n)))
+
+struct Sphere:
+    center: Vec3
+    radius: float
+    color: Vec3
+    reflect: float
+
+# Nearest positive ray-sphere t (dir assumed unit), or -1.0 for a miss.
+fn hit(o: Vec3, dir: Vec3, s: Sphere) -> float:
+    oc := v_sub(o, s.center)
+    b := v_dot(oc, dir)
+    c := v_dot(oc, oc) - s.radius * s.radius
+    disc := b * b - c
+    if disc < 0.0:
+        return -1.0
+    sq := sqrt(disc)
+    t := (0.0 - b) - sq
+    if t > 0.001:
+        return t
+    t2 := (0.0 - b) + sq
+    if t2 > 0.001:
+        return t2
+    return -1.0
+
+fn scene() -> [Sphere]:
+    ss := []Sphere
+    push(ss, Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Vec3(0.45, 0.45, 0.5), 0.15))   # ground
+    push(ss, Sphere(Vec3(-1.15, 0.5, -3.0), 0.5, Vec3(0.9, 0.25, 0.2), 0.3))
+    push(ss, Sphere(Vec3(0.0, 0.5, -3.6), 0.5, Vec3(0.2, 0.85, 0.35), 0.5))
+    push(ss, Sphere(Vec3(1.15, 0.5, -3.0), 0.5, Vec3(0.25, 0.35, 0.95), 0.65))
+    push(ss, Sphere(Vec3(0.0, 1.35, -3.3), 0.35, Vec3(0.95, 0.85, 0.2), 0.2))        # small top sphere
+    return ss
+
+fn clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+# Whether a point is in shadow from the light (any sphere between it and light).
+fn shadowed(ss: [Sphere], p: Vec3, ldir: Vec3, ldist: float) -> bool:
+    for i in range(len(ss)):
+        t := hit(p, ldir, ss[i])
+        if t > 0.001 and t < ldist:
+            return true
+    return false
+
+fn trace(ss: [Sphere], o: Vec3, dir: Vec3, light: Vec3, depth: int) -> Vec3:
+    best := 1000000.0
+    idx := 0 - 1
+    for i in range(len(ss)):
+        t := hit(o, dir, ss[i])
+        if t > 0.0 and t < best:
+            best = t
+            idx = i
+    if idx < 0:                                        # sky gradient
+        tt := 0.5 * (dir.y + 1.0)
+        return v_add(v_scale(Vec3(1.0, 1.0, 1.0), 1.0 - tt), v_scale(Vec3(0.55, 0.7, 1.0), tt))
+    s := ss[idx]
+    p := v_add(o, v_scale(dir, best))
+    n := v_norm(v_sub(p, s.center))
+    lvec := v_sub(light, p)
+    ldist := v_len(lvec)
+    ldir := v_norm(lvec)
+    diff := v_dot(n, ldir)
+    if diff < 0.0:
+        diff = 0.0
+    if shadowed(ss, p, ldir, ldist):
+        diff = diff * 0.25
+    # specular highlight (Blinn-ish): reflect the light off the normal
+    rl := v_reflect(v_scale(ldir, 0.0 - 1.0), n)
+    spec := v_dot(rl, v_scale(dir, 0.0 - 1.0))
+    spec = clamp01(spec)
+    spec = spec * spec * spec * spec * spec * spec * spec * spec
+    local := v_add(v_scale(s.color, 0.12 + 0.85 * diff), v_scale(Vec3(1.0, 1.0, 1.0), spec * 0.6))
+    if depth <= 0 or s.reflect <= 0.0:
+        return local
+    rdir := v_reflect(dir, n)
+    rcol := trace(ss, p, rdir, light, depth - 1)
+    return v_add(v_scale(local, 1.0 - s.reflect), v_scale(rcol, s.reflect))
+
+fn q(x: float) -> int:                                 # float channel -> 0..255 byte
+    v := to_int(clamp01(x) * 255.0 + 0.5)
+    if v > 255:
+        return 255
+    return v
+
+fn main():
+    w := 240
+    h := 160
+    cam := Vec3(0.0, 0.95, 1.4)
+    light := Vec3(5.0, 7.0, 1.0)
+    ss := scene()
+    aspect := to_float(w) / to_float(h)
+    px := []int
+    for y in range(h):
+        for x in range(w):
+            u := ((to_float(x) + 0.5) / to_float(w) * 2.0 - 1.0) * aspect
+            v := 1.0 - (to_float(y) + 0.5) / to_float(h) * 2.0
+            dir := v_norm(Vec3(u, v, 0.0 - 1.6))
+            col := trace(ss, cam, dir, light, 3)
+            push(px, q(col.x))
+            push(px, q(col.y))
+            push(px, q(col.z))
+            push(px, 255)
+    img := raster.make(w, h, to_bytes(px))
+    qoi := raster.encode_qoi(img)
+    write_file("out.qoi", to_str(qoi))
+    qs := to_str(qoi)
+    sum := 0
+    for i in range(len(qs)):
+        sum = (sum + qs[i] * (i % 7 + 1)) % 1000000007
+    println("raytrace " + str(w) + "x" + str(h) + " rgba_px=" + str(len(px)) + " qoi_bytes=" + str(len(qs)) + " checksum=" + str(sum))
