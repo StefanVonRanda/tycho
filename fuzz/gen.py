@@ -342,7 +342,7 @@ class Gen:
         # deepen two under-covered surfaces (ROADMAP what's-next): f-string holes of
         # every value type (str() through the interpolation desugar) and richer closures
         # (multi-param, multi-capture, composite capture, heap-return, nesting).
-        kinds += ["fstring_types", "closure_rich"]
+        kinds += ["fstring_types", "closure_rich", "generic_rich"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -513,6 +513,39 @@ class Gen:
                 self.emit(ind, a + " := " + str(self.r.randint(0, 9)))
                 self.emit(ind, g + " := fn(x: int) -> int: (fn(y: int) -> int: y + " + a + ")(x)")
                 self.emit(ind, "acc = acc + " + g + "(" + str(self.r.randint(0, 9)) + ")")
+            return
+        if k == "generic_rich":        # generic monomorphization over composite type args:
+            # gid over [int]/tuple (the tuple instance-mangle path that emitted invalid C
+            # in tychoc0 until fixed), gsum(numeric) over [int]/[float], gtotal(defaultable)
+            # seeded from zero$(T), and the FzBox($T) generic struct over int/[int]/string.
+            # All fold into acc; monomorphization + per-instance body cloning must agree.
+            r = self.r.random()
+            n = lambda: str(self.r.randint(0, 9))
+            if r < 0.25:                                        # gid over array / tuple
+                if self.r.random() < 0.5:
+                    self.emit(ind, "acc = acc + fz_gid([" + n() + ", " + n() + "])[0]")
+                else:
+                    gv = self.fresh("gr")
+                    self.emit(ind, gv + " := fz_gid((" + n() + ", " + n() + "))")
+                    self.emit(ind, "acc = acc + " + gv + ".0 + " + gv + ".1")
+            elif r < 0.5:                                       # gsum(numeric) over [int] / [float]
+                if self.r.random() < 0.6:
+                    self.emit(ind, "acc = acc + fz_gsum([" + n() + ", " + n() + ", " + n() + "])")
+                else:
+                    self.emit(ind, "acc = acc + to_int(fz_gsum([" + n() + ".5, " + n() + ".5]))")
+            elif r < 0.7:                                       # gtotal(defaultable) + zero$(T)
+                self.emit(ind, "acc = acc + fz_gtotal([" + n() + ", " + n() + ", " + n() + "])")
+            else:                                              # FzBox($T) generic struct over int/[int]/string
+                gb = self.fresh("gb"); c = self.r.random()
+                if c < 0.4:
+                    self.emit(ind, gb + " := FzBox(" + n() + ")")
+                    self.emit(ind, "acc = acc + " + gb + ".v")
+                elif c < 0.7:
+                    self.emit(ind, gb + " := FzBox([" + n() + ", " + n() + "])")
+                    self.emit(ind, "acc = acc + " + gb + ".v[0] + len(" + gb + ".v)")
+                else:
+                    self.emit(ind, gb + ' := FzBox("' + self.r.choice(["a", "bb", "cc"]) + '")')
+                    self.emit(ind, "acc = acc + len(" + gb + ".v)")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
@@ -1061,6 +1094,13 @@ class Gen:
         # cloning in both compilers.
         self.out += ["fn fz_gid(x: $T) -> T:", "    return x", ""]
         self.out += ["fn fz_gfst(a: $T, b: $T) -> T:", "    return a", ""]
+        # richer generics (the `generic_rich` kind): a numeric-constrained sum, a
+        # defaultable-constrained total seeded from zero$(T), and a generic struct.
+        self.out += ["fn fz_gsum(xs: [$T]) -> $T where numeric(T):", "    acc := xs[0]",
+                     "    for i in range(len(xs)):", "        if i > 0:", "            acc = acc + xs[i]", "    return acc", ""]
+        self.out += ["fn fz_gtotal(xs: [$T]) -> $T where defaultable(T):", "    acc := zero$(T)",
+                     "    for i in range(len(xs)):", "        acc = acc + xs[i]", "    return acc", ""]
+        self.out += ["struct FzBox($T):", "    v: T", ""]
         self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
         self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
