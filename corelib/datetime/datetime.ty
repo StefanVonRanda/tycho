@@ -9,6 +9,10 @@
 # FIXED offsets (from_unix_at / format_iso_tz, no FFI), and DST-aware SYSTEM/zone
 # offsets via a tiny libc shim (local_offset / offset_at / now_local, the only
 # FFI here -- see datetime_shim.c). There is still no IANA tz database.
+#
+# Parsers (all fail-closed to a `bad()` sentinel): parse_iso / parse_iso_tz for
+# ISO-8601, and parse_clf / parse_clf_tz for the Common Log Format timestamp
+# (`dd/Mon/yyyy:HH:MM:SS ±HHMM`, as in Apache/nginx access logs).
 package datetime
 
 struct DateTime:
@@ -273,6 +277,84 @@ fn parse_iso_tz(s: string) -> DateTime:
     if not good:
         return bad()
     return from_unix(to_unix_at(dt, off))       # local+offset -> UTC instant
+
+# ---- Common Log Format (Apache/nginx access logs) --------------------------
+# The CLF timestamp is `dd/Mon/yyyy:HH:MM:SS` optionally followed by ` ±HHMM`
+# (e.g. `10/Oct/2000:13:55:36 -0700`) -- a 3-letter English month name, and an
+# offset with NO colon, unlike ISO-8601. These parse it fail-closed, reusing the
+# same day-count core.
+
+# "Jan".."Dec" -> 1..12, else 0 (the inverse of month_name; case-sensitive).
+fn month_num(mon: string) -> int:
+    names := ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    m := 1
+    for m <= 12:
+        if mon == names[m]:
+            return m
+        m = m + 1
+    return 0
+
+# Parse a bare CLF `±HHMM` (no colon) at index `at`; (offset_secs, ok). A missing
+# suffix (end of string) is treated as UTC. Sibling of parse_offset.
+fn parse_clf_offset(s: string, at: int) -> (int, bool):
+    n := len(s)
+    if at >= n:
+        return (0, true)                        # absent -> UTC
+    c := s[at]
+    sign := 1
+    if c == 45:                                 # '-'
+        sign = -1
+    elif c != 43:                               # not '+'
+        return (0, false)
+    if at + 5 > n:                              # need "±HHMM"
+        return (0, false)
+    if not (all_digits(s, at + 1, at + 3) and all_digits(s, at + 3, at + 5)):
+        return (0, false)
+    hh := digits_val(s, at + 1, at + 3)
+    mm := digits_val(s, at + 3, at + 5)
+    return (sign * (hh * 3600 + mm * 60), true)
+
+# Parse a CLF timestamp and return the CIVIL fields as written (any trailing
+# offset is ignored here; use parse_clf_tz to fold it). Fail-closed on a bad
+# shape, unknown month, or out-of-range field.
+fn parse_clf(s: string) -> DateTime:
+    if len(s) < 20:
+        return bad()
+    if s[2] != 47 or s[6] != 47:                # '/' '/'
+        return bad()
+    if s[11] != 58 or s[14] != 58 or s[17] != 58:   # ':' ':' ':'
+        return bad()
+    if not (all_digits(s, 0, 2) and all_digits(s, 7, 11)):
+        return bad()
+    if not (all_digits(s, 12, 14) and all_digits(s, 15, 17) and all_digits(s, 18, 20)):
+        return bad()
+    da := digits_val(s, 0, 2)
+    mo := month_num(substr(s, 3, 6))
+    y := digits_val(s, 7, 11)
+    ho := digits_val(s, 12, 14)
+    mi := digits_val(s, 15, 17)
+    se := digits_val(s, 18, 20)
+    if mo < 1:                                  # unknown month name
+        return bad()
+    if da < 1 or da > days_in_month(y, mo):
+        return bad()
+    if ho > 23 or mi > 59 or se > 60:           # 60 allows a leap second
+        return bad()
+    return DateTime(y, mo, da, ho, mi, se, weekday(y, mo, da))
+
+# Parse a CLF timestamp WITH its ` ±HHMM` offset and return the UTC instant (the
+# offset folded out). An absent offset means UTC. Fail-closed.
+fn parse_clf_tz(s: string) -> DateTime:
+    dt := parse_clf(s)
+    if not ok(dt):
+        return bad()
+    at := 20
+    if at < len(s) and s[at] == 32:             # skip the space before the offset
+        at = at + 1
+    off, good := parse_clf_offset(s, at)
+    if not good:
+        return bad()
+    return from_unix(to_unix_at(dt, off))
 
 # ---- system / zone local time (libc) ---------------------------------------
 # The ONLY FFI in this package (companion datetime_shim.c, pure libc). libc knows

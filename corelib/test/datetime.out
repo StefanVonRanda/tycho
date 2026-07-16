@@ -21,6 +21,11 @@ parse_tz unix=1234567890 ok=1
 parse_neg ok=1
 parse_z unix=1234567890
 fail short=0 sep=0 month=0 day=0 off=0
+clf ok=1 iso=2000-10-10T13:55:36
+clf_utc = 2000-10-10T20:55:36
+clf_noz = 2021-01-01T00:00:00
+month_num Jan=1 Dec=12 Xyz=0
+clf_fail sep=0 month=0 day=0 off=0
 local_off_ok = 1
 now_local_valid = 1
 now_valid = 1

@@ -111,6 +111,23 @@ fn main():
     bday := b2i(datetime.ok(datetime.parse_iso("2009-02-30T00:00:00")))
     boff := b2i(datetime.ok(datetime.parse_iso_tz("2009-02-13T23:31:30+5")))
     println(f"fail short={bshort} sep={bsep} month={bmon} day={bday} off={boff}")  # all 0
+
+    # ---- Common Log Format parsing (dd/Mon/yyyy:HH:MM:SS ±HHMM) ----
+    clf := datetime.parse_clf("10/Oct/2000:13:55:36 -0700")
+    println(f"clf ok={b2i(datetime.ok(clf))} iso={datetime.format_iso(clf)}")   # 1 ... 2000-10-10T13:55:36
+    println("clf_utc = " + datetime.format_iso(datetime.parse_clf_tz("10/Oct/2000:13:55:36 -0700")))  # +7h -> 20:55:36
+    println("clf_noz = " + datetime.format_iso(datetime.parse_clf_tz("01/Jan/2021:00:00:00")))         # no offset -> UTC
+    mnjan := datetime.month_num("Jan")
+    mndec := datetime.month_num("Dec")
+    mnxyz := datetime.month_num("Xyz")
+    println(f"month_num Jan={mnjan} Dec={mndec} Xyz={mnxyz}")                    # 1 12 0
+    # fail-closed: wrong separators, bad month name, out-of-range day, short offset
+    cbsep := b2i(datetime.ok(datetime.parse_clf("10-Oct-2000:13:55:36")))
+    cbmon := b2i(datetime.ok(datetime.parse_clf("10/Zzz/2000:13:55:36")))
+    cbday := b2i(datetime.ok(datetime.parse_clf("32/Oct/2000:13:55:36")))
+    cboff := b2i(datetime.ok(datetime.parse_clf_tz("10/Oct/2000:13:55:36 -07")))
+    println(f"clf_fail sep={cbsep} month={cbmon} day={cbday} off={cboff}")       # all 0
+
     # system local_offset() is host-dependent -- assert invariants, not the value
     lo := datetime.local_offset(1234567890)
     println("local_off_ok = " + str(b2i(lo >= 0 - 50400 and lo <= 50400 and lo % 900 == 0)))

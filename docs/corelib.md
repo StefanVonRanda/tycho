@@ -113,7 +113,9 @@ element type instead of a family of per-type siblings.
   `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); formatting
   `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`; and its
   inverse **parsing** `parse_iso` (wall-clock fields; `T` or space separator, trailing zone
-  ignored) / `parse_iso_tz` (`+HH:MM` / `-HH:MM` / `Z` folded to the UTC instant), both
+  ignored) / `parse_iso_tz` (`+HH:MM` / `-HH:MM` / `Z` folded to the UTC instant), plus
+  `parse_clf` / `parse_clf_tz` for the Common Log Format stamp (`dd/Mon/yyyy:HH:MM:SS ±HHMM`,
+  as in Apache/nginx access logs) and `month_num` (`"Jan"`..`"Dec"` → 1..12), all
   fail-closed via a `year = -1` sentinel that `ok(dt)` checks (a real 4-digit parse is never
   negative). The core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
   `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
