@@ -1,0 +1,18 @@
+# Regression: a name bound by a destructuring `a, b := tuple` must stay in scope
+# for a LATER `:=` declaration that reads it. tychoc0's lift/mono/gfix passes used
+# to walk past SDestructure without recording its names, so `type_of` on a
+# subsequent decl's RHS reported the destructured var as unknown (only bit when a
+# destructure var fed an intermediate decl, so tychoc0.ty itself never tripped it).
+# tychoc always accepted this; the fixpoint is output-only and never saw the gap.
+fn pair(s: string) -> (string, string):
+    return (s, s)
+
+fn build(x: string) -> string:
+    a, b := pair(x)
+    c, d := pair(b)
+    e, f := pair(d)
+    joined := a + c + e
+    return joined
+
+fn main():
+    println(build("z"))

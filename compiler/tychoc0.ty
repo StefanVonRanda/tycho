@@ -12228,7 +12228,17 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
         SOrReturn(nm, e, _sl):
             return SOrReturn(nm, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
         SDestructure(nms, e, _sl):
-            return SDestructure(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
+            nde := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            dtt := type_of(e, names, types, dc, ctx)   # bind the destructure names for later stmts (mirrors SDecl + gen_stmt)
+            if is_tuple(dtt):
+                dparts := tuple_parts(dtt)
+                if len(dparts) == len(nms):
+                    dj := 0
+                    for dj < len(nms):
+                        push(names, nms[dj])
+                        push(types, dparts[dj])
+                        dj = dj + 1
+            return SDestructure(nms, nde, _sl)
         SMultiAssign(nms, e, _sl):
             return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
         SMatch(subj, vars, binds, bodies, _sl):
@@ -13616,7 +13626,17 @@ fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func]
             push(types, "int")                    # precise unwrap type is 1c; unused by 1a
             return SOrReturn(nm, mr, ln)
         SDestructure(nms, e, ln):
-            return SDestructure(nms, mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
+            mde := mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
+            mtt := type_of(e, names, types, dc, ctx)   # bind the destructure names for later stmts (mirrors SDecl + gen_stmt)
+            if is_tuple(mtt):
+                mparts := tuple_parts(mtt)
+                if len(mparts) == len(nms):
+                    mj := 0
+                    for mj < len(nms):
+                        push(names, nms[mj])
+                        push(types, mparts[mj])
+                        mj = mj + 1
+            return SDestructure(nms, mde, ln)
         SMultiAssign(nms, e, ln):
             return SMultiAssign(nms, mono_expr(e, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), ln)
         SMatch(subj, vars, binds, bodies, ln):
@@ -14535,7 +14555,17 @@ fn gfix_stmt(dc: Decls, ctx: Ctx, s: Stmt, names: inout [string], types: inout [
             push(types, "int")
             return SOrReturn(nm, ne, sl)
         SDestructure(nms, e, sl):
-            return SDestructure(nms, gfix_expr(dc, ctx, "", e, names, types), sl)
+            gde := gfix_expr(dc, ctx, "", e, names, types)
+            gtt := type_of(e, names, types, dc, ctx)   # bind the destructure names for later stmts (mirrors SDecl + gen_stmt)
+            if is_tuple(gtt):
+                gparts := tuple_parts(gtt)
+                if len(gparts) == len(nms):
+                    gj := 0
+                    for gj < len(nms):
+                        push(names, nms[gj])
+                        push(types, gparts[gj])
+                        gj = gj + 1
+            return SDestructure(nms, gde, sl)
         SMultiAssign(nms, e, sl):
             return SMultiAssign(nms, gfix_expr(dc, ctx, "", e, names, types), sl)
         SMatch(subj, vars, binds, bodies, sl):
