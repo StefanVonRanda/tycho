@@ -123,8 +123,10 @@ element type instead of a family of per-type siblings.
 - **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
   core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
-  (first match substring), `release` (free the C-owned handle). The compiled pattern
-  is C-malloc'd, **not** arena-managed, so call `release` when done.
+  (first match substring). **Capture groups** of the first match by index (0 = whole
+  match): `ngroups`, `group_start` / `group_end` (offset or −1), `group(re, s, n)`
+  (substring), `groups(re, s)` (all groups as `[string]`). `release` frees the C-owned
+  handle — the compiled pattern is C-malloc'd, **not** arena-managed, so call it when done.
 - **`http`** — an HTTP(S) client over **libcurl** (C-shim, FFI), and the first module to
   declare an [external dependency](#external-dependencies-c-shim-deps) (`corelib/http/deps`
   → `libcurl`). `get(url) -> ptr` / `post(url, body, content_type) -> ptr` return an opaque

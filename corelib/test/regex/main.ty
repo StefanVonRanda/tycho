@@ -19,6 +19,25 @@ fn main():
     a1 := regex.is_match(re2, "foo")
     a2 := regex.is_match(re2, "foobar")
     println(f"alt={a1},{a2}")
+    # capture groups: extract fields from the first match
+    re3 := regex.compile("([0-9]+)/([A-Za-z]+)/([0-9]+)")
+    src := "at 10/Oct/2000 ok"
+    ng := regex.ngroups(re3)
+    gst := regex.group_start(re3, src, 1)
+    g1 := regex.group(re3, src, 1)
+    g2 := regex.group(re3, src, 2)
+    g3 := regex.group(re3, src, 3)
+    println(f"grp n={ng} start={gst} 1={g1} 2={g2} 3={g3}")     # 3 3 10 Oct 2000
+    all := regex.groups(re3, src)
+    println("grp_all=" + str(len(all)) + " " + all[0])          # 4 10/Oct/2000
+    # a non-participating optional group is "", a non-match yields ""/empty array
+    re4 := regex.compile("(a)(b)?c")
+    np := regex.group(re4, "ac", 2)
+    nm := regex.group(re3, "zzz", 1)
+    ne := regex.groups(re3, "zzz")
+    println(f"grp_np=[{np}] grp_nm=[{nm}] grp_ne={len(ne)}")     # [] [] 0
+    regex.release(re3)
+    regex.release(re4)
     regex.release(re)
     regex.release(re2)
     # a bad pattern compiles to a null handle

@@ -26,9 +26,10 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 Ordered roughly by value. The tool compiles and runs identically on **both**
 compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
-deterministic. Three of these have since been fixed by the dogfood: finding 1 (a
-`core:io` streaming reader), finding 2 (a `core:datetime` CLF parser), and
-finding 4 (a real tychoc0 compiler bug). Findings 3 and 5 remain open.
+deterministic. Four of these have since been fixed by the dogfood: finding 1 (a
+`core:io` streaming reader), finding 2 (a `core:datetime` CLF parser), finding 3
+(`core:regex` capture groups), and finding 4 (a real tychoc0 compiler bug). Only
+finding 5 remains open.
 
 1. **`core:io` had no streaming line reader — fixed.** Originally the only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
@@ -51,12 +52,13 @@ finding 4 (a real tychoc0 compiler bug). Findings 3 and 5 remain open.
    `YYYY-MM-DD HH` derived from the parsed `DateTime`; a malformed timestamp fails
    the record closed.
 
-3. **`core:regex` has no capture groups.** `find`/`find_end`/`matched` return the
-   first whole match only — there is no `$1`/`$2` group extraction, and a compiled
-   pattern is a raw `ptr` needing a manual `release()` rather than a RAII `handle`.
-   So the CLF fields are pulled apart with `strings.split_once`, not a pattern. For
-   this rigid format that is arguably clearer, but a general log tool would want
-   groups.
+3. **`core:regex` had no capture groups — fixed.** `find`/`find_end`/`matched`
+   returned the first whole match only, with no `$1`/`$2` extraction. Fixed by
+   adding `ngroups`, `group_start`/`group_end`, `group(re, s, n)` (0 = whole
+   match), and `groups(re, s)` over POSIX `regexec`'s `pmatch[]`. This program
+   still parses the rigid CLF layout with `strings.split_once` (clearer for a fixed
+   format), but a general log tool can now use groups. (One minor point remains: a
+   compiled pattern is a raw `ptr` with manual `release()`, not a RAII `handle`.)
 
 4. **A real tychoc0 bug — found here and fixed.** `parse_line` splits the CLF
    timestamp (`dpart, trest := split_once(ts, ":")`) and later builds
