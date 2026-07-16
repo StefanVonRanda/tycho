@@ -29,7 +29,20 @@ fn skip_ws(s: string, n: int, pos: inout int):
 
 fn parse_string(s: string, n: int, pos: inout int) -> string:
     pos = pos + 1                              # skip opening "
-    r := ""
+    start := pos
+    # Fast path: scan the escape-free span up to the closing " or the first '\'.
+    # The common JSON string has no escapes, so this takes it in one substr --
+    # one allocation instead of a chr()+append per character (parse_string was
+    # ~20% of a parse's CPU; the per-char append + chr() temp dominated it).
+    for pos < n and s[pos] != 34 and s[pos] != 92:
+        pos = pos + 1
+    r := substr(s, start, pos)                 # the escape-free prefix (the whole string in the common case)
+    if pos >= n or s[pos] == 34:
+        if pos < n:
+            pos = pos + 1                        # skip closing "
+        return r
+    # Slow path: an escape is present. `r` holds the [start, pos) prefix; continue
+    # char-by-char from the first backslash (rare, so the append cost is fine here).
     for pos < n and s[pos] != 34:              # until closing "
         if s[pos] == 92:                       # backslash escape
             pos = pos + 1
