@@ -342,7 +342,7 @@ class Gen:
         # deepen two under-covered surfaces (ROADMAP what's-next): f-string holes of
         # every value type (str() through the interpolation desugar) and richer closures
         # (multi-param, multi-capture, composite capture, heap-return, nesting).
-        kinds += ["fstring_types", "closure_rich", "generic_rich"]
+        kinds += ["fstring_types", "closure_rich", "generic_rich", "ffi_types"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -546,6 +546,28 @@ class Gen:
                 else:
                     self.emit(ind, gb + ' := FzBox("' + self.r.choice(["a", "bb", "cc"]) + '")')
                     self.emit(ind, "acc = acc + len(" + gb + ".v)")
+            return
+        if k == "ffi_types":           # wider FFI type surface: a sized-int (u32) boundary, a
+            # bytes param (-> ptr,len), an [int] param (-> ptr,len), and a nullable string
+            # return (C NULL -> None, matched both arms). Deterministic -> folds into acc;
+            # ASan/UBSan also covers the marshaling + the arena-copy of the returned string.
+            r = self.r.random()
+            n = lambda: str(self.r.randint(0, 9))
+            if r < 0.3:                                         # sized-int (u32) FFI, wrap folded to a byte
+                big = lambda: str(self.r.randint(0, 4000000000))
+                self.emit(ind, "acc = acc + (to_int(fz_addu32(to_u32(" + big() + "), to_u32(" + big() + "))) & 255)")
+            elif r < 0.55:                                      # bytes param -> int
+                self.emit(ind, "acc = acc + fz_bsum(to_bytes([" + n() + ", " + n() + ", " + n() + "]))")
+            elif r < 0.8:                                       # [int] param -> int
+                self.emit(ind, "acc = acc + fz_isum([" + n() + ", " + n() + ", " + n() + "])")
+            else:                                              # Option(string) return, both arms matched
+                ov = self.fresh("fo"); bv = self.fresh("fb")
+                self.emit(ind, ov + " := fz_bget(" + str(self.r.randint(0, 3)) + ")")   # 0 -> None, >0 -> Some
+                self.emit(ind, "match " + ov + ":")
+                self.emit(ind+1, "Some(" + bv + "):")
+                self.emit(ind+2, "acc = acc + len(" + bv + ")")
+                self.emit(ind+1, "None:")
+                self.emit(ind+2, "acc = acc + 1")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
@@ -1149,6 +1171,10 @@ class Gen:
             "extern fn fz_slen(s: string) -> int",
             "extern fn fz_handle(id: int) -> ptr",
             "extern fn fz_unwrap(h: ptr) -> int",
+            "extern fn fz_addu32(a: u32, b: u32) -> u32",   # sized-int FFI boundary (u32 wrap)
+            "extern fn fz_bsum(b: bytes) -> int",           # bytes param -> (ptr, len)
+            "extern fn fz_isum(xs: [int]) -> int",          # [int] param -> (const long*, len)
+            "extern fn fz_bget(id: int) -> Option(string)", # nullable string return (C NULL -> None)
             "",
         ]
 
