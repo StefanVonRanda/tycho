@@ -1,0 +1,212 @@
+package main
+
+# weblog -- a Combined Log Format access-log analyzer, built entirely on corelib
+# to dogfood it end to end. Streams lines, parses each CLF record fail-closed,
+# aggregates into string-keyed maps (this is the compact-dict map layout under a
+# real workload), and reports status classes, top-K URLs / client IPs, and a
+# per-hour histogram.
+#
+#   tychoc examples/weblog/main.ty -o weblog && ./weblog access.log --top 5
+#
+# With no file argument it analyzes an embedded demo log, so the output is
+# deterministic and golden-locked (the test harness cannot pass argv).
+#
+# Dogfood findings (see README.md): (1) core:io has no streaming line reader --
+# read_lines() slurps the whole file, so peak RSS tracks input size, not the
+# bounded aggregation; (2) core:datetime cannot parse the CLF timestamp
+# ([10/Oct/2000:13:55:36 -0700]) -- only ISO -- so the hour bucket is a string
+# slice, not a real DateTime; (3) core:regex has no capture groups, so parsing
+# is split_once-based, not pattern-based; (4) tychoc0 cannot parse an `inout`
+# parameter whose type is a map (`inout [K:V]`), so the increment-or-insert
+# idiom is inlined (3 lines) at every call site instead of a shared helper.
+
+import "core:cli"
+import "core:io"
+import "core:strings"
+import "core:sort"
+
+struct Rec:
+    ok: bool
+    ip: string
+    datehour: string
+    path: string
+    sclass: string
+    size: int
+
+# NOTE: the increment-or-insert below is inlined at every call site (3 lines each).
+# The natural factoring -- `fn inc(m: inout [string:int], k)` -- does not compile:
+# tychoc0 (the self-hosted compiler) cannot parse an `inout` parameter whose type
+# is a MAP (`inout [K:V]`), though tychoc accepts it. Inlining keeps the example
+# building on BOTH compilers and keeps the O(1) in-place map mutation. See README.
+
+# --- CLF parse, fail-closed (Rule 5): a record that does not match the shape
+#     is skipped and counted, never guessed at. -------------------------------
+fn parse_line(line: string) -> Rec:
+    bad := Rec(false, "", "", "", "", 0)
+    if not strings.contains(line, "["):
+        return bad
+    if not strings.contains(line, "\""):
+        return bad
+    ip, r0 := strings.split_once(line, " ")
+    if ip == "":
+        return bad
+    b0, afterlb := strings.split_once(line, "[")
+    ts, afterrb := strings.split_once(afterlb, "]")
+    if ts == "" or afterrb == "":
+        return bad
+    c0, afterq1 := strings.split_once(afterrb, "\"")
+    req, afterq2 := strings.split_once(afterq1, "\"")
+    if req == "":
+        return bad
+    rest := strings.trim(afterq2)
+    status, r5 := strings.split_once(rest, " ")
+    bytes_s, r6 := strings.split_once(r5, " ")
+    if status == "":
+        return bad
+    dpart, trest := strings.split_once(ts, ":")
+    hour, r7 := strings.split_once(trest, ":")
+    if hour == "":
+        return bad
+    datehour := dpart + ":" + hour
+    m0, pr := strings.split_once(req, " ")
+    path, pp := strings.split_once(pr, " ")
+    if path == "":
+        return bad
+    sclass := substr(status, 0, 1) + "xx"
+    nbytes := strings.parse_int(bytes_s)
+    return Rec(true, ip, datehour, path, sclass, nbytes)
+
+# keys of a [string:int] map ordered by value descending (stable -> deterministic)
+fn ranked(m: [string:int]) -> [string]:
+    ks := keys(m)
+    vals := []int
+    i := 0
+    for i in range(len(ks)):
+        push(vals, m[ks[i]])
+    idx := sort.argsort_desc(vals)
+    out := []string
+    for i in range(len(idx)):
+        push(out, ks[idx[i]])
+    return out
+
+fn demo_lines() -> [string]:
+    L := []string
+    push(L, "192.168.0.1 - - [10/Oct/2000:13:55:36 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"Mozilla/5.0\"")
+    push(L, "192.168.0.1 - - [10/Oct/2000:13:56:10 -0700] \"GET /style.css HTTP/1.0\" 200 1043 \"-\" \"Mozilla/5.0\"")
+    push(L, "10.0.0.5 - - [10/Oct/2000:13:57:01 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"curl/7.1\"")
+    push(L, "10.0.0.5 - - [10/Oct/2000:13:57:45 -0700] \"GET /missing HTTP/1.0\" 404 512 \"-\" \"curl/7.1\"")
+    push(L, "192.168.0.2 - - [10/Oct/2000:13:58:12 -0700] \"POST /login HTTP/1.1\" 200 88 \"-\" \"Mozilla/5.0\"")
+    push(L, "192.168.0.2 - - [10/Oct/2000:13:59:00 -0700] \"GET /dashboard HTTP/1.1\" 302 0 \"-\" \"Mozilla/5.0\"")
+    push(L, "192.168.0.1 - - [10/Oct/2000:13:59:48 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"Mozilla/5.0\"")
+    push(L, "this is a malformed line with no fields")
+    push(L, "203.0.113.9 - - [10/Oct/2000:14:01:22 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"bot/1.0\"")
+    push(L, "203.0.113.9 - - [10/Oct/2000:14:02:30 -0700] \"GET /admin HTTP/1.0\" 403 300 \"-\" \"bot/1.0\"")
+    push(L, "203.0.113.9 - - [10/Oct/2000:14:03:11 -0700] \"GET /admin HTTP/1.0\" 403 300 \"-\" \"bot/1.0\"")
+    push(L, "10.0.0.5 - - [10/Oct/2000:14:05:00 -0700] \"GET /style.css HTTP/1.0\" 304 0 \"-\" \"curl/7.1\"")
+    push(L, "192.168.0.1 - - [10/Oct/2000:14:06:40 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"Mozilla/5.0\"")
+    push(L, "192.168.0.1 - - [10/Oct/2000:14:07:20 -0700] \"GET /api/data HTTP/1.1\" 500 145 \"-\" \"Mozilla/5.0\"")
+    push(L, "10.0.0.5 - - [10/Oct/2000:14:09:10 -0700] \"GET /api/data HTTP/1.1\" 200 4096 \"-\" \"curl/7.1\"")
+    push(L, "203.0.113.9 - - [10/Oct/2000:14:10:05 -0700] \"GET /style.css HTTP/1.0\" 200 1043 \"-\" \"bot/1.0\"")
+    push(L, "192.168.0.2 - - [10/Oct/2000:14:11:33 -0700] \"GET /dashboard HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0\"")
+    push(L, "another totally broken entry")
+    push(L, "10.0.0.5 - - [10/Oct/2000:14:12:50 -0700] \"GET /index.html HTTP/1.0\" 200 2326 \"-\" \"curl/7.1\"")
+    return L
+
+fn main():
+    # args() includes argv[0] (the program path); core:cli.parse expects it
+    # already stripped, so drop it before parsing.
+    raw := args()
+    argv := []string
+    ai := 0
+    for ai in range(len(raw)):
+        if ai == 0:
+            continue
+        push(argv, raw[ai])
+    c := cli.parse(argv)
+    files := cli.positionals(c)
+    topk := strings.parse_int(cli.get(c, "top", "5"))
+    if topk < 1:
+        topk = 5
+
+    lines := []string
+    if len(files) > 0:
+        lines = io.read_lines(files[0])
+    else:
+        lines = demo_lines()
+
+    status := []string: int
+    paths := []string: int
+    pbytes := []string: int
+    ips := []string: int
+    hours := []string: int
+
+    total := 0
+    parsed := 0
+    skipped := 0
+    li := 0
+    for li in range(len(lines)):
+        line := lines[li]
+        if strings.trim(line) == "":
+            continue
+        total = total + 1
+        r := parse_line(line)
+        if not r.ok:
+            skipped = skipped + 1
+            continue
+        parsed = parsed + 1
+        if r.sclass in status:
+            status[r.sclass] = status[r.sclass] + 1
+        else:
+            status[r.sclass] = 1
+        if r.path in paths:
+            paths[r.path] = paths[r.path] + 1
+        else:
+            paths[r.path] = 1
+        if r.path in pbytes:
+            pbytes[r.path] = pbytes[r.path] + r.size
+        else:
+            pbytes[r.path] = r.size
+        if r.ip in ips:
+            ips[r.ip] = ips[r.ip] + 1
+        else:
+            ips[r.ip] = 1
+        if r.datehour in hours:
+            hours[r.datehour] = hours[r.datehour] + 1
+        else:
+            hours[r.datehour] = 1
+
+    println(f"weblog: {parsed} parsed, {skipped} skipped ({total} non-blank lines)")
+    println("")
+
+    println("status classes:")
+    scs := sort.asc(keys(status))
+    i := 0
+    for i in range(len(scs)):
+        println("  " + strings.pad_right(scs[i], 6, " ") + strings.pad_left(str(status[scs[i]]), 6, " "))
+    println("")
+
+    println(f"top {topk} urls by hits:")
+    println("  " + strings.pad_left("hits", 6, " ") + strings.pad_left("bytes", 9, " ") + "  url")
+    rp := ranked(paths)
+    n := len(rp)
+    if n > topk:
+        n = topk
+    for i in range(n):
+        u := rp[i]
+        println("  " + strings.pad_left(str(paths[u]), 6, " ") + strings.pad_left(str(pbytes[u]), 9, " ") + "  " + u)
+    println("")
+
+    println(f"top {topk} client ips by hits:")
+    println("  " + strings.pad_left("hits", 6, " ") + "  ip")
+    ri := ranked(ips)
+    m := len(ri)
+    if m > topk:
+        m = topk
+    for i in range(m):
+        println("  " + strings.pad_left(str(ips[ri[i]]), 6, " ") + "  " + ri[i])
+    println("")
+
+    println("requests by hour:")
+    hrs := sort.asc(keys(hours))
+    for i in range(len(hrs)):
+        println("  " + strings.pad_right(hrs[i], 16, " ") + strings.pad_left(str(hours[hrs[i]]), 5, " "))
