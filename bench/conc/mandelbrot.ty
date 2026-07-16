@@ -1,0 +1,47 @@
+# Compute-bound parallel reduction over FLOAT work: Mandelbrot escape counts.
+# tycho: `parallel for` -- K = ncpu row-chunk tasks, int64 partials, fold at join.
+# Each pixel's escape count is a pure function of its coordinates, so the row-sum
+# reduction is interleaving-independent -> total/inset are deterministic regardless
+# of worker count. This is parreduce's float sibling: same reduction shape, but the
+# kernel is an iterated complex map (chaotic), so it also checks that the float
+# pipeline agrees bit-for-bit across ports (materialized `m` blocks FMA fusion).
+fn escape(cx: float, cy: float, maxit: int) -> int:
+    zx := 0.0
+    zy := 0.0
+    i := 0
+    for i < maxit:
+        x2 := zx * zx
+        y2 := zy * zy
+        if x2 + y2 > 4.0:
+            return i
+        m := 2.0 * zx * zy
+        zy = m + cy
+        zx = x2 - y2 + cx
+        i = i + 1
+    return maxit
+
+fn main():
+    w := 1200
+    h := 1200
+    maxit := 2000
+    xmin := 0.0 - 2.5
+    xmax := 1.0
+    ymin := 0.0 - 1.25
+    ymax := 1.25
+
+    total := 0
+    inset := 0
+    parallel for py in range(h):
+        cy := ymin + (ymax - ymin) * to_float(py) / to_float(h)
+        rowsum := 0
+        rowin := 0
+        for px in range(w):
+            cx := xmin + (xmax - xmin) * to_float(px) / to_float(w)
+            e := escape(cx, cy, maxit)
+            rowsum = rowsum + e
+            if e >= maxit:
+                rowin = rowin + 1
+        total += rowsum
+        inset += rowin
+
+    print(str(total) + " " + str(inset))

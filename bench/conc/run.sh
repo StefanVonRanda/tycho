@@ -4,6 +4,10 @@
 #
 #   parreduce  compute-bound parallel reduction (tycho `parallel for`,
 #              C pthread chunks, Go goroutines, Rust scoped threads)
+#   mandelbrot the same reduction shape but the kernel is FLOAT work -- a
+#              1200x1200 Mandelbrot escape-count sum. Chaotic map, so it also
+#              checks the float pipeline agrees bit-for-bit across all four ports
+#              (the multiply is materialized to block FMA fusion)
 #   pipeline   1 producer -> bounded channel(cap 256) -> 4 consumers, 1e6
 #              string payloads (tycho channels deep-copy every payload twice
 #              -- value semantics; C passes pointers, Go shares under GC,
@@ -58,6 +62,7 @@ bench() {                                    # <name>
 
 printf '  %-6s %10s %10s   %s\n' lang peakRSS time checksum
 bench parreduce
+bench mandelbrot
 bench pipeline
 bench pool
 [ $FAIL -eq 0 ] && echo "conc bench: ok (checksums agree)" || { echo "conc bench: CHECKSUM FAILURE"; exit 1; }

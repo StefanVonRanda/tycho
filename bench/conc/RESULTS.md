@@ -1,11 +1,11 @@
 # Concurrency head-to-head: tycho vs C vs Go vs Rust
 
-`make bench-conc`. Three workloads, identical logic and checksum in every
+`make bench-conc`. Four workloads, identical logic and checksum in every
 language, each binary picking K = online cores itself. Fair-bench rule: every
 language at its standard optimized build (tycho -O3 via tychoc, C `-O3
--pthread`, `go build` (Go 1.26.2), `rustc -O`). Measured via bench/peakrss
-(peak RSS + wall). AMD Ryzen 7 7735HS, 16 hw threads, Linux (parreduce/pipeline
-2026-06-11; pool 2026-06-25).
+-pthread`, `go build` (Go 1.26.2), `rustc -O` (Rust 1.93.0)). Measured via
+bench/peakrss (peak RSS + wall). AMD Ryzen 7 7735HS, 16 hw threads, Linux
+(parreduce/pipeline 2026-06-11; pool 2026-06-25; mandelbrot 2026-07-16).
 
 ## parreduce — compute-bound parallel reduction
 
@@ -28,6 +28,41 @@ measurable memory over C's stacks. This is the memory-model proof point:
 data-parallel compute needs no GC, no scheduler, no runtime — and tycho's
 zero-annotation `parallel for` compiles down to exactly the C you would
 write.
+
+## mandelbrot — the same reduction, but FLOAT work
+
+parreduce's float sibling. Sum the Mandelbrot escape count (`maxit = 2000`) over
+a 1200x1200 grid and count in-set pixels; tycho uses the same `parallel for`
+row-chunk reduction, C/Go/Rust the same per-thread-partial pattern as parreduce.
+Two things change: the kernel is an **iterated complex map in `f64`** (real
+scalar-FP work, not integer modulo), and because that map is chaotic the checksum
+is also a **cross-language float-agreement oracle** — a single fused multiply-add
+would diverge the escape counts, so the multiply is materialized into a rounded
+`double` before the add, making the kernel fusion-proof under plain `-O3` in all
+four ports. Median of 5 runs (±2 ms):
+
+| lang | peak RSS | wall | checksum (total_iters in_set) |
+|------|---------:|-----:|-------------------------------|
+| tycho | 1.8 MB | 186 ms | 504003403 248334 |
+| C    | 1.9 MB | 187 ms | 504003403 248334 |
+| Go   | 2.3 MB | 189 ms | 504003403 248334 |
+| Rust | 2.3 MB | 188 ms | 504003403 248334 |
+
+**All four are within 2% — a dead heat — and print bit-identical output.** Two
+readings:
+
+1. **The `parallel for` reduction is free on float work too.** parreduce already
+   showed int-reduction parity with C; here the per-pixel kernel is heavier
+   scalar FP, so coordination overhead is an even smaller share and all four
+   runtimes converge — Rust's ~9% parreduce edge vanishes because the bottleneck
+   is now everyone's identical scalar-FP throughput, not thread hand-off. tycho
+   holds the lowest peak RSS of the group (per-task arenas, no GC).
+2. **The float pipeline agrees across four independent implementations.** A
+   chaotic iterated map is the strictest cross-language float check in the suite:
+   any reassociation or FMA fusion would drift the escape counts and split the
+   checksum. Byte-identical `504003403 248334` from tycho, C, Go, and Rust means
+   tycho's emitted `f64` arithmetic is IEEE-faithful, not just close. (Holds on
+   x86-64/SSE2, where a `double` local is a true 64-bit value — see Caveats.)
 
 ## pipeline — bounded-channel throughput
 
@@ -139,3 +174,8 @@ lock-free on the hot path, track each other.
 - tycho channels deliberately spend the copies; if a workload cannot afford
   them, the answer in tycho is `parallel for` (no per-item synchronization),
   not a shared-memory escape hatch.
+- mandelbrot's bit-identical checksum assumes x86-64/SSE2 (all ports here), where
+  a `double` local rounds to 64 bits so the materialized `m` blocks FMA fusion.
+  On a target with excess intermediate precision (x87) or a `-ffast-math`-class
+  build, the chaotic escape counts could drift and the checksum split — that would
+  be a float-portability signal, not a bug in any one port.
