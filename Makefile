@@ -264,7 +264,7 @@ ci:
 # Activate the local git pre-push gate (.githooks/pre-push: test + fixpoint).
 hooks:
 	@git config core.hooksPath .githooks
-	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs test + fixpoint)"
+	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"
 
 clean:
 	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c build/tycho_rt_embed.h

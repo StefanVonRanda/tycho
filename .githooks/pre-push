@@ -1,15 +1,19 @@
 #!/bin/sh
 # tycho pre-push gate -- no broken code leaves this machine. (Local. No GitHub
-# Actions, ever.) Runs the FAST correctness gates that catch regressions in
-# seconds: the golden+sanitizer test suite and the self-host fixpoint. Both
-# include every recycle/soundness regression test, so a reintroduced corruption
-# bug is blocked here. Also runs `make corelib` (C-vs-tychoc0 + standalone-tychoc0
-# vs goldens) so a type-system change can't silently break the stdlib's package
-# mangling -- that path is NOT exercised by test or fixpoint.
+# Actions, ever.) Runs the FULL DETERMINISTIC gate via `make ci N=0`: every ci
+# lane EXCEPT the minutes-long differential fuzz campaign -- build, golden +
+# sanitizer tests, self-host fixpoint, corelib + corelib-examples + the `site`
+# dogfood, concurrency, ffi, formatter/LSP tools-check, the four accept/reject
+# parity lanes, bench-guard, recursion, and spec-check -- plus a quick differential
+# fuzz smoke (`make fuzz-quick`).
 #
-# The heavier differential fuzz is NOT in this hook (it would make every push take
-# minutes). Run it before a substantial push with `make ci` (full: test +
-# fixpoint + fuzz N=500) or `make fuzz N=...`.
+# Why this wide: a green `make test` is NOT a green tree. A `datetime`-FFI link
+# break in the `site` dogfood, and cross-package type-mangling divergences, are
+# invisible to test+fixpoint but caught here -- running only test+fixpoint (+
+# corelib) once let a red `make ci` reach `main` unnoticed.
+#
+# The full fuzz campaign (fuzz N=200 + reject + leak + pkg, ~20 min) is NOT in
+# this hook -- run it before a substantial push with `make ci`.
 #
 # Activate once:  make hooks   (sets core.hooksPath to .githooks)
 # Emergency bypass (avoid): git push --no-verify
@@ -17,36 +21,25 @@ set -eu
 cd "$(git rev-parse --show-toplevel)"
 
 # Private per-run log (mktemp, not a fixed world-shared /tmp path): no multi-user
-# collision/symlink risk, and each step APPENDS under a header so earlier steps'
-# output survives. Kept on failure (path printed); removed on success.
+# collision/symlink risk. Each step APPENDS under a header; kept on failure (path
+# printed), removed on success.
 LOG="$(mktemp "${TMPDIR:-/tmp}/tycho-prepush.XXXXXX")"
 
-printf 'pre-push: make test ... '
-printf '===== make test =====\n' >>"$LOG"
-if make -s test >>"$LOG" 2>&1; then
-    printf 'ok\n'
-else
-    printf 'FAILED\n\n'; tail -20 "$LOG"
-    printf '\npre-push BLOCKED: make test failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
-fi
+gate() {   # gate "<label>" <make args...>
+    label="$1"; shift
+    printf 'pre-push: %s ... ' "$label"
+    printf '\n===== %s =====\n' "$label" >>"$LOG"
+    if make -s "$@" >>"$LOG" 2>&1; then
+        printf 'ok\n'
+    else
+        printf 'FAILED\n\n'; tail -25 "$LOG"
+        printf '\npre-push BLOCKED: %s failed (full log: %s). Push aborted.\n' "$label" "$LOG"
+        exit 1
+    fi
+}
 
-printf 'pre-push: make fixpoint ... '
-printf '===== make fixpoint =====\n' >>"$LOG"
-if make -s fixpoint >>"$LOG" 2>&1; then
-    printf 'ok\n'
-else
-    printf 'FAILED\n\n'; tail -20 "$LOG"
-    printf '\npre-push BLOCKED: make fixpoint failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
-fi
-
-printf 'pre-push: make corelib ... '
-printf '===== make corelib =====\n' >>"$LOG"
-if make -s corelib >>"$LOG" 2>&1; then
-    printf 'ok\n'
-else
-    printf 'FAILED\n\n'; tail -20 "$LOG"
-    printf '\npre-push BLOCKED: make corelib failed (full log: %s). Push aborted.\n' "$LOG"; exit 1
-fi
+gate "make ci N=0 (all deterministic lanes)" ci N=0
+gate "make fuzz-quick (differential smoke)"  fuzz-quick
 
 rm -f "$LOG"
-printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz).\n'
+printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz campaign).\n'
