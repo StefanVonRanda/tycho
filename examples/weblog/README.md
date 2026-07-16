@@ -26,9 +26,9 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 Ordered roughly by value. The tool compiles and runs identically on **both**
 compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
-deterministic. Two of these have since been fixed by the dogfood: finding 1 (a
-`core:io` streaming reader) and finding 4 (a real tychoc0 compiler bug). Findings
-2, 3, and 5 remain open.
+deterministic. Three of these have since been fixed by the dogfood: finding 1 (a
+`core:io` streaming reader), finding 2 (a `core:datetime` CLF parser), and
+finding 4 (a real tychoc0 compiler bug). Findings 3 and 5 remain open.
 
 1. **`core:io` had no streaming line reader — fixed.** Originally the only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
@@ -40,13 +40,16 @@ deterministic. Two of these have since been fixed by the dogfood: finding 1 (a
    not O(file)); the embedded demo is materialized to a temp file so even the
    default run flows through the same path.
 
-2. **`core:datetime` cannot parse the CLF timestamp.** It parses ISO-8601 only
-   (`parse_iso`/`parse_iso_tz`); the CLF stamp `[10/Oct/2000:13:55:36 -0700]`
-   (month name, `/` and `:` separators, offset) has no parser. The primitives to
-   build one exist (`month_name`, `days_from_civil`, `digits_val`), but the hour
-   bucket here is just a string slice of the raw stamp, not a real `DateTime` — so
-   the histogram can't sort chronologically across a month boundary or do any date
-   math. Wants a reusable custom/strptime-style parser.
+2. **`core:datetime` could not parse the CLF timestamp — fixed.** It parsed
+   ISO-8601 only (`parse_iso`/`parse_iso_tz`); the CLF stamp
+   `[10/Oct/2000:13:55:36 -0700]` (3-letter month name, `/` and `:` separators, a
+   colon-less `±HHMM` offset) had no parser, so the hour bucket was a raw string
+   slice — not a real `DateTime`, so it couldn't sort chronologically or do date
+   math. Fixed by adding `parse_clf` (civil fields) and `parse_clf_tz` (offset
+   folded to the UTC instant), plus `month_num` (the inverse of `month_name`),
+   reusing the same day-count core. The bucket is now a validated, sortable
+   `YYYY-MM-DD HH` derived from the parsed `DateTime`; a malformed timestamp fails
+   the record closed.
 
 3. **`core:regex` has no capture groups.** `find`/`find_end`/`matched` return the
    first whole match only — there is no `$1`/`$2` group extraction, and a compiled

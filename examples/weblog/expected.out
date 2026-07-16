@@ -22,5 +22,5 @@ top 5 client ips by hits:
        3  192.168.0.2
 
 requests by hour:
-  10/Oct/2000:13      7
-  10/Oct/2000:14     10
+  2000-10-10 13       7
+  2000-10-10 14      10

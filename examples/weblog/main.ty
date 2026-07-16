@@ -14,18 +14,20 @@ package main
 # Dogfood findings (see README.md): (1) core:io HAD no streaming line reader --
 # read_lines() slurps the whole file; FIXED by adding open_lines/read_line +
 # fold_lines, and this program now streams (peak memory O(longest line));
-# (2) core:datetime cannot parse the CLF timestamp
-# ([10/Oct/2000:13:55:36 -0700]) -- only ISO -- so the hour bucket is a string
-# slice, not a real DateTime; (3) core:regex has no capture groups, so parsing
-# is split_once-based, not pattern-based; (4) building this surfaced a real
-# tychoc0 bug -- a name bound by `a, b := tuple` was dropped from scope for a
-# later decl that read it (`parse_line`'s date/hour split) -- since fixed in the
-# lift/mono/gfix passes. Compiles + runs identically on both compilers now.
+# (2) core:datetime could not parse the CLF timestamp ([10/Oct/2000:13:55:36
+# -0700]) -- only ISO -- so the hour bucket was a raw string slice; FIXED by
+# adding parse_clf/parse_clf_tz, and the bucket is now a validated, sortable
+# DateTime-derived "YYYY-MM-DD HH"; (3) core:regex has no capture groups, so
+# parsing is split_once-based, not pattern-based; (4) building this surfaced a
+# real tychoc0 bug -- a name bound by `a, b := tuple` was dropped from scope for
+# a later decl that read it -- since fixed in the lift/mono/gfix passes.
+# Compiles + runs identically on both compilers now.
 
 import "core:cli"
 import "core:io"
 import "core:strings"
 import "core:sort"
+import "core:datetime"
 
 struct Rec:
     ok: bool
@@ -72,11 +74,13 @@ fn parse_line(line: string) -> Rec:
     bytes_s, r6 := strings.split_once(r5, " ")
     if status == "":
         return bad
-    dpart, trest := strings.split_once(ts, ":")
-    hour, r7 := strings.split_once(trest, ":")
-    if hour == "":
+    # Parse the CLF timestamp into a real DateTime and bucket by a sortable
+    # ISO-ish "YYYY-MM-DD HH" -- validated, and chronologically orderable (unlike
+    # a raw "dd/Mon/yyyy:HH" string slice). A malformed timestamp fails the record.
+    dt := datetime.parse_clf(ts)
+    if not datetime.ok(dt):
         return bad
-    datehour := dpart + ":" + hour
+    datehour := datetime.pad4(dt.year) + "-" + datetime.pad2(dt.month) + "-" + datetime.pad2(dt.day) + " " + datetime.pad2(dt.hour)
     m0, pr := strings.split_once(req, " ")
     path, pp := strings.split_once(pr, " ")
     if path == "":
