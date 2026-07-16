@@ -2700,8 +2700,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         if ar > 0:
             mp = mangle_type_list(m, substr(inner, 0, ar))
         return "fn(" + mp + "->" + mangle_type(m, substr(inner, ar + 2, len(inner))) + ")"
-    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char" or ty == "ptr" or ty == "bytes" or ty == "u32" or ty == "u64" or ty == "f32":
-        return ty                  # builtin scalar types are never package-qualified (ptr = FFI opaque handle)
+    if ty == "int" or ty == "float" or ty == "str" or ty == "void" or ty == "bool" or ty == "char" or ty == "ptr" or ty == "bytes" or ty == "u8" or ty == "u16" or ty == "u32" or ty == "u64" or ty == "i8" or ty == "i16" or ty == "i32" or ty == "i64" or ty == "f32":
+        return ty                  # builtin scalar types are never package-qualified (ptr = FFI opaque handle; the whole fixed-width int family is builtin, not just u32/u64)
     if find(ty, ".") >= 0:
         return mangle_dotted(m, ty)
     return m.prefix + ty

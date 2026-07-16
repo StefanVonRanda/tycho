@@ -1,0 +1,16 @@
+package geom
+
+# Sized-int types in a cross-package API. tychoc0's mangle_type recognized only
+# u32/u64/f32 as builtin scalars, so a u8/u16/i8/i16/i32/i64 in a package
+# signature was package-mangled (geom__u8) and mis-resolved -- tychoc accepted,
+# tychoc0 rejected. These exercise sized params AND a sized return type across
+# the boundary.
+
+fn widen(x: u8) -> int:
+    return to_int(x)
+
+fn bump16(x: i16) -> i16:
+    return x + to_i16(1)
+
+fn pack(a: i32, b: i64) -> int:
+    return to_int(a) + to_int(b)
