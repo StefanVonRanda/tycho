@@ -614,16 +614,16 @@ Foundation before feature breadth:
    (`fuzz/run_pkg.py`: tychoc vs tychoc0 `--bundle` vs standalone) — multi-file packages, the
    cross-package mangling surface the single-file fuzzer can't reach. Both compilers and the
    corelib were audited for the same class (the crypto/raster sized-int uses are fixed-width
-   by spec, not gaps). Ongoing: keep this coverage in lockstep as new features land, and
-   adversarially fuzz each new construct before shipping it.
-2. **CI-hygiene** — `make ci` went red unnoticed (a `datetime`-FFI link break in the `site`
-   dogfood) because the pre-push hook runs only `test + fixpoint`. A green `make test` is not
-   a green tree; decide whether to widen the pre-push gate or run the full `make ci` on a
-   cadence.
-3. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG / other image
+   by spec, not gaps). And the pre-push gate was widened to the full deterministic ci lane
+   set (`make ci N=0` + a `fuzz-quick` smoke) so a red `make ci` -- like the `datetime`-FFI
+   link break in the `site` dogfood that once slipped past a `test`+`fixpoint`-only hook --
+   can no longer reach `main` unnoticed; a green `make test` is not a green tree. Ongoing:
+   keep this coverage in lockstep as new features land, and adversarially fuzz each new
+   construct before shipping it.
+2. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG / other image
    formats needing `libjpeg`, richer `datetime` formatting beyond ISO, bignum `gcd`). Each
    built against a real program, never ahead of one.
-4. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
+3. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
    small-value stack promotion, SIMD in hot corelib paths — all evidence-gated against
    `bench-guard`.
 
