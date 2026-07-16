@@ -24,8 +24,10 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 ## Dogfood findings
 
-Ordered roughly by value. None of these blocked the tool — it works on `tychoc`
-and its output is correct and deterministic — but each is a real gap.
+Ordered roughly by value. The tool compiles and runs identically on **both**
+compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
+deterministic. Findings 1–3 are corelib gaps; finding 4 is a real compiler bug the
+dogfood found and got fixed.
 
 1. **`core:io` has no streaming line reader.** The only option is
    `read_lines(path) -> [string]`, which slurps the whole file into an array, so
@@ -49,24 +51,25 @@ and its output is correct and deterministic — but each is a real gap.
    this rigid format that is arguably clearer, but a general log tool would want
    groups.
 
-4. **tychoc0 cannot compile this program (a two-compiler parity gap).** The
-   reference `tychoc` builds and runs it; the self-hosted `tychoc0` does not, in
-   two independent places:
-   - it rejects an `inout` parameter whose type is a map (`fn f(m: inout [K:V])`)
-     at parse time, while `tychoc` accepts it — which is why the increment-or-
-     insert idiom is inlined at every call site instead of factored into a helper;
-   - even with that inlined, `tychoc0` then loses a local binding inside
-     `parse_line` (it reports a later `split_once` result variable as an unknown
-     variable), while `tychoc` resolves the same body fine.
-
-   Because of this the example is `tychoc`-only for now; the gap is the most
-   actionable finding for the compilers themselves.
+4. **A real tychoc0 bug — found here and fixed.** `parse_line` splits the CLF
+   timestamp (`dpart, trest := split_once(ts, ":")`) and later builds
+   `datehour := dpart + ":" + hour`. tychoc resolved that fine; `tychoc0` reported
+   `dpart` as an unknown variable. Root cause: tychoc0's `lift`/`mono`/`gfix`
+   statement walks recursed past an `SDestructure` node without recording its bound
+   names, so `type_of` on a *later* declaration that read one couldn't see it. It
+   only bit when a destructure var fed an intermediate `:=` decl — a shape
+   `tychoc0.ty` itself never contains, so the self-hosted compiler compiled cleanly
+   and the output-only fixpoint differential never saw the gap. Fixed in all three
+   passes (mirroring how `gen_stmt` already tracked them), locked by
+   `tests/destructure_scope`. This is the dogfood's headline result: a real
+   parity/soundness bug that the whole test + fuzz + fixpoint gate had missed,
+   caught by writing one real program.
 
 5. **`tychoc` package-mode diagnostics misattribute.** Every parse error in this
    package build printed the wrong file, line, and source snippet (e.g. a field-
    name error in `main.ty` rendered as a line from `corelib/sort/sort.ty`). The
    error *category* was right; the location was not. Single-file builds are fine —
-   this is specific to the merged package build.
+   this is specific to the merged package build. (Still open.)
 
 6. **Map "increment-or-insert" is a three-line idiom.** `if k in m: m[k] = m[k] + 1
    else: m[k] = 1`, repeated for every counter. A tiny ergonomic (a `map_inc`

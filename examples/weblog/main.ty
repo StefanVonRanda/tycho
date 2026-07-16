@@ -16,9 +16,10 @@ package main
 # bounded aggregation; (2) core:datetime cannot parse the CLF timestamp
 # ([10/Oct/2000:13:55:36 -0700]) -- only ISO -- so the hour bucket is a string
 # slice, not a real DateTime; (3) core:regex has no capture groups, so parsing
-# is split_once-based, not pattern-based; (4) tychoc0 cannot parse an `inout`
-# parameter whose type is a map (`inout [K:V]`), so the increment-or-insert
-# idiom is inlined (3 lines) at every call site instead of a shared helper.
+# is split_once-based, not pattern-based; (4) building this surfaced a real
+# tychoc0 bug -- a name bound by `a, b := tuple` was dropped from scope for a
+# later decl that read it (`parse_line`'s date/hour split) -- since fixed in the
+# lift/mono/gfix passes. Compiles + runs identically on both compilers now.
 
 import "core:cli"
 import "core:io"
@@ -33,11 +34,18 @@ struct Rec:
     sclass: string
     size: int
 
-# NOTE: the increment-or-insert below is inlined at every call site (3 lines each).
-# The natural factoring -- `fn inc(m: inout [string:int], k)` -- does not compile:
-# tychoc0 (the self-hosted compiler) cannot parse an `inout` parameter whose type
-# is a MAP (`inout [K:V]`), though tychoc accepts it. Inlining keeps the example
-# building on BOTH compilers and keeps the O(1) in-place map mutation. See README.
+# --- map helpers: increment-or-insert on an inout map (O(1), in place) --------
+fn inc(m: inout [string:int], k: string):
+    if k in m:
+        m[k] = m[k] + 1
+    else:
+        m[k] = 1
+
+fn add(m: inout [string:int], k: string, v: int):
+    if k in m:
+        m[k] = m[k] + v
+    else:
+        m[k] = v
 
 # --- CLF parse, fail-closed (Rule 5): a record that does not match the shape
 #     is skipped and counted, never guessed at. -------------------------------
@@ -154,26 +162,11 @@ fn main():
             skipped = skipped + 1
             continue
         parsed = parsed + 1
-        if r.sclass in status:
-            status[r.sclass] = status[r.sclass] + 1
-        else:
-            status[r.sclass] = 1
-        if r.path in paths:
-            paths[r.path] = paths[r.path] + 1
-        else:
-            paths[r.path] = 1
-        if r.path in pbytes:
-            pbytes[r.path] = pbytes[r.path] + r.size
-        else:
-            pbytes[r.path] = r.size
-        if r.ip in ips:
-            ips[r.ip] = ips[r.ip] + 1
-        else:
-            ips[r.ip] = 1
-        if r.datehour in hours:
-            hours[r.datehour] = hours[r.datehour] + 1
-        else:
-            hours[r.datehour] = 1
+        inc(&status, r.sclass)
+        inc(&paths, r.path)
+        add(&pbytes, r.path, r.size)
+        inc(&ips, r.ip)
+        inc(&hours, r.datehour)
 
     println(f"weblog: {parsed} parsed, {skipped} skipped ({total} non-blank lines)")
     println("")
