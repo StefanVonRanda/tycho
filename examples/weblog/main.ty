@@ -11,9 +11,10 @@ package main
 # With no file argument it analyzes an embedded demo log, so the output is
 # deterministic and golden-locked (the test harness cannot pass argv).
 #
-# Dogfood findings (see README.md): (1) core:io has no streaming line reader --
-# read_lines() slurps the whole file, so peak RSS tracks input size, not the
-# bounded aggregation; (2) core:datetime cannot parse the CLF timestamp
+# Dogfood findings (see README.md): (1) core:io HAD no streaming line reader --
+# read_lines() slurps the whole file; FIXED by adding open_lines/read_line +
+# fold_lines, and this program now streams (peak memory O(longest line));
+# (2) core:datetime cannot parse the CLF timestamp
 # ([10/Oct/2000:13:55:36 -0700]) -- only ISO -- so the hour bucket is a string
 # slice, not a real DateTime; (3) core:regex has no capture groups, so parsing
 # is split_once-based, not pattern-based; (4) building this surfaced a real
@@ -136,11 +137,14 @@ fn main():
     if topk < 1:
         topk = 5
 
-    lines := []string
+    # Resolve the log path. With no file argument, materialize the embedded demo
+    # so even the default run flows through the same streaming read path.
+    path := ""
     if len(files) > 0:
-        lines = io.read_lines(files[0])
+        path = files[0]
     else:
-        lines = demo_lines()
+        path = "/tmp/tycho_weblog_demo.log"
+        io.write_lines(path, demo_lines())
 
     status := []string: int
     paths := []string: int
@@ -151,22 +155,33 @@ fn main():
     total := 0
     parsed := 0
     skipped := 0
-    li := 0
-    for li in range(len(lines)):
-        line := lines[li]
-        if strings.trim(line) == "":
-            continue
-        total = total + 1
-        r := parse_line(line)
-        if not r.ok:
-            skipped = skipped + 1
-            continue
-        parsed = parsed + 1
-        inc(&status, r.sclass)
-        inc(&paths, r.path)
-        add(&pbytes, r.path, r.size)
-        inc(&ips, r.ip)
-        inc(&hours, r.datehour)
+
+    # Stream the log ONE line at a time: peak memory is O(longest line), not
+    # O(file), so this scales to a log far larger than RAM. (read_lines() would
+    # slurp the whole file into an array -- see README, finding 1.)
+    lr := io.open_lines(path)
+    if is_null(lr):
+        println("weblog: cannot open " + path)
+        return
+    done := false
+    for not done:
+        match io.read_line(lr):
+            Some(line):
+                if strings.trim(line) != "":
+                    total = total + 1
+                    r := parse_line(line)
+                    if r.ok:
+                        parsed = parsed + 1
+                        inc(&status, r.sclass)
+                        inc(&paths, r.path)
+                        add(&pbytes, r.path, r.size)
+                        inc(&ips, r.ip)
+                        inc(&hours, r.datehour)
+                    else:
+                        skipped = skipped + 1
+            None:
+                done = true
+    io.close_lines(lr)
 
     println(f"weblog: {parsed} parsed, {skipped} skipped ({total} non-blank lines)")
     println("")

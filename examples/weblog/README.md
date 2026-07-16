@@ -26,15 +26,19 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
 
 Ordered roughly by value. The tool compiles and runs identically on **both**
 compilers (`tychoc` and the self-hosted `tychoc0`), output correct and
-deterministic. Findings 1–3 are corelib gaps; finding 4 is a real compiler bug the
-dogfood found and got fixed.
+deterministic. Two of these have since been fixed by the dogfood: finding 1 (a
+`core:io` streaming reader) and finding 4 (a real tychoc0 compiler bug). Findings
+2, 3, and 5 remain open.
 
-1. **`core:io` has no streaming line reader.** The only option is
-   `read_lines(path) -> [string]`, which slurps the whole file into an array, so
-   peak RSS tracks input size instead of the bounded aggregation state. A real log
-   analyzer over a multi-GB file wants a fold/iterator over lines. This is the
-   headline gap — it's the difference between the tool demonstrating the
-   value-semantic memory story and defeating it.
+1. **`core:io` had no streaming line reader — fixed.** Originally the only option
+   was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
+   peak RSS tracked input size instead of the bounded aggregation state — defeating
+   the value-semantic memory story on a large log. Fixed by adding a bounded-memory
+   reader to `core:io` over a libc `getline` shim: `open_lines` → `read_line`
+   (`Some`/`None`) → `close_lines`, plus a `fold_lines(path, init, f)` convenience.
+   This program now streams the log one line at a time (peak memory O(longest line),
+   not O(file)); the embedded demo is materialized to a temp file so even the
+   default run flows through the same path.
 
 2. **`core:datetime` cannot parse the CLF timestamp.** It parses ISO-8601 only
    (`parse_iso`/`parse_iso_tz`); the CLF stamp `[10/Oct/2000:13:55:36 -0700]`
