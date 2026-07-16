@@ -4,16 +4,12 @@
 # Pure arithmetic (no FFI, no bit-operators -- the 6-bit packing is done with
 # `/` and `%`, which is exact on the unsigned 0..255 bytes that `s[i]` yields).
 #
-# BYTE-SAFETY CAVEAT (a tycho string-model constraint, not a Base64 one):
-#   * `encode` is fully byte-safe. `s[i]` returns 0..255 and `len(s)` is exact,
-#     so any byte string -- including one read from a file with high bytes --
-#     encodes correctly.
-#   * `decode` builds its result by appending bytes with `chr()`. A tycho string
-#     CANNOT hold a 0x00 byte when built that way (`chr(0)` appends nothing), so
-#     if the decoded plaintext contains a NUL byte, that byte is silently
-#     dropped. decode is therefore EXACT for text and for any non-NUL binary,
-#     and LOSSY only for data that contains a 0x00 byte. There is no way to
-#     represent an interior NUL in a constructed tycho string.
+# BYTE-SAFETY: both encode and decode are fully byte-safe. `s[i]` returns 0..255
+# and `len(s)` is exact, so any byte string -- including one read from a file with
+# high bytes -- encodes correctly. decode materializes its result through
+# `to_bytes([int])`, which PRESERVES interior 0x00, so decode is EXACT for text
+# and for arbitrary binary. (An earlier chr()-append implementation silently
+# dropped NUL bytes, since `chr(0)` appends nothing; that limitation is gone.)
 #
 # `decode` is lenient: it skips any byte that is not in the alphabet (so '=',
 # spaces, and newlines in wrapped Base64 are ignored) and accepts BOTH the
@@ -54,34 +50,39 @@ fn dec_val(c: int) -> int:
 # ---- encode ----------------------------------------------------------------
 
 fn encode_impl(s: string, url: bool, pad: bool) -> string:
-    out := ""
+    # Gather the output alphabet bytes in an int array, then materialize the
+    # string in ONE to_bytes/to_str pass. The old `out = out + chr(x)` per output
+    # char allocated a 1-char temp and appended it -- ~28% of an encode/decode's
+    # CPU went to tycho_str_append (sampling profiler). '=' padding is byte 61.
+    cs := []int
     n := len(s)
     i := 0
     for i + 3 <= n:                    # full 3-byte -> 4-char groups
         b0 := s[i]
         b1 := s[i + 1]
         b2 := s[i + 2]
-        out = out + chr(enc_char(b0 / 4, url))
-        out = out + chr(enc_char((b0 % 4) * 16 + b1 / 16, url))
-        out = out + chr(enc_char((b1 % 16) * 4 + b2 / 64, url))
-        out = out + chr(enc_char(b2 % 64, url))
+        push(cs, enc_char(b0 / 4, url))
+        push(cs, enc_char((b0 % 4) * 16 + b1 / 16, url))
+        push(cs, enc_char((b1 % 16) * 4 + b2 / 64, url))
+        push(cs, enc_char(b2 % 64, url))
         i = i + 3
     rem := n - i
     if rem == 1:
         b0 := s[i]
-        out = out + chr(enc_char(b0 / 4, url))
-        out = out + chr(enc_char((b0 % 4) * 16, url))
+        push(cs, enc_char(b0 / 4, url))
+        push(cs, enc_char((b0 % 4) * 16, url))
         if pad:
-            out = out + "=="
+            push(cs, 61)                       # "=="
+            push(cs, 61)
     elif rem == 2:
         b0 := s[i]
         b1 := s[i + 1]
-        out = out + chr(enc_char(b0 / 4, url))
-        out = out + chr(enc_char((b0 % 4) * 16 + b1 / 16, url))
-        out = out + chr(enc_char((b1 % 16) * 4, url))
+        push(cs, enc_char(b0 / 4, url))
+        push(cs, enc_char((b0 % 4) * 16 + b1 / 16, url))
+        push(cs, enc_char((b1 % 16) * 4, url))
         if pad:
-            out = out + "="
-    return out
+            push(cs, 61)                       # "="
+    return to_str(to_bytes(cs))
 
 # Standard Base64 with `=` padding.
 fn encode(s: string) -> string:
@@ -101,7 +102,12 @@ fn decode(s: string) -> string:
         v := dec_val(s[i])
         if v >= 0:
             push(vals, v)
-    out := ""
+    # Gather the decoded bytes in an int array, then materialize in ONE
+    # to_bytes/to_str pass. to_bytes PRESERVES interior 0x00, so decode is now
+    # exact for arbitrary binary -- the old chr()-per-byte append both cost ~28%
+    # CPU in tycho_str_append AND silently dropped NUL bytes (chr(0) appends
+    # nothing). Byte 0x00 now round-trips.
+    bs := []int
     m := len(vals)
     j := 0
     for j + 4 <= m:                    # full 4-value -> 3-byte groups
@@ -109,20 +115,20 @@ fn decode(s: string) -> string:
         v1 := vals[j + 1]
         v2 := vals[j + 2]
         v3 := vals[j + 3]
-        out = out + chr(v0 * 4 + v1 / 16)
-        out = out + chr((v1 % 16) * 16 + v2 / 4)
-        out = out + chr((v2 % 4) * 64 + v3)
+        push(bs, v0 * 4 + v1 / 16)
+        push(bs, (v1 % 16) * 16 + v2 / 4)
+        push(bs, (v2 % 4) * 64 + v3)
         j = j + 4
     rem := m - j
     if rem == 2:                       # 2 values -> 1 byte
         v0 := vals[j]
         v1 := vals[j + 1]
-        out = out + chr(v0 * 4 + v1 / 16)
+        push(bs, v0 * 4 + v1 / 16)
     elif rem == 3:                     # 3 values -> 2 bytes
         v0 := vals[j]
         v1 := vals[j + 1]
         v2 := vals[j + 2]
-        out = out + chr(v0 * 4 + v1 / 16)
-        out = out + chr((v1 % 16) * 16 + v2 / 4)
+        push(bs, v0 * 4 + v1 / 16)
+        push(bs, (v1 % 16) * 16 + v2 / 4)
     # rem == 1 is malformed (a lone 6-bit value can't make a byte) -> dropped
-    return out
+    return to_str(to_bytes(bs))
