@@ -229,9 +229,17 @@ bignum `gcd` — each to be built on a real need.
   hover on imported members (`strings.trim`) also **shipped** — the LSP resolves
   `import "core:X"` by running `--symbols` on the file in its real directory
   (package-aware; needs `TYCHO_CORELIB` in the server env). signatureHelp,
-  workspace-symbol, and **semanticTokens** are shipped (below). Still open —
-  package-aware *diagnostics* (today the buffer compiles single-file, so a
-  package file's diagnostics are empty rather than wrong — a safe gap).
+  workspace-symbol, and **semanticTokens** are shipped (below).
+  **Package-aware diagnostics — shipped:** a file with a `package` decl is
+  compiled package-aware. The buffer's package directory is mirrored into a clean
+  temp with the live buffer swapped in for the active file (`pkg_mirror`,
+  `tools/lsp.ty`), so same-directory siblings and `core:` imports resolve and the
+  active file's real errors surface — where a lone temp used to scan `/tmp`,
+  fail to resolve siblings, and drop them all. A relative *subdirectory* package
+  import isn't mirrored and degrades to no diagnostics (a headerless compiler
+  error, dropped) rather than a wrong one; sibling-file errors stay on their own
+  file, never the active buffer. Gated by the `pkgdiag` assertion in
+  `scripts/tools_check.sh`.
   **signatureHelp — shipped:** typing inside a call shows the callee's signature
   with the active parameter highlighted. Resolves a local call via the symbol
   index (`sym_describe`) and a `pkg.member` call via the project index
@@ -595,10 +603,10 @@ demand-gated polish, not new language identity.** Foundation before feature brea
 1. **Hold spec + two-compiler parity in lockstep** as any new feature lands. With 1.0
    ratified, the spec is now a contract to keep byte-identical, not just documentation —
    this is the standing foundational task, ahead of any single feature.
-2. **Demand-gated corelib / tooling extras** — package-aware LSP *diagnostics* (1.5, the
-   one real open LSP gap), plus 1.4 leftovers (JPEG/other image formats, `datetime`
-   parsing, an HTTP server, a CLI-arg parser). Each built against a real program, never
-   ahead of one.
+2. **Demand-gated corelib / tooling extras** — genuine 1.4 leftovers (JPEG/other image
+   formats needing `libjpeg`, richer `datetime` formatting beyond ISO, bignum `gcd`).
+   Each built against a real program, never ahead of one. (Package-aware LSP diagnostics
+   — the last standing open LSP gap — shipped; see 1.5.)
 3. **Opportunistic codegen** now that the map-memory gap is closed — inlining hints,
    small-value stack promotion, SIMD in hot corelib paths — all evidence-gated against
    `bench-guard`.

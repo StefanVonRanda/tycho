@@ -201,5 +201,42 @@ print("    completion(strings.) trim+lines=%s   hover(strings.trim)=%s" % (comp_
 sys.exit(0 if comp_ok and hover_ok else 1)
 PY
 
+echo ">>> pkgdiag: package-aware diagnostics (sibling resolution + live buffer)"
+# A package file is compiled package-aware: its dir is mirrored with the live
+# buffer swapped in, so sibling symbols resolve and the active file's real errors
+# surface (a lone temp would scan /tmp and drop them). Needs a real on-disk dir.
+mkdir -p "$TMP/pkgdiag"
+printf 'package main\n\nfn help(x: int) -> int:\n    return x + 1\n' > "$TMP/pkgdiag/help.ty"
+printf 'package main\n\nfn main():\n    println("stub")\n' > "$TMP/pkgdiag/main.ty"
+python3 - "$LSP" "$TMP/pkgdiag/main.ty" "$PWD/corelib" <<'PY' || fail=1
+import subprocess, json, os, sys
+lsp, path, corelib = sys.argv[1], sys.argv[2], sys.argv[3]
+def frame(o):
+    b = json.dumps(o).encode(); return b"Content-Length: %d\r\n\r\n%b" % (len(b), b)
+uri = "file://" + path
+def diags_for(text):
+    msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
+            + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"text":text}}})
+            + frame({"jsonrpc":"2.0","method":"exit"}))
+    p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, TYCHOC="./tychoc", TYCHO_CORELIB=corelib))
+    out = p.stdout.decode(); i = 0; d = None
+    while True:
+        k = out.find("Content-Length: ", i)
+        if k < 0: break
+        j = out.find("\r\n\r\n", k); n = int(out[k+16:j]); body = out[j+4:j+4+n]; i = j+4+n
+        o = json.loads(body)
+        if o.get("method") == "textDocument/publishDiagnostics" and o["params"]["uri"] == uri:
+            d = o["params"]["diagnostics"]
+    return d
+# live buffer uses the sibling help() AND has a real error (undefined zzz)
+bad = diags_for("package main\n\nfn main():\n    z := help(41)\n    println(zzz)\n")
+# clean buffer, still using the sibling -> no diagnostics
+clean = diags_for('package main\n\nfn main():\n    println(str(help(41)))\n')
+bad_ok = bad is not None and len(bad) >= 1 and "zzz" in json.dumps(bad)
+clean_ok = clean == []
+print("    pkg real-err flagged=%s   clean pkg empty=%s" % (bad_ok, clean_ok))
+sys.exit(0 if bad_ok and clean_ok else 1)
+PY
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

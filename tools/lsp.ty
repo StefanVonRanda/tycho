@@ -292,15 +292,78 @@ fn line_len(text: string, ln: int) -> int:
         return len(lines[idx])
     return 0
 
+# directory of a path ("proj/a.ty" -> "proj"; "a.ty" -> ".")
+fn path_dir(p: string) -> string:
+    i := len(p) - 1
+    for i >= 0 and p[i] != 47:                          # 47 = '/'
+        i = i - 1
+    if i < 0:
+        return "."
+    return substr(p, 0, i)
+
+# final path component ("proj/a.ty" -> "a.ty")
+fn path_base(p: string) -> string:
+    i := len(p) - 1
+    for i >= 0 and p[i] != 47:
+        i = i - 1
+    return substr(p, i + 1, len(p))
+
+# single-quote a string for the shell, escaping embedded quotes (paths from a
+# file:// uri are attacker-shaped -- never interpolate them raw into a command).
+fn shq(s: string) -> string:
+    out := "'"
+    for i in range(len(s)):
+        if s[i] == 39:                                  # 39 = single quote
+            out = out + "'\\''"
+        else:
+            out = out + substr(s, i, i + 1)
+    return out + "'"
+
+# does the buffer declare a package? (only the first non-blank/comment line can)
+fn has_package(text: string) -> bool:
+    lines := split(text, "\n")
+    for i in range(len(lines)):
+        s := ltrim(lines[i])
+        if s == "" or starts_with(s, "#"):
+            continue
+        return starts_with(s, "package ")
+    return false
+
+# Mirror the active file's package directory into a clean temp, then overwrite
+# the active file's copy with the LIVE buffer. Returns the buffer's path in the
+# mirror (the header prefix diagnostics are matched against). The mirror root is
+# a hardcoded /tmp constant -- the uri only ever picks the read-only `cp` source,
+# never the `rm -rf` target -- so a stray uri can't reach a real source tree.
+fn pkg_mirror(path: string, text: string) -> string:
+    mir := "/tmp/.tycholsp_pkg"
+    dir := path_dir(path)
+    base := path_base(path)
+    tycho_run("rm -rf " + shq(mir) + " && mkdir -p " + shq(mir) + " && cp " + shq(dir) + "/*.ty " + shq(mir) + "/ 2>/dev/null; true")
+    active := mir + "/" + base
+    write_file(active, text)                            # live buffer wins over the on-disk copy
+    return active
+
 # ---- diagnostics: compile the buffer, parse errors, publish -----------------
-# Write the buffer to a temp, run the compiler (front-end only, no cc), and turn
-# each `path:line: error: msg` header line of its stderr into an LSP diagnostic
-# (full-line range, 0-based). Always publishes -- an empty array clears stale
-# errors once the buffer is clean again.
+# Compile the buffer (front-end only, no cc) and turn each `path:line: error: msg`
+# header line of its stderr into an LSP diagnostic (full-line range, 0-based).
+# Always publishes -- an empty array clears stale errors once the buffer is clean.
+#
+# A file with a `package` decl must be compiled package-aware: the compiler scans
+# the file's directory for its sibling package files, so a lone temp both fails to
+# resolve those siblings AND (in /tmp) scans foreign .ty files -- its real errors
+# never surface. So for package files we mirror the package dir with the live
+# buffer swapped in (pkg_mirror). Same-directory siblings and `core:` imports then
+# resolve; a relative *subdirectory* package import isn't mirrored and degrades to
+# no diagnostics (a headerless "cannot open package directory" error, dropped
+# below) -- never a wrong one. Non-package files keep the fast single-file path.
 fn diagnose(uri: string, text: string, cc: string):
-    tmp := "/tmp/.tycholsp_doc.ty"
     errf := "/tmp/.tycholsp_err.txt"
-    write_file(tmp, text)
+    path := uri_to_path(uri)
+    tmp := "/tmp/.tycholsp_doc.ty"
+    if has_package(text) and path != "":
+        tmp = pkg_mirror(path, text)
+    else:
+        write_file(tmp, text)
     tycho_run(cc + " " + tmp + " --emit-c -o /tmp/.tycholsp_out > /dev/null 2> " + errf)
     errtext := read_file(errf)
     diags := ""
