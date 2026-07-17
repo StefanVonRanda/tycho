@@ -74,11 +74,20 @@ spec-level, no memory unsafety).
   Fixes wired `scalar_coercion_bad` at SAssign / check_place_assign / check_struct_ctor /
   the map-key write, and `nt_check_e` at the array-element loop. Locked by
   `tests/reject/{scalar_coerce_reassign,scalar_coerce_place,scalar_coerce_struct_field,scalar_coerce_map_key,newtype_array_elem}.ty`.
-  - **Surfaced but NOT fixed (separate, pre-existing, OVER-strict — fail-closed, safe):**
-    `for k in keys(m)` over a newtype-keyed map then `m[k]` — tychoc0 rejects "map key
-    identity differs" (the loop key is newtype-erased to base; `check_mkey`'s `nt_check`
-    rejects it) where tychoc accepts. Present on HEAD before this sweep; tychoc0 is
-    over-strict here, not unsound. Tracked as open follow-up.
+  - **Newtype element/value identity survives a binding — FIXED (follow-up).** The sweep
+    surfaced a pre-existing OVER-strict divergence (tychoc0 rejects valid code, fail-closed):
+    `for k in keys(m)` over a newtype-keyed map then `m[k]`, and more generally `for x in
+    [Id]` / `x := a[i]` / `x := m[key]` for a newtype element/value — tychoc0 rejected a
+    later `m[k]` or newtype-typed use as "a plain int" where tychoc accepts. Root cause:
+    `type_of(EIndex)` `resolve_nt`-erased a newtype array-element / map-value to its base, so
+    the `SDecl` binding stored the base and the value's identity was lost (direct use still
+    worked via `nt_skin_of` off the container, but a bound variable has no container to
+    recover from). Fix: `type_of(EIndex)` keeps a newtype element/value's identity (returns
+    `Id`, not the erased base), so the binding stores it and every pass agrees. `nt_check`
+    reads identity only via `nt_skin_of`, so nothing double-counts. Matches tychoc across a
+    broad battery (str/to_under/compare/nested/Some-payload/struct-field/map-key-from-array);
+    raw-base-key / float-key / array-elem-mismatch still reject. Locked by
+    `tests/newtype_elem_identity.ty`. fixpoint B==C, corelib 3-way green.
 
 ## Confirmed inconsistencies
 

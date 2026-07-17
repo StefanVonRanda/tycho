@@ -1,0 +1,37 @@
+# A value read out of a newtype-typed array or map element keeps its newtype identity
+# when bound to a variable -- `for x in [Id]`, `x := a[i]`, `for k in keys(m)` over a
+# newtype-keyed map, `x := m[key]` for a newtype value. tychoc0 used to erase the identity
+# at the binding (EIndex read resolve_nt'd to base), so a later `m[k]` / newtype-arg use
+# rejected the value as "a plain int"; tychoc keeps the identity. Now they agree.
+
+type Id = int
+type Name = string
+
+fn use_id(i: Id) -> int:
+    return to_under(i) * 2
+
+fn main():
+    # for x in [Id]: the element stays Id (usable where Id is expected)
+    ids : [Id] = [Id(3), Id(4)]
+    total := 0
+    for x in ids:
+        total = total + use_id(x)
+    println("foreach total " + str(total))
+
+    # x := a[i] binding keeps Id
+    first := ids[0]
+    println("first " + str(use_id(first)))
+
+    # keys() over a newtype-KEYED map, then read + in-place update via the loop key
+    scores : [Id: int] = []
+    scores[Id(1)] = 10
+    scores[Id(2)] = 20
+    for k in keys(scores):
+        scores[k] = scores[k] + 1
+    println("scores sum " + str(scores.get(Id(1), 0) + scores.get(Id(2), 0)))
+
+    # newtype VALUE read out of a map keeps identity
+    names : [int: Name] = []
+    names[0] = Name("ada")
+    nm := names[0]
+    println("name len " + str(len(to_under(nm))))

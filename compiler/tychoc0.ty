@@ -4695,8 +4695,14 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             if is_soa(bt):
                 return soa_struct(bt)             # soa element -> the struct
             if is_map(bt):                        # m[k] place -> the value type (#2)
-                return resolve_nt(dc, ctx, map_val(bt))
-            return resolve_nt(dc, ctx, elem_ty(bt))   # else array element type (dynamic [T] or fixed [N]T, 1.6; resolved like a var read, so a [Newtype] element is consistently its base in queries; identity is recovered separately via nt_skin_of off the container's stored type)
+                mv := map_val(bt)                  # keep a NEWTYPE value's identity so a bound `x := m[k]` stays the newtype (matches tychoc); a plain value still resolves to its base
+                if is_newtype(dc, ctx, mv):
+                    return mv
+                return resolve_nt(dc, ctx, mv)
+            eln := elem_ty(bt)                     # array element type (dynamic [T] or fixed [N]T, 1.6)
+            if is_newtype(dc, ctx, eln):           # keep a NEWTYPE element's identity so `for x in [Id]` / `x := a[i]` stays Id (matches tychoc); was resolve_nt-erased, which dropped identity at the binding and made a later m[k]/arg check reject the value as a plain base
+                return eln
+            return resolve_nt(dc, ctx, eln)
         EArrLit(elems, _ft, _el):
             if _ft != "":                             # a fixed literal (1.6) tagged by the gfix pass -> its "[N]T" type
                 return _ft
