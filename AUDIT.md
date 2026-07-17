@@ -89,6 +89,23 @@ spec-level, no memory unsafety).
     raw-base-key / float-key / array-elem-mismatch still reject. Locked by
     `tests/newtype_elem_identity.ty`. fixpoint B==C, corelib 3-way green.
 
+- **inout / sink argument type-checks (2026-07-17) — 4 fail-open gaps FIXED.** Extending
+  the sweep to the inout/sink and generic-instantiation classes: generics were clean, but
+  `check_call_args` type-checked only plain by-value params. An **inout** param ran ONLY
+  the `is_eaddr` "pass &variable" check — never a type check — and a **sink** param was
+  checked NOWHERE. So `f(&y)` with `y:int` into `inout Id` (and `Id` into `inout int`),
+  `f(2.5)` into `sink int`, and `f(y:int)` into `sink Id` all fail-opened in tychoc0 where
+  tychoc rejects. (Scalar float/string through inout already fail-closed via a downstream
+  cc error; only the newtype-inout and sink cases were true fail-opens.) Fix: the inout
+  branch now runs `nt_check` against `base_ty(pp[k])` (the `&place`'s identity must match;
+  `nt_skin_of(EAddr)` recurses to the inner), and the sink branch runs the full
+  `nt_check` + `check_sum_pos` + `scalar_coercion_bad` like a normal by-value arg. Locked by
+  `tests/reject/{inout_arg_newtype,sink_arg_scalar,sink_arg_newtype}.ty`. fixpoint B==C,
+  corelib 3-way green. Broader probe (inout composite / sink Option-payload / inout
+  exclusivity `swap(&x,&x)` / explicit-typearg / nested + newtype generics) found no further
+  divergence — the parity sweep is closed across sum-payload, scalar-coercion, newtype-
+  identity, inout/sink, and generic-instantiation.
+
 ## Confirmed inconsistencies
 
 ### C1. [HIGH] Escaping closure capturing a bare map is a use-after-free in tychoc0 (segfault / silently wrong value); tychoc is correct

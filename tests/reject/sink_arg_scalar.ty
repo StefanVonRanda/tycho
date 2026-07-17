@@ -1,0 +1,9 @@
+# A sink (by-value-owned) argument must be type-checked like a normal by-value argument.
+# The param is `sink int` but 2.5 (a float) is passed -- tychoc0 checked sink params
+# NOWHERE, so it silently coerced the float where tychoc rejects. Both compilers must
+# reject. (sink scalar-coercion check at the call-argument position.)
+fn f(x: sink int) -> int:
+    return x
+
+fn main():
+    println(str(f(2.5)))

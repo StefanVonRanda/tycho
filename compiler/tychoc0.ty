@@ -10159,13 +10159,23 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
     pp := dc.sigs[si].ptypes
     k := 0
     for k < len(args) and k < len(pp):
-        if is_inout(pp[k]) and not is_eaddr(args[k]):
-            die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is inout; pass it as '&variable'")
-        elif not is_inout(pp[k]) and not is_sink(pp[k]):
-            nt_check(dc, ctx, pp[k], args[k], names, types, "argument " + str(k + 1) + " of '" + nm + "'", el)
+        aname := "argument " + str(k + 1) + " of '" + nm + "'"
+        if is_inout(pp[k]):
+            if not is_eaddr(args[k]):
+                die_at(dc, el, aname + " is inout; pass it as '&variable'")
+            else:
+                nt_check(dc, ctx, base_ty(pp[k]), args[k], names, types, aname, el)   # inout: the &place's newtype identity must match the param's base type (was unchecked -- fail-open)
+        elif is_sink(pp[k]):
+            sw := base_ty(pp[k])                                                      # sink is by-value-owned: check the value like a normal arg (was NOT checked at all -- fail-open on scalar coercion / newtype / sum mismatch)
+            nt_check(dc, ctx, sw, args[k], names, types, aname, el)
+            check_sum_pos(dc, ctx, sw, args[k], names, types, el)
+            if scalar_coercion_bad(dc, ctx, sw, args[k], names, types):
+                die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + sw)
+        else:
+            nt_check(dc, ctx, pp[k], args[k], names, types, aname, el)
             check_sum_pos(dc, ctx, pp[k], args[k], names, types, el)   # a Some/Ok/Err argument payload must match the parameter's Option/Result type
             if scalar_coercion_bad(dc, ctx, pp[k], args[k], names, types):   # AUDIT: no silent scalar coercion of an argument
-                die_at(dc, el, "argument " + str(k + 1) + " of '" + nm + "' is " + type_of(args[k], names, types, dc, ctx) + ", expected " + pp[k])
+                die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + pp[k])
         k = k + 1
     # exclusivity (Law of Exclusivity): the same variable may not be passed to two
     # inout params of one call -- overlapping mutable access breaks the x = f(x)

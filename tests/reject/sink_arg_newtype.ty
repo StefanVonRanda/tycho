@@ -1,0 +1,12 @@
+# A sink argument must also match the parameter's newtype identity. The param is
+# `sink Id` but a raw `int` is passed -- tychoc0 skipped all sink-argument checks, so it
+# fail-opened where tychoc rejects. Both compilers must reject. (sink newtype-identity
+# check at the call-argument position.)
+type Id = int
+
+fn f(x: sink Id) -> int:
+    return to_under(x)
+
+fn main():
+    y : int = 5
+    println(str(f(y)))
