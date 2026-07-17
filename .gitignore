@@ -48,6 +48,7 @@ gmon.out
 # tracked; everything else in examples/ is reproducible with `make` / `./tychoc`.
 /examples/*
 !/examples/*.ty
+!/examples/README.md
 # the sqlite FFI example is a multi-file dir (shim + harness); track it (its own
 # .gitignore drops the build artifacts, the root *.out exception keeps the golden).
 !/examples/sqlite
