@@ -40,7 +40,7 @@
 > seeded keyed hashing + insertion-order store this must preserve), and the
 > `bench/trie` / `bench/lru` RESULTS. Supersedes the "typed sub-pools" idea for
 > the memory story (that was rejected on evidence — it buys locality, not storage;
-> see [ROADMAP](../../ROADMAP.md) cross-cutting axes). This is the real lever.
+> see [ROADMAP](../../ROADMAP.md). This is the real lever.
 
 ## 1. The problem
 

@@ -2,7 +2,7 @@
 
 > **Status: ratified — Tycho 1.0 (2026-07-13).** The formal specification of the
 > Tycho language: the normative contract a conforming implementation must satisfy
-> ([ROADMAP §1.8](../../ROADMAP.md)).
+> ([the roadmap](../../ROADMAP.md)).
 >
 > **Every chapter (1–33) and appendix (A–H) is cross-checked against the reference
 > compiler `src/tychoc.c`**, one adversarial audit per chapter with each finding

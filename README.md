@@ -28,6 +28,16 @@ fn main():
 Python- and Nim-inspired syntax; Go- and Odin-like semantics; the value-semantics
 core comes from **[Hylo](https://www.hylo-lang.org/)**.
 
+It is a proof-of-concept, not a product — but a heavily-checked one, and that is
+the part most languages this young skip. Tycho has two compilers — a reference one
+written in C, and a second one *written in Tycho* that compiles itself. A fixpoint check
+holds the self-hosted compiler to reproducing its own emitted C **byte-for-byte**
+and to matching the reference's output on every test; a differential fuzzer runs
+both compilers on random programs under ASan and UBSan; every example is built
+twice — native and sanitized — and checked against a committed golden. There is no
+cloud CI to take on faith — `make ci` runs the whole gate locally. So it is
+experimental in *scope*, not in rigor.
+
 ## The thesis
 
 The arena is an old idea, and a fast one: a bump allocator hands out memory by
@@ -228,7 +238,7 @@ so that half of the sanitizer build is skipped there (the rest still runs).
 - **Design notes** (`docs/*.md`) — the rationale behind each subsystem (memory
   model, concurrency, FFI, generics, maps). The reference says *what*; these say
   *why*.
-- **[STATUS.md](STATUS.md)** — architecture, verification gates, what's shipped.
+- **[docs/architecture.md](docs/architecture.md)** — how it's built, what each verification gate proves, what's shipped, and the decided non-goals.
   Start here to evaluate or contribute.
 
 ## License

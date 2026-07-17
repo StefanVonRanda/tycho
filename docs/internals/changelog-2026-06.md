@@ -2,7 +2,7 @@
 
 > **Historical record**, not a TODO and not current-state reference. Every entry below is
 > CLOSED. For the CURRENT project state — architecture, the gate map, shipped capabilities,
-> decided non-goals, and what's actually open — see [`STATUS.md`](../../STATUS.md) at the repo
+> decided non-goals, and what's actually open — see [`architecture.md`](../architecture.md) at the repo
 > root. This file is kept for its "what was wrong / how it was fixed / how it was verified"
 > detail, which is useful if a related area ever regresses.
 >

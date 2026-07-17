@@ -42,7 +42,7 @@ reproduces its own emitted C byte-for-byte (the *fixpoint*), that both
 transpilers produce identical program output across the whole test suite, and
 that both make identical accept/reject decisions (differential fuzzing plus the
 `typeparity`/`eqparity`/`unaryparity`/`parforparity` lanes). See
-[STATUS.md](../../STATUS.md).
+[architecture.md](../architecture.md).
 
 This specification is written *from* that contract. Every normative clause is
 required to be verifiable against both implementations. Where this document and
