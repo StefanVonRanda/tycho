@@ -25,9 +25,10 @@ fn main():
     println(greet(name))
 ```
 
-It is a proof-of-concept, not a product — but a heavily-checked one, and that's the
-part most languages this young skip. There are two compilers — a reference in C and a
-second one *written in Tycho* that compiles itself — and `make fixpoint` holds the
+It's a research project — an experiment testing that one idea — but a heavily-checked
+one, and that's the part most experiments this young skip. There are two compilers — a
+reference in C and a second one *written in Tycho* that compiles itself — and `make
+fixpoint` holds the
 self-hosted one to reproducing its own emitted C **byte-for-byte** and to matching the
 reference's output on every test. A differential fuzzer runs both on random programs
 under ASan/UBSan; every example is built twice, native and sanitized, and checked against
