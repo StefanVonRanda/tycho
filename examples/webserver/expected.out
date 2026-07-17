@@ -1,0 +1,113 @@
+### GET / -> 200
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Tycho</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>Tycho</h1>
+<p>Tycho is a small systems language with <strong>value semantics</strong> and an <strong>implicit
+arena</strong> memory model — no garbage collector, no manual <code>free</code>, and memory that's
+competitive with C.</p>
+<ul>
+<li>Read the <a href="/blog">blog</a> for notes and benchmarks.</li>
+<li>Browse the <a href="/wiki/getting-started">wiki</a> to get started.</li>
+</ul>
+<blockquote>
+<p>This whole site is served by a web server <em>written in Tycho</em>, rendering
+Markdown through <code>core:markdown</code>.</p>
+</blockquote>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /blog -> 200
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Blog</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>Blog</h1>
+<ul>
+<li>2026-07-16 — <a href="/blog/streaming-io">Streaming I/O without a GC</a></li>
+<li>2026-07-01 — <a href="/blog/hello-tycho">Hello, Tycho</a></li>
+</ul>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /blog/hello-tycho -> 200
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hello, Tycho</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>Hello, Tycho</h1>
+<p>This is the first post. Tycho compiles to C and self-hosts: a second compiler
+written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
+<pre><code>fn main():
+    println(&quot;hello, world&quot;)
+</code></pre>
+<p>Value semantics mean you pass a struct and get a copy — no aliasing, no
+<code>free</code>, and the arena reclaims it when the scope ends.</p>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /wiki/getting-started -> 200
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Getting Started</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>Getting Started</h1>
+<p>Build the compiler and run an example:</p>
+<pre><code>make
+./tychoc examples/webserver/main.ty -o server
+./server --serve
+</code></pre>
+<p>Then open <code>http://127.0.0.1:8080/</code>.</p>
+<h2>Next steps</h2>
+<ul>
+<li>Read the <a href="/blog/hello-tycho">Hello, Tycho</a> post.</li>
+<li>Skim the language reference in <code>docs/</code>.</li>
+</ul>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /blog/../secret -> 404
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>404 Not Found</h1>
+<p>No such page.</p>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /blog/missing -> 404
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>404 Not Found</h1>
+<p>No such page.</p>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+
+### GET /nope -> 404
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<body>
+<nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
+<main>
+<h1>404 Not Found</h1>
+<p>No such page.</p>
+</main>
+<footer>Served by Tycho.</footer>
+</body></html>
+

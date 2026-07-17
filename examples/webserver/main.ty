@@ -1,0 +1,174 @@
+package main
+
+# A web server, written in Tycho, that serves a small site -- a landing page, a
+# Markdown blog (index + posts), and a Markdown wiki -- over core:httpd + core:net,
+# rendering content through core:markdown inside a shared HTML layout. This is the
+# website dogfood: it exercises the HTTP server plumbing, the new markdown renderer
+# (its second consumer, after examples/site), and io/path/sort together.
+#
+#   ./server --serve            # listen on 127.0.0.1:8080
+#   ./server                    # self-test: dispatch fixed routes and print them
+#                               #  (deterministic -> golden-locked; see run.sh)
+#
+# Routing is a pure `route(req) -> Response`; --serve wraps it in a net accept
+# loop, the self-test wraps it in a fixed-path loop -- so the interesting logic is
+# transport-independent and testable without a live socket.
+
+import "core:httpd"
+import "core:net"
+import "core:io"
+import "core:strings"
+import "core:sort"
+import "core:markdown"
+
+const ROOT = "examples/webserver/content"
+
+struct Page:
+    ok: bool
+    title: string
+    date: string
+    body_html: string
+
+# A URL path segment used to build a filename must be alnum+dash only -- reject
+# anything else (Rule 5: blocks `..`, `/`, and other path-traversal payloads).
+fn safe_slug(s: string) -> bool:
+    if s == "" or len(s) > 64:
+        return false
+    i := 0
+    for i < len(s):
+        c := s[i]
+        ok := (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 45   # a-z 0-9 -
+        if not ok:
+            return false
+        i = i + 1
+    return true
+
+# Read `<ROOT>/<rel>`, peel an optional leading `date: ...` frontmatter line, take
+# the title from the first `# ` heading, and render the body Markdown to HTML.
+fn load_page(rel: string) -> Page:
+    raw := io.read(ROOT + "/" + rel)
+    if raw == "":
+        return Page(false, "", "", "")
+    lines := strings.lines(raw)
+    date := ""
+    start := 0
+    if len(lines) > 0 and strings.starts_with(lines[0], "date: "):
+        date = strings.trim(substr(lines[0], 6, len(lines[0])))
+        start = 1
+    title := ""
+    have_title := false
+    body := ""
+    first := true
+    i := start
+    for i < len(lines):
+        ln := lines[i]
+        if not have_title and strings.starts_with(ln, "# "):
+            title = strings.trim(substr(ln, 2, len(ln)))
+            have_title = true
+        if not first:
+            body = body + "\n"
+        body = body + ln
+        first = false
+        i = i + 1
+    return Page(true, title, date, markdown.render(body))
+
+fn layout(title: string, body: string) -> string:
+    t := title
+    if t == "":
+        t = "Tycho"
+    return "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>" + markdown.esc(t) + "</title></head>\n<body>\n<nav><a href=\"/\">Home</a> &middot; <a href=\"/blog\">Blog</a> &middot; <a href=\"/wiki/getting-started\">Wiki</a></nav>\n<main>\n" + body + "</main>\n<footer>Served by Tycho.</footer>\n</body></html>\n"
+
+fn html(status: int, body: string) -> httpd.Response:
+    return httpd.with_header(httpd.response(status, body), "Content-Type", "text/html; charset=utf-8")
+
+fn not_found() -> httpd.Response:
+    return html(404, layout("Not Found", "<h1>404 Not Found</h1>\n<p>No such page.</p>\n"))
+
+fn page_response(pg: Page) -> httpd.Response:
+    return html(200, layout(pg.title, pg.body_html))
+
+# The blog index: list every content/blog/*.md, newest first (ISO dates sort
+# lexically), as a Markdown list -- then render it (dogfooding markdown again).
+fn blog_index() -> string:
+    files := io.list(ROOT + "/blog")
+    slugs := []string
+    dates := []string
+    titles := []string
+    for f in files:
+        if not strings.ends_with(f, ".md"):
+            continue
+        pg := load_page("blog/" + f)
+        push(slugs, substr(f, 0, len(f) - 3))     # strip ".md"
+        push(dates, pg.date)
+        push(titles, pg.title)
+    ord := sort.argsort_desc(dates)
+    md := "# Blog\n\n"
+    k := 0
+    for k in range(len(ord)):
+        j := ord[k]
+        md = md + "- " + dates[j] + " — [" + titles[j] + "](/blog/" + slugs[j] + ")\n"
+    return markdown.render(md)
+
+fn route(req: httpd.Request) -> httpd.Response:
+    if req.method != "GET":
+        return html(405, layout("Method Not Allowed", "<h1>405</h1>\n"))
+    p := req.path
+    if p == "/" or p == "/index.html":
+        return page_response(load_page("home.md"))
+    if p == "/blog" or p == "/blog/":
+        return html(200, layout("Blog", blog_index()))
+    if strings.starts_with(p, "/blog/"):
+        slug := substr(p, 6, len(p))
+        if not safe_slug(slug):
+            return not_found()
+        pg := load_page("blog/" + slug + ".md")
+        if not pg.ok:
+            return not_found()
+        return page_response(pg)
+    if strings.starts_with(p, "/wiki/"):
+        page := substr(p, 6, len(p))
+        if not safe_slug(page):
+            return not_found()
+        pg := load_page("wiki/" + page + ".md")
+        if not pg.ok:
+            return not_found()
+        return page_response(pg)
+    return not_found()
+
+fn main():
+    raw := args()
+    serve := false
+    i := 0
+    for i in range(len(raw)):
+        if raw[i] == "--serve":
+            serve = true
+
+    if serve:
+        port := 8080
+        pe := getenv("PORT")
+        if pe != "":
+            port = strings.parse_int(pe)
+        srv := net.listen("127.0.0.1", port)
+        if srv < 0:
+            eprint("webserver: cannot bind 127.0.0.1:" + str(port) + " (in use?)\n")
+            return
+        eprint("webserver: serving http://127.0.0.1:" + str(port) + "/\n")
+        for true:
+            conn := net.accept(srv)
+            if conn < 0:
+                continue
+            req := httpd.read_request(conn)
+            httpd.write_response(conn, route(req))
+            net.close_fd(conn)
+    else:
+        # Deterministic self-test: dispatch a fixed route list through the same
+        # handler and print status + body. Golden-locked (no socket needed).
+        cr := httpd.crlf()
+        paths := ["/", "/blog", "/blog/hello-tycho", "/wiki/getting-started", "/blog/../secret", "/blog/missing", "/nope"]
+        j := 0
+        for j in range(len(paths)):
+            req := httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr)
+            resp := route(req)
+            println("### GET " + paths[j] + " -> " + str(resp.status))
+            print(resp.body)
+            println("")
