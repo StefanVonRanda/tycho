@@ -47,8 +47,9 @@
 
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
+  html{overflow-x:hidden}
   body{
-    margin:0; background:var(--bg); color:var(--fg);
+    margin:0; background:var(--bg); color:var(--fg); overflow-x:hidden;
     font-family:"Berkeley Mono","JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
     font-size:15px; line-height:1.6; letter-spacing:.1px;
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
@@ -75,9 +76,9 @@
     margin:0 -20px 0; padding:11px 20px; background:color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter:blur(6px); border-bottom:1px solid var(--line);
   }
-  .bar .brand{color:var(--fg-bright); font-weight:600; letter-spacing:.5px}
-  .bar .brand b{color:var(--accent); font-weight:600}
-  .bar nav{margin-left:auto; display:flex; gap:18px; font-size:13.5px}
+  .bar .brand{display:flex; align-items:center; gap:9px; color:var(--fg-bright); font-weight:600; letter-spacing:.5px; text-decoration:none; border:0}
+  .bar .brand .logo{width:22px; height:22px; color:var(--accent); flex:0 0 auto}
+  .bar nav{margin-left:auto; display:flex; align-items:center; gap:18px; font-size:13.5px}
   .bar nav a{color:var(--dim)} .bar nav a:hover{color:var(--fg)}
   .themebtn{background:none; border:1px solid var(--line); color:var(--dim); cursor:pointer;
     font:inherit; font-size:12px; padding:2px 9px; border-radius:3px; letter-spacing:.3px}
@@ -171,6 +172,21 @@
   .rise{opacity:0; transform:translateY(6px); animation:rise .5s ease forwards}
   .d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.23s}.d4{animation-delay:.32s}.d5{animation-delay:.41s}
   @keyframes rise{to{opacity:1; transform:none}}
+  @media (max-width:640px){
+    .bar{gap:10px; padding:10px 18px}
+    .bar nav{gap:16px}
+    .bar nav a[href^="#"]{display:none}   /* hide in-page anchors on phones; keep github + theme */
+    .wrap{padding:0 18px 76px}
+    header.hero{padding:44px 0 8px}
+    h1{font-size:31px; line-height:1.1; letter-spacing:-.3px}
+    h1 br{display:none}                   /* let it wrap naturally at phone width */
+    h2{font-size:19px}
+    section{padding:28px 0 6px; margin-top:30px}
+    .lede{font-size:15.5px}
+    pre{font-size:12.5px; padding:14px 15px}
+    .ev .row{flex-direction:column; gap:5px}
+    .ev .row .tag{width:auto}
+  }
   @media (prefers-reduced-motion:reduce){
     .rise{animation:none; opacity:1; transform:none}
     .cur{animation:none}
@@ -180,7 +196,16 @@
 
 <div class="wrap">
   <div class="bar">
-    <span class="brand"><b>◆</b> tycho</span>
+    <a class="brand" href="#top" aria-label="Tycho — top">
+      <svg class="logo" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
+        <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
+        <circle cx="143.3" cy="75" r="16"/>
+        <g fill="currentColor" stroke="none">
+          <circle cx="100" cy="100" r="7"/><circle cx="143.3" cy="75" r="5.5"/><circle cx="143.3" cy="91" r="3.4"/><circle cx="35.9" cy="137" r="4"/>
+        </g>
+      </svg>
+      <span>tycho</span>
+    </a>
     <nav>
       <a href="#idea">idea</a>
       <a href="#evidence">evidence</a>
@@ -192,12 +217,14 @@
 
   <header class="hero">
     <p class="eyebrow rise d1"><span class="tick">◇</span> an experimental systems language · transpiles to C</p>
-    <h1 class="rise d2">Implicit hierarchical arenas,<br>under <span class="amp">value semantics</span>.<span class="cur" aria-hidden="true"></span></h1>
+    <h1 class="rise d2">Automatic memory management —<br>no garbage collector, no manual <span class="amp">free</span>.<span class="cur" aria-hidden="true"></span></h1>
     <p class="lede rise d3">
-      Tycho is a research project built to test one idea. Each scope owns a memory arena,
-      freed when the scope exits; with no reference type in the language, the compiler sees
-      every value's lifetime from the syntax and inserts every allocation and free itself.
-      <span class="sub">Automatic memory management from lexical scope, not a runtime — and no manual `free`.</span>
+      Tycho is a research project testing one idea: <b>implicit hierarchical arenas under value
+      semantics.</b> Each scope owns a memory arena, freed when the scope exits. Because the
+      language has no reference type, the compiler can see every value's lifetime from the
+      syntax alone, and inserts every allocation and free for you — the memory management
+      comes from lexical scope, not from a runtime.
+      <span class="sub">It transpiles to C, and builds with a plain <code>cc</code> and <code>make</code>.</span>
     </p>
     <pre class="rise d4"><code><span class="k">fn</span> <span class="fn">greet</span>(name: <span class="k">string</span>) -> <span class="k">string</span>:
     <span class="k">return</span> <span class="s">"hello "</span> + name
@@ -212,58 +239,41 @@
   </header>
 
   <section id="idea">
-    <p class="marker">the idea</p>
-    <h2>Lifetimes you can see in the source.</h2>
+    <p class="marker">how it works</p>
+    <h2>Every scope owns a memory arena.</h2>
     <p>
-      The arena is an old, fast idea — bump-allocate, free everything at once when the scope
-      ends. The catch was always knowing <em>when</em> a value may outlive its arena; with
-      pointers, that needs whole-program alias analysis.
+      An arena is an old, fast idea: hand out memory by bumping a pointer, then free it all at
+      once when the scope ends. The catch has always been knowing <em>when</em> a value is
+      allowed to outlive its arena — with pointers, answering that needs whole-program alias
+      analysis, and that's the hard part.
     </p>
     <p>
-      Value semantics removes the question. There is no reference type: <span class="inl">b := a</span>
-      copies, and you cannot store or return a pointer into another value's memory. So a value
-      can leave a scope in exactly two ways, both visible in the source:
+      Value semantics removes the question. Tycho has no reference type: <span class="inl">b := a</span>
+      copies, and you can't store or return a pointer into another value's memory. So a value can
+      leave a scope in only two ways, and both are right there in the source:
     </p>
     <div class="flow">
-      <div><span class="arr">↓ down</span><small>passed as an argument to a callee.</small></div>
-      <div><span class="arr">↑ up</span><small>returned to the caller.</small></div>
+      <div><span class="arr">↓ down</span><small>passed as an argument into a function you call.</small></div>
+      <div><span class="arr">↑ up</span><small>returned back out to your caller.</small></div>
     </div>
-    <p class="muted">
-      That's the whole thesis — the compiler places every allocation from the syntax, with no
-      whole-program analysis and no annotations to write. Two optimizations keep it fast, both
-      sound <em>because</em> the value is provably un-aliased: a returned value is built in the
-      caller's arena (so <span class="inl">return</span> is a move, not a copy), and
-      <span class="inl">acc = acc + x</span> in a loop grows one buffer in place — the textbook
-      O(n²) string build becomes O(n). Neither is visible in your code.
-    </p>
-  </section>
-
-  <section id="evidence">
-    <p class="marker">the evidence</p>
-    <h2>Experimental in scope, not in rigor.</h2>
     <p>
-      It's a research project — an experiment testing one idea — but a heavily-checked one,
-      which is the part most experiments this young skip.
+      That's the whole thesis. With only those two exits, the compiler places every allocation
+      straight from the syntax — no whole-program analysis, and no lifetime annotations for you
+      to write.
     </p>
-    <div class="ev">
-      <div class="row"><span class="tag">self-host</span><span class="txt">Two compilers: a reference in C, and a second one <b>written in Tycho that compiles itself</b> on the same implicit arenas it emits. <span class="cmd">make fixpoint</span> holds it to reproducing its own emitted C <b>byte-for-byte</b> and matching the reference on every test.</span></div>
-      <div class="row"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden.</span></div>
-      <div class="row"><span class="tag">local</span><span class="txt">No cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your machine.</span></div>
-    </div>
-
     <p class="muted">
-      Where the model helps and where it costs are both measured — as machine-specific ratios,
-      with the workloads that produce them — in the
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes</a>.
-      Pointer-shaped data (graphs, trees) is where value semantics is least free; the docs are
-      honest about that, not just about the wins.
+      Two optimizations keep value semantics from being slow, both sound <em>because</em> a value
+      is never aliased. A value you build and return is allocated straight into the caller's arena,
+      so <span class="inl">return</span> moves it instead of copying. And
+      <span class="inl">acc = acc + x</span> in a loop grows one buffer in place — the textbook
+      O(n²) string build becomes O(n). Neither shows up in your code.
     </p>
   </section>
 
   <section id="lang">
     <p class="marker">the language</p>
-    <h2>Small, Go/Odin-shaped, honest about what it is.</h2>
-    <p class="muted">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo</a>.</p>
+    <h2>What the language looks like.</h2>
+    <p class="muted">The syntax is Python/Nim-flavored and the semantics are Go/Odin-like; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo</a>. What's in the box:</p>
     <ul class="feat">
       <li><b>Value semantics</b> <span>— no aliasing, no GC</span></li>
       <li><b>Generics</b> <span>— <span class="inl">$T</span>, monomorphized</span></li>
@@ -274,6 +284,28 @@
       <li><b>FFI to C</b> <span>— extern fn, handles, bytes</span></li>
       <li><b>Packages + corelib</b> <span>— import, 36 modules</span></li>
     </ul>
+  </section>
+
+  <section id="evidence">
+    <p class="marker">how it's checked</p>
+    <h2>An experiment, but a heavily-checked one.</h2>
+    <p>
+      Tycho is a research project — an experiment testing one idea — but heavily checked, which is
+      the part most experiments this young skip. It's experimental in <em>scope</em>, not in rigor.
+    </p>
+    <div class="ev">
+      <div class="row"><span class="tag">self-host</span><span class="txt">There are two compilers: a reference written in C, and a second one <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits. <span class="cmd">make fixpoint</span> holds it to reproducing its own emitted C <b>byte-for-byte</b>, and to matching the C reference on every test.</span></div>
+      <div class="row"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden output.</span></div>
+      <div class="row"><span class="tag">local</span><span class="txt">There's no cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your own machine.</span></div>
+    </div>
+
+    <p class="muted">
+      Where the model helps and where it costs are both measured — as machine-specific ratios,
+      with the workloads that produce them — in the
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes</a>.
+      Pointer-shaped data like graphs and trees is where value semantics is least free, and the
+      docs are honest about that, not just about the wins.
+    </p>
   </section>
 
   <section id="start">
