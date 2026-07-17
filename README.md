@@ -25,18 +25,33 @@ fn main():
     println(greet(name))
 ```
 
-Python- and Nim-inspired syntax; Go- and Odin-like semantics; the value-semantics
-core comes from **[Hylo](https://www.hylo-lang.org/)**.
+It is a proof-of-concept, not a product — but a heavily-checked one, and that's the
+part most languages this young skip. There are two compilers — a reference in C and a
+second one *written in Tycho* that compiles itself — and `make fixpoint` holds the
+self-hosted one to reproducing its own emitted C **byte-for-byte** and to matching the
+reference's output on every test. A differential fuzzer runs both on random programs
+under ASan/UBSan; every example is built twice, native and sanitized, and checked against
+a committed golden. No cloud CI to take on faith — `make ci` runs the whole gate locally.
+Experimental in *scope*, not in rigor.
 
-It is a proof-of-concept, not a product — but a heavily-checked one, and that is
-the part most languages this young skip. Tycho has two compilers — a reference one
-written in C, and a second one *written in Tycho* that compiles itself. A fixpoint check
-holds the self-hosted compiler to reproducing its own emitted C **byte-for-byte**
-and to matching the reference's output on every test; a differential fuzzer runs
-both compilers on random programs under ASan and UBSan; every example is built
-twice — native and sanitized — and checked against a committed golden. There is no
-cloud CI to take on faith — `make ci` runs the whole gate locally. So it is
-experimental in *scope*, not in rigor.
+## Quick start
+
+A C compiler (`cc`) and `make` — that's the whole toolchain.
+
+```
+$ git clone https://github.com/StefanVonRanda/tycho
+$ cd tycho
+$ make                                  # builds ./tychoc
+$ ./tychoc examples/hello.ty && ./examples/hello
+what is your name: Ada
+hello Ada
+```
+
+New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program in about
+an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)** explains the memory
+model from C you already know. Full build details are under [Trying it](#trying-it). The
+syntax is Python/Nim-flavored and the semantics Go/Odin-like; the value-semantics core
+comes from **[Hylo](https://www.hylo-lang.org/)**.
 
 ## The thesis
 
@@ -101,25 +116,19 @@ no GC and no reference counting — only lexical arenas and value semantics.
 **Benchmark scope.** These numbers measure the arena model, not the language:
 Tycho trails C and Rust on array-pipeline time (per-element bounds checks, not
 the memory model). Full toolchains and both reference machines (AMD Ryzen 7
-7735HS x86-64 Linux; Apple Silicon arm64 macOS) are in RESULTS.md. Each
-benchmark's dual build (native `-O2` and `-fsanitize=address,undefined`) must
-produce byte-identical output — a miscompile visible to one but not the other
-would diverge them.
+7735HS x86-64 Linux; Apple Silicon arm64 macOS) are in RESULTS.md.
 
 ## What it costs
 
 Value semantics is not free, and the costs are structural.
 
-**No shared mutable references.** Every binding is an independent copy; there are
-no pointers, and recursive struct types are rejected (recursive *enums*, like the
-`Json` tree above, are fine — they nest through a boxed payload, not by value). You
-cannot build a shared-mutable **graph**, **doubly-linked list**, or **observer**
-the way a pointer language does. The idiom is a **flat node pool**: hold all nodes in one
-`[Node]` and link them by integer index, not reference (a generational index
-gives use-after-free detection). The whole structure becomes one value with one
-arena lifetime — and the layout is cache-friendly, the same data-oriented pattern
-high-performance engines choose on purpose. See
-[docs/arrays-structs.md](docs/arrays-structs.md) §2.
+**No shared mutable references.** Every binding is an independent copy; there are no
+pointers, and recursive structs are rejected (recursive *enums* like the `Json` tree
+above are fine — they nest through a boxed payload). You can't build a shared-mutable
+**graph**, **doubly-linked list**, or **observer** the pointer way; the idiom is a
+**flat node pool** — hold all nodes in one array and link them by integer index — which
+is also the cache-friendly layout data-oriented engines choose on purpose. See
+[docs/arrays-structs.md](docs/arrays-structs.md).
 
 **Pointer-shaped data costs more, measured.** Storing children by value, a
 recursive trie is ~1.55× C's memory (halved by the compact indexed-dict map
@@ -160,22 +169,13 @@ also work. Measured, not asserted: see the tables above.
 
 ## Trying it
 
-**Prerequisites:** a C compiler (`cc` — GCC or Clang) and `make`. That's all; the
-transpiler is one dependency-free C file. *(Optional: `pkg-config` + a library for
-FFI-backed corelib modules like `core:http`; a Go toolchain for the cross-language
-benchmarks. Both skip cleanly when absent.)*
-
-```
-$ git clone https://github.com/StefanVonRanda/tycho
-$ cd tycho
-$ make                                  # builds ./tychoc
-$ ./tychoc examples/hello.ty && ./examples/hello
-what is your name: Ada
-hello Ada
-```
+[Quick start](#quick-start) above is the 30-second version; here's the rest.
 
 `./tychoc f.ty` transpiles `f.ty` to `f.c` and compiles it to a native binary `f`;
-`-o name` names the output, `--emit-c` stops at the C.
+`-o name` names the output, `--emit-c` stops at the C. The transpiler is one
+dependency-free C file. The only optional extras are `pkg-config` plus a library for the
+FFI-backed corelib modules (like `core:http`) and a Go toolchain for the cross-language
+benchmarks — both skip cleanly when absent.
 
 **Core library.** `corelib/` is Tycho's core library, imported as `core:<name>`. The
 transpiler finds it beside its own binary, so there's no setup (`TYCHO_CORELIB`
