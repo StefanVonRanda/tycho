@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tycho — a systems language with no GC and no free()</title>
-<meta name="description" content="Tycho is an experimental systems language testing one idea: implicit hierarchical arenas under value semantics. No garbage collector, no manual free — the compiler places every allocation from your syntax alone. Transpiles to C.">
+<title>Tycho — an experimental systems language</title>
+<meta name="description" content="Tycho is an experimental systems language and a research project, built to test one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope. Transpiles to C.">
 <meta name="theme-color" content="#0c0b09">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
-<meta property="og:title" content="Tycho — no GC, no free()">
-<meta property="og:description" content="An experimental systems language: implicit hierarchical arenas under value semantics. The compiler places every allocation from your syntax. Transpiles to C.">
+<meta property="og:title" content="Tycho — an experimental systems language">
+<meta property="og:description" content="A research project testing one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, not a runtime. Transpiles to C.">
 <meta property="og:image" content="https://tycho-lang.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -192,11 +192,12 @@
 
   <header class="hero">
     <p class="eyebrow rise d1"><span class="tick">◇</span> an experimental systems language · transpiles to C</p>
-    <h1 class="rise d2">No garbage collector.<br>No <span class="amp">free()</span>.<span class="cur" aria-hidden="true"></span></h1>
+    <h1 class="rise d2">Implicit hierarchical arenas,<br>under <span class="amp">value semantics</span>.<span class="cur" aria-hidden="true"></span></h1>
     <p class="lede rise d3">
-      Tycho has no reference type, so the compiler sees every value's lifetime from the
-      syntax alone — and places <b>every allocation and free itself</b>, from lexical scope
-      rather than a runtime. <span class="sub">One idea: implicit hierarchical arenas under value semantics.</span>
+      Tycho is a research project built to test one idea. Each scope owns a memory arena,
+      freed when the scope exits; with no reference type in the language, the compiler sees
+      every value's lifetime from the syntax and inserts every allocation and free itself.
+      <span class="sub">Automatic memory management from lexical scope, not a runtime — and no manual `free`.</span>
     </p>
     <pre class="rise d4"><code><span class="k">fn</span> <span class="fn">greet</span>(name: <span class="k">string</span>) -> <span class="k">string</span>:
     <span class="k">return</span> <span class="s">"hello "</span> + name
@@ -250,16 +251,12 @@
       <div class="row"><span class="tag">local</span><span class="txt">No cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your machine.</span></div>
     </div>
 
-    <div class="nums">
-      <div><div class="big">56×</div><small>less peak memory than a GC language on a string-built-in-a-loop workload</small></div>
-      <div><div class="big">239×</div><small>faster on that same workload — the arena payoff, made concrete</small></div>
-      <div><div class="big">≈1.0×</div><small>the self-hosted compiler's cost against the C reference, compiling itself</small></div>
-    </div>
-    <p class="caveat">
-      Figures are measured and machine-specific, so the cross-language <em>ratios</em> are the
-      claim, not the absolute numbers — and the advantage is real but <em>concentrated</em>:
-      pointer-shaped data (graphs, trees) still costs about 1.55× C in this model. The programs
-      behind the numbers run in CI on both compilers, output checked byte-for-byte.
+    <p class="muted">
+      Where the model helps and where it costs are both measured — as machine-specific ratios,
+      with the workloads that produce them — in the
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/perf.md">performance notes</a>.
+      Pointer-shaped data (graphs, trees) is where value semantics is least free; the docs are
+      honest about that, not just about the wins.
     </p>
   </section>
 
@@ -297,7 +294,7 @@
   </section>
 
   <footer>
-    <p class="tagline">Tycho — <b>an experiment, checked hard.</b></p>
+    <p class="tagline">A research project. The source, the checks, and the honest caveats are all in the repo.</p>
     <div class="meta">
       <span>MIT licensed</span>
       <a href="https://github.com/StefanVonRanda/tycho">github.com/StefanVonRanda/tycho</a>
