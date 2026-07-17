@@ -33,17 +33,25 @@ Composes `core:httpd`, `core:net`, `core:io`, `core:strings`, `core:sort`, and
 
 ## Dogfood findings
 
+- **A real `tychoc` soundness bug — found here and fixed (the headline).** Serving a
+  binary asset returns a struct holding the file `bytes`; the body came back as
+  *reused arena memory* (fragments of the response headers). Root cause: `copy_into`
+  (which re-homes a heap value into the caller's arena) had no `T_BYTES` case, so a
+  `bytes` field of a returned struct wasn't deep-copied — it dangled into the callee's
+  freed scope, and a later allocation reused the block. A use-after-free that **ASan
+  can't catch** (valid memory, wrong data), and a `tychoc`/`tychoc0` *divergence* the
+  output-only fixpoint missed (tychoc0 re-homed bytes; tychoc didn't). Fixed in
+  `copy_into`; regression-locked by `tools_check.sh`'s `bytes-rehome` assertion.
+- **Binary/static serving now works.** With `io.read_bytes` (added for this) and the
+  compiler fix, the server serves CSS and a favicon PNG (20 NUL bytes) **byte-identical
+  over the socket** — the string-model `0x00` limit is sidestepped by keeping the body
+  as `bytes` and writing it via `net.write`. The write stays in this package (`net`
+  directly) rather than a cross-package `httpd` helper; a `httpd.write_bytes` is a
+  reasonable follow-up now that the bytes-lifetime bug is gone.
 - **`core:markdown`'s second consumer.** The renderer (built for this) works
-  end-to-end here — the blog index is even *built as Markdown and rendered*. This
-  validates it beyond its own tests.
-- **`core:httpd` serves text only — the next real gap.** Bodies cross as Tycho
-  strings, so an interior `0x00` truncates; the package itself notes it's "not for
-  serving binary blobs." A real site wants a favicon, images, and fonts — so serving
-  binary/static assets needs a `bytes`-based response path through `net`. Not hit by
-  this MVP (all content is text), but it's the headline ticket for a production site.
-- **No router in `core:httpd`.** You hand-write the path matching (this example
-  rolls its own `if starts_with(p, "/blog/")` chain). A small pattern router
-  (`/blog/:slug`) would be a natural corelib addition — demand-gated.
+  end-to-end — the blog index is even *built as Markdown and rendered*.
+- **No router in `core:httpd`.** You hand-write the path matching. A small pattern
+  router (`/blog/:slug`) would be a natural corelib addition — demand-gated.
 
 ### Gotchas (not bugs)
 

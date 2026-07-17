@@ -1,6 +1,6 @@
 ### GET / -> 200
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Tycho</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Tycho</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -22,7 +22,7 @@ Markdown through <code>core:markdown</code>.</p>
 
 ### GET /blog -> 200
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Blog</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Blog</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -37,7 +37,7 @@ Markdown through <code>core:markdown</code>.</p>
 
 ### GET /blog/hello-tycho -> 200
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Hello, Tycho</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Hello, Tycho</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -55,7 +55,7 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 
 ### GET /wiki/getting-started -> 200
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Getting Started</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Getting Started</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -77,7 +77,7 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 
 ### GET /blog/../secret -> 404
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -89,7 +89,7 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 
 ### GET /blog/missing -> 404
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -101,7 +101,7 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 
 ### GET /nope -> 404
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Not Found</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Not Found</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/favicon.ico"></head>
 <body>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
@@ -111,3 +111,7 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 <footer>Served by Tycho.</footer>
 </body></html>
 
+### GET /static/style.css -> 200 text/css; charset=utf-8 (486 bytes)
+### GET /favicon.ico -> 200 image/png (70 bytes)
+### GET /static/missing.png -> 404
+### GET /static/../secret -> 404
