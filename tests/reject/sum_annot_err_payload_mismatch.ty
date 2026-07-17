@@ -1,0 +1,6 @@
+# The Err(...) arm of a Result annotation must type-check its payload too. Here the
+# error type is `string`, but Err(5) supplies an int -- same unsound int-in-string-slot
+# confusion as the Some case, on the Result/Err path. Both compilers must reject.
+fn main():
+    x : Result(int, string) = Err(5)
+    println("unreachable")

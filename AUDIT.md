@@ -35,6 +35,18 @@ spec-level, no memory unsafety).
   tychoc). Pre-existing; made visible by the bare-sum-ctor fix. **FIXED — d829375**
   (recursive `check_sum_annot` mirroring tychoc's `resolve_exp`; only a concrete leaf
   is compared, bare `None`/`Ok`/`Err` still adapt from context).
+  - **Residual hole closed (follow-up).** d829375 compared only the `ok`-listed leaf
+    kinds (`EStr`/`EBool`/`EChar`/`EVar`/`ECall`) and silently *skipped* everything else
+    — so a concrete int/float literal, an arithmetic expr, and an array/tuple/map literal
+    payload were never checked. `x : Option(string) = Some(42)` (and `Err(5):Result(int,string)`,
+    `Some([1]):Option([u32])`, …) fail-opened in tychoc0 where tychoc rejects, and the
+    accepted program stored an `int` in a `string` slot → **use-after-free / segfault**
+    (type confusion) at read. `check_sum_leaf` now (a) gives int/float literals their real
+    adaptation rule (numeric slots only, mirroring `lit_ok`) and (b) compares the remaining
+    concrete payload kinds (`EBin`/`EArrLit`/`EMapLit`/`ETuple`/`EIndex`/`ESlice`) via
+    `type_of`; only bare `[]`/`{}`, lambdas and `&x` still adapt/skip. Locked by
+    `tests/reject/sum_annot_{int_payload_nonnumeric,err_payload_mismatch,array_payload_widen}.ty`
+    (differential: both compilers reject). fixpoint B==C, test 347/0, type/eq-parity green.
 
 ## Confirmed inconsistencies
 

@@ -3937,6 +3937,24 @@ fn check_sum_annot(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], 
             check_sum_leaf(dc, ctx, want, e, names, types, el)
 
 fn check_sum_leaf(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string], el: int):
+    # A bare int/float literal adapts, but ONLY to a numeric payload slot (int-lit ->
+    # int/float/f32/sized, float-lit -> f32/float; mirrors `lit_ok` in scalar_coercion_bad).
+    # A numeric literal against a non-numeric slot (e.g. Some(42):Option(string)) is a hard
+    # mismatch that the `ok` gate below would otherwise skip -- and tychoc0 would then store
+    # the int where a string pointer is expected, a use-after-free / segfault at runtime.
+    if is_int_lit(e) or is_float_lit(e):
+        rwant := resolve_nt(dc, ctx, want)
+        adapt := false
+        if is_int_lit(e):
+            adapt = rwant == "int" or rwant == "float" or rwant == "f32" or is_sized_int(rwant)
+        else:
+            adapt = rwant == "float" or rwant == "f32"
+        if not adapt:
+            vt := "int"
+            if is_float_lit(e):
+                vt = "float"
+            die_at(dc, el, "declared type " + want + " but value is " + vt)
+        return
     ok := false                                  # only a definitely-concrete, non-adapting payload is compared
     match e:
         EStr(_t, _l):
@@ -3949,7 +3967,19 @@ fn check_sum_leaf(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], t
             ok = true
         ECall(_cn, _ca, _l):                     # a ctor / fn call (reliably typed post-mono; generics via resolve_ginst)
             ok = true
-        _:
+        EBin(_o, _bl, _br, _l):                  # arithmetic/logical: a concrete non-adapting scalar type
+            ok = true
+        EArrLit(_es, _ft, _l):                   # `[1]` synthesizes `[int]`; a bare empty `[]` adapts to any array type
+            ok = len(_es) > 0
+        EMapLit(_ks, _vs, _l):                   # `{k:v}` synthesizes a concrete map type; a bare empty `{}` adapts
+            ok = len(_ks) > 0
+        ETuple(_es, _l):                         # a tuple literal's element types are synthesized, not adapted
+            ok = true
+        EIndex(_b, _i, _l):                      # element access: a concrete element type
+            ok = true
+        ESlice(_b, _lo, _hi, _l):                # a slice: a concrete array type
+            ok = true
+        _:                                       # bare []/{} (EArrEmpty/EMapEmpty), lambdas, &x: genuinely adapt/opaque -- skip
             ok = false
     if not ok or not scalar_check_safe(e):
         return

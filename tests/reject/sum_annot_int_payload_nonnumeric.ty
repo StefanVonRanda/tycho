@@ -1,0 +1,10 @@
+# A concrete int-literal payload of a Some(...) must be type-checked against the
+# annotation's inner type. `Option(string)` cannot hold an int -- accepting it
+# stored the int 42 where a string pointer is expected (use-after-free / segfault
+# when the value is later read). An int literal adapts ONLY to a numeric slot
+# (int/float/f32/sized), never to `string`. Both compilers must reject.
+# (Differential reject: tychoc0's check_sum_leaf used to skip numeric-literal
+# payloads unconditionally, fail-opening where tychoc rejects.)
+fn main():
+    x : Option(string) = Some(42)
+    println("unreachable")
