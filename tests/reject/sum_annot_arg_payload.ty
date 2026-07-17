@@ -1,0 +1,13 @@
+# A Some/Ok/Err argument payload must type-check against the parameter's type. The
+# parameter is Option(string) but the call passes Some(42) -- same int-in-string-slot
+# type confusion. Both compilers must reject. (Locks check_sum_pos at the call-argument
+# position.)
+fn g(o: Option(string)):
+    match o:
+        Some(s):
+            println(s)
+        None:
+            println("none")
+
+fn main():
+    g(Some(42))

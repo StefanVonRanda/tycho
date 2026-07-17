@@ -47,6 +47,17 @@ spec-level, no memory unsafety).
     `type_of`; only bare `[]`/`{}`, lambdas and `&x` still adapt/skip. Locked by
     `tests/reject/sum_annot_{int_payload_nonnumeric,err_payload_mismatch,array_payload_widen}.ty`
     (differential: both compilers reject). fixpoint B==C, test 347/0, type/eq-parity green.
+  - **Extended to ALL supplying positions (follow-up 2).** The above wired the check only
+    into a typed *declaration* (`STypedDecl`). The same fail-open persisted at every other
+    position that supplies a value against a known type — a `return`, a call *argument*, a
+    place assignment (`b.o = Some(42)`, `m[k] = Some(42)`), a plain reassignment, and a
+    struct-literal field — all accepted `Some(42)` into `Option(string)` in tychoc0 where
+    tychoc rejects (same int-in-string UAF). A shared helper `check_sum_pos` (guarded: sum
+    ctor against an Option/Result want) is now called alongside the existing `nt_check` at
+    `SReturn`, `SAssign`, `check_place_assign`, `check_struct_ctor`, and `check_call_args`.
+    Locked by `tests/reject/sum_annot_{return,arg,place}_payload.ty`. fixpoint B==C, corelib
+    3-way green, test 351/0, type/eq-parity green, fuzz N=1000 FAIL=0 (no false-reject at the
+    new positions across the differential accept-fuzzer's Some/Ok/Err arg/return sites).
 
 ## Confirmed inconsistencies
 

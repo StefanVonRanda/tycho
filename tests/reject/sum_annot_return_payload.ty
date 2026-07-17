@@ -1,0 +1,13 @@
+# A returned Some/Ok/Err payload must type-check against the function's return type,
+# not only against a variable annotation. Here the fn returns Option(string) but
+# returns Some(42) -- the int would land in a string slot (UAF/segfault at read).
+# Both compilers must reject. (Locks check_sum_pos at the SReturn position.)
+fn f() -> Option(string):
+    return Some(42)
+
+fn main():
+    match f():
+        Some(s):
+            println(s)
+        None:
+            println("none")
