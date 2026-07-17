@@ -2574,6 +2574,14 @@ struct Mctx:
 fn is_builtin_call(name: string) -> bool:
     return name == "str" or name == "substr" or name == "chr" or name == "input" or name == "split" or name == "keys" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "find" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_bool" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "read_file" or name == "write_file" or name == "list_dir" or name == "args" or name == "getenv" or name == "is_null" or name == "null" or name == "die" or name == "eprint" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "Some" or name == "Ok" or name == "Err" or name == "None"
 
+# Builtins callable with UFCS method syntax `recv.name(args)` -> `name(recv, args)`.
+# Only receiver-first builtins; constructors (Some/Ok/Err/None) and env/IO niladics
+# are excluded. The desugar routes through the SAME builtin dispatch the direct call
+# uses, so a wrong receiver type still fails closed there. Kept byte-identical with
+# tychoc's is_ufcs_builtin (src/tychoc.c).
+fn is_ufcs_builtin(name: string) -> bool:
+    return name == "str" or name == "substr" or name == "chr" or name == "split" or name == "keys" or name == "find" or name == "len" or name == "push" or name == "pop" or name == "reserve" or name == "map_get" or name == "map_has" or name == "map_set" or name == "map_del" or name == "sqrt" or name == "pow" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bool" or name == "to_bytes" or name == "to_ptr" or name == "to_u8" or name == "to_u16" or name == "to_u32" or name == "to_u64" or name == "to_i8" or name == "to_i16" or name == "to_i32" or name == "to_i64" or name == "to_f32" or name == "is_null"
+
 fn resolve_pkg(m: Mctx, qual: string) -> string:       # import alias -> real package name (else identity)
     i := 0
     for i < len(m.aliasn):
@@ -4045,12 +4053,24 @@ fn base_type_mismatch(dc: Decls, ctx: Ctx, want0: string, e: Expr, names: [strin
         EAddr(_x, _l):                                # inout `&place`: a place is never a literal, so compare its resolved type directly (scalar included -- no adaptation applies through inout)
             pt := resolve_ginst(resolve_nt(dc, ctx, type_of(_x, names, types, dc, ctx)), dc, ctx)
             return pt != "" and pt != rwant
-        _:                                            # EVar / ECall / EBin / EIndex / ESlice (type_of context-dependent), lambdas, empties, bare None: skip
+        EVar(_vn, _vl):                               # a variable / match-binding / call / index / binop: type_of is trustworthy for a CONCRETE type; a generic ($-bearing) result is skipped below
+            ok = true
+        ECall(_cn, _ca, _cl):
+            ok = true
+        EIndex(_ib, _ix, _il):
+            ok = true
+        ESlice(_sb, _slo, _shi, _sl2):
+            ok = true
+        EBin(_bo, _bl, _br, _bl2):
+            ok = true
+        _:                                            # lambdas, empties, bare None, EField/ECallV (already screened out above): skip
             ok = false
     if not ok:
         return false
     vt := type_of(e, names, types, dc, ctx)
-    if vt == "":
+    if vt == "" or ty_is_generic(vt):                 # a $-bearing value type is a pre-mono typaram: unreliable, so fail closed to the cc error (never false-reject a generic body)
+        return false
+    if is_option(vt) or is_result(vt):                # a sum-typed var/call (incl. a bare `None` -> "Option()") ADAPTS; its payload/identity is owned by check_sum_pos / check_sum_annot / nt_check, not this base-type compare
         return false
     rat := resolve_ginst(resolve_nt(dc, ctx, vt), dc, ctx)
     if rat == "":
@@ -4808,6 +4828,14 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ssi := find_subscript(dc, cfn, srbt, len(cargs))
                 if ssi >= 0:
                     return subscript_call_type(dc, ctx, names, types, ssi, efield_base(callee), cargs, _el)
+            if is_ufcs_builtin(cfn) and not struct_fn_field(dc, type_of(efield_base(callee), names, types, dc, ctx), cfn):
+                bnca := []Expr                    # UFCS on a builtin: x.split(s) -> split(x, s)
+                push(bnca, efield_base(callee))
+                bti := 0
+                for bti < len(cargs):
+                    push(bnca, cargs[bti])
+                    bti = bti + 1
+                return type_of(ECall(cfn, bnca, _el), names, types, dc, ctx)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method: its return type
                 msi := dc.sigmap.get(mn, -1)
@@ -4919,8 +4947,14 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 gk := 0
                 for gk < len(dc.sigs[gsi].ptypes) and gk < len(args):
                     if ty_is_generic(dc.sigs[gsi].ptypes[gk]):
-                        if not match_typaram_str(dc.sigs[gsi].ptypes[gk], type_of(args[gk], names, types, dc, ctx), &gbn, &gbt):
-                            gok = false
+                        gpp := base_ty(dc.sigs[gsi].ptypes[gk])
+                        gaty := type_of(args[gk], names, types, dc, ctx)
+                        if not match_typaram_str(gpp, gaty, &gbn, &gbt):
+                            # a generic-struct instance arg (`Pool__Node`) doesn't structurally
+                            # match the `Pool($T)` pattern -- bind $T from the instance's inst_args
+                            # (dc carries the instances by the time a call result is typed)
+                            if not recover_struct_binds(gpp, gaty, dc.structs, dc.structs, &gbn, &gbt) and not recover_enum_binds(gpp, gaty, dc.enums, dc.enums, &gbn, &gbt):
+                                gok = false
                     gk = gk + 1
                 if gok:
                     return resolve_nt(dc, ctx, subst_field_type(dc.sigs[gsi].ret, gbn, gbt))
@@ -5904,6 +5938,14 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 gsi := find_subscript(dc, cfn, grbt, len(cargs))
                 if gsi >= 0:
                     return gen_expr(subscript_projected_place(dc, gsi, efield_base(callee), cargs), names, types, dc, ctx)
+            if is_ufcs_builtin(cfn) and not struct_fn_field(dc, type_of(efield_base(callee), names, types, dc, ctx), cfn):
+                bnca := []Expr                    # UFCS on a builtin: x.split(s) -> split(x, s); reuse the builtin dispatch
+                push(bnca, efield_base(callee))
+                bgi := 0
+                for bgi < len(cargs):
+                    push(bnca, cargs[bgi])
+                    bgi = bgi + 1
+                return gen_expr(ECall(cfn, bnca, _el), names, types, dc, ctx)
             mn := ufcs_name(dc, ctx, names, types, callee)
             if mn != "":                          # UFCS method call: foo(recv, args)
                 allargs := []Expr
@@ -8516,7 +8558,8 @@ fn inout_container_param(dc: Decls, ctx: Ctx, ptype: string) -> bool:
     b := base_ty(ptype)
     if resolve_nt(dc, ctx, b) == "str":          # inout string: reassignment bytes build in _ina_
         return true
-    return is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, b) and struct_is_heap(dc, ctx, b))   # a heap struct's field-containers grow in _ina_
+    rb := resolve_ginst(b, dc, ctx)              # a generic-struct param type is the application form "Box(int)"; resolve to the instance "Box__int" so is_struct/heap see it (must agree with arg_ina, which types the arg as the instance)
+    return is_array(b) or is_map(b) or is_soa(b) or (is_struct(dc, ctx, rb) and struct_is_heap(dc, ctx, rb))   # a heap struct's field-containers grow in _ina_
 
 fn gen_params(f: Func, dc: Decls, ctx: Ctx) -> string:
     out := "Arena* _parent"                       # every fn threads the caller's arena
@@ -8735,6 +8778,7 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             sacc_block(&acc, body, bn, bt, dc, ctx)
         SMatch(subj, variants, allbinds, bodies, _sl):
             sty := type_of(subj, names, types, dc, ctx)
+            rsty := resolve_ginst(sty, dc, ctx)   # scrutinee INSTANCE, so a generic-enum arm binds from the right instance (mirror collect_stmt)
             j := 0
             for j < len(bodies):
                 bn := names                       # bind arm payloads with PROPER types so
@@ -8753,7 +8797,7 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
                             push(bt, result_err(sty))
                 else:
                     if len(binds) > 0:            # `_` / no-payload arms have no bindings; skip the lookup (which rejects `_`)
-                        pts := variant_ptypes(dc, ctx, variants[j])
+                        pts := match_arm_ptypes(dc, ctx, rsty, variants[j])   # instance-aware payload types (was variant_ptypes: first-instance fallback mis-typed generic-enum bindings)
                         k := 0
                         for k < len(binds):
                             push(bn, binds[k])
@@ -10567,7 +10611,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
         SMatch(subj, variants, allbinds, bodies, _sl):
             collect_expr(&acc, subj, names, types, dc, ctx)
             sty := type_of(subj, names, types, dc, ctx)
-            check_match(dc, ctx, resolve_ginst(sty, dc, ctx), variants, _sl)   # reject non-exhaustive / bad-arm-name matches at compile time (parity with tychoc)
+            rsty := resolve_ginst(sty, dc, ctx)                                 # the scrutinee's INSTANCE (Tree__string), so a generic-enum arm binds from the right instance -- not variant_ptypes's first-instance fallback (which mis-typed a Tree(string) Leaf as int)
+            check_match(dc, ctx, rsty, variants, _sl)   # reject non-exhaustive / bad-arm-name matches at compile time (parity with tychoc)
             j := 0
             for j < len(bodies):
                 bn := names                       # bind arm payloads so type_of resolves them
@@ -10586,7 +10631,7 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                             push(bt, result_err(sty))
                 else:
                     if len(binds) > 0:            # `_` / no-payload arms have no bindings; skip the lookup (which rejects `_`)
-                        pts := variant_ptypes(dc, ctx, variants[j])
+                        pts := match_arm_ptypes(dc, ctx, rsty, variants[j])   # instance-aware payload types (was variant_ptypes: first-instance fallback mis-typed generic-enum bindings)
                         k := 0
                         for k < len(binds):
                             push(bn, binds[k])
@@ -12767,6 +12812,8 @@ fn find_generic(gens: [Func], name: string) -> int:
     return -1
 
 fn gen_inst_mangle(ty: string) -> string:
+    if len(ty) > 0 and (ty[0] == 38 or ty[0] == 126):   # a inout '&' / sink '~' marker never belongs in a C identifier: mangle the underlying type (a generic fn's inout-ness is fixed by its signature, so this can't collide)
+        return gen_inst_mangle(base_ty(ty))
     if ty == "str":
         return "string"
     n := len(ty)
@@ -13136,7 +13183,56 @@ fn constraint_ok_str(pred: string, ty: string, dc: Decls) -> bool:
         return ty == "int" or ty == "float" or ty == "bool" or ty == "str"
     return true
 
-fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, dc: Decls, explicit: [string]) -> string:
+# Is `cn` the name of a struct — a template in dc, or a monomorphized INSTANCE created
+# mid-mono (still in sinsts, not yet merged into dc)? Lets a `x := Box(5)` decl record the
+# concrete instance `Box__int` (the mono'd construction's callee) instead of the bare
+# template `Box`, so a later `f(x)` against `f(b: Box($T))` can bind $T from the instance.
+# Given a mono'd generic-struct INSTANCE name (`pool__Pool__Node`, from a construction's
+# rewritten callee), return its APPLICATION form `pool__Pool(Node)` -- the form
+# match_typaram_str binds a `Pool($T)` pattern against directly (no sinsts lookup needed at
+# the eventual call). "" if cn isn't a generic-struct instance. The instance records its
+# concrete type args (inst_args) but not its base; recover the base by finding the template
+# whose instantiation reproduces cn.
+fn ginst_app_form(cn: string, dc: Decls, sinsts: [StructDef]) -> string:
+    si := -1
+    i := 0
+    for i < len(sinsts):
+        if sinsts[i].name == cn:
+            si = i
+        i = i + 1
+    if si < 0:
+        return ""
+    iargs := sinsts[si].inst_args
+    if len(iargs) == 0:
+        return ""
+    t := 0
+    for t < len(dc.structs):
+        if len(dc.structs[t].typeparams) == len(iargs) and inst_name(dc.structs[t].name, iargs) == cn:
+            out := dc.structs[t].name + "("
+            j := 0
+            for j < len(iargs):
+                if j > 0:
+                    out = out + ","
+                out = out + iargs[j]
+                j = j + 1
+            return out + ")"
+        t = t + 1
+    return ""
+
+fn struct_named_here(cn: string, dc: Decls, sinsts: [StructDef]) -> bool:
+    i := 0
+    for i < len(dc.structs):
+        if dc.structs[i].name == cn:
+            return true
+        i = i + 1
+    i = 0
+    for i < len(sinsts):
+        if sinsts[i].name == cn:
+            return true
+        i = i + 1
+    return false
+
+fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, dc: Decls, explicit: [string], sinsts: [StructDef], einsts: [EnumDef]) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
@@ -13171,8 +13267,13 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, 
     else:
         i = 0
         for i < len(gt.ptypes):                  # infer: structurally match each pattern against the arg type
-            if not match_typaram_str(gt.ptypes[i], argtypes[i], &bnames, &btypes):
-                die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
+            pp := base_ty(gt.ptypes[i])          # strip an inout '&' / sink '~' marker: the pass-mode never affects type identity, only the underlying pattern matches
+            if not match_typaram_str(pp, argtypes[i], &bnames, &btypes):
+                # a generic user-struct / enum arg names its mangled INSTANCE (`Box__int`), which
+                # doesn't structurally match the `Box($T)` pattern -- bind $T from the instance's
+                # recorded inst_args (mirrors the construction + nested-field recovery paths).
+                if not recover_struct_binds(pp, argtypes[i], dc.structs, sinsts, &bnames, &btypes) and not recover_enum_binds(pp, argtypes[i], dc.enums, einsts, &bnames, &btypes):
+                    die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
             i = i + 1
     # generics: enforce `where` constraints up front (clear signature error, not a deep body error)
     if gt.constraints != "":
@@ -13645,7 +13746,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                     for k < len(allargs):
                         push(at, type_of(allargs[k], names, types, dc, ctx))
                         k = k + 1
-                    newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
+                    newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts)
                     return ECall(newnm, allargs, el)
             gi := find_generic(gens, rn)
             if gi >= 0:
@@ -13654,7 +13755,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                 for k < len(a):
                     push(at, type_of(a[k], names, types, dc, ctx))   # type the ORIGINAL args: a nested generic call resolves to its concrete return via type_of, whereas the mono'd arg names its instance (not yet in dc)
                     k = k + 1
-                newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit)
+                newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit, sinsts, einsts)
                 return ECall(newnm, margs, el)
             geni := -1                                # generic enum constructor: a variant of a generic enum
             gevi := -1
@@ -13751,7 +13852,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                             push(allargs, mono_expr(a[ai], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
                             push(at, type_of(a[ai], names, types, dc, ctx))
                             ai = ai + 1
-                        newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string)
+                        newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts)
                         return ECall(newnm, allargs, el)
             return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ESpread(_sx, _sel):
@@ -13769,6 +13870,18 @@ fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func]
             # `mr` names instances not yet in dc; the final codegen recomputes the
             # real type from the instance-bearing dc.
             ty := type_of(rhs, names, types, dc, ctx)
+            # BUT a generic-struct construction (`x := Box(5)`) types to the bare template
+            # "Box" — which loses the instantiation, so a later `f(x)` against `f(b: Box($T))`
+            # can't bind $T. The mono'd `mr` IS the instance constructor `Box__int(..)`; record
+            # its concrete instance name so the env carries the instantiation (mirrors the
+            # annotated `x: Box(int)` path, which resolve_gtype already resolves to Box__int).
+            cn := call_callee(mr)
+            if cn != "":
+                app := ginst_app_form(cn, dc, sinsts)   # a generic-struct instance: store the APPLICATION form Box(int), so a later f(x) binds $T via match_typaram_str
+                if app != "":
+                    ty = app
+                elif cn != ty and struct_named_here(cn, dc, sinsts):   # a non-generic struct construction: record the concrete name
+                    ty = cn
             push(names, nm)
             push(types, ty)
             return SDecl(nm, mr, ln)

@@ -1,0 +1,61 @@
+# core:pool showcase -- a directed graph whose nodes live in a pool and whose
+# edges are handles into that same pool. This is the case value semantics makes
+# awkward with raw pointers; the pool packages the index-plus-generation idiom so
+# the program reads like an ordinary graph, and a dangling edge (an edge to a
+# removed node) is CAUGHT by `pool.alive` instead of silently reading a reused slot.
+package main
+
+import "core:pool"
+
+struct Node:
+    label: string
+    edges: [int]                # out-neighbours, by handle into the pool
+
+fn main():
+    g := pool.Pool([]pool.Slot(Node), []int)
+    a := pool.add(&g, Node("A", []int))
+    b := pool.add(&g, Node("B", []int))
+    c := pool.add(&g, Node("C", []int))
+
+    # wire A->B, A->C, B->C  (value semantics: get, mutate the copy, set it back)
+    na := pool.get(g, a)
+    push(na.edges, b)
+    push(na.edges, c)
+    pool.set(&g, a, na)
+    nb := pool.get(g, b)
+    push(nb.edges, c)
+    pool.set(&g, b, nb)
+
+    # depth-first walk from A, iterative worklist keyed by handle
+    seen := []int: bool
+    stack := [a]
+    order := []string
+    for len(stack) > 0:
+        h := pop(stack)
+        if not pool.alive(g, h) or (h in seen):
+            continue
+        seen[h] = true
+        n := pool.get(g, h)
+        push(order, n.label)
+        # push neighbours in reverse so the walk visits them in insertion order
+        i := len(n.edges) - 1
+        for i >= 0:
+            push(stack, n.edges[i])
+            i = i - 1
+    joined := ""
+    for i in range(len(order)):
+        if i > 0:
+            joined = joined + ","
+        joined = joined + order[i]
+    println("dfs: " + joined + "  live=" + str(pool.count(g)))
+
+    # remove C. Every edge pointing at C (A->C, B->C) is now a DANGLING handle,
+    # but the generation check catches it -- no silent read of a reused slot.
+    pool.remove(&g, c)
+    println("after remove(C): live=" + str(pool.count(g)) + " alive(C)=" + str(pool.alive(g, c)))
+    na2 := pool.get(g, a)
+    dangling := 0
+    for e in na2.edges:
+        if not pool.alive(g, e):
+            dangling = dangling + 1
+    println("A has " + str(dangling) + " dangling edge(s)")

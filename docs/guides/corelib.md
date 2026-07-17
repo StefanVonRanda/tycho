@@ -93,6 +93,18 @@ element type instead of a family of per-type siblings.
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
   array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
   derived int key (a fn/closure).
+- **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
+  doubly-linked structures). Value semantics forbids a shared-mutable pointer graph, so the
+  idiom is to hold every node in one array and link by integer index; `pool` packages that
+  idiom. Generic over the element type `Pool($T)`: `add(&p, v) -> Handle`, `get(p, h)`,
+  `set(&p, h, v)`, `remove(&p, h)`, `alive(p, h)`, `count(p)`. A `Handle` is a single packed
+  `int` (pointer-sized, value-semantic, introduces no aliasing) carrying a slot index plus a
+  generation; every access checks the generation, so a handle to a freed-and-reused slot is
+  caught (use-after-free / double-free) at runtime instead of silently reading the new
+  occupant. Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It improves
+  *ergonomics*, not memory — pointer-shaped storage still costs ~1.55× C in this model
+  (fundamental; see [value-semantics limits](../internals/value-semantics-limits.md)) — what
+  it removes is the hand-rolled index-plus-generation bookkeeping.
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
   state is an explicit int threaded via `inout` (the `&` marks the `inout` call site,
   [Basics](../reference/basics.md#procedures)): `st := rand.seed(42)`,

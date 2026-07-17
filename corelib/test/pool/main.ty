@@ -1,0 +1,15 @@
+package main
+
+import "core:pool"
+
+fn main():
+    p := pool.Pool([]pool.Slot(int), []int)
+    a := pool.add(&p, 10)
+    b := pool.add(&p, 20)
+    println("get=" + str(pool.get(p, a)) + "," + str(pool.get(p, b)) + " count=" + str(pool.count(p)))
+    pool.set(&p, a, 11)
+    println("set a->11: get=" + str(pool.get(p, a)))
+    pool.remove(&p, a)
+    println("removed a: alive=" + str(pool.alive(p, a)) + " count=" + str(pool.count(p)))
+    c := pool.add(&p, 30)
+    println("reuse slot: get(c)=" + str(pool.get(p, c)) + " alive(a)=" + str(pool.alive(p, a)) + " count=" + str(pool.count(p)))

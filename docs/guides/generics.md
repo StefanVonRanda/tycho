@@ -4,6 +4,8 @@
 > `enum`s: generic *functions*, generic-struct *construction* and
 > *type-position* annotations, struct *dependency-ordering* (`Box(Point)`),
 > *structured type-param patterns* (`fn first(xs: [$T]) -> Option(T)`),
+> *generic-struct parameters* (`fn get(p: Pool($T), h: int) -> $T`, by value or
+> `inout` — a `Box($T)`/`Pool($T)` argument binds `$T` from the instance),
 > *map patterns* (`fn lookup(m: [$K: $V], k: $K, d: $V) -> $V`), generic
 > *enums* (`enum Tree($T)`, including recursive payloads —
 > `Node(Tree($T), $T, Tree($T))`), *`where` constraints*

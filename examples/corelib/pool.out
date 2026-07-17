@@ -1,0 +1,3 @@
+dfs: A,B,C  live=3
+after remove(C): live=2 alive(C)=false
+A has 1 dangling edge(s)

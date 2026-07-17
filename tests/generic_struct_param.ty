@@ -1,0 +1,40 @@
+# A generic struct passed as a function PARAMETER (by-value and inout), across
+# multiple instantiations, plus a generic fn returning $T whose binding comes from
+# a generic-struct-instance argument (the get->mutate->set chain). Both compilers.
+struct Box($T):
+    v: $T
+
+fn peek(b: Box($T)) -> $T:          # by-value generic-struct param, $T-return
+    return b.v
+
+fn bump(b: inout Box($T), x: $T):   # inout generic-struct param
+    b.v = x
+
+fn twice(b: inout Box($T)):         # inout + read the field back through $T
+    b.v = b.v
+
+struct Pair($A, $B):
+    a: $A
+    b: $B
+
+fn swapv(p: inout Pair($A, $B), na: $A):
+    p.a = na
+
+fn main():
+    bi := Box(5)
+    bump(&bi, 9)
+    println(str(peek(bi)))               # 9  (int instance, inout + by-value)
+
+    bs := Box("hi")
+    bump(&bs, "bye")
+    println(peek(bs))                    # bye  (string instance -> heap struct)
+
+    # the $T-return chain: peek returns $T bound from a struct-instance arg, feeds bump
+    n := peek(bi)
+    bump(&bi, n + 100)
+    println(str(peek(bi)))               # 109
+
+    # two type params
+    p := Pair(1, "x")
+    swapv(&p, 42)
+    println(str(p.a) + p.b)              # 42x

@@ -1,0 +1,7 @@
+# tychoc0 parity: a base-type mismatch supplied by a variable / index / call (not
+# just a literal) must be a clean diagnostic in BOTH compilers, never a cc error.
+fn gimme() -> string:
+    return "x"
+fn main():
+    n: int = gimme()
+    println(str(n))

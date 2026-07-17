@@ -4296,6 +4296,22 @@ static void pend_ground(const char *name, Type t, int line) {
  * tree fails closed here instead of overflowing the C stack (SIGSEGV). */
 #define TYCHO_MAX_TREE_DEPTH 2000
 static int g_resolve_depth = 0;
+/* Builtins callable with UFCS method syntax `recv.name(args)` -> `name(recv, args)`.
+ * Only receiver-first builtins are eligible; constructors (Some/Ok/Err/None), env/IO
+ * niladics (args/clock/now/ncpu/getenv/input/read_*) and effectful non-methods are
+ * excluded. The desugar re-resolves through the SAME builtin arg-shape checking the
+ * direct-call form uses, so a wrong receiver type still fails closed there.
+ * Kept byte-identical with tychoc0.ty's is_ufcs_builtin. */
+static int is_ufcs_builtin(const char *n) {
+    if (!n) return 0;
+    static const char *bs[] = { "str", "substr", "chr", "split", "keys", "find", "len",
+        "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
+        "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
+        "to_bytes", "to_ptr", "to_u8", "to_u16", "to_u32", "to_u64",
+        "to_i8", "to_i16", "to_i32", "to_i64", "to_f32", "is_null", 0 };
+    for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
+    return 0;
+}
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
     if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
@@ -4725,6 +4741,13 @@ static Type resolve_expr_inner(Expr *e) {
                       e->args = na; e->nargs += 1;
                       e->qual = NULL;
                       e->sval = ms ? (char *)ms->name : (char *)gennm;   /* method name; a generic template name is instantiated by the dispatch below */
+                  } else if (!fnfield && is_ufcs_builtin(e->sval)) {   /* UFCS on a builtin: x.split(s) -> split(x, s); keep sval, let the builtin dispatch below arg-check it */
+                      Expr *recv = new_expr(E_IDENT, e->line); recv->sval = (char *)e->qual; recv->pkg = e->pkg;
+                      Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
+                      na[0] = recv;
+                      for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
+                      e->args = na; e->nargs += 1;
+                      e->qual = NULL;
                   } else {            /* fn-typed-field call: a call-on-expression of x.foo */
                       Expr *base = new_expr(E_IDENT, e->line); base->sval = (char *)e->qual; base->pkg = e->pkg;
                       Expr *fld = new_expr(E_FIELD, e->line); fld->lhs = base; fld->sval = e->sval;
@@ -4795,6 +4818,13 @@ static Type resolve_expr_inner(Expr *e) {
                     for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
                     e->args = na; e->nargs += 1;
                     e->sval = ms ? (char *)ms->name : (char *)gennm2;   /* generic template name dispatches below */
+                    e->lhs = NULL;
+                } else if (!fnfield && is_ufcs_builtin(fld->sval)) {   /* UFCS builtin on a chained receiver: a.f().len() -> len(a.f()) */
+                    Expr **na = (Expr **)xmalloc((size_t)(e->nargs + 1) * sizeof(Expr *));
+                    na[0] = fld->lhs;
+                    for (int i = 0; i < e->nargs; i++) na[i + 1] = e->args[i];
+                    e->args = na; e->nargs += 1;
+                    e->sval = (char *)fld->sval;
                     e->lhs = NULL;
                 }
             }

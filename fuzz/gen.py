@@ -155,9 +155,12 @@ class Gen:
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
                 choices.append(("len", lambda: "len(" + self.r.choice(av) + ")"))
+                # UFCS on a builtin: `x.len()` must lower to `len(x)` byte-for-byte
+                choices.append(("ulen", lambda: self.r.choice(av) + ".len()"))
             sv = [n for n, ty in env.items() if ty == "string"]
             if sv:
                 choices.append(("slen", lambda: "len(" + self.r.choice(sv) + ")"))
+                choices.append(("uslen", lambda: self.r.choice(sv) + ".len()"))
         elif t == "string":
             choices.append(("lit", lambda: '"' + self.r.choice(["a","bb","ccc","",">"]) + '"'))
             if depth < 2:

@@ -129,5 +129,22 @@ n := 21
 n.doubled()             # == doubled(n) -- an int receiver
 ```
 
+This extends to the built-ins that take a receiver-shaped first argument, so the operations you
+reach for most read the same way your own functions do:
+
+```
+s.split(",")            # == split(s, ",")
+xs.push(9)              # == push(xs, 9)
+xs.len()                # == len(xs)
+n.to_float()            # == to_float(n)
+```
+
+`recv.name(args)` on a built-in lowers to `name(recv, args)` and is checked by the exact same
+argument rules as the plain call — a wrong receiver type is rejected, not silently coerced. The
+receiver-first built-ins include `split`, `find`, `len`, `push`, `pop`, `reserve`, `keys`, `str`,
+`substr`, `chr`, the `to_*` conversions, `is_null`, `sqrt`/`pow`/`floor`/`fabs`, and the `map_*`
+forms. Constructors (`Some`/`Ok`/`Err`/`None`) and niladic built-ins (`args`, `now`, `ncpu`, …)
+have no receiver and stay plain calls.
+
 One disambiguation rule: if the receiver's struct has a *fn-typed field* with the same name as
 a free function, the field wins — `h.cb(5)` calls the stored function value, not a free `cb`.
