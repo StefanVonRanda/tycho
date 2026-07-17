@@ -59,6 +59,27 @@ spec-level, no memory unsafety).
     3-way green, test 351/0, type/eq-parity green, fuzz N=1000 FAIL=0 (no false-reject at the
     new positions across the differential accept-fuzzer's Some/Ok/Err arg/return sites).
 
+- **Parity-discipline sweep (2026-07-17) — 6 position gaps FIXED.** Generalizing the
+  sum-payload lesson: a check wired at a typed decl often isn't wired at the other value-
+  supplying positions. A differential battery (mismatch-class x position) found the same
+  fail-open shape for two more classes, all tychoc0-accepts-where-tychoc-rejects:
+  - **Silent scalar coercion (UB-6 completion).** 2ed088c added `scalar_coercion_bad` at
+    decl/arg/return/array-elem but omitted **reassignment** (`x = 2.5`), **place assign**
+    (`b.f = 2.5`, `m[k] = 2.5`), **struct-literal field** (`S(2.5)`), and the **map-key
+    write** (`m[2.5] = 1`, whose write path used bare `nt_check` while the read path
+    base-checks via `check_mkey`). Each silently truncated a float into an int slot.
+  - **Newtype identity at the array-element boundary.** `[Id(1), y]` (y a raw int) erased
+    the identity — the elem loop only ran `scalar_coercion_bad` (base-equal, so blind to
+    identity); added `nt_check_e` between the first element and each subsequent one.
+  Fixes wired `scalar_coercion_bad` at SAssign / check_place_assign / check_struct_ctor /
+  the map-key write, and `nt_check_e` at the array-element loop. Locked by
+  `tests/reject/{scalar_coerce_reassign,scalar_coerce_place,scalar_coerce_struct_field,scalar_coerce_map_key,newtype_array_elem}.ty`.
+  - **Surfaced but NOT fixed (separate, pre-existing, OVER-strict — fail-closed, safe):**
+    `for k in keys(m)` over a newtype-keyed map then `m[k]` — tychoc0 rejects "map key
+    identity differs" (the loop key is newtype-erased to base; `check_mkey`'s `nt_check`
+    rejects it) where tychoc accepts. Present on HEAD before this sweep; tychoc0 is
+    over-strict here, not unsound. Tracked as open follow-up.
+
 ## Confirmed inconsistencies
 
 ### C1. [HIGH] Escaping closure capturing a bare map is a use-after-free in tychoc0 (segfault / silently wrong value); tychoc is correct

@@ -10040,11 +10040,15 @@ fn nt_check_e(dc: Decls, ctx: Ctx, le: Expr, re: Expr, names: [string], types: [
 fn check_place_assign(dc: Decls, ctx: Ctx, lv: Expr, rhs: Expr, names: [string], types: [string], el: int):
     nt_check_e(dc, ctx, lv, rhs, names, types, "assignment", el)
     check_sum_pos(dc, ctx, type_of(lv, names, types, dc, ctx), rhs, names, types, el)   # a Some/Ok/Err payload stored into a place (b.o = ..., m[k] = ...) must match the place's Option/Result type
+    if scalar_coercion_bad(dc, ctx, type_of(lv, names, types, dc, ctx), rhs, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion into a place (b.f = 2.5, m[k] = 2.5)
+        die_at(dc, el, "storing " + type_of(rhs, names, types, dc, ctx) + " into a place of type " + type_of(lv, names, types, dc, ctx))
     match lv:
         EIndex(b, k, _il):
             bt := type_of(b, names, types, dc, ctx)
             if is_map(bt):
-                nt_check(dc, ctx, map_key(bt), k, names, types, "map key", el)
+                nt_check(dc, ctx, map_key(bt), k, names, types, "map key", el)   # newtype identity of the key
+                if scalar_coercion_bad(dc, ctx, map_key(bt), k, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion of a WRITE key (m[2.5]=1); the read path already base-checks via check_mkey
+                    die_at(dc, el, "map key must be " + map_key(bt) + ", got " + type_of(k, names, types, dc, ctx))
         _:
             return
 
@@ -10058,6 +10062,8 @@ fn check_struct_ctor(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [stri
             for k < len(args) and k < len(dc.structs[i].fields):
                 nt_check(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types, "field '" + dc.structs[i].fields[k].name + "'", el)
                 check_sum_pos(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types, el)   # a Some/Ok/Err payload in a struct-literal field must match the field's Option/Result type
+                if scalar_coercion_bad(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types):   # AUDIT (UB-6 completion): no silent scalar coercion in a struct-literal field
+                    die_at(dc, el, "field '" + dc.structs[i].fields[k].name + "' is " + dc.structs[i].fields[k].ty + " but the value is " + type_of(args[k], names, types, dc, ctx))
                 k = k + 1
             return
         i = i + 1
@@ -10291,6 +10297,7 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
                 for m < len(elems):
                     if scalar_coercion_bad(dc, ctx, e0, elems[m], names, types):
                         die_at(dc, _el, "array elements must all have the same type")
+                    nt_check_e(dc, ctx, elems[0], elems[m], names, types, "array element", _el)   # AUDIT (newtype-identity completion): a raw base among newtype elements ([Id(1), y]) is a mismatch
                     m = m + 1
         EArrEmpty(ety, _el):
             note_arr_types(&acc, "[" + ety + "]")
@@ -10393,6 +10400,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             if has_str(names, n):                       # newtype identity: RHS must match the variable's type
                 nt_check(dc, ctx, var_type(names, types, n), e, names, types, "assignment to '" + n + "'", _sl)
                 check_sum_pos(dc, ctx, var_type(names, types, n), e, names, types, _sl)   # a Some/Ok/Err payload must match the variable's Option/Result type
+                if scalar_coercion_bad(dc, ctx, var_type(names, types, n), e, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion on a reassignment
+                    die_at(dc, _sl, "assigning " + type_of(e, names, types, dc, ctx) + " to '" + n + "' which is " + var_type(names, types, n))
         SFieldAssign(lv, rhs, _sl):
             collect_expr(&acc, lv, names, types, dc, ctx)
             collect_expr(&acc, rhs, names, types, dc, ctx)

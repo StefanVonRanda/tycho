@@ -1,0 +1,11 @@
+# No silent scalar coercion when storing into a PLACE (a struct field here; a map value
+# m[k] = ... is the same check_place_assign path). The field is int; `s.v = 2.5` silently
+# truncated in tychoc0 while tychoc rejects. Both compilers must reject. (UB-6 completion
+# at the place-assignment position.)
+struct S:
+    v: int
+
+fn main():
+    s : S = S(0)
+    s.v = 2.5
+    println(str(s.v))

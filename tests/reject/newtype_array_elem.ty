@@ -1,0 +1,10 @@
+# Newtype identity is enforced on ARRAY-LITERAL elements: a raw base value among newtype
+# elements is a mismatch. `[Id(1), y]` (y a plain int) erased the identity in tychoc0
+# while tychoc rejects. Both compilers must reject. (Newtype-identity completion at the
+# array-element boundary.)
+type Id = int
+
+fn main():
+    y : int = 5
+    a : [Id] = [Id(1), y]
+    println(str(len(a)))
