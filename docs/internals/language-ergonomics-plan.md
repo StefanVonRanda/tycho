@@ -111,16 +111,34 @@ Verified: minimal by-value/inout/two-param cases (`tests/generic_struct_param.ty
 `Pool(int)`/`Pool(Node)` package (`corelib/test/pool`, `examples/corelib/pool`) all agree
 byte-for-byte across tychoc, tychoc0-bundle, and tychoc0-standalone; full gate green.
 
-**Handle is a plain `int`, not the distinct newtype the API sketch used.** A *concrete newtype
-parameter alongside a generic one* (`get(p: Pool($T), h: Handle)`) is a **separate, still-open**
-tychoc0 gap: `type_of` base-resolves the arg (`Handle`→`int`) at the call, so the strict
-generic matcher can't reconcile it with the `Handle` pattern. Plain-int handles sidestep it and
-stay runtime-safe via the generation check. Closing that gap (newtype identity preserved through
-a generic call's arg types) would let `Handle` become distinct again.
+**`Handle` is a distinct `int` newtype (the newtype-through-generics gap was then closed).** A
+*concrete newtype parameter alongside a generic one* (`get(p: Pool($T), h: Handle)`) used to be
+rejected by tychoc0: `type_of` base-resolves a var/call arg (`Handle`→`int`), so the strict
+generic matcher couldn't reconcile it with the `Handle` pattern. Fixed in tychoc0:
 
-**Remaining follow-up:** teach `fuzz/gen.py` to emit generic-struct params (its generic
-generation is currently gated to literal scalar args — see its own comments) so this gap stays
-enforced by the differential fuzzer, not only the goldens.
+- **Keep a fn's newtype return unresolved** in `type_of` (like the `Nt(v)` constructor case), so
+  a value carries its newtype through the generic call's `nt_check`.
+- **Lenient concrete-param match** in `mono_instantiate`: a non-`$` param whose resolved base
+  equals the arg's resolved base is accepted (identity is enforced separately by the existing
+  post-mono `nt_check`, which rejects a bare `int` for a `Handle` param — parity with tychoc).
+- **`str` resolves the newtype** for every scalar dispatch (a fn returning `Meters` now
+  `str`s as its `float`, matching `str(Meters(3.0))`).
+- Also closed the **direct generic-struct construction arg** (`f(Box(5))`) via the same
+  `ginst_app_form` used for `x := Box(5)` decls.
+
+Verified: `tests/generic_newtype_param.ty` + `tests/reject/generic_newtype_bare_int.ty`, and
+`core:pool` with a distinct `Handle` (`add(...) -> Handle`, `get(p, h: Handle)`, `edges:
+[pool.Handle]`) — identical across tychoc / tychoc0 bundle / standalone.
+
+**Residual narrow gaps (not generics; surfaced by richer newtype use, noted for later):** an
+array literal of a newtype-typed variable (`[a]` where `a: Handle`) infers `[int]` (the element
+read resolves), and a package-qualified newtype in a **map-key annotation** (`[]pool.Handle: bool`)
+records the key unmangled (`pool.Handle` vs the value's `pool__Handle`). Both are tychoc/tychoc0
+divergences; sidestep with an explicit array type / an `int` key until fixed.
+
+**Remaining follow-up:** teach `fuzz/gen.py` to emit generic-struct + concrete-newtype params
+(its generic generation is currently gated to literal scalar args — see its own comments) so
+these gaps stay enforced by the differential fuzzer, not only the goldens.
 
 ---
 

@@ -1,0 +1,24 @@
+# A concrete newtype parameter (h: Handle) alongside a generic one (Box($T)) in a
+# generic function: the newtype identity must survive the generic call. A generic
+# fn returning a newtype, whose result feeds another generic fn's Handle param --
+# by variable and directly. Both compilers.
+type Handle = int
+
+struct Box($T):
+    v: $T
+
+fn mk(b: Box($T)) -> Handle:
+    return Handle(b.v * 10)
+
+fn slot(b: Box($T), h: Handle) -> int:      # concrete newtype param beside a generic one
+    return to_int(h) + b.v
+
+fn main():
+    bi := Box(5)
+    h := mk(bi)                             # generic fn returning a newtype, bound to a var
+    println(str(slot(bi, h)))               # 55  (var-carried Handle)
+    println(str(slot(bi, mk(bi))))          # 55  (Handle passed directly)
+
+    b4 := Box(4)
+    hs := mk(Box(3))
+    println(str(slot(b4, hs)))              # 34  (distinct instantiations share the Handle param)

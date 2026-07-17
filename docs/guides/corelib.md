@@ -98,10 +98,10 @@ element type instead of a family of per-type siblings.
   idiom is to hold every node in one array and link by integer index; `pool` packages that
   idiom. Generic over the element type `Pool($T)`: `add(&p, v) -> Handle`, `get(p, h)`,
   `set(&p, h, v)`, `remove(&p, h)`, `alive(p, h)`, `count(p)`. A `Handle` is a single packed
-  `int` (pointer-sized, value-semantic, introduces no aliasing) carrying a slot index plus a
-  generation; every access checks the generation, so a handle to a freed-and-reused slot is
-  caught (use-after-free / double-free) at runtime instead of silently reading the new
-  occupant. Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It improves
+  `int` **newtype** (pointer-sized, value-semantic, introduces no aliasing, and type-distinct
+  from a raw `int` so you can't pass the wrong thing) carrying a slot index plus a generation;
+  every access checks the generation, so a handle to a freed-and-reused slot is caught
+  (use-after-free / double-free) at runtime instead of silently reading the new occupant. Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It improves
   *ergonomics*, not memory — pointer-shaped storage still costs ~1.55× C in this model
   (fundamental; see [value-semantics limits](../internals/value-semantics-limits.md)) — what
   it removes is the hand-rolled index-plus-generation bookkeeping.

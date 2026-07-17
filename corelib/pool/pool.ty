@@ -4,8 +4,9 @@
 # Value semantics forbids a shared-mutable pointer graph, so the idiom is to hold
 # every node in one array and link nodes by INTEGER INDEX (see
 # docs/internals/value-semantics-limits.md). This package packages that idiom so
-# you don't re-derive it each time: `add` returns a `Handle` (a single packed int
-# -- pointer-sized, value-semantic, introduces NO aliasing), and every
+# you don't re-derive it each time: `add` returns a `Handle` (a distinct int
+# newtype -- pointer-sized, value-semantic, introduces NO aliasing, and
+# type-incompatible with a raw int so you can't pass the wrong thing), and every
 # `get`/`set`/`remove` is checked against a per-slot GENERATION counter, so a
 # handle to a freed-and-reused slot is caught (use-after-free / double-free) at
 # runtime instead of silently reading the new occupant.
@@ -17,11 +18,10 @@
 #
 # A Handle packs `(generation << 24) | slot-index`, so a pool holds up to 2^24
 # (~16.7M) live slots and each slot survives 2^39 reuse cycles before the
-# generation wraps. Both limits are far past any in-memory working set. (Handle is
-# a plain `int`, not a distinct newtype: a concrete newtype parameter alongside a
-# generic one isn't yet matched by the self-hosted compiler. Validity is enforced
-# at runtime by the generation check regardless.)
+# generation wraps. Both limits are far past any in-memory working set.
 package pool
+
+type Handle = int
 
 struct Slot($T):
     val: $T
@@ -33,17 +33,17 @@ struct Pool($T):
     free: [int]           # indices of removed slots, ready to reuse
 
 # --- handle packing (index in the low 24 bits, generation above) ---
-fn pack(idx: int, gen: int) -> int:
-    return (gen << 24) | idx
-fn index_of(h: int) -> int:
-    return h & 16777215
-fn generation_of(h: int) -> int:
-    return h >> 24
+fn pack(idx: int, gen: int) -> Handle:
+    return Handle((gen << 24) | idx)
+fn index_of(h: Handle) -> int:
+    return to_int(h) & 16777215
+fn generation_of(h: Handle) -> int:
+    return to_int(h) >> 24
 
 # --- lifecycle ---
 
 # Add a value; returns a stable Handle. Reuses a freed slot when one exists.
-fn add(p: inout Pool($T), v: $T) -> int:
+fn add(p: inout Pool($T), v: $T) -> Handle:
     if len(p.free) > 0:
         idx := pop(p.free)
         p.slots[idx].val = v
@@ -54,7 +54,7 @@ fn add(p: inout Pool($T), v: $T) -> int:
     return pack(ni, 0)
 
 # Is this handle still valid (slot live AND generation matches)?
-fn alive(p: Pool($T), h: int) -> bool:
+fn alive(p: Pool($T), h: Handle) -> bool:
     idx := index_of(h)
     if idx < 0 or idx >= len(p.slots):
         return false
@@ -62,20 +62,20 @@ fn alive(p: Pool($T), h: int) -> bool:
 
 # Read the value behind a handle. Dies (use-after-free) on a stale/invalid handle.
 # Returns a COPY (value semantics) -- the pool is never aliased.
-fn get(p: Pool($T), h: int) -> $T:
+fn get(p: Pool($T), h: Handle) -> $T:
     if not alive(p, h):
         die("pool.get: stale or invalid handle (use-after-free)")
     return p.slots[index_of(h)].val
 
 # Overwrite the value behind a live handle. Dies on a stale/invalid handle.
-fn set(p: inout Pool($T), h: int, v: $T):
+fn set(p: inout Pool($T), h: Handle, v: $T):
     if not alive(p, h):
         die("pool.set: stale or invalid handle (use-after-free)")
     p.slots[index_of(h)].val = v
 
 # Free a slot. Bumps its generation so every existing handle to it goes stale.
 # Dies on a double-free / invalid handle.
-fn remove(p: inout Pool($T), h: int):
+fn remove(p: inout Pool($T), h: Handle):
     if not alive(p, h):
         die("pool.remove: stale or invalid handle (double free)")
     idx := index_of(h)

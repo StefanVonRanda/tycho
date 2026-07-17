@@ -4960,7 +4960,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return resolve_nt(dc, ctx, subst_field_type(dc.sigs[gsi].ret, gbn, gbt))
             if is_newtype(dc, ctx, name):             # Nt(v) constructor: KEEP the newtype identity unresolved, so a decl `r := Nt(v)` stores "Nt" and the value can be distinguished from its base. A var read (the EVar case above) and cty still resolve to the base, so codegen is unchanged.
                 return name
-            return resolve_nt(dc, ctx, sig_ret(dc, with_line(ctx, _el), name))
+            cret := sig_ret(dc, with_line(ctx, _el), name)
+            if is_newtype(dc, ctx, cret):             # a fn RETURNING a newtype: keep the identity too (like the constructor above), so the value carries the newtype through a generic call's nt_check. Consumers that need the base (str, arithmetic) resolve_nt themselves; reads via EVar/EField/EIndex still resolve.
+                return cret
+            return resolve_nt(dc, ctx, cret)
 
 # ROADMAP 2.4: the type a subscript call `recv.name(args)` projects to. The
 # subscript is declared `-> inout U`; substitute the receiver + args into its
@@ -6205,11 +6208,12 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return gen_expr(args[0], names, types, dc, ctx) + ".len"
             if name == "str":
                 at := type_of(args[0], names, types, dc, ctx)
-                if at == "str":                                  # str(string) is identity (interpolation)
+                rnt := resolve_nt(dc, ctx, at)                    # a newtype stringifies as its base (docs: `str` sees the underlying value); resolve for every scalar dispatch, not just int/char/uint
+                if rnt == "str":                                 # str(string) is identity (interpolation)
                     return gen_expr(args[0], names, types, dc, ctx)
-                if at == "float" or at == "f32":                 # f32 promotes to double
+                if rnt == "float" or rnt == "f32":               # f32 promotes to double
                     return "f2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
-                if at == "bool":
+                if rnt == "bool":
                     return "b2s(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
                 if resolve_nt(dc, ctx, at) == "char":   # char -> its one-byte glyph string (value is a byte 0..255)
                     return "hi_chr(" + ctx.owner + ", " + gen_expr(args[0], names, types, dc, ctx) + ")"
@@ -13232,7 +13236,7 @@ fn struct_named_here(cn: string, dc: Decls, sinsts: [StructDef]) -> bool:
         i = i + 1
     return false
 
-fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, dc: Decls, explicit: [string], sinsts: [StructDef], einsts: [EnumDef]) -> string:
+fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, dc: Decls, explicit: [string], sinsts: [StructDef], einsts: [EnumDef], ctx: Ctx) -> string:
     if len(argtypes) != len(gt.ptypes):
         die("generics: '" + gt.name + "' takes " + str(len(gt.ptypes)) + " argument(s), got " + str(len(argtypes)))
     bnames := []string
@@ -13273,7 +13277,12 @@ fn mono_instantiate(gt: Func, argtypes: [string], insts: inout [Func], ln: int, 
                 # doesn't structurally match the `Box($T)` pattern -- bind $T from the instance's
                 # recorded inst_args (mirrors the construction + nested-field recovery paths).
                 if not recover_struct_binds(pp, argtypes[i], dc.structs, sinsts, &bnames, &btypes) and not recover_enum_binds(pp, argtypes[i], dc.enums, einsts, &bnames, &btypes):
-                    die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
+                    # a CONCRETE (non-$) newtype param (`h: Handle`) sees a base-resolved arg
+                    # (`int`), which match_typaram_str rejects. Accept when the resolved bases
+                    # agree -- the newtype IDENTITY is enforced separately by nt_check at the call
+                    # site (which exempts $T params), mirroring the non-generic arg path.
+                    if ty_is_generic(pp) or resolve_nt(dc, ctx, pp) != resolve_nt(dc, ctx, argtypes[i]):
+                        die("generics: argument " + str(i + 1) + " of '" + gt.name + "' is " + argtypes[i] + ", which does not fit the parameter pattern")
             i = i + 1
     # generics: enforce `where` constraints up front (clear signature error, not a deep body error)
     if gt.constraints != "":
@@ -13746,16 +13755,22 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                     for k < len(allargs):
                         push(at, type_of(allargs[k], names, types, dc, ctx))
                         k = k + 1
-                    newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts)
+                    newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts, ctx)
                     return ECall(newnm, allargs, el)
             gi := find_generic(gens, rn)
             if gi >= 0:
                 at := []string
                 k := 0
                 for k < len(a):
-                    push(at, type_of(a[k], names, types, dc, ctx))   # type the ORIGINAL args: a nested generic call resolves to its concrete return via type_of, whereas the mono'd arg names its instance (not yet in dc)
+                    atk := type_of(a[k], names, types, dc, ctx)   # type the ORIGINAL args: a nested generic call resolves to its concrete return via type_of, whereas the mono'd arg names its instance (not yet in dc)
+                    cnk := call_callee(margs[k])                  # a DIRECT generic-struct construction arg (f(Box(5))) types to the bare template "Box"; the mono'd arg names its instance -> use the application form so match_typaram_str binds $T (mirrors the SDecl decl-typing)
+                    if cnk != "":
+                        appk := ginst_app_form(cnk, dc, sinsts)
+                        if appk != "":
+                            atk = appk
+                    push(at, atk)
                     k = k + 1
-                newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit, sinsts, einsts)
+                newnm := mono_instantiate(gens[gi], at, &insts, el, dc, explicit, sinsts, einsts, ctx)
                 return ECall(newnm, margs, el)
             geni := -1                                # generic enum constructor: a variant of a generic enum
             gevi := -1
@@ -13852,7 +13867,7 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                             push(allargs, mono_expr(a[ai], names, types, gens, &insts, &sinsts, &einsts, dc, ctx))
                             push(at, type_of(a[ai], names, types, dc, ctx))
                             ai = ai + 1
-                        newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts)
+                        newnm := mono_instantiate(gens[ug], at, &insts, el, dc, []string, sinsts, einsts, ctx)
                         return ECall(newnm, allargs, el)
             return ECallV(mono_expr(c, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
         ESpread(_sx, _sel):

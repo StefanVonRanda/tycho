@@ -9,13 +9,13 @@ import "core:pool"
 
 struct Node:
     label: string
-    edges: [int]                # out-neighbours, by handle into the pool
+    edges: [pool.Handle]        # out-neighbours, by handle into the pool
 
 fn main():
     g := pool.Pool([]pool.Slot(Node), []int)
-    a := pool.add(&g, Node("A", []int))
-    b := pool.add(&g, Node("B", []int))
-    c := pool.add(&g, Node("C", []int))
+    a := pool.add(&g, Node("A", []pool.Handle))
+    b := pool.add(&g, Node("B", []pool.Handle))
+    c := pool.add(&g, Node("C", []pool.Handle))
 
     # wire A->B, A->C, B->C  (value semantics: get, mutate the copy, set it back)
     na := pool.get(g, a)
@@ -26,15 +26,17 @@ fn main():
     push(nb.edges, c)
     pool.set(&g, b, nb)
 
-    # depth-first walk from A, iterative worklist keyed by handle
+    # depth-first walk from A, iterative worklist of handles (visited set keyed by
+    # the handle's underlying int)
     seen := []int: bool
-    stack := [a]
+    stack := []pool.Handle
+    push(stack, a)
     order := []string
     for len(stack) > 0:
         h := pop(stack)
-        if not pool.alive(g, h) or (h in seen):
+        if not pool.alive(g, h) or (to_int(h) in seen):
             continue
-        seen[h] = true
+        seen[to_int(h)] = true
         n := pool.get(g, h)
         push(order, n.label)
         # push neighbours in reverse so the walk visits them in insertion order
