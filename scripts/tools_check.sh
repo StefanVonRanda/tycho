@@ -267,5 +267,20 @@ else
     echo "    package resolve error: WRONG file or missing snippet"; sed 's/^/      /' "$TMP/pkgres.err"; fail=1
 fi
 
+echo ">>> bytes-rehome: a bytes field of a returned struct is deep-copied into the caller's arena"
+# Regression: copy_into had no T_BYTES case, so a `bytes` field of a returned/stored
+# aggregate fell through to `return val` (no re-home) and dangled in the callee's
+# freed scope -- a use-after-free that served garbage from the webserver dogfood.
+# The bytes must be re-homed (tycho_str_copy, same as a string). Emission-level so
+# it's deterministic (the runtime manifestation is arena-layout dependent).
+mkdir -p "$TMP/brh"
+printf 'package main\nimport "core:io"\nstruct B:\n    data: bytes\nfn mk(p: string) -> B:\n    d := io.read_bytes(p)\n    if len(d) == 0:\n        return B(to_bytes(""))\n    return B(d)\nfn main():\n    b := mk("Makefile")\n    println(str(len(b.data)))\n' > "$TMP/brh/main.ty"
+TYCHO_CORELIB="$PWD/corelib" ./tychoc "$TMP/brh/main.ty" --emit-c >/dev/null 2>&1
+if grep -q 'tycho_str_copy(_parent, h_d)' "$TMP/brh/main.c"; then
+    echo "    bytes field re-homed on struct return"
+else
+    echo "    bytes field NOT re-homed -- copy_into missing T_BYTES (dangling UAF!)"; fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then echo "tools-check: FAIL"; exit 1; fi
 echo "tools-check: ok"

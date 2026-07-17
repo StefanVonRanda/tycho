@@ -7369,6 +7369,7 @@ static char *copy_into(Type t, const char *arena, char *val) {
     if (IS_MAPC(t)) return sfmt("tycho_mapc%d_copy(%s, %s)", MAPC_ID(t), arena, val);
     switch (t) {
         case T_STRING:       return sfmt("tycho_str_copy(%s, %s)", arena, val);
+        case T_BYTES:        return sfmt("tycho_str_copy(%s, %s)", arena, val);   /* bytes shares string's length-headered buffer -> same length-safe re-home (was missing: a bytes field of a returned/stored aggregate wasn't re-homed and dangled) */
         case T_ARRAY_INT:    return sfmt("tycho_arr_int_copy(%s, %s)", arena, val);
         case T_ARRAY_FLOAT:  return sfmt("tycho_arr_float_copy(%s, %s)", arena, val);
         case T_ARRAY_STRING: return sfmt("tycho_arr_str_copy(%s, %s)", arena, val);
