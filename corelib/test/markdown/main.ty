@@ -1,0 +1,25 @@
+# corelib test: exercises core:markdown. The C compiler and tychoc0 must agree,
+# and the output is locked to corelib/test/markdown.out (corelib/run.sh). Pure
+# Tycho -- no filesystem, deterministic.
+package main
+import "core:markdown"
+
+fn main():
+    # headings 1..6 + inline in a heading
+    println(markdown.render("# H1 *i*"))
+    println(markdown.render("###### H6"))
+    # paragraph with every inline: bold, italic (both delims), code, link, image, escapes
+    println(markdown.render("a **b** _i_ *j* `x<y` [t](u) ![a](s) & < >"))
+    # multi-line paragraph joins; a blank line splits
+    println(markdown.render("line one\nline two\n\nsecond para"))
+    # unordered (all three markers) and ordered lists with inline
+    println(markdown.render("- one\n* two\n+ **three**"))
+    println(markdown.render("1. first\n2. second"))
+    # blockquote (rendered recursively) and thematic breaks
+    println(markdown.render("> quoted **b**\n> still"))
+    println(markdown.render("---"))
+    println(markdown.render("***"))
+    # fenced code escapes HTML, no inline processing
+    println(markdown.render("```\nlet x = a<b && c > d; `nope`\n```"))
+    # fail-soft: unmatched delimiters pass through as escaped text
+    println(markdown.render("un**matched and [broken(link and *lone"))

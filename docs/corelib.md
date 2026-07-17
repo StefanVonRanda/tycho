@@ -154,6 +154,13 @@ element type instead of a family of per-type siblings.
   delimiter/quote/CR/LF (doubling internal quotes) -- `parse`/`stringify` round-trip.
   `parse_delim`/`stringify_delim` take an arbitrary single-byte delimiter (TSV is
   `parse_delim(s, 9)`); `get(rows, r, c)` is a bounds-safe cell read (`""` if OOB).
+- **`markdown`** — a pragmatic Markdown → HTML renderer in pure Tycho. `render(src)`
+  handles ATX headings, fenced code (HTML-escaped), blockquotes, unordered/ordered
+  lists, thematic breaks, and paragraphs; inline `**bold**`, `*italic*`/`_italic_`,
+  `` `code` ``, `[text](url)`, `![alt](src)`. All text is HTML-escaped and unknown
+  syntax degrades to escaped plain text (never a parse abort). Not full CommonMark
+  (no nested lists, reference links, tables, or setext headings) — targets a
+  blog/wiki.
 - **`base64`** — Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe
   `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
   (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is

@@ -1,0 +1,235 @@
+# corelib: a pragmatic Markdown -> HTML renderer in pure Tycho. Import with
+# `import "core:markdown"`, then `markdown.render(src)`.
+#
+# Block level: ATX headings (`#`..`######`), fenced code (``` ```), blockquotes
+# (`>`), unordered (`-`/`*`/`+`) and ordered (`1.`) lists, thematic breaks
+# (`---`/`***`/`___`), and paragraphs. Inline: `**bold**`, `*italic*`/`_italic_`,
+# `` `code` ``, `[text](url)`, `![alt](src)`. Everything else is passed through as
+# escaped text -- unknown syntax degrades to plain text, never a parse abort.
+#
+# This is NOT full CommonMark (no nested lists, reference links, tables, or setext
+# headings). It targets a blog/wiki: enough to render prose faithfully and safely
+# (all text is HTML-escaped; only the constructs above emit tags).
+package markdown
+import "core:strings"
+
+# --- HTML escaping -----------------------------------------------------------
+# Escape the five characters that are unsafe in HTML text / attributes.
+fn esc(s: string) -> string:
+    out := ""
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if c == 38:                     # &
+            out = out + "&amp;"
+        elif c == 60:                   # <
+            out = out + "&lt;"
+        elif c == 62:                   # >
+            out = out + "&gt;"
+        elif c == 34:                   # "
+            out = out + "&quot;"
+        else:
+            out = out + chr(c)
+        i = i + 1
+    return out
+
+# index of byte `b` in `s` at or after `from`, or -1
+fn index_from(s: string, b: int, from: int) -> int:
+    i := from
+    n := len(s)
+    for i < n:
+        if s[i] == b:
+            return i
+        i = i + 1
+    return 0 - 1
+
+# find the literal `close` string in `s` at or after `from`, or -1
+fn find_from(s: string, close: string, from: int) -> int:
+    n := len(s)
+    cl := len(close)
+    i := from
+    for i + cl <= n:
+        if substr(s, i, i + cl) == close:
+            return i
+        i = i + 1
+    return 0 - 1
+
+# --- inline formatting -------------------------------------------------------
+# Render inline markdown within one text run to HTML. Left-to-right scan; an
+# unmatched delimiter is emitted as an escaped literal (fail soft).
+fn inline(s: string) -> string:
+    out := ""
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if c == 96:                                 # `code`
+            j := index_from(s, 96, i + 1)
+            if j < 0:
+                out = out + "&#96;"
+                i = i + 1
+            else:
+                out = out + "<code>" + esc(substr(s, i + 1, j)) + "</code>"
+                i = j + 1
+        elif c == 33 and i + 1 < n and s[i + 1] == 91:   # ![alt](src)
+            rb := index_from(s, 93, i + 2)              # ]
+            if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
+                rp := index_from(s, 41, rb + 2)         # )
+                if rp > 0:
+                    alt := substr(s, i + 2, rb)
+                    src := substr(s, rb + 2, rp)
+                    out = out + "<img src=\"" + esc(src) + "\" alt=\"" + esc(alt) + "\">"
+                    i = rp + 1
+                else:
+                    out = out + "!"
+                    i = i + 1
+            else:
+                out = out + "!"
+                i = i + 1
+        elif c == 91:                               # [text](url)
+            rb := index_from(s, 93, i + 1)          # ]
+            if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
+                rp := index_from(s, 41, rb + 2)     # )
+                if rp > 0:
+                    txt := substr(s, i + 1, rb)
+                    url := substr(s, rb + 2, rp)
+                    out = out + "<a href=\"" + esc(url) + "\">" + inline(txt) + "</a>"
+                    i = rp + 1
+                else:
+                    out = out + chr(91)             # unmatched '[' -> literal
+                    i = i + 1
+            else:
+                out = out + chr(91)                 # unmatched '[' -> literal
+                i = i + 1
+        elif c == 42 and i + 1 < n and s[i + 1] == 42:   # **bold**
+            j := find_from(s, "**", i + 2)
+            if j < 0:
+                out = out + "**"
+                i = i + 2
+            else:
+                out = out + "<strong>" + inline(substr(s, i + 2, j)) + "</strong>"
+                i = j + 2
+        elif c == 42 or c == 95:                    # *italic* or _italic_
+            j := index_from(s, c, i + 1)
+            if j < 0:
+                out = out + chr(c)
+                i = i + 1
+            else:
+                out = out + "<em>" + inline(substr(s, i + 1, j)) + "</em>"
+                i = j + 1
+        elif c == 38:                               # & -> escaped
+            out = out + "&amp;"
+            i = i + 1
+        elif c == 60:                               # < -> escaped
+            out = out + "&lt;"
+            i = i + 1
+        elif c == 62:                               # > -> escaped
+            out = out + "&gt;"
+            i = i + 1
+        else:
+            out = out + chr(c)
+            i = i + 1
+    return out
+
+# --- block helpers -----------------------------------------------------------
+fn is_blank(s: string) -> bool:
+    return strings.trim(s) == ""
+
+# a line is a thematic break if it's 3+ of the same -, *, or _ (after trim)
+fn is_hr(line: string) -> bool:
+    t := strings.trim(line)
+    if len(t) < 3:
+        return false
+    c := t[0]
+    if c != 45 and c != 42 and c != 95:             # - * _
+        return false
+    i := 0
+    for i < len(t):
+        if t[i] != c:
+            return false
+        i = i + 1
+    return true
+
+# heading level 1..6 for an ATX line, or 0 if not a heading
+fn heading_level(line: string) -> int:
+    i := 0
+    n := len(line)
+    for i < n and line[i] == 35:                    # count leading '#'
+        i = i + 1
+    if i >= 1 and i <= 6 and i < n and line[i] == 32:   # '#'* then a space
+        return i
+    return 0
+
+# an unordered-list marker (`- `, `* `, `+ `) -> the item text, or "" if not one
+fn ul_item(line: string) -> string:
+    t := line
+    if len(t) >= 2 and (t[0] == 45 or t[0] == 42 or t[0] == 43) and t[1] == 32:
+        return strings.trim(substr(t, 2, len(t)))
+    return ""
+
+# an ordered-list marker (`<digits>. `) -> the item text, or "" if not one
+fn ol_item(line: string) -> string:
+    i := 0
+    n := len(line)
+    for i < n and line[i] >= 48 and line[i] <= 57:  # digits
+        i = i + 1
+    if i >= 1 and i + 1 < n and line[i] == 46 and line[i + 1] == 32:   # '.' ' '
+        return strings.trim(substr(line, i + 2, n))
+    return ""
+
+# --- the block renderer ------------------------------------------------------
+fn render(src: string) -> string:
+    lines := strings.lines(src)
+    out := ""
+    i := 0
+    n := len(lines)
+    for i < n:
+        line := lines[i]
+        if is_blank(line):
+            i = i + 1
+        elif strings.starts_with(strings.trim(line), "```"):    # fenced code
+            i = i + 1
+            code := ""
+            for i < n and not strings.starts_with(strings.trim(lines[i]), "```"):
+                code = code + esc(lines[i]) + "\n"
+                i = i + 1
+            if i < n:
+                i = i + 1                                        # closing fence
+            out = out + "<pre><code>" + code + "</code></pre>\n"
+        elif is_hr(line):
+            out = out + "<hr>\n"
+            i = i + 1
+        elif heading_level(line) > 0:
+            h := heading_level(line)
+            text := strings.trim(substr(line, h + 1, len(line)))
+            hs := str(h)
+            out = out + "<h" + hs + ">" + inline(text) + "</h" + hs + ">\n"
+            i = i + 1
+        elif strings.starts_with(line, ">"):                    # blockquote
+            body := ""
+            for i < n and strings.starts_with(lines[i], ">"):
+                body = body + strings.trim(substr(lines[i], 1, len(lines[i]))) + "\n"
+                i = i + 1
+            out = out + "<blockquote>\n" + render(body) + "</blockquote>\n"
+        elif ul_item(line) != "":                               # unordered list
+            out = out + "<ul>\n"
+            for i < n and ul_item(lines[i]) != "":
+                out = out + "<li>" + inline(ul_item(lines[i])) + "</li>\n"
+                i = i + 1
+            out = out + "</ul>\n"
+        elif ol_item(line) != "":                               # ordered list
+            out = out + "<ol>\n"
+            for i < n and ol_item(lines[i]) != "":
+                out = out + "<li>" + inline(ol_item(lines[i])) + "</li>\n"
+                i = i + 1
+            out = out + "</ol>\n"
+        else:                                                   # paragraph
+            para := ""
+            for i < n and not is_blank(lines[i]) and heading_level(lines[i]) == 0 and not is_hr(lines[i]) and not strings.starts_with(lines[i], ">") and ul_item(lines[i]) == "" and ol_item(lines[i]) == "" and not strings.starts_with(strings.trim(lines[i]), "```"):
+                if para != "":
+                    para = para + "\n"
+                para = para + lines[i]
+                i = i + 1
+            out = out + "<p>" + inline(para) + "</p>\n"
+    return out
