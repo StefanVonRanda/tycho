@@ -95,7 +95,7 @@ element type instead of a family of per-type siblings.
   derived int key (a fn/closure).
 - **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
   state is an explicit int threaded via `inout` (the `&` marks the `inout` call site,
-  [Basics](reference/basics.md#procedures)): `st := rand.seed(42)`,
+  [Basics](../reference/basics.md#procedures)): `st := rand.seed(42)`,
   `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
   (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
   signed 64-bit int, so the generator is UB-free by construction.

@@ -219,4 +219,4 @@ The same operator works on `Option`: inside a function that returns `Option(T)`,
 ---
 
 *Design background:* why arena-allocated payloads keep recursive enums finite and copyable,
-and how the tagged value is laid out, is in [the memory model](../memory-model.md).
+and how the tagged value is laid out, is in [the memory model](../guides/memory-model.md).

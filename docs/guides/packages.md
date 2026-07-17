@@ -21,7 +21,7 @@ Three things define the model:
 - **There's no separate compilation.** The transpiler follows the import graph,
   merges everything reachable into one program, and emits a single `.c`.
 
-The [Packages reference](reference/packages.md) is the short version; this
+The [Packages reference](../reference/packages.md) is the short version; this
 is the longer design note.
 
 ## Surface syntax

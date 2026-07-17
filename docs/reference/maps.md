@@ -92,4 +92,4 @@ rejected. *Not yet:* a map as a map's key.
 ---
 
 *Design background:* why an in-place `m[k]` mutation stays value-safe, and how heap-valued
-entries are kept alive, is in [the map-values and map-mutation design notes](../map-values.md).
+entries are kept alive, is in [the map-values and map-mutation design notes](../guides/map-values.md).

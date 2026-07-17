@@ -1,7 +1,7 @@
 # Memory model in the self-hosted compiler
 
 Tycho's memory model — value semantics over implicit per-scope arenas — is
-described in [thesis.md](thesis.md), [arrays-structs.md](arrays-structs.md), and
+described in [thesis.md](../thesis.md), [arrays-structs.md](arrays-structs.md), and
 the README's [The thesis](../README.md#the-thesis) section. This document is
 about the *self-hosted* transpiler, `tychoc0`: how it generates code on that same
 model, and the reclamation tricks that let its output match the C reference
@@ -117,8 +117,8 @@ and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
 (reference counting) on these allocation-churn workloads. (The model's honest loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~1.55× C
 in RAM after the compact indexed-dict map layout, down from ~3×; I cover that
-residue in [the thesis](thesis.md) and the
-[value-semantics limits note](internals/value-semantics-limits.md).)
+residue in [the thesis](../thesis.md) and the
+[value-semantics limits note](../internals/value-semantics-limits.md).)
 
 ## Verification
 

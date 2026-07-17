@@ -165,4 +165,4 @@ an array view it **always copies** into a fresh substring (there is no zero-copy
 
 *Design background:* why value-semantic aggregates stay sound — copied deeply, projected
 in place, never aliased — with no borrow checker or whole-program alias analysis, is in
-[the aggregates design note](../arrays-structs.md).
+[the aggregates design note](../guides/arrays-structs.md).

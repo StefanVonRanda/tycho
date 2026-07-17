@@ -17,11 +17,11 @@ is why:
 - **[`reference/`](reference/)** — *what a feature does.* The canonical, terse language
   reference, one page per topic (`basics`, `types`, `maps`, `generics`, `concurrency`,
   `ffi`, `packages`, …). If you want the precise behavior, look here.
-- **Design notes** (`thesis.md`, `memory-model.md`, `generics.md`, `concurrency.md`,
-  `ffi.md`, `packages.md`, `arrays-structs.md`, `map-values.md`, `map-mutation.md`,
-  `perf.md`, `corelib.md`, `debugging.md`) — *why a feature is the way it is.* Long-form
-  essays on the reasoning behind each subsystem. Start with **[thesis.md](thesis.md)**,
-  the argument the whole language exists to test.
+- **[`guides/`](guides/)** — design notes: *why a feature is the way it is.* Long-form
+  essays on the reasoning behind each subsystem (`memory-model`, `generics`,
+  `concurrency`, `ffi`, `packages`, `arrays-structs`, `map-values`, `map-mutation`,
+  `perf`, `corelib`, `debugging`). And **[thesis.md](thesis.md)** — the argument the whole
+  language exists to test — is the best place to start.
 - **[`spec/`](spec/)** — the formal specification: grammar, per-construct semantics, and
   a conformance suite. For implementers and edge-case reasoning.
 - **[`architecture.md`](architecture.md)** — how the project is built, what each

@@ -5,7 +5,7 @@ A Tycho map `[K: V]` can hold *any* value type: `[string: string]`,
 This note explains how that works under value semantics and implicit arenas,
 and why the map runtime doesn't need any `$T` generics of its own to support any
 value type (monomorphization handles it). The user-facing surface is the
-[Maps reference](reference/maps.md); in-place mutation of a
+[Maps reference](../reference/maps.md); in-place mutation of a
 value (`push(m[k], v)`, `m[k] += 1`) has its own note,
 [map-mutation.md](map-mutation.md).
 
@@ -69,7 +69,7 @@ All operations work uniformly regardless of `V`:
 value take `V`; the key takes `K`. The key `K` is `string`, `int`, a newtype over
 either, a fieldless enum, or any **hashable composite** (struct/tuple/array, hashed
 deeply over its fields); only a map itself is not yet usable as a key (see the
-[Maps](reference/maps.md) reference page).
+[Maps](../reference/maps.md) reference page).
 
 ## Implementation notes
 

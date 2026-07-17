@@ -58,7 +58,7 @@ pre-push hook (`make hooks`), which blocks a push if `make test` or
    ([docs/thesis.md](docs/thesis.md)). Changes that quietly break the in-place
    optimizations (string append, the map accumulator, move-on-last-use) turn an
    O(n) idiom into O(n²), and `make bench` / `bench/` guard against that. When in
-   doubt, read [docs/memory-model.md](docs/memory-model.md).
+   doubt, read [docs/guides/memory-model.md](docs/guides/memory-model.md).
 
 ## Where feature work is useful
 
@@ -83,7 +83,7 @@ graph-shaped data as an index pool (see
 [docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md) and
 [docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)).
 Generics, on the other hand, *are* supported — `$T`, see
-[docs/generics.md](docs/generics.md).
+[docs/guides/generics.md](docs/guides/generics.md).
 
 ## Code style
 

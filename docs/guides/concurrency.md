@@ -14,7 +14,7 @@ stops at the FFI boundary: a task calling C that mutates process-global or
 `static` C state races just as it would in C, invisibly to the transpiler. Isolate
 that state per thread (thread-local storage, as the `core:crypto` shim does) or
 serialize the calls. The full analysis is in
-[`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md).
+[`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).
 
 The model does **not** remove **deadlock or livelock**: a `recv` with no live
 sender and no `close` parks forever, undetected (see
@@ -159,7 +159,7 @@ rejected just as it is anywhere else in a `parallel for` body.
 
 `make bench-conc` runs identical logic with cross-checked checksums in all four
 languages (AMD Ryzen 7 7735HS, 16 hardware threads — full details and the honest
-read in [bench/conc/RESULTS.md](../bench/conc/RESULTS.md)):
+read in [bench/conc/RESULTS.md](../../bench/conc/RESULTS.md)):
 
 | workload | tycho | C | Go | Rust |
 |---|---:|---:|---:|---:|

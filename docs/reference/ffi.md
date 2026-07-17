@@ -56,4 +56,4 @@ need to isolate such state per thread or serialize the calls. See [Concurrency](
 Ergonomics live on the `tychoc` command line: `--link` (a raw linker flag), `--pkg`
 (pkg-config), and `--shim` (compile a companion `.c` alongside). For a complete worked binding,
 in-memory SQLite is at [`examples/sqlite/`](../../examples/sqlite), and the full rules are in
-[the FFI design note](../ffi.md).
+[the FFI design note](../guides/ffi.md).

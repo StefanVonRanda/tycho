@@ -11,9 +11,9 @@ language has arrays and structs, given strict value semantics and no pointer
 type?* I believe the answer is **yes**, subject to five invariants and three honest
 costs, both listed below. Two transpiler optimizations (return-slot move,
 in-place append) keep the costs from biting in practice; see
-[thesis.md](thesis.md) §4. Arrays, structs, nested struct fields, structural
+[thesis.md](../thesis.md) §4. Arrays, structs, nested struct fields, structural
 equality, and `inout` all ship as described — see the [README](../README.md)
-and [thesis.md](thesis.md).
+and [thesis.md](../thesis.md).
 
 ## 1. The model in one paragraph
 

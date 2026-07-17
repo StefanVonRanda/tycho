@@ -20,7 +20,7 @@ language and its standard library (the *corelib*). It defines:
 It does **not** specify: the compiler's command-line interface, its diagnostic
 message text, the layout of generated C, or the performance of any construct
 (performance characteristics are described informatively in
-[docs/thesis.md](../thesis.md) and [docs/perf.md](../perf.md)).
+[docs/thesis.md](../thesis.md) and [docs/perf.md](../guides/perf.md)).
 
 Tycho is defined **abstractly**: scalar widths and behavior are fixed
 independently of any compilation target (§5). The reference

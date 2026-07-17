@@ -3,7 +3,7 @@
 > **[!CAUTION]** This document measures the **transpiler's own** compile-time performance
 > (`tychoc0` vs `tychoc`), tracking optimization history and codegen quality. It is
 > **not** about the language's performance or about the arena model's claims — those are
-> in [the thesis](thesis.md) and the cross-language benchmark suite
+> in [the thesis](../thesis.md) and the cross-language benchmark suite
 > (`bench/prongB/`, `bench/conc/`). The thesis numbers are what matters for evaluating
 > the model; this page is a contributors' log.
 
@@ -40,7 +40,7 @@ transpiler's 13 ms** (on one machine; absolute numbers vary widely by
 machine, so the ratio is the claim) — and emits the same implicit-arena C the
 C transpiler does. With that codegen, `tychoc0` beats `tychoc` on both
 memory and time on 3 of 4 workloads in the cross-language benchmark suite
-(`bench/prongB/`, [RESULTS.md](../bench/prongB/RESULTS.md)) and leads the suite
+(`bench/prongB/`, [RESULTS.md](../../bench/prongB/RESULTS.md)) and leads the suite
 on binary-trees here.
 
 The earliest `tychoc0` used a naive codegen — `malloc`, no frees,

@@ -64,7 +64,7 @@ definitions into a **single** AST, and emits a **single** C translation unit,
 which is compiled and linked into a **single** executable. There is **no**
 separate compilation, **no** per-package object file, and **no** linker step
 that joins independently-compiled packages (`compile_package`
-`src/tychoc.c:10355-10360`; [packages.md](../packages.md) §"How it builds").
+`src/tychoc.c:10355-10360`; [packages.md](../guides/packages.md) §"How it builds").
 
 A conforming implementation is not required to transpile to C; the single-unit
 merge, however, is observable and normative — it determines name resolution and
@@ -178,7 +178,7 @@ A **package** is a *directory* of `.ty` files that all declare the same
 `package NAME` and share **one flat namespace**. Every top-level definition in
 any file of the directory — function, `struct`, `enum`, `handle`, newtype,
 `const`, and enum variant — belongs to that one namespace; the split into files
-is not semantically significant ([packages.md](../packages.md) §"Surface
+is not semantically significant ([packages.md](../guides/packages.md) §"Surface
 syntax"; merge at `src/tychoc.c:10328-10347`).
 
 A package's symbols are reached from another package by a **qualified name**
@@ -216,7 +216,7 @@ they are not reserved words (`src/tychoc.c:3448-3452`). A bound package name,
 however, is effectively reserved within the file: because a bare `pkg.symbol`
 is disambiguated by treating `pkg` as an imported package first, a program
 SHOULD NOT shadow an imported binding with a local of the same name
-([packages.md](../packages.md) §"Surface syntax"). **Import cycles are an
+([packages.md](../guides/packages.md) §"Surface syntax"). **Import cycles are an
 error** (§28.5).
 
 ### 28.3 Name resolution and visibility
@@ -227,7 +227,7 @@ symbols keep their plain names; every imported package `P` uses the prefix
 `P__`, applied uniformly to every definition and every reference — including the
 generated type families for its arrays, tuples, maps, and helper functions
 (`pkg_mangle` `src/tychoc.c:1343-1345`; `g_cur_pkg_prefix` set per file at
-`:10330`, reset at `:10348`; [packages.md](../packages.md) §"How it builds").
+`:10330`, reset at `:10348`; [packages.md](../guides/packages.md) §"How it builds").
 Two identically-named symbols in different packages are therefore distinct after
 mangling. `extern` C symbols are the sole exception and are never prefixed
 (§27.3).
@@ -260,7 +260,7 @@ non-empty; otherwise `<exe_dir>/corelib` (next to the compiler binary, so an
 in-tree build needs no configuration); otherwise `<exe_dir>/../share/tycho/corelib`
 (the installed layout); otherwise resolution fails with a diagnostic
 (`:3544-3553`). `core:` is currently the only collection root
-([packages.md](../packages.md) §"The `core:` collection").
+([packages.md](../guides/packages.md) §"The `core:` collection").
 
 ### 28.5 The multi-file merge
 

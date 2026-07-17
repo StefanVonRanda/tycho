@@ -9,9 +9,9 @@ the Tycho side: no foreign pointer ever leaks into Tycho's owned world.
 The FFI is an *unsafe* boundary — you can still pass a bad handle to C and crash
 inside C. All I'm trying to do is keep the **Tycho side** sound and make the
 unsafe surface explicit, which is what the `extern` keyword marks. The
-[FFI reference](reference/ffi.md) is the short version; this page is the
+[FFI reference](../reference/ffi.md) is the short version; this page is the
 full rule set. A complete binding lives in
-[`examples/sqlite/`](../examples/sqlite/) — in-memory SQLite driven through both
+[`examples/sqlite/`](../../examples/sqlite/) — in-memory SQLite driven through both
 transpilers.
 
 ## Quick start
@@ -203,9 +203,9 @@ the FFI**: a C function touching process-global or `static` state is invisible
 to the transpiler, so two tasks racing on it race exactly as they would in C.
 Isolate such state per thread (thread-local storage, as the `core:crypto` shim
 does) or serialize the calls. The full analysis is in
-[`rfc/ffi-threading-design-review.md`](rfc/ffi-threading-design-review.md), and
+[`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md), and
 the concurrency guarantee's scope is in
-[the concurrency reference](reference/concurrency.md#the-safety-envelope).
+[the concurrency reference](../reference/concurrency.md#the-safety-envelope).
 
 Handles are affine (see [Typed handles](#typed-handles-safe-by-default-resources)):
 they cannot be captured by a closure or `parallel for`, or otherwise cross a
@@ -251,7 +251,7 @@ round-trip, a string-returning extern, a NULL-return extern, a `ptr` handle
 round-trip, and a `--shim` build) run through both transpilers under `make ffi`,
 ASan-clean and output-identical.
 
-A worked binding lives in [`examples/sqlite/`](../examples/sqlite/): opaque
+A worked binding lives in [`examples/sqlite/`](../../examples/sqlite/): opaque
 `db`/`stmt` handles, SQL string arguments, arena-copied column text, `--shim`
 for the out-parameter API, and `--pkg` for linking — against a library whose
 returned text pointer is genuinely transient.

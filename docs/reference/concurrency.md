@@ -108,5 +108,5 @@ same rule as an ordinary call.
 ---
 
 *Design, staging, and the measured numbers* (the reduction matching C-pthreads, the 1M-message
-pipeline) are in [the concurrency design note](../concurrency.md); the test suite runs golden
+pipeline) are in [the concurrency design note](../guides/concurrency.md); the test suite runs golden
 output under ASan/LSan **and** ThreadSanitizer, in both compilers, as part of `make ci`.

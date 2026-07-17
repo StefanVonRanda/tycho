@@ -49,7 +49,7 @@ shows compile errors inline.
 | `tycho.enableServer` | `true` | set `false` for highlighting only |
 
 If your code imports `core:` packages, set `TYCHO_CORELIB` in your environment so
-the server can resolve them (see [corelib](../../docs/corelib.md)) — this also
+the server can resolve them (see [corelib](../../docs/guides/corelib.md)) — this also
 powers completion and hover on imported members (`strings.trim`), which the
 server reads by running the transpiler on the file in its real package directory.
 

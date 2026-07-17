@@ -19,9 +19,9 @@ fn main():
 
 `./tychoc pkg/main.ty` follows the imports and emits one binary. `import "core:strings"`
 resolves the standard library found next to the transpiler binary, or at `TYCHO_CORELIB` if set
-(see [the corelib catalog](../corelib.md)). Privacy is by leading underscore: a top-level
+(see [the corelib catalog](../guides/corelib.md)). Privacy is by leading underscore: a top-level
 name beginning with `_` is package-private and cannot be reached through a `pkg.` qualifier
 from another package; every other name is visible to importers.
 
 A file with an `import` is a package, so give it its own directory. Fixtures live in
-`tests/pkg/`; the resolution and mangling details are in [the packages design note](../packages.md).
+`tests/pkg/`; the resolution and mangling details are in [the packages design note](../guides/packages.md).

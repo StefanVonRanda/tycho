@@ -219,4 +219,4 @@ measurements and the cases where it costs, is in [thesis.md](thesis.md).
 - **[Examples](../examples/)** — larger runnable programs (a JSON parser, an HTTP client,
   a static-site generator, a ray tracer).
 - **[thesis.md](thesis.md)** — why the language is shaped this way.
-- **[Core library](corelib.md)** — the batteries: strings, math, io, json, http, and more.
+- **[Core library](guides/corelib.md)** — the batteries: strings, math, io, json, http, and more.

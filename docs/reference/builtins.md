@@ -6,7 +6,7 @@
 > operations) does so in the caller's arena.
 
 The built-in functions, by category. These are part of the language — always there, no
-import needed; the importable [standard library](../corelib.md) layers more on top. Anything written
+import needed; the importable [standard library](../guides/corelib.md) layers more on top. Anything written
 as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on its own topic page.
 
 ## Output and input

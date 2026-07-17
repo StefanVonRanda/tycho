@@ -66,4 +66,4 @@ another monomorphized instance.
 ---
 
 *The monomorphization strategy* (binding-based, no AST cloning) is documented in
-[the generics design note](../generics.md).
+[the generics design note](../guides/generics.md).

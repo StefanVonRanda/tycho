@@ -90,7 +90,7 @@ builds `tychoc0` three ways and asserts the last two emit **byte-identical** C,
 and that the self-hosted build produces the same output as the C transpiler across
 every test and example. A compiler is the hostile case for any allocator:
 thousands of small, short-lived, deeply-recursive AST nodes. It manages its own
-memory with no GC and no leaks ([docs/memory-model.md](docs/memory-model.md)).
+memory with no GC and no leaks ([docs/guides/memory-model.md](docs/guides/memory-model.md)).
 
 **A real program at flat memory.** [`examples/json.ty`](examples/json.ty) is a
 220-line recursive-descent JSON parser over a recursive `Json` sum type — real
@@ -128,7 +128,7 @@ above are fine — they nest through a boxed payload). You can't build a shared-
 **graph**, **doubly-linked list**, or **observer** the pointer way; the idiom is a
 **flat node pool** — hold all nodes in one array and link them by integer index — which
 is also the cache-friendly layout data-oriented engines choose on purpose. See
-[docs/arrays-structs.md](docs/arrays-structs.md).
+[docs/guides/arrays-structs.md](docs/guides/arrays-structs.md).
 
 **Pointer-shaped data costs more, measured.** Storing children by value, a
 recursive trie is ~1.55× C's memory (halved by the compact indexed-dict map
@@ -143,7 +143,7 @@ for each case, is in
 structs, and enums (including recursive, e.g. `enum Tree($T)`) take `$T`, but the
 only constraints are the built-in predicates (`numeric` / `comparable` /
 `has_str`) and type sets (`where T: int | float`). No user-defined traits, no
-higher-kinded types, no variance. See [docs/generics.md](docs/generics.md).
+higher-kinded types, no variance. See [docs/guides/generics.md](docs/guides/generics.md).
 
 ## FAQ
 
@@ -242,9 +242,9 @@ that ends with a small real program and the one idea that makes the language tic
   The source of truth; every example compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
   work, and where it doesn't, with measured numbers.
-- **Design notes** (`docs/*.md`) — the rationale behind each subsystem (memory
-  model, concurrency, FFI, generics, maps). The reference says *what*; these say
-  *why*.
+- **Design notes** ([`docs/guides/`](docs/guides)) — the rationale behind each
+  subsystem (memory model, concurrency, FFI, generics, maps). The reference says
+  *what*; these say *why*.
 - **[Architecture & status](docs/architecture.md)** — how it's built, what each
   verification gate proves, what's shipped, and the decided non-goals.
 

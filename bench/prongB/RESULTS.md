@@ -30,7 +30,7 @@ memory models."
 
 **What it says, honestly:**
 - **vs Go (GC): tycho wins every workload on BOTH time and memory.** Across the board.
-- **vs Koka (ARC): tycho wins every workload on BOTH axes too.** Time is always tycho's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by per-statement transient reclaim (see [memory-model.md](../../docs/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). tycho is also far lighter on array/parse where Koka's core has no flat array.
+- **vs Koka (ARC): tycho wins every workload on BOTH axes too.** Time is always tycho's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by per-statement transient reclaim (see [memory-model.md](../../docs/guides/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). tycho is also far lighter on array/parse where Koka's core has no flat array.
 - **vs manual C/Rust** (neither GC nor ARC): tycho *beats* them on the tree workloads (bulk-free vs per-node free) and on object-count-bound gcscan; it trails them on flat-array throughput and `latency` (the raw-loop ceiling). That gap is the manual-memory ceiling, not the GC/ARC rivals.
 
 ¹ Koka's json-parse port failed to build in this run (the harness records a 1 ms / 2.7 MB
@@ -101,7 +101,7 @@ Tycho has **two** compilers, and both appear here:
 - **tycho (tychoc0)** — the **self-hosted** compiler, written in Tycho itself
   (`compiler/tychoc0.ty`). Its codegen was migrated onto the same implicit-arena
   model one type family at a time (see
-  [../../docs/memory-model.md](../../docs/memory-model.md)). The numbers below are
+  [../../docs/guides/memory-model.md](../../docs/guides/memory-model.md)). The numbers below are
   after that migration.
 
 All six binaries print **byte-identical output** per workload. Peak RSS via
