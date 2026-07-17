@@ -1,0 +1,20 @@
+# An array literal of newtype-typed values keeps the element's newtype identity:
+# `[a]` where a: Id is `[Id]`, not `[int]`. So indexing / iterating yields an Id,
+# which a function taking an Id accepts (and a raw int would be rejected). Both compilers.
+type Id = int
+
+fn take(x: Id) -> int:
+    return to_int(x)
+
+fn main():
+    a := Id(3)
+    b := Id(4)
+    xs := [a, b]                # [Id], not [int]
+    s := 0
+    for x in xs:
+        s = s + take(x)         # x is an Id
+    println(str(s))             # 7
+    println(str(take(xs[1])))   # 4  (index yields an Id)
+
+    ys := [Id(10), Id(20), Id(30)]   # literal of constructors
+    println(str(take(ys[2])))        # 30

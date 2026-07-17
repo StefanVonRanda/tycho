@@ -29,8 +29,7 @@ fn main():
     # depth-first walk from A, iterative worklist of handles (visited set keyed by
     # the handle's underlying int)
     seen := []int: bool
-    stack := []pool.Handle
-    push(stack, a)
+    stack := [a]
     order := []string
     for len(stack) > 0:
         h := pop(stack)

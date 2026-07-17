@@ -130,11 +130,14 @@ Verified: `tests/generic_newtype_param.ty` + `tests/reject/generic_newtype_bare_
 `core:pool` with a distinct `Handle` (`add(...) -> Handle`, `get(p, h: Handle)`, `edges:
 [pool.Handle]`) — identical across tychoc / tychoc0 bundle / standalone.
 
-**Residual narrow gaps (not generics; surfaced by richer newtype use, noted for later):** an
-array literal of a newtype-typed variable (`[a]` where `a: Handle`) infers `[int]` (the element
-read resolves), and a package-qualified newtype in a **map-key annotation** (`[]pool.Handle: bool`)
-records the key unmangled (`pool.Handle` vs the value's `pool__Handle`). Both are tychoc/tychoc0
-divergences; sidestep with an explicit array type / an `int` key until fixed.
+**Array literal of a newtype (`[a]` where `a: Id`) — FIXED.** It used to infer `[int]` (the
+element read resolves the newtype), so a later index/iteration lost the identity. `type_of` and
+the array-literal codegen (`Arr_<T>_from`) now both keep the element's newtype skin (mirrors the
+existing `EIndex` element case), matching tychoc. Verified: `tests/newtype_array_literal.ty`.
+
+**Residual narrow gap (not generics; noted for later):** a package-qualified newtype in a
+**map-key annotation** (`[]pool.Handle: bool`) records the key unmangled (`pool.Handle` vs the
+value's `pool__Handle`), a tychoc/tychoc0 divergence — sidestep with an `int` key until fixed.
 
 **Remaining follow-up:** teach `fuzz/gen.py` to emit generic-struct + concrete-newtype params
 (its generic generation is currently gated to literal scalar args — see its own comments) so

@@ -4785,6 +4785,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
         EArrLit(elems, _ft, _el):
             if _ft != "":                             # a fixed literal (1.6) tagged by the gfix pass -> its "[N]T" type
                 return _ft
+            esk := nt_skin_of(elems[0], names, types, dc, ctx)   # keep a NEWTYPE element's identity: `[a]` where a: Id is `[Id]`, not `[int]` (mirrors the EIndex element case + tychoc); type_of would resolve-erase it and a later arg/map check would reject the value as a plain base
+            if esk != "":
+                return "[" + esk + "]"
             return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
         EArrEmpty(ety, _el):
             if ety == "":                         # bare []: ground_pre had no destination type for it
@@ -5853,7 +5856,9 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     fout = fout + " _lf.v[" + str(fi) + "] = " + gen_rhs(elems[fi], names, types, dc, fsctx) + ";"
                     fi = fi + 1
                 return fout + " _lf; })"
-            et := type_of(elems[0], names, types, dc, ctx)
+            et := nt_skin_of(elems[0], names, types, dc, ctx)   # keep the NEWTYPE element so the from-constructor family (Arr_Handle_from) matches the decl's Arr_Handle type; cty resolves the C element to its base
+            if et == "":
+                et = type_of(elems[0], names, types, dc, ctx)
             eo := "0"                              # deep-copied element temporaries
             if elem_deepcopy(dc, ctx, et):             # live in the array's arena (no leak);
                 eo = ctx.owner                     # _from re-copies them into `ar` anyway
