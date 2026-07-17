@@ -343,6 +343,9 @@ class Gen:
         # every value type (str() through the interpolation desugar) and richer closures
         # (multi-param, multi-capture, composite capture, heap-return, nesting).
         kinds += ["fstring_types", "closure_rich", "generic_rich", "ffi_types"]
+        # sum-payload inference/lift surface (2026-07): bare [] (and array) payloads of
+        # Some/Ok/Err grounded from the annotation, then bound in a match arm + mutated.
+        kinds += ["sum_empty_payload"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
         if self.fenum:
@@ -568,6 +571,58 @@ class Gen:
                 self.emit(ind+2, "acc = acc + len(" + bv + ")")
                 self.emit(ind+1, "None:")
                 self.emit(ind+2, "acc = acc + 1")
+            return
+        if k == "sum_empty_payload":   # a bare [] (and non-bare array) payload of Some/Ok/Err takes
+            # its element type from the Option/Result annotation (ground_pre threads it inward), and
+            # the match arm binding is then mutated + measured (the lift must register the arm bind).
+            # Both were tychoc0 fail-closed divergences until 2026-07 (Some([]) -> "cannot type a bare
+            # [] here"; push over the bind -> "unknown variable"). Deterministic: len folds into acc.
+            el = self.r.choice(["int", "string", "float"])
+            def _elit():
+                if el == "int": return str(self.r.randint(1, 9))
+                if el == "float": return self.r.choice(["1.5", "2.0", "3.25"])
+                return '"' + self.r.choice(["a", "bb", "cc"]) + '"'
+            def _payload():                                    # half bare [], half a 1-2 elem literal
+                if self.r.random() < 0.5: return "[]"
+                return "[" + ", ".join(_elit() for _ in range(self.r.randint(1, 2))) + "]"
+            ov = self.fresh("sp"); bv = self.fresh("sb"); ev = self.fresh("se")
+            r = self.r.random()
+            if r < 0.3:                                        # Option([el]) = Some(<payload>)
+                self.emit(ind, ov + " : Option([" + el + "]) = Some(" + _payload() + ")")
+                self.emit(ind, "match " + ov + ":")
+                self.emit(ind+1, "Some(" + bv + "):")
+                self.emit(ind+2, "push(" + bv + ", " + _elit() + ")")
+                self.emit(ind+2, "acc = acc + len(" + bv + ")")
+                self.emit(ind+1, "None:")
+                self.emit(ind+2, "acc = acc + 1")
+            elif r < 0.55:                                     # Result([el], string) = Ok(<payload>)
+                self.emit(ind, ov + " : Result([" + el + "], string) = Ok(" + _payload() + ")")
+                self.emit(ind, "match " + ov + ":")
+                self.emit(ind+1, "Ok(" + bv + "):")
+                self.emit(ind+2, "push(" + bv + ", " + _elit() + ")")
+                self.emit(ind+2, "acc = acc + len(" + bv + ")")
+                self.emit(ind+1, "Err(" + ev + "):")
+                self.emit(ind+2, "acc = acc + len(" + ev + ")")
+            elif r < 0.8:                                      # Result(int, [el]) = Err(<payload>): bare [] on the Err arm
+                self.emit(ind, ov + " : Result(int, [" + el + "]) = Err(" + _payload() + ")")
+                self.emit(ind, "match " + ov + ":")
+                self.emit(ind+1, "Ok(" + ev + "):")
+                self.emit(ind+2, "acc = acc + " + ev)
+                self.emit(ind+1, "Err(" + bv + "):")
+                self.emit(ind+2, "push(" + bv + ", " + _elit() + ")")
+                self.emit(ind+2, "acc = acc + len(" + bv + ")")
+            else:                                              # nested: Option(Option([el])) = Some(Some(<payload>))
+                iv = self.fresh("si")
+                self.emit(ind, ov + " : Option(Option([" + el + "])) = Some(Some(" + _payload() + "))")
+                self.emit(ind, "match " + ov + ":")
+                self.emit(ind+1, "Some(" + bv + "):")
+                self.emit(ind+2, "match " + bv + ":")
+                self.emit(ind+3, "Some(" + iv + "):")
+                self.emit(ind+4, "acc = acc + len(" + iv + ")")
+                self.emit(ind+3, "None:")
+                self.emit(ind+4, "acc = acc + 2")
+                self.emit(ind+1, "None:")
+                self.emit(ind+2, "acc = acc + 3")
             return
         if k == "ntkey_use":           # newtype-keyed map: declared key (a raw base is a type error),
             # base hashing/storage, keys() returns the WRAPPED key array, m[k] is a place.
