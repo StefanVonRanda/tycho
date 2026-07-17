@@ -1,7 +1,0 @@
-map=2,4,6,8,10
-mapcl=11,12,13,14,15
-filter=1,3,5
-sum=15
-count!=4 any!=2=1
-smap=hi!,!,yo!,! scount=2
-freduce=6.0

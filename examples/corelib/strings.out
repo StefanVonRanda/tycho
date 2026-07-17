@@ -1,8 +1,0 @@
-to_upper        = TYCHO
-trim            = [padded]
-repeat('ab', 3) = ababab
-replace         = a/b/c
-capitalize      = Hello world
-pad_left        = [0007]
-parse_int('-42')= -42
-count('aXbXc')  = 2

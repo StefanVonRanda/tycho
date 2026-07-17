@@ -1,4 +1,0 @@
-fn f() -> int:
-    return 1
-fn main():
-    println(str(f$(int)()))

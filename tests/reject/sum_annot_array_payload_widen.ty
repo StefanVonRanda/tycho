@@ -1,7 +1,0 @@
-# A non-scalar payload is compared structurally: `[1]` synthesizes `[int]`, which is
-# NOT `[u32]` -- there is no element-literal adaptation inside an array (only a bare
-# `[]` and a top-level scalar literal adapt). `Option([u32])` cannot hold an `[int]`.
-# Both compilers must reject. (Locks check_sum_leaf's non-literal payload comparison.)
-fn main():
-    x : Option([u32]) = Some([1])
-    println("unreachable")

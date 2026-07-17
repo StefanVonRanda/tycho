@@ -1,8 +1,0 @@
-# A subscript must yield a place rooted in one of its parameters (else the projection
-# would dangle — it must project INTO an argument, not a fresh local).
-struct Node:
-    weight: int
-subscript bad(i: int) -> inout Node:
-    yield &g.nodes[i]
-fn main():
-    print("x")

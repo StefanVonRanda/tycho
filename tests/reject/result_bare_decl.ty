@@ -1,7 +1,0 @@
-# A bare untyped `x := Ok(v)` / `x := Err(v)` fixes only ONE of Result's two type
-# params; the other is never inferred from a later use (unlike None, which can be
-# grounded), so it must be annotated. Both compilers reject. tychoc0 used to accept
-# it and store a partial `Result(int,)` type that a downstream match then mis-handled.
-fn main():
-    x := Ok(1)
-    print("x")

@@ -1,8 +1,0 @@
-# Map in-place accumulator: `m = map_set(m, k, v)` reuses m's unique table
-# instead of deep-copying it each step, so building 40000 entries is O(n) memory.
-# The pure deep-copy-per-insert path would be O(n^2) (GBs retained in the arena).
-fn main():
-    m := []string: int
-    for i in range(40000):
-        m["k" + str(i)] = i
-    println(str(len(m)))

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tycho — a systems language with no GC and no free()</title>
+<meta name="description" content="Tycho is an experimental systems language testing one idea: implicit hierarchical arenas under value semantics. No garbage collector, no manual free — the compiler places every allocation from your syntax alone. Transpiles to C.">
+<meta name="theme-color" content="#0c0b09">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tycho-lang.com">
+<meta property="og:title" content="Tycho — no GC, no free()">
+<meta property="og:description" content="An experimental systems language: implicit hierarchical arenas under value semantics. The compiler places every allocation from your syntax. Transpiles to C.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0b09'/%3E%3Cpath d='M16 6L26 16L16 26L6 16Z' fill='%23ffb454'/%3E%3C/svg%3E">
+</head>
+<body>
+<!-- Direction: amber-phosphor CRT terminal — warm near-black ground, phosphor-cream
+     text, a single amber accent, one monospace face. The page is a scrollback buffer. -->
+<style>
+  :root{
+    --bg:#0c0b09; --bg-raised:#14120d; --fg:#e6ddc9; --fg-bright:#fbf4e2;
+    --dim:#8a8168; --faint:#5c5644; --line:#28241b;
+    --accent:#ffb454; --accent-dim:#c98a3a; --green:#8bb26a; --str:#b7c48a;
+    --shadow:0 1px 0 rgba(255,180,84,.04);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f3eddf; --bg-raised:#ece4d1; --fg:#2a2519; --fg-bright:#171308;
+      --dim:#7a6f52; --faint:#a89b78; --line:#dcd2ba;
+      --accent:#a9631a; --accent-dim:#8a5215; --green:#5c7a34; --str:#5f6d34;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c0b09; --bg-raised:#14120d; --fg:#e6ddc9; --fg-bright:#fbf4e2;
+    --dim:#8a8168; --faint:#5c5644; --line:#28241b;
+    --accent:#ffb454; --accent-dim:#c98a3a; --green:#8bb26a; --str:#b7c48a;
+  }
+  :root[data-theme="light"]{
+    --bg:#f3eddf; --bg-raised:#ece4d1; --fg:#2a2519; --fg-bright:#171308;
+    --dim:#7a6f52; --faint:#a89b78; --line:#dcd2ba;
+    --accent:#a9631a; --accent-dim:#8a5215; --green:#5c7a34; --str:#5f6d34;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:"Berkeley Mono","JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    font-size:15px; line-height:1.6; letter-spacing:.1px;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  /* faint scanlines + vignette atmosphere */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(255,180,84,.05), transparent 60%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,.10) 0 1px, transparent 1px 3px);
+    mix-blend-mode:soft-light; opacity:.55;
+  }
+  @media (prefers-color-scheme: light){ body::before{opacity:.28} }
+  :root[data-theme="light"] body::before{opacity:.28}
+
+  .wrap{position:relative; z-index:1; max-width:74ch; margin:0 auto; padding:0 20px 96px}
+  a{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent; transition:border-color .15s}
+  a:hover{border-bottom-color:var(--accent)}
+  a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+
+  /* ── status bar ── */
+  .bar{
+    position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:14px;
+    margin:0 -20px 0; padding:11px 20px; background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(6px); border-bottom:1px solid var(--line);
+  }
+  .bar .brand{color:var(--fg-bright); font-weight:600; letter-spacing:.5px}
+  .bar .brand b{color:var(--accent); font-weight:600}
+  .bar nav{margin-left:auto; display:flex; gap:18px; font-size:13.5px}
+  .bar nav a{color:var(--dim)} .bar nav a:hover{color:var(--fg)}
+  .themebtn{background:none; border:1px solid var(--line); color:var(--dim); cursor:pointer;
+    font:inherit; font-size:12px; padding:2px 9px; border-radius:3px; letter-spacing:.3px}
+  .themebtn:hover{color:var(--fg); border-color:var(--faint)}
+
+  /* ── hero ── */
+  header.hero{padding:64px 0 8px}
+  .eyebrow{color:var(--dim); font-size:13px; letter-spacing:.4px; margin:0 0 22px}
+  .eyebrow .tick{color:var(--green)}
+  h1{
+    font-size:clamp(30px,6.4vw,50px); line-height:1.08; margin:0 0 22px;
+    font-weight:600; letter-spacing:-.5px; color:var(--fg-bright); text-wrap:balance;
+  }
+  h1 .amp{color:var(--accent)}
+  .cur{display:inline-block; width:.62em; height:1.02em; margin-left:.06em; translate:0 .13em;
+    background:var(--accent); animation:blink 1.15s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .lede{color:var(--fg); font-size:16px; max-width:66ch; margin:0 0 30px}
+  .lede b{color:var(--fg-bright); font-weight:600}
+  .lede .sub{color:var(--dim)}
+
+  /* code blocks */
+  pre{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:6px;
+    padding:16px 18px; margin:0 0 14px; overflow-x:auto; font-size:13.5px; line-height:1.62;
+    box-shadow:var(--shadow);
+  }
+  pre.term{background:color-mix(in srgb,var(--bg-raised) 82%, #000 18%)}
+  :root[data-theme="light"] pre.term{background:color-mix(in srgb,var(--bg-raised) 86%, #fff 14%)}
+  code{font:inherit}
+  .k{color:var(--accent-dim)} .fn{color:var(--fg-bright)} .s{color:var(--str)}
+  .c{color:var(--faint)} .p{color:var(--dim)} .g{color:var(--green)}
+  .out{color:var(--dim)}
+
+  /* ── sections ── */
+  section{padding:34px 0 6px; border-top:1px solid var(--line); margin-top:38px}
+  .marker{color:var(--faint); font-size:12.5px; letter-spacing:.6px; margin:0 0 16px; text-transform:uppercase}
+  .marker::before{content:"## "; color:var(--accent-dim)}
+  h2{font-size:21px; color:var(--fg-bright); font-weight:600; margin:0 0 14px; letter-spacing:-.2px}
+  p{margin:0 0 15px; max-width:68ch}
+  p.muted{color:var(--dim)}
+  strong{color:var(--fg-bright); font-weight:600}
+  .accent{color:var(--accent)}
+  kbd,.inl{background:var(--bg-raised); border:1px solid var(--line); border-radius:4px;
+    padding:1px 6px; font-size:.88em; color:var(--fg-bright)}
+
+  /* up/down callout */
+  .flow{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:20px 0 6px}
+  @media (max-width:560px){.flow{grid-template-columns:1fr}}
+  .flow div{border:1px solid var(--line); border-radius:6px; padding:14px 15px; background:var(--bg-raised)}
+  .flow .arr{color:var(--accent); font-weight:600; letter-spacing:.4px}
+  .flow small{color:var(--dim); display:block; margin-top:5px; line-height:1.5}
+
+  /* evidence rows */
+  .ev{border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:6px 0 4px}
+  .ev .row{display:flex; gap:14px; padding:14px 16px; border-top:1px solid var(--line)}
+  .ev .row:first-child{border-top:0}
+  .ev .row .tag{color:var(--accent); flex:0 0 auto; width:9ch; font-size:12.5px; letter-spacing:.3px; padding-top:1px}
+  .ev .row .txt{color:var(--fg); font-size:14px; min-width:0}
+  .ev .row .txt b{color:var(--fg-bright)}
+  .ev .row .txt .cmd{color:var(--green)}
+
+  /* number strip */
+  .nums{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:18px 0 8px}
+  @media (max-width:560px){.nums{grid-template-columns:1fr}}
+  .nums div{border:1px solid var(--line); border-radius:6px; padding:15px; background:var(--bg-raised)}
+  .nums .big{color:var(--accent); font-size:26px; font-weight:600; letter-spacing:-.5px; font-variant-numeric:tabular-nums}
+  .nums small{color:var(--dim); display:block; margin-top:4px; font-size:12.5px; line-height:1.45}
+  .caveat{color:var(--dim); font-size:13px; margin-top:14px; border-left:2px solid var(--line); padding-left:12px}
+
+  /* feature list */
+  ul.feat{list-style:none; margin:6px 0 4px; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:2px 24px}
+  @media (max-width:560px){ul.feat{grid-template-columns:1fr}}
+  ul.feat li{padding:7px 0; border-bottom:1px solid var(--line); display:flex; gap:10px; font-size:14px; color:var(--fg)}
+  ul.feat li::before{content:"›"; color:var(--accent); flex:0 0 auto}
+  ul.feat li b{color:var(--fg-bright); font-weight:600}
+  ul.feat li span{color:var(--dim)}
+
+  .cta{display:flex; flex-wrap:wrap; gap:12px; margin:22px 0 4px}
+  .btn{border:1px solid var(--accent); color:var(--accent); padding:9px 18px; border-radius:5px; font-size:13.5px; letter-spacing:.3px}
+  .btn:hover{background:var(--accent); color:var(--bg); border-bottom-color:var(--accent)}
+  .btn.ghost{border-color:var(--line); color:var(--fg)} .btn.ghost:hover{background:var(--bg-raised); color:var(--fg-bright); border-color:var(--faint)}
+
+  footer{border-top:1px solid var(--line); margin-top:44px; padding-top:22px; color:var(--dim); font-size:13px}
+  footer .tagline{color:var(--fg); margin-bottom:12px}
+  footer .tagline b{color:var(--accent)}
+  footer .meta{display:flex; flex-wrap:wrap; gap:6px 18px}
+  footer a{color:var(--dim)} footer a:hover{color:var(--fg)}
+
+  /* print-on-load reveal */
+  .rise{opacity:0; transform:translateY(6px); animation:rise .5s ease forwards}
+  .d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.23s}.d4{animation-delay:.32s}.d5{animation-delay:.41s}
+  @keyframes rise{to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    .rise{animation:none; opacity:1; transform:none}
+    .cur{animation:none}
+    body::before{background:radial-gradient(120% 80% at 50% -10%, rgba(255,180,84,.05), transparent 60%)}
+  }
+</style>
+
+<div class="wrap">
+  <div class="bar">
+    <span class="brand"><b>◆</b> tycho</span>
+    <nav>
+      <a href="#idea">idea</a>
+      <a href="#evidence">evidence</a>
+      <a href="#start">get&nbsp;it</a>
+      <a href="https://github.com/StefanVonRanda/tycho">github&nbsp;↗</a>
+      <button class="themebtn" id="tbtn" aria-label="Toggle light/dark theme">theme</button>
+    </nav>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow rise d1"><span class="tick">◇</span> an experimental systems language · transpiles to C</p>
+    <h1 class="rise d2">No garbage collector.<br>No <span class="amp">free()</span>.<span class="cur" aria-hidden="true"></span></h1>
+    <p class="lede rise d3">
+      Tycho has no reference type, so the compiler sees every value's lifetime from the
+      syntax alone — and places <b>every allocation and free itself</b>, from lexical scope
+      rather than a runtime. <span class="sub">One idea: implicit hierarchical arenas under value semantics.</span>
+    </p>
+    <pre class="rise d4"><code><span class="k">fn</span> <span class="fn">greet</span>(name: <span class="k">string</span>) -> <span class="k">string</span>:
+    <span class="k">return</span> <span class="s">"hello "</span> + name
+
+<span class="k">fn</span> <span class="fn">main</span>():
+    name := <span class="fn">input</span>()
+    <span class="fn">println</span>(<span class="fn">greet</span>(name))</code></pre>
+    <div class="cta rise d5">
+      <a class="btn" href="#start">$ make</a>
+      <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">Read the source</a>
+    </div>
+  </header>
+
+  <section id="idea">
+    <p class="marker">the idea</p>
+    <h2>Lifetimes you can see in the source.</h2>
+    <p>
+      The arena is an old, fast idea — bump-allocate, free everything at once when the scope
+      ends. The catch was always knowing <em>when</em> a value may outlive its arena; with
+      pointers, that needs whole-program alias analysis.
+    </p>
+    <p>
+      Value semantics removes the question. There is no reference type: <span class="inl">b := a</span>
+      copies, and you cannot store or return a pointer into another value's memory. So a value
+      can leave a scope in exactly two ways, both visible in the source:
+    </p>
+    <div class="flow">
+      <div><span class="arr">↓ down</span><small>passed as an argument to a callee.</small></div>
+      <div><span class="arr">↑ up</span><small>returned to the caller.</small></div>
+    </div>
+    <p class="muted">
+      That's the whole thesis — the compiler places every allocation from the syntax, with no
+      whole-program analysis and no annotations to write. Two optimizations keep it fast, both
+      sound <em>because</em> the value is provably un-aliased: a returned value is built in the
+      caller's arena (so <span class="inl">return</span> is a move, not a copy), and
+      <span class="inl">acc = acc + x</span> in a loop grows one buffer in place — the textbook
+      O(n²) string build becomes O(n). Neither is visible in your code.
+    </p>
+  </section>
+
+  <section id="evidence">
+    <p class="marker">the evidence</p>
+    <h2>Experimental in scope, not in rigor.</h2>
+    <p>
+      It's a research project — an experiment testing one idea — but a heavily-checked one,
+      which is the part most experiments this young skip.
+    </p>
+    <div class="ev">
+      <div class="row"><span class="tag">self-host</span><span class="txt">Two compilers: a reference in C, and a second one <b>written in Tycho that compiles itself</b> on the same implicit arenas it emits. <span class="cmd">make fixpoint</span> holds it to reproducing its own emitted C <b>byte-for-byte</b> and matching the reference on every test.</span></div>
+      <div class="row"><span class="tag">fuzz</span><span class="txt">A differential fuzzer runs both compilers on random programs under <b>ASan/UBSan</b>; every example is built twice — native and sanitized — and checked against a committed golden.</span></div>
+      <div class="row"><span class="tag">local</span><span class="txt">No cloud CI to take on faith. <span class="cmd">make ci</span> runs the whole gate on your machine.</span></div>
+    </div>
+
+    <div class="nums">
+      <div><div class="big">56×</div><small>less peak memory than a GC language on a string-built-in-a-loop workload</small></div>
+      <div><div class="big">239×</div><small>faster on that same workload — the arena payoff, made concrete</small></div>
+      <div><div class="big">≈1.0×</div><small>the self-hosted compiler's cost against the C reference, compiling itself</small></div>
+    </div>
+    <p class="caveat">
+      Figures are measured and machine-specific, so the cross-language <em>ratios</em> are the
+      claim, not the absolute numbers — and the advantage is real but <em>concentrated</em>:
+      pointer-shaped data (graphs, trees) still costs about 1.55× C in this model. The programs
+      behind the numbers run in CI on both compilers, output checked byte-for-byte.
+    </p>
+  </section>
+
+  <section id="lang">
+    <p class="marker">the language</p>
+    <h2>Small, Go/Odin-shaped, honest about what it is.</h2>
+    <p class="muted">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo</a>.</p>
+    <ul class="feat">
+      <li><b>Value semantics</b> <span>— no aliasing, no GC</span></li>
+      <li><b>Generics</b> <span>— <span class="inl">$T</span>, monomorphized</span></li>
+      <li><b>Sum types</b> <span>— <span class="inl">Option</span>/<span class="inl">Result</span>, <span class="inl">match</span></span></li>
+      <li><b>Methods (UFCS)</b> <span>— no classes</span></li>
+      <li><b>Closures</b> <span>— value-capture</span></li>
+      <li><b>Concurrency</b> <span>— spawn, channels, parallel-for</span></li>
+      <li><b>FFI to C</b> <span>— extern fn, handles, bytes</span></li>
+      <li><b>Packages + corelib</b> <span>— import, 36 modules</span></li>
+    </ul>
+  </section>
+
+  <section id="start">
+    <p class="marker">try it</p>
+    <h2>A C compiler and <span class="accent">make</span> — that's the whole toolchain.</h2>
+    <pre class="term"><code><span class="c"># a `cc` and `make`, nothing else</span>
+<span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
+<span class="g">$</span> cd tycho
+<span class="g">$</span> make                                  <span class="c"># builds ./tychoc</span>
+<span class="g">$</span> ./tychoc examples/hello.ty && ./examples/hello
+<span class="out">what is your name: Ada</span>
+<span class="out">hello Ada</span></code></pre>
+    <div class="cta">
+      <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub&nbsp;↗</a>
+      <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
+      <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/tree/main/docs/reference">Language reference</a>
+    </div>
+  </section>
+
+  <footer>
+    <p class="tagline">Tycho — <b>an experiment, checked hard.</b></p>
+    <div class="meta">
+      <span>MIT licensed</span>
+      <a href="https://github.com/StefanVonRanda/tycho">github.com/StefanVonRanda/tycho</a>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial</a>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md">malloc → arenas</a>
+      <a href="https://www.hylo-lang.org/">value semantics ← Hylo</a>
+    </div>
+  </footer>
+</div>
+
+<script>
+  (function(){
+    var root=document.documentElement, btn=document.getElementById('tbtn');
+    function cur(){ return root.getAttribute('data-theme') ||
+      (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); }
+    btn.addEventListener('click',function(){
+      root.setAttribute('data-theme', cur()==='dark'?'light':'dark');
+    });
+  })();
+</script>
+
+</body>
+</html>

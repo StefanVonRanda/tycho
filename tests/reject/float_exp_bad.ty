@@ -1,6 +1,0 @@
-# A malformed exponent is NOT consumed as a float: `1e` lexes as int `1`
-# followed by the ident `e`, which is two tokens on one line -> parse error.
-# Both compilers must reject (locks the maximal-munch-only-if-valid rule).
-fn main():
-    x := 1e
-    print(str(x))

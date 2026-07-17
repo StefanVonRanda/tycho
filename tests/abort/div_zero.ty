@@ -1,6 +1,0 @@
-# integer division by zero must die with a tycho: message (not SIGFPE)
-fn main():
-    z := []int
-    push(z, 0)
-    a := 10
-    print(str(a / z[0]))

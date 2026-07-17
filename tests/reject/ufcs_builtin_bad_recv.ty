@@ -1,5 +1,0 @@
-# UFCS builtin desugar must fail closed on a wrong receiver type: `n.push(1)`
-# lowers to `push(n, 1)`, and push requires an array receiver -> rejected.
-fn main():
-    n := 42
-    n.push(1)

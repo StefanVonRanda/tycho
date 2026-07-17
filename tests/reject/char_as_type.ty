@@ -1,4 +1,0 @@
-# there is no `char` type keyword -- char arises by inference, never as a written type
-fn main():
-    c: char = 97
-    println(str(c))

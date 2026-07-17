@@ -1,7 +1,0 @@
-# No silent scalar coercion on a REASSIGNMENT (not just a typed decl). `x` is int; a
-# later `x = 2.5` silently truncated the float to 2 in tychoc0 while tychoc rejects.
-# Both compilers must reject. (UB-6 completion at the SAssign position.)
-fn main():
-    x : int = 7
-    x = 2.5
-    println(str(x))

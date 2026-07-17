@@ -1,4 +1,0 @@
-fn count(xs: ...$T) -> int:
-    return len(xs)
-fn main():
-    print(str(count()))

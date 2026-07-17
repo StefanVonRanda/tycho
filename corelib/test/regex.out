@@ -1,7 +1,0 @@
-ok=true m1=true m2=false find=3 end=6
-matched=12
-alt=true,false
-grp n=3 start=3 1=10 2=Oct 3=2000
-grp_all=4 10/Oct/2000
-grp_np=[] grp_nm=[] grp_ne=0
-bad_ok=false

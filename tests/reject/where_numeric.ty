@@ -1,5 +1,0 @@
-fn sm(xs: [$T]) -> $T where numeric(T):
-    return xs[0] + xs[0]
-
-fn main():
-    println(sm(["a", "b"]))

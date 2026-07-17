@@ -1,5 +1,0 @@
-fn mk() -> Channel(int):
-    ch := channel(int, 4)
-    return ch
-fn main():
-    print("x")

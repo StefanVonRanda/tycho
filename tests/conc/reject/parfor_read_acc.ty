@@ -1,5 +1,0 @@
-fn main():
-    acc := 0
-    parallel for i in range(10):
-        acc = acc + i
-        print(str(acc))

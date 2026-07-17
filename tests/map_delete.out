@@ -1,5 +1,0 @@
-del len=2 hasA=T hasB=F a=1 c=3
-missing len=2
-reinsert len=3 b=20
-empty len=0 hasC=F
-int len=1 has1=F has2=T

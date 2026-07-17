@@ -1,8 +1,0 @@
-package main
-
-import "geom"
-
-fn main():
-    c := geom.Circle(2)
-    print(c.describe())
-    print(str(c.area()))

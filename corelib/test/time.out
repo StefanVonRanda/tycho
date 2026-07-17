@@ -1,7 +1,0 @@
-sum=499999500000
-elapsed_ns_nonneg=true
-elapsed_us_nonneg=true
-elapsed_ms_nonneg=true
-unix_positive=true
-conv=2,2,3
-monotonic=true

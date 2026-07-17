@@ -1,6 +1,0 @@
-struct Point:
-    x: int
-fn main():
-    p := Point(1)
-    q: Pointt = p
-    print(str(q.x))

@@ -1,7 +1,0 @@
-fn seed() -> int:
-    return 7
-
-const X = seed()
-
-fn main():
-    println(str(X))

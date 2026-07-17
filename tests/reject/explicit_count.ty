@@ -1,5 +1,0 @@
-fn empty() -> [$T]:
-    return []T
-fn main():
-    xs := empty$(int, str)
-    println(str(len(xs)))

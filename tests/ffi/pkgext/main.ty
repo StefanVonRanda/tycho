@@ -1,5 +1,0 @@
-package main
-import "lib"
-
-fn main():
-    println(f"tri6={lib.tri6(7)}")    # 7 * 3 (shim) * 2 (wrapper) = 42

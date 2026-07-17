@@ -1,7 +1,0 @@
-get=abc rev=cba miss=?
-in=true len=2
-k0len=3 k0=(1,2,3)
-del: len=1 gone=true
-sa=10 miss=-1
-pa=99 miss=-1
-eq=true neq=false

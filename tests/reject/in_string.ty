@@ -1,7 +1,0 @@
-# `in` tests membership in a MAP; a string is not a map, so `char in string` is a
-# type error in both compilers. tychoc0 used to fail open (bogus map_*_has on the
-# string). This locks the parity.
-fn main():
-    s := "abc"
-    if 'a' in s:
-        print("x\n")

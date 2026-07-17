@@ -1,9 +1,0 @@
-# No silent scalar coercion in a STRUCT-LITERAL field. The field is int but S(2.5) passes
-# a float; tychoc0 silently truncated while tychoc rejects. Both compilers must reject.
-# (UB-6 completion at the struct-constructor position.)
-struct S:
-    v: int
-
-fn main():
-    s : S = S(2.5)
-    println(str(s.v))

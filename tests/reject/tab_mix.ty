@@ -1,3 +1,0 @@
-# Mixed indentation (space then tab) in one line -- must be rejected.
-fn main():
- 	println("mixed")

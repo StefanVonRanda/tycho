@@ -1,4 +1,0 @@
-alias_whole:  b1.items[0] = 1 (expect 1)
-alias_chain:  b2.items[0] = 1 (expect 1)
-alias_assign: b3.items[1] = 2 (expect 2)
-alias_tag:    b4.tag = four (expect four)

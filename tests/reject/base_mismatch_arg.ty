@@ -1,5 +1,0 @@
-# A base-type mismatch at a call argument (string into an int param): clean diagnostic.
-fn f(n: int):
-    println(str(n))
-fn main():
-    f("h")

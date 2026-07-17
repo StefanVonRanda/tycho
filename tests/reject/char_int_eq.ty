@@ -1,5 +1,0 @@
-# Comparing a char to an int for equality is a type error in BOTH compilers (a
-# char compares only against another char). tychoc0 used to coerce the char.
-fn main():
-    c := 'A'
-    println(str(c == 66))

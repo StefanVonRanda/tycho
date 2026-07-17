@@ -1,8 +1,0 @@
-ok:5
-err:divide by zero
-range_len=4 last=3
-neg_err=negative
-a_len=3
-b_len=3
-err:annotated
-ok:42

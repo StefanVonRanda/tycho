@@ -1,8 +1,0 @@
-# The declared `-> inout U` must match the yielded place's type.
-struct Row:
-    cells: [int]
-subscript at(r: Row, i: int) -> inout string:
-    yield &r.cells[i]
-fn main():
-    r := Row([1])
-    print(r.at(0))

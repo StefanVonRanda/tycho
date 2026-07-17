@@ -1,9 +1,0 @@
-digit=true,false
-alpha=true,false
-alnum=true,false
-case=true,true
-space=true,false
-hex=true,false
-to_upper=65 to_lower=97
-digit_val=7,-1
-hex_val=9,10,15

@@ -1,7 +1,0 @@
-# A `[$N]T` size parameter can only bind from a FIXED-size argument; a dynamic
-# `[int]` has no compile-time length to infer N from.
-fn f(xs: [$N]int) -> int:
-    return N
-fn main():
-    ys := [1, 2, 3]        # dynamic [int]
-    print(str(f(ys)))

@@ -1,5 +1,0 @@
-# both compilers must reject a reference to an undefined type name.
-fn f(v: cool) -> int:
-    return 0
-fn main():
-    print("x")

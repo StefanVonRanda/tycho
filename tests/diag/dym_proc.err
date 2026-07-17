@@ -1,2 +1,0 @@
-tests/diag/dym_proc.ty:4: error: unknown procedure 'totl'; did you mean 'total'?
-     4 |     print(str(totl(3)))

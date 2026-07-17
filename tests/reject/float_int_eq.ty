@@ -1,6 +1,0 @@
-# Equality needs exact types: comparing a float to an int (literal OR variable)
-# is a type error in BOTH compilers. Locks the parity: tychoc0 used to silently
-# coerce (tychoc always rejected "cannot compare float with int").
-fn main():
-    f := 3.5
-    println(str(f == 0))

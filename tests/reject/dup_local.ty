@@ -1,6 +1,0 @@
-# both compilers must reject re-:= of a name in the same scope (it would
-# emit a duplicate C local).
-fn main():
-    a := 1
-    a := 2
-    print(str(a))

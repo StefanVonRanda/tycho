@@ -1,4 +1,0 @@
-# External dependencies for core:image, one pkg-config package per line.
-# pkg-config resolves the per-platform cflags + libs; the corelib harness skips
-# this module test when the dependency is absent (so `make ci` stays green).
-libpng

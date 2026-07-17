@@ -1,7 +1,0 @@
-# a local const cannot reference another const (no sibling-const table at local
-# parse in the self-hosted compiler) -- symmetric limitation, both compilers reject.
-const K = 8
-
-fn main():
-    const D = K * 2
-    println(str(D))

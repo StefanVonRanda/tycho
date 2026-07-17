@@ -1,7 +1,0 @@
-# both compilers must reject a duplicate enum variant name (fail-open
-# emitted a duplicate C struct member before the check was added).
-enum Wrap:
-    W([int])
-    W([int])
-fn main():
-    print("x")

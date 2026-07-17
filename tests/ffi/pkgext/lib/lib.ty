@@ -1,8 +1,0 @@
-package lib
-# Regression: an extern declared AND called from inside a package. tychoc0 used to
-# package-mangle the bare call (lib__ffi_triple) and fail to resolve it; the C
-# symbol is global and must stay unmangled. ffi_triple lives in tests/ffi/shim.c.
-extern fn ffi_triple(x: int) -> int
-
-fn tri6(x: int) -> int:
-    return ffi_triple(x) * 2          # extern call in a mangled (package) context

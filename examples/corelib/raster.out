@@ -1,6 +1,0 @@
-image     = 2x2
-qoi bytes = 30
-qoi rt    = 2x2 lossless=true
-bmp bytes = 70
-bmp rt    = 2x2 lossless=true
-bad input = 0x0

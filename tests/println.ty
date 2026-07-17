@@ -1,8 +1,0 @@
-# println(x) == print(x + "\n"); same string-only arg as print, just adds a newline.
-fn main():
-    println("alpha")
-    println("n=" + str(7))
-    print("a")
-    print("b")
-    println("")
-    println("end")

@@ -1,5 +1,0 @@
-# both compilers must reject a duplicate parameter name.
-fn f(x: int, x: int) -> int:
-    return x
-fn main():
-    print(str(f(1, 2)))

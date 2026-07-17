@@ -1,5 +1,0 @@
-# A base-type mismatch on an annotated decl (string where int is expected) is now a clean
-# tychoc0 diagnostic instead of an emitted-C error. Both compilers must reject.
-fn main():
-    x : int = "h"
-    println("unreachable")

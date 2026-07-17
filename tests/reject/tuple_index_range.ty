@@ -1,5 +1,0 @@
-# tuple field index past the last part must be rejected (fail closed),
-# in particular multi-digit indexes like .10 must not be read as .1
-fn main():
-    t := (1, 2)
-    print(str(t.10))

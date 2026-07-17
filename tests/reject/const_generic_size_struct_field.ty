@@ -1,6 +1,0 @@
-# A `[$N]T` may only appear in a function parameter (where the argument fixes N),
-# never in a stored position such as a struct field.
-struct Box:
-    v: [$N]int
-fn main():
-    print("x")

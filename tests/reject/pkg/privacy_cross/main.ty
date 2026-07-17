@@ -1,8 +1,0 @@
-package main
-import "secretlib"
-
-# B3: a cross-package access to a leading-underscore (package-private) name must
-# be rejected by the resolver. `secretlib._scale` starts with '_', so this is a
-# privacy violation even though the symbol exists.
-fn main():
-    println(str(secretlib._scale(5, 2)))

@@ -1,5 +1,0 @@
-fn f(x: int) -> int where numeric(x):
-    return x
-
-fn main():
-    println(str(f(1)))

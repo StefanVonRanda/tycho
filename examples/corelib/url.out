@@ -1,5 +1,0 @@
-encode       = a%20b%26c%3Dd
-encode_form  = a+b%26c%3Dd
-decode       = a b&c=d
-decode_form  = a b&c
-unreserved   = safe-_.~

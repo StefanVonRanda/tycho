@@ -1,4 +1,0 @@
-round-trip: {"name":"tycho","version":7,"tags":["systems","arena"],"nested":{"ok":true,"n":-3},"empty":[],"nothing":null}
-version    = 7
-nested.n   = -3
-sum of nums = 4

@@ -1,7 +1,0 @@
-len=3 sumx=9 p2x=5
-set0x=100
-ps_len=3 qs_len=4
-after_inout len=4 last_x=9
-ns0=Ada ms0=ada
-grid_len=2 row1_2=4 grid1len=4
-eq-ok

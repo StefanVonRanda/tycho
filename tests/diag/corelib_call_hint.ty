@@ -1,3 +1,0 @@
-fn main():
-    xs := sort([3, 1, 2])
-    println(str(xs))

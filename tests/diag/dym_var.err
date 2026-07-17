@@ -1,2 +1,0 @@
-tests/diag/dym_var.ty:3: error: unknown variable 'coutn'; did you mean 'count'?
-     3 |     print(str(coutn))

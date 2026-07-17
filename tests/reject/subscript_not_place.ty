@@ -1,7 +1,0 @@
-# A subscript must `yield &<place>`, not a value.
-struct N:
-    w: int
-subscript bad(g: [N], i: int) -> inout N:
-    yield g[i]
-fn main():
-    print("x")

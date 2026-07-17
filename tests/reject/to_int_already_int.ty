@@ -1,6 +1,0 @@
-# to_int(x) where x is already a plain int is rejected in BOTH compilers (the
-# common to_int(s[i]) confusion -- s[i] is already the byte value as an int).
-# tychoc0 used to fail-open here and emit a redundant (long) cast.
-fn main():
-    x := 5
-    println(str(to_int(x)))

@@ -1,4 +1,0 @@
-len = 5
-sum = 150
-xs[0] = 99
-len xs = 5, len ys = 6

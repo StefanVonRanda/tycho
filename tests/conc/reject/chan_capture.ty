@@ -1,8 +1,0 @@
-fn helper(ch: Channel(int), x: int) -> int:
-    send(ch, x)
-    return x
-fn main():
-    ch := channel(int, 4)
-    g := fn(x: int) -> int: helper(ch, x)
-    print(str(g(1)))
-    close(ch)

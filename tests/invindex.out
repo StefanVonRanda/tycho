@@ -1,4 +1,0 @@
-docs=5 vocab=20
-AND(the, dog) -> [1, 3]
-quick -> [0, 2, 4]
-freq(the) = 4

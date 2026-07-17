@@ -1,4 +1,0 @@
-fn f(xs: ...int, y: int) -> int:
-    return y
-fn main():
-    print("x")

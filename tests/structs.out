@@ -1,4 +1,0 @@
-area = 12
-shifted = (11, 22)
-a.x = 1, d.x = 99
-r.lo.x = 100, a.x still 1

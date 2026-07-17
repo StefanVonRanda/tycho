@@ -1,2 +1,0 @@
-tests/diag/int_float_mix.ty:4: error: arithmetic requires two ints or two floats (got int, float) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints
-     4 |     println(str(x / y))

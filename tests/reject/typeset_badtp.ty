@@ -1,4 +1,0 @@
-fn f(x: $T) -> $T where Q: int | float:
-    return x
-fn main():
-    println(str(f(1)))

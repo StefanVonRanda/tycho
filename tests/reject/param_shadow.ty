@@ -1,7 +1,0 @@
-# both compilers must reject a top-level := that shadows a parameter
-# (same C function scope -> duplicate C local).
-fn f(x: int) -> int:
-    x := 5
-    return x
-fn main():
-    print(str(f(1)))

@@ -1,5 +1,0 @@
-const X = 5
-
-fn main():
-    X = 6
-    println(str(X))

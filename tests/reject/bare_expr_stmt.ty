@@ -1,8 +1,0 @@
-# A bare expression with no effect -- here a lone identifier -- is not a valid
-# statement; it is almost always an incomplete line (e.g. a truncated `x = ...`).
-# Both compilers must reject it: only a call may stand alone as a statement.
-# (This locks the tychoc/tychoc0 parity the reject fuzzer flagged: tychoc used to
-# accept a bare identifier statement that tychoc0 rejected.)
-fn main():
-    x := 5
-    x

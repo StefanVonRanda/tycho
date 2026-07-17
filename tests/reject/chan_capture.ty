@@ -1,5 +1,0 @@
-# a closure cannot capture an affine channel handle. Both reject.
-fn main():
-    ch := channel(int, 2)
-    g := fn(x: int) -> int: recv(ch)
-    print("x")

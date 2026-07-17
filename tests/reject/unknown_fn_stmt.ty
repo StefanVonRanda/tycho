@@ -1,5 +1,0 @@
-# both compilers must reject a STATEMENT-position call to an undefined
-# function (value-position calls are caught via type_of; this is the bare-
-# statement path).
-fn main():
-    nofunc(3)

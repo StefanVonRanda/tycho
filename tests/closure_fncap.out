@@ -1,5 +1,0 @@
-compose(inc,dbl)(5) = 12
-twice(inc)(5) = 7
-inline f(x)+1 at 10 = 21
-apply(compose(inc,dbl),3) = 8
-compose(compose(inc,inc),dbl)(5) = 14

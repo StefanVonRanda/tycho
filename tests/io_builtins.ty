@@ -1,8 +1,0 @@
-# Stage 0 enabling builtins: read_all (slurp stdin) + chr (byte -> 1-char string).
-fn main():
-    src := read_all()                    # the whole of stdin, verbatim
-    print(src)
-    println(chr(65) + chr(66) + chr(67))              # ABC
-    s := "Hi!"
-    println(str(s[0]) + "," + str(s[1]) + "," + str(s[2]))   # 72,105,33 (ord)
-    println(chr(s[0]) + chr(s[1]) + chr(s[2]))        # Hi! (chr inverts ord)

@@ -1,4 +1,0 @@
-get=10,20 count=2
-set a->11: get=11
-removed a: alive=false count=1
-reuse slot: get(c)=30 alive(a)=false count=2

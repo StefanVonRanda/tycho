@@ -1,6 +1,0 @@
-# to_float(x) takes an int, a sized int, f32, or a float newtype -- NOT a plain
-# float (a redundant conversion). Both compilers must reject; tychoc0 used to
-# fail-open here.
-fn main():
-    x := 2.5
-    println(str(to_float(x)))

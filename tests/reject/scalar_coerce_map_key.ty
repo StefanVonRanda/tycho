@@ -1,8 +1,0 @@
-# No silent scalar coercion of a WRITE map key. The map is int-keyed; `m[2.5] = 1` used
-# a float key, which the write path (bare nt_check, identity-only) let through while the
-# read path already base-checks. tychoc rejects; tychoc0 silently coerced the key. Both
-# compilers must reject. (UB-6 completion at the map-key write position.)
-fn main():
-    m : [int: int] = []
-    m[2.5] = 1
-    println(str(len(m)))

@@ -1,7 +1,0 @@
-package main
-import "geom"
-
-fn main():
-    println(str(geom.widen(to_u8(200))))                          # 200
-    println(str(to_int(geom.bump16(to_i16(41)))))                 # 42 (i16 return crosses the boundary)
-    println(str(geom.pack(to_i32(1000), to_i64(2000000000000))))  # 2000000001000

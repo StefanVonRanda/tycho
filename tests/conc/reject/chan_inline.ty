@@ -1,5 +1,0 @@
-fn worker(ch: Channel(int)) -> int:
-    return 1
-fn main():
-    t := spawn worker(channel(int, 4))
-    print(str(wait(t)))

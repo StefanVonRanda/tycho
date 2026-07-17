@@ -1,6 +1,0 @@
-# a map key must have the map exact key type on READ too, not only write (newtype identity)
-type Slot = int
-fn main():
-    m : [Slot: int] = []
-    m[Slot(3)] = 30
-    println(str(m[3]))

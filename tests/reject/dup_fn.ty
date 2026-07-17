@@ -1,8 +1,0 @@
-# both compilers must reject a duplicate function name (no overloading;
-# it would emit two C functions with the same name).
-fn foo() -> int:
-    return 1
-fn foo() -> int:
-    return 2
-fn main():
-    print(str(foo()))

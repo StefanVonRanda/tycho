@@ -1,9 +1,0 @@
-# Loop scratch-arena reset: per-iteration temporaries are reclaimed every
-# iteration, so five million iterations run in constant memory. If the reset
-# regressed, the scratch arena would grow unbounded (~100s of MB here).
-fn main():
-    last := 0
-    for i in range(5000000):
-        s := str(i) + "!"
-        last = len(s)
-    println(str(last))

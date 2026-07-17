@@ -1,8 +1,0 @@
-get=11 miss=-1
-in=true len=2
-acc=16 k0=(1,a)
-del: len=1 gone=true
-tstruct=hit miss=?
-ttup=true miss=false
-eq=true neq=false
-sff=43 miss=-1

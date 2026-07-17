@@ -1,8 +1,0 @@
-# A subscript parameter may appear at most once in the yielded place (v1), so an
-# argument is never double-evaluated on substitution.
-struct G:
-    a: [[int]]
-subscript bad(g: G, i: int) -> inout int:
-    yield &g.a[i][i]
-fn main():
-    print("x")

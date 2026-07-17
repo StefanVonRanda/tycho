@@ -1,7 +1,0 @@
-# `t.0[k] = v` — index-assigning INTO a tuple element is rejected. You can REPLACE a
-# tuple element (`t.0 = v`) but not index-mutate one in place. Both compilers must
-# reject this (tychoc at resolve, tychoc0 at parse), mirroring the deliberate rule
-# "can only index-assign an array or map variable or field".
-fn main():
-    t := ([]int: int, 9)
-    t.0[1] = 10

@@ -1,7 +1,0 @@
-sum=20 product=24 max=8 min=1
-idx3=1 idx9=-1 cnt3=2 has8=1
-sort=1,3,3,5,8 sok=1 origok=0
-rev=1,3,8,3,5 take=5,3 drop=3,1
-concat=1,2,3,4 fill=7,7,7 dedup=1,2,3,1
-s_sort=apple,apple,fig,pear s_min=apple s_max=pear s_has=1 s_dedup=apple,fig,pear
-f_sum=4.5 f_min=0.5 f_max=2.5 f_sort=0.5,1.5,2.5

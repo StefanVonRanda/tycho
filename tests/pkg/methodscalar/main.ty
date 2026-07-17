@@ -1,7 +1,0 @@
-package main
-
-import "mathx"
-
-fn main():
-    println(str(mathx.use_int(5)))
-    println(mathx.use_str("hi"))

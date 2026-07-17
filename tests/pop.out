@@ -1,7 +1,0 @@
-int=30 len=2
-flt=2.5
-str=gamma len=2
-struct=3,30
-row=5,6 len=2
-held=beta now=4
-drained=8,7 refill=99

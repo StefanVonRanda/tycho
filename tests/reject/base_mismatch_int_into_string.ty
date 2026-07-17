@@ -1,5 +1,0 @@
-# A numeric literal adapts only to a numeric slot; an int literal into a `string` annotation
-# is a mismatch (the read path for the literal branch). Both compilers must reject.
-fn main():
-    x : string = 5
-    println("unreachable")

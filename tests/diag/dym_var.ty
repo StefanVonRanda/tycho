@@ -1,3 +1,0 @@
-fn main():
-    count := 1
-    print(str(coutn))

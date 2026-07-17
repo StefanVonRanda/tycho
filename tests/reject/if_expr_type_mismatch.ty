@@ -1,7 +1,0 @@
-# A value `if` whose branches disagree on type is a compile error (both compilers).
-fn main():
-    x := if true:
-        1
-    else:
-        "two"
-    println(str(x))

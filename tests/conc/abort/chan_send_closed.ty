@@ -1,4 +1,0 @@
-fn main():
-    ch := channel(int, 2)
-    close(ch)
-    send(ch, 1)

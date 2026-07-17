@@ -1,9 +1,0 @@
-output  = build/site
-jobs    = 4
-color   = auto
-verbose = true
-flag r  = true
-flag x  = false
-nargs   = 2
-pos 0   = src/main.ty
-pos 1   = --not-a-flag

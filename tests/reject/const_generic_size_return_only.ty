@@ -1,6 +1,0 @@
-# A `$N` that no argument mentions (return-only) cannot be inferred.
-fn mk() -> [$N]int:
-    return [1, 2, 3]
-fn main():
-    x := mk()
-    print(str(len(x)))

@@ -1,4 +1,0 @@
-fn main():
-    total := 1
-    totel = 2
-    print(str(total))

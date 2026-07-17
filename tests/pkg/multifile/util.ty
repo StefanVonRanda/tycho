@@ -1,8 +1,0 @@
-package multifile
-
-struct Box:
-    w: int
-    h: int
-
-fn area(b: Box) -> int:
-    return b.w * b.h

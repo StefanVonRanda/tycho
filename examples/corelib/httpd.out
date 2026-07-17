@@ -1,6 +1,0 @@
-method = GET
-path   = /hello?name=ada
-host   = localhost
-status ok = true
-served = GET /
-reply  = pong

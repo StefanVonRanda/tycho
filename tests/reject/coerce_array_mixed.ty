@@ -1,4 +1,0 @@
-# array elements must share a type -- no silent scalar mix (must reject, both compilers)
-fn main():
-    xs := [1, 2.5, 3]
-    println(str(xs[1]))

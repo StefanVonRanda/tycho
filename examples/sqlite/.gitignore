@@ -1,9 +1,0 @@
-# build artifacts (run.sh builds in a tmpdir; these are from manual `tychoc demo.ty ...`)
-demo
-demo.c
-demo0
-demo0.c
-demo0_san
-demo0.err
-*.o
-# (expected.out is un-ignored in the root .gitignore, like the other test goldens)

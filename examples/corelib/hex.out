@@ -1,5 +1,0 @@
-encode       = 747963686f
-encode_upper = 6869
-decode       = tycho
-decode spaced= tycho
-is_valid     = 1

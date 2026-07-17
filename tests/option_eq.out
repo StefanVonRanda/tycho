@@ -1,7 +1,0 @@
-opt_int TFFTTF
-opt_str TFT
-opt_arr TF
-opt_struct TF
-opt_nested TF
-res_int TFFTFT
-res_heap TF

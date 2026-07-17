@@ -1,9 +1,0 @@
-# Example: core:md5 -- the MD5 digest (for checksums / content addressing /
-# interop; MD5 is broken for security, so never use it for passwords).
-package main
-import "core:md5"
-
-fn main():
-    println("md5(\"\")      =\n  " + md5.hex(""))        # d41d8cd98f00b204e9800998ecf8427e
-    println("md5(\"tycho\")  =\n  " + md5.hex("tycho"))
-    println("digest bytes  = " + str(len(md5.digest("tycho"))))  # 16

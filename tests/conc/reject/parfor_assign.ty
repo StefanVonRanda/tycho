@@ -1,6 +1,0 @@
-fn main():
-    acc := 0
-    parallel for i in range(10):
-        acc = acc + i
-        if acc > 3:
-            acc = 0
