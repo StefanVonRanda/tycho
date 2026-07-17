@@ -8,6 +8,11 @@
 /tmp*
 *.s
 cc??????.s
+# profiler output (valgrind --tool=callgrind/cachegrind, perf, gprof) — scratch, never source
+cachegrind.out.*
+callgrind.out.*
+perf.data*
+gmon.out
 # transpiled C emitted by `tychoc <pkg>.ty --emit-c` next to the source
 # (e.g. compiler/tychoc0.c) — a build artifact, never source
 /compiler/*.c
