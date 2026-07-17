@@ -233,7 +233,9 @@ element type instead of a family of per-type siblings.
   checks membership). For inputs too large to slurp, a **bounded-memory streaming line
   reader** over a libc `getline` shim: `open_lines(p)` → `read_line(r)` (`Some(line)` /
   `None` at EOF) → `close_lines(r)`, plus `fold_lines(p, init, f)` — peak memory is
-  O(longest line), not O(file). Error model mirrors the builtins — nothing aborts.
+  O(longest line), not O(file). `read_bytes(p)` reads a whole file as raw `bytes`
+  (binary-safe — interior NUL bytes are preserved, unlike `read`'s string).
+  Error model mirrors the builtins — nothing aborts.
 - **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the

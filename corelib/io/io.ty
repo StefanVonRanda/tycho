@@ -51,6 +51,13 @@ fn write_lines(p: string, lines: [string]) -> bool:
 extern fn iox_open_lines(path: string) -> ptr        # null if the path can't be opened
 extern fn iox_read_line(r: ptr) -> Option(string)    # next line (no trailing newline/CRLF); None at EOF
 extern fn iox_close_lines(r: ptr)
+extern fn iox_read_file(path: string) -> bytes       # whole file as raw bytes (binary-safe)
+
+# Read the whole file as raw bytes -- interior NUL bytes are preserved (unlike
+# read(), whose string truncates at the first NUL). A missing/unreadable file
+# yields empty bytes. The right tool for binary assets (images, fonts, ...).
+fn read_bytes(p: string) -> bytes:
+    return iox_read_file(p)
 
 # Open a streaming line reader over `path`. Returns a null ptr (check is_null) if
 # the file can't be opened. Pair every successful open with close_lines(r).

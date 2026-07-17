@@ -45,3 +45,29 @@ void iox_close_lines(void *p) {
     free(r->buf);
     free(r);
 }
+
+/* Read the whole file at `path` as raw bytes -- binary-safe, so interior NUL
+ * bytes survive (unlike the read_file builtin's string). Out-param bytes contract
+ * (same as net_shim's netx_read): *out is a malloc'd buffer the runtime copies
+ * *outlen bytes from and frees; a missing/unreadable file yields empty bytes. */
+void iox_read_file(const char *path, unsigned char **out, long *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;                                  /* fail closed: empty result */
+    size_t cap = 4096, len = 0, n;
+    unsigned char *buf = malloc(cap);
+    if (!buf) { fclose(f); return; }
+    while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
+        len += n;
+        if (len == cap) {
+            size_t nc = cap * 2;
+            unsigned char *nb = realloc(buf, nc);
+            if (!nb) { free(buf); fclose(f); return; }   /* fail closed */
+            buf = nb; cap = nc;
+        }
+    }
+    fclose(f);
+    *out = buf;
+    *outlen = (long)len;
+}

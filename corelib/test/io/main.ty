@@ -64,6 +64,14 @@ fn main():
     missfold := io.fold_lines("/tmp/tycho_corelib_io_absent.xyz", 7, addlen)
     println(f"fold_sumlen={tot} fold_missing={missfold}")
 
+    # read_bytes: binary-safe whole-file read (interior NUL bytes preserved, and
+    # a missing file -> empty). Used immediately, the safe pattern.
+    binf := "/tmp/tycho_corelib_io_bin.dat"
+    io.write(binf, "AB" + chr(0) + "CD")
+    rb := io.read_bytes(binf)
+    rbmiss := io.read_bytes("/tmp/tycho_corelib_io_absent.xyz")
+    println(f"read_bytes len={len(rb)} missing={len(rbmiss)}")
+
     # a missing file reads as ""
     miss := io.read("/tmp/tycho_corelib_io_absent.xyz")
     println(f"missing=[{miss}] len={len(miss)}")
