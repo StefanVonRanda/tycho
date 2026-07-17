@@ -11528,6 +11528,18 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
         EBin(o, l, r, _el):
             return e
         ECall(cn2, ca, _el):
+            # thread the annotation's inner type into a Some/Ok/Err payload, so a bare `[]`
+            # inside a sum constructor is grounded exactly as `x: [int] = []` is (mirrors
+            # check_sum_annot's inward type flow; tychoc grounds these via resolve_exp).
+            # Without this, `x: Option([int]) = Some([])` leaves the `[]` untyped and dies
+            # "cannot type a bare [] here" where tychoc accepts.
+            if len(ca) == 1:
+                if cn2 == "Some" and is_option(want):
+                    return ECall(cn2, [ground_pre(dc, ctx, option_inner(want), ca[0])], _el)
+                if cn2 == "Ok" and is_result(want):
+                    return ECall(cn2, [ground_pre(dc, ctx, result_ok(want), ca[0])], _el)
+                if cn2 == "Err" and is_result(want):
+                    return ECall(cn2, [ground_pre(dc, ctx, result_err(want), ca[0])], _el)
             return e
         EField(b, f, _el):
             return e
@@ -12273,10 +12285,29 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
             return SMultiAssign(nms, lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx), _sl)
         SMatch(subj, vars, binds, bodies, _sl):
             ns := lift_expr(subj, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
+            # Register each arm's payload bindings before lifting the arm body: a body
+            # statement lifted/grounded here can call type_of on a bind (e.g. `push(a, 7)`
+            # over `Some(a)` of an array payload), which dies `unknown variable 'a'` if the
+            # bind isn't in scope. Mirrors the mono/codegen SMatch handling. Per-arm copies
+            # (value semantics) keep each bind local to its own arm. `lifted`/`lams`/`spawns`
+            # /`pars` stay shared so lifted definitions still accumulate across arms.
+            msty := resolve_ginst(type_of(subj, names, types, dc, ctx), dc, ctx)
             nb := [][Stmt]
             k := 0
             for k < len(bodies):
-                push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx, fret))
+                bn := names
+                bt := types
+                if k < len(vars):
+                    pts := match_arm_ptypes(dc, ctx, msty, vars[k])
+                    j := 0
+                    for j < len(binds[k]):
+                        push(bn, binds[k][j])
+                        if j < len(pts):
+                            push(bt, pts[j])
+                        else:
+                            push(bt, "int")
+                        j = j + 1
+                push(nb, lift_block(bodies[k], &lifted, &ctr, &lams, &spawns, &pars, &bn, &bt, dc, ctx, fret))
                 k = k + 1
             return SMatch(ns, vars, binds, nb, _sl)
         SBreak:

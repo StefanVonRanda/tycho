@@ -1,0 +1,50 @@
+# A bare `[]` as a Some/Ok/Err payload takes its element type from the enclosing
+# Option/Result annotation, exactly as `x: [int] = []` does (ground_pre threads the
+# inner type through the sum constructor). And a match arm that binds such a payload
+# and uses it must type-check even when the function's lift is active (the bare `[]`
+# gates the lift; the lift's SMatch now registers arm binds before walking the body).
+# tychoc0 used to reject both -- "cannot type a bare [] here" and "unknown variable".
+
+fn main():
+    # bare [] grounded from the Option annotation, then matched + mutated + read
+    a : Option([int]) = Some([])
+    match a:
+        Some(xs):
+            push(xs, 10)
+            push(xs, 20)
+            println("some len " + str(len(xs)))
+        None:
+            println("none")
+
+    # the Ok arm of a Result, same grounding path
+    b : Result([int], string) = Ok([])
+    match b:
+        Ok(ys):
+            push(ys, 7)
+            println("ok len " + str(len(ys)))
+        Err(e):
+            println("err " + e)
+
+    # nested: the inner [] grounds through two constructors
+    c : Option(Option([int])) = Some(Some([]))
+    match c:
+        Some(inner):
+            match inner:
+                Some(zs):
+                    println("nested len " + str(len(zs)))
+                None:
+                    println("nested none")
+        None:
+            println("outer none")
+
+    # an unrelated bare [] forces the lift ON; the match below binds an array payload
+    # supplied explicitly -- locks the lift arm-bind fix independently of grounding
+    junk : [int] = []
+    push(junk, 1)
+    d : Option([int]) = Some([]int)
+    match d:
+        Some(ws):
+            push(ws, 99)
+            println("forced len " + str(len(ws)))
+        None:
+            println("forced none")
