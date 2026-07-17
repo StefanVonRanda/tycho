@@ -236,6 +236,8 @@ that ends with a small real program and the one idea that makes the language tic
 [`docs/`](docs/README.md) is the full index; the map:
 
 - **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
+- **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
+  model in five steps, starting from C you already know. The gentlest way in.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
   The source of truth; every example compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas

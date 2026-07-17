@@ -100,3 +100,4 @@ gmon.out
 
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/
+dist/

@@ -4,7 +4,9 @@ New here? Read these in order:
 
 1. **[The README](../README.md)** — what Tycho is and why, in a few minutes.
 2. **[Tutorial](tutorial.md)** — write and run your first programs, start to finish.
-3. **[Language reference](reference/index.md)** — the canonical, per-topic description of
+3. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
+   explained in five steps from familiar C. The gentlest introduction to the core idea.
+4. **[Language reference](reference/index.md)** — the canonical, per-topic description of
    how each feature behaves. This is the source of truth.
 
 ## How the docs are organized
