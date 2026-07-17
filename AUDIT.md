@@ -106,6 +106,22 @@ spec-level, no memory unsafety).
   divergence — the parity sweep is closed across sum-payload, scalar-coercion, newtype-
   identity, inout/sink, and generic-instantiation.
 
+- **Base-type mismatches upgraded to clean diagnostics (2026-07-17).** The remaining
+  fail-CLOSED cases — a base-type mismatch that is neither a newtype-identity nor a
+  scalar-numeric coercion (string↔int, `[int]`↔int, a tuple with a wrong element, an int
+  literal into `string`) — used to be rejected only by the emitted C failing to compile
+  (`cc` error), not by tychoc0 itself. A new guarded helper `base_type_mismatch` gives a
+  clean diagnostic at every supplying position (decl / reassign / return / argument /
+  place / struct field / map key / array element / inout `&place` / sink). It fires ONLY on
+  SYNTACTICALLY-typed literals (`EStr`/`EBool`/`EChar`/array/map/tuple literals) and an inout
+  `&place` (compared directly) — a var / call / index / binop is skipped because its `type_of`
+  is unreliable inside a generic body (a match binding over a generic enum reports the
+  pre-mono typaram; that false-rejected `generic_enum_array.ty` until the guard was added),
+  and scalar-vs-scalar is left to `scalar_coercion_bad` (which owns literal adaptation). Not a
+  soundness or parity change (both compilers already rejected these) — purely a better error.
+  Locked by `tests/reject/base_mismatch_*.ty`. fixpoint B==C, corelib 3-way green, full gate
+  green. (A base mismatch supplied by a var/call/index still falls back to the cc error.)
+
 ## Confirmed inconsistencies
 
 ### C1. [HIGH] Escaping closure capturing a bare map is a use-after-free in tychoc0 (segfault / silently wrong value); tychoc is correct

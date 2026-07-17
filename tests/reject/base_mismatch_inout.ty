@@ -1,0 +1,8 @@
+# A base-type mismatch through an inout &place (a float variable into an inout int param):
+# the &place's type is compared directly (a place is never a literal). Clean diagnostic.
+fn f(x: inout int):
+    x = x
+fn main():
+    y : float = 2.5
+    f(&y)
+    println("unreachable")

@@ -1,0 +1,5 @@
+# A base-type mismatch on a return (string from a -> int function): clean diagnostic.
+fn f() -> int:
+    return "h"
+fn main():
+    println(str(f()))

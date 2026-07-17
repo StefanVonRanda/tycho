@@ -4000,6 +4000,65 @@ fn check_sum_pos(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], ty
     if want != "" and is_sum_ctor(e) and (is_option(want) or is_result(want)):
         check_sum_annot(dc, ctx, want, e, names, types, el)
 
+# Is supplying value `e` where concrete type `want` is expected a plain BASE-TYPE mismatch
+# (string where int expected, [int] where string, a tuple with a wrong element, ...)?  This
+# is the general "types must match" check that nt_check (newtype identity only) and
+# scalar_coercion_bad (two scalars, with literal adaptation) do not cover -- without it those
+# cases fell through to invalid emitted C and a `cc` error instead of a clean diagnostic.
+# Fires ONLY when the two concrete types differ and it is not a case another check owns:
+# generics, sum constructors, bare []/{}/None, lambdas and field/UFCS reads are skipped, and
+# scalar-vs-scalar is left to scalar_coercion_bad (which knows the legal literal adaptations).
+fn base_type_mismatch(dc: Decls, ctx: Ctx, want0: string, e: Expr, names: [string], types: [string]) -> bool:
+    want := base_ty(want0)                            # strip an inout '&' / sink '~' marker: a reassigned inout param's stored type is "&int" but its value is "int"
+    if want == "" or ty_is_generic(want):
+        return false
+    if is_sum_ctor(e):                                # Some/Ok/Err handled by check_sum_pos
+        return false
+    if not scalar_check_safe(e):                      # field access / UFCS call: typed later
+        return false
+    rwant := resolve_ginst(resolve_nt(dc, ctx, want), dc, ctx)
+    if rwant == "":
+        return false
+    if is_int_lit(e):                                 # int literal adapts to a numeric slot only; into a non-numeric it is a mismatch
+        return not (rwant == "int" or rwant == "float" or rwant == "f32" or is_sized_int(rwant))
+    if is_float_lit(e):
+        return not (rwant == "float" or rwant == "f32")
+    # Only SYNTACTICALLY-typed literals are compared: their type is fixed by the source and
+    # cannot be corrupted by a later generic instantiation. A var / call / index / binop can
+    # have a type_of that is unreliable inside a generic body (e.g. a match binding over a
+    # generic enum reports the pre-mono typaram), which would false-reject -- those base-type
+    # mismatches stay a fail-closed cc error rather than risk an over-strict diagnostic.
+    ok := false
+    match e:
+        EStr(_t, _l):
+            ok = true
+        EBool(_t, _l):
+            ok = true
+        EChar(_t, _l):
+            ok = true
+        EArrLit(_es, _ft, _l):
+            ok = len(_es) > 0                         # a bare `[]` adapts; a non-empty literal has a synthesized type
+        EMapLit(_ks, _vs, _l):
+            ok = len(_ks) > 0                         # a bare `{}` adapts
+        ETuple(_es, _l):
+            ok = true
+        EAddr(_x, _l):                                # inout `&place`: a place is never a literal, so compare its resolved type directly (scalar included -- no adaptation applies through inout)
+            pt := resolve_ginst(resolve_nt(dc, ctx, type_of(_x, names, types, dc, ctx)), dc, ctx)
+            return pt != "" and pt != rwant
+        _:                                            # EVar / ECall / EBin / EIndex / ESlice (type_of context-dependent), lambdas, empties, bare None: skip
+            ok = false
+    if not ok:
+        return false
+    vt := type_of(e, names, types, dc, ctx)
+    if vt == "":
+        return false
+    rat := resolve_ginst(resolve_nt(dc, ctx, vt), dc, ctx)
+    if rat == "":
+        return false
+    if is_scalar_num(rat) and is_scalar_num(rwant):   # two scalars: scalar_coercion_bad owns this (it knows literal adaptation)
+        return false
+    return rat != rwant
+
 fn is_tuple(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 40           # "(T,U,...)"
 
@@ -10046,6 +10105,8 @@ fn nt_check_e(dc: Decls, ctx: Ctx, le: Expr, re: Expr, names: [string], types: [
 fn check_place_assign(dc: Decls, ctx: Ctx, lv: Expr, rhs: Expr, names: [string], types: [string], el: int):
     nt_check_e(dc, ctx, lv, rhs, names, types, "assignment", el)
     check_sum_pos(dc, ctx, type_of(lv, names, types, dc, ctx), rhs, names, types, el)   # a Some/Ok/Err payload stored into a place (b.o = ..., m[k] = ...) must match the place's Option/Result type
+    if base_type_mismatch(dc, ctx, type_of(lv, names, types, dc, ctx), rhs, names, types):   # base-type mismatch (e.g. string into an int place): a clean diagnostic instead of an emitted-C error
+        die_at(dc, el, "storing " + type_of(rhs, names, types, dc, ctx) + " into a place of type " + type_of(lv, names, types, dc, ctx))
     if scalar_coercion_bad(dc, ctx, type_of(lv, names, types, dc, ctx), rhs, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion into a place (b.f = 2.5, m[k] = 2.5)
         die_at(dc, el, "storing " + type_of(rhs, names, types, dc, ctx) + " into a place of type " + type_of(lv, names, types, dc, ctx))
     match lv:
@@ -10053,6 +10114,8 @@ fn check_place_assign(dc: Decls, ctx: Ctx, lv: Expr, rhs: Expr, names: [string],
             bt := type_of(b, names, types, dc, ctx)
             if is_map(bt):
                 nt_check(dc, ctx, map_key(bt), k, names, types, "map key", el)   # newtype identity of the key
+                if base_type_mismatch(dc, ctx, map_key(bt), k, names, types):   # a base-type-wrong write key (string key on an int-keyed map): clean diagnostic
+                    die_at(dc, el, "map key must be " + map_key(bt) + ", got " + type_of(k, names, types, dc, ctx))
                 if scalar_coercion_bad(dc, ctx, map_key(bt), k, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion of a WRITE key (m[2.5]=1); the read path already base-checks via check_mkey
                     die_at(dc, el, "map key must be " + map_key(bt) + ", got " + type_of(k, names, types, dc, ctx))
         _:
@@ -10068,6 +10131,8 @@ fn check_struct_ctor(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [stri
             for k < len(args) and k < len(dc.structs[i].fields):
                 nt_check(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types, "field '" + dc.structs[i].fields[k].name + "'", el)
                 check_sum_pos(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types, el)   # a Some/Ok/Err payload in a struct-literal field must match the field's Option/Result type
+                if base_type_mismatch(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types):   # base-type mismatch in a struct-literal field: clean diagnostic
+                    die_at(dc, el, "field '" + dc.structs[i].fields[k].name + "' is " + dc.structs[i].fields[k].ty + " but the value is " + type_of(args[k], names, types, dc, ctx))
                 if scalar_coercion_bad(dc, ctx, dc.structs[i].fields[k].ty, args[k], names, types):   # AUDIT (UB-6 completion): no silent scalar coercion in a struct-literal field
                     die_at(dc, el, "field '" + dc.structs[i].fields[k].name + "' is " + dc.structs[i].fields[k].ty + " but the value is " + type_of(args[k], names, types, dc, ctx))
                 k = k + 1
@@ -10165,15 +10230,21 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
                 die_at(dc, el, aname + " is inout; pass it as '&variable'")
             else:
                 nt_check(dc, ctx, base_ty(pp[k]), args[k], names, types, aname, el)   # inout: the &place's newtype identity must match the param's base type (was unchecked -- fail-open)
+                if base_type_mismatch(dc, ctx, base_ty(pp[k]), args[k], names, types):   # inout base-type mismatch (&str-var into inout int): clean diagnostic (EAddr recurses to the place)
+                    die_at(dc, el, aname + " is " + base_ty(pp[k]) + " but the &place is a different type")
         elif is_sink(pp[k]):
             sw := base_ty(pp[k])                                                      # sink is by-value-owned: check the value like a normal arg (was NOT checked at all -- fail-open on scalar coercion / newtype / sum mismatch)
             nt_check(dc, ctx, sw, args[k], names, types, aname, el)
             check_sum_pos(dc, ctx, sw, args[k], names, types, el)
+            if base_type_mismatch(dc, ctx, sw, args[k], names, types):
+                die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + sw)
             if scalar_coercion_bad(dc, ctx, sw, args[k], names, types):
                 die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + sw)
         else:
             nt_check(dc, ctx, pp[k], args[k], names, types, aname, el)
             check_sum_pos(dc, ctx, pp[k], args[k], names, types, el)   # a Some/Ok/Err argument payload must match the parameter's Option/Result type
+            if base_type_mismatch(dc, ctx, pp[k], args[k], names, types):   # base-type mismatch (string into an int param): clean diagnostic
+                die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + pp[k])
             if scalar_coercion_bad(dc, ctx, pp[k], args[k], names, types):   # AUDIT: no silent scalar coercion of an argument
                 die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + pp[k])
         k = k + 1
@@ -10313,6 +10384,8 @@ fn collect_expr(acc: inout [string], e: Expr, names: [string], types: [string], 
                 for m < len(elems):
                     if scalar_coercion_bad(dc, ctx, e0, elems[m], names, types):
                         die_at(dc, _el, "array elements must all have the same type")
+                    if base_type_mismatch(dc, ctx, e0, elems[m], names, types):   # a base-type mix ([1, "h"]): clean diagnostic instead of an emitted-C error
+                        die_at(dc, _el, "array elements must all have the same type")
                     nt_check_e(dc, ctx, elems[0], elems[m], names, types, "array element", _el)   # AUDIT (newtype-identity completion): a raw base among newtype elements ([Id(1), y]) is a mismatch
                     m = m + 1
         EArrEmpty(ety, _el):
@@ -10416,6 +10489,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             if has_str(names, n):                       # newtype identity: RHS must match the variable's type
                 nt_check(dc, ctx, var_type(names, types, n), e, names, types, "assignment to '" + n + "'", _sl)
                 check_sum_pos(dc, ctx, var_type(names, types, n), e, names, types, _sl)   # a Some/Ok/Err payload must match the variable's Option/Result type
+                if base_type_mismatch(dc, ctx, var_type(names, types, n), e, names, types):   # base-type mismatch on a reassignment (x = "h" for x:int): clean diagnostic
+                    die_at(dc, _sl, "assigning " + type_of(e, names, types, dc, ctx) + " to '" + n + "' which is " + var_type(names, types, n))
                 if scalar_coercion_bad(dc, ctx, var_type(names, types, n), e, names, types):   # AUDIT (UB-6 completion): no silent scalar coercion on a reassignment
                     die_at(dc, _sl, "assigning " + type_of(e, names, types, dc, ctx) + " to '" + n + "' which is " + var_type(names, types, n))
         SFieldAssign(lv, rhs, _sl):
@@ -10427,6 +10502,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
         SReturn(e, _sl):
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, ctx.rettype, e, names, types, "return value", _sl)   # newtype identity vs the declared return type
+            if base_type_mismatch(dc, ctx, ctx.rettype, e, names, types):           # base-type mismatch on a return (return "h" from -> int): clean diagnostic
+                die_at(dc, _sl, "returning " + type_of(e, names, types, dc, ctx) + " but this function returns " + ctx.rettype)
             if scalar_coercion_bad(dc, ctx, ctx.rettype, e, names, types):          # AUDIT: no silent scalar coercion of a return value
                 die_at(dc, _sl, "returning " + type_of(e, names, types, dc, ctx) + " but this function returns " + ctx.rettype)
             check_sum_pos(dc, ctx, ctx.rettype, e, names, types, _sl)               # a returned Some/Ok/Err payload must match the return type
@@ -10444,6 +10521,8 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             note_arr_types(&acc, t)
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
+            if base_type_mismatch(dc, ctx, t, e, names, types):         # base-type mismatch on an annotated decl (x:int="h"): clean diagnostic
+                die_at(dc, _sl, "declared type " + t + " but value is " + type_of(e, names, types, dc, ctx))
             if scalar_coercion_bad(dc, ctx, t, e, names, types):        # AUDIT: no silent scalar widen/narrow
                 die_at(dc, _sl, "declared type " + t + " but value is " + type_of(e, names, types, dc, ctx))
             check_sum_pos(dc, ctx, t, e, names, types, _sl)             # AUDIT follow-up: check an aggregate Some/Ok/Err payload against the annotation

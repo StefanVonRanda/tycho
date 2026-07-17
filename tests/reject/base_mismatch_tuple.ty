@@ -1,0 +1,5 @@
+# A base-type mismatch in a tuple-literal element ((int, int) annotation, a string element):
+# the whole-tuple comparison rejects cleanly. Both compilers must reject.
+fn main():
+    t : (int, int) = (1, "h")
+    println("unreachable")
