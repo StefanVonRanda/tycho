@@ -1,0 +1,27 @@
+# A generic type instantiated over a NEWTYPE type-arg (`Box(Id)`, `Opt(Id)`):
+# inside the monomorphized body, a field/payload read keeps the newtype identity,
+# so returning it satisfies the `$T`-return (= Id here). Both compilers.
+type Id = int
+
+struct Box($T):
+    v: $T
+
+fn get(b: Box($T)) -> $T:
+    return b.v
+
+enum Opt($T):
+    Has($T)
+    Non
+
+fn uw(o: Opt($T), d: $T) -> $T:
+    match o:
+        Has(v): return v
+        Non: return d
+
+fn main():
+    b := Box(Id(5))
+    println(str(to_int(get(b))))          # 5
+    o := Has(Id(8))
+    println(str(to_int(uw(o, Id(0)))))    # 8
+    bs := Box(Box(Id(3)))                 # nested generic over newtype
+    println(str(to_int(get(get(bs)))))    # 3

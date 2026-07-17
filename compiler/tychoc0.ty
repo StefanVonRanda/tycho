@@ -2775,7 +2775,7 @@ fn mangle_expr(m: Mctx, e: Expr) -> Expr:
         EArrEmpty(ty, _el):
             return EArrEmpty(mangle_type(m, ty), _el)
         EMapEmpty(k, v, _el):
-            return EMapEmpty(k, v, _el)
+            return EMapEmpty(mangle_type(m, k), mangle_type(m, v), _el)   # mangle the annotated key/value types (a qualified `pool.Handle` -> `pool__Handle`), like EArrEmpty above -- was left raw, so a package-qualified newtype key never matched the mangled value skin
         EMapLit(ks, vs, _el):
             return EMapLit(mangle_args(m, ks), mangle_args(m, vs), _el)
         ETuple(es, _el):
@@ -4805,7 +4805,11 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             for j < len(elems):
                 if j > 0:
                     out = out + ","
-                out = out + type_of(elems[j], names, types, dc, ctx)
+                esk := nt_skin_of(elems[j], names, types, dc, ctx)   # keep a NEWTYPE element's identity: (a, 9) with a: Id is (Id, int), so t.0 stays Id (mirrors EArrLit / EIndex); type_of would resolve-erase it
+                if esk != "":
+                    out = out + esk
+                else:
+                    out = out + type_of(elems[j], names, types, dc, ctx)
                 j = j + 1
             return out + ")"
         ESlice(base, lo, hi, _el):
@@ -4963,6 +4967,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                     return resolve_nt(dc, ctx, subst_field_type(dc.sigs[gsi].ret, gbn, gbt))
             if is_newtype(dc, ctx, name):             # Nt(v) constructor: KEEP the newtype identity unresolved, so a decl `r := Nt(v)` stores "Nt" and the value can be distinguished from its base. A var read (the EVar case above) and cty still resolve to the base, so codegen is unchanged.
                 return name
+            if is_variant(dc, ctx, name):             # a generic-enum construction: infer its application form Opt(int) from the payload, so the value carries its instantiation everywhere it flows (array/tuple element, struct-field arg, foreach binding, direct fn arg) -- mirrors generic-struct construction typing
+                eaf := enum_ctor_appform(name, args, names, types, dc, ctx)
+                if eaf != "":
+                    return eaf
             cret := sig_ret(dc, with_line(ctx, _el), name)
             if is_newtype(dc, ctx, cret):             # a fn RETURNING a newtype: keep the identity too (like the constructor above), so the value carries the newtype through a generic call's nt_check. Consumers that need the base (str, arithmetic) resolve_nt themselves; reads via EVar/EField/EIndex still resolve.
                 return cret
@@ -5992,8 +6000,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 rt := type_of(r, names, types, dc, ctx)
                 if not is_map(rt):                # the right operand must be a map (not an array/string/etc). Without this tychoc0 fail-opened -- `x in [int]` emitted a bogus map_*_has call on an array (broken C). Matches tychoc (src/tychoc.c ~4363).
                     die_at(dc, _el, "`in` tests membership in a map; the right operand must be a map")
-                if lt != map_key(rt):             # and the key must be the map's key type (matches tychoc)
-                    die_at(dc, _el, "`in` key must be " + map_key(rt))
+                check_mkey(dc, ctx, rt, l, names, types, _el)   # key must be the map's key type -- newtype-identity-aware (was a raw `lt != map_key` compare, which rejected a newtype key whose type_of resolves to its base)
                 return mfam(rt) + "_has(" + gen_expr(r, names, types, dc, ctx) + ", " + krt(dc, ctx, rt, gen_expr(l, names, types, dc, ctx)) + ")"
             if op == "+" and lt == "str":         # string concat: the left operand is a string
                 rcat := type_of(r, names, types, dc, ctx)
@@ -10104,7 +10111,18 @@ fn nt_skin_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
                 return nt_or_empty(dc, ctx, dc.sigs[si].ret)   # a fn returning a newtype
             return ""
         EField(b, f, _el):
-            bt := type_of(b, names, types, dc, ctx)        # struct shape (newtype-over-struct already resolved)
+            bt := resolve_ginst(type_of(b, names, types, dc, ctx), dc, ctx)   # resolve a generic app form (Box(Id) -> Box__Id, e.g. inside a body monomorphized over a newtype type-arg) so is_struct/field_type see the instance
+            if is_tuple(bt):                               # tuple index t.0: the newtype skin of that part
+                tparts := tuple_parts(bt)
+                tix := 0
+                tci := 0
+                for tci < len(f):
+                    if f[tci] >= 48 and f[tci] <= 57:
+                        tix = tix * 10 + (f[tci] - 48)
+                    tci = tci + 1
+                if tix < len(tparts):
+                    return nt_or_empty(dc, ctx, tparts[tix])
+                return ""
             if is_struct(dc, ctx, bt):
                 return nt_or_empty(dc, ctx, field_type(dc, ctx, bt, f))
             return ""
@@ -13228,6 +13246,86 @@ fn ginst_app_form(cn: string, dc: Decls, sinsts: [StructDef]) -> string:
         t = t + 1
     return ""
 
+# Enum mirror of ginst_app_form: a generic-enum construction's mono'd callee is
+# "Variant#Instance" (e.g. `Has#Opt__int`, encoded so codegen picks the shared variant
+# ctor). Return the instance's APPLICATION form `Opt(int)` so a later `f(o)` binds $T from
+# a `Opt($T)` pattern. "" if not a generic-enum instance.
+fn einst_app_form(cn: string, dc: Decls, einsts: [EnumDef]) -> string:
+    inm := cn
+    h := find(cn, "#")
+    if h >= 0:
+        inm = substr(cn, h + 1, len(cn))
+    ei := -1
+    i := 0
+    for i < len(einsts):
+        if einsts[i].name == inm:
+            ei = i
+        i = i + 1
+    if ei < 0:
+        return ""
+    iargs := einsts[ei].inst_args
+    if len(iargs) == 0:
+        return ""
+    t := 0
+    for t < len(dc.enums):
+        if len(dc.enums[t].typeparams) == len(iargs) and inst_name(dc.enums[t].name, iargs) == inm:
+            out := dc.enums[t].name + "("
+            j := 0
+            for j < len(iargs):
+                if j > 0:
+                    out = out + ","
+                out = out + iargs[j]
+                j = j + 1
+            return out + ")"
+        t = t + 1
+    return ""
+
+# type_of of a generic-enum variant construction (`Has(5)`) infers the APPLICATION form
+# `Opt(int)` from the payload arg types -- so the value carries its instantiation wherever
+# it flows (an array literal element, a tuple element, a struct-field arg, a foreach
+# binding, a direct fn arg), the same way a generic-struct construction does. "" if not a
+# generic enum, or a typeparam the payload doesn't pin (a nullary variant like `Non` -> the
+# bare enum name, adapted from context / explicit type args).
+fn enum_ctor_appform(name: string, args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    en := variant_enum(dc, ctx, name)
+    gi := find_generic_enum(dc.enums, en)
+    if gi < 0:
+        return ""
+    vi := -1
+    k := 0
+    for k < len(dc.enums[gi].variants):
+        if dc.enums[gi].variants[k].name == name:
+            vi = k
+        k = k + 1
+    if vi < 0:
+        return ""
+    pts := dc.enums[gi].variants[vi].ptypes
+    bnames := []string
+    btypes := []string
+    k = 0
+    for k < len(args) and k < len(pts):
+        aty := type_of(args[k], names, types, dc, ctx)
+        if not match_typaram_str(pts[k], aty, &bnames, &btypes):
+            recover_struct_binds(pts[k], aty, dc.structs, [], &bnames, &btypes)   # a nested generic-struct payload (rare)
+        k = k + 1
+    tps := dc.enums[gi].typeparams
+    out := en + "("
+    j := 0
+    for j < len(tps):
+        bnd := ""
+        bi := 0
+        for bi < len(bnames):
+            if bnames[bi] == tps[j]:
+                bnd = btypes[bi]
+            bi = bi + 1
+        if bnd == "":
+            return ""                                # a typeparam not pinned by this variant's payload
+        if j > 0:
+            out = out + ","
+        out = out + bnd
+        j = j + 1
+    return out + ")"
+
 fn struct_named_here(cn: string, dc: Decls, sinsts: [StructDef]) -> bool:
     i := 0
     for i < len(dc.structs):
@@ -13768,9 +13866,11 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
                 k := 0
                 for k < len(a):
                     atk := type_of(a[k], names, types, dc, ctx)   # type the ORIGINAL args: a nested generic call resolves to its concrete return via type_of, whereas the mono'd arg names its instance (not yet in dc)
-                    cnk := call_callee(margs[k])                  # a DIRECT generic-struct construction arg (f(Box(5))) types to the bare template "Box"; the mono'd arg names its instance -> use the application form so match_typaram_str binds $T (mirrors the SDecl decl-typing)
+                    cnk := call_callee(margs[k])                  # a DIRECT generic-struct/enum construction arg (f(Box(5)) / f(Has(5))) types to the bare template; the mono'd arg names its instance -> use the application form so match_typaram_str binds $T (mirrors the SDecl decl-typing)
                     if cnk != "":
                         appk := ginst_app_form(cnk, dc, sinsts)
+                        if appk == "":
+                            appk = einst_app_form(cnk, dc, einsts)
                         if appk != "":
                             atk = appk
                     push(at, atk)
@@ -13879,6 +13979,11 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
             die("internal: unexpected spread ... (pack_program should have removed it)")
             return _sx
         ESpawn(id, nm, a, el):
+            # NOTE: `spawn <generic-fn>(args)` is not supported -- the spawn chunk-proc /
+            # SpawnInfo is built from the callee's TEMPLATE signature by the lift pass (before
+            # mono), so instantiating the callee here isn't enough (the chunk proc still carries
+            # `Box($T)`). tychoc accepts it; closing this needs generics awareness in the lift /
+            # SpawnInfo / chunk-proc machinery. Fails closed ("unknown function") for now.
             return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
 
 fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> Stmt:
@@ -13898,6 +14003,8 @@ fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func]
             cn := call_callee(mr)
             if cn != "":
                 app := ginst_app_form(cn, dc, sinsts)   # a generic-struct instance: store the APPLICATION form Box(int), so a later f(x) binds $T via match_typaram_str
+                if app == "":
+                    app = einst_app_form(cn, dc, einsts)   # a generic-ENUM construction: same, Opt(int)
                 if app != "":
                     ty = app
                 elif cn != ty and struct_named_here(cn, dc, sinsts):   # a non-generic struct construction: record the concrete name

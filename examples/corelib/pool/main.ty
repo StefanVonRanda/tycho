@@ -26,16 +26,15 @@ fn main():
     push(nb.edges, c)
     pool.set(&g, b, nb)
 
-    # depth-first walk from A, iterative worklist of handles (visited set keyed by
-    # the handle's underlying int)
-    seen := []int: bool
+    # depth-first walk from A, worklist + visited set both keyed by handle
+    seen := []pool.Handle: bool
     stack := [a]
     order := []string
     for len(stack) > 0:
         h := pop(stack)
-        if not pool.alive(g, h) or (to_int(h) in seen):
+        if not pool.alive(g, h) or (h in seen):
             continue
-        seen[to_int(h)] = true
+        seen[h] = true
         n := pool.get(g, h)
         push(order, n.label)
         # push neighbours in reverse so the walk visits them in insertion order

@@ -1,0 +1,24 @@
+# A tuple literal keeps each element's newtype identity: `(a, 9)` where a: Id has
+# type `(Id, int)`, so `t.0` is an Id (accepted by a fn taking Id), including a
+# tuple-in-struct and an array of tuples iterated in a foreach. Both compilers.
+type Id = int
+
+struct S:
+    p: (Id, int)
+
+fn take(x: Id) -> int:
+    return to_int(x)
+
+fn main():
+    a := Id(3)
+    t := (a, 9)
+    println(str(take(t.0) + t.1))            # 12
+
+    s := S((Id(6), 1))                        # tuple inside a struct
+    println(str(take(s.p.0) + s.p.1))         # 7
+
+    xs := [(Id(4), 100), (Id(5), 200)]        # array of tuples, foreach
+    acc := 0
+    for pr in xs:
+        acc = acc + take(pr.0)
+    println(str(acc))                         # 9

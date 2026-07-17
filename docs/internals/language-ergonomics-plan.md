@@ -135,9 +135,27 @@ element read resolves the newtype), so a later index/iteration lost the identity
 the array-literal codegen (`Arr_<T>_from`) now both keep the element's newtype skin (mirrors the
 existing `EIndex` element case), matching tychoc. Verified: `tests/newtype_array_literal.ty`.
 
-**Residual narrow gap (not generics; noted for later):** a package-qualified newtype in a
-**map-key annotation** (`[]pool.Handle: bool`) records the key unmangled (`pool.Handle` vs the
-value's `pool__Handle`), a tychoc/tychoc0 divergence — sidestep with an `int` key until fixed.
+**Gap-hunt round — a family of generic/newtype-identity divergences closed.** A differential
+battery over ~60 positions (tychoc vs tychoc0) surfaced several more cases the two compilers
+disagreed on, all now fixed: **tuple-element newtype** (`(a, 9)` keeps `(Id, int)`); **generic
+enum as a fn parameter** (`unwrap(o: Opt($T), …)`, via an `einst_app_form` mirroring the struct
+path); **generic-enum construction identity** in an array/tuple element, a struct-field arg, and
+a `foreach` binding (via `enum_ctor_appform`, so `type_of(Has(5))` yields `Opt(int)`); and a
+**generic instantiated over a newtype type-arg** (`Box(Id)`, where a field read inside the
+monomorphized body lost the skin). Goldens: `generic_enum_param.ty`, `generic_over_newtype.ty`,
+`newtype_tuple.ty`. **Still open:** `spawn <generic-fn>(args)` — the spawn chunk-proc/SpawnInfo
+is built from the callee TEMPLATE by the lift pass (pre-mono), so it needs generics awareness in
+the lift/SpawnInfo/chunk-proc machinery (documented inline at the mono `ESpawn` case); tychoc
+accepts it, tychoc0 fails closed.
+
+**Newtype map keys — FIXED.** Two tychoc0 bugs: (1) the `in` operator compared the key's
+*resolved* type against the map's newtype key type (`int` vs `Id`) instead of using the
+newtype-aware `check_mkey` the read/get/delete paths already used; (2) the mangler's `EMapEmpty`
+case left the annotated key/value types raw, so a package-qualified `[]pool.Handle: bool`
+recorded `pool.Handle` (unmangled) while values carried `pool__Handle`. Both fixed; a newtype
+(incl. a package-qualified one) is now a first-class map key — write / `in` / read / delete —
+and a bare base value is still rejected. Verified: `tests/newtype_map_key.ty`, and the
+`core:pool` graph example keys its visited set on `pool.Handle` directly, identical 3-way.
 
 **Remaining follow-up:** teach `fuzz/gen.py` to emit generic-struct + concrete-newtype params
 (its generic generation is currently gated to literal scalar args — see its own comments) so
