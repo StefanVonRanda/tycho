@@ -231,6 +231,11 @@ so that half of the sanitizer build is skipped there (the rest still runs).
 
 ## Documentation
 
+New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first hour
+that ends with a small real program and the one idea that makes the language tick.
+[`docs/`](docs/README.md) is the full index; the map:
+
+- **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
   The source of truth; every example compiles on both transpilers.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
@@ -238,8 +243,8 @@ so that half of the sanitizer build is skipped there (the rest still runs).
 - **Design notes** (`docs/*.md`) — the rationale behind each subsystem (memory
   model, concurrency, FFI, generics, maps). The reference says *what*; these say
   *why*.
-- **[docs/architecture.md](docs/architecture.md)** — how it's built, what each verification gate proves, what's shipped, and the decided non-goals.
-  Start here to evaluate or contribute.
+- **[Architecture & status](docs/architecture.md)** — how it's built, what each
+  verification gate proves, what's shipped, and the decided non-goals.
 
 ## License
 
