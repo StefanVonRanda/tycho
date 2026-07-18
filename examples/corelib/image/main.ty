@@ -1,0 +1,15 @@
+# Example: core:image -- encode/decode PNG (RGBA), via libpng.
+package main
+import "core:image"
+
+fn main():
+    # a 2x2 RGBA image: red, green / blue, white
+    px := to_bytes([255,0,0,255,  0,255,0,255,  0,0,255,255,  255,255,255,255])
+    img := image.make(2, 2, px)
+
+    png := image.encode(img)
+    println("encoded PNG  = " + str(len(png) > 0))
+
+    back := image.decode(png)
+    println("decoded dims = " + str(back.width) + "x" + str(back.height))
+    println("roundtrip ok = " + str(to_str(back.pixels) == to_str(px)))

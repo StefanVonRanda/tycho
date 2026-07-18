@@ -1,0 +1,6 @@
+<h1>Tycho</h1>
+<p>A <em>small</em> systems language with <code>value semantics</code>.</p>
+<ul>
+<li>no GC</li>
+<li>no manual free</li>
+</ul>

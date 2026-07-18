@@ -1,0 +1,16 @@
+# Example: core:compress -- zlib (de)compression of byte buffers.
+package main
+import "core:compress"
+
+fn main():
+    text := ""
+    i := 0
+    for i < 40:
+        text = text + "value semantics, implicit arenas, no GC. "
+        i = i + 1
+    raw := to_bytes(text)
+    packed := compress.compress(raw)
+    back := compress.decompress(packed)
+    println("original     = " + str(len(raw)) + " bytes")
+    println("smaller      = " + str(len(packed) < len(raw)))
+    println("roundtrip ok = " + str(to_str(back) == text))

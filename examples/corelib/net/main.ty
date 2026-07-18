@@ -1,0 +1,20 @@
+# Example: core:net -- a loopback TCP round-trip (server + client, one program).
+package main
+import "core:net"
+
+fn main():
+    srv := net.listen("127.0.0.1", 0)         # 0 = an OS-chosen ephemeral port
+    port := net.port_of(srv)
+
+    cli := net.connect("127.0.0.1", port)     # queued in the listen backlog
+    conn := net.accept(srv)                   # pick up the pending connection
+
+    net.write(cli, to_bytes("ping"))
+    println("server received: " + to_str(net.read(conn, 64)))
+
+    net.write(conn, to_bytes("pong"))
+    println("client received: " + to_str(net.read(cli, 64)))
+
+    net.close_fd(cli)
+    net.close_fd(conn)
+    net.close_fd(srv)

@@ -1,0 +1,15 @@
+# Example: core:decimal -- exact base-10 fixed-point (no binary-float rounding).
+package main
+import "core:decimal"
+
+fn main():
+    a := decimal.from_str("0.1")
+    b := decimal.from_str("0.2")
+    println("0.1 + 0.2 = " + decimal.to_str(decimal.add(a, b)))
+
+    price := decimal.from_str("19.99")
+    subtotal := decimal.mul(price, decimal.from_int(3))
+    println("19.99 x 3 = " + decimal.to_str(subtotal))
+
+    paid := decimal.from_str("100.00")
+    println("change    = " + decimal.to_str(decimal.sub(paid, subtotal)))

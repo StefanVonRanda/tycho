@@ -1,0 +1,9 @@
+# Example: core:os -- run external commands and capture their output.
+package main
+import "core:os"
+
+fn main():
+    r := os.run("echo hello from the shell")
+    println("exit code = " + str(r.code))
+    print("captured  = " + r.out)             # echo supplies the trailing newline
+    println("system(true) = " + str(os.system("true")))

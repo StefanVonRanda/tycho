@@ -1,0 +1,4 @@
+connected ok = false
+write result = -1
+bytes read   = 0
+done

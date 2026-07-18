@@ -1,0 +1,3 @@
+encoded PNG  = true
+decoded dims = 2x2
+roundtrip ok = true

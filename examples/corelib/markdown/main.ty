@@ -1,0 +1,7 @@
+# Example: core:markdown -- render a Markdown subset to HTML.
+package main
+import "core:markdown"
+
+fn main():
+    src := "# Tycho\n\nA *small* systems language with `value semantics`.\n\n- no GC\n- no manual free\n"
+    print(markdown.render(src))

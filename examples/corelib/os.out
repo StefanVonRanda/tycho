@@ -1,0 +1,3 @@
+exit code = 0
+captured  = hello from the shell
+system(true) = 0

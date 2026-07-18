@@ -1,0 +1,12 @@
+# Example: core:tls -- a TLS client (OpenSSL). Shown against a closed port, so it
+# demonstrates the API and graceful failure without needing a live server.
+package main
+import "core:tls"
+
+fn main():
+    conn := tls.connect("127.0.0.1", 1)       # nothing listening -> refused
+    println("connected ok = " + str(tls.ok(conn)))
+    println("write result = " + str(tls.write(conn, to_bytes("hello"))))
+    println("bytes read   = " + str(len(tls.read(conn, 64))))
+    tls.close_conn(conn)                       # safe even on a failed handle
+    println("done")
