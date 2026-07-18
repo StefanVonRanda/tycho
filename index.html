@@ -424,7 +424,7 @@
     function buildOracle(){
       oracleRings=[{br:0.34},{br:0.62},{br:0.92}];
       oracleRings.forEach(function(ring){
-        ring.wave=waveCoeffs(5,0.05);
+        ring.wave=waveCoeffs(5,0.02);           // gentle radial undulation (kept subtle)
         ring.dots=[]; var cap=Math.round(1500*ring.br), guard=cap*4, i=0;
         var dense=1.18-0.32*ring.br;                                            // inner rings a touch denser/darker (centre-thick)
         while(i<guard && ring.dots.length<cap){
