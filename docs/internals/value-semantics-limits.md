@@ -14,7 +14,7 @@ the model's edges.
 
 ## Where the model is competitive (for context)
 
-Measured head-to-head against hand-written C and Go (`bench/`, same machine, same
+Measured head-to-head against hand-written C and Go (`bench/`, one machine — AMD Ryzen 7 7735HS, Debian x86-64 — same
 checksum):
 
 - **Value-shaped trees** — `bench/json`: parse a 50k-object document into a tagged value

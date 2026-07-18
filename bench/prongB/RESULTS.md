@@ -15,14 +15,18 @@ memory models."
 > C/Rust `-O3`, `go build` (Go's only level), `koka -O2` (Koka's max). Comparing
 > tycho-`-O3` to a rival at `-O2` would not be apples-to-apples; this table holds
 > every language at its own standard optimization level.
-> Peak RSS via `bench/peakrss`; best-of-3 wall; one machine. Regenerate with
+> Peak RSS via `bench/peakrss`; best-of-3 wall; one machine. **Peak RSS and the
+> cross-language ratios are the claim — not the absolute wall times, which are the
+> least stable figure here: they drift with CPU governor, thermal state, and
+> toolchain version (a newer C compiler can cut a malloc-heavy workload severalfold,
+> narrowing or erasing a time gap while the memory gap holds).** Regenerate with
 > `sh bench/fair_full.sh`. (The `tychoc0` self-host column in "The field" table below
 > is also at `-O3`.)
 
 | workload      | tycho (tychoc)   | C            | Rust         | Go (GC)        | Koka (ARC)     |
 |---------------|---------------:|-------------:|-------------:|---------------:|---------------:|
 | binary-trees  | **13.3MB/179ms** | 33.3MB/765ms | 33.5MB/855ms | 32.3MB/1756ms  | 14.8MB/269ms   |
-| tree-rewrite  | **6.5MB/120ms**  | 13.6MB/484ms | 10.0MB/375ms | 21.1MB/812ms   |  7.6MB/182ms   |
+| tree-rewrite  | **6.5MB/120ms**  | 13.6MB/556ms | 10.0MB/404ms | 21.1MB/837ms   |  7.6MB/178ms   |
 | array-pipeline| 6.3MB/30ms     |  3.1MB/22ms  |  3.3MB/23ms  |  6.4MB/53ms    | 17.8MB/372ms   |
 | json-parse    | 67.3MB/1108ms  | 58.6MB/1260ms| 60.2MB/1623ms| 108.9MB/1445ms | n/a¹           |
 | gcscan        | 64.7MB/136ms   | 78.1MB/129ms | —            | 125.1MB/201ms  | —              |

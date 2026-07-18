@@ -13,7 +13,7 @@
 >
 > | bench | RAM before | RAM after | Δ | checksum |
 > |---|---|---|---|---|
-> | trie (`[int:Trie]`) | 119.2 MB | 58.8 MB | **−51%** (3.2×C → ~1.55×C) | identical |
+> | trie (`[int:Trie]`) | 119.2 MB | 58.7 MB | **−51%** (3.2×C → ~1.55×C) | identical |
 > | invindex (`[string:V]`) | 127 MB | 59.5 MB | **−53%** | identical |
 > | lru (`[int:int]`, delete-churn) | 40.4 MB | 32.7 MB | **−19%** (bounded, no 222 MB cliff) | identical |
 > | json (small values) | 37.0 MB | 37.1 MB | flat (no regression) | identical |

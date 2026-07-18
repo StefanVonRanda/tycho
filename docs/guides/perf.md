@@ -13,7 +13,7 @@ is about how the self-hosted one performs — how fast `tychoc0` transpiles
 its own source, and how the value-semantic, implicit-arena memory model
 behaves on a real, allocation-heavy, deeply-recursive workload.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where another machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted transpiler, `tychoc0` the self-hosted one; each figure names which.
 
 I check every change here against the byte-identical self-build
 (`make fixpoint`) and the sanitizer and fuzzer suite (`make test` under

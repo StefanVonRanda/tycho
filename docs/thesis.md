@@ -121,7 +121,7 @@ call-sites** (destination-passing, emergent). Soundness comes from §3:
 allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
-> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Linux — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
+> **Benchmark setup.** Figures here were measured on a single machine — AMD Ryzen 7 7735HS (16 hardware threads), Debian x86-64 — except where a different machine is noted. Toolchain versions and per-suite detail are in the matching `bench/*/RESULTS.md`. `tychoc` is the C-hosted compiler, `tychoc0` the self-hosted one.
 
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
 before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.

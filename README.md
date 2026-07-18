@@ -99,25 +99,29 @@ recursion, zero `malloc`/`free`/refcount/GC in the source. Parsing **5,000,000**
 documents in a loop holds at a **flat 10 MB**: each document's tree is reclaimed
 when its loop iteration's arena resets. Clean under ASan + LeakSanitizer.
 
-**Head-to-head, five languages.** ([bench/prongB/RESULTS.md](bench/prongB/RESULTS.md),
-peak RSS / best-of-3 wall time, all binaries print identical output; `tycho` here
-is the *self-hosted* transpiler):
+**Head-to-head, five languages** ([bench/prongB/RESULTS.md](bench/prongB/RESULTS.md)).
+Peak resident memory (MB) — every binary computes the same checksum; lower is better:
 
-| workload         |   tycho |        C |     Rust |   Go (GC) | Koka (Perceus) |
-| ---------------- | ------: | -------: | -------: | --------: | -------------: |
-| binary-trees     | 13 MB/107 ms | 33/765 ms | 34/855 ms | 32/1756 ms |   15/269 ms |
-| tree-rewrite     |  6 MB/89 ms  | 13/556 ms | 10/404 ms |  21/837 ms |    8/178 ms |
-| array-pipeline   |  5 MB/30 ms  |  3/22 ms |  3/23 ms |   6/53 ms |   18/372 ms |
-| string-pipeline  |  2 MB/1 ms   |  1/1 ms  |  2/2 ms  |   4/5 ms  |    2/17 ms |
+| workload         | tycho |  C | Rust | Go (GC) | Koka (Perceus) |
+| ---------------- | ----: | -: | ---: | ------: | -------------: |
+| binary-trees     |  **13** | 33 |   33 |      36 |             14 |
+| tree-rewrite     |   **6** | 13 |    9 |      22 |              7 |
+| array-pipeline   |     6 |  3 |    3 |       6 |             14 |
+| string-pipeline  |     1 |  1 |    2 |       3 |              2 |
 
-On the allocation-heavy tree workloads Tycho is competitive with all four. On
-binary-trees it has the lowest memory of the five and the lowest wall time, with
-no GC and no reference counting — only lexical arenas and value semantics.
+On the allocation-heavy tree workloads Tycho uses the least memory of the five —
+40% of C's on binary-trees, half on tree-rewrite — with no GC and no reference
+counting, only lexical arenas and value semantics. Memory is the thesis metric,
+and it is reached with zero manual management.
 
-**Benchmark scope.** These numbers measure the arena model, not the language:
-Tycho trails C and Rust on array-pipeline time (per-element bounds checks, not
-the memory model). Full toolchains and both reference machines (AMD Ryzen 7
-7735HS x86-64 Linux; Apple Silicon arm64 macOS) are in RESULTS.md.
+**On speed and scope.** Tycho runs in C's class: it is faster than hand-written C
+on the allocation-heavy tree workloads (binary-trees, tree-rewrite) and on the
+JSON parser, and it trails C and Rust on the flat array-pipeline (per-element
+bounds checks, not the memory model). It is *not* a bid to be the fastest language
+— absolute wall times are machine-, governor-, and toolchain-specific, so the
+cross-language *ratios* are the claim, not the times. Measured on an AMD Ryzen 7
+7735HS (16 threads), Debian; full toolchains and per-workload timings are in
+RESULTS.md.
 
 ## What it costs
 
@@ -225,9 +229,9 @@ correctness: each `bench/*.ty` asserts one metric against a generous bound. The
 in-place append holds ~1.5 MB where the un-optimized path is ~825 MB at the same
 N, so a 32 MB bound sits firmly between working and broken.
 
-**Platform notes.** Builds and self-hosts on any unix-like OS — tested on Debian,
-Arch, and macOS (Apple Silicon and Intel). No native Windows, but WSL is fine. On
-macOS, `xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer,
+**Platform notes.** Builds and self-hosts on any unix-like OS — developed and gated
+on Debian (x86-64), and benchmarked on macOS (Apple Silicon). No native Windows, but
+WSL is fine. On macOS, `xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer,
 so that half of the sanitizer build is skipped there (the rest still runs).
 
 ## Documentation
