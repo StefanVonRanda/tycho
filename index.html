@@ -381,18 +381,26 @@
     //    over a gentler shared traveling wave so the field still breathes as one ──
     var TV=0.5;
     function mkTerrain(cv){ var s=mkState(cv); s.wave=waveCoeffs(3,1.0); s.parts=null; return s; }
+    // A dithered GRADIENT: gradient value g (1 at the dense/dark centre -> 0 at the
+    // sparse/light edges) drives BOTH the speck density (keep-probability) AND the
+    // darkness (alpha). So the field reads as a smooth gradient rendered in dots:
+    // thick in the centre, dissolving into faint sparse specks at the edges.
     function buildParts(s){
-      var target=Math.floor(s.w*3.0), arr=[], guard=target*5;
-      for(var i=0;i<guard && arr.length<target;i++){
+      var cap=Math.floor(s.w*3.4), arr=[], guard=cap*4, i=0;
+      while(i<guard && arr.length<cap){
+        i = i + 1;
         var xn=Math.random();
-        var e=Math.min(xn,1-xn)/0.20; if(e<1 && Math.random()>e) continue;     // fade at L/R edges
-        var off=Math.pow(Math.random(),1.7)*0.48-0.12;                          // dissolve away from the ridge
-        if(Math.random()>1-Math.abs(off)/0.48) continue;                        // thin out far from ridge
-        arr.push({ xn:xn, y0:0.42+off*0.5,                                      // home row (fraction of h)
+        var off=(Math.random()+Math.random()+Math.random()-1.5)*0.34;           // ~gaussian vertical offset (frac h), packed near the ridge
+        var hf=Math.cos((xn-0.5)*Math.PI); if(hf<0){ hf=0; } hf=Math.pow(hf,0.7); // 1 at horizontal centre -> 0 at the L/R edges
+        var vf=Math.exp(-(off/0.16)*(off/0.16));                                 // gaussian falloff away from the ridge line
+        var g=hf*vf;                                                             // the gradient
+        if(Math.random()>g) continue;                                           // DENSITY follows g (dense centre, sparse edges)
+        arr.push({ xn:xn, off:off,
+                   a:0.10+0.80*g,                                               // DARKNESS follows g (dark centre, faint edges)
+                   sz:g>0.55?(Math.random()<0.35?1.5:1.05):(Math.random()<0.5?0.7:0.9),
                    pj:(Math.random()-0.5)*1.1,                                   // phase jitter: neighbours desync
-                   ay:3+Math.random()*8, wy:0.5+Math.random()*0.8, py:Math.random()*TAU,   // own vertical bob
+                   ay:2+Math.random()*7, wy:0.5+Math.random()*0.8, py:Math.random()*TAU,   // own vertical bob
                    ax:1+Math.random()*3, wx:0.4+Math.random()*0.7, px:Math.random()*TAU,   // own horizontal drift
-                   a:0.30+Math.random()*0.55, sz:Math.random()<0.16?1.5:(Math.random()<0.5?0.7:1.05),
                    sp:Math.random()*TAU });
       }
       s.parts=arr;
@@ -403,8 +411,8 @@
       for(var i=0,P=s.parts;i<P.length;i++){ var q=P[i];
         var wave=sample(s.wave, q.xn*TAU + q.pj, TV, time);            // shared wave (+ per-speck phase jitter)
         var x=q.xn*w + q.ax*Math.sin(q.wx*time+q.px);                  // independent horizontal drift
-        var y=q.y0*h + h*0.10*wave + q.ay*Math.sin(q.wy*time+q.py);    // wave + independent vertical bob
-        var al=q.a*(0.6+0.4*Math.sin(time*0.5+q.sp));
+        var y=h*0.46 + h*0.11*wave + q.off*h + q.ay*Math.sin(q.wy*time+q.py);   // ridge wave + independent vertical bob
+        var al=q.a*(0.74+0.26*Math.sin(time*0.5+q.sp));                // baked gradient alpha + mild shimmer
         ctx.fillStyle=pre+al.toFixed(3)+')';
         ctx.fillRect(x, y, q.sz, q.sz);
       }
@@ -417,13 +425,19 @@
       oracleRings=[{br:0.34},{br:0.62},{br:0.92}];
       oracleRings.forEach(function(ring){
         ring.wave=waveCoeffs(5,0.05);
-        ring.dots=[]; var n=Math.round(1150*ring.br);
-        for(var i=0;i<n;i++) ring.dots.push({
-          ang:Math.random()*TAU,
-          rj:(Math.random()+Math.random()+Math.random()-1.5)*0.055,             // tighter band, densely packed
-          ar:0.004+Math.random()*0.013, wr:0.4+Math.random()*0.7, pr:Math.random()*TAU,   // own radial drift (frac of R)
-          aa:0.006+Math.random()*0.013, wa:0.3+Math.random()*0.6, pa:Math.random()*TAU,   // own angular drift
-          a:0.32+Math.random()*0.55, sz:Math.random()<0.4?0.9:1.25, sp:Math.random()*TAU });
+        ring.dots=[]; var cap=Math.round(1500*ring.br), guard=cap*4, i=0;
+        var dense=1.18-0.32*ring.br;                                            // inner rings a touch denser/darker (centre-thick)
+        while(i<guard && ring.dots.length<cap){
+          i = i + 1;
+          var rj=(Math.random()+Math.random()+Math.random()-1.5)*0.07;         // radial offset from the core (frac R)
+          var gf=Math.exp(-(rj/0.032)*(rj/0.032));                             // GRADIENT across the band: dense/dark core -> thin/faint edges
+          if(Math.random()>gf*dense) continue;
+          ring.dots.push({ ang:Math.random()*TAU, rj:rj,
+            a:(0.12+0.74*gf)*dense, sz:gf>0.5?1.2:0.85,
+            ar:0.004+Math.random()*0.012, wr:0.4+Math.random()*0.7, pr:Math.random()*TAU,   // own radial drift (frac of R)
+            aa:0.006+Math.random()*0.012, wa:0.3+Math.random()*0.6, pa:Math.random()*TAU,   // own angular drift
+            sp:Math.random()*TAU });
+        }
       });
     }
     function drawOracle(s, time){
@@ -437,7 +451,7 @@
           var ang=d.ang + d.aa*Math.sin(d.wa*time+d.pa);                     // independent angular drift
           var wob=sample(ring.wave, d.ang, RV, time);                        // shared undulation around the ring
           var r=R*(ring.br*(1+wob) + d.rj + d.ar*Math.sin(d.wr*time+d.pr));  // + independent radial drift
-          var al=d.a*(0.5+0.5*Math.sin(time*0.5+d.sp));
+          var al=d.a*(0.74+0.26*Math.sin(time*0.5+d.sp));                    // baked gradient alpha + mild shimmer
           ctx.fillStyle=pre+al.toFixed(3)+')';
           ctx.fillRect(cx+Math.cos(ang)*r, cy+Math.sin(ang)*r, d.sz, d.sz);
         }
