@@ -116,8 +116,14 @@
   .c{color:var(--code-dim)} .g{color:#9a9c8e} .out{color:#8f9084}
 
   .cta{display:flex; flex-wrap:wrap; gap:11px; margin:6px 0 4px}
-  .btn{border:1.5px solid var(--ink); background:var(--ink); color:var(--bg); padding:9px 20px;
+  .btn{position:relative; overflow:hidden; border:1.5px solid var(--ink); background:var(--ink); color:var(--bg); padding:9px 20px;
     font-size:11px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700; border-bottom:1.5px solid var(--ink)}
+  /* dithered-gradient hint: a faint dot field fading in from the trailing edge (echoes the terrain), stronger on hover */
+  .btn::after{content:""; position:absolute; inset:0; pointer-events:none;
+    background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
+    -webkit-mask-image:linear-gradient(90deg, transparent 45%, #000); mask-image:linear-gradient(90deg, transparent 45%, #000);
+    opacity:.16; transition:opacity .18s}
+  .btn:hover::after{opacity:.30}
   .btn:hover{background:transparent; color:var(--ink)}
   .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line)}
   .btn.ghost:hover{border-color:var(--ink)}
@@ -132,6 +138,11 @@
   .marker{display:flex; align-items:baseline; gap:12px; font-size:11px; letter-spacing:2px;
     text-transform:uppercase; color:var(--ink); font-weight:700; margin:0 0 18px}
   .marker .n{color:var(--faint); font-weight:400}
+  /* dithered-gradient tail: a dot strip after the label, fading out to the right */
+  .marker::after{content:""; flex:1; align-self:center; height:6px; margin-left:6px;
+    background-image:radial-gradient(currentColor .6px, transparent .7px); background-size:3px 3px;
+    -webkit-mask-image:linear-gradient(90deg, #000, transparent 82%); mask-image:linear-gradient(90deg, #000, transparent 82%);
+    opacity:.20}
   h2{font-size:clamp(19px,2.7vw,25px); color:var(--ink); font-weight:700; margin:0 0 16px; letter-spacing:-.4px; line-height:1.12; text-wrap:balance}
   p{margin:0 0 15px; max-width:64ch}
   p.muted{color:var(--dim)}
