@@ -417,10 +417,10 @@
       oracleRings=[{br:0.34},{br:0.62},{br:0.92}];
       oracleRings.forEach(function(ring){
         ring.wave=waveCoeffs(5,0.05);
-        ring.dots=[]; var n=Math.round(560*ring.br);
+        ring.dots=[]; var n=Math.round(1150*ring.br);
         for(var i=0;i<n;i++) ring.dots.push({
           ang:Math.random()*TAU,
-          rj:(Math.random()+Math.random()+Math.random()-1.5)*0.075,             // wider band = thicker ring
+          rj:(Math.random()+Math.random()+Math.random()-1.5)*0.055,             // tighter band, densely packed
           ar:0.004+Math.random()*0.013, wr:0.4+Math.random()*0.7, pr:Math.random()*TAU,   // own radial drift (frac of R)
           aa:0.006+Math.random()*0.013, wa:0.3+Math.random()*0.6, pa:Math.random()*TAU,   // own angular drift
           a:0.32+Math.random()*0.55, sz:Math.random()<0.4?0.9:1.25, sp:Math.random()*TAU });
