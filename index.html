@@ -99,6 +99,8 @@
   .lede{color:var(--fg); font-size:16px; max-width:66ch; margin:0 0 30px}
   .lede b{color:var(--fg-bright); font-weight:600}
   .lede .sub{color:var(--dim)}
+  .verline{color:var(--dim); font-size:13px; margin:14px 0 0}
+  .verline code{color:var(--fg-bright)}
 
   /* code blocks */
   pre{
@@ -131,6 +133,14 @@
   .flow div{border:1px solid var(--line); border-radius:6px; padding:14px 15px; background:var(--bg-raised)}
   .flow .arr{color:var(--accent); font-weight:600; letter-spacing:.4px}
   .flow small{color:var(--dim); display:block; margin-top:5px; line-height:1.5}
+
+  /* pillar bullet points */
+  ul.points{list-style:none; margin:2px 0 18px; padding:0; display:grid; gap:11px}
+  ul.points li{position:relative; padding-left:19px; font-size:14.5px; color:var(--fg); line-height:1.58; max-width:68ch}
+  ul.points li::before{content:"—"; color:var(--accent); position:absolute; left:0; top:0}
+  ul.points li b{color:var(--fg-bright); font-weight:600}
+  .codecap{color:var(--dim); font-size:12.5px; margin:2px 0 9px; letter-spacing:.2px}
+  .codecap::before{content:"› "; color:var(--accent-dim)}
 
   /* evidence rows */
   .ev{border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:6px 0 4px}
@@ -207,8 +217,8 @@
       <span>tycho</span>
     </a>
     <nav>
-      <a href="#idea">idea</a>
-      <a href="#evidence">evidence</a>
+      <a href="#mem">how&nbsp;it&nbsp;works</a>
+      <a href="#lang">language</a>
       <a href="#start">get&nbsp;it</a>
       <a href="https://github.com/StefanVonRanda/tycho">github&nbsp;↗</a>
       <button class="themebtn" id="tbtn" aria-label="Toggle light/dark theme">theme</button>
@@ -233,46 +243,57 @@
     name := <span class="fn">input</span>()
     <span class="fn">println</span>(<span class="fn">greet</span>(name))</code></pre>
     <div class="cta rise d5">
-      <a class="btn" href="#start">$ make</a>
-      <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">Read the source</a>
+      <a class="btn" href="#start">Get started ↓</a>
+      <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
     </div>
+    <p class="verline rise d5">Builds from source with a C compiler and <code>make</code> — nothing else to install. New here? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a>.</p>
   </header>
 
-  <section id="idea">
+  <section id="mem">
     <p class="marker">how it works</p>
-    <h2>Every scope owns a memory arena.</h2>
-    <p>
-      An arena is an old, fast idea: hand out memory by bumping a pointer, then free it all at
-      once when the scope ends. The catch has always been knowing <em>when</em> a value is
-      allowed to outlive its arena — with pointers, answering that needs whole-program alias
-      analysis, and that's the hard part.
-    </p>
-    <p>
-      Value semantics removes the question. Tycho has no reference type: <span class="inl">b := a</span>
-      copies, and you can't store or return a pointer into another value's memory. So a value can
-      leave a scope in only two ways, and both are right there in the source:
-    </p>
-    <div class="flow">
-      <div><span class="arr">↓ down</span><small>passed as an argument into a function you call.</small></div>
-      <div><span class="arr">↑ up</span><small>returned back out to your caller.</small></div>
-    </div>
-    <p>
-      That's the whole thesis. With only those two exits, the compiler places every allocation
-      straight from the syntax — no whole-program analysis, and no lifetime annotations for you
-      to write.
-    </p>
-    <p class="muted">
-      Two optimizations keep value semantics from being slow, both sound <em>because</em> a value
-      is never aliased. A value you build and return is allocated straight into the caller's arena,
-      so <span class="inl">return</span> moves it instead of copying. And
-      <span class="inl">acc = acc + x</span> in a loop grows one buffer in place — the textbook
-      O(n²) string build becomes O(n). Neither shows up in your code.
-    </p>
+    <h2>Memory comes from scope, not a runtime.</h2>
+    <ul class="points">
+      <li>Each scope owns a memory <b>arena</b> — allocation is a pointer bump; the whole arena is freed the moment the scope exits.</li>
+      <li>There's <b>no reference type</b>. <span class="inl">b := a</span> copies, so the compiler sees every value's lifetime from the syntax alone.</li>
+      <li>So it inserts every allocation and free for you: <b>no garbage collector, no manual <span class="inl">free</span></b>, nothing to annotate.</li>
+    </ul>
+    <p class="codecap">A string built across a loop lives in <code>main</code>'s arena, and is freed for you when <code>main</code> returns:</p>
+    <pre><code><span class="k">fn</span> <span class="fn">main</span>():
+    total := <span class="s">""</span>
+    <span class="k">for</span> i <span class="k">in</span> <span class="fn">range</span>(1, 6):
+        total = total + <span class="fn">str</span>(i)
+        <span class="k">if</span> i &lt; 5:
+            total = total + <span class="s">", "</span>
+    <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
+  </section>
+
+  <section id="value">
+    <p class="marker">why it stays fast</p>
+    <h2>Value semantics, without the copies you'd expect.</h2>
+    <ul class="points">
+      <li>A value can leave a scope only two ways, both visible in the source: <b>down</b> (passed into a callee) or <b>up</b> (returned to the caller).</li>
+      <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
+      <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
+    </ul>
+    <p class="codecap">Both optimizations are sound <em>because</em> a value is never aliased — a copy is always independent:</p>
+    <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
+    name: <span class="k">string</span>
+    age: <span class="k">int</span>
+
+<span class="k">fn</span> <span class="fn">promote</span>(p: <span class="fn">Person</span>) -> <span class="fn">Person</span>:
+    q := p                <span class="c"># a full, independent copy</span>
+    q.age = p.age + 1
+    <span class="k">return</span> q             <span class="c"># moved into caller's arena, not copied</span>
+
+<span class="k">fn</span> <span class="fn">main</span>():
+    ada := <span class="fn">Person</span>(<span class="s">"Ada"</span>, 36)
+    older := <span class="fn">promote</span>(ada)
+    <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
   </section>
 
   <section id="lang">
     <p class="marker">the language</p>
-    <h2>What the language looks like.</h2>
+    <h2>Small, and Go/Odin-shaped.</h2>
     <p class="muted">The syntax is Python/Nim-flavored and the semantics are Go/Odin-like; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo</a>. What's in the box:</p>
     <ul class="feat">
       <li><b>Value semantics</b> <span>— no aliasing, no GC</span></li>
