@@ -1,0 +1,15 @@
+# spawn a GENERIC function: the spawn callee is monomorphized and its trampoline
+# emits concrete C, across multiple instantiations. Both compilers.
+struct Box($T):
+    v: $T
+
+fn get(b: Box($T)) -> $T:
+    return b.v
+
+fn twice(x: $T) -> $T:
+    return x
+
+fn main():
+    println(str(wait(spawn get(Box(11)))))     # 11
+    println(wait(spawn get(Box("hi"))))         # hi   (a second instance)
+    println(str(wait(spawn twice(42))))         # 42   (a different generic fn)

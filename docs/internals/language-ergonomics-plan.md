@@ -143,10 +143,18 @@ path); **generic-enum construction identity** in an array/tuple element, a struc
 a `foreach` binding (via `enum_ctor_appform`, so `type_of(Has(5))` yields `Opt(int)`); and a
 **generic instantiated over a newtype type-arg** (`Box(Id)`, where a field read inside the
 monomorphized body lost the skin). Goldens: `generic_enum_param.ty`, `generic_over_newtype.ty`,
-`newtype_tuple.ty`. **Still open:** `spawn <generic-fn>(args)` — the spawn chunk-proc/SpawnInfo
-is built from the callee TEMPLATE by the lift pass (pre-mono), so it needs generics awareness in
-the lift/SpawnInfo/chunk-proc machinery (documented inline at the mono `ESpawn` case); tychoc
-accepts it, tychoc0 fails closed.
+`newtype_tuple.ty`.
+
+**`spawn <generic-fn>(args)` — FIXED (the common case).** The lift pass (pre-mono) built each
+spawn site's `SpawnInfo` from the callee TEMPLATE, so the trampoline carried `$T`. Fixed: mono's
+`ESpawn` now instantiates the callee (rewrites it to its instance), and a post-mono
+`refresh_spawn_sigs` walk re-derives each `spawns[sid]` from the monomorphized dc so the
+`tycho_spawn_<sid>` trampoline emits concrete C. Verified: `tests/spawn_generic.ty` (a generic fn
+spawned at two element types + a second generic fn), `make conc` green. **Corner still open:** a
+spawn *lexically inside* a generic body instantiated at 2+ types shares one spawn-site id, so one
+trampoline can't serve both — tychoc0 rejects it cleanly (`refresh_spawn_sigs` detects the
+sid-collision) rather than emit broken C; tychoc supports it via per-instantiation trampolines.
+Closing that corner needs per-instance spawn-site ids threaded from mono.
 
 **Newtype map keys — FIXED.** Two tychoc0 bugs: (1) the `in` operator compared the key's
 *resolved* type against the map's newtype key type (`int` vs `Id`) instead of using the

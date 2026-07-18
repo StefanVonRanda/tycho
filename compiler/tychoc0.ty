@@ -13979,12 +13979,25 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
             die("internal: unexpected spread ... (pack_program should have removed it)")
             return _sx
         ESpawn(id, nm, a, el):
-            # NOTE: `spawn <generic-fn>(args)` is not supported -- the spawn chunk-proc /
-            # SpawnInfo is built from the callee's TEMPLATE signature by the lift pass (before
-            # mono), so instantiating the callee here isn't enough (the chunk proc still carries
-            # `Box($T)`). tychoc accepts it; closing this needs generics awareness in the lift /
-            # SpawnInfo / chunk-proc machinery. Fails closed ("unknown function") for now.
-            return ESpawn(id, nm, mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx), el)
+            smargs := mono_exprs(a, names, types, gens, &insts, &sinsts, &einsts, dc, ctx)
+            sgi := find_generic(gens, nm)
+            if sgi >= 0:                               # spawn of a GENERIC fn: instantiate the callee. The
+                sat := []string                       # SpawnInfo built by the lift pass (pre-mono) still carries
+                sk := 0                               # the template's `$T` types -- refresh_spawn_sigs (post-mono)
+                for sk < len(a):                      # re-derives it from this instance name.
+                    satk := type_of(a[sk], names, types, dc, ctx)
+                    scnk := call_callee(smargs[sk])
+                    if scnk != "":
+                        sappk := ginst_app_form(scnk, dc, sinsts)
+                        if sappk == "":
+                            sappk = einst_app_form(scnk, dc, einsts)
+                        if sappk != "":
+                            satk = sappk
+                    push(sat, satk)
+                    sk = sk + 1
+                snewnm := mono_instantiate(gens[sgi], sat, &insts, el, dc, []string, sinsts, einsts, ctx)
+                return ESpawn(id, snewnm, smargs, el)
+            return ESpawn(id, nm, smargs, el)
 
 fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func], insts: inout [Func], sinsts: inout [StructDef], einsts: inout [EnumDef], dc: Decls, ctx: Ctx) -> Stmt:
     match s:
@@ -14134,6 +14147,164 @@ fn mono_block(stmts: [Stmt], names: [string], types: [string], gens: [Func], ins
         push(out, mono_stmt(stmts[i], &nm, &ty, gens, &insts, &sinsts, &einsts, dc, ctx))
         i = i + 1
     return out
+
+# Post-mono spawn-sig refresh. The lift pass (which runs BEFORE mono) built each spawn
+# site's SpawnInfo from the callee's TEMPLATE signature, so `spawn <generic-fn>(...)`
+# recorded `$T`-bearing arg/ret types. mono has since rewritten the ESpawn callee to its
+# concrete instance; re-derive spawns[sid] from the monomorphized dc (instances now in
+# sigmap) so the HSpawnA_<sid>/tycho_spawn_<sid> trampoline emits concrete C. Mirrors the
+# exhaustive collect_expr/collect_stmt walk; ELambda is a leaf (its body is a lifted func).
+fn rss_expr(e: Expr, dc: Decls, spawns: inout [SpawnInfo]):
+    match e:
+        ESpawn(sid, snm, sa, _el):
+            si := dc.sigmap.get(snm, -1)
+            if si >= 0 and sid >= 0 and sid < len(spawns):
+                cur := spawns[sid].fname
+                if cur != snm and dc.sigmap.get(cur, -1) >= 0:   # this spawn SITE already resolved to a DIFFERENT concrete instance -> it's a spawn lexically inside a generic body, monomorphized at 2+ types; one trampoline can't serve both. Reject cleanly instead of emitting broken C.
+                    die("spawn of a generic function from inside a generic function is not supported (the site is instantiated as both '" + cur + "' and '" + snm + "')")
+                spawns[sid] = SpawnInfo(snm, dc.sigs[si].ptypes, dc.sigs[si].ret)
+            j := 0
+            for j < len(sa):
+                rss_expr(sa[j], dc, &spawns)
+                j = j + 1
+        EArrLit(elems, _ft, _el):
+            j := 0
+            for j < len(elems):
+                rss_expr(elems[j], dc, &spawns)
+                j = j + 1
+        EArrEmpty(ety, _el):
+            j := 0
+        EMapEmpty(k, v, _el):
+            j := 0
+        EMapLit(keys, vals, _el):
+            j := 0
+            for j < len(vals):
+                rss_expr(keys[j], dc, &spawns)
+                rss_expr(vals[j], dc, &spawns)
+                j = j + 1
+        ETuple(elems, _el):
+            j := 0
+            for j < len(elems):
+                rss_expr(elems[j], dc, &spawns)
+                j = j + 1
+        EBin(op, l, r, _el):
+            rss_expr(l, dc, &spawns)
+            rss_expr(r, dc, &spawns)
+        ECall(nm, args, _el):
+            j := 0
+            for j < len(args):
+                rss_expr(args[j], dc, &spawns)
+                j = j + 1
+        EField(b, f, _el):
+            rss_expr(b, dc, &spawns)
+        EIndex(b, idx, _el):
+            rss_expr(b, dc, &spawns)
+            rss_expr(idx, dc, &spawns)
+        ESlice(b, lo, hi, _el):
+            rss_expr(b, dc, &spawns)
+            rss_expr(lo, dc, &spawns)
+            rss_expr(hi, dc, &spawns)
+        ELambda(id, ps, pts, ret, body, cn, ct, _el):
+            j := 0
+        ECallV(callee, cargs, _el):
+            rss_expr(callee, dc, &spawns)
+            j := 0
+            for j < len(cargs):
+                rss_expr(cargs[j], dc, &spawns)
+                j = j + 1
+        EAddr(inner, _el):
+            rss_expr(inner, dc, &spawns)
+        EInt(t, _el):
+            j := 0
+        EBool(t, _el):
+            j := 0
+        EChar(t, _el):
+            j := 0
+        EFloat(f, _el):
+            j := 0
+        EStr(s, _el):
+            j := 0
+        EVar(n, _el):
+            j := 0
+        ESpread(_sx, _sel):
+            j := 0
+
+fn rss_block(stmts: [Stmt], dc: Decls, spawns: inout [SpawnInfo]):
+    j := 0
+    for j < len(stmts):
+        rss_stmt(stmts[j], dc, &spawns)
+        j = j + 1
+
+fn rss_stmt(s: Stmt, dc: Decls, spawns: inout [SpawnInfo]):
+    match s:
+        SDecl(n, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SAssign(n, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SFieldAssign(lv, rhs, _sl):
+            rss_expr(lv, dc, &spawns)
+            rss_expr(rhs, dc, &spawns)
+        SPrint(e, _sl):
+            rss_expr(e, dc, &spawns)
+        SReturn(e, _sl):
+            rss_expr(e, dc, &spawns)
+        SConst(n, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SReturnVoid:
+            j := 0
+        SBreak:
+            j := 0
+        SContinue:
+            j := 0
+        SExpr(e, _sl):
+            rss_expr(e, dc, &spawns)
+        STypedDecl(n, t, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SOrReturn(n, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SDestructure(dnames, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SMultiAssign(mnames, e, _sl):
+            rss_expr(e, dc, &spawns)
+        SIf(c, tb, eb, _sl):
+            rss_expr(c, dc, &spawns)
+            rss_block(tb, dc, &spawns)
+            rss_block(eb, dc, &spawns)
+        SWhile(c, body, _sl):
+            rss_expr(c, dc, &spawns)
+            rss_block(body, dc, &spawns)
+        SForRange(n, a, b, st, body, _sl):
+            rss_expr(a, dc, &spawns)
+            rss_expr(b, dc, &spawns)
+            rss_expr(st, dc, &spawns)
+            rss_block(body, dc, &spawns)
+        SMatch(subj, variants, allbinds, bodies, _sl):
+            rss_expr(subj, dc, &spawns)
+            j := 0
+            for j < len(bodies):
+                rss_block(bodies[j], dc, &spawns)
+                j = j + 1
+        SParFor(v, a, b, body, pid, _sl):
+            rss_expr(a, dc, &spawns)
+            rss_expr(b, dc, &spawns)
+            rss_block(body, dc, &spawns)
+        SSelect(uid, svars, schans, sbinds, sbodies, _sl):
+            j := 0
+            for j < len(schans):
+                rss_expr(schans[j], dc, &spawns)
+                j = j + 1
+            j = 0
+            for j < len(sbodies):
+                rss_block(sbodies[j], dc, &spawns)
+                j = j + 1
+        SValDecl(n, annot, cc, _sl):
+            rss_stmt(cc, dc, &spawns)
+
+fn refresh_spawn_sigs(funcs: [Func], dc: Decls, spawns: inout [SpawnInfo]):
+    j := 0
+    for j < len(funcs):
+        rss_block(funcs[j].body, dc, &spawns)
+        j = j + 1
 
 fn monomorphize_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
     gens := []Func
@@ -15123,6 +15294,7 @@ fn main():
             sigmap[funcs[i].name] = i
         i = i + 1
     dc = Decls(sigs, prog.structs, prog.enums, prog.ntnames, prog.ntunder, sigmap, pars, src_lines, build_vmap(prog.enums), prog.handles, collect_subs(prog.funcs))
+    refresh_spawn_sigs(prog.funcs, dc, &spawns)       # a `spawn <generic-fn>` site's SpawnInfo was built pre-mono with template `$T` types; re-derive it from the now-monomorphized dc (mono rewrote the ESpawn callee to its instance)
     prog = gfix_program(prog, dc, ctx)                # 1.6: tag fixed-size array literals with their [N]T type (runs for every func, unlike the lambda-gated lift)
     funcs = prog.funcs                                # re-capture: codegen below iterates `funcs`
     ets := collect_elem_types(prog, dc, ctx)
