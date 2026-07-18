@@ -102,3 +102,6 @@ gmon.out
 # Claude Code session state (locks, worktrees) — never publish
 /.claude/
 dist/
+
+# generated wiki mirror (see scripts/sync-wiki.py, make wiki)
+.wiki/

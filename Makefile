@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks clean
 
 all: tychoc
 
@@ -64,6 +64,17 @@ spec-check:
 # Doc hygiene: every relative Markdown link points at a file that exists.
 check-links:
 	@sh scripts/check_links.sh
+
+# Regenerate the GitHub wiki's reader-doc mirror from /docs. Clones or pulls the
+# wiki repo into ./.wiki (gitignored), runs the sync, and audits the links. Does
+# NOT push — review ./.wiki, then commit and push it yourself.
+WIKI_DIR ?= .wiki
+WIKI_REMOTE ?= https://github.com/StefanVonRanda/tycho.wiki.git
+wiki:
+	@if [ -d $(WIKI_DIR)/.git ]; then git -C $(WIKI_DIR) pull --ff-only; \
+	else git clone $(WIKI_REMOTE) $(WIKI_DIR); fi
+	@python3 scripts/sync-wiki.py $(WIKI_DIR)
+	@echo "Review $(WIKI_DIR)/, then: git -C $(WIKI_DIR) add -A && git -C $(WIKI_DIR) commit -m ... && git -C $(WIKI_DIR) push"
 
 demo: tychoc
 	./tychoc examples/hello.ty
