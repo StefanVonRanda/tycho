@@ -354,82 +354,120 @@
 <script>
   (function(){
     var root=document.documentElement, btn=document.getElementById('tbtn');
+    var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
     function curTheme(){ return root.getAttribute('data-theme') ||
       (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); }
     function ink(){ return curTheme()==='dark'? [236,237,230] : [16,16,15]; }
 
-    // smooth seamless periodic noise: sum of harmonics
-    function harmonics(n, amp){
+    // smooth seamless periodic noise — FIXED coefficients so motion is a smooth drift,
+    // not per-frame random flicker. `drift` shifts the phase to make the wobble travel.
+    function makeNoise(n, amp){
       var H=[]; for(var k=1;k<=n;k++) H.push({k:k, a:amp*(0.55+Math.random())/k, p:Math.random()*6.2832});
-      return function(t){ var s=0; for(var i=0;i<H.length;i++) s+=H[i].a*Math.sin(H[i].k*t+H[i].p); return s; };
+      return function(t, drift){ drift=drift||0; var s=0; for(var i=0;i<H.length;i++) s+=H[i].a*Math.sin(H[i].k*t+H[i].p+drift); return s; };
     }
-    function setup(cv){
+    function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0}; }
+    function sizeState(s){
       var dpr=Math.min(window.devicePixelRatio||1,2);
-      var w=cv.clientWidth, h=cv.clientHeight;
-      cv.width=Math.max(1,w*dpr); cv.height=Math.max(1,h*dpr);
-      var ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-      return {ctx:ctx,w:w,h:h};
+      s.w=s.cv.clientWidth; s.h=s.cv.clientHeight;
+      s.cv.width=Math.max(1,s.w*dpr); s.cv.height=Math.max(1,s.h*dpr);
+      s.ctx.setTransform(dpr,0,0,dpr,0,0);
     }
 
-    // ── concentric oracle rings (the nested-arena motif) ──
-    function drawOracle(cv){
-      var s=setup(cv); if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h;
-      var cx=w*0.5, cy=h*0.5, R=Math.min(w,h)*0.44, c=ink();
-      // faint perfect guide circles
-      ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.09)'; ctx.lineWidth=1;
+    // ── concentric oracle rings (nested-arena motif); coefficients built once ──
+    var RINGS=null;
+    function buildRings(){
+      RINGS=[{r:0.34,rough:0.05,spike:0,dir:1.0},
+             {r:0.62,rough:0.055,spike:0,dir:-0.7},
+             {r:0.95,rough:0.06,spike:0.16,dir:0.45}];
+      RINGS.forEach(function(ring){
+        ring.passes=[]; var np=ring.spike?10:8;
+        for(var p=0;p<np;p++) ring.passes.push({
+          nz:makeNoise(6,ring.rough), sp:makeNoise(4,1),
+          al: ring.spike?0.10:(ring.r<0.5?0.14:0.12), drift:(Math.random()-0.5)*0.5 });
+      });
+    }
+    function drawOracle(s, time){
+      if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h, c=ink();
+      var cx=w*0.5, cy=h*0.5, R=Math.min(w,h)*0.44;
+      ctx.clearRect(0,0,w,h);
+      ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.08)'; ctx.lineWidth=1;
       [0.20,0.36,0.54,0.74,0.92].forEach(function(f){ ctx.beginPath(); ctx.arc(cx,cy,R*f,0,6.2832); ctx.stroke(); });
-      // three jittery arena rings, multi-pass scribble + spiky top on the outer
-      [{r:0.34,rough:0.05,spike:0,pass:7,al:0.14},
-       {r:0.62,rough:0.055,spike:0,pass:8,al:0.12},
-       {r:0.95,rough:0.06,spike:0.16,pass:11,al:0.11}].forEach(function(ring){
-        for(var p=0;p<ring.pass;p++){
-          var nz=harmonics(6, ring.rough), rr=R*ring.r;
+      RINGS.forEach(function(ring){
+        var rot=time*0.05*ring.dir, rr=R*ring.r;
+        ring.passes.forEach(function(ps){
           ctx.beginPath();
-          for(var t=0;t<=6.2832+0.02;t+=0.017){
-            var rad=rr*(1+nz(t));
-            if(ring.spike){ var d=Math.atan2(Math.sin(t+1.5708),Math.cos(t+1.5708)); rad+=rr*ring.spike*Math.exp(-(d*d)/0.03)*(0.4+Math.random()*0.9); }
-            var x=cx+Math.cos(t)*rad, y=cy+Math.sin(t)*rad;
+          for(var t=0;t<=6.2832+0.02;t+=0.02){
+            var rad=rr*(1+ps.nz(t, time*0.22*ring.dir + ps.drift));
+            if(ring.spike){ var d=Math.atan2(Math.sin(t+1.5708),Math.cos(t+1.5708));
+              rad+=rr*ring.spike*Math.exp(-(d*d)/0.03)*(0.7+0.5*ps.sp(t*6, time*0.8)); }
+            var a=t+rot, x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad;
             t===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
           }
           ctx.closePath();
-          ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+','+ring.al+')'; ctx.lineWidth=1; ctx.stroke();
-        }
+          ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+','+ps.al+')'; ctx.lineWidth=1; ctx.stroke();
+        });
       });
-      // radius leader line to a node on the outer ring (upper-right)
-      var ang=-0.62, nodeR=R*0.95, nx=cx+Math.cos(ang)*nodeR, ny=cy+Math.sin(ang)*nodeR;
+      // slowly-orbiting node + radius leader
+      var ang=-0.62+time*0.06, nodeR=R*0.95, nx=cx+Math.cos(ang)*nodeR, ny=cy+Math.sin(ang)*nodeR;
       ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.5)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.stroke();
       ctx.beginPath(); ctx.arc(nx,ny,3.2,0,6.2832); ctx.stroke();
       ctx.fillStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.85)'; ctx.beginPath(); ctx.arc(cx,cy,2.4,0,6.2832); ctx.fill();
     }
 
-    // ── dithered terrain spray band ──
-    function drawTerrain(cv, dens){
-      var s=setup(cv); if(!s.w) return; var ctx=s.ctx, w=s.w, h=s.h, c=ink();
-      var ridge=harmonics(5,0.5), n=Math.floor(w*(dens||9));
-      for(var i=0;i<n;i++){
+    // ── dithered terrain: particle positions built once, then shimmer + bob ──
+    function mkTerrain(cv){ var s=mkState(cv); s.ridge=makeNoise(5,0.5); s.parts=null; return s; }
+    function buildParts(s){
+      var w=s.w, h=s.h, target=Math.floor(w*3.4), arr=[], guard=target*5;
+      for(var i=0;i<guard && arr.length<target;i++){
         var x=Math.random()*w, tx=x/w*6.2832;
-        var base=h*0.42 + ridge(tx)*h*0.26;
-        var up=Math.pow(Math.random(),1.7)*h*0.5;        // spread mostly downward+dissolve up
-        var y=base + up - h*0.12;
-        var p=1;
-        var e=Math.min(x, w-x)/(w*0.22); if(e<1) p*=e;    // fade at L/R edges
-        var vy=(y-base)/(h*0.55); p*=Math.max(0,1-Math.abs(vy)); // fade away from ridge
+        var base=h*0.42 + s.ridge(tx)*h*0.26;
+        var up=Math.pow(Math.random(),1.7)*h*0.5;
+        var y=base+up-h*0.12;
+        var p=1, e=Math.min(x,w-x)/(w*0.22); if(e<1) p*=e;
+        var vy=(y-base)/(h*0.55); p*=Math.max(0,1-Math.abs(vy));
         if(Math.random()>p*p) continue;
-        var a=0.28+Math.random()*0.6, sz=Math.random()<0.16?1.5:(Math.random()<0.5?0.7:1.05);
-        ctx.fillStyle='rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';
-        ctx.fillRect(x,y,sz,sz);
+        arr.push({x:x, y:y, sz:Math.random()<0.16?1.5:(Math.random()<0.5?0.7:1.05),
+                  a:0.28+Math.random()*0.55, ph:Math.random()*6.2832});
+      }
+      s.parts=arr;
+    }
+    function drawTerrain(s, time){
+      if(!s.w||!s.parts) return; var ctx=s.ctx, c=ink(), pre='rgba('+c[0]+','+c[1]+','+c[2]+',';
+      ctx.clearRect(0,0,s.w,s.h);
+      for(var i=0,P=s.parts;i<P.length;i++){ var q=P[i];
+        var a=q.a*(0.45+0.55*(0.5+0.5*Math.sin(time*1.25+q.ph)));
+        ctx.fillStyle=pre+a.toFixed(3)+')';
+        ctx.fillRect(q.x, q.y+Math.sin(time*0.7+q.ph)*0.8, q.sz, q.sz);
       }
     }
 
-    function drawAll(){
-      var o=document.getElementById('oracle'); if(o) drawOracle(o);
-      ['t1','t2','t3'].forEach(function(id){ var el=document.getElementById(id); if(el) drawTerrain(el); });
+    // ── wiring ──
+    var oracleS=null, terrains=[];
+    function initAll(){
+      buildRings();
+      var o=document.getElementById('oracle'); oracleS=o?mkState(o):null;
+      terrains=[]; ['t1','t2','t3'].forEach(function(id){ var el=document.getElementById(id); if(el) terrains.push(mkTerrain(el)); });
+      sizeAll();
     }
-    btn.addEventListener('click',function(){ root.setAttribute('data-theme', curTheme()==='dark'?'light':'dark'); requestAnimationFrame(drawAll); });
-    var rt; window.addEventListener('resize',function(){ clearTimeout(rt); rt=setTimeout(drawAll,180); });
-    if(document.readyState!=='loading') drawAll(); else document.addEventListener('DOMContentLoaded',drawAll);
-    window.addEventListener('load',drawAll);
+    function sizeAll(){ if(oracleS) sizeState(oracleS); terrains.forEach(function(s){ sizeState(s); buildParts(s); }); }
+    function drawFrame(time){ if(oracleS) drawOracle(oracleS,time); terrains.forEach(function(s){ drawTerrain(s,time); }); }
+
+    var raf=null;
+    function loop(ts){ drawFrame(ts*0.001); raf=requestAnimationFrame(loop); }
+    function start(){ if(!raf && !reduce) raf=requestAnimationFrame(loop); }
+    function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
+
+    function boot(){
+      initAll();
+      if(reduce) drawFrame(0); else start();
+    }
+    if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded',boot);
+    window.addEventListener('load',function(){ sizeAll(); if(reduce) drawFrame(0); });
+
+    var rt; window.addEventListener('resize',function(){ clearTimeout(rt); rt=setTimeout(function(){ sizeAll(); if(reduce) drawFrame(0); },180); });
+    document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
+    btn.addEventListener('click',function(){ root.setAttribute('data-theme', curTheme()==='dark'?'light':'dark'); if(reduce) drawFrame(0); });
   })();
 </script>
 
