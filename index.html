@@ -376,18 +376,24 @@
     }
     function sample(W, x, v, t){ var s=0; for(var i=0;i<W.length;i++){ var c=W[i]; s+=c.a*Math.sin(c.k*x - c.k*v*t + c.p); } return s; }
 
-    // ── undulating dithered terrain: speckles ride a slow traveling wave ──
-    var TV=0.55;                                   // wave travel speed (slow)
-    function mkTerrain(cv){ var s=mkState(cv); s.wave=waveCoeffs(4,1.0); s.parts=null; return s; }
+    // ── undulating dithered terrain: each speck drifts on its OWN slow path
+    //    (vertical bob + horizontal drift + a phase jitter that desyncs neighbours),
+    //    over a gentler shared traveling wave so the field still breathes as one ──
+    var TV=0.5;
+    function mkTerrain(cv){ var s=mkState(cv); s.wave=waveCoeffs(3,1.0); s.parts=null; return s; }
     function buildParts(s){
-      var target=Math.floor(s.w*3.4), arr=[], guard=target*5;
+      var target=Math.floor(s.w*3.0), arr=[], guard=target*5;
       for(var i=0;i<guard && arr.length<target;i++){
         var xn=Math.random();
         var e=Math.min(xn,1-xn)/0.20; if(e<1 && Math.random()>e) continue;     // fade at L/R edges
         var off=Math.pow(Math.random(),1.7)*0.48-0.12;                          // dissolve away from the ridge
         if(Math.random()>1-Math.abs(off)/0.48) continue;                        // thin out far from ridge
-        arr.push({xn:xn, off:off, a:0.30+Math.random()*0.55,
-                  sz:Math.random()<0.16?1.5:(Math.random()<0.5?0.7:1.05), ph:Math.random()*TAU});
+        arr.push({ xn:xn, y0:0.42+off*0.5,                                      // home row (fraction of h)
+                   pj:(Math.random()-0.5)*1.1,                                   // phase jitter: neighbours desync
+                   ay:3+Math.random()*8, wy:0.5+Math.random()*0.8, py:Math.random()*TAU,   // own vertical bob
+                   ax:1+Math.random()*3, wx:0.4+Math.random()*0.7, px:Math.random()*TAU,   // own horizontal drift
+                   a:0.30+Math.random()*0.55, sz:Math.random()<0.16?1.5:(Math.random()<0.5?0.7:1.05),
+                   sp:Math.random()*TAU });
       }
       s.parts=arr;
     }
@@ -395,25 +401,29 @@
       if(!s.w||!s.parts) return; var ctx=s.ctx, w=s.w, h=s.h, c=ink(), pre='rgba('+c[0]+','+c[1]+','+c[2]+',';
       ctx.clearRect(0,0,w,h);
       for(var i=0,P=s.parts;i<P.length;i++){ var q=P[i];
-        var ridge=sample(s.wave, q.xn*TAU, TV, time);        // the traveling wave
-        var y=h*0.42 + h*0.12*ridge + q.off*h;               // speckle rides the wave
-        var al=q.a*(0.62+0.38*Math.sin(time*0.45+q.ph));     // gentle slow shimmer on top
+        var wave=sample(s.wave, q.xn*TAU + q.pj, TV, time);            // shared wave (+ per-speck phase jitter)
+        var x=q.xn*w + q.ax*Math.sin(q.wx*time+q.px);                  // independent horizontal drift
+        var y=q.y0*h + h*0.10*wave + q.ay*Math.sin(q.wy*time+q.py);    // wave + independent vertical bob
+        var al=q.a*(0.6+0.4*Math.sin(time*0.5+q.sp));
         ctx.fillStyle=pre+al.toFixed(3)+')';
-        ctx.fillRect(q.xn*w, y, q.sz, q.sz);
+        ctx.fillRect(x, y, q.sz, q.sz);
       }
     }
 
-    // ── oracle: concentric arena rings, drawn as dithered speckles that undulate ──
-    var RV=0.5, oracleRings=null;
+    // ── oracle: concentric arena rings as THICK dithered speckle bands; each dot
+    //    drifts independently (radial + angular), the band undulating as a wave ──
+    var RV=0.45, oracleRings=null;
     function buildOracle(){
       oracleRings=[{br:0.34},{br:0.62},{br:0.92}];
       oracleRings.forEach(function(ring){
-        ring.wave=waveCoeffs(5,0.06);                        // small radial undulation around the ring
-        ring.dots=[]; var n=Math.round(300*ring.br);
+        ring.wave=waveCoeffs(5,0.05);
+        ring.dots=[]; var n=Math.round(560*ring.br);
         for(var i=0;i<n;i++) ring.dots.push({
           ang:Math.random()*TAU,
-          rj:(Math.random()+Math.random()+Math.random()-1.5)*0.03,   // ~gaussian radial jitter = band thickness
-          a:0.30+Math.random()*0.55, sz:Math.random()<0.5?0.8:1.1, ph:Math.random()*TAU });
+          rj:(Math.random()+Math.random()+Math.random()-1.5)*0.075,             // wider band = thicker ring
+          ar:0.004+Math.random()*0.013, wr:0.4+Math.random()*0.7, pr:Math.random()*TAU,   // own radial drift (frac of R)
+          aa:0.006+Math.random()*0.013, wa:0.3+Math.random()*0.6, pa:Math.random()*TAU,   // own angular drift
+          a:0.32+Math.random()*0.55, sz:Math.random()<0.4?0.9:1.25, sp:Math.random()*TAU });
       });
     }
     function drawOracle(s, time){
@@ -424,15 +434,16 @@
       [0.22,0.5,0.78,1.0].forEach(function(f){ ctx.beginPath(); ctx.arc(cx,cy,R*f,0,TAU); ctx.stroke(); });
       oracleRings.forEach(function(ring){
         for(var i=0,D=ring.dots;i<D.length;i++){ var d=D[i];
-          var wob=sample(ring.wave, d.ang, RV, time);        // undulation travels around the ring
-          var r=R*ring.br*(1+wob) + d.rj*R;
-          var al=d.a*(0.5+0.5*Math.sin(time*0.5+d.ph));
+          var ang=d.ang + d.aa*Math.sin(d.wa*time+d.pa);                     // independent angular drift
+          var wob=sample(ring.wave, d.ang, RV, time);                        // shared undulation around the ring
+          var r=R*(ring.br*(1+wob) + d.rj + d.ar*Math.sin(d.wr*time+d.pr));  // + independent radial drift
+          var al=d.a*(0.5+0.5*Math.sin(time*0.5+d.sp));
           ctx.fillStyle=pre+al.toFixed(3)+')';
-          ctx.fillRect(cx+Math.cos(d.ang)*r, cy+Math.sin(d.ang)*r, d.sz, d.sz);
+          ctx.fillRect(cx+Math.cos(ang)*r, cy+Math.sin(ang)*r, d.sz, d.sz);
         }
       });
       // subtle slowly-orbiting node + radius leader
-      var ang=-0.62+time*0.05, nr=R*0.92, nx=cx+Math.cos(ang)*nr, ny=cy+Math.sin(ang)*nr;
+      var oang=-0.62+time*0.05, nr=R*0.92, nx=cx+Math.cos(oang)*nr, ny=cy+Math.sin(oang)*nr;
       ctx.strokeStyle=pre+'0.32)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.stroke();
       ctx.beginPath(); ctx.arc(nx,ny,3,0,TAU); ctx.stroke();
