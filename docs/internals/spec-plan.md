@@ -7,8 +7,8 @@
 > `docs/spec/` (28 files, ~4.2k lines): all chapters 1–33 and appendices A–H are
 > drafted.
 >
-> **Drafting phases 0–4 done + phase-5 artifacts stubbed.** What remains before
-> the draft is release-ready:
+> **Drafting phases 0–5 done; the release-readiness punch-list below is now fully
+> CLOSED (last item cleared 2026-07-20).** Kept as a record of what the list was:
 > 1. ~~Resolve the remaining `Editor's note` corners~~ — **DONE.** Concurrency
 >    ordering (#23 channel delivery = send-linearization/ticket order; #24 select
 >    = listed-order, not fair; #25 happens-before via the cell `seq`
@@ -21,13 +21,17 @@
 >    errors) and a real error in my own FFI chapter (u32/u64 are first-class, not
 >    extern-only). Verified all internal anchor links + `§`-labels resolve (fixed
 >    4 broken anchors, 4 mislabeled `[§13]`→`[§20]`).
-> 2. **Build the `make spec-check` gate** and populate the Appendix E coverage
->    matrix (Phase 5) — a build-system change, do with care.
+> 2. ~~Build the `make spec-check` gate and populate the Appendix E coverage
+>    matrix (Phase 5)~~ — **DONE.** `make spec-check` (`scripts/spec_check.sh`) is a
+>    Makefile target wired into `make ci`; Appendix E holds 81 conformance rows
+>    (§ + `tests/` references).
 > 3. ~~Fix the tychoc0 `inout`-exclusivity fail-open~~ — **DONE** (§6a; locked by
 >    `tests/reject/inout_alias.ty`).
-> 4. **Back-port the Appendix H drifts** to `docs/reference/*` — H1 (packages
->    privacy) is a genuine behavioral correction; the rest are wording.
-> 5. Flatten the collected grammar into Appendix A.
+> 4. ~~Back-port the Appendix H drifts to `docs/reference/*`~~ — **DONE.** H1
+>    leading-underscore package privacy now stated at `reference/packages.md:22-24`
+>    (commit `cf51e09`); the wording drifts back-ported too.
+> 5. ~~Flatten the collected grammar into Appendix A~~ — **DONE**
+>    (`docs/spec/appendix-a-grammar.md`, all productions collected).
 
 ## 0. Decisions locked (the four that shape everything)
 

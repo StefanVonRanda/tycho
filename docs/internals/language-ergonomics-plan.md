@@ -165,9 +165,11 @@ recorded `pool.Handle` (unmangled) while values carried `pool__Handle`. Both fix
 and a bare base value is still rejected. Verified: `tests/newtype_map_key.ty`, and the
 `core:pool` graph example keys its visited set on `pool.Handle` directly, identical 3-way.
 
-**Remaining follow-up:** teach `fuzz/gen.py` to emit generic-struct + concrete-newtype params
-(its generic generation is currently gated to literal scalar args — see its own comments) so
-these gaps stay enforced by the differential fuzzer, not only the goldens.
+**Remaining follow-up — DONE (2026-07-20):** `fuzz/gen.py` now emits the family. Its fixed
+preamble adds `type FzHandle = int`, `fz_slot(b: FzBox($T), h: FzHandle) -> int`, and
+`fz_mkhandle(b: FzBox($T)) -> FzHandle`; `gen_expr` weaves literal-arg calls (FzBox at
+int/string/[int]) into the int checksum. Verified: 80-seed differential 0 divergences +
+ASan fuzz gate FAIL=0. These gaps are now differential-fuzz-enforced, not golden-only.
 
 ---
 
