@@ -151,6 +151,17 @@ class Gen:
                 choices.append(("fzslen",    lambda: "fz_slen(" + se() + ")"))
                 choices.append(("fzecholen", lambda: "len(fz_echo(" + se() + "))"))
                 choices.append(("fznulllen", lambda: "len(fz_nullify(" + se() + "))"))
+                # generic-struct param + concrete-newtype param (the FzBox($T)/FzHandle
+                # family). LITERAL FzBox args only (a generic construction's arg must be
+                # concrete -- same rule as fz_gid/fz_gfst above), instantiated at int /
+                # string / [int]. All return int, so they fold straight into the checksum.
+                il = lambda: str(self.r.randint(0, 9))
+                sl = lambda: '"' + self.r.choice(["a", "bb", "", ">"]) + '"'
+                choices.append(("gslot_i", lambda: "fz_slot(FzBox(" + il() + "), FzHandle(" + il() + "))"))
+                choices.append(("gslot_s", lambda: "fz_slot(FzBox(" + sl() + "), FzHandle(" + il() + "))"))
+                choices.append(("gslot_a", lambda: "fz_slot(FzBox(mkarr(" + str(self.r.randint(0, 4)) + ")), FzHandle(" + il() + "))"))
+                choices.append(("gmkh",    lambda: "to_int(fz_mkhandle(FzBox(" + il() + ")))"))
+                choices.append(("gchain",  lambda: "fz_slot(FzBox(" + il() + "), fz_mkhandle(FzBox(" + il() + ")))"))
             # len of an array var
             av = [n for n, ty in env.items() if ty.startswith("[")]
             if av:
@@ -1181,6 +1192,18 @@ class Gen:
         self.out += ["fn fz_gtotal(xs: [$T]) -> $T where defaultable(T):", "    acc := zero$(T)",
                      "    for i in range(len(xs)):", "        acc = acc + xs[i]", "    return acc", ""]
         self.out += ["struct FzBox($T):", "    v: T", ""]
+        # generic-struct + concrete-newtype PARAM coverage (the core:pool `Handle`
+        # family): a concrete newtype param BESIDE a generic-struct param, and a
+        # generic fn RETURNING that newtype. tychoc once accepted these while
+        # tychoc0 rejected them (a real parity gap the fuzzer didn't emit); both
+        # now monomorphize + newtype-identity-check them identically. Returns stay
+        # concrete `int` (never a bare `$T`), so no generic-result-typing gap; gen_expr
+        # instantiates FzBox at int/string/[int] via literal args (fz_slot ignores b.v,
+        # so every instantiation type-checks). fz_mkhandle feeds a newtype-returning
+        # generic result straight into fz_slot's newtype param (the `slot(b, mk(b))` shape).
+        self.out += ["type FzHandle = int", ""]
+        self.out += ["fn fz_slot(b: FzBox($T), h: FzHandle) -> int:", "    return to_int(h)", ""]
+        self.out += ["fn fz_mkhandle(b: FzBox($T)) -> FzHandle:", "    return FzHandle(0)", ""]
         self.out += ["fn fillA(xs: inout [int], n: int):", "    for i in range(n):", "        push(xs, i)", ""]
         self.out += ["fn fz_sgrow(s: inout string, n: int):", "    for i in range(n):", "        s = s + \"y\"", ""]
         self.out += ["fn mkarr(n: int) -> [int]:", "    r := []int", "    for i in range(n):", "        push(r, (i + 1))", "    return r", ""]
