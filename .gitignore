@@ -8,6 +8,8 @@
 /tmp*
 *.s
 cc??????.s
+# personal local book draft — not part of the repo
+/book/
 # profiler output (valgrind --tool=callgrind/cachegrind, perf, gprof) — scratch, never source
 cachegrind.out.*
 callgrind.out.*
