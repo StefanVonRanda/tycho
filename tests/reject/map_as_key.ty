@@ -1,0 +1,11 @@
+# A map cannot itself key another map: maps have no stable, hashable value
+# identity (insertion-ordered, arena-backed). Must be a type error in BOTH
+# compilers -- and the diagnostic must be the clean "map keys must be ..."
+# message, not a malformed type render (tychoc0 once mis-split the nested
+# `{{int:int}:bool}` type and reported a bogus place-assignment mismatch).
+fn main():
+    inner := []int: int
+    inner[1] = 2
+    m := [][int:int]: bool
+    m[inner] = true
+    println(str(len(m)))

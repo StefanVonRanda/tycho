@@ -3590,21 +3590,37 @@ fn soa_struct(ty: string) -> string:            # "soa[Struct]" -> "Struct"
 fn is_map(ty: string) -> bool:
     return len(ty) > 0 and ty[0] == 123          # "{str:V}"  (V = int or float)
 
-fn map_val(ty: string) -> string:               # "{K:V}" -> "V"
+fn map_val(ty: string) -> string:               # "{K:V}" -> "V" (splits on the TOP-LEVEL ':')
     inner := substr(ty, 1, len(ty) - 1)
+    d := 0                                        # nesting depth: a map/tuple/array key can itself hold ':'
     i := 0
     for i < len(inner):
-        if inner[i] == 58:                       # first ':'
-            return substr(inner, i + 1, len(inner))
+        c := inner[i]
+        if c == 123 or c == 91 or c == 40:       # '{' '[' '('
+            d = d + 1
+        else:
+            if c == 125 or c == 93 or c == 41:   # '}' ']' ')'
+                d = d - 1
+            else:
+                if c == 58 and d == 0:           # top-level ':'
+                    return substr(inner, i + 1, len(inner))
         i = i + 1
     return "int"
 
-fn map_key(ty: string) -> string:               # "{K:V}" -> "K"
+fn map_key(ty: string) -> string:               # "{K:V}" -> "K" (splits on the TOP-LEVEL ':')
     inner := substr(ty, 1, len(ty) - 1)
+    d := 0                                        # nesting depth: a map/tuple/array key can itself hold ':'
     i := 0
     for i < len(inner):
-        if inner[i] == 58:                       # first ':'
-            return substr(inner, 0, i)
+        c := inner[i]
+        if c == 123 or c == 91 or c == 40:       # '{' '[' '('
+            d = d + 1
+        else:
+            if c == 125 or c == 93 or c == 41:   # '}' ']' ')'
+                d = d - 1
+            else:
+                if c == 58 and d == 0:           # top-level ':'
+                    return substr(inner, 0, i)
         i = i + 1
     return "str"
 
@@ -9914,7 +9930,7 @@ fn gen_struct_hash(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
 fn gen_map_type(dc: Decls, ctx: Ctx, ty: string) -> string:
     k := map_key(ty)
     if resolve_nt(dc, ctx, k) != "int" and resolve_nt(dc, ctx, k) != "str" and not enum_fieldless(dc, ctx, k) and not (mapkey_composite(dc, ctx, k) and key_hashable(dc, ctx, k)):
-        die_at(dc, ctx.line, "type: map keys must be string, int (directly or through a newtype), a fieldless enum, or a struct of hashable fields")   # fail-closed: a payload enum / float / non-hashable-field key fell through and would emit broken C
+        die_at(dc, ctx.line, "type: map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array")   # fail-closed: a payload enum / float / non-hashable-field key (incl. a map-keyed-by-map) fell through and would emit broken C
     v := map_val(ty)
     cvs := cty(dc, ctx, v)                        # value C type (has a trailing space)
     cv := substr(cvs, 0, len(cvs) - 1)

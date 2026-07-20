@@ -1760,7 +1760,7 @@ static Type parse_type_inner(Parser *ps) {
                 return mapc_of(elem, val);
             Type mt = map_of(elem, val);   /* map_of routes composite values to mapc_of; only a bad key is T_VOID */
             if (mt == T_VOID)
-                die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum");
+                die_at(t->line, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array");
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
@@ -2058,7 +2058,7 @@ static Expr *parse_primary(Parser *ps) {
                 ps->p++;
                 Type val = parse_type(ps);
                 Type mt = map_of(elem, val);
-                if (mt == T_VOID) die_at(t->line, "map keys must be string, int (directly or through a newtype), or a fieldless enum");
+                if (mt == T_VOID) die_at(t->line, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array");
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
