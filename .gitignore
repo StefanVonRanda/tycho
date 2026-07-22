@@ -26,6 +26,9 @@ gmon.out
 # (e.g. `tychoc compiler/tychoc0.ty -o ./tychoc0`) — build artifacts, never source
 /tychoc0
 /tychoc0.c
+# ...and the same binary built next to its source (`tychoc compiler/tychoc0.ty
+# -o compiler/tychoc0`). The emitted C there is already covered by /compiler/*.c.
+/compiler/tychoc0
 
 # The compiled `tycho` daily-driver CLI + its intermediate C (built by `make tycho`)
 /tycho
