@@ -218,6 +218,44 @@ for hi in tests/diag/*.ty; do
     fi
 done
 
+# Warning goldens. tests/warn/<name>.ty are VALID programs (the compiler must
+# ACCEPT them) whose exact warning output is locked as tests/warn/<name>.err.
+# The diag loop above cannot cover these: it asserts a NONZERO exit, so every
+# warning the compiler emits on a program it accepts — the channel-liveness
+# lints (CC-6), a discarded Result, a non-advancing loop condition, a
+# fall-off-the-end — had nothing holding it, and could stop firing unnoticed.
+#
+# COMPILE ONLY, never run: a deadlock fixture hangs by construction and a
+# no-progress loop spins forever. That is also why they live in tests/warn/
+# rather than tests/ — the main loop above builds AND runs everything it globs.
+# Only stderr is captured: the "wrote <path>" line goes to stdout and would bake
+# a $TMP path into the golden. tychoc only, like the diag lane (tychoc0's
+# diagnostic format differs by design, though CC-6's text is identical in both).
+for hi in tests/warn/*.ty; do
+    [ -e "$hi" ] || continue
+    name="warn_$(basename "$hi" .ty)"
+    g="tests/warn/$(basename "$hi" .ty).err"
+    if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/wn" >"$TMP/wn.out" 2>"$TMP/wn.err"; then
+        note "$name" "compiler REJECTED a valid program"; sed 's/^/      /' "$TMP/wn.err"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    if ! grep -q 'warning:' "$TMP/wn.err"; then
+        note "$name" "no warning emitted (the lint this fixture locks stopped firing)"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    if [ "$RECORD" = 1 ]; then
+        cp "$TMP/wn.err" "$g"; echo "rec   $name"; recorded=$((recorded + 1)); continue
+    fi
+    if [ ! -f "$g" ]; then
+        note "$name" "no golden — run 'make test-update'"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! cmp -s "$TMP/wn.err" "$g"; then
+        note "$name" "warning != golden ($g)"
+        diff "$g" "$TMP/wn.err" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 echo "-----------------------------------------"
 if [ "$RECORD" = 1 ]; then
     echo "recorded: $recorded   failed: $fail"

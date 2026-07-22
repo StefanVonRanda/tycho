@@ -1,0 +1,7 @@
+# CC-6: a blocking receive on a channel nothing ever sends to parks forever.
+fn main():
+    ch := channel(int, 4)
+    match recv(ch):
+        Some(v): print(str(v))
+        None:    print("closed")
+    close(ch)

@@ -1,0 +1,7 @@
+# A non-void function whose body can reach the end without returning.
+fn pick(x: int) -> int:
+    if x > 0:
+        return 1
+
+fn main():
+    print(str(pick(2)))

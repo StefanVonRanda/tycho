@@ -1,0 +1,2 @@
+tests/warn/loop_no_progress.ty:5: warning: loop condition never changes; this `for` may run forever (forgot to advance a variable? consider `for x in range(...)`)
+     5 |     for i < n:

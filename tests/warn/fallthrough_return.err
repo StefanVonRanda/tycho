@@ -1,0 +1,2 @@
+tests/warn/fallthrough_return.ty:2: warning: not all paths of 'pick' return a value (a fall-off-the-end yields a zero value)
+     2 | fn pick(x: int) -> int:

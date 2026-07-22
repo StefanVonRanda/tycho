@@ -1,0 +1,2 @@
+tests/warn/chan_no_sender.ty:3: warning: nothing ever sends on channel 'ch', so a receive on it parks forever
+     3 |     ch := channel(int, 4)

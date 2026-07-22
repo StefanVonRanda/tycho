@@ -1,0 +1,2 @@
+tests/warn/chan_no_receiver.ty:8: warning: nothing ever receives from channel 'ch', so a send parks once its buffer fills
+     8 |     ch := channel(int, 4)

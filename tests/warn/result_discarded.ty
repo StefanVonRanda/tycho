@@ -1,0 +1,9 @@
+# A bare call whose value is a Result throws the error path away silently.
+fn parse(s: string) -> Result(int, string):
+    if len(s) == 0:
+        return Err("empty")
+    return Ok(len(s))
+
+fn main():
+    parse("abc")
+    print("done")

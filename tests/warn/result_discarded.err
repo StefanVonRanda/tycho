@@ -1,0 +1,2 @@
+tests/warn/result_discarded.ty:8: warning: this Result is discarded, so its error is silently ignored; handle it with `match`, propagate with `or_return`, or bind it (x := ...)
+     8 |     parse("abc")

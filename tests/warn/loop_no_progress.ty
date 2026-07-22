@@ -1,0 +1,6 @@
+# The loop condition's variables are never touched in the body.
+fn main():
+    i := 0
+    n := 3
+    for i < n:
+        print("spin")

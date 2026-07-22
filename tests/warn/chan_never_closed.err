@@ -1,0 +1,2 @@
+tests/warn/chan_never_closed.ty:11: warning: close(jobs) is never called, so this `closed:` arm can never run (a `parallel for` over a channel ends only when it is closed)
+    11 |     parallel for j in jobs:

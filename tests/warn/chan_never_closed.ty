@@ -1,0 +1,14 @@
+# CC-6: a `parallel for` drain ends only on close(), which never happens here.
+fn produce(ch: Channel(int), n: int) -> int:
+    for i in range(0, n):
+        ch.send(i)
+    return n
+
+fn main():
+    jobs := channel(int, 16)
+    p := spawn produce(jobs, 50)
+    total := 0
+    parallel for j in jobs:
+        total += j
+    n := wait(p)
+    print(str(total + n))
