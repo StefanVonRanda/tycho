@@ -89,10 +89,6 @@ ALLOW_MSG_TYCHOC_ONLY = {
     # xs[a:b] is bounds-checked inline by tychoc (src/tychoc.c:8475,8494);
     # tychoc0's Arr_*_slice forwards lo/hi to Arr_*_from unchecked.
     "tycho: slice [%ld:%ld] out of bounds (len %ld)\\n",
-    # split(s, "") aborts in tycho_rt.c:1582; tychoc0's hi_split instead returns
-    # the whole string as a single element. A real behaviour difference, not
-    # just a missing trap -- the only entry here that is not "check vs no check".
-    "tycho: split with an empty separator\\n",
     # The map index is int-sized, so tycho_rt.c refuses to grow past 2^31 entries
     # (runtime/tycho_rt.c:1794, :1937, :2124, :2263). tychoc0 emits its maps
     # per-type with no such guard.

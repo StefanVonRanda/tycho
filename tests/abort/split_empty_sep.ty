@@ -1,0 +1,7 @@
+# split on an empty separator has no well-defined answer, so it must die
+# rather than guess. The separator comes from an array element so no
+# constant-folding can decide it at compile time.
+fn main():
+    z := []string
+    push(z, "")
+    print(str(len(split("a,b,c", z[0]))))

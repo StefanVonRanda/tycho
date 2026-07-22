@@ -9982,7 +9982,10 @@ fn gen_strlib() -> string:
     out := "static Arr_str hi_split(Arena* ar, const char* s, const char* sep) {\n"
     out = out + "    Arr_str r = Arr_str_new();\n"
     out = out + "    long n = ((const long*)s)[-1], sl = ((const long*)sep)[-1];\n"
-    out = out + "    if (sl == 0) { Arr_str_push(ar, &r, substr(ar, s, 0, n)); return r; }\n"
+    # an empty separator has no well-defined splitting: fail closed, exactly as
+    # the C runtime does (runtime/tycho_rt.c:1581-1584) -- same text, same stream,
+    # same exit code, so the two compilers give one answer, not two.
+    out = out + "    if (sl == 0) { fprintf(stderr, \"tycho: split with an empty separator\\n\"); exit(1); }\n"
     out = out + "    long start = 0, i = 0;\n"
     out = out + "    while (i + sl <= n) {\n"
     out = out + "        if (memcmp(s + i, sep, (size_t)sl) == 0) { Arr_str_push(ar, &r, substr(ar, s, start, i)); i += sl; start = i; }\n"

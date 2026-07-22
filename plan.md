@@ -47,7 +47,7 @@ Every phase, without exception:
 - proves it does NOT fire on valid input: `make fixpoint`, `make test`,
   `make corelib`, `make rtparity`.
 
-- [ ] **Phase 1 — `split(s, "")` behaviour divergence**
+- [x] **Phase 1 — `split(s, "")` behaviour divergence**
   - The only entry that is not check-vs-no-check: tychoc aborts
     (`runtime/tycho_rt.c:1582`), tychoc0's `hi_split` returns the whole string as
     one element. Two compilers, two answers, same program.
@@ -55,6 +55,71 @@ Every phase, without exception:
     gone from `ALLOW_MSG_TYCHOC_ONLY`, and a fixture locks it.
   - Verify: an abort fixture under `tests/abort/` (see `tests/run.sh` for how
     that lane works) plus the four gates above.
+
+  **The change.** One line of `gen_strlib` (`compiler/tychoc0.ty:9982`, the sole
+  `hi_split` emission site — called once, `:15999`). The empty-separator arm
+  stopped guessing and now fails closed with the reference's exact text:
+
+  ```
+  - if (sl == 0) { Arr_str_push(ar, &r, substr(ar, s, 0, n)); return r; }
+  + if (sl == 0) { fprintf(stderr, "tycho: split with an empty separator\n"); exit(1); }
+  ```
+
+  That is the WHOLE diff of tychoc0's emitted C for `tests/rtparity/surface.ty`
+  (broad probe, ~3k lines) — before vs after, one line, nothing else moved.
+
+  **1. The guard fires, identically on both sides.** `tests/abort/split_empty_sep.ty`
+  (separator via an array element, so nothing folds it at compile time):
+
+  ```
+  === tychoc (reference) ===        === tychoc0 (self-hosted) ===
+  tycho: split with an empty         tycho: split with an empty
+  separator                          separator
+  exit=1                             exit=1
+  ```
+
+  Both write to stderr and nothing to stdout; `cmp` on the two stderr streams
+  says IDENTICAL, `od -c` confirms the trailing `\n` and no more:
+  `t y c h o :   s p l i t   w i t h   a n   e m p t y   s e p a r a t o r \n`.
+
+  Before the fix, the same program under tychoc0 printed `1` and exited 0 (built
+  from `git show HEAD:compiler/tychoc0.ty`) — that was the divergence.
+
+  **2. It does not fire on valid input.**
+  - `make fixpoint` — `ok B == C : tychoc0 reproduces itself byte-identically
+    (34428 lines C)`; `ok split tychoc0 (2 packages) self-hosts E==F`;
+    `fixpoint: all green`. tychoc0 splits its own source on `chr(10)`
+    (`compiler/tychoc0.ty:15789`), so a guard that over-fired could not self-host.
+  - `make test` — `passed: 400   failed: 0` / `all green`, including
+    `ok    abort_split_empty_sep`.
+  - `make corelib` — `corelib: all green (tychoc and tychoc0 agree, match
+    goldens)`, all 24 modules ok (`strings`, `path`, `httpd` and `csv` all call
+    `split` with a non-empty literal; grep found no caller anywhere in
+    `corelib/`, `examples/` or `tests/` passing an empty or non-literal
+    separator).
+  - Neighbouring cases checked by hand, tychoc vs tychoc0 byte-identical:
+    `split("a,b,c", ",")`=3, `split("", ",")`=1 (empty STRING still yields one
+    empty field — a different case from an empty SEPARATOR), `split("a::b::c",
+    "::")`=3, `split(",a,", ",")[1]`=`a`, `split("x", "yy")`=`[x]`.
+
+  **3. `make rtparity`** — the entry is deleted and the lane agrees:
+  ```
+  rtparity: env knobs         3 shared, 0 allowlisted difference(s) (ok)
+  rtparity: diagnostics      19 shared, 8 allowlisted difference(s) (ok)
+  rtparity: arena-stats rows  5 shared, 0 allowlisted difference(s) (ok)
+  rtparity: the two runtimes agree on env knobs, diagnostics and arena stats
+  ```
+  8, down from 9; the diagnostic moved into the 19 shared (was 18).
+
+  **4. What the fixture does and does not lock.** `tests/abort/` builds with
+  tychoc only (`tests/run.sh:180` uses `$TYCHOC`), and so does the conc abort
+  lane (`tests/conc/run.sh:79`) — there is no differential abort lane in the
+  repo. So the fixture locks the REFERENCE side; on the tychoc0 side the lock is
+  rtparity, which now requires the text to be present in tychoc0's emitted C and
+  will fail if it is ever dropped. That is a text-level lock, not a
+  fires-on-the-same-input lock — exactly the Pre-flight "Assuming" caveat, which
+  is why the side-by-side run above exists. Closing it properly needs the abort
+  lane made differential, which is outside this phase's allowed edits.
 
 - [ ] **Phase 2 — slice bounds check**
   - `xs[a:b]` is bounds-checked inline by tychoc (`src/tychoc.c:8475`, `:8494`);
