@@ -61,6 +61,44 @@ in a debugger:
   of each statement; block/loop bodies get their own `_b`/`_scope` arenas. These
   are the arena-management lines you'll step over between your statements.
 
+## Where the memory lives: `TYCHO_ARENA_STATS`
+
+Set the env var on any Tycho binary (built by either compiler — no rebuild, no
+flag) and a residency summary prints to stderr at exit:
+
+```
+$ TYCHO_ARENA_STATS=1 ./tychoc0 < compiler/tychoc0.ty > /dev/null
+
+[tycho arena stats]
+  peak live:   75.9 MiB   (working-set high-water)
+  bump-alloc:  315.6 MiB over 11177285 allocations
+  OS reserved: 79.1 MiB over 902 blocks
+  block reuse: 777462 of 778364 requests from pool (99.9%)
+  arenas:      8790511 created, 8790511 freed
+
+  by function (20 of 139 shown, by peak):
+    main                       75.6 MiB peak    75.8 MiB bump  1646059 allocs
+    parse_program               7.3 MiB peak    10.9 MiB bump  455484 allocs
+    gfix_program                4.0 MiB peak    12.2 MiB bump  518127 allocs
+    ...
+    ... 119 more (TYCHO_ARENA_STATS=full lists every function)
+```
+
+Reading it:
+
+- **peak live** is the working-set high-water — the number that decides whether
+  the program fits in memory. **bump-alloc** is everything ever handed out;
+  a large gap between the two is arenas doing their job.
+- **A function's row counts the memory its arena OWNS**, which is the honest
+  attribution: a value returned up into the caller's arena is the *caller's*
+  residency, not the callee's. So a `main` that holds the whole program value
+  dominates, and per-pass rows show each pass's transient working set.
+- `(unlabeled)` collects allocations from arenas with no owning proc — task
+  roots, channel cells, and per-statement `_t` temporaries (~1% of bump on the
+  self-compile).
+- Counters are only touched when the variable is set; a normal run pays one
+  never-taken branch per allocation.
+
 ## Limits
 
 - **Single-file only.** `-g` emits line info for a single-file compile. A

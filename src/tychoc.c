@@ -9593,7 +9593,9 @@ static void gen_proc(FILE *o, Proc *pr) {
     diag_use_proc(pr);   /* package mode: codegen errors name THIS proc's file */
     gen_signature(o, pr);
     fprintf(o, " {\n");
-    indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent);\n");
+    /* stamp the residency label (TYCHO_ARENA_STATS): every arena opened inside this
+     * proc inherits it through arena_child, so allocations report per function. */
+    indent(o, 1); fprintf(o, "Arena _scope = arena_child(_parent); _scope.name = \"%s\";\n", pr->name);
     g_gen_ret = pr->ret;
     g_proc_body = pr->body; g_proc_nbody = pr->nbody;   /* for move-on-last-use read counts */
     g_loop_depth = 0;

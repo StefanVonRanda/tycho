@@ -83,7 +83,12 @@ typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
  * single NULL store + one not-taken branch; only recycling arenas allocate the
  * table (once, freed at arena_free). */
 #define TYCHO_NBKT 16
-typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; } Arena;
+/* `name` labels the arena for residency reporting (TYCHO_ARENA_STATS): a proc's
+ * prologue stamps its own function name, and arena_child copies it, so every
+ * block arena and loop scratch arena inside that proc attributes to it. One
+ * pointer field and one store per arena creation, paid whether or not stats are
+ * on -- measured at noise on the self-compile (see the stats block below). */
+typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; const char *name; } Arena;
 
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
 
@@ -208,15 +213,66 @@ static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
                      st_os_bytes, st_os_blocks, st_block_gets,
                      st_arenas, st_arena_frees;
 
+static void st_peak_up(atomic_size_t *pk, size_t cur) {   /* high-water CAS, shared by the global and per-label counters */
+    size_t p = atomic_load_explicit(pk, memory_order_relaxed);
+    while (cur > p && !atomic_compare_exchange_weak_explicit(
+            pk, &p, cur, memory_order_relaxed, memory_order_relaxed)) {}
+}
 static void st_bump_live(size_t n) {  /* live += n; track high-water */
-    size_t cur = atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n;
-    size_t pk = atomic_load_explicit(&st_peak_live, memory_order_relaxed);
-    while (cur > pk && !atomic_compare_exchange_weak_explicit(
-            &st_peak_live, &pk, cur, memory_order_relaxed, memory_order_relaxed)) {}
+    st_peak_up(&st_peak_live, atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n);
 }
 static size_t st_chain_off(HBlock *b) { size_t s = 0; for (; b; b = b->next) s += b->off; return s; }
-static void st_drop_live(HBlock *b) {  /* whole arena chain going away/rewound */
-    if (b) atomic_fetch_sub_explicit(&st_live, st_chain_off(b), memory_order_relaxed);
+
+/* ---- per-function residency ---------------------------------------------
+ * "Where does the memory live?" needs an answer per scope, not just a total.
+ * Every arena carries a `name` (the proc prologue stamps its own function name;
+ * arena_child copies it down to block/loop arenas), so an allocation is charged
+ * to the function whose arena OWNS it -- which is the honest attribution: a
+ * value returned up into the caller's arena is the caller's residency, not the
+ * callee's.
+ *
+ * Storage is a fixed open-addressed table keyed by the label POINTER (labels are
+ * string literals in one translation unit, so pointer identity == name identity;
+ * no hashing of characters, no allocation from inside the allocator). Slots are
+ * claimed with a CAS, so no lock is taken on the alloc path. A label that finds
+ * no free slot within the probe window is counted in st_lbl_lost and REPORTED --
+ * a truncated profile that says so beats a tidy one that lies. */
+#define TYCHO_NLBL 1024              /* power of two; ~1k allocating functions */
+#define TYCHO_LBL_PROBE 24
+typedef struct { _Atomic(const char *) key; atomic_size_t live, peak, bytes, calls; } StLbl;
+static StLbl st_lbl[TYCHO_NLBL];
+static atomic_size_t st_lbl_lost;
+static const char st_anon[] = "(unlabeled)";   /* task roots, channel cells, statement temporaries */
+
+static StLbl *st_slot(const char *name) {
+    size_t h = (size_t)(const void *)name;
+    h = (h >> 4) * (size_t)0x9e3779b1u;
+    for (int i = 0; i < TYCHO_LBL_PROBE; i++) {
+        StLbl *s = &st_lbl[(h + (size_t)i) & (TYCHO_NLBL - 1)];
+        const char *k = atomic_load_explicit(&s->key, memory_order_acquire);
+        if (k == name) return s;
+        if (!k) {
+            const char *empty = NULL;
+            if (atomic_compare_exchange_strong_explicit(&s->key, &empty, name,
+                    memory_order_acq_rel, memory_order_acquire)) return s;
+            if (empty == name) return s;   /* lost the race to an identical label */
+        }
+    }
+    return NULL;
+}
+static void st_lbl_alloc(const Arena *a, size_t n) {
+    StLbl *s = st_slot(a->name ? a->name : st_anon);
+    if (!s) { atomic_fetch_add_explicit(&st_lbl_lost, 1, memory_order_relaxed); return; }
+    atomic_fetch_add_explicit(&s->calls, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&s->bytes, n, memory_order_relaxed);
+    st_peak_up(&s->peak, atomic_fetch_add_explicit(&s->live, n, memory_order_relaxed) + n);
+}
+static void st_drop_live(Arena *a) {  /* whole arena chain going away/rewound */
+    size_t s = st_chain_off(a->head);
+    if (!s) return;
+    atomic_fetch_sub_explicit(&st_live, s, memory_order_relaxed);
+    StLbl *l = st_slot(a->name ? a->name : st_anon);
+    if (l) atomic_fetch_sub_explicit(&l->live, s, memory_order_relaxed);
 }
 
 static void st_fmt(size_t n, char *out, size_t outsz) {
@@ -225,6 +281,13 @@ static void st_fmt(size_t n, char *out, size_t outsz) {
     while (v >= 1024.0 && i < 4) { v /= 1024.0; i++; }
     if (i == 0) snprintf(out, outsz, "%zu B", n);
     else        snprintf(out, outsz, "%.1f %s", v, u[i]);
+}
+
+#define TYCHO_LBL_SHOW 20            /* rows printed unless TYCHO_ARENA_STATS=full */
+static int st_cmp(const void *x, const void *y) {   /* by peak, descending */
+    StLbl *const *a = (StLbl *const *)x, *const *b = (StLbl *const *)y;
+    size_t pa = atomic_load(&(*a)->peak), pb = atomic_load(&(*b)->peak);
+    return pa < pb ? 1 : pa > pb ? -1 : 0;
 }
 
 static void stats_dump(void) {
@@ -245,13 +308,35 @@ static void stats_dump(void) {
         os, osbl,
         reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0,
         (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees));
+
+    StLbl *rows[TYCHO_NLBL]; int n = 0;
+    for (int i = 0; i < TYCHO_NLBL; i++)
+        if (atomic_load(&st_lbl[i].key) && atomic_load(&st_lbl[i].bytes)) rows[n++] = &st_lbl[i];
+    if (n) {
+        qsort(rows, (size_t)n, sizeof rows[0], st_cmp);
+        int show = (g_arena_stats > 1 || n < TYCHO_LBL_SHOW) ? n : TYCHO_LBL_SHOW;
+        fprintf(stderr, "\n  by function (%d of %d shown, by peak):\n", show, n);
+        for (int i = 0; i < show; i++) {
+            char pk[32], by[32];
+            st_fmt(atomic_load(&rows[i]->peak), pk, sizeof pk);
+            st_fmt(atomic_load(&rows[i]->bytes), by, sizeof by);
+            fprintf(stderr, "    %-24s %10s peak  %10s bump  %zu allocs\n",
+                atomic_load(&rows[i]->key), pk, by, (size_t)atomic_load(&rows[i]->calls));
+        }
+        if (show < n)
+            fprintf(stderr, "    ... %d more (TYCHO_ARENA_STATS=full lists every function)\n", n - show);
+    }
+    size_t lost = atomic_load(&st_lbl_lost);
+    if (lost)   /* say so rather than quietly under-report */
+        fprintf(stderr, "  %zu allocations unattributed (label table full at %d entries)\n", lost, TYCHO_NLBL);
 }
 
 /* Runs before main (gcc/clang, same family as the __thread pool below). Reads
  * the env once; when off, nothing else in this file does any work. */
 __attribute__((constructor)) static void stats_init(void) {
     const char *e = getenv("TYCHO_ARENA_STATS");
-    if (e && *e && *e != '0') { g_arena_stats = 1; atexit(stats_dump); }
+    /* 1 = summary + the top TYCHO_LBL_SHOW functions; "full"/"all" = every function. */
+    if (e && *e && *e != '0') { g_arena_stats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(stats_dump); }
 }
 
 /* Global block free-list. Arenas are created/reset/freed per block scope, call,
@@ -316,6 +401,7 @@ Arena arena_new(size_t blocksz) {
     a.bkt = NULL;                            /* lazily allocated on first tiny recycle */
     a.freelist = NULL;
     a.nfree = 0;
+    a.name = NULL;                           /* a proc prologue stamps its own name; children inherit it */
     return a;
 }
 
@@ -348,7 +434,11 @@ void arena_recycle(Arena *a, void *p, size_t n) {
     a->nfree++;
 }
 
-Arena arena_child(Arena *parent) { return arena_new(parent->blocksz); }
+Arena arena_child(Arena *parent) {   /* inherit the label: a block/loop arena reports under its enclosing proc */
+    Arena a = arena_new(parent->blocksz);
+    a.name = parent->name;
+    return a;
+}
 
 /* Does `p` point inside one of this arena's blocks? Used by element-overwrite
  * recycling (MM-9) to recycle ONLY buffers this arena owns -- an interned string
@@ -394,6 +484,7 @@ void *arena_alloc(Arena *a, size_t n) {
         atomic_fetch_add_explicit(&st_alloc_calls, 1, memory_order_relaxed);
         atomic_fetch_add_explicit(&st_alloc_bytes, n, memory_order_relaxed);
         st_bump_live(n);   /* recycle-reuse returns earlier and never bumps, so st_live == sum of block offsets */
+        st_lbl_alloc(a, n);   /* charge it to the arena's owning function */
     }
     return p;
 }
@@ -411,7 +502,7 @@ void arena_reset(Arena *a) {
     a->freelist = NULL; a->nfree = 0;
     HBlock *b = a->head;
     if (!b) return;
-    if (g_arena_stats) st_drop_live(b);   /* head rewound + overflow pooled: whole chain's live goes to 0 */
+    if (g_arena_stats) st_drop_live(a);   /* head rewound + overflow pooled: whole chain's live goes to 0 */
     block_release_chain(b->next);   /* overflow blocks -> pool */
     b->next = NULL;
     b->off = 0;                     /* keep & reuse the head block */
@@ -421,7 +512,7 @@ void arena_reset(Arena *a) {
 void arena_free(Arena *a) {
     if (g_arena_stats) {
         atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
-        st_drop_live(a->head);
+        st_drop_live(a);
     }
     if (a->bkt) { free(a->bkt); a->bkt = NULL; }   /* release the lazily-allocated table */
     a->freelist = NULL; a->nfree = 0;

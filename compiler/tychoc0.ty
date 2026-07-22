@@ -8972,14 +8972,16 @@ fn gen_func(f: Func, dc: Decls, ctx: Ctx) -> string:
         # wrapper that calls it -- mirrors tychoc. An early bare `return` in the body
         # then lowers to `return;` inside a void function (valid C); inlining the body
         # into `int main` made it `return;` in an int-returning function (cc error).
-        mb := "static void " + un(f.name) + "(Arena* _parent) {\n    Arena _scope = arena_child(_parent);\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n}\n"
+        mb := "static void " + un(f.name) + "(Arena* _parent) {\n    Arena _scope = arena_child(_parent); _scope.name = \"main\";\n" + gen_block(f.body, names, types, dc, fctx) + "    arena_free(&_scope);\n}\n"
         return mb + "int main(int argc, char **argv) {\n    mhash_seed_init();\n    hi_argc = argc; hi_argv = argv;\n    Arena _root = arena_new(0);\n    " + un(f.name) + "(&_root);\n    arena_free(&_root);\n    return 0;\n}\n"
     # open a child scope from the caller's arena; void funcs free it on fall-through
     # (every `return` frees it via the return-slot in gen_stmt).
     tail := ""
     if f.ret == "void":
         tail = "    arena_free(&_scope);\n"
-    return ret_cty(dc, fctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0);\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
+    # stamp the residency label (TYCHO_ARENA_STATS): arenas opened inside this proc
+    # inherit it through arena_child, so allocations report per function.
+    return ret_cty(dc, fctx, f.ret) + un(f.name) + "(" + gen_params(f, dc, fctx) + ") {\n    Arena _scope = _parent ? arena_child(_parent) : arena_new(0); _scope.name = \"" + f.name + "\";\n" + gen_block(f.body, names, types, dc, fctx) + tail + "}\n"
 
 fn gen_struct(sd: StructDef, dc: Decls, ctx: Ctx) -> string:
     out := "struct " + ust(sd.name) + " {\n"     # named tag; forward-declared elsewhere
@@ -9536,7 +9538,10 @@ fn preamble() -> string:
     # class, bkt[16] = sizes 8..120B): O(1) push/pop, NO cap -- a sliding-window
     # eviction needs the per-class list to grow to the window size, which a single
     # capped best-fit list cannot. Larger chunks keep the capped best-fit `freelist`.
-    out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* bkt[16]; FreeNode* freelist; int nfree; } Arena;\n"
+    # `name` labels the arena for residency reporting: a proc prologue stamps its own
+    # function name and arena_child copies it, so every block/loop arena inside that
+    # proc attributes to it. One pointer field, one store per arena creation.
+    out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* bkt[16]; FreeNode* freelist; int nfree; const char* name; } Arena;\n"
     # Arena residency (TYCHO_ARENA_STATS): opt-in memory observability, mirroring
     # runtime/tycho_rt.c so a tychoc0-built binary reports the same summary the C
     # compiler's binaries do -- otherwise the env var is silently a no-op on half
@@ -9548,11 +9553,25 @@ fn preamble() -> string:
     # plain int.
     out = out + "static int g_astats = 0;\n"
     out = out + "static atomic_size_t st_live, st_peak, st_calls, st_bytes, st_osb, st_osblk, st_gets, st_arenas, st_frees;\n"
-    out = out + "static void st_add(size_t n) { size_t cur = atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n; size_t pk = atomic_load_explicit(&st_peak, memory_order_relaxed); while (cur > pk && !atomic_compare_exchange_weak_explicit(&st_peak, &pk, cur, memory_order_relaxed, memory_order_relaxed)) { } }\n"
-    out = out + "static void st_drop(ABlk* b) { size_t s = 0; for (; b; b = b->next) s += b->used; if (s) atomic_fetch_sub_explicit(&st_live, s, memory_order_relaxed); }\n"
+    out = out + "static void st_peak_up(atomic_size_t* pk, size_t cur) { size_t p = atomic_load_explicit(pk, memory_order_relaxed); while (cur > p && !atomic_compare_exchange_weak_explicit(pk, &p, cur, memory_order_relaxed, memory_order_relaxed)) { } }\n"
+    out = out + "static void st_add(size_t n) { st_peak_up(&st_peak, atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n); }\n"
+    # Per-function residency: an allocation is charged to the function whose arena
+    # OWNS it (a value returned up into the caller's arena is the caller's residency).
+    # Fixed open-addressed table keyed by the label POINTER -- labels are string
+    # literals in one translation unit, so pointer identity is name identity; no
+    # hashing, no allocation from inside the allocator, slots claimed by CAS so the
+    # alloc path stays lock-free. A label that finds no slot is counted and REPORTED.
+    out = out + "static const char st_anon[] = \"(unlabeled)\";\n"
+    out = out + "typedef struct { _Atomic(const char*) key; atomic_size_t live, peak, bytes, calls; } StLbl;\n"
+    out = out + "static StLbl st_lbl[1024];\n"
+    out = out + "static atomic_size_t st_lost;\n"
+    out = out + "static StLbl* st_slot(const char* nm) { size_t h = (size_t)(const void*)nm; h = (h >> 4) * (size_t)0x9e3779b1u; for (int i = 0; i < 24; i++) { StLbl* s = &st_lbl[(h + (size_t)i) & 1023]; const char* k = atomic_load_explicit(&s->key, memory_order_acquire); if (k == nm) return s; if (!k) { const char* empty = 0; if (atomic_compare_exchange_strong_explicit(&s->key, &empty, nm, memory_order_acq_rel, memory_order_acquire)) return s; if (empty == nm) return s; } } return 0; }\n"
+    out = out + "static void st_lbl_alloc(const Arena* a, size_t n) { StLbl* s = st_slot(a->name ? a->name : st_anon); if (!s) { atomic_fetch_add_explicit(&st_lost, 1, memory_order_relaxed); return; } atomic_fetch_add_explicit(&s->calls, 1, memory_order_relaxed); atomic_fetch_add_explicit(&s->bytes, n, memory_order_relaxed); st_peak_up(&s->peak, atomic_fetch_add_explicit(&s->live, n, memory_order_relaxed) + n); }\n"
+    out = out + "static void st_drop(Arena* a) { size_t s = 0; for (ABlk* b = a->head; b; b = b->next) s += b->used; if (!s) return; atomic_fetch_sub_explicit(&st_live, s, memory_order_relaxed); StLbl* l = st_slot(a->name ? a->name : st_anon); if (l) atomic_fetch_sub_explicit(&l->live, s, memory_order_relaxed); }\n"
+    out = out + "static int st_cmp(const void* x, const void* y) { StLbl* const* a = (StLbl* const*)x; StLbl* const* b = (StLbl* const*)y; size_t pa = atomic_load(&(*a)->peak), pb = atomic_load(&(*b)->peak); return pa < pb ? 1 : pa > pb ? -1 : 0; }\n"
     out = out + "static void st_fmt(size_t n, char* o, size_t osz) { const char* u[] = { \"B\", \"KiB\", \"MiB\", \"GiB\", \"TiB\" }; double v = (double)n; int i = 0; while (v >= 1024.0 && i < 4) { v /= 1024.0; i++; } if (i == 0) snprintf(o, osz, \"%zu B\", n); else snprintf(o, osz, \"%.1f %s\", v, u[i]); }\n"
-    out = out + "static void st_dump(void) { char live[32], bump[32], os[32]; size_t gets = atomic_load(&st_gets), osblk = atomic_load(&st_osblk); size_t reuse = gets - osblk; st_fmt(atomic_load(&st_peak), live, sizeof live); st_fmt(atomic_load(&st_bytes), bump, sizeof bump); st_fmt(atomic_load(&st_osb), os, sizeof os); fprintf(stderr, \"\\n[tycho arena stats]\\n  peak live:   %s   (working-set high-water)\\n  bump-alloc:  %s over %zu allocations\\n  OS reserved: %s over %zu blocks\\n  block reuse: %zu of %zu requests from pool (%.1f%%)\\n  arenas:      %zu created, %zu freed\\n\", live, bump, (size_t)atomic_load(&st_calls), os, osblk, reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0, (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_frees)); }\n"
-    out = out + "__attribute__((constructor)) static void st_init(void) { const char* e = getenv(\"TYCHO_ARENA_STATS\"); if (e && *e && *e != '0') { g_astats = 1; atexit(st_dump); } }\n"
+    out = out + "static void st_dump(void) { char live[32], bump[32], os[32]; size_t gets = atomic_load(&st_gets), osblk = atomic_load(&st_osblk); size_t reuse = gets - osblk; st_fmt(atomic_load(&st_peak), live, sizeof live); st_fmt(atomic_load(&st_bytes), bump, sizeof bump); st_fmt(atomic_load(&st_osb), os, sizeof os); fprintf(stderr, \"\\n[tycho arena stats]\\n  peak live:   %s   (working-set high-water)\\n  bump-alloc:  %s over %zu allocations\\n  OS reserved: %s over %zu blocks\\n  block reuse: %zu of %zu requests from pool (%.1f%%)\\n  arenas:      %zu created, %zu freed\\n\", live, bump, (size_t)atomic_load(&st_calls), os, osblk, reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0, (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_frees)); StLbl* rows[1024]; int n = 0; for (int i = 0; i < 1024; i++) if (atomic_load(&st_lbl[i].key) && atomic_load(&st_lbl[i].bytes)) rows[n++] = &st_lbl[i]; if (n) { qsort(rows, (size_t)n, sizeof rows[0], st_cmp); int show = (g_astats > 1 || n < 20) ? n : 20; fprintf(stderr, \"\\n  by function (%d of %d shown, by peak):\\n\", show, n); for (int i = 0; i < show; i++) { char pk[32], by[32]; st_fmt(atomic_load(&rows[i]->peak), pk, sizeof pk); st_fmt(atomic_load(&rows[i]->bytes), by, sizeof by); fprintf(stderr, \"    %-24s %10s peak  %10s bump  %zu allocs\\n\", atomic_load(&rows[i]->key), pk, by, (size_t)atomic_load(&rows[i]->calls)); } if (show < n) fprintf(stderr, \"    ... %d more (TYCHO_ARENA_STATS=full lists every function)\\n\", n - show); } size_t lost = atomic_load(&st_lost); if (lost) fprintf(stderr, \"  %zu allocations unattributed (label table full at 1024 entries)\\n\", lost); }\n"
+    out = out + "__attribute__((constructor)) static void st_init(void) { const char* e = getenv(\"TYCHO_ARENA_STATS\"); if (e && *e && *e != '0') { g_astats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(st_dump); } }\n"
     # THREAD-LOCAL (CC-0): each thread owns a private pool -- allocation never
     # contends or races. Blocks may be freed on a different thread than they
     # were allocated on (wait() frees the task tree on the waiting thread);
@@ -9561,12 +9580,12 @@ fn preamble() -> string:
     out = out + "static __thread ABlk* g_pool = 0;\n"
     out = out + "static ABlk* blk_get(size_t cap) { if (g_astats) atomic_fetch_add_explicit(&st_gets, 1, memory_order_relaxed); if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } for (ABlk** link = &g_pool; *link; link = &(*link)->next) if ((*link)->cap >= cap) { ABlk* b = *link; *link = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; if (g_astats) { atomic_fetch_add_explicit(&st_osb, sizeof(ABlk) + cap, memory_order_relaxed); atomic_fetch_add_explicit(&st_osblk, 1, memory_order_relaxed); } return b; }\n"
     out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
-    out = out + "static Arena arena_new(size_t bs) { if (g_astats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed); Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; for (int i = 0; i < 16; i++) a.bkt[i] = 0; a.freelist = 0; a.nfree = 0; return a; }\n"
+    out = out + "static Arena arena_new(size_t bs) { if (g_astats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed); Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; for (int i = 0; i < 16; i++) a.bkt[i] = 0; a.freelist = 0; a.nfree = 0; a.name = 0; return a; }\n"
     out = out + "static void arena_recycle(Arena* a, void* p, size_t n) { if (!a || !p || n < sizeof(FreeNode)) return; n = (n + 7) & ~(size_t)7; size_t k = n >> 3; FreeNode* fn = (FreeNode*)p; fn->size = n; if (k < 16) { fn->next = a->bkt[k]; a->bkt[k] = fn; return; } if (a->nfree >= 32) return; fn->next = a->freelist; a->freelist = fn; a->nfree++; }\n"
-    out = out + "static Arena arena_child(Arena* p) { return arena_new(p->blocksz); }\n"
-    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; size_t k = n >> 3; if (k < 16) { if (a->bkt[k]) { FreeNode* fn = a->bkt[k]; a->bkt[k] = fn->next; return (void*)fn; } } else if (a->freelist) { FreeNode** link = &a->freelist; FreeNode** best = 0; size_t bestsz = (size_t)-1; for (; *link; link = &(*link)->next) if ((*link)->size >= n && (*link)->size <= 2*n && (*link)->size < bestsz) { best = link; bestsz = (*link)->size; } if (best) { FreeNode* fn = *best; *best = fn->next; a->nfree--; return (void*)fn; } } if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; if (g_astats) { atomic_fetch_add_explicit(&st_calls, 1, memory_order_relaxed); atomic_fetch_add_explicit(&st_bytes, n, memory_order_relaxed); st_add(n); } return p; }\n"
+    out = out + "static Arena arena_child(Arena* p) { Arena a = arena_new(p->blocksz); a.name = p->name; return a; }\n"
+    out = out + "static void* arena_alloc(Arena* a, size_t n) { n = (n + 7) & ~(size_t)7; size_t k = n >> 3; if (k < 16) { if (a->bkt[k]) { FreeNode* fn = a->bkt[k]; a->bkt[k] = fn->next; return (void*)fn; } } else if (a->freelist) { FreeNode** link = &a->freelist; FreeNode** best = 0; size_t bestsz = (size_t)-1; for (; *link; link = &(*link)->next) if ((*link)->size >= n && (*link)->size <= 2*n && (*link)->size < bestsz) { best = link; bestsz = (*link)->size; } if (best) { FreeNode* fn = *best; *best = fn->next; a->nfree--; return (void*)fn; } } if (!a->head || a->head->used + n > a->head->cap) { size_t cap = a->blocksz; if (cap < n) cap = n; ABlk* b = blk_get(cap); b->next = a->head; a->head = b; } void* p = a->head->mem + a->head->used; a->head->used += n; if (g_astats) { atomic_fetch_add_explicit(&st_calls, 1, memory_order_relaxed); atomic_fetch_add_explicit(&st_bytes, n, memory_order_relaxed); st_add(n); st_lbl_alloc(a, n); } return p; }\n"
     out = out + "static int arena_owns(Arena* a, const void* p) { for (ABlk* b = a->head; b; b = b->next) if ((const char*)p >= b->mem && (const char*)p < b->mem + b->cap) return 1; return 0; }\n"
-    out = out + "static void arena_free(Arena* a) { if (g_astats) { atomic_fetch_add_explicit(&st_frees, 1, memory_order_relaxed); st_drop(a->head); } for (int i = 0; i < 16; i++) a->bkt[i] = 0; a->freelist = 0; a->nfree = 0; blk_release(a->head); a->head = 0; }\n"
+    out = out + "static void arena_free(Arena* a) { if (g_astats) { atomic_fetch_add_explicit(&st_frees, 1, memory_order_relaxed); st_drop(a); } for (int i = 0; i < 16; i++) a->bkt[i] = 0; a->freelist = 0; a->nfree = 0; blk_release(a->head); a->head = 0; }\n"
     # ---- concurrency runtime (CC-0..CC-4), mirroring runtime/tycho_rt.c ----
     # A task is one OS thread running one call against a private arena tree;
     # arguments deep-copy IN before the thread starts, the result copies OUT at
