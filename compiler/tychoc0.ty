@@ -4474,7 +4474,12 @@ fn field_type(dc: Decls, ctx: Ctx, sname: string, fld: string) -> string:
                 if dc.structs[i].fields[j].name == fld:
                     return dc.structs[i].fields[j].ty
                 j = j + 1
-            die_at(dc, ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'")
+            fns := []string                       # this struct's field names, for the typo suggestion
+            k := 0
+            for k < len(dc.structs[i].fields):
+                push(fns, dc.structs[i].fields[k].name)
+                k = k + 1
+            die_at(dc, ctx.line, "type: no such field '" + fld + "' on struct '" + sname + "'" + dym_hint(fld, fns))
         i = i + 1
     # generic-application receiver like "LL(int)": the concrete instance isn't interned
     # in dc during the mono pass, but its layout is the template's with the type args
@@ -4601,7 +4606,7 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     si := dc.sigmap.get(name, -1)                # O(1) user-function lookup (was a linear scan)
     if si >= 0:
         return dc.sigs[si].ret
-    die_at(dc, ctx.line, "type: unknown function '" + name + "'")
+    die_at(dc, ctx.line, "type: unknown function '" + name + "'" + dym_hint(name, sig_names(dc)))
     return "int"
 
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
@@ -4808,7 +4813,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ft := sig_functype(dc, name)
                 if ft != "":
                     return ft
-                die_at(dc, _el, "type: unknown variable '" + name + "'")
+                die_at(dc, _el, "type: unknown variable '" + name + "'" + dym_hint(name, names))
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(dc, ctx, vt)
         EField(base, fld, _el):
@@ -5355,6 +5360,75 @@ fn warn_at(dc: Decls, code: int, msg: string):
         eprint("line " + str(lineno) + ": warning: " + msg + nl)
         return
     eprint("warning: " + msg + nl)
+
+# ---- "did you mean ...?" (1:1 port of src/tychoc.c edit_dist/dym/dym_pick) ----
+# Bounded Levenshtein for typo suggestions. Names longer than 63 bytes never
+# match (cheap upper bound), matching tychoc so both compilers offer the same
+# suggestion for the same typo.
+fn edit_dist(a: string, b: string) -> int:
+    la := len(a)
+    lb := len(b)
+    if la > 63 or lb > 63:
+        return 99
+    row := []int
+    j := 0
+    for j <= lb:
+        push(row, j)
+        j = j + 1
+    i := 1
+    for i <= la:
+        prev := row[0]
+        row[0] = i
+        j = 1
+        for j <= lb:
+            tmp := row[j]
+            d := prev + 1                            # substitute
+            if a[i - 1] == b[j - 1]:
+                d = prev
+            if row[j] + 1 < d:                       # delete
+                d = row[j] + 1
+            if row[j - 1] + 1 < d:                   # insert
+                d = row[j - 1] + 1
+            row[j] = d
+            prev = tmp
+            j = j + 1
+        i = i + 1
+    return row[lb]
+
+# Closest candidate to `name`, or "" when nothing is close enough to be a
+# plausible typo (tychoc's dym_pick threshold: 1 for short names, else 2).
+fn dym_of(name: string, cands: [string]) -> string:
+    best := ""
+    bestd := 99
+    i := 0
+    for i < len(cands):
+        c := cands[i]
+        if c != "" and c != name:
+            d := edit_dist(name, c)
+            if d < bestd:
+                bestd = d
+                best = c
+        i = i + 1
+    lim := 2
+    if len(name) <= 4:
+        lim = 1
+    if bestd <= lim:
+        return best
+    return ""
+
+fn dym_hint(name: string, cands: [string]) -> string:   # the suffix tychoc appends, or ""
+    s := dym_of(name, cands)
+    if s == "":
+        return ""
+    return "; did you mean '" + s + "'?"
+
+fn sig_names(dc: Decls) -> [string]:                 # every user function name, for suggestions
+    out := []string
+    i := 0
+    for i < len(dc.sigs):
+        push(out, dc.sigs[i].name)
+        i = i + 1
+    return out
 
 # Loop-progress check (1:1 port of src/tychoc.c wl_*): a `for COND:` whose condition
 # variables are never changed in the body (and which can't break/return/die) may
@@ -6524,7 +6598,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # the statement position, whose result -- and thus type_of -- is unused.)
             csidx := dc.sigmap.get(name, -1)
             if csidx < 0:
-                die_at(dc, ctx.line, "type: unknown function '" + name + "'")
+                die_at(dc, ctx.line, "type: unknown function '" + name + "'" + dym_hint(name, sig_names(dc)))
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
             return un(name) + "(" + ctx.owner + ", " + gen_call_args_sink(args, dc.sigs[csidx].ptypes, names, types, dc, ctx) + ")"
@@ -8214,6 +8288,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             ctrl2 := ctrl_rewrite_tails(ctrl, 1, name, EInt("0", 0))   # each tail -> `name = tail`
             return code + gen_stmt(ctrl2, &names, &types, dc, ctx)
         SAssign(name, e, _sl):
+            if not has_str(names, name):          # var_type() below dies with NO line/snippet
+                die_at(dc, _sl, "type: assignment to unknown variable '" + name + "'" + dym_hint(name, names))
             if is_handle(dc, var_type(names, types, name)):   # FFI R2: rebinding orphans the old handle (freed once, at scope exit)
                 die_at(dc, _sl, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope")
             if is_task(var_type(names, types, name)) or is_chan(var_type(names, types, name)):   # AUDIT: reassigning an affine task/channel orphans the running task / the created queue
@@ -8829,6 +8905,10 @@ fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [
             push(names, n)
             push(types, dty)
         SAssign(n, e, _sl):
+            # lift/collect/gfix all skip an unknown target (has_str guards), so this
+            # is the first pass that touches it -- and var_type() dies with no line.
+            if not has_str(names, n):
+                die_at(dc, _sl, "type: assignment to unknown variable '" + n + "'" + dym_hint(n, names))
             if var_type(names, types, n) == "str":
                 if len(sacc_pieces(e, n)) > 0:
                     push(acc, n)

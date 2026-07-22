@@ -1,3 +1,3 @@
-line 4: type: unknown function 'totl'
+line 4: type: unknown function 'totl'; did you mean 'total'?
         print(str(totl(3)))
                   ^
