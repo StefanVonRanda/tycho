@@ -579,6 +579,14 @@ struct Decls:                 # immutable after parse — threaded read-only as 
     handles: [string]         # FFI R2 typed handles: "Name=c_free_fn" per `handle` decl (for is_handle/cty/finalizer)
     subs: [Func]              # ROADMAP 2.4 user projections: each subscript is a MARKED Func (ret = "inout U", body = [SExpr(place)]); found at a call site by find_subscript. Empty in a subscript-free program (so codegen is byte-identical).
 
+struct ChanUse:               # CC-6 channel liveness lint (see cu_report): what a channel's
+    send: bool                # closed use-graph contains. Absence is the whole point --
+    recv: bool                # an op that appears NOWHERE can never run.
+    recvb: bool               # a receive that can PARK: recv(ch), or a select arm with no `default:`
+    clos: bool                # close(ch) called somewhere
+    opaque: bool              # the walk hit something it cannot follow -- stay quiet
+    selline: int              # a drain that ends only on close (0 = none)
+
 struct Ctx:                   # mutable per-scope / per-function state only
     vparams: [string]         # current func's NON-inout param names (map accum guard)
     saccums: [string]         # current func's string-append accumulator locals (in-place hi_append)
@@ -15402,6 +15410,270 @@ fn gfix_program(prog: Program, dc: Decls, ctx: Ctx) -> Program:
         i = i + 1
     return Program(prog.structs, prog.enums, nfuncs, prog.ntnames, prog.ntunder, prog.handles)
 
+# ---- CC-6: channel liveness lint (1:1 port of src/tychoc.c chan_*) --------
+# Value semantics removes data races, not deadlock. The provable half IS
+# decidable: a channel handle can only reach code by being passed as an
+# ARGUMENT (it cannot be returned, stored in a struct/enum/container, captured
+# by a closure, or rebound -- CC-4), so the procs that can touch one channel are
+# a closed graph rooted at its decl. That makes absence sound: if no `send`
+# appears anywhere in the graph, no execution can ever send. Every warning here
+# is of that shape, never "this path might not send". Anything the walk cannot
+# follow (unknown callee, arity mismatch) sets `opaque` and silences the channel.
+# Runs BEFORE lift_program, so `parallel for x in ch` is still the deferred
+# SParFor (pid -2) rather than its lifted select -- the drain is easier to see
+# at the source form, and the two compilers still warn on the same line.
+fn cu_zero() -> ChanUse:
+    return ChanUse(false, false, false, false, false, 0)
+
+fn cu_opaque() -> ChanUse:
+    return ChanUse(false, false, false, false, true, 0)
+
+fn cu_or(a: ChanUse, b: ChanUse) -> ChanUse:
+    sl := a.selline
+    if sl == 0:
+        sl = b.selline
+    return ChanUse(a.send or b.send, a.recv or b.recv, a.recvb or b.recvb, a.clos or b.clos, a.opaque or b.opaque, sl)
+
+fn cu_is(e: Expr, nm: string) -> bool:            # is this expression exactly the channel variable?
+    match e:
+        EVar(n, _el):
+            return n == nm
+        _:
+            return false
+
+fn cu_find(funcs: [Func], name: string) -> int:   # -1 = builtin / extern / unknown: caller goes opaque
+    i := 0
+    for i < len(funcs):
+        if funcs[i].name == name and funcs[i].is_extern == 0:
+            return i
+        i = i + 1
+    return 0 - 1
+
+fn cu_walk(funcs: [Func], fi: int, pnm: string, vis: inout [string]) -> ChanUse:
+    key := funcs[fi].name + "|" + pnm
+    k := 0
+    for k < len(vis):                             # recursion / diamond: already accounted for
+        if vis[k] == key:
+            return cu_zero()
+        k = k + 1
+    if len(vis) >= 256:
+        return cu_opaque()
+    push(vis, key)
+    return cu_body(funcs, funcs[fi].body, pnm, &vis)
+
+fn cu_op(bare: string) -> ChanUse:                # one of the three channel ops, on OUR channel
+    if bare == "send":
+        return ChanUse(true, false, false, false, false, 0)
+    if bare == "recv":
+        return ChanUse(false, true, true, false, false, 0)
+    return ChanUse(false, false, false, true, false, 0)
+
+fn cu_call(funcs: [Func], name: string, args: [Expr], nm: string, vis: inout [string]) -> ChanUse:
+    # `ch.send(v)` parses as ECall("ch.send", [v]) and only becomes the ECallV
+    # method form in the mangle pass, which runs after this check -- so the
+    # dotted spelling must be read here or every UFCS send is invisible (and the
+    # channel then looks senderless).
+    di := find(name, ".")
+    if di >= 0:
+        if substr(name, 0, di) == nm and is_conc_method(substr(name, di + 1, len(name))):
+            return cu_op(substr(name, di + 1, len(name)))
+    u := cu_zero()
+    passes := false
+    k := 0
+    for k < len(args):
+        if cu_is(args[k], nm):
+            passes = true
+        k = k + 1
+    if not passes:
+        return u                                  # this call doesn't take our channel
+    if len(args) >= 1 and cu_is(args[0], nm) and is_conc_method(name) and name != "wait":
+        return cu_op(name)                        # the three builtin ops in free-call form
+    fi := cu_find(funcs, name)
+    if fi < 0:
+        return cu_opaque()
+    k = 0
+    for k < len(args):                            # follow the handle into the callee's parameter
+        if cu_is(args[k], nm):
+            if k >= len(funcs[fi].params):
+                return cu_opaque()
+            u = cu_or(u, cu_walk(funcs, fi, funcs[fi].params[k], &vis))
+        k = k + 1
+    return u
+
+fn cu_exprs(funcs: [Func], es: [Expr], nm: string, vis: inout [string]) -> ChanUse:
+    u := cu_zero()
+    k := 0
+    for k < len(es):
+        u = cu_or(u, cu_expr(funcs, es[k], nm, &vis))
+        k = k + 1
+    return u
+
+fn cu_expr(funcs: [Func], e: Expr, nm: string, vis: inout [string]) -> ChanUse:
+    match e:
+        ECall(name, args, _el):
+            return cu_or(cu_call(funcs, name, args, nm, &vis), cu_exprs(funcs, args, nm, &vis))
+        ECallV(callee, cargs, _el):
+            cfn := efield_fname(callee)           # ch.send(v) / ch.recv() / ch.close(): still the
+            if is_conc_method(cfn) and cu_is(efield_base(callee), nm):   # method form this early
+                na := []Expr
+                push(na, efield_base(callee))
+                j := 0
+                for j < len(cargs):
+                    push(na, cargs[j])
+                    j = j + 1
+                return cu_or(cu_call(funcs, cfn, na, nm, &vis), cu_exprs(funcs, cargs, nm, &vis))
+            return cu_or(cu_expr(funcs, callee, nm, &vis), cu_exprs(funcs, cargs, nm, &vis))
+        ESpawn(_sid, snm, sargs, _el):
+            return cu_or(cu_call(funcs, snm, sargs, nm, &vis), cu_exprs(funcs, sargs, nm, &vis))
+        EBin(_op, l, r, _el):
+            return cu_or(cu_expr(funcs, l, nm, &vis), cu_expr(funcs, r, nm, &vis))
+        EField(b, _f, _el):
+            return cu_expr(funcs, b, nm, &vis)
+        EIndex(b, ix, _el):
+            return cu_or(cu_expr(funcs, b, nm, &vis), cu_expr(funcs, ix, nm, &vis))
+        ESlice(b, lo, hi, _el):
+            return cu_or(cu_expr(funcs, b, nm, &vis), cu_or(cu_expr(funcs, lo, nm, &vis), cu_expr(funcs, hi, nm, &vis)))
+        EAddr(x, _el):
+            return cu_expr(funcs, x, nm, &vis)
+        ESpread(x, _el):
+            return cu_expr(funcs, x, nm, &vis)
+        ETuple(es, _el):
+            return cu_exprs(funcs, es, nm, &vis)
+        EArrLit(es, _ft, _el):
+            return cu_exprs(funcs, es, nm, &vis)
+        EMapLit(ks, vls, _el):
+            return cu_or(cu_exprs(funcs, ks, nm, &vis), cu_exprs(funcs, vls, nm, &vis))
+        _:
+            return cu_zero()
+
+fn cu_stmt(funcs: [Func], s: Stmt, nm: string, vis: inout [string]) -> ChanUse:
+    match s:
+        SDecl(_n, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        STypedDecl(_n, _t, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SConst(_n, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SAssign(_n, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SOrReturn(_n, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SDestructure(_ns, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SMultiAssign(_ns, e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SFieldAssign(lv, r, _p):
+            return cu_or(cu_expr(funcs, lv, nm, &vis), cu_expr(funcs, r, nm, &vis))
+        SExpr(e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SPrint(e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SReturn(e, _p):
+            return cu_expr(funcs, e, nm, &vis)
+        SIf(cnd, b, els, _p):
+            return cu_or(cu_expr(funcs, cnd, nm, &vis), cu_or(cu_body(funcs, b, nm, &vis), cu_body(funcs, els, nm, &vis)))
+        SWhile(cnd, b, _p):
+            return cu_or(cu_expr(funcs, cnd, nm, &vis), cu_body(funcs, b, nm, &vis))
+        SForRange(_v, a, b, st, body, _p):
+            u := cu_or(cu_expr(funcs, a, nm, &vis), cu_or(cu_expr(funcs, b, nm, &vis), cu_expr(funcs, st, nm, &vis)))
+            return cu_or(u, cu_body(funcs, body, nm, &vis))
+        SMatch(subj, _vs, _bs, bodies, _p):
+            u := cu_expr(funcs, subj, nm, &vis)
+            k := 0
+            for k < len(bodies):
+                u = cu_or(u, cu_body(funcs, bodies[k], nm, &vis))
+                k = k + 1
+            return u
+        SValDecl(_n, _t, c, _p):
+            return cu_stmt(funcs, c, nm, &vis)
+        SParFor(_v, a, b, body, pid, p):
+            u := cu_or(cu_expr(funcs, a, nm, &vis), cu_expr(funcs, b, nm, &vis))
+            if pid == 0 - 2 and cu_is(a, nm):     # `parallel for x in ch`: K workers drain until closed
+                u = cu_or(u, ChanUse(false, true, true, false, false, p))
+            return cu_or(u, cu_body(funcs, body, nm, &vis))
+        SSelect(_uid, svars, schans, _sbinds, sbodies, p):
+            mine := false
+            dflt := false
+            clsd := false
+            k := 0
+            for k < len(svars):
+                if svars[k] == "recv" and k < len(schans) and cu_is(schans[k], nm):
+                    mine = true
+                if svars[k] == "default":
+                    dflt = true
+                if svars[k] == "closed":
+                    clsd = true
+                k = k + 1
+            u := cu_exprs(funcs, schans, nm, &vis)
+            if mine:
+                u = cu_or(u, ChanUse(false, true, not dflt, false, false, 0))
+            if mine and clsd:                     # the arm fires only when EVERY listed channel closes
+                u = cu_or(u, ChanUse(false, false, false, false, false, p))
+            j := 0
+            for j < len(sbodies):
+                u = cu_or(u, cu_body(funcs, sbodies[j], nm, &vis))
+                j = j + 1
+            return u
+        _:
+            return cu_zero()
+
+fn cu_body(funcs: [Func], body: [Stmt], nm: string, vis: inout [string]) -> ChanUse:
+    u := cu_zero()
+    i := 0
+    for i < len(body):
+        u = cu_or(u, cu_stmt(funcs, body[i], nm, &vis))
+        i = i + 1
+    return u
+
+fn cu_report(funcs: [Func], fi: int, nm: string, pos: int, dc: Decls):
+    vis := []string
+    u := cu_body(funcs, funcs[fi].body, nm, &vis)
+    if u.opaque:
+        return
+    if u.recvb and not u.send:
+        warn_at(dc, pos, "nothing ever sends on channel '" + nm + "', so a receive on it parks forever")
+    elif u.send and not u.recv:
+        warn_at(dc, pos, "nothing ever receives from channel '" + nm + "', so a send parks once its buffer fills")
+    if u.selline > 0 and not u.clos:
+        warn_at(dc, u.selline, "close(" + nm + ") is never called, so this `closed:` arm can never run (a `parallel for` over a channel ends only when it is closed)")
+
+fn cu_decls(funcs: [Func], body: [Stmt], fi: int, dc: Decls):
+    i := 0
+    for i < len(body):
+        match body[i]:
+            SDecl(n, e, p):
+                if is_channel_call(e):            # `ch := channel(T, cap)` is the ONE creation form
+                    cu_report(funcs, fi, n, p, dc)
+            SIf(_c, b, els, _p):
+                cu_decls(funcs, b, fi, dc)
+                cu_decls(funcs, els, fi, dc)
+            SWhile(_c, b, _p):
+                cu_decls(funcs, b, fi, dc)
+            SForRange(_v, _a, _b, _st, b, _p):
+                cu_decls(funcs, b, fi, dc)
+            SParFor(_v, _a, _b, b, _pid, _p):
+                cu_decls(funcs, b, fi, dc)
+            SMatch(_s, _vs, _bs, bodies, _p):
+                k := 0
+                for k < len(bodies):
+                    cu_decls(funcs, bodies[k], fi, dc)
+                    k = k + 1
+            SSelect(_uid, _sv, _sc, _sb, sbodies, _p):
+                k := 0
+                for k < len(sbodies):
+                    cu_decls(funcs, sbodies[k], fi, dc)
+                    k = k + 1
+            _:
+                i = i
+        i = i + 1
+
+fn check_channels(prog: Program, dc: Decls):
+    i := 0
+    for i < len(prog.funcs):
+        if prog.funcs[i].is_extern == 0:
+            cu_decls(prog.funcs, prog.funcs[i].body, i, dc)
+        i = i + 1
+
 fn main():
     a := args()
     src := ""
@@ -15437,6 +15709,7 @@ fn main():
     src_lines := split(src, chr(10))                  # for die_at diagnostics (snippet + caret)
     dc0 := Decls(sigs0, prog0.structs, prog0.enums, prog0.ntnames, prog0.ntunder, sigmap0, []ParInfo, src_lines, build_vmap(prog0.enums), prog0.handles, collect_subs(prog0.funcs))
     ctx0 := Ctx([]string, []string, "", "0", 0, []int, []string, 0, []string, []string, []string, 0, "")
+    check_channels(prog0, dc0)                        # CC-6: channel liveness lint (pre-lift: the parallel-for drain is still in source form)
     lams := []LamInfo
     spawns := []SpawnInfo                             # CC: spawn sites (incl. parallel-for chunks)
     pars := []ParInfo                                 # CC-3: parallel-for sites

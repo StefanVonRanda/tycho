@@ -6728,6 +6728,156 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?");
 }
 
+/* ---- CC-6: channel liveness lint ----------------------------------------
+ * Value semantics removes data races; it does not remove deadlock
+ * (docs/guides/concurrency.md). The provable half of deadlock IS decidable
+ * here, because a channel handle can only reach code by being passed as an
+ * argument -- it cannot be returned (CC-4, resolve_program below), stored in a
+ * struct/enum/newtype/container, captured by a closure, or rebound. So the set
+ * of procs that can touch one channel is a CLOSED graph rooted at its decl.
+ *
+ * That is what makes an ABSENCE argument sound: if no `send` appears anywhere
+ * in that graph, no execution can ever send, whatever the control flow does.
+ * Every warning here is of that shape -- an operation that appears NOWHERE --
+ * never "this path might not send". Anything the walk cannot follow (an unknown
+ * or generic callee, a variadic call) sets `opaque` and silences every warning
+ * for that channel: a missed deadlock is a bug the programmer already had, a
+ * false warning is one I handed them.
+ *
+ * Warning, not error, deliberately: rejecting these would change the set of
+ * accepted programs, which is a language change and belongs in the spec. */
+typedef struct {
+    int send, recv, close;   /* an op of this kind exists SOMEWHERE in the graph */
+    int recv_block;          /* a receive that can PARK: recv(ch), or a select arm with no `default:`
+                              * (a select with `default:` polls -- tests/conc/select.ty does exactly
+                              * this on a deliberately senderless channel, and must not warn) */
+    int opaque;              /* the walk hit something it cannot follow -- stay quiet */
+    int sel_closed_line;     /* a `select` on this channel with a `closed:` arm (0 = none) */
+} ChanUse;
+
+#define CHAN_VISIT_MAX 256
+typedef struct { const Proc *pr; const char *nm; } ChanVisit;
+static ChanVisit g_cvisit[CHAN_VISIT_MAX];
+static int g_ncvisit = 0;
+
+static void chan_scan_body(ProcVec *prog, Stmt **body, int n, const char *nm, ChanUse *u);
+
+static Proc *chan_proc_find(ProcVec *prog, const char *name) {
+    for (int i = 0; i < prog->n; i++)
+        if (!prog->v[i]->generic && !prog->v[i]->is_extern && !strcmp(prog->v[i]->name, name))
+            return prog->v[i];
+    return NULL;   /* builtin, extern, generic template, or package-mangled: caller marks opaque */
+}
+
+/* follow the handle into a callee, under the parameter name it arrives as */
+static void chan_walk_proc(ProcVec *prog, Proc *pr, const char *nm, ChanUse *u) {
+    for (int i = 0; i < g_ncvisit; i++)   /* recursion / diamond: already accounted for */
+        if (g_cvisit[i].pr == pr && !strcmp(g_cvisit[i].nm, nm)) return;
+    if (g_ncvisit >= CHAN_VISIT_MAX) { u->opaque = 1; return; }
+    g_cvisit[g_ncvisit].pr = pr; g_cvisit[g_ncvisit].nm = nm; g_ncvisit++;
+    chan_scan_body(prog, pr->body, pr->nbody, nm, u);
+}
+
+static int chan_is(Expr *e, const char *nm) {
+    return e && e->kind == E_IDENT && e->sval && !strcmp(e->sval, nm);
+}
+
+static void chan_scan_expr(ProcVec *prog, Expr *e, const char *nm, ChanUse *u);
+
+static void chan_scan_call(ProcVec *prog, Expr *e, const char *nm, ChanUse *u) {
+    int passes = 0;
+    for (int i = 0; i < e->nargs; i++) if (chan_is(e->args[i], nm)) passes = 1;
+    if (!passes) return;   /* this call doesn't take our channel; args still scanned by the caller */
+    if (e->sval && e->nargs >= 1 && chan_is(e->args[0], nm)) {   /* the three builtin ops (UFCS is rewritten to this form) */
+        if (!strcmp(e->sval, "send"))  { u->send  = 1; return; }
+        if (!strcmp(e->sval, "recv"))  { u->recv  = 1; u->recv_block = 1; return; }
+        if (!strcmp(e->sval, "close")) { u->close = 1; return; }
+    }
+    Proc *cal = e->sval ? chan_proc_find(prog, e->sval) : NULL;
+    if (!cal || e->nargs > cal->nparams) { u->opaque = 1; return; }
+    for (int i = 0; i < e->nargs; i++)
+        if (chan_is(e->args[i], nm)) {
+            if (cal->params[i].is_variadic) { u->opaque = 1; return; }
+            chan_walk_proc(prog, cal, cal->params[i].name, u);
+        }
+}
+
+static void chan_scan_expr(ProcVec *prog, Expr *e, const char *nm, ChanUse *u) {
+    if (!e) return;
+    if (e->kind == E_CALL) chan_scan_call(prog, e, nm, u);
+    chan_scan_expr(prog, e->lhs, nm, u);   /* E_SPAWN carries its E_CALL here */
+    chan_scan_expr(prog, e->rhs, nm, u);
+    for (int i = 0; i < e->nargs; i++) chan_scan_expr(prog, e->args[i], nm, u);
+}
+
+static void chan_scan_stmt(ProcVec *prog, Stmt *s, const char *nm, ChanUse *u) {
+    if (!s) return;
+    chan_scan_expr(prog, s->expr, nm, u);
+    chan_scan_expr(prog, s->target, nm, u);
+    chan_scan_expr(prog, s->r_start, nm, u);
+    chan_scan_expr(prog, s->r_stop, nm, u);
+    chan_scan_expr(prog, s->r_step, nm, u);
+    if (s->kind == S_SELECT) {
+        int mine = 0, closed_arm = 0, dflt = 0;
+        for (int a = 0; a < s->narms; a++) {
+            if (s->sel_ch && s->sel_ch[a]) {
+                chan_scan_expr(prog, s->sel_ch[a], nm, u);
+                if (chan_is(s->sel_ch[a], nm)) { u->recv = 1; mine = 1; }
+            }
+            if (s->arms[a].variant && !strcmp(s->arms[a].variant, "closed"))  closed_arm = 1;
+            if (s->arms[a].variant && !strcmp(s->arms[a].variant, "default")) dflt = 1;
+        }
+        if (mine && !dflt) u->recv_block = 1;
+        /* `parallel for x in ch` desugars to exactly this (resolve_parfor), so this
+         * is also how the documented "workers park unless the producer closes" hang
+         * is caught. The arm fires only when EVERY listed channel is closed+drained,
+         * so one never-closed channel is enough to make it dead. */
+        if (mine && closed_arm && !u->sel_closed_line) u->sel_closed_line = s->line;
+    }
+    chan_scan_body(prog, s->body, s->nbody, nm, u);
+    chan_scan_body(prog, s->els, s->nels, nm, u);
+    for (int a = 0; a < s->narms; a++)
+        chan_scan_body(prog, s->arms[a].body, s->arms[a].nbody, nm, u);
+    if (s->ctrl) chan_scan_stmt(prog, s->ctrl, nm, u);
+}
+
+static void chan_scan_body(ProcVec *prog, Stmt **body, int n, const char *nm, ChanUse *u) {
+    for (int i = 0; i < n; i++) chan_scan_stmt(prog, body[i], nm, u);
+}
+
+static void chan_check_decl(ProcVec *prog, Proc *owner, Stmt *d) {
+    ChanUse u; memset(&u, 0, sizeof u);
+    g_ncvisit = 0;
+    chan_scan_body(prog, owner->body, owner->nbody, d->name, &u);   /* the decl's own proc, then outward */
+    if (u.opaque) return;
+    diag_use_proc(owner);   /* package mode: name the file this channel was declared in */
+    if (u.recv_block && !u.send)
+        warn_at(d->line, "nothing ever sends on channel '%s', so a receive on it parks forever", d->name);
+    else if (u.send && !u.recv)
+        warn_at(d->line, "nothing ever receives from channel '%s', so a send parks once its buffer fills", d->name);
+    if (u.sel_closed_line && !u.close)
+        warn_at(u.sel_closed_line, "close(%s) is never called, so this `closed:` arm can never run "
+                "(a `parallel for` over a channel ends only when it is closed)", d->name);
+}
+
+static void chan_find_decls(ProcVec *prog, Proc *owner, Stmt **body, int n) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        if (!s) continue;
+        if (s->kind == S_DECL && IS_CHAN(s->decl_type) && s->name) chan_check_decl(prog, owner, s);
+        chan_find_decls(prog, owner, s->body, s->nbody);
+        chan_find_decls(prog, owner, s->els, s->nels);
+        for (int a = 0; a < s->narms; a++)
+            chan_find_decls(prog, owner, s->arms[a].body, s->arms[a].nbody);
+    }
+}
+
+static void check_channel_liveness(ProcVec *prog) {
+    for (int i = 0; i < prog->n; i++)
+        if (!prog->v[i]->generic && !prog->v[i]->is_extern)
+            chan_find_decls(prog, prog->v[i], prog->v[i]->body, prog->v[i]->nbody);
+}
+
 static void resolve_program(ProcVec *prog) {
     register_builtins();
     /* CC-4: a channel handle must not outlive its creating scope. Channel(T)
@@ -6841,6 +6991,7 @@ static void resolve_program(ProcVec *prog) {
         if (pr->ret != T_VOID && !block_ends_in_return(pr->body, pr->nbody))
             warn_at(pr->line, "not all paths of '%s' return a value (a fall-off-the-end yields a zero value)", pr->name);
     }
+    check_channel_liveness(prog);   /* CC-6: after every body is resolved (parallel-for desugars are in place) */
 }
 
 /* ------------------------------------------------------------- codegen */

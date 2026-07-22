@@ -17,9 +17,11 @@ serialize the calls. The full analysis is in
 [`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).
 
 The model does **not** remove **deadlock or livelock**: a `recv` with no live
-sender and no `close` parks forever, undetected (see
-[Limits](#limits-deliberate)). Data races and use-after-free fall out of value
-semantics; deadlock doesn't.
+sender and no `close` parks forever (see [Limits](#limits-deliberate)). Data
+races and use-after-free fall out of value semantics; deadlock doesn't. The
+compiler warns about the three cases it can *prove* — see
+[What the compiler warns about](#what-the-compiler-warns-about) — but proving
+absence of a live sender in general is not on the table.
 
 The model has four constructs:
 
@@ -179,6 +181,41 @@ mutex channel and of std lacking an MPMC channel, respectively (see RESULTS.md);
 they aren't a tycho win — the win is that the one-liner gets the tuned Vyukov
 queue for free.
 
+## What the compiler warns about
+
+A channel handle can only reach code by being passed as an **argument** — it
+cannot be returned, stored in a struct/enum/container, captured by a closure, or
+rebound. So the set of code that can touch one channel is a closed graph rooted
+at its `ch := channel(T, cap)`, and the compiler can prove that an operation
+appears **nowhere** in it. Three such cases warn (both `tychoc` and `tychoc0`,
+same message and line):
+
+```
+jobs := channel(int, 16)
+p := spawn produce(jobs, 50)
+parallel for j in jobs:              # producer never calls close(jobs)
+    total += j
+```
+```
+warning: close(jobs) is never called, so this `closed:` arm can never run
+         (a `parallel for` over a channel ends only when it is closed)
+```
+
+- **Nothing ever sends** on a channel that has a *blocking* receive — `recv(ch)`,
+  or a `select` arm with no `default:` (a select with `default:` polls, so it
+  never parks and never warns).
+- **Nothing ever receives** from a channel that is sent to: the send parks once
+  the buffer fills.
+- **Nothing ever closes** a channel a drain waits on — the `parallel for x in ch`
+  hang above.
+
+These are lints, not errors: they never reject a program. And they are *absence*
+proofs, never "this path might not send" — so a conditional send, a send behind
+a flag, or a send in a loop that may not run all suppress the warning. Anything
+the analysis cannot follow (a call it can't resolve) silences the channel
+entirely. Missing a real deadlock is expected; warning about a working program
+is a bug.
+
 ## Limits (deliberate)
 
 These are on purpose, not gaps I forgot about:
@@ -187,8 +224,9 @@ These are on purpose, not gaps I forgot about:
   already isolate state.
 - No mutex or atomic in the language, and no work-stealing runtime: a blocked
   waiter is a parked OS thread.
-- Deadlock (a `recv` with no live sender and no `close`) is your bug, and I
-  don't detect it. A panic or abort in any task kills the whole process.
+- Deadlock is your bug. Beyond the three provable cases above, I don't detect
+  it: a `recv` whose only sender took a branch that returns early parks forever
+  and nothing warns. A panic or abort in any task kills the whole process.
 
 ## Verification
 
