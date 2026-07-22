@@ -1,6 +1,6 @@
 # The flat node-pool + integer-index idiom for pointer-shaped structures (see
 # docs/internals/value-semantics-limits.md). Instead of a recursive `struct Trie { kids:
-# [int: Trie] }` (which stores children by VALUE and costs ~2.7x C on memory), keep all
+# [int: Trie] }` (which stores children by VALUE and costs ~1.55x C on memory), keep all
 # nodes in one pool array and make children INDICES into it -- an index is pointer-sized,
 # sharing is two indices pointing at one slot, and the arena reclaims the whole pool. No
 # pointers, no free; the cost is that you index a pool instead of following references.
