@@ -139,6 +139,19 @@ Every phase, without exception:
     without a fake allocator, say so in plan.md and prove that check by source
     trace rather than faking a pass.
 
+- [ ] **Phase 5 — make the abort lane differential** (discovered in Phase 1)
+  - `tests/abort/` builds with `$TYCHOC` only (`tests/run.sh:180`), and so does
+    the conc abort lane (`tests/conc/run.sh:79`). Every runtime trap this plan
+    adds is therefore locked on the reference side only; on the tychoc0 side the
+    lock is rtparity, which proves the TEXT exists in the emitted C, not that it
+    fires on the same input.
+  - Done when: `tests/abort/` asserts both compilers die with the same message
+    and the same exit status on the same fixture.
+  - Verify: flip one guard in tychoc0's emitted runtime and show the lane
+    failing; restore; full suite green.
+  - Scope: `tests/run.sh` (+ `tests/conc/run.sh` if it applies). No compiler
+    changes.
+
 - [ ] **Phase 4 — the four map 2^31 guards**
   - `[string:int]`, `[string:float]`, `[int:int]`, `[int:float]`
     (`runtime/tycho_rt.c:1794`, `:1937`, `:2124`, `:2263`). tychoc0 emits maps
