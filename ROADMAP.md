@@ -6,7 +6,7 @@ this file is the high-level shape.
 
 ## Where it is
 
-The language, the self-hosted compiler, and the 34-package core library are
+The language, the self-hosted compiler, and the 36-package core library are
 feature-complete for the thesis they exist to prove. The current strength is the
 correctness harness — two independent compilers held to byte-identical self-hosting, a
 differential fuzzer, and a golden-locked test suite, all green in a local gate

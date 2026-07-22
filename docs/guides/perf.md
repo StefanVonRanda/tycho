@@ -61,7 +61,7 @@ and emitting C. That step is genuinely fast, but it is **not** the time to
 build the transpiler. A full `make bootstrap` / `make fixpoint` takes about a
 minute of wall clock, and almost all of that belongs to the *host* C compiler,
 not to Tycho. A representative breakdown on the primary machine (`cc -O2`;
-`tychoc0.ty` ≈ 11.9k lines → emitted C):
+`tychoc0.ty` ≈ 16.1k lines → emitted C):
 
 | step | wall |
 |------|------|
@@ -388,7 +388,7 @@ transpiler with a value-semantic self-hosted one is reachable incrementally.
 **The C transpiler `src/tychoc.c` stays the default, production transpiler.**
 `tychoc0` is the self-hosting proof — the byte-identical self-build
 (`make fixpoint`) is the definitive dogfood of the value-semantic plus arena
-model on a real, allocation-heavy self-hosted transpiler (~11.9k lines of Tycho)
+model on a real, allocation-heavy self-hosted transpiler (~16.1k lines of Tycho)
 — and the counterpart in the
 differential oracle. I haven't retired it, and it
 is not on the correctness-critical path for production. By the convention I

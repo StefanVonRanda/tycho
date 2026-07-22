@@ -17,7 +17,7 @@ for an honest accounting of where the model wins and loses see
 | `tychoc` | `src/tychoc.c` (~11k LoC) | **Reference** transpiler (C). Full language. Emits C, invokes `cc`. |
 | `tychoc0` | `compiler/tychoc0.ty` (~15k LoC) | **Self-hosted** transpiler, written in Tycho — a subset that includes itself. |
 | runtime | `runtime/tycho_rt.c` (~2k LoC) | Arena allocator + string/map/channel primitives, embedded into emitted C. |
-| corelib | `corelib/` (34 packages) | Standard library, imported `core:<name>`. |
+| corelib | `corelib/` (36 packages) | Standard library, imported `core:<name>`. |
 | tooling | `tools/` | `tychofmt` (formatter), `tycho-lsp` (LSP), VS Code / Zed extensions. |
 
 **Self-hosting (the fixpoint).** `A = tychoc·tychoc0.ty`, `B = A·tychoc0.ty`,
@@ -47,6 +47,7 @@ step proves:
 | `make typeparity` / `parforparity` / `eqparity` / `unaryparity` | tychoc and tychoc0 **agree on accept/reject** (the fixpoint is output-only and blind to that; these lanes close the hole). |
 | `bench-guard` | tree-alloc wall: Tycho must beat C (perf-regression gate). |
 | `make recursion` | deep input fails closed in both transpilers (no stack-overflow DoS). |
+| `make rtparity` | the two runtimes (`runtime/tycho_rt.c` and the one `tychoc0` emits) agree on env knobs, `tycho:` traps and arena-stats rows — fixpoint is blind to this drift. |
 | `make spec-check` | the spec's grammar matches the prose, its fixtures exist, and its examples produce the documented output on both transpilers. |
 
 The `make hooks` pre-push gate runs the full deterministic lane set plus a fast fuzz

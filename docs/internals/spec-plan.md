@@ -4,7 +4,7 @@
 > ("Formal language specification"). This is the working plan for writing the
 > spec — its structure, methodology, the reconciliation punch-list, the
 > conformance gate, and the phased sequence. The spec itself lives under
-> `docs/spec/` (28 files, ~4.2k lines): all chapters 1–33 and appendices A–H are
+> `docs/spec/` (28 files, ~4.8k lines): all chapters 1–33 and appendices A–H are
 > drafted.
 >
 > **Drafting phases 0–5 done; the release-readiness punch-list below is now fully
@@ -38,7 +38,7 @@
 | Decision | Choice | Consequence |
 |---|---|---|
 | Deliverable | Plan **+ begin drafting** the mechanical chapters | `docs/spec/` scaffolded; Lexical + Grammar drafted from `src/tychoc.c`. |
-| Scope | **Language + corelib** | One spec. Parts I–XI define the language; Part XII is the normative library reference for the 31 corelib packages. |
+| Scope | **Language + corelib** | One spec. Parts I–XI define the language; Part XII is the normative library reference for the 36 corelib packages. |
 | Semantics basis | **Abstract & exact** | `int` = 64-bit two's-complement, `u32/u64` exactly 32/64-bit, `f32`/`float` IEEE-754 binary32/binary64 — independent of the C backend. Near-zero implementation-defined behavior. |
 | "1.0" meaning | **Spec is the freeze + date versioning** | The 1.0 spec *is* the language freeze; adopt the ROADMAP date scheme (`Tycho 2027`). Conformance is stated against a named, dated version. |
 
@@ -67,9 +67,9 @@ follow. Tycho already has a **mechanically-checkable behavioral contract**:
 
 - **Two implementations that agree byte-for-byte** — `tychoc` (C reference) and
   `tychoc0` (self-hosted). `make fixpoint` asserts `B == C` byte-identical.
-- **A differential fuzzer** (`make fuzz`, 500 seeds) holding both to identical
+- **A differential fuzzer** (`make fuzz`, 200 seeds by default) holding both to identical
   accept/reject and identical output on random valid programs.
-- **274+ golden fixtures** (`tests/`, incl. `tests/reject/` must-fail).
+- **291 golden files + 135 must-fail rejects** (`tests/`), 399 checks in `make test`.
 - **Accept/reject parity lanes** (`typeparity` 4608/4608, `eqparity`,
   `unaryparity`, `parforparity`) that close the "fixpoint is output-only" hole.
 
@@ -525,7 +525,7 @@ changes an observable behavior claim.
 
 - **Size:** a book — ~33 chapters + 8 appendices. ROADMAP rates it **high
   effort**; the abstract-exact + corelib-in-scope decisions *increase* size
-  (Part XII adds 31 package sections; abstract-exact forces the numerics/FFI
+  (Part XII adds 36 package sections; abstract-exact forces the numerics/FFI
   corners to be pinned rather than deferred).
 - **Risk:** *lower than a typical spec* because of the two-implementation oracle
   (§2). The uncertainty is concentrated in the ~30 punch-list corners, each

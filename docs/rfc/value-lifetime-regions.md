@@ -112,10 +112,8 @@ at `docs/internals/value-semantics-limits.md:45`, `docs/guides/memory-model.md:1
 `bench/trie/RESULTS.md:28`, all of them attributing the halving from ~3.2× (119 MB) to
 the compact indexed-dict map layout. The figure is current.
 
-One stale copy exists and should be corrected separately: `examples/triepool.ty:3`
-still says the by-value form "costs ~2.7x C on memory". That predates the compact-map
-work. Fixing it is outside this study's scope (one document, no code) but it is a real
-drift and is recorded here so it is not lost.
+(`examples/triepool.ty:3` carried a stale "~2.7x C" from before the compact-map work;
+corrected to ~1.55x in the same series as this study.)
 
 Two adjacent measurements bound the shape of the problem. Expressed the value-semantic
 way — a graph as an adjacency list of indices — `bench/dijkstra` lands at ~1.3× C
