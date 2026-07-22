@@ -1,0 +1,3 @@
+line 4: arithmetic requires two ints or two floats
+        println(str(x / y))
+                    ^

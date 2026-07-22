@@ -1,0 +1,3 @@
+line 2: type: unknown function 'sort'
+        xs := sort([3, 1, 2])
+              ^

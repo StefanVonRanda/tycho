@@ -1,0 +1,3 @@
+line 7: type: no such field 'yy' on struct 'Point'
+        println(str(p.yy))
+                    ^

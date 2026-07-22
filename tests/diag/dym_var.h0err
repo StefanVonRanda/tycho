@@ -1,0 +1,3 @@
+line 3: type: unknown variable 'coutn'
+        print(str(coutn))
+                  ^

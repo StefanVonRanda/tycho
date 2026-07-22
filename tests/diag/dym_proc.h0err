@@ -1,0 +1,3 @@
+line 4: type: unknown function 'totl'
+        print(str(totl(3)))
+                  ^

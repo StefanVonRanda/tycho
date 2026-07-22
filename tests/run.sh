@@ -218,6 +218,36 @@ for hi in tests/diag/*.ty; do
     fi
 done
 
+# The SAME fixtures through tychoc0, locked separately as tests/diag/<name>.h0err.
+# The reject lane already asserts tychoc0 refuses invalid programs; this asserts
+# WHAT IT SAYS, which nothing did before — a refactor could have degraded every
+# self-hosted message to a bare "type error" with no line number and the build
+# would still have gone green. The goldens are deliberately a SEPARATE file, not
+# a shared one: tychoc0's format ("line N: ...") and its wording are behind the C
+# compiler's on purpose (no did-you-mean, fewer hints), so holding them to one
+# golden would either block this lane or force a premature rewrite. Convergence
+# work now shows up as a diff in these files. Reuses the $TMP/h0 built above.
+for hi in tests/diag/*.ty; do
+    [ -e "$hi" ] || continue
+    base="$(basename "$hi" .ty)"
+    name="diag0_$base"
+    g="tests/diag/$base.h0err"
+    if "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/dg0.log"; then
+        note "$name" "tychoc0 ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    if [ "$RECORD" = 1 ]; then
+        cp "$TMP/dg0.log" "$g"; echo "rec   $name"; recorded=$((recorded + 1)); continue
+    fi
+    if [ ! -f "$g" ]; then
+        note "$name" "no golden — run 'make test-update'"; fail=$((fail + 1)); fails="$fails $name"
+    elif ! cmp -s "$TMP/dg0.log" "$g"; then
+        note "$name" "tychoc0 diagnostic != golden ($g)"
+        diff "$g" "$TMP/dg0.log" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+
 # Warning goldens. tests/warn/<name>.ty are VALID programs (the compiler must
 # ACCEPT them) whose exact warning output is locked as tests/warn/<name>.err.
 # The diag loop above cannot cover these: it asserts a NONZERO exit, so every

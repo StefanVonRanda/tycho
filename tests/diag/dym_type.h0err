@@ -1,0 +1,3 @@
+line 5: declared type Pointt but value is Point
+        q: Pointt = p
+        ^
