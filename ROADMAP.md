@@ -16,12 +16,10 @@ differential fuzzer, and a golden-locked test suite, all green in a local gate
 
 Foundation before feature breadth. In rough priority:
 
-1. **Adoption & onboarding.** The language is more finished than it is known: better
-   getting-started material, a guided tutorial, examples, and lower trial friction.
-2. **Demand-gated corelib / tooling.** New library and tooling work is built against a
+1. **Demand-gated corelib / tooling.** New library and tooling work is built against a
    real program that needs it, never ahead of one — e.g. more image codecs, richer
    date/time, additional networking. Requests belong in the issue tracker.
-3. **Keeping the two compilers honest.** As new language features land, each is
+2. **Keeping the two compilers honest.** As new language features land, each is
    adversarially fuzzed and gated before shipping. This is ongoing, not a milestone.
 
 ## Non-goals
