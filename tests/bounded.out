@@ -1,0 +1,8 @@
+len 3
+slots [10, 20, 30]
+total 139
+p [10, 99, 30]
+q [10, 99, 30, 40]
+eq false
+lit [1, 2, 3] len 3
+empty len 0

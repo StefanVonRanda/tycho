@@ -1,0 +1,35 @@
+# bounded[N]T: an inline, fixed-capacity, variable-count collection. Lives inside
+# its container (no separate arena buffer), is value-copied, and `push` traps if
+# the capacity is exceeded rather than growing.
+
+struct Pool:
+    slots: bounded[4]int
+
+fn make() -> bounded[8]int:
+    return [1, 2, 3]
+
+fn main():
+    p := Pool([])
+    push(p.slots, 10)
+    push(p.slots, 20)
+    push(p.slots, 30)
+    println("len " + str(len(p.slots)))
+    println("slots " + str(p.slots))
+
+    p.slots[1] = 99                       # index set
+    total := 0
+    for i in range(0, len(p.slots)):      # iterate by index
+        total = total + p.slots[i]
+    println("total " + str(total))
+
+    q := p.slots                          # value copy — independent storage
+    push(q, 40)
+    println("p " + str(p.slots))          # unchanged by q's push
+    println("q " + str(q))
+    println("eq " + str(p.slots == q))
+
+    lit := make()                         # literal construction + return
+    println("lit " + str(lit) + " len " + str(len(lit)))
+
+    empty: bounded[2]int = []
+    println("empty len " + str(len(empty)))
