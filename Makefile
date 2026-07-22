@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks clean
 
 all: tychoc
 
@@ -208,6 +208,17 @@ recursion: tychoc
 # assert B==C (byte-identical self-emission) and B matches the C compiler.
 fixpoint: tychoc
 	@sh compiler/fixpoint.sh
+
+# Runtime drift gate: tycho ships TWO hand-maintained runtimes -- runtime/tycho_rt.c
+# (embedded verbatim by tychoc) and the one tychoc0 emits as C string literals --
+# and fixpoint compares them only BEHAVIOURALLY, on programs that never trip a
+# trap or read an env knob. So a feature present in one and absent in the other
+# stays green everywhere (TYCHO_ARENA_STATS was a silent no-op in tychoc0-built
+# binaries until 2b24ca6). This lane compiles one broad probe with both compilers
+# and diffs the user-visible surface of the emitted C: env knobs, `tycho:` trap
+# texts, arena-stats rows. See tests/rtparity/run.py. In `make ci`.
+rtparity: tychoc
+	@python3 tests/rtparity/run.py
 
 # Soundness fuzzer: generate N random well-typed Tycho programs, compile each
 # with tychoc (reference, native) and tychoc0 (native + ASan/UBSan), and assert

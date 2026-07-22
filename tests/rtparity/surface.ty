@@ -1,0 +1,135 @@
+# Runtime-surface probe for the `rtparity` lane (tests/rtparity/run.py).
+#
+# NOT a behaviour test — it is never run, only transpiled. Its whole job is to
+# make BOTH compilers emit as much of their runtime as they possibly can, so the
+# lane compares a wide surface instead of the sliver a hello-world reaches.
+#
+# Why a probe is needed at all: tychoc embeds runtime/tycho_rt.c verbatim in
+# every output (Makefile:23-26), but the per-type helpers and the inline traps
+# (`range step is zero`, bounds checks, bounded-push, non-exhaustive match) are
+# emitted ON DEMAND by both compilers. A feature that no fixture instantiates is
+# invisible to the comparison, so every construct below is here to pull one more
+# emitted region into the diff. Adding a construct here can only widen the gate.
+#
+# Keep it compiling under BOTH compilers: tychoc0 is a subset compiler, so a
+# construct it cannot parse breaks the lane rather than extending it.
+
+struct Point:
+    x: int
+    y: float
+
+enum Shape:
+    Dot
+    Line(int)
+
+struct Inline:
+    slots: bounded[4]int
+
+fn arrays() -> int:
+    xs := [1, 2, 3]
+    push(xs, 4)
+    reserve(xs, 16)
+    t := xs[0] + pop(xs)
+    for i in range(0, len(xs)):
+        t = t + xs[i]
+    for i in range(0, 10, 2):          # stepped range -> the step!=0 trap
+        t = t + i
+    ys := xs[1:]                       # slice -> the slice-bounds trap
+    t = t + len(ys)
+    fs := [1.0, 2.5]
+    push(fs, 3.5)
+    t = t + to_int(fs[0] + pop(fs))
+    ss := ["a", "b"]
+    push(ss, "c")
+    t = t + len(pop(ss)) + len(ss[0])
+    bs := [true, false]
+    t = t + len(bs)
+    ps := [Point(1, 2.0)]
+    push(ps, Point(3, 4.0))
+    t = t + ps[1].x
+    return t
+
+fn maps() -> int:
+    si := []string: int                # [string:int]
+    si["k"] = si.get("k", 0) + 1
+    delete si["k"]
+    sf := []string: float              # [string:float]
+    sf["k"] = 1.5
+    ii := []int: int                   # [int:int]
+    ii[7] = 8
+    if_ := []int: float                # [int:float]
+    if_[7] = 8.5
+    n := len(keys(si)) + len(keys(sf)) + len(keys(ii)) + len(keys(if_))
+    return n + si.get("k", 0) + ii.get(7, 0) + to_int(sf.get("k", 0.0) + if_.get(7, 0.0))
+
+fn strings_() -> int:
+    s := "hello, world"
+    p := substr(s, 0, 5) + chr(33)     # substr + chr(): the byte-range trap
+    q := split(s, ", ")
+    n := find(s, "world") + len(q) + len(p)
+    n = n + s[0]                       # string index -> the string-index trap
+    b := to_bytes(s)                   # bytes round-trip
+    return n + len(to_str(b))
+
+fn numbers(a: int, b: int) -> int:
+    q := a / b                         # int / and % -> the div-by-zero traps
+    r := a % b
+    u := to_u32(a) / to_u32(b)         # unsigned / and % (separate helpers)
+    v := to_u32(a) % to_u32(b)
+    sh := (a << 3) + (a >> 2)          # shifts -> the negative-shift trap
+    su := to_u64(a) << 1
+    f := to_float(a) / 3.0
+    return q + r + sh + to_int(f) + to_int(to_float(u + v)) + to_int(to_float(su))
+
+fn shapes(s: Shape) -> int:
+    match s:                           # match -> the non-exhaustive trap
+        Dot:
+            return 0
+        Line(n):
+            return n
+
+fn inline_() -> int:
+    p := Inline([])
+    push(p.slots, 1)                   # bounded push -> the over-capacity trap
+    p.slots[0] = 2
+    return len(p.slots) + p.slots[0]
+
+fn worker(ch: Channel(int), n: int) -> int:
+    acc := 0
+    for i in range(n):
+        ch.send(i)
+        acc = acc + i
+    return acc
+
+fn concurrency() -> int:
+    ch := channel(int, 4)              # channel() -> capacity + closed traps
+    w := spawn worker(ch, 4)           # spawn -> task-cap + pthread traps
+    total := 0
+    for i in range(4):
+        match recv(ch):
+            Some(v):
+                total = total + v
+            None:
+                total = total - 1
+    close(ch)
+    total = total + wait(w)
+    par := 0
+    parallel for i in range(0, 8):     # parallel for -> the worker-pool path
+        par = par + i
+    return total + par + ncpu()
+
+fn io_() -> int:
+    n := len(getenv("TYCHO_RTPARITY_PROBE")) + len(args())
+    n = n + len(read_file("/dev/null"))
+    if write_file("/dev/null", ""):
+        n = n + 1
+    n = n + len(list_dir(".")) + (clock() - now())
+    return n
+
+fn main():
+    n := arrays() + maps() + strings_() + numbers(9, 2)
+    n = n + shapes(Line(3)) + inline_() + concurrency() + io_()
+    println(str(n))
+    if n < 0:
+        die("unreachable")             # die() -> the runtime abort path
+        eprint("unreachable")
