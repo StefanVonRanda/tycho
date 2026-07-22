@@ -86,9 +86,6 @@ ALLOW_MSG_TYCHOC_ONLY = {
     # tycho_rt.c checks every malloc (runtime/tycho_rt.c:93). tychoc0's blk_get
     # does not, so an OOM there is a null deref rather than a clean abort.
     "tycho: out of memory\\n",
-    # xs[a:b] is bounds-checked inline by tychoc (src/tychoc.c:8475,8494);
-    # tychoc0's Arr_*_slice forwards lo/hi to Arr_*_from unchecked.
-    "tycho: slice [%ld:%ld] out of bounds (len %ld)\\n",
     # The map index is int-sized, so tycho_rt.c refuses to grow past 2^31 entries
     # (runtime/tycho_rt.c:1794, :1937, :2124, :2263). tychoc0 emits its maps
     # per-type with no such guard.

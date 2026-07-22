@@ -1,0 +1,9 @@
+# an inverted range must die. Both ends are in bounds here; it is `lo > hi` that
+# is illegal, because the length `hi - lo` would be negative. (`lo == hi` is the
+# legal empty slice, and `lo == len` is legal too -- only the inversion traps.)
+fn main():
+    xs := []int
+    push(xs, 1)
+    push(xs, 2)
+    push(xs, 3)
+    print(str(len(xs[2:1])))

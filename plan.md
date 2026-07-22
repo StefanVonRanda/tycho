@@ -121,13 +121,127 @@ Every phase, without exception:
   is why the side-by-side run above exists. Closing it properly needs the abort
   lane made differential, which is outside this phase's allowed edits.
 
-- [ ] **Phase 2 — slice bounds check**
+- [x] **Phase 2 — slice bounds check**
   - `xs[a:b]` is bounds-checked inline by tychoc (`src/tychoc.c:8475`, `:8494`);
     tychoc0's `Arr_*_slice` forwards lo/hi to `Arr_*_from` unchecked — reading
     out of bounds instead of aborting. Memory safety, not tidiness.
   - Done when: an out-of-range slice aborts with the reference text in both, the
     entry is deleted, and a fixture locks it.
   - Verify: as above. Cover a negative index and `hi > len`.
+
+  **The predicate, read off the reference before writing anything.**
+  `src/tychoc.c:8493` (arrays) and `:8474` (soa) emit the SAME guard inline:
+
+  ```
+  if (_lo < 0 || _hi > _sv.len || _lo > _hi) {
+      fprintf(stderr, "tycho: slice [%ld:%ld] out of bounds (len %ld)\n", _lo, _hi, _sv.len); exit(1); }
+  ```
+
+  So `lo == len`, `hi == len` and an empty range are all LEGAL; only a negative
+  `lo`, `hi > len`, and an inverted `lo > hi` trap. (`hi < 0` needs no arm of its
+  own: `lo >= 0 && lo <= hi` already implies `hi >= 0`.) Confirmed by RUNNING
+  tychoc first, not by reading alone — `xs[0:0] xs[n:n] xs[0:n] xs[1:1] xs[1:]
+  xs[:2] xs[:]` on a 3-element array prints `0 0 3 0 2 2 3`, exit 0.
+
+  **Emission sites changed** — both in `compiler/tychoc0.ty`, and those are all
+  of them (`grep '_slice('` finds no third):
+  - `:9892` `gen_arr_fns` — the single `Arr_<T>_slice` template, instantiated
+    per element type: 11 copies in the rtparity probe, 28 in tychoc0's own C.
+  - `:5254` `gen_soa_slice` — the inline soa sub-range. It had no temp to name
+    the length, so it now binds source/lo/hi in a statement expression exactly
+    as tychoc does (`src/tychoc.c:8473`); as a side effect the source, `lo` and
+    `hi` are now evaluated ONCE instead of once per field.
+
+  The whole diff of tychoc0's emitted C (11 identical array lines on
+  `tests/rtparity/surface.ty` — nothing else moved — plus the soa line, taken
+  from `tests/soa.ty`):
+
+  ```
+  - static Arr_int Arr_int_slice(Arena* ar, Arr_int a, long lo, long hi) { return Arr_int_from(ar, a.data + lo, hi - lo); }
+  + static Arr_int Arr_int_slice(Arena* ar, Arr_int a, long lo, long hi) { if (lo < 0 || hi > a.len || lo > hi) { fprintf(stderr, "tycho: slice [%ld:%ld] out of bounds (len %ld)\n", lo, hi, a.len); exit(1); } return Arr_int_from(ar, a.data + lo, hi - lo); }
+
+  - (Soa_Particle){ (h_q).f0 + (1), (h_q).f1 + (1), (h_q).f2 + (1), (h_q).f3 + (1), (3) - (1), 0 }
+  + ({ Soa_Particle _sv = (h_q); long _lo = (1), _hi = (3); if (_lo < 0 || _hi > _sv.len || _lo > _hi) { fprintf(stderr, "tycho: slice [%ld:%ld] out of bounds (len %ld)\n", _lo, _hi, _sv.len); exit(1); } (Soa_Particle){ _sv.f0 + _lo, _sv.f1 + _lo, _sv.f2 + _lo, _sv.f3 + _lo, _hi - _lo, 0 }; })
+  ```
+
+  **What is NOT in scope — checked, not skipped.**
+  - `s[a:b]` (strings) does not trap in the REFERENCE: `tycho_str_substr`
+    CLAMPS (`runtime/tycho_rt.c:1056-1058`), and tychoc0's emitted `substr`
+    clamps with the identical three tests (`compiler/tychoc0.ty:9775`). Ran
+    `s[0:99]`, `s[-2:3]`, `s[4:2]` on `"hello"` — both compilers print
+    `hello|hel||`, exit 0. Nothing to close; adding a trap here would DIVERGE.
+  - `bytes` cannot be sliced at all — tychoc rejects it at compile time
+    (`error: can only slice an array, soa, or string`).
+  - `bounded[N]T` is rejected by tychoc0 at `compiler/tychoc0.ty:6053`.
+  - `[N]T` fixed arrays: both compilers already fail to BUILD a slice of one
+    (tychoc's own emitted C does not compile; tychoc0 emits an incompatible
+    `Arr_int_slice` argument). Pre-existing, symmetric, untouched here — it is
+    a fixarr-codegen gap, not a slice-bounds gap.
+
+  **1. The guard fires, identically on both sides.** Four fixtures, each built
+  by tychoc AND by tychoc0 (`tychoc0 < f.ty > f.c && cc`), stdout and stderr
+  captured separately:
+
+  ```
+  fixture                    tychoc                                       tychoc0
+  abort/slice_hi_oob     tycho: slice [0:5] out of bounds (len 3)  ex=1  identical, ex=1
+  abort/slice_neg_lo     tycho: slice [-1:1] out of bounds (len 2) ex=1  identical, ex=1
+  abort/slice_lo_gt_hi   tycho: slice [2:1] out of bounds (len 3)  ex=1  identical, ex=1
+  abort/slice_soa_oob    tycho: slice [0:5] out of bounds (len 2)  ex=1  identical, ex=1
+  ```
+
+  For all four, `cmp` on the two stderr streams says IDENTICAL, `cmp` on the two
+  stdout streams says IDENTICAL (both empty), and the exit status matches.
+  `od -c` confirms the trailing `\n` and no more, e.g.
+  `t y c h o :   s l i c e   [ 0 : 5 ]   o u t   o f   b o u n d s   ( l e n   3 ) \n`.
+
+  Before the fix (built from `git show HEAD:compiler/tychoc0.ty`) the same four
+  programs under tychoc0 gave: `5` exit 0 (it read FIVE elements out of a
+  three-element buffer), `3` exit 0 (read behind the buffer), SIGSEGV 139
+  (`hi - lo` = -1 reached `_from`, which allocated `sizeof(T) * (size_t)-1`),
+  and `5` exit 0 for the soa. That is the memory-safety part of this entry: not
+  a missing message, an actual out-of-bounds read.
+
+  **2. It does not fire on valid input.**
+  - `make fixpoint` — `ok B == C : tychoc0 reproduces itself byte-identically
+    (34425 lines C)`; `ok split tychoc0 (2 packages) self-hosts E==F and matches
+    the single-file compiler`; `fixpoint: all green`. tychoc0 slices arrays while
+    compiling, so an over-tight bound could not self-host.
+    (34425 vs Phase 1's 34428: accounted for entirely inside `gen_soa_slice` —
+    the loop body's four `hi_append` calls of interpolated `basec`/`loc` fold
+    into two constant literals, −4, and the new `nm :=` adds +1. Net −3. The
+    rest of the 69-line self-compilation diff is the per-type guard.)
+  - `make test` — `passed: 404   failed: 0` / `all green`, including
+    `ok    abort_slice_hi_oob`, `ok    abort_slice_lo_gt_hi`,
+    `ok    abort_slice_neg_lo`, `ok    abort_slice_soa_oob`. 400 → 404 is
+    exactly the four new fixtures and nothing regressed.
+  - `make corelib` — `corelib: all green (tychoc and tychoc0 agree, match
+    goldens)`, all 37 modules ok.
+  - The reference's boundary cases re-run under tychoc0 AFTER the change:
+    `0 0 3 0 2 2 3`, exit 0 — byte-identical to tychoc. `tests/soa.ty`'s
+    `q[1:3]` (the repo's only soa slice) still passes under both.
+
+  **3. `make rtparity`** — the entry is deleted and the lane agrees:
+  ```
+  rtparity: env knobs         3 shared, 0 allowlisted difference(s) (ok)
+  rtparity: diagnostics      20 shared, 7 allowlisted difference(s) (ok)
+  rtparity: arena-stats rows  5 shared, 0 allowlisted difference(s) (ok)
+  rtparity: the two runtimes agree on env knobs, diagnostics and arena stats
+  ```
+  7, down from 8; the diagnostic moved into the 20 shared (was 19).
+
+  **4. What the fixtures do and do not lock.** Unchanged from Phase 1:
+  `tests/abort/` builds with `$TYCHOC` only (`tests/run.sh:180`), so these four
+  fixtures lock the REFERENCE side. On the tychoc0 side the lock is rtparity,
+  which proves the TEXT is present in the emitted C, not that it fires on the
+  same input — which is exactly why the side-by-side `cmp` in (1) exists. Phase 5
+  is queued to make that lane differential.
+
+  **Contradicting plan.md's description of the gap.** The entry said "tychoc0's
+  `Arr_*_slice` forwards lo/hi to `Arr_*_from` unchecked". True, but incomplete:
+  there is a SECOND unchecked path, `gen_soa_slice` (`compiler/tychoc0.ty:5254`),
+  which is not a `_slice` function at all — it is inlined per field at the use
+  site. It had the same hole and needed its own fix and its own fixture.
 
 - [ ] **Phase 3 — allocation range + OOM traps**
   - Three entries: `reserve capacity %ld out of range`

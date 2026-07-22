@@ -1,0 +1,8 @@
+# a slice whose high bound runs past the end must die, not read past the buffer.
+# `hi == len` is LEGAL (a full-length slice), so the trap is `hi > len` only.
+fn main():
+    xs := []int
+    push(xs, 1)
+    push(xs, 2)
+    push(xs, 3)
+    print(str(len(xs[0:5])))

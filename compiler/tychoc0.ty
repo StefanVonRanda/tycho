@@ -5251,18 +5251,23 @@ fn gen_soa_gather(dc: Decls, ctx: Ctx, ty: string, basec: string, ix: string) ->
     return ""
 
 # soa sub-range [lo:hi]: offset every field buffer by lo (len hi-lo, cap 0).
+# BOUNDS-CHECKED with tychoc's predicate for a soa slice (src/tychoc.c:8474) —
+# lo < 0 || hi > len || lo > hi. Bound to temps in a statement expression, as
+# tychoc does (src/tychoc.c:8473), so the source, lo and hi are each evaluated
+# ONCE even though every field offset mentions them.
 fn gen_soa_slice(dc: Decls, ctx: Ctx, ty: string, basec: string, loc: string, hic: string) -> string:
     sn := soa_struct(ty)
     si := 0
     for si < len(dc.structs):
         if dc.structs[si].name == sn:
             flds := dc.structs[si].fields
-            out := "(Soa_" + sn + "){"
+            nm := "Soa_" + sn
+            out := "({ " + nm + " _sv = (" + basec + "); long _lo = (" + loc + "), _hi = (" + hic + "); if (_lo < 0 || _hi > _sv.len || _lo > _hi) { fprintf(stderr, \"tycho: slice [%ld:%ld] out of bounds (len %ld)\\n\", _lo, _hi, _sv.len); exit(1); } (" + nm + "){"
             i := 0
             for i < len(flds):
-                out = out + " (" + basec + ").f" + str(i) + " + (" + loc + "),"
+                out = out + " _sv.f" + str(i) + " + _lo,"
                 i = i + 1
-            return out + " (" + hic + ") - (" + loc + "), 0 }"
+            return out + " _hi - _lo, 0 }; })"
         si = si + 1
     die("codegen: soa slice of unknown struct")
     return ""
@@ -9889,7 +9894,11 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
         popv = elem_copy_expr(dc, ctx, et, "ar", "a->data[a->len]")
     out = out + "static " + ct + nm + "_pop(Arena* ar, " + nm + "* a) { if (a->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); } a->len--; return " + popv + "; }\n"
     out = out + "static void " + nm + "_reserve(Arena* ar, " + nm + "* a, long n) { if (n <= a->cap) return; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * n); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = n; }\n"
-    out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
+    # BOUNDS-CHECKED: the same predicate tychoc emits inline for E_SLICE
+    # (src/tychoc.c:8493) — lo < 0 || hi > len || lo > hi. lo == len, hi == len
+    # and an empty range are all LEGAL; only these three shapes trap. Unchecked,
+    # `hi - lo` could go negative and _from would allocate sizeof(T) * (long)-1.
+    out = out + "static " + nm + " " + nm + "_slice(Arena* ar, " + nm + " a, long lo, long hi) { if (lo < 0 || hi > a.len || lo > hi) { fprintf(stderr, \"tycho: slice [%ld:%ld] out of bounds (len %ld)\\n\", lo, hi, a.len); exit(1); } return " + nm + "_from(ar, a.data + lo, hi - lo); }\n"
     # _eq for every element type (eq_field handles scalar/str/enum/struct/array/
     # option/result); the gen_arr_type forward decl lets composite eq cross-ref.
     out = out + "static int " + nm + "_eq(" + nm + " a, " + nm + " b) { if (a.len != b.len) return 0; for (long i = 0; i < a.len; i++) if (!(" + eq_field(dc, ctx, et, "a.data[i]", "b.data[i]") + ")) return 0; return 1; }\n"

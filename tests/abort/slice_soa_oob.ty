@@ -1,0 +1,12 @@
+# a soa sub-range is bounds-checked with the same predicate and the same message
+# as an array slice -- it is a second codegen path (every field buffer is offset
+# by lo), so it needs its own fixture.
+struct P:
+    x: int
+    y: int
+
+fn main():
+    ps := soa []P
+    push(ps, P(1, 2))
+    push(ps, P(3, 4))
+    print(str(len(ps[0:5])))

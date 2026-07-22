@@ -1,0 +1,7 @@
+# a negative low bound must die rather than index behind the buffer. Tycho has
+# no Python-style negative indexing: `xs[-1:1]` is out of bounds, not "the last".
+fn main():
+    xs := []int
+    push(xs, 1)
+    push(xs, 2)
+    print(str(len(xs[-1:1])))
