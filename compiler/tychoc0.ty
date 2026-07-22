@@ -1531,7 +1531,12 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                     lv = EField(lv, pflds[j], _el)
                 else:
                     ix := pidxs[j]
-                    if iscomp and expr_has_call(ix):   # bind a side-effecting index once
+                    # Bind a side-effecting index to a temp that sequences BEFORE the rhs.
+                    # For compound `a[i] OP= e` this also avoids evaluating i twice; for a
+                    # plain `a[f()] = g()` it fixes evaluation order -- C leaves `place = rhs`
+                    # unsequenced, so without this the rhs ran before the index, diverging
+                    # from tychoc (spec A5 left-to-right). Pure indices are untouched.
+                    if expr_has_call(ix):
                         tn := "_cx" + str(pos) + "_" + str(ci)
                         ci = ci + 1
                         push(pending, SDecl(tn, ix, _sl))
