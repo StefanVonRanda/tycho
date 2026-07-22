@@ -243,7 +243,7 @@ Every phase, without exception:
   which is not a `_slice` function at all — it is inlined per field at the use
   site. It had the same hole and needed its own fix and its own fixture.
 
-- [ ] **Phase 3 — allocation range + OOM traps**
+- [x] **Phase 3 — allocation range + OOM traps**
   - Three entries: `reserve capacity %ld out of range`
     (`runtime/tycho_rt.c:190`), `string length %ld out of range` (`:858`),
     `out of memory` (`:93` — tychoc0's `blk_get` mallocs unchecked).
@@ -252,6 +252,162 @@ Every phase, without exception:
   - Verify: as above. OOM is hard to trigger honestly — if you cannot force it
     without a fake allocator, say so in plan.md and prove that check by source
     trace rather than faking a pass.
+
+  **The three predicates, read off the reference before writing anything.**
+
+  1. `reserve capacity %ld out of range` — `tycho_cap_check`
+     (`runtime/tycho_rt.c:190-195`): `if (n < 0 || (unsigned long)n > (size_t)-1
+     / elem)`. `n == SIZE_MAX/elem` is LEGAL; only a negative `n` or one whose
+     `n*elem` would wrap `size_t` traps. Copied verbatim into a new `hi_cap_check`.
+  2. `string length %ld out of range` — `tycho_str_alloc`
+     (`runtime/tycho_rt.c:854-866`): `if (n < 0)` only. The comment there
+     (`:855-857`) states WHY there is no upper arm — lengths are 64-bit, so a
+     POSITIVE `n` can never overflow `(size_t)(8 + n + 1)` on a 64-bit host.
+     Ported exactly, no upper arm.
+  3. `out of memory` — `tycho_oom` (`runtime/tycho_rt.c:93`): `fprintf(stderr,
+     "tycho: out of memory\n"); exit(1);`, called after EVERY `malloc` /
+     `aligned_alloc` in the reference (`:381 :536 :666 :668 :1002 :1270`, and
+     `arena_alloc`'s malloc is the block one at `:380-381`).
+
+  **Contradicting plan.md's description of the gap — checked, as Phase 2 warned.**
+
+  - The entry says "tychoc0's `Arr_*_reserve` … allocate the request unchecked",
+    singular. But tychoc does NOT check every reserve: the three SCALAR arrays
+    route through `tycho_cap_check` (`runtime/tycho_rt.c:1292/:1391/:1475`), while
+    the GENERATED composite `tycho_arr_C%d_reserve` (`src/tychoc.c:10503-10508`)
+    has NO check at all. Verified by running both compilers on
+    `reserve([]P, 2305843009213693953)` where `P` is a struct: BOTH print `1` and
+    exit 0 today. So the guard is gated on the element type in tychoc0's single
+    `_slice`/`_reserve` template (`gen_arr_fns`, `compiler/tychoc0.ty:9911-9924`):
+    `int`/`float`/`str` get `hi_cap_check`, every other element type is left as
+    unchecked as the reference leaves it. Guarding ALL of them would make tychoc0
+    abort where tychoc returns — a NEW divergence, exactly what this lane exists
+    to catch.
+  - `hs` is not the only unchecked string alloc, and the OOM path threads through
+    it: `hs` calls `amem`, `amem`'s malloc arm was itself unchecked, and both
+    `hi_input`/`hi_read_all` malloc+realloc a scratch buffer directly. So case 2
+    and case 3 interact: `hs(ar, -1)` now traps as case 2, and `hs(ar, huge)`
+    reaches `amem` → arena → `blk_get`'s `malloc(cap)`, which now traps as case 3.
+
+  **Emission sites changed — all in `compiler/tychoc0.ty`, all of them:**
+  - Two new preamble helpers: `hi_oom` (after the `Arena` typedef,
+    `:9638-9643`) and `hi_cap_check` (after `hi_f2i`, `:9767-9773`) — placed to
+    mirror tychoc's `tycho_oom`/`tycho_cap_check` ordering.
+  - `hs` (`:9749`): prepend the `n < 0` string-length guard.
+  - Every malloc/realloc/aligned_alloc site now checks its result and calls
+    `hi_oom`: `blk_get` (`:9686`, both the header and `->mem` mallocs), `amem`
+    (`:9744`), `hi_intern` (`:9750`), `bi_from_ints` (`:9787`), `hi_input`
+    (`:9794`), `hi_read_all` (`:9799`), `tycho_task_new` (`:9702`),
+    `tycho_chan_new` (`:9726`, both `ch` and `ch->cells`). That is every
+    `malloc(`/`aligned_alloc(`/`realloc(` in the emitted runtime — matches the
+    `grep` set on `runtime/tycho_rt.c`.
+  - `gen_arr_fns` `_reserve` template (`:9911-9924`): element-type-gated
+    `hi_cap_check(n, sizeof(T))` on `int`/`float`/`str` only.
+
+  The WHOLE diff of tychoc0's emitted C on `tests/rtparity/surface.ty` is 13
+  lines changed (before/after), nothing else moved — one `hi_oom` decl added,
+  one `hi_cap_check` decl added, the `hs` guard, and one `if (!x) hi_oom();` per
+  alloc site (`blk_get`, `tycho_task_new`, `tycho_chan_new`, `amem`, `hi_intern`,
+  `bi_from_ints`, `hi_input`, `hi_read_all`), plus `hi_cap_check(...)` inside the
+  three scalar `Arr_*_reserve`.
+
+  **1. The guards fire, identically on both sides.** Each fixture built by
+  tychoc AND by tychoc0 (`tychoc0 < f.ty > f.c && cc`), stdout/stderr captured
+  separately, `cmp` on both streams, exit status compared:
+
+  ```
+  case             fixture / input                tychoc                                              tychoc0
+  reserve range    abort/reserve_range.ty  tycho: reserve capacity 2305843009213693953 out of range  identical
+                   (reserve []int, 2^61+1) ex=1                                                       ex=1
+  out of memory    abort/oom_alloc.ty      tycho: out of memory                                       identical
+                   (reserve []int, 1e18)   ex=1                                                       ex=1
+  ```
+
+  For both, `cmp` on the two stderr streams says IDENTICAL, `cmp` on stdout
+  IDENTICAL (both empty), exit status matches. `od -c` confirms the exact bytes
+  and the trailing `\n`:
+  `t y c h o :   r e s e r v e   c a p a c i t y   2 3 0 5 8 4 3 0 0 9 2 1 3 6 9 3 9 5 3   o u t   o f   r a n g e \n`
+  and `t y c h o :   o u t   o f   m e m o r y \n`.
+
+  Before the fix (built from `git show HEAD:compiler/tychoc0.ty`), the same
+  inputs under tychoc0 gave: `reserve_range` → `1` exit 0 (allocated a tiny
+  buffer under a `2^61+1` cap — the heap-corruption the entry warns of);
+  `oom_alloc` → SIGSEGV 139 (`blk_get`'s `malloc(8e18)` returned NULL, then
+  `b->mem = malloc(cap)` … `b->cap = cap` dereferenced it). That is the
+  memory-safety part: not a missing message, an out-of-bounds write and a
+  null-deref.
+
+  **OOM triggered honestly, TWO independent ways — no fake allocator.**
+  - The `abort/oom_alloc.ty` fixture above asks for `1e18` `int` = 8 EB, which is
+    under `tycho_cap_check`'s wrap cap (`SIZE_MAX/8 = 2305843009213693951`) so it
+    PASSES the range check and reaches the real `malloc` — which cannot return 8
+    EB on any 64-bit host (exceeds the 128 TiB user address space, overcommit or
+    not). Both compilers abort with `tycho: out of memory`, exit 1.
+  - Also on the INCREMENTAL growth path, under a real `ulimit -v` cap (the same
+    mechanism `tests/conc/run.sh:29` and `tests/recursion/run.sh:35` use). A
+    `push` loop to 1e9 under `( ulimit -v 300000 )` (≈300 MB):
+
+    ```
+    === tychoc under ulimit -v 300000 ===    exit=1   tycho: out of memory
+    === tychoc0 under ulimit -v 300000 ===   exit=1   tycho: out of memory
+    ```
+    `cmp` on the two stderr streams: IDENTICAL. Before the fix, tychoc0 exited
+    139 (SIGSEGV) here. So OOM is exercised at runtime, not merely source-traced.
+
+  **String-length guard (case 2) — reachable but not via a committed fixture.**
+  `hs`'s `n < 0` arm fires when a negative length reaches a string allocation.
+  Every `hs` caller in the emitted runtime derives `n` from a header length or a
+  concat sum (`sc`, `i2s`, `substr`, …), and `substr` CLAMPS negatives before
+  calling `hs` (`compiler/tychoc0.ty:9790`), so no ordinary Tycho program passes
+  a negative directly — matching the reference, whose comment (`:855`) calls this
+  a "corrupted length" guard. It is proven by SOURCE TRACE: the emitted text is
+  byte-identical to `tycho_str_alloc`'s guard (rtparity now counts it as shared,
+  see §3), same predicate, same message, same `exit(1)`. I did not fabricate a
+  runtime firing for it. Its sibling in the same commit — the `hs(ar, huge)` →
+  `amem` → `blk_get` OOM — IS exercised above, which is the allocation half of
+  the same function.
+
+  **2. It does not fire on valid input.**
+  - `make fixpoint` — `ok B == C : tychoc0 reproduces itself byte-identically
+    (34436 lines C)`; `ok split tychoc0 (2 packages) self-hosts E==F and matches
+    the single-file compiler`; `fixpoint: all green`. tychoc0 `reserve`s and
+    string-allocates on every line while compiling itself, so an over-tight bound
+    could not self-host. 34436 vs Phase 2's 34425 (+11): accounted for exactly —
+    the tychoc0 self-compile diff is `-21 +32` lines, and every one of the +11
+    net lines is either a new runtime string literal (`hi_oom`, `hi_cap_check`,
+    the guarded reserve lines) or the `capck :=`/`if et …:` gating block in
+    `gen_arr_fns`; ZERO are scratch-arena renumbering. Verified line-by-line.
+  - `make test` — `passed: 405   failed: 0` / `all green`, including
+    `ok    abort_oom_alloc` and `ok    abort_reserve_range` (whole abort lane
+    re-listed by hand, all 15 fixtures `ok`). 404 → 405 is the one new fixture
+    (`oom_alloc`; `reserve_range` already existed) and nothing regressed.
+  - `make corelib` — `corelib: all green (tychoc and tychoc0 agree, match
+    goldens)`, all 37 modules ok.
+  - Boundary cases run under BOTH compilers, byte-identical: `reserve([]int, 0)`,
+    `reserve([]int, -1)` (both no-op: `-1 <= cap` returns before the check),
+    `reserve([]int, 1000000)`, `reserve([]float, …)`, `reserve([]string, …)`,
+    `substr("hello", 4, 2)` (empty), `substr("hello", 1, 3)` — all identical
+    stdout, exit 0. `reserve([]int, 2305843009213693951)` (== `SIZE_MAX/8`, the
+    cap boundary) passes `hi_cap_check` on both, then the huge alloc fails as OOM
+    on both (tychoc glibc-aborts, tychoc0 cleanly OOMs — but neither
+    silently corrupts, and the range check itself did not fire, which is the
+    point of the boundary).
+
+  **3. `make rtparity`** — all three entries deleted and the lane agrees:
+  ```
+  rtparity: env knobs         3 shared, 0 allowlisted difference(s) (ok)
+  rtparity: diagnostics      23 shared, 4 allowlisted difference(s) (ok)
+  rtparity: arena-stats rows  5 shared, 0 allowlisted difference(s) (ok)
+  rtparity: the two runtimes agree on env knobs, diagnostics and arena stats
+  ```
+  **4**, down from 7; the three diagnostics moved into the 23 shared (was 20).
+  The four remaining allowlisted differences are Phase 4's map 2^31 guards.
+
+  **4. What the fixtures do and do not lock.** Unchanged from Phases 1-2:
+  `tests/abort/` builds with `$TYCHOC` only (`tests/run.sh:180`), so
+  `oom_alloc` and `reserve_range` lock the REFERENCE side. On the tychoc0 side
+  the lock is rtparity (text present in the emitted C) plus the side-by-side
+  `cmp` in (1). Phase 5 is queued to make that lane differential.
 
 - [ ] **Phase 5 — make the abort lane differential** (discovered in Phase 1)
   - `tests/abort/` builds with `$TYCHOC` only (`tests/run.sh:180`), and so does

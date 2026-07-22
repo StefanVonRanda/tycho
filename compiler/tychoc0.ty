@@ -9635,6 +9635,11 @@ fn preamble() -> string:
     # function name and arena_child copies it, so every block/loop arena inside that
     # proc attributes to it. One pointer field, one store per arena creation.
     out = out + "typedef struct { ABlk* head; size_t blocksz; FreeNode* bkt[16]; FreeNode* freelist; int nfree; const char* name; } Arena;\n"
+    # Allocation failure is a clean abort, never a null deref: every malloc /
+    # realloc / aligned_alloc below checks its result and calls this. Mirrors
+    # runtime/tycho_rt.c:93 (tycho_oom), which guards every allocation tychoc's
+    # runtime makes -- same message, same exit status.
+    out = out + "static void hi_oom(void) { fprintf(stderr, \"tycho: out of memory\\n\"); exit(1); }\n"
     # Arena residency (TYCHO_ARENA_STATS): opt-in memory observability, mirroring
     # runtime/tycho_rt.c so a tychoc0-built binary reports the same summary the C
     # compiler's binaries do -- otherwise the env var is silently a no-op on half
@@ -9671,7 +9676,7 @@ fn preamble() -> string:
     # that's fine, a block is just malloc'd memory and lands in the releasing
     # thread's pool. A spawned thread flushes its pool before exiting.
     out = out + "static __thread ABlk* g_pool = 0;\n"
-    out = out + "static ABlk* blk_get(size_t cap) { if (g_astats) atomic_fetch_add_explicit(&st_gets, 1, memory_order_relaxed); if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } for (ABlk** link = &g_pool; *link; link = &(*link)->next) if ((*link)->cap >= cap) { ABlk* b = *link; *link = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); b->mem = malloc(cap); b->cap = cap; b->used = 0; b->next = 0; if (g_astats) { atomic_fetch_add_explicit(&st_osb, sizeof(ABlk) + cap, memory_order_relaxed); atomic_fetch_add_explicit(&st_osblk, 1, memory_order_relaxed); } return b; }\n"
+    out = out + "static ABlk* blk_get(size_t cap) { if (g_astats) atomic_fetch_add_explicit(&st_gets, 1, memory_order_relaxed); if (g_pool && g_pool->cap >= cap) { ABlk* b = g_pool; g_pool = b->next; b->used = 0; b->next = 0; return b; } for (ABlk** link = &g_pool; *link; link = &(*link)->next) if ((*link)->cap >= cap) { ABlk* b = *link; *link = b->next; b->used = 0; b->next = 0; return b; } ABlk* b = malloc(sizeof(ABlk)); if (!b) hi_oom(); b->mem = malloc(cap); if (!b->mem) hi_oom(); b->cap = cap; b->used = 0; b->next = 0; if (g_astats) { atomic_fetch_add_explicit(&st_osb, sizeof(ABlk) + cap, memory_order_relaxed); atomic_fetch_add_explicit(&st_osblk, 1, memory_order_relaxed); } return b; }\n"
     out = out + "static void blk_release(ABlk* b) { while (b) { ABlk* nx = b->next; b->next = g_pool; g_pool = b; b = nx; } }\n"
     out = out + "static Arena arena_new(size_t bs) { if (g_astats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed); Arena a; a.head = 0; a.blocksz = bs ? bs : 65536; for (int i = 0; i < 16; i++) a.bkt[i] = 0; a.freelist = 0; a.nfree = 0; a.name = 0; return a; }\n"
     out = out + "static void arena_recycle(Arena* a, void* p, size_t n) { if (!a || !p || n < sizeof(FreeNode)) return; n = (n + 7) & ~(size_t)7; size_t k = n >> 3; FreeNode* fn = (FreeNode*)p; fn->size = n; if (k < 16) { fn->next = a->bkt[k]; a->bkt[k] = fn; return; } if (a->nfree >= 32) return; fn->next = a->freelist; a->freelist = fn; a->nfree++; }\n"
@@ -9687,7 +9692,7 @@ fn preamble() -> string:
     # spawned thread's TLS block pool before it exits (the TLS dies with it).
     out = out + "static void tycho_pool_flush(void) { while (g_pool) { ABlk* b = g_pool; g_pool = b->next; free(b->mem); free(b); } }\n"
     out = out + "typedef struct { pthread_t th; Arena root; void* ret; int done; } HTask;\n"
-    out = out + "static HTask* tycho_task_new(void) { HTask* t = malloc(sizeof(HTask)); t->root = arena_new(0); t->ret = 0; t->done = 0; return t; }\n"
+    out = out + "static HTask* tycho_task_new(void) { HTask* t = malloc(sizeof(HTask)); if (!t) hi_oom(); t->root = arena_new(0); t->ret = 0; t->done = 0; return t; }\n"
     # Bounded concurrency: cap concurrently-live tasks (started, not yet joined) and fail closed.
     # A hard ceiling, not a pool -- admitted tasks run immediately, so a task blocking on a channel
     # for another task never starves. Default 1024; TYCHO_MAX_TASKS overrides. Mirrors runtime/tycho_rt.c.
@@ -9711,7 +9716,7 @@ fn preamble() -> string:
     # on the pipeline bench). aligned_alloc backs the cells' 64-byte alignment.
     out = out + "typedef struct __attribute__((aligned(64))) { _Atomic long seq; long pos; void* val; Arena arena; } HCell;\n"
     out = out + "typedef struct { HCell* cells; long cap; char _pad0[64]; _Atomic long enq; char _pad1[64]; _Atomic long deq; char _pad2[64]; _Atomic int closed; _Atomic int waiters; pthread_mutex_t mu; pthread_cond_t cv; } HChan;\n"
-    out = out + "static HChan* tycho_chan_new(long cap) { if (cap < 1) { fprintf(stderr, \"tycho: channel capacity must be >= 1\\n\"); exit(1); } long c2 = 2; /* min ring 2: one cell makes published (pos+1) == recycled (pos+cap) and a 2nd send overwrites the unreceived value */ while (c2 < cap) c2 <<= 1; HChan* ch = malloc(sizeof(HChan)); ch->cells = aligned_alloc(64, c2 * sizeof(HCell)); for (long i = 0; i < c2; i++) { atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed); ch->cells[i].pos = 0; ch->cells[i].val = 0; ch->cells[i].arena = arena_new(0); } ch->cap = c2; atomic_store_explicit(&ch->enq, 0, memory_order_relaxed); atomic_store_explicit(&ch->deq, 0, memory_order_relaxed); atomic_store_explicit(&ch->closed, 0, memory_order_relaxed); atomic_store_explicit(&ch->waiters, 0, memory_order_relaxed); pthread_mutex_init(&ch->mu, 0); pthread_cond_init(&ch->cv, 0); return ch; }\n"
+    out = out + "static HChan* tycho_chan_new(long cap) { if (cap < 1) { fprintf(stderr, \"tycho: channel capacity must be >= 1\\n\"); exit(1); } long c2 = 2; /* min ring 2: one cell makes published (pos+1) == recycled (pos+cap) and a 2nd send overwrites the unreceived value */ while (c2 < cap) c2 <<= 1; HChan* ch = malloc(sizeof(HChan)); if (!ch) hi_oom(); ch->cells = aligned_alloc(64, c2 * sizeof(HCell)); if (!ch->cells) hi_oom(); for (long i = 0; i < c2; i++) { atomic_store_explicit(&ch->cells[i].seq, i, memory_order_relaxed); ch->cells[i].pos = 0; ch->cells[i].val = 0; ch->cells[i].arena = arena_new(0); } ch->cap = c2; atomic_store_explicit(&ch->enq, 0, memory_order_relaxed); atomic_store_explicit(&ch->deq, 0, memory_order_relaxed); atomic_store_explicit(&ch->closed, 0, memory_order_relaxed); atomic_store_explicit(&ch->waiters, 0, memory_order_relaxed); pthread_mutex_init(&ch->mu, 0); pthread_cond_init(&ch->cv, 0); return ch; }\n"
     out = out + "static void tycho_chan_park(HChan* ch) { pthread_mutex_lock(&ch->mu); atomic_fetch_add_explicit(&ch->waiters, 1, memory_order_relaxed); struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_nsec += 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; } pthread_cond_timedwait(&ch->cv, &ch->mu, &ts); atomic_fetch_sub_explicit(&ch->waiters, 1, memory_order_relaxed); pthread_mutex_unlock(&ch->mu); }\n"
     # signal ONE waiter per commit (one cell published); close() still broadcasts; the
     # 1ms timed park self-heals any wake the signal/park race drops.
@@ -9729,13 +9734,17 @@ fn preamble() -> string:
     # fallback for not-yet-migrated contexts). owner-threading (ctx.owner) flips
     # provably-safe contexts (e.g. print args) to a real arena. hi_append is NOT
     # arena-based: accumulator buffers are realloc-grown, so they must be malloc.
-    out = out + "static void* amem(Arena* a, size_t n) { return a ? arena_alloc(a, n) : malloc(n); }\n"
+    out = out + "static void* amem(Arena* a, size_t n) { if (a) return arena_alloc(a, n); void* p = malloc(n); if (!p) hi_oom(); return p; }\n"
     # Length-carrying strings: an 8-byte length header sits just before the
     # returned char* (hidden behind it, so printf/strcmp are unaffected); arena
     # blocks are 8-aligned so the header word is aligned. len(s)/s[i] read it in
     # O(1) -- s[i] is bounds-checked (hi_sidx). Mirrors tychoc's tycho_str_alloc.
-    out = out + "static char* hs(Arena* ar, long n) { char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
-    out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
+    # The n < 0 arm is tycho_str_alloc's exact guard (runtime/tycho_rt.c:858): a
+    # negative/corrupted length would make (size_t)(8 + n + 1) wrap to a huge
+    # request. Lengths are 64-bit, so a POSITIVE n can never overflow that sum on
+    # a 64-bit host -- which is why there is no upper arm here either.
+    out = out + "static char* hs(Arena* ar, long n) { if (n < 0) { fprintf(stderr, \"tycho: string length %ld out of range\\n\", n); exit(1); } char* base = (char*)amem(ar, (size_t)(8 + n + 1)); *(long*)base = n; char* d = base + 8; d[n] = 0; return d; }\n"
+    out = out + "static char* hi_intern(const char* s) { long n = (long)strlen(s); char* base = (char*)malloc((size_t)(8 + n + 1)); if (!base) hi_oom(); *(long*)base = n; char* d = base + 8; memcpy(d, s, (size_t)n + 1); return d; }\n"
     out = out + "static long hi_sidx(const char* s, long i) { long n = ((const long*)s)[-1]; if (i < 0 || i >= n) { fprintf(stderr, \"tycho: string index %ld out of bounds (len %ld)\\n\", i, n); exit(1); } return (long)(unsigned char)s[i]; }\n"
     # Array index bounds check: returns i when in range, else aborts with the same
     # message as runtime/tycho_rt.c (tycho_arr_*_get) and tychoc. Used by both the
@@ -9758,6 +9767,12 @@ fn preamble() -> string:
     out = out + "static long long hi_shln(long long x, long long n, int w) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= w) return 0; return (long long)((unsigned long long)x << n); }\n"
     out = out + "static long long hi_shrn(long long x, long long n, int w, int sgn) { if (n < 0) { fprintf(stderr, \"tycho: negative shift count\\n\"); exit(1); } if (n >= w) return 0; if (sgn) return x >> n; return (long long)((unsigned long long)x >> n); }\n"
     out = out + "static long hi_f2i(double x) { if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) { fprintf(stderr, \"tycho: float-to-int conversion out of range\\n\"); exit(1); } return (long)x; }\n"
+    # reserve() takes a runtime int straight from user code: a negative or huge n
+    # would make (size_t)n * elem wrap, allocating a tiny buffer under a huge cap --
+    # every later push then writes out of bounds. Same predicate and message as
+    # tycho_cap_check (runtime/tycho_rt.c:190); called from the same three array
+    # families tychoc guards (see gen_arr_fns).
+    out = out + "static void hi_cap_check(long n, size_t elem) { if (n < 0 || (unsigned long)n > (size_t)-1 / elem) { fprintf(stderr, \"tycho: reserve capacity %ld out of range\\n\", n); exit(1); } }\n"
     out = out + "static char* sc(Arena* ar, const char* a, const char* b) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1]; char* r = hs(ar, la + lb); memcpy(r, a, (size_t)la); memcpy(r + la, b, (size_t)lb); return r; }\n"
     out = out + "static char* sc3(Arena* ar, const char* a, const char* b, const char* c) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1]; char* r = hs(ar, la + lb + lc); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); return r; }\n"
     out = out + "static char* sc4(Arena* ar, const char* a, const char* b, const char* c, const char* d) { long la = ((const long*)a)[-1], lb = ((const long*)b)[-1], lc = ((const long*)c)[-1], ld = ((const long*)d)[-1]; char* r = hs(ar, la + lb + lc + ld); char* p = r; memcpy(p, a, (size_t)la); p += la; memcpy(p, b, (size_t)lb); p += lb; memcpy(p, c, (size_t)lc); p += lc; memcpy(p, d, (size_t)ld); return r; }\n"
@@ -9772,19 +9787,19 @@ fn preamble() -> string:
     out = out + "static char* s_from_c(Arena* ar, const char* s) { long n = (long)strlen(s); char* r = hs(ar, n); memcpy(r, s, (size_t)n); return r; }\n"
     # FFI: copy a C-owned (ptr,len) byte buffer (extern returning bytes, out-param shim) into an arena bytes, then free it. Length-carried, so interior 0x00 survives.
     out = out + "static char* b_from_c(Arena* ar, unsigned char* p, long n) { if (n < 0) n = 0; char* r = hs(ar, p ? n : 0); if (p) { if (n > 0) memcpy(r, p, (size_t)n); free(p); } return r; }\n"
-    out = out + "static char* bi_from_ints(Arena* ar, const long* p, long n) { if (n < 0) n = 0; unsigned char* q = n > 0 ? (unsigned char*)malloc((size_t)n) : 0; if (q) { for (long i = 0; i < n; i++) q[i] = (unsigned char)(p[i] & 0xFF); } return b_from_c(ar, q, n); }\n"
+    out = out + "static char* bi_from_ints(Arena* ar, const long* p, long n) { if (n < 0) n = 0; unsigned char* q = n > 0 ? (unsigned char*)malloc((size_t)n) : 0; if (n > 0 && !q) hi_oom(); if (q) { for (long i = 0; i < n; i++) q[i] = (unsigned char)(p[i] & 0xFF); } return b_from_c(ar, q, n); }\n"
     out = out + "static void hi_puts(const char* s) { fwrite(s, 1, (size_t)((const long*)s)[-1], stdout); }\n"
     out = out + "static void hi_append(Arena* a, char** s, long* len, long* cap, const char* e) { long le = ((const long*)e)[-1]; if (*len + le + 1 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + le + 1) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } memmove(*s + *len, e, (size_t)le); *len += le; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static void hi_append_char(Arena* a, char** s, long* len, long* cap, long c) { if (*len + 2 > *cap) { long nc = *cap > 0 ? *cap : 16; while (nc < *len + 2) nc *= 2; char* base = (char*)amem(a, (size_t)(8 + nc)); char* nb = base + 8; memcpy(nb, *s, (size_t)*len); *s = nb; *cap = nc; } (*s)[*len] = (char)c; *len += 1; (*s)[*len] = 0; ((long*)(*s))[-1] = *len; }\n"
     out = out + "static char* f2s(Arena* ar, double x) { char t[64]; int m = snprintf(t, sizeof t, \"%.15g\", x); int fl = 0; for (int i = 0; i < m; i++) { char c = t[i]; if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'N' || c == 'i' || c == 'I') { fl = 1; break; } } if (!fl) { t[m++] = '.'; t[m++] = '0'; t[m] = 0; } char* r = hs(ar, m); memcpy(r, t, (size_t)m); return r; }\n"
     out = out + "static char* substr(Arena* ar, const char* s, long a, long b) { long n = ((const long*)s)[-1]; if (a < 0) a = 0; if (b > n) b = n; if (b < a) b = a; long m = b - a; char* r = hs(ar, m); memcpy(r, s + a, (size_t)m); return r; }\n"
     out = out + "static long hi_find(const char* s, const char* sub) { long ls = ((const long*)s)[-1], lsub = ((const long*)sub)[-1]; if (lsub == 0) return 0; for (long i = 0; i + lsub <= ls; i++) if (memcmp(s + i, sub, (size_t)lsub) == 0) return i; return -1; }\n"
-    out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
+    out = out + "static char* hi_input(Arena* ar) { size_t cap = 128, len = 0; char* b = malloc(cap); if (!b) hi_oom(); int c; fflush(stdout); while ((c = getchar()) != EOF && c != '\\n') { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); if (!b) hi_oom(); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static char* hi_chr(Arena* ar, long n) { if (n < 0 || n > 255) { fprintf(stderr, \"tycho: chr(%ld) out of byte range 0..255\\n\", n); exit(1); } char* r = hs(ar, 1); r[0] = (char)n; return r; }\n"
     out = out + "static char* hi_getenv(Arena* ar, const char* name) { const char* v = getenv(name); return s_from_c(ar, v ? v : \"\"); }\n"
     out = out + "static void hi_die(const char* m) { fputs(m, stderr); fputc('\\n', stderr); exit(1); }\n"
     out = out + "static void hi_eprint(const char* m) { fputs(m, stderr); }\n"
-    out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
+    out = out + "static char* hi_read_all(Arena* ar) { size_t cap = 4096, len = 0; char* b = malloc(cap); if (!b) hi_oom(); int c; while ((c = getchar()) != EOF) { if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); if (!b) hi_oom(); } b[len++] = (char)c; } char* r = hs(ar, (long)len); memcpy(r, b, len); free(b); return r; }\n"
     out = out + "static long hi_clock(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (long)ts.tv_sec * 1000000000L + (long)ts.tv_nsec; }\n"
     out = out + "static long hi_now(void) { return (long)time(NULL); }\n"
     out = out + "static char* hi_read_file(Arena* ar, const char* path) { FILE* f = fopen(path, \"rb\"); if (!f) return s_from_c(ar, \"\"); size_t cap = 4096, len = 0, n; char* b = amem(ar, cap); while ((n = fread(b + len, 1, cap - len, f)) > 0) { len += n; if (len == cap) { size_t nc = cap * 2; char* nb = amem(ar, nc); memcpy(nb, b, len); b = nb; cap = nc; } } fclose(f); char* r = hs(ar, (long)len); memcpy(r, b, len); return r; }\n"
@@ -9893,7 +9908,20 @@ fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
     if elem_deepcopy(dc, ctx, et):                   # (so the popped value outlives a later array recycle)
         popv = elem_copy_expr(dc, ctx, et, "ar", "a->data[a->len]")
     out = out + "static " + ct + nm + "_pop(Arena* ar, " + nm + "* a) { if (a->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); } a->len--; return " + popv + "; }\n"
-    out = out + "static void " + nm + "_reserve(Arena* ar, " + nm + "* a, long n) { if (n <= a->cap) return; " + ct + "* nd = amem(ar, sizeof(" + ct + ") * n); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = n; }\n"
+    # RANGE-CHECKED, on exactly the three families tychoc checks. tychoc has ONE
+    # reserve per scalar array in the runtime (tycho_arr_{int,float,str}_reserve,
+    # runtime/tycho_rt.c:1292/:1391/:1475 -> tycho_cap_check) and a GENERATED one
+    # for every other element type (src/tychoc.c:10503) that has no check at all.
+    # tychoc0 emits one template for all of them, so the call is gated on the
+    # element type: matching tychoc means checking [int]/[float]/[string] and
+    # leaving the rest exactly as unchecked as the reference leaves them. Adding
+    # the check everywhere would make tychoc0 abort where tychoc returns — a new
+    # divergence, the very thing this lane exists to catch (checked by hand:
+    # reserve([]P, 2^61+1) prints 1 and exits 0 under BOTH compilers today).
+    capck := ""
+    if et == "int" or et == "float" or et == "str":
+        capck = "hi_cap_check(n, sizeof(" + ct + ")); "
+    out = out + "static void " + nm + "_reserve(Arena* ar, " + nm + "* a, long n) { if (n <= a->cap) return; " + capck + ct + "* nd = amem(ar, sizeof(" + ct + ") * n); if (a->len) memcpy(nd, a->data, sizeof(" + ct + ") * a->len); if (ar && a->cap) arena_recycle(ar, a->data, sizeof(" + ct + ") * (size_t)a->cap); a->data = nd; a->cap = n; }\n"
     # BOUNDS-CHECKED: the same predicate tychoc emits inline for E_SLICE
     # (src/tychoc.c:8493) — lo < 0 || hi > len || lo > hi. lo == len, hi == len
     # and an empty range are all LEGAL; only these three shapes trap. Unchecked,

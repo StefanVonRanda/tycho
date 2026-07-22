@@ -77,15 +77,6 @@ PROBE = os.path.join(ROOT, "tests", "rtparity", "surface.ty")
 # Nothing here is a spelling difference; the comparison keys above were chosen
 # so that spelling differences cannot reach this list.
 ALLOW_MSG_TYCHOC_ONLY = {
-    # A length taken straight from user code is range-checked before it can wrap
-    # the size_t allocation: tycho_cap_check for reserve() (runtime/tycho_rt.c:190)
-    # and a negative-length guard in tycho_str_alloc (runtime/tycho_rt.c:858).
-    # tychoc0's Arr_*_reserve and `hs` allocate the request unchecked.
-    "tycho: reserve capacity %ld out of range\\n",
-    "tycho: string length %ld out of range\\n",
-    # tycho_rt.c checks every malloc (runtime/tycho_rt.c:93). tychoc0's blk_get
-    # does not, so an OOM there is a null deref rather than a clean abort.
-    "tycho: out of memory\\n",
     # The map index is int-sized, so tycho_rt.c refuses to grow past 2^31 entries
     # (runtime/tycho_rt.c:1794, :1937, :2124, :2263). tychoc0 emits its maps
     # per-type with no such guard.

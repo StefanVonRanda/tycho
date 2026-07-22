@@ -1,0 +1,11 @@
+# A request the allocator cannot possibly satisfy must die loudly, not deref a
+# null block. 1e18 elements * 8 bytes = 8e18 bytes: under the size_t wrap cap
+# tycho_cap_check enforces (SIZE_MAX/8 = 2305843009213693951), so it passes the
+# range check and reaches the real malloc -- which cannot return 8 EB on any
+# 64-bit host (it exceeds the 128 TiB user address space, overcommit or not).
+# tychoc0's blk_get used to ignore the NULL and SIGSEGV (exit 139) here.
+fn main():
+    a := []int
+    reserve(a, 1000000000000000000)
+    push(a, 1)
+    print(str(len(a)))
