@@ -189,6 +189,71 @@ static void tycho_cap_check(long n, size_t elem) {
     }
 }
 
+/* ---- arena stats (TYCHO_ARENA_STATS): opt-in memory observability ---------
+ * The language whose thesis is "memory from structure" should be able to show
+ * that memory stayed bounded and that blocks got reused. Set TYCHO_ARENA_STATS
+ * to anything but empty/0 and a one-shot summary prints to stderr at exit.
+ *
+ * Scope: GLOBAL aggregates, not per-scope. Arenas carry no name at runtime, so
+ * per-scope attribution would mean threading a label through every codegen emit
+ * site -- deferred (ponytail: global first; add per-scope labels when a real
+ * profiling need shows up). All counters are only touched when g_arena_stats is
+ * set, so a normal run pays one never-taken branch per alloc.
+ *
+ * Threading: the block pool is thread-local, but these aggregates are shared, so
+ * every counter is atomic. g_arena_stats is set once by a constructor (before
+ * main, before any thread) and only read after, so it's a plain int. */
+static int g_arena_stats = 0;
+static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
+                     st_os_bytes, st_os_blocks, st_block_gets,
+                     st_arenas, st_arena_frees;
+
+static void st_bump_live(size_t n) {  /* live += n; track high-water */
+    size_t cur = atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n;
+    size_t pk = atomic_load_explicit(&st_peak_live, memory_order_relaxed);
+    while (cur > pk && !atomic_compare_exchange_weak_explicit(
+            &st_peak_live, &pk, cur, memory_order_relaxed, memory_order_relaxed)) {}
+}
+static size_t st_chain_off(HBlock *b) { size_t s = 0; for (; b; b = b->next) s += b->off; return s; }
+static void st_drop_live(HBlock *b) {  /* whole arena chain going away/rewound */
+    if (b) atomic_fetch_sub_explicit(&st_live, st_chain_off(b), memory_order_relaxed);
+}
+
+static void st_fmt(size_t n, char *out, size_t outsz) {
+    const char *u[] = { "B", "KiB", "MiB", "GiB", "TiB" };
+    double v = (double)n; int i = 0;
+    while (v >= 1024.0 && i < 4) { v /= 1024.0; i++; }
+    if (i == 0) snprintf(out, outsz, "%zu B", n);
+    else        snprintf(out, outsz, "%.1f %s", v, u[i]);
+}
+
+static void stats_dump(void) {
+    char live[32], bump[32], os[32];
+    size_t gets = atomic_load(&st_block_gets), osbl = atomic_load(&st_os_blocks);
+    size_t reuse = gets - osbl;   /* every block_get either mallocs or reuses a pooled block */
+    st_fmt(atomic_load(&st_peak_live), live, sizeof live);
+    st_fmt(atomic_load(&st_alloc_bytes), bump, sizeof bump);
+    st_fmt(atomic_load(&st_os_bytes), os, sizeof os);
+    fprintf(stderr,
+        "\n[tycho arena stats]\n"
+        "  peak live:   %s   (working-set high-water)\n"
+        "  bump-alloc:  %s over %zu allocations\n"
+        "  OS reserved: %s over %zu blocks\n"
+        "  block reuse: %zu of %zu requests from pool (%.1f%%)\n"
+        "  arenas:      %zu created, %zu freed\n",
+        live, bump, (size_t)atomic_load(&st_alloc_calls),
+        os, osbl,
+        reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0,
+        (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees));
+}
+
+/* Runs before main (gcc/clang, same family as the __thread pool below). Reads
+ * the env once; when off, nothing else in this file does any work. */
+__attribute__((constructor)) static void stats_init(void) {
+    const char *e = getenv("TYCHO_ARENA_STATS");
+    if (e && *e && *e != '0') { g_arena_stats = 1; atexit(stats_dump); }
+}
+
 /* Global block free-list. Arenas are created/reset/freed per block scope, call,
  * and loop iteration, so naive malloc/free of a TYCHO_BLOCK_DEFAULT-sized block
  * per scope dominated runtime on allocation-heavy workloads (e.g. the
@@ -207,6 +272,7 @@ static void tycho_cap_check(long n, size_t elem) {
 static __thread HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
+    if (g_arena_stats) atomic_fetch_add_explicit(&st_block_gets, 1, memory_order_relaxed);
     if (g_block_pool && g_block_pool->cap >= cap) {  /* fast path: head fits (uniform sizes) */
         HBlock *b = g_block_pool;
         g_block_pool = b->next;
@@ -228,6 +294,10 @@ static HBlock *block_get(size_t cap) {
         }
     HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
     if (!b) tycho_oom();
+    if (g_arena_stats) {
+        atomic_fetch_add_explicit(&st_os_bytes, sizeof(HBlock) + cap, memory_order_relaxed);
+        atomic_fetch_add_explicit(&st_os_blocks, 1, memory_order_relaxed);
+    }
     b->cap = cap;
     b->off = 0;
     b->next = NULL;
@@ -239,6 +309,7 @@ static void block_release_chain(HBlock *b) {     /* push a block chain onto the 
 }
 
 Arena arena_new(size_t blocksz) {
+    if (g_arena_stats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed);
     Arena a;
     a.head = NULL;
     a.blocksz = blocksz ? blocksz : TYCHO_BLOCK_DEFAULT;
@@ -319,6 +390,11 @@ void *arena_alloc(Arena *a, size_t n) {
     }
     void *p = (char *)(a->head + 1) + a->head->off;
     a->head->off += n;
+    if (g_arena_stats) {
+        atomic_fetch_add_explicit(&st_alloc_calls, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&st_alloc_bytes, n, memory_order_relaxed);
+        st_bump_live(n);   /* recycle-reuse returns earlier and never bumps, so st_live == sum of block offsets */
+    }
     return p;
 }
 
@@ -335,6 +411,7 @@ void arena_reset(Arena *a) {
     a->freelist = NULL; a->nfree = 0;
     HBlock *b = a->head;
     if (!b) return;
+    if (g_arena_stats) st_drop_live(b);   /* head rewound + overflow pooled: whole chain's live goes to 0 */
     block_release_chain(b->next);   /* overflow blocks -> pool */
     b->next = NULL;
     b->off = 0;                     /* keep & reuse the head block */
@@ -342,6 +419,10 @@ void arena_reset(Arena *a) {
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 void arena_free(Arena *a) {
+    if (g_arena_stats) {
+        atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
+        st_drop_live(a->head);
+    }
     if (a->bkt) { free(a->bkt); a->bkt = NULL; }   /* release the lazily-allocated table */
     a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
