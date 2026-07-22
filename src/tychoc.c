@@ -6495,9 +6495,10 @@ static void resolve_stmt(Stmt *s, Type ret) {
             /* inside a value if/match branch (g_value_ctrl), this S_EXPR is the tail
              * VALUE, not a discarded statement — resolve it for its type but skip the
              * discard warning and the discarded-task error. */
+            const char *dn = NULL;
             if (!g_value_ctrl && s->expr) {
-                const char *dn = (s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
-                                     ? s->expr->sval : discarded_map_get(s->expr);
+                dn = (s->expr->kind == E_CALL && is_pure_builtin(s->expr->sval))
+                         ? s->expr->sval : discarded_map_get(s->expr);
                 if (dn)
                     warn_at(s->expr->line, "result of `%s` is discarded; it has no side effects, so this statement does "
                                            "nothing (to change a map, use `m[k] = v` or `delete m[k]`)", dn);
@@ -6505,6 +6506,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
             Type et = resolve_expr(s->expr);
             if (!g_value_ctrl && IS_TASK(et))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
+            /* A discarded Result silently swallows the error path. Not fatal (the no-side-effects
+             * warning above already covers a pure discard), but nudge toward handling it. */
+            if (!g_value_ctrl && !dn && IS_RES(et))
+                warn_at(s->expr->line, "this Result is discarded, so its error is silently ignored; "
+                                       "handle it with `match`, propagate with `or_return`, or bind it (x := ...)");
             break;
         }
     }
