@@ -1662,6 +1662,20 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         st := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRBracket)
         return "soa[" + st + "]"
+    if toks[pos].kind == TIdent and toks[pos].text == "bounded":   # bounded[N]T: inline fixed-cap, variable-count
+        pos = pos + 1
+        expect(toks, &pos, TLBracket)
+        if toks[pos].kind != TInt:
+            die("parse: line " + str(toks[pos].line) + ": bounded needs an integer capacity: bounded[N]T")
+        bcap := lit_to_int(toks[pos].text)
+        if bcap <= 0:
+            die("parse: line " + str(toks[pos].line) + ": a bounded capacity must be positive")
+        pos = pos + 1
+        expect(toks, &pos, TRBracket)
+        belem := parse_type_d(toks, &pos, depth + 1)
+        if belem == "void" or belem == "bool":
+            die("parse: line " + str(toks[pos].line) + ": bounded elements must be int, float, string, a struct, or an array")
+        return "[b" + str(bcap) + "]" + belem
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
         pos = pos + 1
         expect(toks, &pos, TLParen)
@@ -2691,6 +2705,8 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         return "[" + str(cv) + "]" + mangle_type(m, celem)
     if is_fixarr(ty):                             # [N]T fixed: keep the size, mangle the element (1.6)
         return "[" + str(fixarr_size(ty)) + "]" + mangle_type(m, elem_ty(ty))
+    if is_bounded(ty):                            # bounded[N]T: keep the "[bN]" form, mangle the element
+        return "[b" + str(bounded_cap(ty)) + "]" + mangle_type(m, elem_ty(ty))
     if has_prefix(ty, "["):
         return "[" + mangle_type(m, substr(ty, 1, len(ty) - 1)) + "]"
     if has_prefix(ty, "Option("):
@@ -3505,10 +3521,25 @@ fn fixarr_size(ty: string) -> int:               # "[3]int" -> 3 (the length bef
         i = i + 1
     return n
 
-fn elem_ty(ty: string) -> string:               # "[T]" -> "T"  /  "[3]int" -> "int" (after the ']')
-    if is_fixarr(ty):
+# bounded[N]T: inline fixed-cap, variable-count collection `{ T v[N]; long len; }`.
+# Encoded "[bN]T" ('[' then 'b' then the capacity digits, e.g. "[b64]Worker"), so
+# is_array covers it but is_fixarr does NOT ('b' is not a digit). push traps on
+# overflow; value-copied; stores inline like a fixed [N]T but carries a runtime len.
+fn is_bounded(ty: string) -> bool:
+    return len(ty) > 2 and ty[0] == 91 and ty[1] == 98 and is_digit(ty[2])   # '[' 'b' digit
+
+fn bounded_cap(ty: string) -> int:               # "[b3]int" -> 3
+    i := 2
+    n := 0
+    for i < len(ty) and is_digit(ty[i]):
+        n = n * 10 + (ty[i] - 48)
+        i = i + 1
+    return n
+
+fn elem_ty(ty: string) -> string:               # "[T]" -> "T"  /  "[3]int" / "[b3]int" -> "int" (after the ']')
+    if is_fixarr(ty) or is_bounded(ty):
         i := 1
-        for i < len(ty) and ty[i] != 93:         # skip the digits to ']' (93 = ']')
+        for i < len(ty) and ty[i] != 93:         # skip the digits (and bounded's 'b') to ']' (93 = ']')
             i = i + 1
         return substr(ty, i + 1, len(ty))        # everything after ']'
     return substr(ty, 1, len(ty) - 1)
@@ -3516,7 +3547,7 @@ fn elem_ty(ty: string) -> string:               # "[T]" -> "T"  /  "[3]int" -> "
 # C family name for an array type (dynamic OR fixed). Dynamic [T] -> Arr_<mangle(T)>;
 # fixed [N]T -> Arr_<mangle("[N]T")> = Arr_f<N>_<mangle(T)> (distinct from Arr_<T>).
 fn afam(ty: string) -> string:
-    if is_fixarr(ty):
+    if is_fixarr(ty) or is_bounded(ty):
         return "Arr_" + mangle(ty)
     return "Arr_" + mangle(elem_ty(ty))
 
@@ -4260,6 +4291,8 @@ fn func_suffix(ty: string) -> string:            # a C identifier for the signat
 fn mangle(ty: string) -> string:
     if is_fixarr(ty):                            # fixed [N]T -> f<N>_<mangle(elem)> (distinct from arr_<elem>)
         return "f" + str(fixarr_size(ty)) + "_" + mangle(elem_ty(ty))
+    if is_bounded(ty):                           # bounded[N]T -> b<N>_<mangle(elem)> (distinct from fixed f<N>_ and dynamic arr_)
+        return "b" + str(bounded_cap(ty)) + "_" + mangle(elem_ty(ty))
     if is_array(ty):
         return "arr_" + mangle(elem_ty(ty))
     if is_option(ty):
@@ -4374,7 +4407,7 @@ fn cty(dc: Decls, ctx: Ctx, ty: string) -> string:
         return "HTask* "
     if is_chan(ty):                              # shared bounded-queue handle (channels, CC-4)
         return "HChan* "
-    if is_fixarr(ty):                             # [N]T fixed -> the inline Arr_f<N>_T struct (1.6)
+    if is_fixarr(ty) or is_bounded(ty):           # [N]T fixed / bounded[N]T -> the inline Arr_f<N>_T / Arr_b<N>_T struct
         return afam(ty) + " "
     if is_array(ty):                              # [T] -> the monomorphized Arr_T
         return "Arr_" + mangle(elem_ty(ty)) + " "
@@ -5862,23 +5895,30 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return mfam(bt) + "_get(" + gen_expr(base, names, types, dc, ctx) + ", " + krt(dc, ctx, bt, gen_expr(idx, names, types, dc, ctx)) + ", " + z + ")"
             if is_fixarr(bt):                               # [N]T fixed read a[i]: inline .v[], static bound N (1.6)
                 return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.v[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", " + str(fixarr_size(bt)) + ")]; })"
+            if is_bounded(bt):                              # bounded[N]T read a[i]: inline .v[], runtime bound .len
+                return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.v[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", _a.len)]; })"
             # array read a[i]: bounds-checked (hi_bchk) to match tychoc/runtime. The
             # descriptor is copied into _a so `base` is evaluated ONCE (a side-effecting
             # base like m[k] must not run twice). Nested a[i][j] -> nested blocks, each
             # with its own _a (block-scoped shadowing is fine).
             return "({ " + cty(dc, ctx, bt) + " _a = " + gen_expr(base, names, types, dc, ctx) + "; _a.data[hi_bchk(" + gen_expr(idx, names, types, dc, ctx) + ", _a.len)]; })"
         EArrLit(elems, _ft, _el):
-            if _ft != "":                          # fixed [N]T literal (1.6): fill the inline v[] of a temp struct
+            if _ft != "":                          # fixed [N]T OR bounded[N]T literal: fill the inline v[] of a temp struct
                 fet := elem_ty(_ft)
                 feo := "0"
                 if elem_deepcopy(dc, ctx, fet):
                     feo = ctx.owner
                 fsctx := with_owner(dc, ctx, feo)
-                fout := "({ " + cty(dc, ctx, _ft) + "_lf;"
+                finit := "_lf;"
+                if is_bounded(_ft):                # bounded fills only k<=N; zero the tail, set len below
+                    finit = "_lf = {0};"
+                fout := "({ " + cty(dc, ctx, _ft) + finit
                 fi := 0
                 for fi < len(elems):
                     fout = fout + " _lf.v[" + str(fi) + "] = " + gen_rhs(elems[fi], names, types, dc, fsctx) + ";"
                     fi = fi + 1
+                if is_bounded(_ft):
+                    fout = fout + " _lf.len = " + str(len(elems)) + ";"
                 return fout + " _lf; })"
             et := nt_skin_of(elems[0], names, types, dc, ctx)   # keep the NEWTYPE element so the from-constructor family (Arr_Handle_from) matches the decl's Arr_Handle type; cty resolves the C element to its base
             if et == "":
@@ -5889,6 +5929,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             return "Arr_" + mangle(et) + "_from(" + ctx.owner + ", (" + cty(dc, ctx, et) + "[]){" + gen_store_args_owner(elems, names, types, dc, ctx, eo) + "}, " + str(len(elems)) + ")"
         EArrEmpty(ety, _el):
             if is_soa(ety):                       # empty soa: zeroed descriptor
+                return "(" + cty(dc, ctx, ety) + "){0}"
+            if is_bounded(ety):                   # empty bounded: zeroed inline descriptor (len 0)
                 return "(" + cty(dc, ctx, ety) + "){0}"
             return "Arr_" + mangle(ety) + "_new()"
         EMapEmpty(kty, vty, _el):                      # key+value mangled to match the family (a tuple key (int,str) -> tup_int_str)
@@ -5920,6 +5962,8 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "substr(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
             if is_soa(bt):
                 return gen_soa_slice(dc, ctx, bt, gen_expr(base, names, types, dc, ctx), gen_expr(lo, names, types, dc, ctx), gen_expr(hi, names, types, dc, ctx))
+            if is_bounded(bt):                    # a slice needs a .data view; bounded stores inline
+                die_at(dc, ctx.line, "cannot slice a bounded[...] value; copy it into a [" + elem_ty(bt) + "] first")
             return "Arr_" + mangle(elem_ty(bt)) + "_slice(" + ctx.owner + ", " + gen_expr(base, names, types, dc, ctx) + ", " + gen_expr(lo, names, types, dc, ctx) + ", " + gen_expr(hi, names, types, dc, ctx) + ")"
         ELambda(id, ps, pts, ret, body, cn, ct, _el):
             suffix := func_suffix(mk_functype(pts, ret))
@@ -6193,6 +6237,13 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                     die_at(dc, ctx.line, "push's first argument must be an array or soa")
                 if is_soa(at):                    # soa push: grow each field buffer (in the soa's arena) + scatter
                     return "Soa_" + soa_struct(at) + "_push(" + owner_arena_of(args[0], names, types, dc, ctx) + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, "0")) + ")"
+                if is_bounded(at):                # bounded push: trap-on-full family (afam = Arr_b<N>_<elem>); inline, never fused/grown
+                    bet := elem_ty(at)
+                    boa := owner_arena_of(args[0], names, types, dc, ctx)
+                    bvo := ctx.owner
+                    if elem_deepcopy(dc, ctx, bet):
+                        bvo = boa
+                    return afam(at) + "_push(" + boa + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, bvo)) + ")"
                 et := elem_ty(at)
                 pv := evar_name(args[0])              # push-loop fusion: register-resident cursor write
                 if pv != "" and count_str_occ(ctx.fusearr, pv) > 0:
@@ -6216,12 +6267,16 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 return "Arr_" + mangle(et) + "_push(" + oa + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_rhs(args[1], names, types, dc, with_owner(dc, ctx, vo)) + ")"
             if name == "pop":                     # pop(arr): remove + return the last element
                 pat := type_of(args[0], names, types, dc, ctx)
+                if is_bounded(pat):               # v1: bounded supports push only
+                    die_at(dc, ctx.line, "pop is not supported on a bounded[...] yet")
                 if is_soa(pat):
                     return "Soa_" + soa_struct(pat) + "_pop(&" + gen_place(args[0], names, types, dc, ctx) + ")"
                 # result is deep-copied into ctx.owner (the array buffer may recycle), so
                 # the popped value is independent of the (shrunk) array. Scalars pass through.
                 return "Arr_" + mangle(elem_ty(pat)) + "_pop(" + ctx.owner + ", &" + gen_place(args[0], names, types, dc, ctx) + ")"
             if name == "reserve":                 # reserve(arr, n): preallocate exact capacity
+                if is_bounded(type_of(args[0], names, types, dc, ctx)):   # capacity is fixed at the type
+                    die_at(dc, ctx.line, "reserve does not apply to a bounded[...] -- its capacity is fixed")
                 rt := elem_ty(type_of(args[0], names, types, dc, ctx))
                 ra := owner_arena_of(args[0], names, types, dc, ctx)
                 return "Arr_" + mangle(rt) + "_reserve(" + ra + ", &" + gen_place(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
@@ -6704,6 +6759,8 @@ fn gen_place(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
                 return gen_expr(lv, names, types, dc, ctx)
             if is_fixarr(bt):                       # [N]T fixed lvalue a[i]: inline .v[], static bound N (1.6)
                 return "(*({ " + cty(dc, ctx, bt) + "* _a = &(" + gen_place(b, names, types, dc, ctx) + "); &_a->v[hi_bchk(" + gen_expr(i, names, types, dc, ctx) + ", " + str(fixarr_size(bt)) + ")]; }))"
+            if is_bounded(bt):                      # bounded[N]T lvalue a[i]: inline .v[], runtime bound .len
+                return "(*({ " + cty(dc, ctx, bt) + "* _a = &(" + gen_place(b, names, types, dc, ctx) + "); &_a->v[hi_bchk(" + gen_expr(i, names, types, dc, ctx) + ", _a->len)]; }))"
             # array element lvalue a[i]: bounds-checked (hi_bchk) like tychoc's _ptr.
             # A pointer stmt-expr keeps the result assignable; &(place) takes the base
             # address ONCE so a side-effecting place (e.g. m[k] slotptr) runs once.
@@ -7501,6 +7558,8 @@ fn fuse_detect(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: C
         ok := true
         if not is_array(et):                          # any array element type (scalar/str/struct/tuple/...); inout + soa excluded by is_array
             ok = false
+        if is_bounded(et):                            # bounded has no growable .data spine -> never fuse (would emit a missing _grow)
+            ok = false
         if count_str_occ(ctx.fusearr, nm) > 0:
             ok = false
         if fuse_defines(body, nm):
@@ -8180,7 +8239,7 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
             # the map_set in-place put below is unaffected.
             rnty := type_of(EVar(name, _el), names, types, dc, ctx)
             rown := owner_arena_of(EVar(name, _el), names, types, dc, ctx)
-            if is_array(rnty) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
+            if is_array(rnty) and not is_bounded(rnty) and not has_str(ctx.vparams, name) and not is_inout(var_type(names, types, name)) and not has_str(ctx.movables, name) and rown != "0":
                 return "    { " + cty(dc, ctx, rnty) + "_r = " + gen_rhs(e, names, types, dc, with_owner(dc, ctx, rown)) + "; if (" + lhs + ".data && " + lhs + ".data != _r.data) arena_recycle(" + rown + ", " + lhs + ".data, (size_t)" + lhs + ".cap * sizeof(*" + lhs + ".data)); " + lhs + " = _r; }\n"
             match e:                              # accumulator rewrite: x = map_set(x,k,v) -> in-place put
                 # A by-value map PARAM must NOT take the in-place put: it shares
@@ -9325,6 +9384,9 @@ fn gen_arr_str(dc: Decls, ctx: Ctx, et: string) -> string:
         fet := elem_ty(et)
         n := str(fixarr_size(et))
         return "static char* " + nm + "_str(Arena* ar, " + nm + " xs) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < " + n + "; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); r = sc(ar, r, " + str_field(dc, ctx, fet, "ar", "xs.v[i]") + "); } return sc(ar, r, s_from_c(ar, \"]\")); }\n"
+    if is_bounded(et):                           # bounded[N]T: inline storage xs.v[i], runtime count xs.len
+        bfet := elem_ty(et)
+        return "static char* " + nm + "_str(Arena* ar, " + nm + " xs) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < xs.len; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); r = sc(ar, r, " + str_field(dc, ctx, bfet, "ar", "xs.v[i]") + "); } return sc(ar, r, s_from_c(ar, \"]\")); }\n"
     return "static char* " + nm + "_str(Arena* ar, " + nm + " xs) { char* r = s_from_c(ar, \"[\"); for (long i = 0; i < xs.len; i++) { if (i) r = sc(ar, r, s_from_c(ar, \", \")); r = sc(ar, r, " + str_field(dc, ctx, et, "ar", "xs.data[i]") + "); } return sc(ar, r, s_from_c(ar, \"]\")); }\n"
 
 # Map str: iterate insertion order (m.ord[i] is the key), look up the value slot via
@@ -9611,6 +9673,13 @@ fn preamble() -> string:
 # struct itself only needs T as a pointer — this is what lets [P] and recursive
 # structs like `struct Node { kids: [Node] }` compile).
 fn gen_arr_type(dc: Decls, ctx: Ctx, et: string) -> string:
+    if is_bounded(et):                           # bounded[N]T: inline v[N] + runtime len; copy/eq protos (no _from)
+        bnm := "Arr_" + mangle(et)
+        bct := cty(dc, ctx, elem_ty(et))
+        bn := str(bounded_cap(et))
+        bout := "struct " + bnm + "_ { " + bct + "v[" + bn + "]; long len; };\n"
+        bout = bout + "static int " + bnm + "_eq(" + bnm + " a, " + bnm + " b);\n"
+        return bout + "static " + bnm + " " + bnm + "_copy(Arena* ar, " + bnm + " a);\n"
     if is_fixarr(et):                            # fixed [N]T (1.6): inline storage struct + copy/eq protos (no _from)
         fnm := "Arr_" + mangle(et)
         fct := cty(dc, ctx, elem_ty(et))         # ELEMENT C type (et itself is the array type)
@@ -9643,7 +9712,27 @@ fn gen_fixarr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
     out = out + "static int " + nm + "_eq(" + nm + " x, " + nm + " y) { for (long i = 0; i < " + n + "; i++) if (!(" + eq_field(dc, ctx, fet, "x.v[i]", "y.v[i]") + ")) return 0; return 1; }\n"
     return out
 
+# bounded[N]T family: inline v[N] + runtime .len. Like the fixed family but access
+# is bounded by .len (not the static N), plus a _push that traps when len == N.
+fn gen_bounded_fns(dc: Decls, ctx: Ctx, et: string) -> string:
+    nm := "Arr_" + mangle(et)
+    fet := elem_ty(et)
+    ct := cty(dc, ctx, fet)                          # element C type, trailing space
+    n := str(bounded_cap(et))
+    out := "static void " + nm + "_push(Arena* ar, " + nm + "* xs, " + ct + "v) { if (xs->len >= " + n + ") { fprintf(stderr, \"tycho: push to a full bounded[" + n + "]\\n\"); exit(1); } xs->v[xs->len++] = " + cp_field(dc, ctx, fet, "ar", "v") + "; }\n"
+    out = out + "static " + ct + nm + "_get(" + nm + " xs, long i) { if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %ld out of bounds (len %ld)\\n\", i, xs.len); exit(1); } return xs.v[i]; }\n"
+    out = out + "static " + ct + "*" + nm + "_ptr(" + nm + "* xs, long i) { if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %ld out of bounds (len %ld)\\n\", i, xs->len); exit(1); } return &xs->v[i]; }\n"
+    out = out + "static void " + nm + "_set(Arena* ar, " + nm + "* xs, long i, " + ct + "v) { if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %ld out of bounds (len %ld)\\n\", i, xs->len); exit(1); } xs->v[i] = " + cp_field(dc, ctx, fet, "ar", "v") + "; }\n"
+    out = out + "static " + nm + " " + nm + "_copy(Arena* ar, " + nm + " src) { " + nm + " r = src;"
+    if elem_deepcopy(dc, ctx, fet):
+        out = out + " for (long i = 0; i < src.len; i++) r.v[i] = " + elem_copy_expr(dc, ctx, fet, "ar", "src.v[i]") + ";"
+    out = out + " return r; }\n"
+    out = out + "static int " + nm + "_eq(" + nm + " x, " + nm + " y) { if (x.len != y.len) return 0; for (long i = 0; i < x.len; i++) if (!(" + eq_field(dc, ctx, fet, "x.v[i]", "y.v[i]") + ")) return 0; return 1; }\n"
+    return out
+
 fn gen_arr_fns(dc: Decls, ctx: Ctx, et: string) -> string:
+    if is_bounded(et):                           # bounded[N]T: inline family
+        return gen_bounded_fns(dc, ctx, et)
     if is_fixarr(et):                            # fixed [N]T: inline family (1.6)
         return gen_fixarr_fns(dc, ctx, et)
     nm := "Arr_" + mangle(et)
@@ -10051,6 +10140,10 @@ fn note_arr_types(acc: inout [string], ty: string):
     b := base_ty(ty)
     if is_fixarr(b):                             # fixed [N]T (1.6): register the FULL type (its family
         if not has_str(acc, b):                  # is keyed on N+elem), then descend into the element
+            push(acc, b)
+        note_arr_types(&acc, elem_ty(b))
+    elif is_bounded(b):                          # bounded[N]T: family keyed on N+elem too -> register the FULL type
+        if not has_str(acc, b):
             push(acc, b)
         note_arr_types(&acc, elem_ty(b))
     elif is_array(b):
@@ -11698,6 +11791,8 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
                 return EMapEmpty(map_key(want), map_val(want), _el)
             if is_soa(want):
                 return EArrEmpty(want, _el)
+            if is_bounded(want):                  # bounded []: store the FULL type (codegen zeroes the inline descriptor)
+                return EArrEmpty(want, _el)
             if is_array(want):
                 return EArrEmpty(elem_ty(want), _el)
             return e
@@ -11769,6 +11864,17 @@ fn ground_pre(dc: Decls, ctx: Ctx, want: string, e: Expr) -> Expr:
                     push(ges, ground_pre(dc, ctx, el, es[gk]))
                     gk = gk + 1
                 return EArrLit(ges, want, _el)      # tag the literal with its fixed type
+            if is_bounded(want) and len(es) > 0:    # [e0..ek-1] coerces to bounded[N]T when k <= N
+                bcap := bounded_cap(want)
+                if len(es) > bcap:
+                    die("type: a bounded[" + str(bcap) + "] holds at most " + str(bcap) + " elements, got " + str(len(es)))
+                bel := elem_ty(want)
+                bges := []Expr
+                bgk := 0
+                for bgk < len(es):
+                    push(bges, ground_pre(dc, ctx, bel, es[bgk]))
+                    bgk = bgk + 1
+                return EArrLit(bges, want, _el)     # tag the literal with its bounded type
             return e
         EMapEmpty(k2, v2, _el):
             return e
@@ -12862,6 +12968,8 @@ fn gen_inst_mangle(ty: string) -> string:
     n := len(ty)
     if is_fixarr(ty):                                # "[N]E" fixed (1.6): arr<N>_<E> (distinct per size; matches tychoc type_mangle_ident)
         return "arr" + str(fixarr_size(ty)) + "_" + gen_inst_mangle(elem_ty(ty))
+    if is_bounded(ty):                               # "[bN]E" bounded -> bnd<N>_<E> (distinct from fixed arr<N>_)
+        return "bnd" + str(bounded_cap(ty)) + "_" + gen_inst_mangle(elem_ty(ty))
     if n > 1 and ty[0] == 91 and ty[n - 1] == 93:    # "[E]" array -> arr_<E> (C-identifier-safe)
         return "arr_" + gen_inst_mangle(substr(ty, 1, n - 1))
     if n > 1 and ty[0] == 123 and ty[n - 1] == 125:  # "{K:V}" map -> map_<K>_<V>
@@ -13699,6 +13807,8 @@ fn resolve_gtype(ty: string, structs: [StructDef], enums: [EnumDef], sinsts: ino
         return ty
     if is_fixarr(ty):                             # "[N]E" fixed (1.6): keep the length, resolve the element
         return "[" + str(fixarr_size(ty)) + "]" + resolve_gtype(elem_ty(ty), structs, enums, &sinsts, &einsts)
+    if is_bounded(ty):                            # "[bN]E" bounded: keep the cap, resolve the element
+        return "[b" + str(bounded_cap(ty)) + "]" + resolve_gtype(elem_ty(ty), structs, enums, &sinsts, &einsts)
     if is_sizeparam_arr(ty):                      # "[$N]E" size-param (1.6B): keep the $N, resolve the element
         return "[$" + sizeparam_name(ty) + "]" + resolve_gtype(sizeparam_elem(ty), structs, enums, &sinsts, &einsts)
     if is_array(ty):                              # "[E]" -> "[resolve(E)]" (recursive generics: `[LL(int)]` -> `[LL__int]`)
@@ -15033,8 +15143,8 @@ fn pack_program(prog: Program) -> Program:
 fn gfix_expr(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types: [string]) -> Expr:
     match e:
         EArrLit(es, ft, el):
-            el2 := ""                                 # element want: fixed dest -> its element type
-            if is_fixarr(want):
+            el2 := ""                                 # element want: fixed/bounded dest -> its element type
+            if is_fixarr(want) or is_bounded(want):
                 el2 = elem_ty(want)
             ges := []Expr
             gk := 0
@@ -15046,6 +15156,11 @@ fn gfix_expr(dc: Decls, ctx: Ctx, want: string, e: Expr, names: [string], types:
                 if len(es) != n:
                     die("type: a fixed-size array of length " + str(n) + " needs " + str(n) + " elements, got " + str(len(es)))
                 return EArrLit(ges, want, el)          # tag with the fixed type
+            if is_bounded(want) and len(es) > 0 and ft == "":
+                bcap := bounded_cap(want)
+                if len(es) > bcap:
+                    die("type: a bounded[" + str(bcap) + "] holds at most " + str(bcap) + " elements, got " + str(len(es)))
+                return EArrLit(ges, want, el)          # tag with the bounded type
             return EArrLit(ges, ft, el)
         ECall(nm, args, el):
             ga := []Expr
