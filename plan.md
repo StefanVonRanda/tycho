@@ -175,7 +175,7 @@ verdict, no implementation.
   - Stale allowlist entries fail the lane. Close a gap in tychoc0 and the lane
     demands its entry be deleted, so the allowlist can only shrink by hand.
 
-- [ ] **Phase 2 — Value-lifetime region design study (RFC, no implementation)**
+- [x] **Phase 2 — Value-lifetime region design study (RFC, no implementation)**
   - Scope: one new document under `docs/rfc/`. No compiler or runtime changes.
   - Content: state the gap with evidence from this repo (where scope-bound
     arenas force copy-up or the flat index-pool idiom, citing
@@ -192,3 +192,72 @@ verdict, no implementation.
   - Verify: `make check-links` green; each `path:line` citation in the document
     resolves to the claimed construct — spot-check every one and record the
     check under this phase.
+
+  ### Result
+
+  `docs/rfc/value-lifetime-regions.md` (one new file; nothing else in the tree
+  was touched — no compiler, runtime, or codegen change).
+
+  #### The three designs, and the verdict
+
+  | | surface | sideways pointer? | `spawn`/channels | fate |
+  |---|---|---|---|---|
+  | **A** region variables (`Node@r`) | `r := region()`, `x := T(..) in r` | **yes — that IS the feature** | must be BANNED from spawn args + channel payloads (a `Sendable` split) | reject: a lifetime-annotation system, contradicts `docs/thesis.md:10` |
+  | **B** value-homed arena | `owned [Conn]` / `Region(T)` — the arena is a hidden field, never a type variable | none: reads copy out, writes copy in | **survives intact** — `copy_into(.., "(&_tk->root)", ..)` generalises with no new rule | sound, buildable, narrow payoff |
+  | **C** `drop(x)` | one statement; use-after-drop is a compile error | none | n/a (intra-scope, value is consumed) | reject: it is the only one that breaks §10.4's asymmetry |
+
+  Recommendation: **don't build.** B is the only sound one and should still wait
+  for a stated condition — a `bench/` workload whose peak is dead-but-unreclaimable
+  storage that the three shipped mechanisms cannot recover, with per-value payloads
+  at or above one 64 KiB block. No such benchmark exists (checked the whole
+  `bench/README.md:19-45` table plus `gcscan`/`latency`/`invindex`: all three are
+  *live* retention).
+
+  #### Verification
+
+  ```
+  $ make check-links
+  link check: ok (116 markdown files, no dead relative links)
+  exit=0
+  ```
+
+  Every `path:line` citation was checked, not sampled: a script extracted all
+  **110** unique citations from the RFC, resolved each path, asserted each line
+  range is within the file, and dumped the cited lines; the dump (1090 lines) was
+  read in full and each region confirmed against the claim it backs. Two defects
+  were found this way and fixed before commit:
+
+  - `bench/README.md:26` was cited for the invindex hold-cost figure — line 26 is
+    the *iter-transform* row. Corrected to `:27`.
+  - `docs/spec/00-conventions.md:106-113` cut off mid-sentence before the
+    load-bearing "never silently"; extended to `:106-114`.
+
+  Post-fix re-run: 110 citations, 0 missing files, 0 out-of-range ranges.
+
+  #### Three findings that qualify the phase's premise
+
+  1. **"Copy-up" overstates the tax.** Up-escape is destination-passing *first*:
+     the value is produced directly in the destination's storage
+     (`docs/spec/07-memory-model.md:109-112`,
+     `docs/guides/memory-model.md:43-45`), so a copy is paid only for a value that
+     already exists elsewhere. The standing tax on long-lived structures is
+     reclamation timing, not repeated copying. §2.3 of the RFC states this.
+  2. **The "server holding N connections" shape does not exist in this repo.** The
+     accept loop holds no per-connection state and a connection is an `int` fd
+     (`examples/webserver/main.ty:205-215`, `corelib/httpd/httpd.ty:5-14`). The gap
+     is real but no call site currently pays for it — §3.4.
+  3. **The reference spike's optional half already shipped.** User-defined yielding
+     subscripts (`limited-references-spike.md:104-131`) are now documented
+     (`docs/reference/subscripts.md:1-8`), normative (§15.6/§18.7,
+     `docs/spec/appendix-e-conformance.md:132`,`:146`) and enforced
+     (`compiler/tychoc0.ty:2050`), so a region proposal must justify itself on
+     reclamation timing alone.
+
+  #### Drift found, deliberately NOT fixed (out of scope: one document, no code)
+
+  `examples/triepool.ty:3` still says the by-value trie "costs ~2.7x C on memory".
+  The current, consistently-stated figure is ~1.55× C
+  (`docs/internals/value-semantics-limits.md:45`, `docs/guides/memory-model.md:118`,
+  `docs/architecture.md:87`, `README.md:139`, `bench/README.md:33`,
+  `bench/trie/RESULTS.md:28` — all six re-opened rather than trusted). Recorded in
+  RFC §3.1 so it is not lost.
