@@ -46,6 +46,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §5.1 | distinct type identity (no erasure) | `tests/reject/char_as_type`, `reject/newtype_key_mix`, `reject/newtype_agg_mix` |
+| §5.2.1 | `int` = required 64-bit two's-complement (range, defined wrap) | `tests/int_overflow` |
 | §5.2.3 | `char` is not `int` | `tests/char_ops`, `reject/char_int_eq`, `reject/char_int_mul`, `reject/char_int_ord` |
 | §5.2.7 | fixed-width `u32`/`u64`/`f32` | `tests/sized_ints`, `tests/sized_family`, `corelib/test/sha256` |
 | §5.3.2 | fixed-size arrays `[N]T` | `tests/fixed_array`, `reject/fixed_array_bad_length`, `reject/fixed_array_zero_size`, `reject/fixed_array_nonconst_size` |

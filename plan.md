@@ -54,7 +54,7 @@ must NOT add fixtures or spec text. Lock phase (4) edits fixtures + `docs/`, not
 the compilers. Every phase runs each verification gate in its own foreground
 command; commits carry NO trailers (repo convention).
 
-- [ ] **Phase 1 — ratify `int` = 64-bit (punch-list #16)**
+- [x] **Phase 1 — ratify `int` = 64-bit (punch-list #16)**
   - Scope: `docs/spec/03-types.md` (the `int` definition), `docs/spec/appendix-f-impl-defined.md`
     (note the reference `long` lowering conforms on LP64 targets only),
     `docs/spec/appendix-e-conformance.md` (conformance row), `docs/internals/spec-plan.md`
@@ -67,6 +67,30 @@ command; commits carry NO trailers (repo convention).
     exists, and #16/§11 are struck from the open list.
   - Verify: `make spec-check` green; `make check-links` green; grep the new
     normative sentence and the appendix-F note and paste them.
+  - DONE (2026-07-23). Spec-only edits, no compiler/runtime source touched:
+    - `docs/spec/03-types.md` §5.2.1 — added the normative fixed-width lowering
+      requirement: "a conforming implementation MUST realize `int` at exactly 64
+      bits through a **fixed-width 64-bit lowering** — a C backend MUST emit a
+      fixed-width 64-bit type (`int64_t` / `long long`), never a type whose width
+      varies by platform such as C `long`".
+    - `docs/spec/appendix-f-impl-defined.md` — added the F.3 reference-implementation
+      note: the reference compilers lower `int` to C `long`, 64-bit on LP64 (conforms)
+      but 32-bit on LLP64/ILP32 (does NOT conform); int64_t/long long migration is a
+      tracked follow-up, not a spec relaxation.
+    - `docs/spec/appendix-e-conformance.md` — added §5 row `| §5.2.1 | int = required
+      64-bit two's-complement (range, defined wrap) | tests/int_overflow |`
+      (`tests/int_overflow` exercises LONG_MAX=2^63−1 / LONG_MIN=−2^63 + wrap).
+    - `docs/internals/spec-plan.md` — punch-list #16 marked RESOLVED (option a);
+      §11 residual `int`-width bullet struck (`~~...~~`) + RESOLVED.
+    - Verify evidence:
+      - `make spec-check` → "Appendix A grammar matches §3/§4 (ok)",
+        "all Appendix E fixture citations resolve (ok)", "7 runnable example(s), all pass".
+      - `make check-links` → "link check: ok (116 markdown files, no dead relative links)".
+      - grep 03-types.md:42-43 (MUST realize int at exactly 64 bits / fixed-width 64-bit
+        lowering) and appendix-f-impl-defined.md:66-71 (Reference-implementation note:
+        lower int to C long / 32-bit on LLP64 / does not conform) — both present.
+    - No out-of-scope work discovered (the int64_t codegen migration was already the
+      designated follow-up, recorded in spec-plan.md #16 per scope; not a new phase).
 
 - [ ] **Phase 2 — ratify shift-≥-width (unspecified) + `deps` tier (normative-optional)**
   - Scope: `docs/spec/09-expressions.md` (shift operators: count MUST be

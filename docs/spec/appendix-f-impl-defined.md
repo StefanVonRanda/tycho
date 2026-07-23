@@ -62,3 +62,15 @@ differ:
   — [§9](07-memory-model.md), [§10.3](07-memory-model.md#103-observable-storage-guarantees);
 - the accept/reject decision for every program (the two-implementation
   conformance oracle, [§1.3](00-conventions.md#13-conformance)).
+
+> **Reference-implementation note (not a spec allowance).** The required 64-bit
+> `int` width above is normative for *every* conforming implementation; it is
+> **not** implementation-defined. The reference compilers (`tychoc`, `tychoc0`)
+> currently lower `int` to C `long`. `long` is 64-bit on **LP64** targets (Linux,
+> macOS, the 64-bit BSDs), so the reference codegen satisfies the requirement
+> there, but `long` is **32-bit on LLP64** (64-bit Windows) and **ILP32** —
+> targets on which the reference codegen does **not** conform. Migrating the
+> lowering to a fixed-width 64-bit C type (`int64_t` / `long long`) closes the gap
+> and is a tracked follow-up (`docs/internals/spec-plan.md`, punch-list #16). The
+> requirement is 64-bit; the `long` lowering is an impl-limited realization, not a
+> relaxation of the spec.

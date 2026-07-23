@@ -38,7 +38,11 @@ compared, assigned, or unified across `match`/`if` arms (§5.5, [§6](04-inferen
 ### 5.2.1 `int`
 
 `int` is a **64-bit two's-complement signed integer**, with values `−2^63`
-through `2^63 − 1`. Arithmetic that overflows this range **wraps** with
+through `2^63 − 1`. This width is **required**, not target-dependent: a
+conforming implementation MUST realize `int` at exactly 64 bits through a
+**fixed-width 64-bit lowering** — a C backend MUST emit a fixed-width 64-bit type
+(`int64_t` / `long long`), never a type whose width varies by platform such as C
+`long` (§F.3, [Appendix F](appendix-f-impl-defined.md)). Arithmetic that overflows this range **wraps** with
 two's-complement semantics; overflow is fully defined and never traps
 ([§30](17-runtime.md)). Division and modulo by zero abort;
 `(−2^63) / −1` aborts (quotient overflow) while `(−2^63) % −1` is `0`. The

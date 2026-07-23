@@ -333,7 +333,12 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
     either (a) require a fixed-width 64-bit lowering (`long long`/`int64_t`), or
     (b) scope conformance to LP64 targets. Recommend (a) + note the current
     codegen satisfies it on LP64 only. **This is the single sharpest consequence
-    of decision §0.**
+    of decision §0.** **RESOLVED (2026-07-23, user ruling):** option (a) — the
+    spec REQUIRES a fixed-width 64-bit two's-complement `int` (normative in
+    `docs/spec/03-types.md` §5.2.1). The reference `long` lowering satisfies it on
+    **LP64 only** and is noted as an impl limitation (Appendix F.3), with a
+    fixed-width 64-bit codegen migration (`int64_t`/`long long`) tracked as a
+    follow-up (not done in this pass). Conformance row: Appendix E §5.2.1.
 17. **Float semantics** — declare IEEE-754 binary64/binary32 conformance:
     NaN/inf/signed-zero behavior, `==` on floats is bitwise (`0.0/0.0`, NaN
     ordering, `NaN == NaN`). Currently unspecified.
@@ -542,8 +547,10 @@ changes an observable behavior claim.
 - Whether the unobservable optimizations are stated as "observationally
   transparent by fiat" (recommended) or with their static preconditions spelled
   out normatively.
-- `int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
-  LP64. Recommend require-64-bit.
+- ~~`int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
+  LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit
+  (option a) — normative in `docs/spec/03-types.md` §5.2.1; reference `long`
+  lowering conforms on LP64 only (Appendix F.3). See punch-list #16.
 - Whether the `deps` extended tier is *normative-but-optional* or *informative*.
   Recommend normative-but-optional (an implementation MAY omit it and still
   conform at the core tier).
