@@ -409,7 +409,7 @@ Every phase, without exception:
   the lock is rtparity (text present in the emitted C) plus the side-by-side
   `cmp` in (1). Phase 5 is queued to make that lane differential.
 
-- [ ] **Phase 5 — make the abort lane differential** (discovered in Phase 1)
+- [x] **Phase 5 — make the abort lane differential** (discovered in Phase 1)
   - `tests/abort/` builds with `$TYCHOC` only (`tests/run.sh:180`), and so does
     the conc abort lane (`tests/conc/run.sh:79`). Every runtime trap this plan
     adds is therefore locked on the reference side only; on the tychoc0 side the
@@ -421,6 +421,76 @@ Every phase, without exception:
     failing; restore; full suite green.
   - Scope: `tests/run.sh` (+ `tests/conc/run.sh` if it applies). No compiler
     changes.
+
+  **The change — `tests/run.sh` abort lane only, no compiler touched.** Each
+  `tests/abort/*.ty` fixture is now built by BOTH compilers: tychoc as before
+  (`--emit-c -o` → `$TMP/ab.c`), and the self-hosted tychoc0 via the `$TMP/h0`
+  already built at `tests/run.sh:141` for the reject lane (it emits C to stdout,
+  `compiler/tychoc0.ty:16150`), into `$TMP/ab0.c`. Both binaries run on the same
+  empty stdin; stderr and exit status captured separately. The existing tychoc
+  assertions are unchanged (nonzero exit + a `tycho:` message); two new arms fire
+  after them: `compilers diverge on exit status (tychoc $rc, tychoc0 $rc0)` when
+  `rc0 != rc`, and `compilers diverge on abort message` (with a `diff`) when
+  `cmp -s` on the two stderr streams disagrees. So the lane now proves the trap
+  FIRES on the same input in tychoc0, not merely that its text exists in the
+  emitted C — closing the "text-level lock, not fires-on-the-same-input lock"
+  caveat carried by Phases 1-4 §4.
+
+  Scope note: `tests/conc/run.sh` left unchanged. Its abort fixtures are the
+  CC-2 double-wait / CC-4 closed-channel concurrency backstops, NOT the runtime
+  traps this plan added (those are all in `tests/abort/`). Making it differential
+  is a separate follow-up, filed below.
+
+  **Pre-check before wiring the strict `cmp`.** Ran all 15 `tests/abort/*.ty`
+  through both compilers by hand: byte-identical stderr AND identical exit=1 on
+  every one (`chr_oob`, `div_overflow`, `div_zero`, `index_oob`, `mod_zero`,
+  `oom_alloc`, `pop_empty`, `range_step_zero`, `reserve_range`, `slice_hi_oob`,
+  `slice_lo_gt_hi`, `slice_neg_lo`, `slice_soa_oob`, `split_empty_sep`,
+  `to_int_oob`). So the strict comparison is green on the clean tree, not a
+  latent failure.
+
+  **1. The lane catches divergence — flip test.** Temporarily flipped the split
+  trap text in tychoc0's emitted runtime (`compiler/tychoc0.ty:10025`,
+  `"tycho: split with an empty separator"` → `"...separator (FLIPPED)"`), rebuilt
+  h0, ran the abort lane. It FAILED, exit 1:
+  ```
+  FAIL  abort_split_empty_sep  (compilers diverge on abort message)
+        1c1
+        < tycho: split with an empty separator
+        ---
+        > tycho: split with an empty separator (FLIPPED)
+  abort-lane passed: 14   failed: 1
+  ```
+  (Run via a standalone driver holding the abort-lane block verbatim — the full
+  `tests/run.sh` main loop is ~20 min of ASan builds; the block under test is
+  identical.) The other 14 fixtures still passed — only the flipped trap
+  diverged, exactly the intended signal. Then `git checkout compiler/tychoc0.ty`
+  fully restored it; `git status --short` shows only `M tests/run.sh`, no
+  compiler change. Re-running the lane on the restored tree: `passed: 15
+  failed: 0`.
+
+  **2. Full suite green after restore.** Each gate its own run:
+  - `make test` — `passed: 405   failed: 0` / `all green`; the abort lane now
+    runs both compilers and all 15 are `ok    abort_*`.
+  - `make rtparity` — `3 shared, 0`; `27 shared, 0`; `5 shared, 0`;
+    `the two runtimes agree`. Allowlist still empty (unchanged from Phase 4).
+  - `make fixpoint` — `ok B == C : tychoc0 reproduces itself byte-identically
+    (34450 lines C)`; `fixpoint: all green`. 34450 == Phase 4's line count, which
+    proves tychoc0 is unchanged (no compiler edit survived).
+
+- [ ] **Phase 6 — make the conc abort lane differential** (discovered in Phase 5)
+  - `tests/conc/run.sh:79` still builds its abort fixtures (CC-2 double-wait,
+    CC-4 closed-channel backstops) with `$TYCHOC` only. The self-hosted tychoc0
+    (`$TMP/tychoc0`, already built at `tests/conc/run.sh:34` for the positive
+    parity differential) also emits those backstops but is never asserted to die
+    identically on them — the same reference-only lock Phase 5 closed for
+    `tests/abort/`.
+  - Out of Phase 5's scope: those are concurrency backstops, not the runtime
+    traps this plan added. Filed as a follow-up, not required by this plan's goal
+    (an empty `ALLOW_MSG_TYCHOC_ONLY`, reached in Phase 4).
+  - Done when: `tests/conc/abort/` asserts both compilers die with the sibling
+    `.err` message and matching exit behaviour under the same resource bounds.
+  - Scope: `tests/conc/run.sh`. No compiler changes.
 
 - [x] **Phase 4 — the four map 2^31 guards**
   - `[string:int]`, `[string:float]`, `[int:int]`, `[int:float]`

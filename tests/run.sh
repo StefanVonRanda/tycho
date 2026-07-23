@@ -174,19 +174,39 @@ for d in tests/reject/pkg/*/; do
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
+# Differential: BOTH compilers must die identically on the same fixture. The
+# reference (tychoc) side asserts the abort fires at all (nonzero exit + a
+# 'tycho:' message); the self-hosted (tychoc0) side then asserts it dies with
+# the SAME stderr byte-for-byte and the SAME exit status. Before this, tychoc0's
+# runtime traps were locked only by rtparity, which proves the trap TEXT exists
+# in the emitted C, not that it fires on the same input. Reuses the $TMP/h0
+# tychoc0 built above; it emits C to stdout.
 for hi in tests/abort/*.ty; do
     [ -e "$hi" ] || continue
     name="abort_$(basename "$hi" .ty)"
     if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
        || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/ab.bin" "$TMP/ab.c" -lm 2>"$TMP/ab.log"; then
-        note "$name" "did not build"; sed 's/^/      /' "$TMP/ab.log"
+        note "$name" "tychoc did not build"; sed 's/^/      /' "$TMP/ab.log"
         fail=$((fail + 1)); fails="$fails $name"; continue
     fi
-    "$TMP/ab.bin" </dev/null >/dev/null 2>"$TMP/ab.err"; rc=$?
+    if ! "$TMP/h0" "$hi" >"$TMP/ab0.c" 2>"$TMP/ab.log" \
+       || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/ab0.bin" "$TMP/ab0.c" -lm 2>"$TMP/ab.log"; then
+        note "$name" "tychoc0 did not build"; sed 's/^/      /' "$TMP/ab.log"
+        fail=$((fail + 1)); fails="$fails $name"; continue
+    fi
+    "$TMP/ab.bin"  </dev/null >/dev/null 2>"$TMP/ab.err";  rc=$?
+    "$TMP/ab0.bin" </dev/null >/dev/null 2>"$TMP/ab0.err"; rc0=$?
     if [ "$rc" -eq 0 ]; then
         note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
     elif ! grep -q 'tycho:' "$TMP/ab.err"; then
         note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/ab.err"
+        fail=$((fail + 1)); fails="$fails $name"
+    elif [ "$rc0" -ne "$rc" ]; then
+        note "$name" "compilers diverge on exit status (tychoc $rc, tychoc0 $rc0)"
+        fail=$((fail + 1)); fails="$fails $name"
+    elif ! cmp -s "$TMP/ab.err" "$TMP/ab0.err"; then
+        note "$name" "compilers diverge on abort message"
+        diff "$TMP/ab.err" "$TMP/ab0.err" | head | sed 's/^/      /'
         fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
