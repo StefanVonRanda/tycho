@@ -70,21 +70,38 @@ for f in tests/conc/*.ty; do
     if [ $ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 done
 
-# abort fixtures: must compile, then DIE at runtime with the message in the
-# sibling .err file (the CC-2 double-wait and CC-4 closed-channel backstops --
-# defined loud failures, never UB).
+# abort fixtures: BOTH compilers must compile, then DIE at runtime with the
+# message in the sibling .err file, under the SAME resource bounds (the CC-2
+# double-wait and CC-4 closed-channel backstops -- defined loud failures, never
+# UB). tychoc drives its own build; the self-hosted tychoc0 ($TMP/tychoc0, built
+# above for the positive parity differential) emits C to stdout. Before this the
+# conc backstops were locked only by that positive differential, which proves
+# the trap TEXT is emitted, never that it FIRES on the same input. The reference
+# (tychoc) side asserts the backstop fires with its message; the tychoc0 side
+# asserts it dies with the SAME message and the SAME exit status. Substring grep
+# (not byte-for-byte) because spawn_cap is a fork-bomb: several threads can race
+# the cap and each print the line, a count that is not stable run to run.
 for f in tests/conc/abort/*.ty; do
     name=abort/$(basename "$f" .ty)
     want=$(cat "${f%.ty}.err")
     if ! $TYCHOC "$f" -o "$TMP/ab" >/dev/null 2>&1; then
         note "$name" "tychoc"; fail=$((fail+1)); continue
     fi
+    if ! "$TMP/tychoc0" < "$f" > "$TMP/ab0.c" 2>"$TMP/ab0b.err" \
+       || ! $CC -O2 -fwrapv -pthread -o "$TMP/ab0" "$TMP/ab0.c" -lm 2>"$TMP/ab0b.err"; then
+        note "$name" "tychoc0 build"; sed 's/^/      /' "$TMP/ab0b.err"; fail=$((fail+1)); continue
+    fi
     # Bound every abort run by memory + CPU, and pin a low task cap so the
     # spawn fork-bomb (recursive spawn) hits the bounded-concurrency ceiling fast
     # instead of exhausting host threads. Harmless to the non-spawn fixtures.
-    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab" ) >/dev/null 2>"$TMP/ab.err"
-    if [ $? -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
-        note "$name" "expected runtime die '$want'"; fail=$((fail+1))
+    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab" )  >/dev/null 2>"$TMP/ab.err";  rc=$?
+    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab0" ) >/dev/null 2>"$TMP/ab0.err"; rc0=$?
+    if [ $rc -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
+        note "$name" "tychoc expected runtime die '$want'"; fail=$((fail+1))
+    elif [ $rc0 -eq 0 ] || ! grep -q "$want" "$TMP/ab0.err"; then
+        note "$name" "tychoc0 expected runtime die '$want'"; sed 's/^/      /' "$TMP/ab0.err"; fail=$((fail+1))
+    elif [ $rc0 -ne $rc ]; then
+        note "$name" "compilers diverge on exit status (tychoc $rc, tychoc0 $rc0)"; fail=$((fail+1))
     else
         pass=$((pass+1))
     fi

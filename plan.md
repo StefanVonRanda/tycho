@@ -478,7 +478,7 @@ Every phase, without exception:
     (34450 lines C)`; `fixpoint: all green`. 34450 == Phase 4's line count, which
     proves tychoc0 is unchanged (no compiler edit survived).
 
-- [ ] **Phase 6 — make the conc abort lane differential** (discovered in Phase 5)
+- [x] **Phase 6 — make the conc abort lane differential** (discovered in Phase 5)
   - `tests/conc/run.sh:79` still builds its abort fixtures (CC-2 double-wait,
     CC-4 closed-channel backstops) with `$TYCHOC` only. The self-hosted tychoc0
     (`$TMP/tychoc0`, already built at `tests/conc/run.sh:34` for the positive
@@ -491,6 +491,44 @@ Every phase, without exception:
   - Done when: `tests/conc/abort/` asserts both compilers die with the sibling
     `.err` message and matching exit behaviour under the same resource bounds.
   - Scope: `tests/conc/run.sh`. No compiler changes.
+
+  **The change.** The conc abort lane now builds each fixture with BOTH
+  compilers: tychoc (`$TYCHOC "$f" -o "$TMP/ab"`, its own driver) and the
+  self-hosted tychoc0 (`"$TMP/tychoc0" < "$f" > "$TMP/ab0.c"` then `$CC -O2
+  -fwrapv -pthread ... -lm`, the exact flags the positive parity differential
+  uses at `tests/conc/run.sh:63-64`). Both binaries run under the SAME bounds
+  (`ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO`). Asserts: tychoc dies
+  (`rc != 0`) with the sibling `.err` message; tychoc0 dies (`rc0 != 0`) with the
+  SAME message; and `rc0 == rc` (matching exit behaviour). Substring grep, NOT
+  Phase 5's byte-for-byte stderr `cmp` — spawn_cap is a fork-bomb where several
+  threads can race the cap and each `fprintf` the line, so the line COUNT is not
+  stable run to run; the message TEXT and exit status are.
+
+  **Verify — differential fires (flip a conc backstop guard).** Temporarily
+  changed tychoc0's emitted `tycho_task_join` message (`compiler/tychoc0.ty:9702`,
+  `"tycho: task already waited"` -> `"tycho: joined twice"`), rebuilt tychoc,
+  ran `make conc`:
+
+  ```
+  FAIL abort/double_wait (tychoc0 expected runtime die 'task already waited')
+        tycho: joined twice
+  conc: passed 35   failed 1
+  make: *** [Makefile:96: conc] Error 1
+  ```
+
+  The tychoc0 side diverges exactly where the new assertion checks it. Then
+  `git checkout compiler/tychoc0.ty` + rebuild; `git status --short` shows only
+  `M tests/conc/run.sh` — no compiler change survived.
+
+  **Verify — full suite green after restore.** Each gate its own foreground run:
+  - `make conc` — `conc: passed 36   failed 0` (the abort lane now runs both
+    compilers on all three conc backstops: double_wait, chan_send_closed,
+    spawn_cap).
+  - `make rtparity` — `3 shared, 0`; `27 shared, 0`; `5 shared, 0`;
+    `the two runtimes agree on env knobs, diagnostics and arena stats`.
+  - `make fixpoint` — `ok   B == C : tychoc0 reproduces itself byte-identically
+    (34450 lines C)`; `fixpoint: all green`. 34450 == Phase 4/5's line count,
+    proving tychoc0 is unchanged (no compiler edit survived the restore).
 
 - [x] **Phase 4 — the four map 2^31 guards**
   - `[string:int]`, `[string:float]`, `[int:int]`, `[int:float]`
