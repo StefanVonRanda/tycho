@@ -92,7 +92,26 @@ command; commits carry NO trailers (repo convention).
     - No out-of-scope work discovered (the int64_t codegen migration was already the
       designated follow-up, recorded in spec-plan.md #16 per scope; not a new phase).
 
-- [ ] **Phase 2 — ratify shift-≥-width (unspecified) + `deps` tier (normative-optional)**
+- [x] **Phase 2 — ratify shift-≥-width (unspecified) + `deps` tier (normative-optional)**
+  - CORRECTED SCOPE (2026-07-23). The premise "shift is unspecified, no guard"
+    was STALE (from a pre-guard 2026-07-12 probe). Source shows shift is already
+    DEFINED and guarded in both compilers (`runtime/tycho_rt.c:129`: ≥width→0,
+    negative→abort), normative in `09-expressions.md` §13.2 / `17-runtime.md` §30,
+    already removed from the unspecified list in `appendix-f-impl-defined.md`, and
+    locked by `tests/shift_edge.ty`. The `deps` tier was likewise already
+    normative-but-optional (`00-conventions.md` §1.3, `15-program.md` §28.6).
+    User ruling (this session): KEEP shift DEFINED (do not regress the guard).
+    So no spec or compiler change was needed — only roadmap bookkeeping.
+  - DONE. Edited only `docs/internals/spec-plan.md`: punch-list #18 marked
+    RESOLVED-as-DEFINED (not unspecified); the superseded #18 probe note in §6a
+    annotated with the post-probe guard; punch-list #39 and the §11 `deps`-tier
+    residual bullet marked RESOLVED (already in-spec). No `docs/spec/` normative
+    text changed; no compiler/runtime touched.
+  - Verify evidence:
+    - `make spec-check` → "spec-examples: 7 runnable example(s), all pass"
+      (grammar + Appendix E citations resolve).
+    - `make check-links` → "link check: ok (116 markdown files, no dead relative
+      links)".
   - Scope: `docs/spec/09-expressions.md` (shift operators: count MUST be
     `0..width−1`, else unspecified), `docs/spec/appendix-f-impl-defined.md` (list
     the out-of-range shift as unspecified), the conformance-tiers text (Ch 1 /

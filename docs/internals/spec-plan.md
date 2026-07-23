@@ -342,8 +342,14 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
 17. **Float semantics** — declare IEEE-754 binary64/binary32 conformance:
     NaN/inf/signed-zero behavior, `==` on floats is bitwise (`0.0/0.0`, NaN
     ordering, `NaN == NaN`). Currently unspecified.
-18. **Shift amount ≥ bit-width or negative** (`<<`/`>>`) — no runtime guard is
-    visible; C UB unless codegen masks. Pin (define or reject or mask).
+18. **Shift amount ≥ bit-width or negative** (`<<`/`>>`). **RESOLVED
+    (2026-07-23, user ruling):** DEFINED, not unspecified — the runtime guards
+    every shift (`runtime/tycho_rt.c:129`): count ≥ width → `0`, negative → abort
+    (`tycho: negative shift count`), negative constant rejected at compile time.
+    Normative in `docs/spec/09-expressions.md` §13.2 and `docs/spec/17-runtime.md`
+    §30; removed from the unspecified list (`appendix-f-impl-defined.md`). Locked
+    by `tests/shift_edge.ty`. (The original "no runtime guard visible" wording
+    predates the guard — see the superseded probe note in §6a.)
 19. **`to_int`/`to_float`/`to_u32…` out-of-range** conversion behavior — pin
     (truncate/saturate/wrap/reinterpret) per pair.
 20. **FFI sized-int round-trip** — does `int → u32 param → int return` preserve
@@ -403,7 +409,9 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
     image, tls) form an **extended tier** an implementation MAY omit and the test
     harness already skips when the C lib is absent; pure-Tycho + libc-only is the
     **core tier**. Ch 1/31 must formalize this so "conforming" is well-defined
-    without libcurl/openssl.
+    without libcurl/openssl. **RESOLVED (2026-07-23):** formalized normatively in
+    `docs/spec/00-conventions.md` §1.3 (two-tier conformance) and
+    `docs/spec/15-program.md` §28.6.
 
 ## 6a. Resolved by differential probing (2026-07-12)
 
@@ -432,11 +440,14 @@ result below **agreed** on both unless noted:
   RESOLVED as *unspecified* (Appendix F), with a noted future option to pin it
   by emitting sequenced temporaries. Same reasoning applies to general
   place/side-effect ordering within one expression.
-- **#18 shift amount ≥ width — UNSPECIFIED.** `1 << 64`, `1 << 100` both gave
-  `0`, but this is C undefined behavior in the emitted code (no guard/mask).
-  RESOLVED as *unspecified*: a shift count MUST be in `0..width−1`; otherwise
-  the result is unspecified. (Candidate hardening: mask or reject — a design
-  decision, not ratified.)
+- **#18 shift amount ≥ width — now DEFINED.** The 2026-07-12 probe saw `1 << 64`
+  → `0` with no guard and recorded it as *unspecified* C UB. A runtime guard was
+  added afterward (`runtime/tycho_rt.c:129`, emitted by both compilers): count ≥
+  width → `0`, negative → abort, negative constant rejected at compile time.
+  **SUPERSEDED (2026-07-23, user ruling):** shift behavior is DEFINED — normative
+  in `docs/spec/09-expressions.md` §13.2 / `docs/spec/17-runtime.md` §30 and
+  removed from the unspecified list (`appendix-f-impl-defined.md`); locked by
+  `tests/shift_edge.ty`.
 - **#19 out-of-range `to_int(float)` — UNSPECIFIED.** `to_int(1e30)` produced a
   nonsensical, non-representable value (C UB from the float→long cast).
   RESOLVED as *unspecified*: a conforming program MUST NOT rely on an
@@ -551,6 +562,8 @@ changes an observable behavior claim.
   LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit
   (option a) — normative in `docs/spec/03-types.md` §5.2.1; reference `long`
   lowering conforms on LP64 only (Appendix F.3). See punch-list #16.
-- Whether the `deps` extended tier is *normative-but-optional* or *informative*.
+- ~~Whether the `deps` extended tier is *normative-but-optional* or *informative*.
   Recommend normative-but-optional (an implementation MAY omit it and still
-  conform at the core tier).
+  conform at the core tier).~~ **RESOLVED (2026-07-23):** normative-but-optional —
+  already formalized in `docs/spec/00-conventions.md` §1.3 and
+  `docs/spec/15-program.md` §28.6. See punch-list #39.
