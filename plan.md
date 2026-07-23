@@ -422,7 +422,7 @@ Every phase, without exception:
   - Scope: `tests/run.sh` (+ `tests/conc/run.sh` if it applies). No compiler
     changes.
 
-- [ ] **Phase 4 — the four map 2^31 guards**
+- [x] **Phase 4 — the four map 2^31 guards**
   - `[string:int]`, `[string:float]`, `[int:int]`, `[int:float]`
     (`runtime/tycho_rt.c:1794`, `:1937`, `:2124`, `:2263`). tychoc0 emits maps
     per-type with no cap.
@@ -431,3 +431,99 @@ Every phase, without exception:
   - Verify: as above. Do NOT allocate 2^31 entries — prove by source trace that
     the guard sits on the same growth path as the reference, and state plainly
     that it is unexercised at runtime.
+
+  **The predicate, read off the reference before writing anything.** All four
+  reference guards are byte-identical bar the `[K:V]` display name and sit at the
+  SAME spot in `tycho_map_<kv>_append`: immediately after the `if (m->ecount ==
+  m->ecap) { ...grow/compact... }` block and before `long e = m->ecount++;`
+  (`runtime/tycho_rt.c:1794` si, `:1937` sf, `:2124` ii, `:2263` if):
+
+  ```
+  if (m->ecount >= 2147483000L) { fprintf(stderr, "tycho: [string:int] map exceeds 2^31 entries\n"); abort(); }
+  ```
+
+  Note `abort()`, NOT `exit(1)` — copied exactly; and `[string:int]` has NO
+  space after the colon. rtparity keys on the `tycho: ...` TEXT only, so exit vs
+  abort is invisible to it, but the reference wording is copied verbatim anyway.
+
+  **Only these four (k,v) combos are guarded — checked against the reference,
+  not assumed.** tychoc's `map_of` (`src/tychoc.c:1102-1103`) canonicalizes ONLY
+  `[string:int]/[string:float]/[int:int]/[int:float]` (raw `T_STRING`/`T_INT`
+  key, raw `T_INT`/`T_FLOAT` value) to the four built-in guarded runtime maps
+  (`tycho_map_si/sf/ii/if`). Every other map type — a newtype/enum/struct key
+  (`:1106-1113`), or any other value — routes to the GENERATED composite
+  `tycho_mapc%d_append` (`src/tychoc.c:10600-10609`), which has NO 2^31 guard.
+  So a blanket cap on tychoc0's unified map template would DIVERGE (emit a
+  guard text tychoc never emits, e.g. `[string:string]`). tychoc0 embeds
+  `tycho_rt.c` whole on the tychoc side, so all four texts are always present in
+  tychoc's `--emit-c`; the only way to match with an empty allowlist is for
+  tychoc0 to emit exactly these four and no other map-cap text.
+
+  **The change.** One gated block in `gen_map_fns` (`compiler/tychoc0.ty`), the
+  sole per-type map emitter, just before the `_app` template. tychoc0 spells
+  `string` as `str` internally (`compiler/tychoc0.ty:1727-1728`), so the guard
+  fires on `(k == "str" or k == "int") and (v == "int" or v == "float")` and
+  maps `str -> "string"` for the message. `newtype`/`enum`/`struct`/`tuple`/
+  `array` keys carry the raw type name in `k` (not `"str"`/`"int"`), so they are
+  excluded exactly as the reference excludes them:
+
+  ```
+  capg := ""
+  if (k == "str" or k == "int") and (v == "int" or v == "float"):
+      kd := "int"
+      if k == "str":
+          kd = "string"
+      capg = "if (m->ecount >= 2147483000L) { fprintf(stderr, \"tycho: [" + kd + ":" + v + "] map exceeds 2^31 entries\\n\"); abort(); } "
+  ```
+  inserted into the `_app` line as `... m->ecap = nc; } } " + capg + "long e = m->ecount; ...`.
+
+  **1. Source trace — guard on the SAME growth path, reference vs tychoc0
+  emitted (built by tychoc0 on `tests/rtparity/surface.ty`, which uses all four
+  map types at `surface.ty:53,56,58,60`):**
+
+  ```
+  reference  (tycho_rt.c:1791-1795):
+      m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc;
+    }
+  }
+  if (m->ecount >= 2147483000L) { fprintf(stderr, "tycho: [string:int] map exceeds 2^31 entries\n"); abort(); }
+  long e = m->ecount++;
+
+  tychoc0 emitted:
+  ... m->ecap = nc; } } if (m->ecount >= 2147483000L) { fprintf(stderr, "tycho: [string:int] map exceeds 2^31 entries\n"); abort(); } long e = m->ecount; m->ecount = m->ecount + 1;
+  ```
+
+  Same predicate, same text, same `abort()`, same position (after the grow
+  block `} }`, before `long e`). tychoc0 writes `long e = m->ecount;
+  m->ecount = m->ecount + 1;` where the reference writes `long e = m->ecount++;`
+  — behaviourally identical, a pre-existing tychoc0 codegen style, not part of
+  this change. All four emitted texts confirmed present and unique:
+  `[string:int]`, `[string:float]`, `[int:int]`, `[int:float]`.
+
+  **UNEXERCISED AT RUNTIME — stated plainly.** The guard fires only at
+  `m->ecount >= 2147483000` (~2.1 billion live entries in a single map), which
+  cannot be reached in a test without tens of GB of allocation. Per the phase
+  instruction it is NOT triggered at runtime; it is proven by the source trace
+  above (identical text, identical growth-path position) and by rtparity, which
+  now counts all four as SHARED between the two runtimes.
+
+  **2. Does-not-fire-on-valid-input gates, all four green:**
+  - `make fixpoint` — `fixpoint: all green (self-hosting; B==C; single files +
+    packages; tychoc0 self-split dogfood)`; `ok B == C : tychoc0 reproduces
+    itself byte-identically (34450 lines C)`. tychoc0 inserts into maps on every
+    line while compiling itself, so a guard that mis-fired (or a mis-gated
+    element type) could not self-host byte-identically.
+  - `make test` — `passed: 405   failed: 0` / `all green`.
+  - `make corelib` — `corelib: all green (tychoc and tychoc0 agree, match
+    goldens)`.
+  - `make rtparity` — the four entries deleted, `ALLOW_MSG_TYCHOC_ONLY` now
+    `set()` (empty), lane green:
+    ```
+    rtparity: env knobs         3 shared, 0 allowlisted difference(s) (ok)
+    rtparity: diagnostics      27 shared, 0 allowlisted difference(s) (ok)
+    rtparity: arena-stats rows  5 shared, 0 allowlisted difference(s) (ok)
+    rtparity: the two runtimes agree on env knobs, diagnostics and arena stats
+    ```
+    0 allowlisted differences on every key; the four map diagnostics moved into
+    the 27 shared (was 23 + 4 allowlisted). The whole `ALLOW_MSG_TYCHOC_ONLY`
+    allowlist is now empty — every tychoc0 runtime gap on this lane is closed.

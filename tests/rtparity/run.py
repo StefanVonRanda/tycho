@@ -76,15 +76,7 @@ PROBE = os.path.join(ROOT, "tests", "rtparity", "surface.ty")
 #   * closing one in tychoc0 makes this lane demand the entry be deleted.
 # Nothing here is a spelling difference; the comparison keys above were chosen
 # so that spelling differences cannot reach this list.
-ALLOW_MSG_TYCHOC_ONLY = {
-    # The map index is int-sized, so tycho_rt.c refuses to grow past 2^31 entries
-    # (runtime/tycho_rt.c:1794, :1937, :2124, :2263). tychoc0 emits its maps
-    # per-type with no such guard.
-    "tycho: [string:int] map exceeds 2^31 entries\\n",
-    "tycho: [string:float] map exceeds 2^31 entries\\n",
-    "tycho: [int:int] map exceeds 2^31 entries\\n",
-    "tycho: [int:float] map exceeds 2^31 entries\\n",
-}
+ALLOW_MSG_TYCHOC_ONLY = set()    # every tychoc0 runtime gap on this lane is now closed
 ALLOW_MSG_TYCHOC0_ONLY = set()   # tychoc0 has never had a trap tychoc lacks
 ALLOW_ENV_TYCHOC_ONLY = set()    # the env surface is identical and must stay so
 ALLOW_ENV_TYCHOC0_ONLY = set()
