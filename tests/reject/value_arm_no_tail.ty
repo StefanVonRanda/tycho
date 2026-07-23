@@ -1,0 +1,11 @@
+# A multi-statement value arm MUST end in a value expression. Here the `if true`
+# branch's final statement is a `for` loop (a bare statement, not a value), so
+# both compilers reject the block — it produces no value for the `:=` to bind.
+fn main():
+    x := if true:
+        acc := 0
+        for i in range(3):
+            acc = acc + i
+    else:
+        9
+    println(str(x))

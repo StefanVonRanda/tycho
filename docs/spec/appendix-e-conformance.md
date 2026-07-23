@@ -111,7 +111,8 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | §13.2 | binary operators; `in` membership | `tests/bitops`, `tests/logic`, `reject/in_array`, `reject/in_string`, `reject/in_wrong_key` |
 | §13.3 | unary `-` `~` `not` | `tests/shift_edge`, `unaryparity` lane |
 | §13.4 | evaluation order; subject evaluated once | `tests/compound_index_eval`, `tests/match_subject_once` |
-| §13.5 | expression-valued `if`/`match` (tail) | `tests/if_expr`, `tests/match_expr`, `tests/match_inline`, `reject/if_expr_no_else`, `reject/if_expr_multistatement`, `reject/match_expr_nonexhaustive` |
+| §13.5 | expression-valued `if`/`match` (tail) | `tests/if_expr`, `tests/match_expr`, `tests/match_inline`, `reject/if_expr_no_else`, `reject/match_expr_nonexhaustive` |
+| §13.5 | multi-statement value arms (block ending in a value expr) | `tests/if_expr_block`, `tests/match_expr_block`, `reject/value_arm_no_tail` |
 | §13.6 | closures & function values | `tests/closures`, `tests/funcvalues`, `tests/combinator`, `reject/infer_lambda_param` |
 
 ### §14 Statements & control flow

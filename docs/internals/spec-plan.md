@@ -567,3 +567,13 @@ changes an observable behavior claim.
   conform at the core tier).~~ **RESOLVED (2026-07-23):** normative-but-optional —
   already formalized in `docs/spec/00-conventions.md` §1.3 and
   `docs/spec/15-program.md` §28.6. See punch-list #39.
+- ~~Value `if`/`match` arms restricted to a single expression (both compilers
+  `die`d on a multi-statement branch).~~ **RESOLVED (2026-07-23):** multi-statement
+  value arms are implemented in both compilers (a branch is a block of ordinary
+  statements ending in a value expression) and normative in `docs/spec/09-expressions.md`
+  §13.5 / `02-grammar.md` §4.3.2; locked by `tests/if_expr_block`,
+  `tests/match_expr_block`, `reject/value_arm_no_tail` (Appendix E §13.5). Known
+  residual asymmetry (a NEW follow-up, not this item): tychoc accepts a value-ctrl
+  leading decl (`inner := if …`) inside a value arm; tychoc0 rejects it as an
+  unknown variable in the tail — its `extend_tail_scope` does not bind value-ctrl
+  leading decls.

@@ -538,15 +538,17 @@ match s:
   contain any statements and produce a value by assigning or `return`-ing from
   inside each arm.
 - **Value `match`** stands as the whole right-hand side of a `:=`, a typed
-  `x: T =`, a plain assignment, or a `return` (tail position). Each arm is a
-  **single expression** whose value becomes the result; all arms MUST have the
-  **same type**, which is the type of the whole expression. A value `match` is
+  `x: T =`, a plain assignment, or a `return` (tail position). Each arm is a block
+  whose **final statement is a value expression** (a bare value expression is the
+  one-statement case); leading ordinary statements may precede it. That final
+  expression's value becomes the result; all arms MUST have the **same type**,
+  which is the type of the whole expression. A value `match` is
   exhaustive exactly as the statement form is. The value form of `if` similarly
   requires an `else` (every path must produce a value). This desugars to the
   declare-then-assign-in-each-arm form (§14).
 
 ```tycho
-label := match status:          # value match — arms are single expressions
+label := match status:          # value match — each arm ends in a value expression
     Active:  "on"
     Idle:    "waiting"
     Done:    "finished"

@@ -41,8 +41,8 @@ payload into 0–8 names local to the arm), a qualified `pkg.Variant`, or the
 wildcard `_`. A `match` MUST be **exhaustive**: every variant of the subject's
 type MUST be covered, or a `_` arm MUST be present; a non-exhaustive `match` is
 rejected at compile time. Payload bindings are visible only within their arm. The
-statement form runs a block per arm; the value form (single-expression arms, tail
-position) is defined in §13.5.
+statement form runs a block per arm; the value form (arms are blocks ending in a
+value expression, tail position) is defined in §13.5.
 
 ## 14.4 Loops
 

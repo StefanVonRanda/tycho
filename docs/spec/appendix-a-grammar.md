@@ -134,7 +134,7 @@ Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
 SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
               | "default" ":" NEWLINE Block
               | "closed" ":" NEWLINE Block
-ValueCtrl   ::= If | Match              /* value form: single-expression branches, tail position */
+ValueCtrl   ::= If | Match              /* value form: block branches ending in a value expression, tail position */
 Expr      ::= OrExpr
 OrExpr    ::= AndExpr ( "or" AndExpr )*
 AndExpr   ::= NotExpr ( "and" NotExpr )*

@@ -1,0 +1,58 @@
+# Multi-statement value `match` arms (ROADMAP 2.1): a value `match` arm may be an
+# indented block of ordinary statements followed by a FINAL value expression. The
+# arm's payload binds and leading-statement locals are both visible in the tail.
+# Covers `:=` inference, a `return`-position value match, a `_` wildcard arm, and
+# nested control flow (a plain `if` statement) inside an arm.
+
+enum Shape:
+    Circle(int)
+    Rect(int, int)
+    Dot
+
+# `return` position: each arm binds a local from its payload, then yields
+fn area(s: Shape) -> int:
+    return match s:
+        Circle(r):
+            r2 := r * r
+            3 * r2
+        Rect(w, h):
+            a := w * h
+            a + 0
+        Dot:
+            z := 0
+            z
+
+# `:=` inferred, with a `_` wildcard arm and nested control flow (a plain `if`
+# STATEMENT mutating an arm-local) before the tail
+fn tag(s: Shape) -> string:
+    name := match s:
+        Circle(r):
+            size := "?"
+            if r > 5:
+                size = "big"
+            else:
+                size = "small"
+            "circle-" + size
+        _:
+            other := "other"
+            other
+    return name
+
+# Option scrutinee, payload bind used after a side-effecting push
+fn collect(o: Option(int)) -> [int]:
+    return match o:
+        Some(v):
+            acc := [v]
+            push(acc, v + 1)
+            acc
+        None:
+            empty := [0]
+            empty
+
+fn main():
+    println(str(area(Circle(2))) + " " + str(area(Rect(3, 4))) + " " + str(area(Dot)))
+    println(tag(Circle(9)) + " " + tag(Circle(1)) + " " + tag(Dot))
+    xs := collect(Some(5))
+    ys := collect(None)
+    println(str(len(xs)) + " " + str(xs[0]) + " " + str(xs[1]))
+    println(str(len(ys)) + " " + str(ys[0]))

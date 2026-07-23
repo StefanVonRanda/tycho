@@ -1,0 +1,71 @@
+# Multi-statement value arms (ROADMAP 2.1): a value `if` branch may be an indented
+# block of ordinary statements followed by a FINAL value expression. The leading
+# statements bind and mutate branch-locals used by the tail; they lower to plain
+# sequenced C (no statement-expression). Covers `:=` inference, typed `:=`, a
+# `return`-position value if, and nested control flow (a plain `if`/`for` before
+# the tail).
+
+# `:=` inferred: each branch binds a branch-local, then yields an expr using it
+fn classify(n: int) -> string:
+    label := if n > 0:
+        doubled := n * 2
+        "pos:" + str(doubled)
+    elif n == 0:
+        tag := "z"
+        tag + "ero"
+    else:
+        neg := 0 - n
+        "neg:" + str(neg)
+    return label
+
+# typed `:=`, two leading bindings before the tail
+fn score(a: int, b: int) -> int:
+    v : int = if a > b:
+        d := a - b
+        bonus := d * 10
+        bonus + a
+    else:
+        s := a + b
+        s * 2
+    return v
+
+# `return` position, with a side-effecting `push` before the tail
+fn pick(flip: bool) -> [int]:
+    return if flip:
+        base := [1, 2, 3]
+        push(base, 4)
+        base
+    else:
+        one := 7
+        [one]
+
+# nested control flow inside a value arm: a branch-local, a plain `if` STATEMENT
+# mutating it, and a nested `for` loop, all before the tail reads the local
+fn nested(n: int) -> string:
+    r := if n > 0:
+        tier := "?"
+        if n > 100:
+            tier = "big"
+        else:
+            tier = "mid"
+        bump := 0
+        for i in range(n):
+            bump = bump + 1
+        "pos-" + tier + "-" + str(bump)
+    else:
+        neg := 0 - n
+        "neg-" + str(neg)
+    return r
+
+fn main():
+    println(classify(3))
+    println(classify(0))
+    println(classify(0 - 4))
+    println(str(score(9, 2)) + " " + str(score(2, 3)))
+    xs := pick(true)
+    ys := pick(false)
+    println(str(len(xs)) + " " + str(xs[3]) + " " + str(len(ys)) + " " + str(ys[0]))
+    println(nested(200))
+    println(nested(20))
+    println(nested(4))
+    println(nested(0 - 1))

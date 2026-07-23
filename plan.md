@@ -227,7 +227,7 @@ command; commits carry NO trailers (repo convention).
       value expression — both compilers reject via the `is_sexpr(body[last])` /
       `body[n-1]->kind != S_EXPR` check).
 
-- [ ] **Phase 4 — lock multi-statement value arms (fixtures + goldens + spec)**
+- [x] **Phase 4 — lock multi-statement value arms (fixtures + goldens + spec)**
   - Scope: new `tests/*.ty` fixtures + `.out` goldens exercising `if`-value and
     `match`-value multi-statement arms (nested, in a function returning the value,
     with side-effecting statements before the tail); a `tests/reject/` fixture for
@@ -247,3 +247,92 @@ command; commits carry NO trailers (repo convention).
   - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
     `make fixpoint`, `make spec-check`, `make check-links` — each its own
     foreground command; paste each summary line.
+  - DONE (2026-07-23). Fixtures + goldens + spec text, no compiler/runtime source
+    touched.
+    - New positive fixtures (each with binding + side-effecting leading statements
+      before a tail value, a `return`-position arm, and nested plain control flow
+      inside an arm), goldens generated from each compiler's native stdout:
+      - `tests/if_expr_block.ty` + `tests/if_expr_block.out` — `:=`/typed-`:=`/
+        `return`-position value `if`; branch-local binds, a `push` side effect, a
+        nested plain `if` statement + a `for` loop before the tail.
+      - `tests/match_expr_block.ty` + `tests/match_expr_block.out` — `:=`/
+        `return`-position value `match`; payload binds + leading locals in the
+        tail, a `_` wildcard arm, a nested plain `if` statement, an `Option`
+        scrutinee with a side-effecting `push`.
+    - New reject fixture (rejected by BOTH compilers with a diagnostic — verified):
+      - `tests/reject/value_arm_no_tail.ty` — a value `if` branch whose FINAL
+        statement is a `for` loop (not a value expression). tychoc:
+        "a value branch must end in a value expression"; tychoc0:
+        "parse: a value branch must end in a value expression".
+    - Spec text (no longer claims value arms are single-expression):
+      - `docs/spec/09-expressions.md` §13.5 — branch/arm is "an indented block
+        whose **final statement is a value expression**"; removed "Multi-statement
+        branches" from the not-supported list.
+      - `docs/spec/02-grammar.md` — §4.3.2 EBNF comment on `ValueCtrl` now reads
+        "block branches ending in a value expression"; the prose bullet updated to
+        "an indented block whose final statement is a value expression".
+      - `docs/spec/appendix-a-grammar.md` — regenerated the one drifted `ValueCtrl`
+        line to match `gen_grammar.sh` (spec-check Check 1 stays green).
+      - `docs/spec/10-statements.md` §19 note — value form is "arms are blocks
+        ending in a value expression".
+      - `docs/spec/12-aggregates.md` §19.4 — same value-`match` construct; updated
+        the two "single expression" claims (NOT in the three named files, fixed for
+        spec self-consistency; see out-of-scope note below).
+      - `docs/spec/appendix-e-conformance.md` §13.5 — dropped the stale
+        `reject/if_expr_multistatement` citation (Phase 3 `git rm`'d that fixture,
+        leaving spec-check Check 2 broken) and added a new §13.5 row citing
+        `tests/if_expr_block`, `tests/match_expr_block`, `reject/value_arm_no_tail`.
+      - `docs/internals/spec-plan.md` §11 — added a RESOLVED bullet closing the
+        single-expression value-arm limitation.
+    - Gate evidence (each its own foreground command):
+      - `make test` → `passed: 407   failed: 0` / `all green` (404 → 407: +2
+        positive fixtures, +1 reject).
+      - `make corelib` → `all green (tychoc and tychoc0 agree, match goldens)`.
+      - `make rtparity` → `0 allowlisted difference(s)` on all three lanes / the
+        two runtimes agree.
+      - `make conc` → `passed 36   failed 0`.
+      - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically
+        (34660 lines C)` / `fixpoint: all green`.
+      - `make spec-check` → `Appendix A grammar matches §3/§4 (ok)`,
+        `all Appendix E fixture citations resolve (ok)`, `7 runnable example(s), all pass`.
+      - `make check-links` → `link check: ok (116 markdown files, no dead relative links)`.
+    - NOTE (transparent scope deviation): `docs/spec/12-aggregates.md` was edited
+      though Phase 4's scope named only 02-grammar / 09-expressions / 10-statements.
+      §19.4 makes the SAME value-`match` single-expression claim; leaving it would
+      make the spec self-contradictory against the Done-when ("the spec no longer
+      claims value arms are single-expression"). Edited the two lines only.
+
+- [ ] **Phase 5 — tychoc0: bind value-ctrl leading decls in a value arm's tail scope**
+  - OUT-OF-SCOPE DISCOVERY (Phase 4, 2026-07-23). The two compilers DIVERGE on a
+    well-formed program: a value-ctrl leading decl inside a value arm. tychoc
+    ACCEPTS and runs it; tychoc0 REJECTS it as an unknown variable in the tail.
+    Minimal repro:
+    ```
+    fn f(n: int) -> string:
+        r := if n > 0:
+            inner := if n > 10:
+                "big"
+            else:
+                "mid"
+            "pos-" + inner
+        else:
+            "neg"
+        return r
+    fn main():
+        println(f(20))
+    ```
+    tychoc: ACCEPTED. tychoc0: `line 7: type: unknown variable 'inner'`.
+  - Root cause: `compiler/tychoc0.ty` `extend_tail_scope` (added by Phase 3, near
+    `:8231`) walks a value arm's LEADING statements and pushes only `SDecl`/
+    `STypedDecl` locals whose RHS is a plain expr (`type_of(de, …)`). A value-ctrl
+    leading decl (`inner := if …`) carries its control on the decl node, not a
+    plain expr, so its name is never bound — the tail then can't see it. tychoc
+    avoids this because it resolves the whole branch block (`resolve_block`) before
+    collecting tail types, so the nested value-ctrl decl binds `inner` for free.
+  - Scope: fix `extend_tail_scope` (or its callers) in `compiler/tychoc0.ty` to
+    bind a value-ctrl leading decl's name/type in the tail scope, matching tychoc.
+    Do NOT touch `src/tychoc.c` (already correct). Add a positive fixture
+    exercising a value-ctrl leading decl inside a value arm (both compilers must
+    agree, byte-identical). Keep `make fixpoint` B==C byte-identical.
+  - Done when: both compilers accept the repro and agree byte-identically; a new
+    fixture locks it; all seven gates green.

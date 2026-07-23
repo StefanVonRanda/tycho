@@ -238,7 +238,7 @@ Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
 SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
               | "default" ":" NEWLINE Block
               | "closed" ":" NEWLINE Block
-ValueCtrl   ::= If | Match              /* value form: single-expression branches, tail position */
+ValueCtrl   ::= If | Match              /* value form: block branches ending in a value expression, tail position */
 ```
 
 - `elif` is sugar for an `else` block containing a single nested `if`.
@@ -252,9 +252,10 @@ ValueCtrl   ::= If | Match              /* value form: single-expression branche
   qualified variant, and `_` is the wildcard (§19).
 - **`ValueCtrl`** is the value-producing form of `if`/`match`: it may appear only
   as the tail of a declaration (`:=`, typed `=`), an assignment, a place
-  assignment, or a `return`. Each branch/arm is a single expression; a value
-  `if` MUST have an `else`; a value `match` MUST be exhaustive; all branches MUST
-  unify to one type. These rules are given in §13/§14.
+  assignment, or a `return`. Each branch/arm is an indented block whose final
+  statement is a value expression (a bare value expression is the one-statement
+  case); a value `if` MUST have an `else`; a value `match` MUST be exhaustive; all
+  branches MUST unify to one type. These rules are given in §13/§14.
 
 > Provenance: `parse_if` (`:2338`), `parse_match` (`:2409`, `:2723`), `for`/
 > `parallel` (`:2731-2827`), `select` (`:2686-2722`), value-control routing

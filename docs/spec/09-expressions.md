@@ -110,8 +110,12 @@ An `if` or `match` may **produce a value** when it appears in tail position — 
 the whole right-hand side of a `:=`, a typed `x : T =`, an `x =` or
 place-assignment, or a `return`. In that position:
 
-- each branch or arm is a **single expression** whose value is the branch's
-  result;
+- each branch or arm is an indented block whose **final statement is a value
+  expression**, and that final expression's value is the branch's result. The
+  common case is a single value expression (a one-statement block); leading
+  ordinary statements (binds, side effects) may precede it and execute before the
+  value is produced. A block whose final statement is not a value expression is
+  rejected;
 - a value `if` MUST have an `else` (every path yields a value); `elif` chains are
   allowed;
 - a value `match` MUST be exhaustive;
@@ -124,10 +128,9 @@ place-assignment, or a `return`. In that position:
   place-assignment / `return` tail positions, where a destination type flows in.
 
 The value lands in the destination's storage exactly as a returned value does; it
-introduces no new aliasing. Multi-statement branches, a branch that diverges
-(e.g. `return`s) instead of yielding, and use as a nested sub-expression
-(`1 + if …`) are not part of the value form; the statement forms
-([§14](10-statements.md)) cover those.
+introduces no new aliasing. A branch that diverges (e.g. `return`s) instead of
+yielding, and use as a nested sub-expression (`1 + if …`), are not part of the
+value form; the statement forms ([§14](10-statements.md)) cover those.
 
 ## 13.6 Closures and function values
 
