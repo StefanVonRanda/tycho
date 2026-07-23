@@ -380,3 +380,101 @@ command; commits carry NO trailers (repo convention).
       would be a wrong tail type (a unification error or bad C), not silent
       miscompilation; `make fixpoint` B==C and the 408-fixture lane both exercise
       it.
+
+- [x] **Phase 6 — close the three stale/open spec-plan bookkeeping items**
+  - Scope: `docs/internals/spec-plan.md` ONLY, unless verification shows a spec
+    gap, in which case the minimal `docs/spec/` sentence may be added. Do NOT
+    touch any compiler/runtime source, fixture, or golden.
+  - Item A — STALE. §11's value-arm bullet (`:576-579`) still records the
+    tychoc/tychoc0 value-ctrl-leading-decl asymmetry as a live "NEW follow-up".
+    Phase 5 (commit `755dd31`) fixed it: `compiler/tychoc0.ty:8252`
+    `extend_tail_scope` gained an `SValDecl` arm; locked by
+    `tests/value_arm_nested_valdecl.ty`. Strike the residual-asymmetry sentences
+    and mark RESOLVED citing the commit and the fixture.
+  - Item B — EBNF dialect punctuation (§11 `:556-557`). Verify (do not assume)
+    that the W3C `::=` dialect is declared normatively and used consistently:
+    `docs/spec/00-conventions.md:131` ("Both use a W3C-style EBNF"),
+    `appendix-a-grammar.md:21`, `README.md:42`; `::=` appears 76× in
+    appendix-a-grammar.md and 65× in 02-grammar.md. Confirm no competing dialect
+    (`=`/`:=`-style productions, ISO 14977, ABNF) leaked in. Then mark the bullet
+    RESOLVED-as-already-in-spec with the citations. If a competing form IS found,
+    normalize it and say so.
+  - Item C — unobservable optimizations (§11 `:558-560`). User ruling: take the
+    RECOMMENDED option — "observationally transparent by fiat", NOT static
+    preconditions spelled out normatively. Verify `docs/spec/07-memory-model.md`
+    §9.5 (`:64-79`) already states exactly that (MUST never change observable
+    behavior), cross-checked by `appendix-g-glossary.md:29-31` and
+    `appendix-e-conformance.md:187`. Then mark the bullet RESOLVED-as-already-in-spec
+    with the citations. Only if §9.5 does NOT actually state the by-fiat rule, add
+    the one minimal normative sentence there and record that as the change.
+  - Done when: all three §11 bullets read as resolved with `path:line` citations
+    (no open residual left in §11 except any genuinely new one), and no claim is
+    made that was not verified against the actual source.
+  - Verify: `make spec-check` and `make check-links`, each its own foreground
+    command; paste each summary line. Docs-only, so the compiler gates are not
+    required — but run `make test` once as a no-op guard that nothing outside
+    `docs/` changed, and confirm `git diff --stat` touches only `docs/`.
+  - DONE (2026-07-23). All three items closed in `docs/internals/spec-plan.md` §11.
+    **No `docs/spec/` edit was needed** — B and C were both already normative in the
+    spec; the change is bookkeeping only.
+  - **Item A — STALE, struck.** Verified by opening the source, not the phase text:
+    `compiler/tychoc0.ty:8239` declares
+    `fn extend_tail_scope(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx) -> ([string], [string])`
+    and `:8252` is the `SValDecl(vn, vannot, vc, vl):` arm — it sets
+    `vty := vannot`, falls back to `value_ctrl_type(vc, bn, bt, dc, ctx, vl)` when
+    the annotation is empty, then `push(bn, vn)` / `push(bt, vty)`. Commit
+    `755dd317b208bd4f98d19e2c609395334cdb48ba` = "fix(tychoc0): phase 5 — bind
+    value-ctrl leading decls in a value arm's tail scope". Fixture present on disk:
+    `tests/value_arm_nested_valdecl.ty` (2089 B) + `.out` (77 B). The residual-
+    asymmetry sentences are now struck and marked RESOLVED with these citations.
+  - **Item B — already in spec, RESOLVED-as-already-in-spec.** Declaration:
+    `docs/spec/00-conventions.md:131` "Both use a W3C-style EBNF:" followed by the
+    form table at `:133-142` (`| \`A ::= …\` | production defining nonterminal \`A\` |`,
+    plus `"x"`, `UPPER`, `A B`, `A | B`, `A?`, `A*`, `A+`); fence language fixed at
+    `00-conventions.md:170` ("**`ebnf`** — a grammar production (see §2.1)");
+    restated `docs/spec/appendix-a-grammar.md:21` ("Productions use the W3C-style
+    EBNF of [§2](00-conventions.md)") and `docs/spec/README.md:42` ("The grammar is
+    W3C-style EBNF over lexer-produced tokens").
+    Consistency measured, not assumed: 154 `::=` lines total — appendix-a-grammar 76,
+    02-grammar 65, 01-lexical 9, 05-generics 3, 03-types 1.
+    **Absence of a competing dialect established by exhaustive search** (RULE 11) over
+    `docs/**` and root `README.md`: (1) case-insensitive `iso[ -]?14977|abnf|rfc ?5234|
+    extended backus|backus|bnf|yacc|bison|antlr|peg grammar|railroad` → the only hits
+    are the word "EBNF" itself in spec-plan/00-conventions and ```ebnf fence openers;
+    (2) `::=` occurring outside the seven known files → NONE; (3) an awk pass over
+    **every** ```ebnf fence in `docs/` matching production lines whose separator is
+    `:=`, bare `=`, or bare `:` → **0 suspect lines** in all five grammar-bearing
+    files. Fence-language census across `docs/`: 27 `tycho`, 22 `ebnf`, 11 `c`,
+    8 `text`, 7 `output`, 1 `sh` — no `bnf`/`abnf`/`grammar` fence exists.
+  - **Item C — already in spec, RESOLVED-as-already-in-spec.** The by-fiat rule is
+    stated verbatim at `docs/spec/07-memory-model.md:64` (`### 9.5
+    Observationally-transparent optimizations`), `:69-70`: "Every such optimization is
+    **observationally transparent**: it MUST NOT change any observed value, program
+    output, or accept/reject decision." `:70-71` limits the licence to *when* and
+    *whether* storage is allocated or freed; `:76-81` binds a conforming
+    implementation to the same observable-equivalence standard. **No static
+    preconditions are spelled out normatively anywhere in §9.5** — so the RECOMMENDED
+    option is what the spec already carries, and no sentence was added.
+    Cross-checks opened and quoted: `docs/spec/appendix-g-glossary.md:29-31`
+    ("**Observationally transparent** — of a storage optimization: never changes any
+    observed value, output, or accept/reject decision") and
+    `docs/spec/appendix-e-conformance.md:187` ("**§5.1 identity, §9.4 uniqueness,
+    §9.5 transparent optimizations, §10.4 soundness** — properties of the model proven
+    by the whole differential suite + byte-identical fixpoint, not one fixture").
+  - Gates (each its own foreground command, exit 0):
+    - `make spec-check` → `spec-check: Appendix A grammar matches §3/§4 (ok)` /
+      `spec-check: all Appendix E fixture citations resolve (ok)` /
+      `spec-examples: 7 runnable example(s), all pass`
+    - `make check-links` → `link check: ok (116 markdown files, no dead relative links)`
+    - `make test` → `passed: 408   failed: 0` / `all green`
+  - Scope confirmed: `git diff --stat` = `docs/internals/spec-plan.md` (the only
+    content change) + `plan.md` (this phase's own text, which the plan author had
+    appended uncommitted, plus this DONE block). No compiler, runtime, fixture, or
+    golden touched; no `docs/spec/` file touched.
+  - Assumptions recorded for a future reader: the claim "B and C are already in spec"
+    rests on the quoted lines above, re-verified against the files on disk rather than
+    on the line numbers in this phase's text (appendix-a-grammar's 76 `::=` split as
+    74 inside ```ebnf fences + 2 in prose, so the phase's raw grep count is a superset,
+    not an error). If a future edit introduces a non-`::=` production or a second
+    grammar dialect, item B's resolution is invalidated and the awk fence scan above is
+    the check to re-run.

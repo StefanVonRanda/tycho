@@ -553,11 +553,30 @@ changes an observable behavior claim.
 
 ## 11. Residual decisions to make *during* writing (not blockers)
 
-- Exact EBNF dialect punctuation (W3C `::=` chosen; confirm on first grammar
-  review).
-- Whether the unobservable optimizations are stated as "observationally
+- ~~Exact EBNF dialect punctuation (W3C `::=` chosen; confirm on first grammar
+  review).~~ **RESOLVED (2026-07-23), already in spec:** the W3C `::=` dialect is
+  declared normatively in `docs/spec/00-conventions.md:131` ("Both use a W3C-style
+  EBNF:") with the form table at `:133-142` (`A ::= …`, `"x"`, `UPPER`, `A B`,
+  `A | B`, `A?`, `A*`, `A+`), restated at `docs/spec/appendix-a-grammar.md:21` and
+  `docs/spec/README.md:42`, and the `ebnf` fence language is fixed at
+  `00-conventions.md:170`. Used consistently: 154 `::=` productions across the five
+  grammar-bearing files (appendix-a 76, 02-grammar 65, 01-lexical 9, 05-generics 3,
+  03-types 1) and **zero** non-`::=` production lines inside any ```ebnf fence.
+  No competing dialect — searched all of `docs/` and root `README.md` for
+  ISO 14977 / ABNF / RFC 5234 / BNF / yacc / bison / ANTLR / railroad mentions
+  (no hits), for `::=` outside the known files (none), and for `=`/`:=`/`:`-style
+  productions inside every `ebnf` fence (none).
+- ~~Whether the unobservable optimizations are stated as "observationally
   transparent by fiat" (recommended) or with their static preconditions spelled
-  out normatively.
+  out normatively.~~ **RESOLVED (2026-07-23), already in spec:** by fiat (the
+  recommended option). `docs/spec/07-memory-model.md` §9.5
+  (`:64-81`) states it outright — `:69-70` "Every such optimization is
+  **observationally transparent**: it MUST NOT change any observed value, program
+  output, or accept/reject decision", with `:70-71` limiting the licence to *when*
+  and *whether* storage is allocated or freed. No static preconditions are spelled
+  out normatively. Cross-referenced by `docs/spec/appendix-g-glossary.md:29-31`
+  and `docs/spec/appendix-e-conformance.md:187` (§9.5 is evidenced by the whole
+  differential suite + `make fixpoint`, not one fixture).
 - ~~`int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
   LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit
   (option a) — normative in `docs/spec/03-types.md` §5.2.1; reference `long`
@@ -572,8 +591,13 @@ changes an observable behavior claim.
   value arms are implemented in both compilers (a branch is a block of ordinary
   statements ending in a value expression) and normative in `docs/spec/09-expressions.md`
   §13.5 / `02-grammar.md` §4.3.2; locked by `tests/if_expr_block`,
-  `tests/match_expr_block`, `reject/value_arm_no_tail` (Appendix E §13.5). Known
-  residual asymmetry (a NEW follow-up, not this item): tychoc accepts a value-ctrl
-  leading decl (`inner := if …`) inside a value arm; tychoc0 rejects it as an
-  unknown variable in the tail — its `extend_tail_scope` does not bind value-ctrl
-  leading decls.
+  `tests/match_expr_block`, `reject/value_arm_no_tail` (Appendix E §13.5).
+  ~~Known residual asymmetry (a NEW follow-up, not this item): tychoc accepts a
+  value-ctrl leading decl (`inner := if …`) inside a value arm; tychoc0 rejects it
+  as an unknown variable in the tail — its `extend_tail_scope` does not bind
+  value-ctrl leading decls.~~ **That asymmetry is RESOLVED (2026-07-23)** by commit
+  `755dd31` ("fix(tychoc0): phase 5 — bind value-ctrl leading decls in a value
+  arm's tail scope"): `compiler/tychoc0.ty:8252` adds the `SValDecl` arm to
+  `extend_tail_scope` (`:8239`), typing the decl the way `gen_stmt`'s `SValDecl`
+  does (annotation, else `value_ctrl_type`) and pushing name+type. Locked by
+  `tests/value_arm_nested_valdecl.ty` / `.out`. No residual asymmetry remains.
