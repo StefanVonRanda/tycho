@@ -302,7 +302,7 @@ command; commits carry NO trailers (repo convention).
       make the spec self-contradictory against the Done-when ("the spec no longer
       claims value arms are single-expression"). Edited the two lines only.
 
-- [ ] **Phase 5 — tychoc0: bind value-ctrl leading decls in a value arm's tail scope**
+- [x] **Phase 5 — tychoc0: bind value-ctrl leading decls in a value arm's tail scope**
   - OUT-OF-SCOPE DISCOVERY (Phase 4, 2026-07-23). The two compilers DIVERGE on a
     well-formed program: a value-ctrl leading decl inside a value arm. tychoc
     ACCEPTS and runs it; tychoc0 REJECTS it as an unknown variable in the tail.
@@ -336,3 +336,47 @@ command; commits carry NO trailers (repo convention).
     agree, byte-identical). Keep `make fixpoint` B==C byte-identical.
   - Done when: both compilers accept the repro and agree byte-identically; a new
     fixture locks it; all seven gates green.
+  - DONE (2026-07-23).
+    - Fix: `compiler/tychoc0.ty:8252` — `extend_tail_scope` gained an
+      `SValDecl(vn, vannot, vc, vl)` match arm alongside the existing
+      `SDecl`/`STypedDecl` arms. It types the leading value-ctrl decl exactly the
+      way `gen_stmt`'s `SValDecl` (`compiler/tychoc0.ty:8371`) and `sacc_block`
+      (`compiler/tychoc0.ty:9106`) already do — annotation if present, otherwise
+      `value_ctrl_type(vc, bn, bt, dc, ctx, vl)` — then pushes name+type onto the
+      tail scope. `value_ctrl_type` is defined below `extend_tail_scope`; forward
+      references are legal in tychoc0 (`type_of` at `:4859` already calls
+      `gen_expr` at `:6005`). Four lines of logic; no other file touched.
+      `src/tychoc.c` NOT touched (already correct — it resolves the whole branch
+      block first).
+    - Fixture: `tests/value_arm_nested_valdecl.ty` + `.out` (golden = the native
+      stdout both compilers produce, 11 lines). Covers a value `if` leading a
+      value `if` arm, a typed `w : int = if …` leading decl feeding a second
+      leading decl, a value `match` leading a value `match` arm over an
+      `Option(int)` payload, and two nesting levels deep.
+    - plan.md repro (lines 311-324) verified in the scratchpad, NOT the repo:
+      `tychoc` build ok / exit 0, self-hosted `tychoc0` emit + `cc` build ok /
+      exit 0, `cmp` of the two stdouts → IDENTICAL (`pos-big`). Before the fix
+      tychoc0 died with `line 7: type: unknown variable 'inner'`.
+    - Gate evidence (each its own foreground command):
+      - `make test` → `passed: 408   failed: 0` / `all green` (407 → 408: the one
+        new positive fixture).
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match
+        goldens)`.
+      - `make rtparity` → `0 allowlisted difference(s)` on env knobs (3 shared),
+        diagnostics (27 shared) and arena-stats rows (5 shared); `the two
+        runtimes agree`.
+      - `make conc` → `conc: passed 36   failed 0`.
+      - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself
+        byte-identically (34673 lines C)` / `fixpoint: all green`.
+      - `make spec-check` → `Appendix A grammar matches §3/§4 (ok)`,
+        `all Appendix E fixture citations resolve (ok)`,
+        `7 runnable example(s), all pass`.
+      - `make check-links` → `link check: ok (116 markdown files, no dead
+        relative links)`.
+    - Assumption recorded for a future reader: the fix assumes a leading
+      `SValDecl`'s type is fully determined by (annotation | `value_ctrl_type` of
+      its ctrl) in the scope accumulated so far — the same assumption the three
+      pre-existing `SValDecl` typing sites make. If that were wrong, the symptom
+      would be a wrong tail type (a unification error or bad C), not silent
+      miscompilation; `make fixpoint` B==C and the 408-fixture lane both exercise
+      it.

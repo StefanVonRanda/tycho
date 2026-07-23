@@ -8249,6 +8249,12 @@ fn extend_tail_scope(body: [Stmt], names: [string], types: [string], dc: Decls, 
             STypedDecl(dn, dty, de, _l):
                 push(bn, dn)
                 push(bt, dty)
+            SValDecl(vn, vannot, vc, vl):         # `inner := if.../match...` as a leading statement: type it like gen_stmt's SValDecl so the tail can see it
+                vty := vannot
+                if vannot == "":
+                    vty = value_ctrl_type(vc, bn, bt, dc, ctx, vl)
+                push(bn, vn)
+                push(bt, vty)
             _:
                 _ignore := 0
         i = i + 1

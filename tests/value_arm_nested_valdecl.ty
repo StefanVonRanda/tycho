@@ -1,0 +1,80 @@
+# A value-ctrl LEADING decl inside a value arm (ROADMAP 2.1). A multi-statement
+# value arm may open with `inner := if ...` / `inner := match ...` -- itself a
+# value if/match -- and the arm's FINAL tail expression must see `inner`.
+# Regression: tychoc0's extend_tail_scope bound only SDecl/STypedDecl leading
+# statements, so a leading SValDecl was never pushed and the tail died with
+# "unknown variable"; tychoc accepted the same program. Both compilers must now
+# accept and agree byte-for-byte.
+
+# value `if` leading a value `if` arm
+fn f(n: int) -> string:
+    r := if n > 0:
+        inner := if n > 10:
+            "big"
+        else:
+            "mid"
+        "pos-" + inner
+    else:
+        "neg"
+    return r
+
+# typed leading value decl, then a second leading decl reading it
+fn g(n: int) -> int:
+    v := if n > 0:
+        w : int = if n > 5:
+            n * 2
+        else:
+            n + 1
+        doubled := w * 10
+        doubled + 1
+    else:
+        0 - 1
+    return v
+
+# value `match` leading a value `match` arm, over an Option payload
+fn band_of(x: int) -> Option(string):
+    if x > 2:
+        return Some("hi")
+    return None
+
+fn h(o: Option(int)) -> string:
+    s := match o:
+        Some(x):
+            band := match band_of(x):
+                Some(b):
+                    b
+                None:
+                    "lo"
+            band + ":" + str(x)
+        None:
+            "none"
+    return s
+
+# two nested levels: a leading value decl whose own arm has a leading value decl
+fn deep(n: int) -> string:
+    r := if n > 0:
+        mid := if n > 10:
+            core := if n > 100:
+                "huge"
+            else:
+                "big"
+            "<" + core + ">"
+        else:
+            "small"
+        "pos" + mid
+    else:
+        "neg"
+    return r
+
+fn main():
+    println(f(20))
+    println(f(5))
+    println(f(0 - 1))
+    println(str(g(9)) + " " + str(g(3)) + " " + str(g(0)))
+    println(h(Some(7)))
+    println(h(Some(1)))
+    println(h(None))
+    println(deep(500))
+    println(deep(50))
+    println(deep(2))
+    println(deep(0 - 3))
