@@ -1,9 +1,0 @@
-# A value branch must be a single expression (multi-statement branches are a
-# deliberate follow-up, not yet supported) — both compilers reject.
-fn main():
-    x := if true:
-        y := 1
-        y
-    else:
-        0
-    println(str(x))

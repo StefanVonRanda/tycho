@@ -2290,9 +2290,11 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
     return StructDef(name, fields, typeparams, []string)
 
 # --- expression-valued if/match (ROADMAP 2.1) --------------------------------
-# A value branch/arm is a SINGLE expression (INDENT expr NEWLINE DEDENT), held as
-# a lone SExpr. `is_value_ctrl_kw` recognises the `if`/`match` that opens one in a
-# tail position (RHS of :=/typed-:=/=/place-=/return).
+# A value branch/arm is an indented block of zero or more ordinary statements
+# followed by a FINAL value expression, held as a trailing SExpr. The leading
+# statements ride along as an ordinary block, so a multi-statement branch lowers
+# to plain sequenced C (no statement-expression). `is_value_ctrl_kw` recognises
+# the `if`/`match` that opens one in a tail position (RHS of :=/typed-:=/=/place-=/return).
 fn is_value_ctrl_kw(t: Token) -> bool:
     return t.kind == TIdent and (t.text == "if" or t.text == "match")
 
@@ -2317,22 +2319,79 @@ fn stmt_self_terminates(s: Stmt) -> bool:
         _:
             return false
 
+# Is `pos` at the LAST logical line of the current value block? The branch tail is
+# a bare value expression on the final line; every earlier line is an ordinary
+# statement. A line that opens its own indented block (its terminating newline is
+# followed by an INDENT) is a statement, never the tail.
+fn value_block_at_tail(toks: [Token], pos: int) -> bool:
+    i := pos
+    for toks[i].kind != TNewline and toks[i].kind != TEof and toks[i].kind != TDedent:
+        i = i + 1
+    if toks[i].kind != TNewline:
+        return true
+    j := i + 1
+    for toks[j].kind == TNewline:
+        j = j + 1
+    if toks[j].kind == TIndent:
+        return false
+    return toks[j].kind == TDedent
+
+fn is_sexpr(s: Stmt) -> bool:
+    match s:
+        SExpr(e, ln):
+            return true
+        _:
+            return false
+
 fn parse_value_block(toks: [Token], pos: inout int) -> [Stmt]:
     open_block(toks, &pos)
-    _tl2 := tloc(toks[pos])
-    tail := parse_expr(toks, &pos)
-    if toks[pos].kind != TNewline:
-        die("parse: line " + str(toks[pos].line) + ": a value branch must be a single expression (multi-statement value branches are not yet supported)")
-    for toks[pos].kind == TNewline:
-        pos = pos + 1
-    expect(toks, &pos, TDedent)
     body := []Stmt
-    push(body, SExpr(tail, _tl2))
+    for toks[pos].kind != TDedent and toks[pos].kind != TEof:
+        if toks[pos].kind == TNewline:
+            pos = pos + 1
+        elif value_block_at_tail(toks, pos):
+            _tl := tloc(toks[pos])
+            tail := parse_expr(toks, &pos)
+            if toks[pos].kind != TNewline and toks[pos].kind != TDedent:
+                die("parse: line " + str(toks[pos].line) + ": a value branch must end in a value expression")
+            push(body, SExpr(tail, _tl))
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+        else:
+            # a leading statement — mirror parse_block (foreach hoist + fail-closed newline)
+            isfe := false
+            if toks[pos].kind == TIdent and toks[pos].text == "for" and pos + 4 < len(toks):
+                if toks[pos + 1].kind == TIdent and toks[pos + 2].kind == TIdent and toks[pos + 2].text == "in":
+                    if not (toks[pos + 3].kind == TIdent and toks[pos + 3].text == "range" and toks[pos + 4].kind == TLParen):
+                        isfe = true
+            if isfe:
+                parse_foreach(toks, &pos, &body)
+            else:
+                firstkw := ""
+                if toks[pos].kind == TIdent:
+                    firstkw = toks[pos].text
+                pend := []Stmt
+                st := parse_stmt(toks, &pos, &pend)
+                pj := 0
+                for pj < len(pend):
+                    push(body, pend[pj])
+                    pj = pj + 1
+                push(body, st)
+                cmpd := firstkw == "if" or firstkw == "for" or firstkw == "while" or firstkw == "match" or firstkw == "select" or firstkw == "parallel" or stmt_self_terminates(st)
+                if not cmpd and toks[pos].kind != TNewline and toks[pos].kind != TDedent:
+                    die("parse: line " + str(toks[pos].line) + ": expected newline")
+            if toks[pos].kind == TNewline:
+                pos = pos + 1
+    expect(toks, &pos, TDedent)
+    if len(body) == 0:
+        die("parse: a value branch must end in a value expression")
+    if not is_sexpr(body[len(body) - 1]):
+        die("parse: a value branch must end in a value expression")
     return body
 
-# the single tail expression of a value branch (its lone SExpr)
+# the tail expression of a value branch — the LAST statement (a trailing SExpr)
 fn branch_tail(body: [Stmt]) -> Expr:
-    match body[0]:
+    match body[len(body) - 1]:
         SExpr(e, ln):
             return e
         _:
@@ -2340,7 +2399,7 @@ fn branch_tail(body: [Stmt]) -> Expr:
             return EInt("0", 0)
 
 fn branch_tail_line(body: [Stmt]) -> int:
-    match body[0]:
+    match body[len(body) - 1]:
         SExpr(e, ln):
             return ln
         _:
@@ -2348,10 +2407,15 @@ fn branch_tail_line(body: [Stmt]) -> int:
 
 # rewrite one value branch's tail into a concrete statement (mode 0=return,
 # 1=assign name, 2=place-set target) — the parse-time desugar for non-decl tails.
+# The leading statements (all but the tail) ride along untouched.
 fn rewrite_branch(body: [Stmt], mode: int, name: string, target: Expr) -> [Stmt]:
     e := branch_tail(body)
     ln := branch_tail_line(body)
     out := []Stmt
+    i := 0
+    for i < len(body) - 1:
+        push(out, body[i])
+        i = i + 1
     if mode == 0:
         push(out, SReturn(e, ln))
     elif mode == 1:
@@ -8167,18 +8231,44 @@ fn cond_unwrap(s: string) -> string:
         i = i + 1
     return s                                       # unbalanced -> unchanged
 
+# Extend (names, types) with the locals a branch's LEADING statements declare (all
+# but the tail), so the tail expression types in its own scope — mirrors how tychoc
+# resolves the whole branch block before collecting tail types. Only the simple
+# local-introducing forms are handled; other statements introduce no tail-visible
+# local.
+fn extend_tail_scope(body: [Stmt], names: [string], types: [string], dc: Decls, ctx: Ctx) -> ([string], [string]):
+    bn := names
+    bt := types
+    i := 0
+    for i < len(body) - 1:
+        match body[i]:
+            SDecl(dn, de, _l):
+                dt := type_of(de, bn, bt, dc, ctx)
+                push(bn, dn)
+                push(bt, dt)
+            STypedDecl(dn, dty, de, _l):
+                push(bn, dn)
+                push(bt, dty)
+            _:
+                _ignore := 0
+        i = i + 1
+    return bn, bt
+
 # unify the tail-expression types of a value if/match (ROADMAP 2.1). Mirrors
 # tychoc's resolve-then-unify: each tail is typed in its branch's bind scope
-# (match payloads pushed to a value-copy of names/types), and all must agree.
+# (match payloads and leading-statement locals pushed to a value-copy of
+# names/types), and all must agree.
 fn value_ctrl_type(c: Stmt, names: [string], types: [string], dc: Decls, ctx: Ctx, sl: int) -> string:
     match c:
         SIf(cond, body, els, ln):
-            t := type_of(branch_tail(body), names, types, dc, ctx)
+            bn, bt := extend_tail_scope(body, names, types, dc, ctx)
+            t := type_of(branch_tail(body), bn, bt, dc, ctx)
             et := ""
             if len(els) == 1 and is_sif(els[0]):
                 et = value_ctrl_type(els[0], names, types, dc, ctx, sl)
             else:
-                et = type_of(branch_tail(els), names, types, dc, ctx)
+                en, ent := extend_tail_scope(els, names, types, dc, ctx)
+                et = type_of(branch_tail(els), en, ent, dc, ctx)
             if t != et:
                 die_at(dc, sl, "if/match branches produce different types (" + t + " and " + et + ")")
             return t
@@ -8208,7 +8298,8 @@ fn value_ctrl_type(c: Stmt, names: [string], types: [string], dc: Decls, ctx: Ct
                             push(bn, binds[j])
                             push(bt, pts[j])
                             j = j + 1
-                ti := type_of(branch_tail(bodies[i]), bn, bt, dc, ctx)
+                abn, abt := extend_tail_scope(bodies[i], bn, bt, dc, ctx)   # leading-statement locals on top of the arm binds
+                ti := type_of(branch_tail(bodies[i]), abn, abt, dc, ctx)
                 if rt == "":
                     rt = ti
                 elif ti != rt:

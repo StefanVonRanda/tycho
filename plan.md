@@ -126,7 +126,7 @@ command; commits carry NO trailers (repo convention).
   - Verify: `make spec-check` green; `make check-links` green; grep both new
     normative rules and paste them.
 
-- [ ] **Phase 3 — implement multi-statement value arms in BOTH compilers**
+- [x] **Phase 3 — implement multi-statement value arms in BOTH compilers**
   - Scope: `src/tychoc.c` (the value-branch parser at `:2498-2506`, plus type
     check and codegen) and `compiler/tychoc0.ty` (the mirror at `:2321-2329` plus
     codegen). A value arm of an expression-`if`/`match` may now be an indented
@@ -144,6 +144,88 @@ command; commits carry NO trailers (repo convention).
     exit 0). Then `make test`, `make corelib`, `make fixpoint` — each its own
     command, paste each summary line. If the feature needs a codegen change deeper
     than a statement-expression, HALT and report; do not guess.
+  - DONE (2026-07-23). No codegen change was needed: both compilers already
+    DESUGAR a value branch into an ordinary statement block (non-decl tails →
+    S_RETURN/S_ASSIGN/S_FIELDSET at parse time; `:=`/typed-`:=` tails → `name =
+    tail` at resolve/codegen). Multi-statement support = parse leading statements
+    + a trailing value expression, then rewrite/collect the LAST branch statement
+    instead of the first. Leading statements ride along as plain sequenced C — the
+    suggested `({ …; v; })` statement-expression was unnecessary for this arch.
+    - `src/tychoc.c`: added `value_block_at_tail()` (is the parser on the branch's
+      final line?); rewrote `parse_value_block()` to parse leading statements via
+      `parse_stmt` (draining the foreach `g_pending` queue like `parse_block`) then
+      the tail via `parse_expr`, enforcing the last statement is an `S_EXPR`;
+      forward-declared `parse_stmt` and hoisted `g_pending`/`g_npending` above it;
+      `ctrl_rewrite_tails`/`ctrl_collect_tails` now target `body[nbody-1]`. The DECL
+      case types the tail with branch scope for free (it already calls
+      `resolve_stmt(s->ctrl)` = full `resolve_block` over the branch before
+      `ctrl_collect_tails`).
+    - `compiler/tychoc0.ty`: mirror — `value_block_at_tail`/`is_sexpr` helpers, the
+      same multi-statement `parse_value_block`, `branch_tail`/`branch_tail_line`
+      read the LAST statement, `rewrite_branch` keeps the leading statements. Its
+      typing (`value_ctrl_type`) does NOT resolve the branch block, so a new
+      `extend_tail_scope()` walks the leading `SDecl`/`STypedDecl` statements and
+      pushes their locals onto a value-copy of names/types before typing each tail
+      — matching tychoc's branch-scoped resolve for the `:=` DECL position.
+    - Probe (`/tmp/.../probe.ty`, NOT a committed fixture) exercises the hardest
+      path — `:=` DECL position, 2-statement `if`-value arm AND 2-statement
+      `match`-value arm, each binding a branch-local then yielding an expr using it,
+      plus a `return`-position value if:
+
+      ```
+      fn classify(n: int) -> string:
+          label := if n > 0:
+              doubled := n * 2
+              "pos:" + str(doubled)
+          else:
+              neg := 0 - n
+              "nonpos:" + str(neg)
+          return label
+
+      fn describe(o: Option(int)) -> int:
+          r := match o:
+              Some(x):
+                  sq := x * x
+                  sq + 1
+              None:
+                  base := 7
+                  base * 2
+          return r
+
+      fn pick(b: bool) -> int:
+          return if b:
+              a := 10
+              a + 5
+          else:
+              c := 2
+              c * 3
+
+      fn main():
+          print(classify(3))
+          print(classify(0 - 4))
+          print(str(describe(Some(5))))
+          print(str(describe(None)))
+          print(str(pick(true)))
+          print(str(pick(false)))
+      ```
+
+    - Gate evidence:
+      - probe: tychoc and self-hosted tychoc0 both build it; both print
+        `pos:6nonpos:42614156`; `cmp` of the two outputs → IDENTICAL, exit 0.
+      - `make test` → `passed: 404   failed: 0` / `all green`.
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`.
+      - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically
+        (34660 lines C)` / `fixpoint: all green`. The backstop holds: a broken
+        block-value lowering could not self-host byte-identically.
+    - SCOPE DEVIATION (transparent): the feature invalidated one committed reject
+      fixture, `tests/reject/if_expr_multistatement.ty`, which asserted the removed
+      "multi-statement value branches are not yet supported" limitation (its `x :=
+      if true: y:=1; y` program is now valid). `make test` cannot be green while it
+      exists, so it was `git rm`'d in this phase even though fixtures are otherwise
+      Phase 4's domain. Phase 4 adds the replacement positive fixtures + goldens and
+      a reject fixture for a malformed arm (a block whose final statement is not a
+      value expression — both compilers reject via the `is_sexpr(body[last])` /
+      `body[n-1]->kind != S_EXPR` check).
 
 - [ ] **Phase 4 — lock multi-statement value arms (fixtures + goldens + spec)**
   - Scope: new `tests/*.ty` fixtures + `.out` goldens exercising `if`-value and
@@ -154,7 +236,10 @@ command; commits carry NO trailers (repo convention).
     chapters (`docs/spec/02-grammar.md`, `09-expressions.md`, `10-statements.md`)
     to state a value arm may be a block; `docs/spec/appendix-e-conformance.md`
     (row); `docs/internals/spec-plan.md` (mark the value-arm limitation closed).
-    Do NOT touch the compilers.
+    Do NOT touch the compilers. NOTE: Phase 3 already `git rm`'d the now-invalid
+    `tests/reject/if_expr_multistatement.ty` (it asserted the removed limitation);
+    this phase adds the replacement positive fixtures/goldens and the new
+    malformed-arm reject fixture.
   - Done when: the new fixtures pass under BOTH compilers (the differential
     `make test` lane), goldens match, any reject fixture is rejected by both, the
     spec no longer claims value arms are single-expression, and EVERY gate is

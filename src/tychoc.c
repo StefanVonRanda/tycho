@@ -2452,6 +2452,13 @@ static Expr *parse_expr(Parser *ps) {           /* logical-or: the top level */
 
 static Stmt **parse_block(Parser *ps, int *count);
 static Stmt **parse_arm_inline(Parser *ps, int value, int *count);   /* F7: one-line match-arm body */
+static Stmt *parse_stmt(Parser *ps);   /* a value branch may lead with ordinary statements before its tail */
+
+/* `for x in COLL:` desugars to a collection-temp decl plus a range loop. The temp
+ * decl must land in the block BEFORE the loop; parse_stmt queues it here and
+ * parse_block / parse_value_block drain the queue ahead of the returned statement. */
+static Stmt *g_pending[64];
+static int g_npending = 0;
 
 static Stmt *new_stmt(StmtKind k, int line) {
     Stmt *s = (Stmt *)xmalloc(sizeof(Stmt));
@@ -2485,28 +2492,63 @@ static Stmt *parse_if(Parser *ps, int line) {
 
 /* --- expression-valued if/match (ROADMAP 2.1) -------------------------------
  * `x := if c: a else: b`, `x = match v: ...`, `return if c: a else: b`, etc.
- * Restricted to TAIL position (RHS of :=/typed-:=/=/place-=/return) and to a
- * SINGLE expression per branch/arm. Each branch's tail expression is parsed as
- * a lone `S_EXPR` (the normal statement grammar rejects a bare non-call expr).
- * The non-decl positions desugar at parse time into ordinary S_RETURN/S_ASSIGN/
- * S_INDEXSET/S_FIELDSET inside the branches (so resolve+codegen are reused
- * wholesale); only `:=`/typed-`:=` keeps the control node on S_DECL.ctrl, its
- * tails rewritten to assignments once the inferred type is known (resolver).
- * ponytail: single-expression branches only; multi-statement value branches,
- * diverging arms, and nested-subexpression use are deliberate follow-ups. */
+ * Restricted to TAIL position (RHS of :=/typed-:=/=/place-=/return). A branch/arm
+ * is an indented block of zero or more ordinary statements followed by a FINAL
+ * value expression, held as a trailing `S_EXPR` (the normal statement grammar
+ * rejects a bare non-call expr, so the tail is parsed on its own).
+ * The non-decl positions desugar at parse time: the trailing S_EXPR becomes an
+ * ordinary S_RETURN/S_ASSIGN/S_INDEXSET/S_FIELDSET (leading statements untouched),
+ * so resolve+codegen are reused wholesale; only `:=`/typed-`:=` keeps the control
+ * node on S_DECL.ctrl, its tails rewritten to assignments once the inferred type
+ * is known (resolver). The leading statements ride along as an ordinary block, so
+ * a multi-statement branch lowers to plain sequenced C, no statement-expression. */
+
+/* Is the parser at the LAST logical line of the current value block? The branch
+ * tail is a bare value expression on the final line; every earlier line is an
+ * ordinary statement. A line that opens its own indented block (its terminating
+ * newline is followed by an INDENT) is a statement, never the tail. */
+static int value_block_at_tail(Parser *ps) {
+    int i = ps->p;
+    while (ps->t[i].kind != TK_NEWLINE && ps->t[i].kind != TK_EOF && ps->t[i].kind != TK_DEDENT)
+        i++;
+    if (ps->t[i].kind != TK_NEWLINE) return 1;   /* DEDENT/EOF with no newline: treat as the tail */
+    int j = i + 1;
+    while (ps->t[j].kind == TK_NEWLINE) j++;
+    if (ps->t[j].kind == TK_INDENT) return 0;    /* this line owns a block body -> a statement */
+    return ps->t[j].kind == TK_DEDENT;           /* the tail iff the next line is this block's DEDENT */
+}
+
 static Stmt **parse_value_block(Parser *ps, int *count) {
     eat(ps, TK_INDENT, "an indented value branch");
-    Expr *tail = parse_expr(ps);
-    if (!at(ps, TK_NEWLINE))
-        die_at(tail->line, "a value branch must be a single expression "
-               "(multi-statement value branches are not yet supported)");
-    eat(ps, TK_NEWLINE, "newline");
-    while (accept(ps, TK_NEWLINE)) {}
+    Stmt **body = NULL; int n = 0, cap = 0;
+    while (!at(ps, TK_DEDENT) && !at(ps, TK_EOF)) {
+        if (accept(ps, TK_NEWLINE)) continue;
+        if (value_block_at_tail(ps)) {
+            /* the branch's value: a bare expression on the final line */
+            Expr *tail = parse_expr(ps);
+            if (!at(ps, TK_NEWLINE))
+                die_at(tail->line, "a value branch must end in a value expression");
+            Stmt *se = new_stmt(S_EXPR, tail->line);
+            se->expr = tail;
+            if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
+            body[n++] = se;
+            eat(ps, TK_NEWLINE, "newline");
+            continue;   /* the tail is last; the next iteration hits the DEDENT and stops */
+        }
+        /* a leading statement (may queue a foreach collection-temp, drained as in parse_block) */
+        Stmt *st = parse_stmt(ps);
+        for (int k = 0; k < g_npending; k++) {
+            if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
+            body[n++] = g_pending[k];
+        }
+        g_npending = 0;
+        if (n == cap) { cap = cap ? cap * 2 : 8; body = (Stmt **)xrealloc(body, (size_t)cap * sizeof(Stmt *)); }
+        body[n++] = st;
+    }
     eat(ps, TK_DEDENT, "end of the value branch");
-    Stmt *se = new_stmt(S_EXPR, tail->line);
-    se->expr = tail;
-    Stmt **body = (Stmt **)xmalloc(sizeof(Stmt *));
-    body[0] = se; *count = 1;
+    if (n == 0 || body[n - 1]->kind != S_EXPR)
+        die_at(n ? body[n - 1]->line : cur(ps)->line, "a value branch must end in a value expression");
+    *count = n;
     return body;
 }
 
@@ -2597,22 +2639,23 @@ static Stmt *parse_value_ctrl(Parser *ps) {
  * for the non-declaration tail positions. `kind` is the target StmtKind;
  * `name`/`target` supply the destination. Recurses through elif chains. */
 static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target) {
-    Stmt **branches[2]; int nbr = 0;
+    Stmt **branches[2]; int bn[2]; int nbr = 0;
     if (c->kind == S_IF) {
-        branches[nbr++] = c->body;
+        branches[nbr] = c->body; bn[nbr] = c->nbody; nbr++;
         if (c->nels == 1 && c->els[0]->kind == S_IF) { ctrl_rewrite_tails(c->els[0], kind, name, target); }
-        else branches[nbr++] = c->els;
+        else { branches[nbr] = c->els; bn[nbr] = c->nels; nbr++; }
     }
     /* for a match, each arm is a branch */
     int narm = (c->kind == S_MATCH) ? c->narms : 0;
     for (int i = 0; i < nbr + narm; i++) {
         Stmt **body = (i < nbr) ? branches[i] : c->arms[i - nbr].body;
-        Stmt *se = body[0];                         /* the S_EXPR(tail) — always index 0, one element */
+        int nb = (i < nbr) ? bn[i] : c->arms[i - nbr].nbody;
+        Stmt *se = body[nb - 1];                     /* the S_EXPR(tail) — the LAST statement of the branch */
         Stmt *ns = new_stmt(kind, se->line);
         if (kind == S_RETURN)      { ns->expr = se->expr; }
         else if (kind == S_ASSIGN) { ns->name = name; ns->expr = se->expr; }
         else                       { ns->target = target; ns->expr = se->expr; }  /* S_INDEXSET / S_FIELDSET */
-        body[0] = ns;
+        body[nb - 1] = ns;                           /* leading statements ride along untouched */
     }
 }
 
@@ -2620,19 +2663,14 @@ static void ctrl_rewrite_tails(Stmt *c, StmtKind kind, char *name, Expr *target)
  * unify their types for a `:=` value if/match. Mirrors ctrl_rewrite_tails. */
 static void ctrl_collect_tails(Stmt *c, Expr **out, int *n) {
     if (c->kind == S_IF) {
-        out[(*n)++] = c->body[0]->expr;
+        out[(*n)++] = c->body[c->nbody - 1]->expr;   /* the tail is the LAST statement of the branch */
         if (c->nels == 1 && c->els[0]->kind == S_IF) ctrl_collect_tails(c->els[0], out, n);
-        else out[(*n)++] = c->els[0]->expr;
+        else out[(*n)++] = c->els[c->nels - 1]->expr;
     } else {   /* S_MATCH */
-        for (int i = 0; i < c->narms; i++) out[(*n)++] = c->arms[i].body[0]->expr;
+        for (int i = 0; i < c->narms; i++) out[(*n)++] = c->arms[i].body[c->arms[i].nbody - 1]->expr;
     }
 }
 
-/* `for x in COLL:` desugars to a collection-temp decl plus a range loop. The
- * temp decl must land in the block BEFORE the loop; parse_stmt queues it here
- * and parse_block drains the queue ahead of the statement it returned. */
-static Stmt *g_pending[64];
-static int g_npending = 0;
 static int g_forin_uid = 0;
 /* set for exactly the `for` directly under a `parallel` keyword, so its foreach
  * form is deferred (type-directed in resolve_parfor) instead of array-desugared;
