@@ -118,7 +118,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       + `plan.md` (this phase's own text) only — no source. `make test` green
       (no-op guard; summary line pasted at commit time).
 
-- [ ] **Phase 2 — emitted-C + runtime prelude: define `tycho_int`, migrate the runtime**
+- [x] **Phase 2 — emitted-C + runtime prelude: define `tycho_int`, migrate the runtime**
   - Scope: Phase 1 found there is NO single shared prelude — TWO parity-locked
     runtime/prelude texts (`runtime/tycho_rt.c` embedded via `src/tychoc.c`, and
     `compiler/tychoc0.ty` `preamble()`). Add to BOTH, textually identical:
@@ -135,6 +135,60 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
     `make fixpoint` — each its own command, paste each summary line. `fixpoint`
     MUST stay B==C (emission unchanged this phase).
+  - DONE (2026-07-24). Prelude added TEXTUALLY IDENTICAL to both runtimes; only
+    `runtime/tycho_rt.c` INT-SEMANTIC sites migrated (tychoc0 emission is Phase 4).
+    - **Prelude block (byte-identical in both — verified emitted bytes match):**
+      ```
+      #include <stdint.h>
+      #include <inttypes.h>
+      typedef int64_t tycho_int;
+      #define TY_PRId PRId64
+      _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
+      ```
+      - `runtime/tycho_rt.c:50-54` (verbatim C, right after the include block, emitted
+        first into every tychoc program by `src/tychoc.c:26`/`:10126`).
+      - `compiler/tychoc0.ty:9699` — one `out = out + "…"` in `preamble()` (`:9697`),
+        right after the include-block string (`:9698`), emitting the same 5 C lines
+        (`\n`/`\"` escaped). tychoc0-emitted programs therefore DEFINE `TY_PRId` and
+        include `<inttypes.h>` too (this is why corelib/conc/fixpoint compiled).
+    - **Runtime migration (`runtime/tycho_rt.c` only):** 331 lines had a standalone
+      `long`→`tycho_int`; all 26 `%ld`→`%" TY_PRId "`. NON-INT protected & untouched
+      (verified counts): `unsigned long long`=13, `long long`=14, `unsigned long`
+      (hash/mask)=66; shift COUNT `long long n` kept (`:129/:134` operand→tycho_int,
+      count stays); `uint_to_str`/`u2s` unsigned stays. **AMBIGUOUS left as C `long`
+      (fail-closed):** `tycho_ncpu()` return + `atol` + `sysconf` (`:842/:844/:845`
+      orig) — libc CPU-count helper, not a Tycho int (audit §3). **AMBIGUOUS migrated
+      per audit recommendation:** channel struct + ring positions (`_Atomic long`→
+      `_Atomic tycho_int`) and `g_live_tasks`, so `cap` and the positions share one
+      width; `tycho_now()`→`tycho_int` (epoch, 2038-safe on ILP32).
+    - **Drift caught + fixed (RULE 6):** first `make rtparity` FAILED with 11 diffs.
+      Root cause: `rtparity` (`tests/rtparity/run.py:92` `RE_MSG`) diffs the SET of
+      emitted `"tycho: …"` trap-text keys textually; tychoc0's `preamble()` carries a
+      SECOND hand-maintained copy of these runtime diagnostics, so migrating only
+      `tycho_rt.c`'s `%ld` drifted them. Fix: ported `%ld`→`%" TY_PRId "` into the 6
+      FIXED-runtime diagnostics in `tychoc0.ty` (`:9803` too-many-tasks, `:9844` hs,
+      `:9846` hi_sidx, `:9850` hi_bchk, `:9873` hi_cap_check, `:9896` hi_chr; 8
+      occurrences). LEFT the per-type array templates (`:9950-9971`) and slice
+      (`:5329/:10027`) as `%ld` — they mirror `src/tychoc.c`'s still-`%ld` inline
+      emission (Phase 4), so `tycho: index %ld out of bounds (len %ld)` stays SHARED.
+      Empirically re-diffed emitted C: symbol sets now equal (28 shared, both diffs
+      empty). No allowlist entry added (this was incomplete migration, not intended
+      divergence).
+    - **Phase 4 notes (scope-locked discoveries):** (a) `tycho_rt.c:104/:109` div-guard
+      uses `LONG_MIN` on now-`tycho_int` a/b — on ILP32 `LONG_MIN`≠`INT64_MIN`, so
+      Phase 4/6 must switch it to `INT64_MIN`. (b) `tycho_rt.c:132` shift keeps
+      `(unsigned long)x` inner cast (audit-scoped) — Phase 4/6 must review for ILP32
+      (would truncate the shift). (c) Phase 4 must migrate tychoc0's WHOLE inline
+      runtime (channels/headers/hi_* `long`, per-type `%ld`) + both compilers' type
+      emission in lockstep, or rtparity/fixpoint drift again.
+    - **Gates (each `env -u LD_PRELOAD make …`):**
+      - `make rtparity` → `env knobs 3 shared, 0 diff` · `diagnostics 28 shared, 0 diff`
+        · `arena-stats rows 5 shared, 0 diff` · "the two runtimes agree".
+      - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` · `fixpoint: all green`.
+      - `make test` → `passed: 408   failed: 0` · `all green`.
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`.
+      - `make conc` → `conc: passed 36   failed 0`.
 
 - [ ] **Phase 3 — corelib FFI shims + any hand-written `long` ABI surface**
   - Scope: migrate INT-SEMANTIC `long` in `corelib/net/net_shim.c`,
