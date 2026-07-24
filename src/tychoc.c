@@ -1233,6 +1233,12 @@ static const char *c_type(Type t) {
     }
 }
 static const char *type_name(Type t) {
+    /* A `$T` is REACHABLE here: an annotated local whose annotation names a
+     * typaram not bound by any argument keeps the raw T_TYPARAM through
+     * resolve, e.g. `fn f(a: $T) -> $T:` / `y: $U = a` -> "declared type $U
+     * but value is int". Checked first because IS_TYPARAM is the only
+     * unbounded-above range (T_TYPARAM_BASE = 65536, past every other base). */
+    if (IS_TYPARAM(t))  return sfmt("$%s", typaram_name(t));
     if (IS_NEWTYPE(t)) return g_newtypes[NT_ID(t)].name;
     if (IS_TASK(t))    return sfmt("Task(%s)", type_name(task_inner(t)));
     if (IS_CHAN(t))    return sfmt("Channel(%s)", type_name(chan_inner(t)));
@@ -1263,10 +1269,12 @@ static const char *type_name(Type t) {
     if (IS_ENUM(t))   return g_enums[ENUM_ID(t)].name;
     if (IS_SOA(t))    return sfmt("soa [%s]", type_name(soa_struct(t)));
     switch (t) {
+        case T_VOID:         return "void";
         case T_NONE:         return "None";
         case T_OK_PARTIAL:   return "Ok(...)";
         case T_ERR_PARTIAL:  return "Err(...)";
         case T_INT:          return "int";
+        case T_CHAR:         return "char";
         case T_U32:          return "u32";
         case T_U64:          return "u64";
         case T_F32:          return "f32";
@@ -1288,6 +1296,18 @@ static const char *type_name(Type t) {
         case T_MAP_SF:       return "[string: float]";
         case T_MAP_II:       return "[int: int]";
         case T_MAP_IF:       return "[int: float]";
+        /* Every tag of the base enum (T_VOID..T_PENDING) is now cased above
+         * except T_PENDING, so T_PENDING is the only thing that can land here.
+         * It is UNREACHABLE: a T_PENDING never escapes as an expression's
+         * resolved type -- resolve_expr dies with a dedicated message at the
+         * first use that needs the type (:4592), pend_ground rejects a pending
+         * grounding type BEFORE its two type_name calls (:4396), and
+         * resolve_block audits any still-pending decl at block end. Verified
+         * empirically: an instrumented build over all 370 tests/, tests/reject/,
+         * examples/, corelib/ and compiler/ sources plus 7 targeted pending
+         * probes recorded zero arrivals. Returning "void" is therefore a
+         * fail-safe for a state that cannot occur, not a description of a type:
+         * if it ever does fire, the message is wrong but not unsound. */
         default:             return "void";
     }
 }

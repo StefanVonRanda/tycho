@@ -81,7 +81,7 @@ dev shell, NOT a code regression. Do **not** add `verify_asan_link_order=0` to
 alters emitted text must land together with its `compiler/tychoc0.ty` counterpart
 or fixpoint goes red.
 
-- [ ] **Phase 1 — `type_name` names every reachable type (#2)**
+- [x] **Phase 1 — `type_name` names every reachable type (#2)**
   - Scope: `src/tychoc.c` `type_name()`. Add `case T_CHAR: return "char";`.
     Then AUDIT the rest: 22 of the 47 `Type` tags are absent from the switch, but
     most are `*_BASE` families already handled by the `IS_NEWTYPE`/`IS_TASK`/
@@ -98,6 +98,75 @@ or fixpoint goes red.
     carries a comment saying what still lands there and why that is safe.
   - Verify: paste the before/after diagnostic for the probe; paste the
     reachability verdict per tag; full gate set green.
+  - **DONE 2026-07-25.** Changes, all in `type_name()` (`src/tychoc.c:1235`):
+    added `case T_VOID`, `case T_CHAR`, an `IS_TYPARAM` branch ahead of the
+    predicate chain, and a comment above `default:`.
+
+    **Before / after — the plan's probe** (`s[1] == 'e'`):
+    ```
+    BEFORE  /tmp/p1.ty:3: error: cannot compare int with void
+    AFTER   /tmp/p1.ty:3: error: cannot compare int with char
+    ```
+
+    **Second defect found by the audit — a `$T` was misreported as `void` too.**
+    Probe (`fn f(a: $T) -> $T:` / `y: $U = a` / `return y`):
+    ```
+    BEFORE  :2: error: declared type void but value is int
+    AFTER   :2: error: declared type $U but value is int
+    ```
+
+    **Correction to this phase's own scope text.** It named seven "remaining
+    tags"; four of them do not exist in `src/tychoc.c`. `grep -nw 'T_MAP_S|T_ID|
+    T_TYPE|T_MAX'` over the file returns only two *comment* mentions
+    (`:998` "T_MAP_S?/I?", `:1388` "a T_TYPARAM") and no declaration. The base
+    enum (`:479-500`) has **28** tags, not 47; the switch cased **25** of them,
+    so the true gap was three tags plus the un-predicated `IS_TYPARAM` range.
+
+    **Reachability verdict, per tag.** Method: an instrumented build (a scratch
+    copy of `tychoc.c` printing a marker at `type_name`'s head) run over all
+    **370** `.ty` sources in `tests/`, `tests/reject/`, `examples/`, `corelib/`
+    and `compiler/`, plus hand-written probes per tag. Corpus totals: `CHAR` 2,
+    everything else 0.
+
+    | Tag | Verdict | Evidence |
+    |---|---|---|
+    | `T_CHAR` | **REACHABLE** → cased | The plan's probe; 2 corpus arrivals |
+    | `T_VOID` | **REACHABLE** → cased | 3 probes reach it: `1 + nop()`, `nop() == 1`, `takes(nop())`. Already printed `void` via `default:`; now explicit so `default:` means "cannot happen" |
+    | `IS_TYPARAM` (`T_TYPARAM_BASE`, `:637`) | **REACHABLE** → branch added | `y: $U = a` inside a generic template; an annotation naming a typaram no argument binds keeps the raw tag through resolve. Was printed as `void` |
+    | `T_PENDING` | **UNREACHABLE** → documented above `default:` | Fenced on every path: `resolve_expr` dies with its own message at the first use needing the type (`:4592`), `pend_ground` rejects a pending/void/None/partial grounding type *before* either of its `type_name` calls (`:4396`), `resolve_block` audits a still-pending decl at block end. 7 targeted probes (`xs := []` used / never grounded / grounded to `int` / `x := None` variants / `xs == ys`) all produced a dedicated message; 0 corpus arrivals |
+    | `T_MAP_S`, `T_ID`, `T_TYPE`, `T_MAX` | **DO NOT EXIST** | No declaration anywhere in `src/tychoc.c` |
+
+    Every other absent tag is a `*_BASE` family already handled by the
+    `IS_NEWTYPE`/`IS_TASK`/`IS_CHAN`/`IS_HANDLE`/`IS_STRUCT`/`IS_ARRC`/`IS_MAPC`/
+    `IS_OPT`/`IS_RES`/`IS_TUP`/`IS_FUNC`/`IS_ENUM`/`IS_SOA` predicates before the
+    switch, as the phase text predicted.
+
+    **Why this could not move emitted C** (the `make fixpoint` question, answered
+    before running the gate, not after). `type_name` has exactly one codegen call
+    site: `:7941`, `gen_str`'s fall-through for a fn/soa/handle/ptr *nested* field,
+    which emits `"<%s>"` into the generated C. It cannot see the tags that
+    changed: `gen_str` returns `tycho_chr(...)` for `T_CHAR` at `:7908`, 33 lines
+    earlier; `T_VOID` produced `"<void>"` before and after (same string); and a
+    `T_TYPARAM` never reaches codegen — templates emit nothing, only their
+    concrete instances do (`:7052`, `:10962`, `:11040`; design note at `:705`).
+    `make fixpoint` green below confirms it empirically.
+
+    Compiler warnings: 3 before, 3 after — the same pre-existing
+    `-Wmissing-field-initializers` on `Param` initializers (`:6095` et al.), none
+    from this edit. Verified by `cc -Wall -Wextra -fsyntax-only` across a
+    `git stash` / `git stash pop`.
+
+    **Gate set — all seven green:**
+    ```
+    make test         passed: 427   failed: 0   / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 36   failed 0
+    make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (34769 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 427   failed: 0   / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (120 markdown files, no dead relative links)
+    ```
 
 - [ ] **Phase 2 — MEASURE diagnostic-text divergence across all 143 reject fixtures (#3, part 1)**
   - Scope: docs only — write `docs/internals/diagnostic-parity-2026-07-25.md`.
@@ -193,6 +262,36 @@ or fixpoint goes red.
     proving how expensive a silent width/semantic change is to chase down.
   - Done when: the ruling is recorded here verbatim, then the chosen option is
     implemented in its own phase(s) appended below with their own gates.
+
+- [ ] **Phase 7 — a `void` value grounds a pending `[]` and escapes into codegen (found by Phase 1, NOT fixed there)**
+  - Found while probing `T_PENDING` reachability. This program produces no tycho
+    diagnostic at all — it reaches the C compiler and fails there:
+    ```
+    fn nop():
+        print("x")
+
+    fn main():
+        xs := []
+        push(xs, nop())
+    ```
+    ```
+    /tmp/pd_pend_ground_void.c:2426:52: error: 'void' must be the only parameter and unnamed
+     2426 | static void tycho_arr_C0_push(Arena*, TychoArrC0*, void );
+    ```
+  - The guard exists but this path bypasses it. `pend_ground` (`src/tychoc.c:4396`)
+    already rejects a `T_VOID` grounding type with "cannot infer the type of '%s'
+    from this use" — but `push` on a pending variable is special-cased earlier
+    (`:5262`, `:5322`, and the `resolve_expr` head grounding at `:5696`) and
+    grounds the element type without going through that check. Compare
+    `xs = 3` / `x = 3`, which *do* produce clean tycho diagnostics.
+  - Class: front-end escape (a raw C error is user-visible and unactionable), not
+    a soundness hole — the program never builds either way.
+  - Scope when taken: the pending-grounding paths in `src/tychoc.c` and their
+    `compiler/tychoc0.ty` twins, plus a `tests/reject/` fixture. Check the whole
+    `void`-as-a-value family, not only `push`: array literal elements, map
+    values, tuple elements, channel sends.
+  - Done when: the probe above is rejected by tychoc *and* tychoc0 with a tycho
+    diagnostic naming the line; a reject fixture locks it; full gate set green.
 
 ## Out of scope
 
