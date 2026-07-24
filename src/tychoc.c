@@ -77,6 +77,11 @@ static void warn_at(int line, const char *fmt, ...) {
     }
 }
 
+/* Format-checked like die_at/warn_at above: sfmt is the helper that bakes
+ * literals into the emitted C, so a wrong conversion here miscompiles silently
+ * rather than merely misprinting a diagnostic. `format(printf, 1, 2)` = fmt is
+ * arg 1, the varargs start at arg 2. */
+__attribute__((format(printf, 1, 2)))
 static char *sfmt(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     char *s = NULL;
