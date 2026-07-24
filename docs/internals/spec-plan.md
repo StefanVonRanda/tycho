@@ -287,7 +287,8 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
 
 > **Audited item-by-item against the written spec on 2026-07-24** — full evidence
 > in [`spec-plan-audit-2026-07-24.md`](spec-plan-audit-2026-07-24.md). Result:
-> 38 closed, 1 partial (**#12**), **0 open**. Each item below carries its verdict
+> 39 closed, 0 partial, **0 open** (**#12**, the last partial, was closed by probe
+> on 2026-07-24 — see the audit's §"#12 — CLOSED"). Each item below carries its verdict
 > tag. Four items closed with a rule *different* from the one the item assumed
 > (#19, #21, #22, #32) — read the tag, not just the item text.
 
