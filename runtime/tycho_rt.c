@@ -193,7 +193,7 @@ static tycho_int tycho_f2i(double x) {
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */
 static void tycho_cap_check(tycho_int n, size_t elem) {
-    if (n < 0 || (unsigned long)n > (size_t)-1 / elem) {
+    if (n < 0 || (uint64_t)n > (size_t)-1 / elem) {
         fprintf(stderr, "tycho: reserve capacity %" TY_PRId " out of range\n", n);
         exit(1);
     }
@@ -1200,7 +1200,7 @@ char *tycho_int_to_str(Arena *a, tycho_int n) {
      * copied out. Unsigned magnitude so LONG_MIN negates without UB. */
     char tmp[24];
     int i = (int)sizeof tmp;
-    unsigned long u = n < 0 ? -(unsigned long)n : (unsigned long)n;
+    uint64_t u = n < 0 ? -(uint64_t)n : (uint64_t)n;
     do { tmp[--i] = (char)('0' + u % 10); u /= 10; } while (u);
     if (n < 0) tmp[--i] = '-';
     int m = (int)sizeof tmp - i;
@@ -1685,20 +1685,20 @@ static void tycho_ord_unlink(tycho_int *nxt, tycho_int *prv, tycho_int *head, ty
  * statement of main(), before any map is touched. keys()/`for k in m` iterate
  * in INSERTION order (independent of the seed), so the random seed never
  * changes a program's observable output -- only its internal bucket layout. */
-static unsigned long tycho_hash_k0 = 0x736f6d6570736575UL;   /* default key; overwritten at startup */
-static unsigned long tycho_hash_k1 = 0x646f72616e646f6dUL;
-static unsigned long tycho_ik_seed = 0;
+static uint64_t tycho_hash_k0 = UINT64_C(0x736f6d6570736575);   /* default key; overwritten at startup */
+static uint64_t tycho_hash_k1 = UINT64_C(0x646f72616e646f6d);
+static uint64_t tycho_ik_seed = 0;
 
 static void tycho_hash_seed_init(void) {
-    unsigned long buf[3];
+    uint64_t buf[3];
     FILE *f = fopen("/dev/urandom", "rb");
     int ok = (f && fread(buf, sizeof buf, 1, f) == 1);
     if (f) fclose(f);
     if (ok) {
         tycho_hash_k0 = buf[0]; tycho_hash_k1 = buf[1]; tycho_ik_seed = buf[2];
     } else {                                  /* fallback: time XOR pid (weaker, but never unseeded) */
-        unsigned long t = (unsigned long)time(NULL) ^ ((unsigned long)getpid() << 16);
-        tycho_hash_k0 ^= t; tycho_hash_k1 ^= t * 0x9e3779b97f4a7c15UL; tycho_ik_seed = t;
+        uint64_t t = (uint64_t)time(NULL) ^ ((uint64_t)getpid() << 16);
+        tycho_hash_k0 ^= t; tycho_hash_k1 ^= t * UINT64_C(0x9e3779b97f4a7c15); tycho_ik_seed = t;
     }
 }
 
@@ -1711,29 +1711,29 @@ static void tycho_hash_seed_init(void) {
     v0 += v3; v3 = (v3 << 21) | (v3 >> 43); v3 ^= v0; \
     v2 += v1; v1 = (v1 << 17) | (v1 >> 47); v1 ^= v2; v2 = (v2 << 32) | (v2 >> 32); \
 } while (0)
-static unsigned long tycho_siphash13(const unsigned char *in, unsigned long inlen) {
-    unsigned long v0 = 0x736f6d6570736575UL ^ tycho_hash_k0;
-    unsigned long v1 = 0x646f72616e646f6dUL ^ tycho_hash_k1;
-    unsigned long v2 = 0x6c7967656e657261UL ^ tycho_hash_k0;
-    unsigned long v3 = 0x7465646279746573UL ^ tycho_hash_k1;
-    unsigned long b = inlen << 56;
-    unsigned long whole = inlen - (inlen % 8);
+static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen) {
+    uint64_t v0 = UINT64_C(0x736f6d6570736575) ^ tycho_hash_k0;
+    uint64_t v1 = UINT64_C(0x646f72616e646f6d) ^ tycho_hash_k1;
+    uint64_t v2 = UINT64_C(0x6c7967656e657261) ^ tycho_hash_k0;
+    uint64_t v3 = UINT64_C(0x7465646279746573) ^ tycho_hash_k1;
+    uint64_t b = inlen << 56;
+    uint64_t whole = inlen - (inlen % 8);
     const unsigned char *end = in + whole;
     for (; in != end; in += 8) {
-        unsigned long m = (unsigned long)in[0] | ((unsigned long)in[1] << 8) | ((unsigned long)in[2] << 16) | ((unsigned long)in[3] << 24)
-                        | ((unsigned long)in[4] << 32) | ((unsigned long)in[5] << 40) | ((unsigned long)in[6] << 48) | ((unsigned long)in[7] << 56);
+        uint64_t m = (uint64_t)in[0] | ((uint64_t)in[1] << 8) | ((uint64_t)in[2] << 16) | ((uint64_t)in[3] << 24)
+                        | ((uint64_t)in[4] << 32) | ((uint64_t)in[5] << 40) | ((uint64_t)in[6] << 48) | ((uint64_t)in[7] << 56);
         v3 ^= m; TYCHO_SIPROUND(v0, v1, v2, v3); v0 ^= m;
     }
-    for (unsigned long i = 0; i < inlen % 8; i++) b |= (unsigned long)in[i] << (8 * i);   /* tail bytes (no fallthrough switch) */
+    for (uint64_t i = 0; i < inlen % 8; i++) b |= (uint64_t)in[i] << (8 * i);   /* tail bytes (no fallthrough switch) */
     v3 ^= b; TYCHO_SIPROUND(v0, v1, v2, v3); v0 ^= b;
     v2 ^= 0xff;
     TYCHO_SIPROUND(v0, v1, v2, v3); TYCHO_SIPROUND(v0, v1, v2, v3); TYCHO_SIPROUND(v0, v1, v2, v3);
     return v0 ^ v1 ^ v2 ^ v3;
 }
 
-static unsigned long tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
+static uint64_t tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
     tycho_int n = ((const tycho_int *)s)[-1];   /* hash the true bytes (header length), not up to a NUL */
-    return tycho_siphash13((const unsigned char *)s, (unsigned long)n);
+    return tycho_siphash13((const unsigned char *)s, (uint64_t)n);
 }
 
 TychoMapSI tycho_map_si_with_cap(Arena *a, tycho_int cap) {
@@ -1752,7 +1752,7 @@ TychoMapSI tycho_map_si_with_cap(Arena *a, tycho_int cap) {
 /* find k, return its ENTRY index or -1 (index table is tombstone-free). */
 static tycho_int tycho_map_si_find(TychoMapSI m, const char *k) {
     if (m.icap == 0) return -1;
-    unsigned long mask = (unsigned long)m.icap - 1;
+    uint64_t mask = (uint64_t)m.icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (tycho_str_cmp(m.ekeys[e - 1], k) == 0) return e - 1;
@@ -1761,7 +1761,7 @@ static tycho_int tycho_map_si_find(TychoMapSI m, const char *k) {
     return -1;
 }
 static void tycho_map_si_idx_put(TychoMapSI *m, tycho_int ei) {
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
@@ -1820,7 +1820,7 @@ tycho_int *tycho_map_si_slotptr(Arena *a, TychoMapSI *m, const char *k) {
 }
 void tycho_map_si_del(TychoMapSI *m, const char *k) {
     if (m->icap == 0) return;
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(k) & mask), found = -1;
     while (m->idx[i] != 0) {
         if (tycho_str_cmp(m->ekeys[m->idx[i] - 1], k) == 0) { found = i; break; }
@@ -1895,7 +1895,7 @@ TychoMapSF tycho_map_sf_with_cap(Arena *a, tycho_int cap) {
 /* find k, return its ENTRY index or -1 (index table is tombstone-free). */
 static tycho_int tycho_map_sf_find(TychoMapSF m, const char *k) {
     if (m.icap == 0) return -1;
-    unsigned long mask = (unsigned long)m.icap - 1;
+    uint64_t mask = (uint64_t)m.icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (tycho_str_cmp(m.ekeys[e - 1], k) == 0) return e - 1;
@@ -1904,7 +1904,7 @@ static tycho_int tycho_map_sf_find(TychoMapSF m, const char *k) {
     return -1;
 }
 static void tycho_map_sf_idx_put(TychoMapSF *m, tycho_int ei) {
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
@@ -1963,7 +1963,7 @@ double *tycho_map_sf_slotptr(Arena *a, TychoMapSF *m, const char *k) {
 }
 void tycho_map_sf_del(TychoMapSF *m, const char *k) {
     if (m->icap == 0) return;
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_si_hash(k) & mask), found = -1;
     while (m->idx[i] != 0) {
         if (tycho_str_cmp(m->ekeys[m->idx[i] - 1], k) == 0) { found = i; break; }
@@ -2023,28 +2023,28 @@ int tycho_map_sf_eq(TychoMapSF x, TychoMapSF y) {
  * byte per slot tracks 0=empty / 1=live instead (delete backward-shifts, so the
  * vestigial 2=tombstone is never set). Keys are plain values (no arena copy).
  * tycho_ik_hash mixes the bits so sequential int keys do not cluster. */
-static unsigned long tycho_ik_hash(tycho_int k) {        /* seeded SplitMix64 finalizer */
-    unsigned long x = ((unsigned long)k ^ tycho_ik_seed) + 0x9e3779b97f4a7c15UL;
-    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9UL;
-    x = (x ^ (x >> 27)) * 0x94d049bb133111ebUL;
+static uint64_t tycho_ik_hash(tycho_int k) {        /* seeded SplitMix64 finalizer */
+    uint64_t x = ((uint64_t)k ^ tycho_ik_seed) + UINT64_C(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
     return x ^ (x >> 31);
 }
 /* Deep hash of a scalar array, for composite map keys. Order-SENSITIVE (the multiply
  * runs before the xor), seeded from the per-process key, folding each element's hash
  * so equal-by-== arrays hash equal. Composite-element arrays get a generated hash. */
-unsigned long tycho_arr_int_hash(TychoArrInt x) {
-    unsigned long h = tycho_hash_k0;
-    for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_ik_hash(x.data[i]);
+uint64_t tycho_arr_int_hash(TychoArrInt x) {
+    uint64_t h = tycho_hash_k0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash(x.data[i]);
     return h;
 }
-unsigned long tycho_arr_float_hash(TychoArrFloat x) {
-    unsigned long h = tycho_hash_k0;
-    for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
+uint64_t tycho_arr_float_hash(TychoArrFloat x) {
+    uint64_t h = tycho_hash_k0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
     return h;
 }
-unsigned long tycho_arr_str_hash(TychoArrStr x) {
-    unsigned long h = tycho_hash_k0;
-    for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ tycho_si_hash(x.data[i]);
+uint64_t tycho_arr_str_hash(TychoArrStr x) {
+    uint64_t h = tycho_hash_k0;
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_si_hash(x.data[i]);
     return h;
 }
 
@@ -2082,7 +2082,7 @@ TychoMapII tycho_map_ii_with_cap(Arena *a, tycho_int cap) {
  * (delete backward-shifts it), so every non-zero slot points at a LIVE entry. */
 static tycho_int tycho_map_ii_find(TychoMapII m, tycho_int k) {
     if (m.icap == 0) return -1;
-    unsigned long mask = (unsigned long)m.icap - 1;
+    uint64_t mask = (uint64_t)m.icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (m.ekeys[e - 1] == k) return e - 1;
@@ -2091,7 +2091,7 @@ static tycho_int tycho_map_ii_find(TychoMapII m, tycho_int k) {
     return -1;
 }
 static void tycho_map_ii_idx_put(TychoMapII *m, tycho_int ei) {   /* place entry ei into the (tombstone-free) index */
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
@@ -2151,7 +2151,7 @@ tycho_int *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, tycho_int k) {
 }
 void tycho_map_ii_del(TychoMapII *m, tycho_int k) {
     if (m->icap == 0) return;
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask), found = -1;   /* locate k's index slot */
     while (m->idx[i] != 0) {
         if (m->ekeys[m->idx[i] - 1] == k) { found = i; break; }
@@ -2221,7 +2221,7 @@ TychoMapIF tycho_map_if_with_cap(Arena *a, tycho_int cap) {
 /* find k, return its ENTRY index or -1 (index table is tombstone-free). */
 static tycho_int tycho_map_if_find(TychoMapIF m, tycho_int k) {
     if (m.icap == 0) return -1;
-    unsigned long mask = (unsigned long)m.icap - 1;
+    uint64_t mask = (uint64_t)m.icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (m.ekeys[e - 1] == k) return e - 1;
@@ -2230,7 +2230,7 @@ static tycho_int tycho_map_if_find(TychoMapIF m, tycho_int k) {
     return -1;
 }
 static void tycho_map_if_idx_put(TychoMapIF *m, tycho_int ei) {
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
@@ -2289,7 +2289,7 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, tycho_int k) {
 }
 void tycho_map_if_del(TychoMapIF *m, tycho_int k) {
     if (m->icap == 0) return;
-    unsigned long mask = (unsigned long)m->icap - 1;
+    uint64_t mask = (uint64_t)m->icap - 1;
     tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask), found = -1;
     while (m->idx[i] != 0) {
         if (m->ekeys[m->idx[i] - 1] == k) { found = i; break; }

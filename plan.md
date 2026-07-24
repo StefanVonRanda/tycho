@@ -369,7 +369,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
         (34679 lines C)` / `fixpoint: all green`.
     - Only plan.md changed this phase (this DONE block); no source touched.
 
-- [ ] **Phase 6a — CORRECTIVE (escalated from Phase 6): runtime int→string truncates on ILP32**
+- [x] **Phase 6a — CORRECTIVE (escalated from Phase 6): runtime int→string truncates on ILP32**
   - Raised by Phase 6's new `make ilp32` gate on 2026-07-24. This is a **missed
     INT-SEMANTIC site from Phase 2** (runtime migration), invisible on LP64.
   - **Root cause, generalized:** Phase 2 protected the whole `unsigned long`
@@ -414,6 +414,85 @@ to `run.sh` (that would blind the check for real link-order bugs).
     (both runtimes changed in lockstep); `make fixpoint` B==C.
   - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
     `make fixpoint`, `make ilp32` — each its own command, paste each summary line.
+  - **DONE (2026-07-24) — `make ilp32` went 400/8 → 408/0. All four site groups
+    retyped to fixed-width `uint64_t` / `UINT64_C(...)`, in BOTH runtimes.**
+    69 lines changed by a fail-closed line-targeted transform (every edit
+    asserted its expected old text before substituting; a miss aborted the run).
+    - **Group 1 — int→string magnitude (7 of the 8 failures).**
+      `runtime/tycho_rt.c:1203` and its parity twin `compiler/tychoc0.ty:9880`
+      (emitted `i2s`): `unsigned long u = n < 0 ? -(unsigned long)n :
+      (unsigned long)n;` → `uint64_t u = n < 0 ? -(uint64_t)n : (uint64_t)n;`.
+      The `tycho_int` parameter was already correct; only the magnitude narrowed.
+    - **Group 2 — HIGHEST SEVERITY, the fail-open memory-safety guard.**
+      `runtime/tycho_rt.c:196` + twin `compiler/tychoc0.ty:9873`
+      (`tycho_cap_check` / `hi_cap_check`): `(unsigned long)n` → `(uint64_t)n`.
+      The `(size_t)-1 / elem` right-hand side was left `size_t` deliberately — it
+      is the genuine allocator bound and promotes to `uint64_t` in the compare.
+    - **Group 3 — hash words, seeds and shifts.** `runtime/tycho_rt.c:1688-1690`
+      (`tycho_hash_k0/k1`, `tycho_ik_seed`), `:1693,1700-1701` (seed init),
+      `:1714-1736` (`tycho_siphash13`, `tycho_si_hash`), `:2026-2030`
+      (`tycho_ik_hash`), `:2035-2048` (`tycho_arr_int/float/str_hash`) — all
+      `unsigned long` → `uint64_t`, and every 64-bit literal `0x…UL` /
+      `1099511628211UL` → `UINT64_C(…)`. Twins: `compiler/tychoc0.ty:9710-9713`
+      (seeds + `mhash_seed_init`) and `:10158-10160` (`siphash13`, `mhash`,
+      `ikhash`).
+    - **Group 4 — map `mask`/`icap` family.** `runtime/tycho_rt.c:1755, 1764,
+      1823, 1898, 1907, 1966, 2085, 2094, 2154, 2224, 2233, 2292` —
+      `unsigned long mask = (unsigned long)m[.|->]icap - 1;` →
+      `uint64_t mask = (uint64_t)m[.|->]icap - 1;`. Twins:
+      `compiler/tychoc0.ty:10379-10380` (emitted `_find` / `_ixput`).
+    - **Lockstep confirmed.** Every group was changed on both sides in the same
+      transform; `make rtparity` is 0 diff on all three lanes (below). Residual
+      `unsigned long` in `runtime/tycho_rt.c` is now ONLY `unsigned long long`
+      (`:119,123,154,159,172,178,1213`) — the u64 type, ≥64-bit on every data
+      model, correctly left alone. `size_t`/libc-facing values untouched.
+    - **Site-2 proof — the abort fires again under `-m32`** (emit the fixture's
+      C with `./tychoc --emit-c`, build `gcc -m32 -O2 -fwrapv -std=c11`):
+      - AFTER (`uint64_t`): stderr `tycho: reserve capacity 2305843009213693953
+        out of range`, `exit=1`.
+      - CONTROL, same emitted C with ONLY that one cast sed'd back to
+        `(unsigned long)`: prints `1`, `exit=0`. That is the guard failing OPEN —
+        2^61+1 narrows to 1, the bound test passes, `push` proceeds. This is a
+        direct before/after on the same binary source, not an inference.
+    - **Site-1 proof — printed ints above 2^32 are correct under `-m32`.**
+      `shift_edge`, `int_overflow`, `strbuild` emitted, built `gcc -m32`, run:
+      each one's stdout is byte-identical to its unchanged LP64 golden.
+      `shift_edge` under `-m32` now prints `1099511627776` (2^40) and
+      `2147483648`, where it printed `0` before.
+    - **Group-3 proof — the shifts no longer exceed the type width.**
+      `gcc -m32 -Wall -Wextra -c` on the emitted C for `tests/rtparity/surface.ty`
+      reports **0** `-Wshift-count-overflow` / `-Woverflow` diagnostics (was one
+      per `<< 32 … << 56` term plus the truncated seeds).
+    - **Gates (each its own command; 64-bit lanes `env -u LD_PRELOAD make …`):**
+      - `make test` → `passed: 408   failed: 0` · `all green`
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+      - `make rtparity` → `env knobs 3 shared, 0 allowlisted difference(s) (ok)` ·
+        `diagnostics 27 shared, 0 …(ok)` · `arena-stats rows 5 shared, 0 …(ok)` ·
+        `rtparity: the two runtimes agree on env knobs, diagnostics and arena stats`
+      - `make conc` → `conc: passed 36   failed 0`
+      - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` · `fixpoint: all green`
+      - `make ilp32` → **`passed: 408   failed: 0` · `all green`** (was
+        `passed: 400   failed: 8`)
+    - **ilp32 before → after, per fixture.** All 8 previously-red fixtures are
+      green: `clock`, `int_overflow`, `shift_edge`, `sized_array`,
+      `sized_family`, `strbuild`, `pkg_sized_pkg` (group 1, the print path) and
+      `abort_reserve_range` (group 2, the fail-open guard). **Zero remaining
+      failures**, so there is nothing to attribute to 6b on this lane — 6b's
+      fixture is still parked at `tests/ilp32/int64_width.ty`, outside the
+      `tests/*.ty` glob, so `make ilp32` does not run it yet (6b owns the move).
+      The lane is nonetheless no longer vacuous: the 7 group-1 fixtures above all
+      exercise values past 2^32 (2^40, INT64_MIN/MAX, `sum=4999950000`).
+    - **No 64-bit golden shifted and no golden was re-recorded.** On LP64
+      `uint64_t` is `unsigned long`, so the change is a provable no-op there;
+      `test`/`corelib`/`conc`/`fixpoint` all matched their existing goldens
+      unchanged, which is the evidence that nothing width-sensitive was retyped
+      by mistake.
+    - **Out of scope, appended as Phase 6c (not silently absorbed):** the
+      per-type struct/tuple/array hash *emitters* in both compilers still declare
+      `unsigned long` accumulators seeded from the now-`uint64_t` seed. Hash
+      quality only; no observable output change (map iteration is insertion-
+      ordered). See Phase 6c.
 
 - [ ] **Phase 6b — CORRECTIVE (escalated from Phase 6): emitted int literals are 32-bit — tychoc0 MISCOMPILES on LP64 TODAY**
   - Raised by Phase 6's new fixture on 2026-07-24. **Severity upgraded while
@@ -556,6 +635,30 @@ to `run.sh` (that would blind the check for real link-order bugs).
       - `ilp32` is a standalone target, deliberately NOT wired into
         `scripts/ci.sh` (verified absent) until 6a+6b make it green, so `make ci`
         and the pre-push hook are unaffected. Wiring it in is 6b's closing step.
+
+- [ ] **Phase 6c — follow-up discovered by 6a (scope-locked out of it): per-type hash emitters still narrow on ILP32**
+  - Raised by Phase 6a on 2026-07-24. 6a retyped the runtime's hash words, seeds
+    and `mask` family to `uint64_t`, but the *per-type* hash helpers that each
+    compiler EMITS for user structs / tuples / composite arrays still declare
+    `unsigned long` accumulators, seeded from the now-`uint64_t` seed:
+    - `src/tychoc.c:10304, 10308, 10343, 10353, 10367` (prototypes),
+      `:10429-10430, 10442-10443` (`tycho_hash_S_*`, `tycho_hash_T%d`),
+      `:10486-10489, 10518-10521, 10584-10585` (`tycho_arr_C%d_hash`), and the
+      emitted map `mask` at `:10620, 10625, 10662`.
+    - `compiler/tychoc0.ty:9386, 9397, 10278` (`<T>_hash` emitters) and
+      `:16026, 16031, 16036` (their prototypes).
+  - **Severity: hash quality on ILP32 only — NOT a correctness or safety bug.**
+    On ILP32 the accumulator truncates the 64-bit seed to 32 bits, so struct- and
+    array-keyed maps get a weaker (but still well-defined) hash. `keys()` and
+    `for k in m` iterate in INSERTION order (`runtime/tycho_rt.c:1685-1687`), so
+    no program output changes; `make ilp32` is 408/0 with these left as-is.
+    Deliberately NOT folded into 6a: 6a's scope was the four confirmed-broken
+    site groups, and `src/tychoc.c` is not a runtime.
+  - Fix: retype these emitted accumulators/prototypes to `uint64_t` in BOTH
+    compilers in one pass, keeping the two emitters textually parallel.
+  - Done when: no emitted hash helper declares `unsigned long`; every gate green.
+  - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
+    `make fixpoint`, `make ilp32` — each its own command, paste each summary line.
 
 - [ ] **Phase 7 — spec + spec-plan: mark the reference impl conformant**
   - Scope: update `docs/spec/appendix-f-impl-defined.md` F.3 — reference compilers
