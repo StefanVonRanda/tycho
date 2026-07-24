@@ -168,7 +168,7 @@ or fixpoint goes red.
     make check-links  link check: ok (120 markdown files, no dead relative links)
     ```
 
-- [ ] **Phase 2 — MEASURE diagnostic-text divergence across all 143 reject fixtures (#3, part 1)**
+- [x] **Phase 2 — MEASURE diagnostic-text divergence across all 143 reject fixtures (#3, part 1)**
   - Scope: docs only — write `docs/internals/diagnostic-parity-2026-07-25.md`.
     Run every `tests/reject/*.ty` (143 files) through both compilers. Normalize
     away the known format difference (`file:LINE: error: ` vs `line LINE: `) and
@@ -183,6 +183,107 @@ or fixpoint goes red.
     halts the plan.
   - Verify: `git diff --stat` shows `docs/` only; paste the three totals; full
     gate set green (no source touched).
+  - **DONE 2026-07-25.** Full measurement:
+    `docs/internals/diagnostic-parity-2026-07-25.md`. No source touched
+    (`git status --short` showed only the new doc + this file).
+
+    **The three totals, over all 143 `tests/reject/*.ty`:**
+    ```
+    IDENTICAL           68     both reject, normalized bodies match
+    DIVERGENT           75     both reject, bodies differ
+    DECISION-DIVERGENT   0     one accepts, one rejects
+    ------------------------
+    TOTAL              143
+    ```
+    **DECISION-DIVERGENT is 0 — the conformance oracle is intact and the plan
+    continues.** All 143 exit non-zero from both compilers with a non-empty
+    diagnostic. (`docs/spec/appendix-f-impl-defined.md:63-64` makes only the
+    accept/reject decision normative; it is unbroken.)
+
+    **How they were run** — mirrors `tests/run.sh:155` and `:159`. tychoc0 built
+    with `./tychoc compiler/tychoc0.ty -o <outside-the-tree>/tychoc0` (no
+    `make tychoc0` target exists), outside the repo so no `.c` spilled:
+    ```sh
+    ./tychoc  "$f" --emit-c -o "$W/rj.c" >"$OUT/$b.tychoc"  2>&1   # C to -o, so 2>&1
+    "$W/tychoc0" "$f" --emit-c >/dev/null 2>"$OUT/$b.tychoc0"      # C to stdout, diag on stderr
+    ```
+
+    **Normalization, as code** (full version with its rationale table in the doc):
+    ```python
+    ECHO_C  = re.compile(r'^\s*\d+ \| ')        # tychoc echo   "     5 |     x := 1e"
+    CARET_C = re.compile(r'^\s*\|\s*\^')        # tychoc caret  "       |           ^"
+    CARET_0 = re.compile(r'^\s*\^\s*$')         # tychoc0 caret "        ^"
+    LOC_C   = re.compile(r'^tests/reject/[A-Za-z0-9_]+\.ty(:(?P<ln>\d+))?: error: ')
+    PHASE_0 = re.compile(r'^(lex|parse|type|resolve|generics|codegen): ')
+    LINE_0  = re.compile(r'^line (?P<ln>\d+): ')
+    WARN_C  = re.compile(r': warning: ')
+    # headers = lines that are neither an echoed source line nor a caret row
+    #   (tychoc0's echo has no gutter: it is the line directly above a caret row)
+    # fatal   = the LAST non-warning header (die() prints last, then exits)
+    # body    = fatal with LOC_C stripped (tychoc) / LINE_0+PHASE_0 stripped in a
+    #           loop (tychoc0 — both orders occur: "parse: line 8: m" and
+    #           "line 3: type: m")
+    ```
+    **The echoed source line is EXCLUDED from the comparison.** It is the
+    fixture's own source text, byte-identical by construction; only the gutter
+    differs (`     5 | ` + original indent, `src/tychoc.c:52-55`, vs an 8-space
+    indent, `compiler/tychoc0.ty:5448`). Including it would score gutter
+    formatting, not diagnostics.
+
+    **The one judgement call: stripping tychoc0's phase tag.** 59 of 143 tychoc0
+    fatal lines carry `lex:`/`parse:`/`type:`/`resolve:`/`generics:`/`codegen:`,
+    baked into the message string (`compiler/tychoc0.ty:622`, `:142`). tychoc has
+    no such field. Kept rather than stripped, 27 IDENTICAL fixtures flip and the
+    totals read **41 / 102 / 0**. Both are defensible; 68/75 is the headline
+    because the tag is a per-compiler structural field. **Phase 3 must pick one
+    explicitly if it gates.**
+
+    **What the number does NOT cover:** only `tests/reject/*.ty` — not the 1
+    package-reject dir nor the 15 `tests/abort/` fixtures; only a minority of the
+    diagnostic surface (`src/tychoc.c` has 455 `die_at(` sites, `tychoc0.ty` has
+    256 `die(` + 92 `die_at(` + 18 `lex_err(`); only the first fatal diagnostic;
+    one build, native x86-64, default flags.
+
+    **Secondary metric (not one of the three totals):** where both report a line
+    number they agree 87/93. tychoc0 reports none at all on 50/143, tychoc on 1.
+
+    **DIVERGENT grouped by cause — what Phase 3 needs:**
+
+    | Group | Cause | Count |
+    |---|---|---|
+    | G1 | Cosmetic rendering of the same message (`str` vs `string` ×10, backticks ×6, em dash ×1, tuple spacing ×1, `bounded[4]int` vs `[b4]int` ×1, leading `.` on a tuple index ×1) | 20 |
+    | G2 | Same rule, same types — one side carries an extra hint/detail (tychoc richer ×10, tychoc0 ×6) | 16 |
+    | G3 | Newtype-identity family — two templates for one rule | 6 |
+    | G4 | Sum-payload naming — tychoc names `Option(string)`/`Some(int)`, tychoc0 names only `str`/`int` | 7 |
+    | G5 | Reworded, same rule, same types (`proc returns` vs `this function returns`, etc.) | 17 |
+    | G6 | **Different diagnosis — the compilers disagree about *why*** | 9 |
+    | | **Total** | **75** |
+
+    G1+G3+G4 = 33 fixtures are three shared sentence shapes plus one type-name
+    spelling — reachable by editing a handful of format strings. G2+G5 = 33 are
+    independent hand-written strings, 33 separate edits in *both* compilers
+    (`make fixpoint` forbids landing one without the other) for no correctness
+    payoff. **G6 (9) is the only group where divergence means something other
+    than wording**: `bare_expr_stmt`, `chan_reassign`, `char_as_type`,
+    `explicit_count`, `explicit_nongeneric`, `fixed_array_nonconst_size`,
+    `genenum_bare_nullary`, `infer_use_before_ground`, `base_mismatch_inout`.
+    Sharpest: `explicit_count` — tychoc says `unknown type 'str'`, tychoc0 says
+    `'empty' has 1 type parameter(s), but 2 explicit type argument(s) were given`.
+    `base_mismatch_inout` is the one where they disagree about a *type*: tychoc
+    calls the argument `float`, tychoc0 calls it `int`. Both still reject; no
+    soundness hole. **No Phase 3 decision is pre-judged here.**
+
+    **Gate set — all seven green (no source touched):**
+    ```
+    make test         passed: 427   failed: 0   / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 36   failed 0
+    make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (34769 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 427   failed: 0   / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (121 markdown files, no dead relative links)
+    ```
 
 - [ ] **Phase 3 — gate diagnostic parity, IF Phase 2 says it is bounded (#3, part 2)**
   - **Conditional.** Read Phase 2's totals first. If DIVERGENT is small and each
@@ -292,6 +393,35 @@ or fixpoint goes red.
     values, tuple elements, channel sends.
   - Done when: the probe above is rejected by tychoc *and* tychoc0 with a tycho
     diagnostic naming the line; a reject fixture locks it; full gate set green.
+
+- [ ] **Phase 8 — two concrete diagnostic defects surfaced by Phase 2's G6 (NOT fixed there)**
+  - Phase 2 was measurement-only, so these were recorded, not touched. They are
+    *message* defects, not soundness holes — both compilers still reject both
+    programs. Listed separately from Phase 3 because they are worth fixing
+    whether or not Phase 3 builds a parity gate.
+  - **(a) `tychoc0` names the wrong side of an inout mismatch.**
+    `tests/reject/base_mismatch_inout.ty` passes a `float` variable to
+    `fn f(x: inout int)`. tychoc: `argument 1 of 'f' is float, expected int`.
+    tychoc0: `argument 1 of 'f' is int but the &place is a different type` — it
+    reports the *parameter's* type as the argument's and never names `float`.
+    Scope when taken: the inout/&place arm in `compiler/tychoc0.ty` only; tychoc
+    is already right, so this is a one-sided fix and `make fixpoint` is not at
+    risk (tychoc0's own diagnostics are not emitted C).
+  - **(b) Six fixtures where the two compilers point at different lines.**
+    `if_expr_no_else` (tychoc 3 / tychoc0 5), `if_expr_type_mismatch` (6 / 3),
+    `len_scalar` (1 / 6), `match_dup_arm` (10 / 8), `match_wildcard_not_last`
+    (12 / 10), `subscript_type_mismatch` (5 / 8). Four of these are scored
+    IDENTICAL on text — the divergence is purely the reported location. Decide
+    per fixture which line is the *right* one (the one a user would look at)
+    before changing either compiler; a wrong "fix" here makes the message worse.
+  - Non-scope: the other seven G6 fixtures. Those are ordering/phase differences
+    where each compiler's message is defensible on its own (e.g.
+    `explicit_count`: `str` genuinely is not a type name — verified by probe
+    `x: str = "h"` → `unknown type 'str'` — so tychoc rejecting the bad type
+    before checking arity is a legitimate order, not an error).
+  - Done when: (a) tychoc0 names the argument's actual type; (b) each of the six
+    has a recorded ruling and the compilers agree where a ruling says they
+    should; full gate set green.
 
 ## Out of scope
 
