@@ -60,7 +60,18 @@ phase runs every relevant gate as its own foreground command and pastes the
 summary line. A phase that fails a gate does NOT tick its box — it halts and
 reports.
 
-- [ ] **Phase 1 — audit every `long` site + probe the ILP32 toolchain (no code change)**
+**ENVIRONMENT GOTCHA (Phase 1, 2026-07-24) — run EVERY gate as `env -u LD_PRELOAD make …`.**
+The interactive shell sets `LD_PRELOAD=/home/igzo/phonic/tools/block-nnp.so`. It
+loads before the dynamically-linked `libasan.so.8`, so `tests/run.sh`'s ASan
+binaries abort with "ASan runtime does not come first in initial library list"
+→ all 231 sanitizer fixtures report `sanitizer exit 1`. This is NOT a code
+regression and NOT a reason to weaken the harness's link-order check — it is a
+foreign preload in the dev shell. Unsetting it (`env -u LD_PRELOAD`) restores a
+clean run. This affects `make test`/`conc`/`corelib`/`rtparity`/`fixpoint`/
+`ilp32` — any gate that runs an ASan binary. Do NOT add `verify_asan_link_order=0`
+to `run.sh` (that would blind the check for real link-order bugs).
+
+- [x] **Phase 1 — audit every `long` site + probe the ILP32 toolchain (no code change)**
   - Scope: write `docs/internals/int64-migration-audit.md` — an exhaustive,
     classified inventory of every `long` in `src/tychoc.c`, `compiler/tychoc0.ty`,
     `runtime/*.c`/`*.h`, `corelib/**/*.c`, each tagged INT-SEMANTIC (→ `tycho_int`)
@@ -75,10 +86,44 @@ reports.
     report — the plan cannot prove its thesis without the proving gate.
   - Verify: `make test` green (no source touched); `git diff --stat` only `docs/`;
     paste the `-m32` probe command + output.
+  - DONE (2026-07-24). Docs-only; no compiler/runtime/corelib source touched.
+    - Audit: `docs/internals/int64-migration-audit.md` (280 lines). Per-file
+      `long` lines / tokens, split NON-INT (protect) vs INT-SEMANTIC (migrate) vs
+      AMBIGUOUS: `src/tychoc.c` 204/242; `compiler/tychoc0.ty` 175/411;
+      `runtime/tycho_rt.c` 384/559; corelib shims: net 27, tls 5, regex 12, image
+      12, crypto 8, os 5, datetime 5, compress 5, http 2, io 2. `%l*` specifiers:
+      55 (tychoc) + 25 (tychoc0) + 26 (rt). NON-INT surface is well-bounded:
+      `i64`/`u64` type maps (~6 sites/compiler), hash/mask `unsigned long` families
+      (~33 tychoc / ~50 tychoc0 / ~66 rt), shift-COUNT `long long`, and two
+      libc-return `long`s (`tycho_rt.c:845` sysconf, datetime/os epoch). Everything
+      else = Tycho int / length-cap header / map key / FFI crossing → `tycho_int`.
+    - PRELUDE CORRECTION (feeds Phase 2): the plan assumed one shared prelude —
+      FALSE. Two parity-locked runtime texts: `runtime/tycho_rt.c` embedded via
+      `src/tychoc.c:26`/`:10126`, and `compiler/tychoc0.ty` `preamble()` (`:9697`).
+      The typedef + guard + includes must land in BOTH, textually identical.
+      Phase 2 scope updated accordingly.
+    - BOOTSTRAP (pre-answers Phase 5): NO pre-generated `tychoc0` C artifact is
+      committed (`Makefile:308` lists `tycho.c`/`tychofmt.c`/`tycho-lsp.c` as
+      generated+removable; no `*.c` under `compiler/`). Phase 5 is a documented
+      no-op unless `make bootstrap` regenerates from source.
+    - ILP32 probe — PASS (multilib installed). Trivial `int64_t` program, scratchpad:
+      - `gcc -m32 m32probe.c -o m32probe && ./m32probe` → `5000000000 szlong=4`
+        (under ILP32 `long` is 4 bytes — the OLD lowering WOULD truncate 5e9;
+        `int64_t` holds it). Native control → `5000000000 szlong=8`.
+      - `_Static_assert(sizeof(int64_t)==8)` compiles under `-m32`.
+      - `dpkg -l` confirms `gcc-multilib`, `lib32gcc-15-dev`, `lib32stdc++6` present.
+      This is the divergence Phase 6's `make ilp32` gate will lock; the proving
+      toolchain is available, so the plan proceeds.
+    - Verify: `git diff --stat` = `docs/internals/int64-migration-audit.md` (new)
+      + `plan.md` (this phase's own text) only — no source. `make test` green
+      (no-op guard; summary line pasted at commit time).
 
 - [ ] **Phase 2 — emitted-C + runtime prelude: define `tycho_int`, migrate the runtime**
-  - Scope: add to the shared prelude (from Phase 1): `#include <stdint.h>`,
-    `#include <inttypes.h>`, `typedef int64_t tycho_int;`, `#define TY_PRId PRId64`,
+  - Scope: Phase 1 found there is NO single shared prelude — TWO parity-locked
+    runtime/prelude texts (`runtime/tycho_rt.c` embedded via `src/tychoc.c`, and
+    `compiler/tychoc0.ty` `preamble()`). Add to BOTH, textually identical:
+    `#include <stdint.h>`, `#include <inttypes.h>`, `typedef int64_t tycho_int;`,
+    `#define TY_PRId PRId64`,
     `_Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");`. Migrate
     `runtime/tycho_rt.c` (+ `.h`) INT-SEMANTIC `long`→`tycho_int`, `%ld`→
     `%" TY_PRId "`, per the audit — NOT the NON-INT/`i64`/`u64`/FFI sites. Do NOT
