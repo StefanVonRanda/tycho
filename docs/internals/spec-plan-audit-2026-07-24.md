@@ -14,16 +14,16 @@ every such point **this specification governs**").
 
 | Verdict | Count | Items |
 |---|---|---|
-| **CLOSED — pinned in spec** | 35 | 1–8, 10, 11, 14–31, 33–39 |
+| **CLOSED — pinned in spec** | 36 | 1–8, 10–12, 14–31, 33–39 |
 | **CLOSED — deliberately unspecified** | 2 | 9, 13 |
 | **CLOSED — obsolete / premise reversed** | 1 | 32 |
-| **PARTIAL — pinned only in part** | 1 | 12 |
+| **PARTIAL — pinned only in part** | 0 | — |
 | **OPEN** | **0** | — |
 
 **OPEN item numbers: none.**
 
-One item is not a clean close: **#12** (general place-evaluation order). See the
-row and the "Significant findings" section.
+Every item is now a clean close. **#12** (general place-evaluation order) was the
+last PARTIAL; it was closed on 2026-07-24 by probing both compilers — see the row.
 
 Three items were resolved *against* the wording the punch-list assumed (#22, #28,
 #32). They are closed, but the closing rule is not the rule the item predicted;
@@ -61,7 +61,7 @@ list. That is stronger than the item asked for.
 | 9 | argument evaluation order | CLOSED — deliberately unspecified | `09-expressions.md:87-91` — "**Argument and operand evaluation order is *unspecified*** (*probed*)… MUST NOT be relied on"; register row `appendix-f-impl-defined.md:14`; rationale `:24-36` |
 | 10 | `match` subject evaluated exactly once | CLOSED — pinned | `09-expressions.md:79-80` — "**`match` subject — evaluated exactly once** (*probed*), before any arm is tested"; fixture `appendix-e-conformance.md:114` (`tests/match_subject_once`) |
 | 11 | compound-assign single evaluation | CLOSED — pinned | `09-expressions.md:82-83` — "a **side-effecting call inside the place is evaluated once** (*probed*); a pure index sub-expression may be evaluated twice"; fixture `appendix-e:114` (`tests/compound_index_eval`) |
-| 12 | general place-evaluation order (receiver vs. index vs. RHS for `p.x[i] = e`) | **PARTIAL** | *Pinned:* index-before-RHS — `09-expressions.md:84-86`, "**A side-effecting index in an assignment place is sequenced left-to-right**… in `a[f()] = g()` the index `f()` is evaluated **before** the RHS `g()`". *Not stated:* the **receiver** leg (`p()` in `p().x[i] = e`) — receiver-vs-index ordering. Searched: `09-expressions.md` §13.4 in full, `10-statements.md` (assignment/place statements), `12-aggregates.md`, `07-memory-model.md`, and `grep -in receiver docs/spec/*.md` (11 hits, none about evaluation order). `appendix-f:14` covers "a call's arguments or a binary operator's operands" — a place receiver is neither, so it is not squarely inside the unspecified register either. |
+| 12 | general place-evaluation order (receiver vs. index vs. RHS for `p.x[i] = e`) | CLOSED — pinned (2026-07-24) | *Was PARTIAL:* only index-before-RHS was stated (`09-expressions.md:84-86`), leaving the **receiver** leg unaddressed by both §13.4 and `appendix-f:14` (which reaches only "a call's arguments or a binary operator's operands"). *Resolved by probe, not by wording:* the receiver leg is **unobservable by construction** — a place is rooted at a **variable** (`09-expressions.md:15-17`), so a call can never be a place receiver. Both compilers reject `p().x = e()` (tychoc: "cannot assign to a field of a temporary"; tychoc0: parse error) and `p()[i()] = e()` (tychoc: "can only index-assign an array or map variable or field"). A place spine is therefore side-effect-free, and the only side-effecting legs are its **index / subscript-argument** sub-expressions. Probed on both compilers over nested indices (`grid[f()][g()] = e()` → `f g e`), field-then-index, index-then-field (`bs[f()].v[g()] = e()` → `f g e`), map keys, a user-subscript argument (`gr.edge(g()).weight = e()` → `g e`), and the compound-assign forms — **byte-identical output on tychoc and tychoc0**. The general rule is now normative at `09-expressions.md:87-95` ("**The whole place is evaluated before the RHS, left-to-right**… evaluated in **source order**… all of them before the RHS"), with `appendix-e-conformance.md:115` and the fixture `tests/place_eval_order.ty`. No place leg is left unaddressed. |
 | 13 | exact scope→arena set | CLOSED — deliberately unspecified (mechanism), normative consequence stated | `07-memory-model.md:97-99` — "The arena *mechanism* (which scope resets versus frees, block-level scratch arenas, per-statement temporaries) is an implementation realization and is **not observable** beyond the guarantees in §10.3"; the guarantees at `:120-131` ("**No dangling**… **No leak at scope exit**"). This is exactly the disposition the item requested ("declare the observable consequence; the arena mechanics are an implementation realization"). |
 | 14 | nested-place escape target (`outer.field[i] = e`, `m[k] = e`) | CLOSED — pinned | `07-memory-model.md:114-118` — "**up** — `return e` (to the caller), and `outer = e` / `push(outer, v)` / **any store through a place whose root is an outer variable** (to that variable's storage)… Every destination is decidable at the write site" |
 | 15 | `inout` exclusivity through aliasing places | CLOSED — pinned | `07-memory-model.md:169-175` — "two `inout` arguments of one call MUST NOT share a **root variable**. The check is by root variable, conservatively (may-overlap): both `&a[i]` and `&a[j]` — and `&a.x` with `&a.y` — are rejected because they root at the same `a`". Note this is the **spec** stating the rule, independent of the compiler fix; the slice-overlap sibling is at `12-aggregates.md` §16. Fixtures `appendix-e-conformance.md:95` (`reject/inout_alias`, `reject/inout_byval_alias`, `reject/slice_inout_alias`). |
@@ -119,15 +119,18 @@ list. That is stronger than the item asked for.
 
 ## Significant findings
 
-1. **#12 is the only item not fully pinned.** `09-expressions.md` §13.4 pins the
-   assignment-place *index* left-to-right (that was the case where the two
-   compilers actually diverged), and leaves call arguments / binary operands
-   unspecified. The **receiver** leg of a nested place — the ordering of a
-   side-effecting `p()` in `p().x[i] = e` relative to the index and the RHS — is
-   stated nowhere, and it does not fall inside `appendix-f:14`'s wording either
-   ("a call's arguments or a binary operator's operands"). *What would close it:*
-   one clause in §13.4 either sequencing receiver→index→RHS, or a widened
-   Appendix F row covering place sub-expressions generally.
+1. **#12 — CLOSED 2026-07-24 by probe.** As audited, §13.4 pinned only the
+   assignment-place *index* left-to-right, and the **receiver** leg (a
+   side-effecting `p()` in `p().x[i] = e`) fell through both §13.4 and
+   `appendix-f:14`'s wording ("a call's arguments or a binary operator's
+   operands"). The probe showed the premise was narrower than assumed: **a call
+   is never a legal place receiver.** Both compilers reject `p().x = e()` and
+   `p()[i()] = e()`, so a place spine is rooted at a variable and carries no side
+   effect to order. The remaining legs — index and subscript-argument
+   sub-expressions — are evaluated left-to-right in source order, all before the
+   RHS, identically on tychoc and tychoc0. Pinned at `09-expressions.md:87-95`;
+   fixture `tests/place_eval_order.ty`; row `appendix-e-conformance.md:115`.
+   Appendix F did not need widening: nothing was left unspecified.
 
 2. **Three items closed with the opposite rule to what §6 assumed** — the
    punch-list text is now actively misleading if read alone.

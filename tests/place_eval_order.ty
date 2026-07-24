@@ -1,0 +1,68 @@
+# Spec §13.4 (general place-evaluation order). `tests/eval_order.ty` pins the
+# one-index case `a[f()] = g()`; this fixture pins the GENERAL rule for a place
+# with several side-effecting legs, on both compilers.
+#
+# The receiver leg is unobservable by construction: a place is rooted at a
+# VARIABLE, never at a call. `p().x = e` and `p()[i] = e` are rejected ("cannot
+# assign to a field of a temporary" / "can only index-assign an array or map
+# variable or field"), so a place spine is always side-effect-free and the only
+# side-effecting legs are its index / subscript-argument sub-expressions.
+#
+# Those legs are evaluated in source order (left to right, outermost index
+# first), and the whole place is evaluated BEFORE the right-hand side.
+
+struct Box:
+    v: [int]
+
+struct Node:
+    weight: int
+
+struct Graph:
+    nodes: [Node]
+
+subscript edge(g: Graph, i: int) -> inout Node:
+    yield &g.nodes[i]
+
+fn f() -> int:
+    println("f")
+    return 0
+
+fn g() -> int:
+    println("g")
+    return 1
+
+fn e() -> int:
+    println("e")
+    return 7
+
+fn main():
+    # two index legs: outer index, then inner index, then the RHS
+    grid := [[0, 0], [0, 0]]
+    grid[f()][g()] = e()                    # f g e
+    println("grid=" + str(grid[0][1]))      # 7
+
+    # field then index
+    b := Box([0, 0])
+    b.v[g()] = e()                          # g e
+    println("bv=" + str(b.v[1]))            # 7
+
+    # index then field then index
+    bs := [Box([0, 0]), Box([0, 0])]
+    bs[f()].v[g()] = e()                    # f g e
+    println("bs=" + str(bs[0].v[1]))        # 7
+
+    # map key is a place leg too, and precedes the RHS
+    m := []int: int
+    m[f()] = e()                            # f e
+    println("m=" + str(m.get(0, 0 - 1)))    # 7
+
+    # a user-defined subscript argument is a place leg: it precedes the RHS
+    gr := Graph([Node(0), Node(0)])
+    gr.edge(g()).weight = e()               # g e
+    println("w=" + str(gr.nodes[1].weight)) # 7
+
+    # compound assignment keeps the same order across the place's legs
+    grid[f()][g()] += e()                   # f g e
+    println("grid2=" + str(grid[0][1]))     # 14
+    bs[f()].v[g()] += e()                   # f g e
+    println("bs2=" + str(bs[0].v[1]))       # 14

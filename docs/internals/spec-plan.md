@@ -317,7 +317,14 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
 11. **Compound-assign single-evaluation** — `a[i] += e` must evaluate `i` (and
     the array place) once. Pin. **[CLOSED — 09-expressions.md:82-83]**
 12. **General place-evaluation order** — receiver vs. index vs. RHS for
-    `p.x[i] = e`. Pin. **[PARTIAL — index→RHS pinned 09-expressions.md:84-86; receiver leg unstated]**
+    `p.x[i] = e`. Pin. **[CLOSED — pinned 09-expressions.md:87-95]** The general
+    rule is now stated: every place leg left-to-right in source order, all before
+    the RHS. The *receiver* leg is unobservable by construction — a place is
+    rooted at a variable and a call is never a place receiver, so `p().x = e`
+    and `p()[i] = e` are rejected by both compilers (probed) rather than
+    evaluated. Probed identical on tychoc and tychoc0 across nested indices,
+    field-then-index, index-then-field, map keys, and subscript arguments; locked
+    by `tests/place_eval_order.ty` and `appendix-e-conformance.md:115`.
 13. **Exact scope→arena set** — the docs name function / if / else /
     loop-iteration / per-statement arenas but never close the set: do `match`
     arms, `elif` arms, expression-`if`/`match` arms, and bare indented blocks own

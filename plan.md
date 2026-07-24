@@ -1573,3 +1573,65 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `examples/*.ty`) plus `make unaryparity` (emitted C compared per case) are
     both output-level, so any re-association that changed a program's meaning
     would show up as a diff, not as silence.
+
+- [ ] **Phase 12 — CORRECTIVE: compound assignment through a user-defined SUBSCRIPT evaluates its argument TWICE (both compilers) — contradicts spec §13.4**
+  - Discovered 2026-07-24 while probing punch-list #12 (general place-evaluation
+    order). Scope-locked OUT of that item, which only pinned ordering; this is a
+    single-vs-double *evaluation* defect and belongs to punch-list #11's rule.
+  - **Not a two-compiler divergence** — tychoc and tychoc0 produce byte-identical
+    (wrong) output. It is a spec-vs-implementation contradiction.
+  - **The contradiction.** `docs/spec/09-expressions.md:82-83` states normatively:
+    "**Compound assignment** — a **side-effecting call inside the place is
+    evaluated once** (*probed*); a pure index sub-expression may be evaluated
+    twice." A subscript argument is a side-effecting call inside the place, and it
+    is evaluated twice.
+  - **Probe** (scratchpad `pf_subscript_counter.ty`):
+    ```tycho
+    subscript edge(g: Graph, i: int) -> inout Node:
+        yield &g.nodes[i]
+
+    g := Graph([Node(100), Node(200), Node(300)])
+    c := 0
+    g.edge(nextidx(&c)).weight += 1
+    ```
+    Both compilers print `c=2` and `n=100,101,300`: the argument ran twice, so the
+    read took `nodes[0]` (100) and the store went to `nodes[1]` (100+1=101).
+    `nodes[0]` is left unchanged and `nodes[1]` is clobbered — the compound assign
+    reads one slot and writes another.
+  - A marker probe (`pe_subscript.ty`) shows the shape directly:
+    `gr.edge(f()).weight = e()` prints `f e` (correct), but
+    `gr.edge(f()).weight += e()` prints `f e f` — the third line is the second
+    evaluation of the subscript argument.
+  - Contrast: the ordinary index place IS hoisted correctly. `a[nextidx(&c)] += 100`
+    evaluates the index once (`tests/compound_index_eval.ty`, golden `c=1`). So the
+    compound-assign hoist covers index sub-expressions but not subscript arguments.
+  - **Not fixed here, and deliberately not papered over in the spec.** Two
+    defensible resolutions, and picking one is a design call, not a doc edit:
+    (a) extend the compound-assign hoist to subscript arguments in BOTH compilers,
+    keeping §13.4 as written — the option that matches the stated rule; or
+    (b) narrow §13.4 to exempt subscript arguments — which would bless a place that
+    reads one slot and writes another, so (a) looks correct.
+  - `tests/place_eval_order.ty` (added by the #12 close) deliberately does NOT
+    exercise a compound assign through a subscript, so this behaviour is not baked
+    into any golden and a fix will not have to re-record one.
+
+- [ ] **Phase 13 — CORRECTIVE: tychoc0 fails open on a method-call place receiver (tychoc rejects; tychoc0 emits invalid C)**
+  - Discovered 2026-07-24 alongside Phase 12, same probe pass. Scope-locked out of
+    punch-list #12.
+  - `b.get().v[f()] = e()` (a call in place-receiver position, via a method):
+    - `tychoc` rejects cleanly: `error: can only index-assign an array or map
+      variable or field`.
+    - `tychoc0` ACCEPTS it and emits C that `cc` then rejects:
+      `error: lvalue required as unary '&' operand` on
+      `&(h_get(&_scope, h_b).f_v)`.
+  - Both compilers do refuse to produce a binary, so no program is miscompiled —
+    but tychoc0's place check is fail-open here and the user gets a C diagnostic
+    instead of a Tycho one. The *direct* call receiver is caught by both
+    (`p().x = e()` → tychoc0 `parse: expected newline`); it is the method/UFCS
+    spelling that slips through tychoc0's checker.
+  - Spec basis for the rejection is now explicit: `docs/spec/09-expressions.md:87-95`
+    — "a call is never a place **receiver**, so `p().x = e` and `p()[i] = e` MUST be
+    rejected".
+  - Fix: teach tychoc0's place checker to reject a call in receiver position, then
+    add `tests/reject/place_call_receiver.ty` (the reject lane is differential —
+    `tests/run.sh:142-158` requires BOTH compilers to reject with a diagnostic).

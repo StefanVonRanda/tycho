@@ -84,6 +84,15 @@ both compilers):
 - **A side-effecting index in an assignment place is sequenced left-to-right**
   (*probed*): in `a[f()] = g()` the index `f()` is evaluated **before** the RHS
   `g()`, on both compilers.
+- **The whole place is evaluated before the RHS, left-to-right** (*probed*) — the
+  general rule of which the single-index case above is an instance. A place is
+  rooted at a **variable** (§13.1); a call is never a place **receiver**, so
+  `p().x = e` and `p()[i] = e` MUST be rejected and the receiver leg carries no
+  side effect to order. The side-effecting legs of a place are therefore its
+  **index** and **subscript-argument** sub-expressions, and they are evaluated in
+  **source order** (left to right, outermost index first), all of them before the
+  RHS: in `g[f()][h()] = e()` and in `bs[f()].v[h()] = e()` the order is `f()`,
+  `h()`, then `e()`. Compound assignment orders the same legs the same way.
 - **Argument and operand evaluation order is *unspecified*** (*probed*). Tycho
   does not sequence the arguments of a call or the operands of a binary operator
   relative to one another; their order of side effects is inherited from the
