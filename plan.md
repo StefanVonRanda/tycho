@@ -1152,7 +1152,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Verify: `make test`, `make fixpoint`, `make ilp32` green; plus a `gcc -m32`
     -hosted tychoc build with `-Wall -Wextra` showing no new warnings.
 
-- [ ] **Phase 10 — CORRECTIVE: tychoc0 rejects unary `-` applied directly to an index expression**
+- [x] **Phase 10 — CORRECTIVE: tychoc0 rejects unary `-` applied directly to an index expression**
   - Discovered 2026-07-24 by the new numeric-boundary fixtures (the hardening
     pass that followed Phase 8), NOT by the int64 migration itself. It is a
     pre-existing tychoc/tychoc0 divergence; nothing in the 408-fixture suite
@@ -1197,3 +1197,143 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `tests/` and passes under both compilers and under `make ilp32`; all gates green.
   - Verify: `make test`, `make corelib`, `make conc`, `make fixpoint`,
     `make ilp32`, `make spec-check` — each its own command, paste summary lines.
+
+  - **DONE 2026-07-24.**
+
+    **The defect was in the PARSER, not the type check.** The phase text (and the
+    error message) pointed at the `u-` operand-typing site
+    (`compiler/tychoc0.ty:6206-6209`, `die_at(dc, _el, "unary - needs an int or a
+    float")`). That site is CORRECT and was left untouched. It fired because the
+    parser handed it the wrong operand: `parse_atom_d`'s `TMinus` branch parsed
+    its operand with `parse_atom_d` — an atom, with NO postfix suffixes — so
+    `-v[0]` built `EIndex(EBin("u-", v, 0), 0)`, i.e. `(-v)[0]`. The type check
+    then correctly reported that `v` (an `[int]`) is not an int or a float. The
+    false assumption in the phase text was "the type check is too narrow"; it is
+    not — the AST was wrong before typing ever ran.
+
+    **What tychoc does (mirrored):**
+    - `src/tychoc.c:2371-2377` `parse_unary_inner`: `if (at(ps, TK_MINUS)) { …
+      e->op = TK_MINUS; e->lhs = parse_unary(ps); }`
+    - `src/tychoc.c:2384-2389` same shape for `TK_TILDE`.
+    - `src/tychoc.c:2390` `return parse_postfix(ps);` — so the unary operand
+      recurses through `parse_unary` and bottoms out at **parse_postfix**, which
+      is what makes `-v[0]` negate the subscript.
+    - `src/tychoc.c:5504-5508` is tychoc's matching operand type check
+      (`base_of(ot) != T_INT && base_of(ot) != T_FLOAT` → `unary \`-\` needs an int
+      or a float`) — unchanged behaviour, it simply receives the subscript.
+
+    **Site changed — `compiler/tychoc0.ty:746-751` (`parse_atom_d`):**
+
+    old:
+    ```
+    elif t.kind == TMinus:
+        pos = pos + 1
+        return EBin("u-", parse_atom_d(toks, &pos, nd), EInt("0", _el), _el)
+    elif t.kind == TTilde:
+        pos = pos + 1
+        return EBin("u~", parse_atom_d(toks, &pos, nd), EInt("0", _el), _el)
+    ```
+    new:
+    ```
+    elif t.kind == TMinus:
+        pos = pos + 1
+        return EBin("u-", parse_postfix_d(toks, &pos, nd), EInt("0", _el), _el)
+    elif t.kind == TTilde:
+        pos = pos + 1
+        return EBin("u~", parse_postfix_d(toks, &pos, nd), EInt("0", _el), _el)
+    ```
+    Two tokens changed, one per operator. `parse_postfix_d`
+    (`compiler/tychoc0.ty:975-1025`) calls `parse_atom_d` first and then applies
+    the `.field` / `[idx]` / `[lo:hi]` / `(call)` / `...` suffix loop — exactly
+    tychoc's `parse_postfix`. Unary chains still work (`- -v[0]`) because
+    `parse_postfix_d` re-enters `parse_atom_d`, which re-enters the `TMinus`
+    branch. The existing depth guards (`pc.depth > 256` in `parse_atom_d:736`,
+    `d > 2000` in `parse_postfix_d:981`) still bound recursion. `&` already used
+    `parse_postfix_d` (`:754`) — that line was the in-file precedent that the
+    unary operators were the odd ones out.
+    Nothing in the operand-typing site, and nothing in codegen, was relaxed.
+
+    **Re-run repro table** (`./tychoc <f>` vs `/tmp/tychoc0_post < <f> | cc`;
+    `v := [7,8]`, `m := []int: int`; value shown is the program's stdout):
+
+    | form | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `-v[0]` (array index) | OK:-7 | **REJECT** | OK:-7 |
+    | `-m[0]` (map index) | OK:-7 | **REJECT** | OK:-7 |
+    | `-(v[0])` (parenthesized) | OK:-7 | OK:-7 | OK:-7 |
+    | `x := v[0]` then `-x` | OK:-7 | OK:-7 | OK:-7 |
+    | `0 - v[0]` (binary minus) | OK:-7 | OK:-7 | OK:-7 |
+    | `-len(v)` (call) | OK:-2 | OK:-2 | OK:-2 |
+    | `-7` (literal) | OK:-7 | OK:-7 | OK:-7 |
+
+    All seven original forms now agree, and every value matches tychoc's.
+
+    **Sibling operand shapes probed** (same technique — compiled under both
+    compilers and RUN, not reasoned about). Four more shapes were broken by the
+    same root cause and are fixed by the same two-token change:
+
+    | form | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `-p.x` (struct field) | OK:-5 | **REJECT** | OK:-5 |
+    | `-vv[0][1]` (nested index) | OK:-2 | **REJECT** | OK:-2 |
+    | `-s[1]` where `s := v[0:2]` (slice elem) | OK:-8 | **REJECT** | OK:-8 |
+    | `~v[0]` (unary `~` on a subscript) | OK:-8 | **REJECT** | OK:-8 |
+    | `- -v[0]` (unary chain over a subscript) | OK:7 | **REJECT** | OK:7 |
+    | `-s[0]` where `s := "ab"` (str byte) | OK:-97 | **REJECT** | OK:-97 |
+    | `not b[0]` (unary `not` on a subscript) | OK:false | OK:false | OK:false |
+
+    `not` was NEVER affected — it is parsed by `parse_not_d`, which descends
+    through the comparison chain into `parse_postfix_d` already; verified
+    empirically above (agreed before AND after), so no `not` change was made.
+    `&place` was already correct (`:754`). No separate defect was found, so
+    nothing new was filed.
+
+    **Invalid operands are still REJECTED (no fail-open).** Post-fix
+    `/tmp/tychoc0_post`, first stderr line each — tychoc rejects all four too:
+    ```
+    -"abc"        line 2: unary - needs an int or a float
+    -true         line 2: unary - needs an int or a float
+    -p (struct)   line 6: unary - needs an int or a float
+    -v (array)    line 3: unary - needs an int or a float
+    ```
+    Note the last two: the fix did NOT make the checker accept aggregates — it
+    made the parser stop *manufacturing* `-v` out of `-v[0]`. A bare `-v` on an
+    array is still an error, with the same diagnostic. `make unaryparity` (30/30,
+    accept/reject **and emitted C**, 0 skipped) is the machine-checked version of
+    this claim.
+
+    **Fixture un-parked.** `tests/pending/boundary_i2s.ty` →
+    `tests/boundary_i2s.ty` (`git mv`), `tests/pending/boundary_i2s.out` →
+    `tests/boundary_i2s.out` (plain `mv` — the golden was untracked). Directory
+    `tests/pending/` removed (`ls -d tests/pending` → No such file or directory).
+    No `.gitignore` stanza referenced it (grepped `.gitignore`, `tests/run.sh`,
+    `Makefile` — no hits). The golden was NOT re-recorded: tychoc0's output
+    matches the committed `.out` byte-for-byte under `make test`, `make ilp32`
+    and `make fixpoint`. `compiler/fixpoint.sh:24` iterates `tests/*.ty`, so the
+    un-parked fixture is now inside the fixpoint differential (it was outside
+    every glob while parked).
+
+    **Gates (each its own foreground command, `env -u LD_PRELOAD`):**
+    ```
+    make test        passed: 415   failed: 0        / all green      (414 -> 415)
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc        conc: passed 36   failed 0
+    make fixpoint    ok   B == C : tychoc0 reproduces itself byte-identically (34679 lines C)
+                     ok   split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler
+                     fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32       passed: 415   failed: 0        / all green      (414 -> 415)
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    make unaryparity unary-parity: 30/30 unary-operator cases AGREE (accept/reject + emitted C; newtype identity enforced, 0 skipped) -- tychoc == tychoc0
+    ```
+    `make unaryparity` was run additionally (not required by the phase) because
+    this change touches unary parsing; it is the gate that would catch a
+    fail-open here.
+
+    **What breaks if I was wrong:** the risk of this change is a *precedence*
+    regression, not a typing one — if Tycho intended `-a.b` to mean `(-a).b` for
+    some shape, this silently re-associates it. It does not: tychoc has always
+    parsed it as `-(a.b)` (`src/tychoc.c:2375`→`:2390`), and `make fixpoint`
+    (B==C byte-identical, plus the emitted-C comparison across `tests/*.ty` +
+    `examples/*.ty`) plus `make unaryparity` (emitted C compared per case) are
+    both output-level, so any re-association that changed a program's meaning
+    would show up as a diff, not as silence.

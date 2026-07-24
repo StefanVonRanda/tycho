@@ -745,10 +745,10 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
         return desugar_interp(t.text)
     elif t.kind == TMinus:                       # unary minus -E: marker op (operand in L); the
         pos = pos + 1                            # strict int/float check + the (0 - E) emit live in
-        return EBin("u-", parse_atom_d(toks, &pos, nd), EInt("0", _el), _el)   # codegen, so `-char` etc. reject like tychoc
+        return EBin("u-", parse_postfix_d(toks, &pos, nd), EInt("0", _el), _el)   # codegen, so `-char` etc. reject like tychoc. The operand is parse_POSTFIX, not parse_atom: tychoc's parse_unary_inner (src/tychoc.c:2375) recurses into parse_unary -> parse_postfix (:2390), so `-v[0]`/`-p.x` negate the SUBSCRIPT/FIELD. Parsing the operand as a bare atom built `(-v)[0]` and rejected a valid program with "unary - needs an int or a float" -- a tychoc/tychoc0 divergence (Phase 10).
     elif t.kind == TTilde:                        # unary bitwise NOT ~E: marker op; codegen checks the
         pos = pos + 1                            # operand is EXACTLY int and emits ((0 - E) - 1). Was
-        return EBin("u~", parse_atom_d(toks, &pos, nd), EInt("0", _el), _el)   # desugared here, which over-accepted ~float/~char
+        return EBin("u~", parse_postfix_d(toks, &pos, nd), EInt("0", _el), _el)   # desugared here, which over-accepted ~float/~char. Same postfix operand as `-`, mirroring tychoc :2387
     elif t.kind == TAmp:                         # &place : pass to a inout param
         pos = pos + 1
         return EAddr(parse_postfix_d(toks, &pos, nd), _el)
