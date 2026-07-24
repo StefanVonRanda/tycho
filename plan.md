@@ -272,7 +272,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       the `-m32` gate must run where libpng-dev (multilib) is present, or explicitly
       skip image with a loud notice.
 
-- [ ] **Phase 4 — BOTH compilers emit `tycho_int` (atomic, self-hosting-critical)**
+- [x] **Phase 4 — BOTH compilers emit `tycho_int` (atomic, self-hosting-critical)**
   - Scope: in ONE commit, change every INT-SEMANTIC emission site in
     `src/tychoc.c` (`:1181-1182`, length headers `:8969`, map keys `:10096`,
     parallel bounds `:8839-8841`, range `:9673`, array-return sigs `:9775-9776`,
@@ -290,6 +290,62 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `make fixpoint`, `make spec-check` — each its own command, paste each summary
     line. A missed INT-SEMANTIC site may still pass on LP64 (equal widths) —
     Phase 6's `-m32` gate is the real catch.
+  - DONE (2026-07-24). ONE commit; the emitted ABI now uses `tycho_int`. Both
+    compilers changed in lockstep; emission stays symmetric and self-hosts
+    byte-identically. INT-SEMANTIC emission sites migrated per file:
+    - `src/tychoc.c`: 136 emitted `long`→`tycho_int` (int/char base type `:1181-1182`,
+      `[int]*` `:3391`, length headers `((const tycho_int *)…)[-1]`, map keys
+      `:10096/:10101`, len/cap locals, Soa/parallel/range bounds, FFI sigs
+      `:9767-9776`, all composite struct/array/map/soa helpers) + 23 emitted
+      `%%ld`→`%%\" TY_PRId \"` (index/slice diagnostics). Bool stays emitted `int`
+      (already 4-byte, no truncation). Host-side compiler `long` (fold, size
+      binds, `ArrType.size`) left untouched — not an emitted site (audit §1
+      AMBIGUOUS; irrelevant to the `-m32` emitted gate; note for Phase 6 if the
+      compiler is ever built ILP32).
+    - `compiler/tychoc0.ty`: 278 emitted `long`→`tycho_int` (int/char/bool type
+      `:4450-4454`, whole inline runtime — channels/headers/string+map helpers/
+      `hi_*`, FFI `:8896-8917`, slice/range/for bounds) + 15 emitted `%ld`→
+      `%\" TY_PRId \"` (slice + per-type index diagnostics) + 1 shift-cast. Every
+      `long` in this file is inside an emitted C string literal or a `#` comment
+      (Tycho has no `long` type), verified: 0 English/prose false-positives, all
+      `#`-comment `long` skipped.
+    - Both migrations done with a string-literal-scoped transform (a real
+      lexer masks in-string chars; `unsigned long long`/`long long`/`unsigned long`
+      hash-mask/i64/u64/shift-count families PROTECTED and untouched; every
+      quote-adjacent conversion + every skipped in-string `long` printed and
+      eyeballed before writing). Residual int-semantic bare `long` emission:
+      `grep 'return "long "|const long*|((const long'` = 0 in both files.
+    - **Two ILP32 hazards applied (plan.md:177-182):**
+      (a) `runtime/tycho_rt.c:109/:114` div-guard now `if (a == INT64_MIN && b == -1)`
+      (`INT64_MIN` from `<stdint.h>`; comments `:103/:105/:41` updated off `LONG_MIN`).
+      tychoc0's inline `hi_idiv`/`hi_imod` ALREADY used the ILP32-safe literal
+      `(-9223372036854775807L - 1L)` (`tychoc0.ty:9855/:9856`) — left as-is (equal
+      to `INT64_MIN`, `L` promotes to `long long` on ILP32).
+      (b) shift inner cast widened to 64-bit: `runtime/tycho_rt.c:137`
+      `return (tycho_int)((uint64_t)x << n);` and `tychoc0.ty:9859`
+      `... return (tycho_int)((uint64_t)x << n); ...` (shift COUNT stays `long long n`,
+      NON-INT). `(unsigned long)x` would truncate the shift to 32-bit on ILP32.
+    - **Probe** (scratchpad, not committed) — int value 5e9 (>2^31), array + length
+      header, int-keyed map, range loop, printed ints; compiled by tychoc and by
+      the self-hosted tychoc0, `cmp` of stdouts: `cmp-exit=0` (identical):
+      `big=5000000000 / len=4 / sum=100 / mapsum=600 maplen=3 / xs2=30`.
+    - **Gates (each `env -u LD_PRELOAD make …`):**
+      - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` · split-package self-host E==F · `fixpoint: all green`.
+      - `make rtparity` → `env knobs 3 shared, 0 diff` · `diagnostics 27 shared,
+        0 diff` · `arena-stats rows 5 shared, 0 diff` · "the two runtimes agree".
+        (28→27: per-size fixed-array index messages collapse at the `%\" TY_PRId \"`
+        split; SYMMETRIC in both compilers → 0 diff, and 27 ≥ anti-vacuity floor 25.)
+      - `make test` → `passed: 408   failed: 0` · `all green`.
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`.
+      - `make conc` → `conc: passed 36   failed 0`.
+      - `make spec-check` → `spec-examples: 7 runnable example(s), all pass`.
+      - `make ffi` (extra, FFI crossing width changed) → `ffi: green (tychoc +
+        tychoc0 agree, ASan-clean, match golden …)`.
+    - LP64 caveat holds: these gates prove no REGRESSION + self-host stability +
+      diagnostic parity, NOT ILP32 completeness (`tycho_int`==`long` here). Phase 6's
+      `-m32` gate is the only completeness proof; migration was made exhaustive
+      against the audit rather than relying on local green.
 
 - [ ] **Phase 5 — regenerate the embedded/bootstrap C if the tree ships one**
   - Scope: Phase 1 determines whether a pre-generated `tychoc0` C artifact is

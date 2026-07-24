@@ -1178,8 +1178,8 @@ static const char *c_type(Type t) {
     if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
-        case T_INT:          return "long ";
-        case T_CHAR:         return "long ";
+        case T_INT:          return "tycho_int ";
+        case T_CHAR:         return "tycho_int ";
         case T_U32:          return "unsigned int ";        /* wraps at 2^32 natively */
         case T_U64:          return "unsigned long long ";  /* wraps at 2^64 natively */
         case T_F32:          return "float ";
@@ -3388,7 +3388,7 @@ static int ffi_scalar_type(Type t) {
  * NULL for a non-scalar-array (arrays of string/struct/nested stay rejected — they
  * have no flat, self-describing C ABI). */
 static const char *ffi_arr_ptr_ctype(Type t) {
-    if (t == T_ARRAY_INT)   return "const long *";
+    if (t == T_ARRAY_INT)   return "const tycho_int *";
     if (t == T_ARRAY_FLOAT) return "const double *";
     return NULL;
 }
@@ -7348,7 +7348,7 @@ static int fuse_open(FILE *o, Stmt **body, int n, int ind, Expr *guard) {
         if (guard && count_reads_e(guard, nm)) continue; /* loop condition reads it -> stale view */
         int id = g_blk++;
         indent(o, ind);
-        fprintf(o, "%s*_fd%d = h_%s.data; long _fl%d = h_%s.len, _fc%d = h_%s.cap;\n",
+        fprintf(o, "%s*_fd%d = h_%s.data; tycho_int _fl%d = h_%s.len, _fc%d = h_%s.cap;\n",
                 c_type(arr_elem(tys[i])), id, nm, id, nm, id, nm);
         g_fuse[g_nfuse].arr = nm; g_fuse[g_nfuse].id = id; g_fuse[g_nfuse].ty = tys[i];
         g_nfuse++; opened++;
@@ -7797,15 +7797,15 @@ static int self_rebuild_move(Stmt *s) {
 static char *gen_hash(Type t, const char *v) {
     t = base_of(t);
     if (t == T_STRING || t == T_BYTES) return sfmt("tycho_si_hash(%s)", v);
-    if (t == T_FLOAT)  return sfmt("tycho_ik_hash((long)((union { double _d; long _l; }){ ._d = (%s) })._l)", v);
-    if (enum_fieldless(t)) return sfmt("tycho_ik_hash((long)((%s)->tag))", v);
+    if (t == T_FLOAT)  return sfmt("tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)", v);
+    if (enum_fieldless(t)) return sfmt("tycho_ik_hash((tycho_int)((%s)->tag))", v);
     if (IS_STRUCT(t))  return sfmt("tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
     if (IS_TUP(t))     return sfmt("tycho_hash_T%d(%s)", TUP_ID(t), v);
     if (t == T_ARRAY_INT)    return sfmt("tycho_arr_int_hash(%s)", v);
     if (t == T_ARRAY_STRING) return sfmt("tycho_arr_str_hash(%s)", v);
     if (t == T_ARRAY_FLOAT)  return sfmt("tycho_arr_float_hash(%s)", v);
     if (IS_ARRC(t))    return sfmt("tycho_arr_C%d_hash(%s)", ARRC_ID(t), v);   /* composite-element array: generated, order-sensitive */
-    return sfmt("tycho_ik_hash((long)(%s))", v);   /* int / bool / char */
+    return sfmt("tycho_ik_hash((tycho_int)(%s))", v);   /* int / bool / char */
 }
 
 static char *gen_eq(Type t, const char *a, const char *b) {
@@ -7995,7 +7995,7 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "len")) {
         if (is_extern_str_call(e->args[0]))   /* FFI: read the length of a C-owned string without copying it (read-once borrow) */
-            return sfmt("({ const char *_x = %s; _x ? (long)strlen(_x) : 0L; })", gen_extern_raw(e->args[0]));
+            return sfmt("({ const char *_x = %s; _x ? (tycho_int)strlen(_x) : 0L; })", gen_extern_raw(e->args[0]));
         char *a = gen_expr(e->args[0], arena);
         if (e->args[0]->type == T_STRING || e->args[0]->type == T_BYTES)   /* bytes: same length-headered buffer */
             return sfmt("tycho_str_len(%s)", a);
@@ -8126,7 +8126,7 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "clock")) return "tycho_clock()";   /* monotonic ns; no arena (scalar) */
     if (!strcmp(e->sval, "now"))   return "tycho_now()";     /* wall-clock seconds */
-    if (!strcmp(e->sval, "ncpu"))  return "((long)tycho_ncpu())";   /* parallel-for fan-out width */
+    if (!strcmp(e->sval, "ncpu"))  return "((tycho_int)tycho_ncpu())";   /* parallel-for fan-out width */
     if (!strcmp(e->sval, "read_file")) {
         return sfmt("tycho_read_file(%s, %s)", arena, gen_expr(e->args[0], arena));
     }
@@ -8212,10 +8212,10 @@ static char *gen_call(Expr *e, const char *arena) {
         Type at = base_of(e->args[0]->type);
         if (at == T_FLOAT || at == T_F32)
             return sfmt("tycho_f2i(%s)", gen_expr(e->args[0], arena));
-        return sfmt("((long)%s)", gen_expr(e->args[0], arena));
+        return sfmt("((tycho_int)%s)", gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
-        return sfmt("((void*)(long)%s)", gen_expr(e->args[0], arena));
+        return sfmt("((void*)(tycho_int)%s)", gen_expr(e->args[0], arena));
     if (is_sized_conv(e->sval))          /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
         return sfmt("((%s)%s)", c_type(sized_conv_target(e->sval)), gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT)   /* [int] -> bytes: real conversion (each elem & 0xFF into a fresh binary buffer) */
@@ -8262,9 +8262,9 @@ static char *gen_call(Expr *e, const char *arena) {
                 }
             }
             int id = g_blk++;
-            const char *octype = _retb == T_BYTES ? "unsigned char" : _retb == T_ARRAY_INT ? "long" : "double";
+            const char *octype = _retb == T_BYTES ? "unsigned char" : _retb == T_ARRAY_INT ? "tycho_int" : "double";
             const char *fromc  = _retb == T_BYTES ? "tycho_bytes_from_c" : _retb == T_ARRAY_INT ? "tycho_arr_int_from_c" : "tycho_arr_float_from_c";
-            return sfmt("({ %s%s *_o%d = 0; long _ol%d = 0; %s(%s%s&_o%d, &_ol%d); %s(%s, _o%d, _ol%d); })",
+            return sfmt("({ %s%s *_o%d = 0; tycho_int _ol%d = 0; %s(%s%s&_o%d, &_ol%d); %s(%s, _o%d, _ol%d); })",
                         decls, octype, id, id, e->sval, args, emitted ? ", " : "", id, id, fromc, arena, id, id);
         }
         char *xc = gen_extern_raw(e);
@@ -8307,7 +8307,7 @@ static char *gen_call(Expr *e, const char *arena) {
  * harmless redundant cast. Non-sized types pass through unchanged. */
 static char *trunc_result(Type t, char *expr) {
     Type b = base_of(t);
-    if (b == T_CHAR) return sfmt("((long)(unsigned char)(%s))", expr);   /* char arithmetic stays a byte 0..255 (char is one byte, like u8) */
+    if (b == T_CHAR) return sfmt("((tycho_int)(unsigned char)(%s))", expr);   /* char arithmetic stays a byte 0..255 (char is one byte, like u8) */
     return is_sized_int(b) ? sfmt("(%s)(%s)", c_type(b), expr) : expr;
 }
 
@@ -8459,7 +8459,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 int sid = SOA_ID(e->lhs->type);
                 char *sl = gen_lvalue(e->lhs, arena);
                 char *ix = gen_expr(e->rhs, arena);
-                char *out = sfmt("({ Soa%d *_g%d = &(%s); long _gi%d = Soa%d_bound(_g%d, %s); (S_%s){ ",
+                char *out = sfmt("({ Soa%d *_g%d = &(%s); tycho_int _gi%d = Soa%d_bound(_g%d, %s); (S_%s){ ",
                                  sid, id, sl, id, sid, id, ix, sd->name);
                 for (int f = 0; f < sd->nfields; f++)
                     out = sfmt("%s%s_g%d->f%d[_gi%d]", out, f ? ", " : "", id, f, id);
@@ -8508,9 +8508,9 @@ static char *gen_expr(Expr *e, const char *arena) {
                 for (int f = 0; f < sd->nfields; f++)
                     fs = fs ? sfmt("%s, _sv%d.f%d + _lo%d", fs, id, f, id)
                             : sfmt("_sv%d.f%d + _lo%d", id, f, id);
-                return sfmt("({ Soa%d _sv%d = %s; long _lo%d = %s, _hi%d = %s; "
+                return sfmt("({ Soa%d _sv%d = %s; tycho_int _lo%d = %s, _hi%d = %s; "
                             "if (_lo%d < 0 || _hi%d > _sv%d.len || _lo%d > _hi%d) { "
-                            "fprintf(stderr, \"tycho: slice [%%ld:%%ld] out of bounds (len %%ld)\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
+                            "fprintf(stderr, \"tycho: slice [%%\" TY_PRId \":%%\" TY_PRId \"] out of bounds (len %%\" TY_PRId \")\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
                             "(Soa%d){ %s, _hi%d - _lo%d, 0 }; })",
                             sid, id, a, id, lo, id, hi,
                             id, id, id, id, id, id, id, id,
@@ -8527,9 +8527,9 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *a  = gen_expr(e->lhs, arena);
             char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
             char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("_sv%d.len", id);
-            return sfmt("({ %s_sv%d = %s; long _lo%d = %s, _hi%d = %s; "
+            return sfmt("({ %s_sv%d = %s; tycho_int _lo%d = %s, _hi%d = %s; "
                         "if (_lo%d < 0 || _hi%d > _sv%d.len || _lo%d > _hi%d) { "
-                        "fprintf(stderr, \"tycho: slice [%%ld:%%ld] out of bounds (len %%ld)\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
+                        "fprintf(stderr, \"tycho: slice [%%\" TY_PRId \":%%\" TY_PRId \"] out of bounds (len %%\" TY_PRId \")\\n\", _lo%d, _hi%d, _sv%d.len); exit(1); } "
                         "(%s){ _sv%d.data + _lo%d, _hi%d - _lo%d, 0 }; })",
                         ct, id, a, id, lo, id, hi,
                         id, id, id, id, id, id, id, id,
@@ -8836,13 +8836,13 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     int sid = pf->spawn_id;
     char *lo = gen_expr(s->r_start, scope), *hi = gen_expr(s->r_stop, scope);
     indent(o, ind); fprintf(o, "{\n");
-    indent(o, ind + 1); fprintf(o, "long _plo = %s, _phi = %s;\n", lo, hi);
+    indent(o, ind + 1); fprintf(o, "tycho_int _plo = %s, _phi = %s;\n", lo, hi);
     indent(o, ind + 1); fprintf(o, "if (_phi < _plo) _phi = _plo;\n");
-    indent(o, ind + 1); fprintf(o, "long _pk = tycho_ncpu();\n");
+    indent(o, ind + 1); fprintf(o, "tycho_int _pk = tycho_ncpu();\n");
     indent(o, ind + 1); fprintf(o, "if (_pk > _phi - _plo) _pk = _phi - _plo;\n");
     indent(o, ind + 1); fprintf(o, "if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n");
     indent(o, ind + 1); fprintf(o, "HTask *_pts[64];\n");
-    indent(o, ind + 1); fprintf(o, "for (long _pc = 0; _pc < _pk; _pc++) {\n");
+    indent(o, ind + 1); fprintf(o, "for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n");
     indent(o, ind + 2); fprintf(o, "HTask *_tk = tycho_task_new();\n");
     indent(o, ind + 2); fprintf(o, "HSpawnA_%d *_sa = (HSpawnA_%d *)arena_alloc(&_tk->root, sizeof(HSpawnA_%d));\n", sid, sid, sid);
     indent(o, ind + 2); fprintf(o, "_sa->t = _tk;\n");
@@ -8857,7 +8857,7 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     indent(o, ind + 2); fprintf(o, "tycho_task_start(_tk, tycho_spawn_%d, _sa);\n", sid);
     indent(o, ind + 2); fprintf(o, "_pts[_pc] = _tk;\n");
     indent(o, ind + 1); fprintf(o, "}\n");
-    indent(o, ind + 1); fprintf(o, "for (long _pc = 0; _pc < _pk; _pc++) {\n");
+    indent(o, ind + 1); fprintf(o, "for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n");
     indent(o, ind + 2); fprintf(o, "tycho_task_join(_pts[_pc]);\n");
     indent(o, ind + 2); fprintf(o, "%s_pp = *(%s*)_pts[_pc]->ret;\n", c_type(g_sigs[pf->sig].ret), c_type(g_sigs[pf->sig].ret));
     indent(o, ind + 2); fprintf(o, "tycho_task_free(_pts[_pc]);\n");
@@ -8966,7 +8966,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * (possibly a string literal in .rodata) is never written. */
             if (s->decl_type == T_STRING && is_accum(s->name)) {
                 indent(o, ind);
-                fprintf(o, "long _len_h_%s = ((const long *)h_%s)[-1]; long _cap_h_%s = 0;\n",
+                fprintf(o, "tycho_int _len_h_%s = ((const tycho_int *)h_%s)[-1]; tycho_int _cap_h_%s = 0;\n",
                         s->name, s->name, s->name);
             }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
@@ -9191,7 +9191,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
              * grow in place — forces the next append to allocate). */
             if (is_accum(s->name) && s->expr->type == T_STRING && !is_inout_param(s->name))
-                fprintf(o, "%*s_len_h_%s = ((const long *)h_%s)[-1]; _cap_h_%s = 0;\n",
+                fprintf(o, "%*s_len_h_%s = ((const tycho_int *)h_%s)[-1]; _cap_h_%s = 0;\n",
                         ind * 4, "", s->name, s->name, s->name);
             break;
         }
@@ -9670,10 +9670,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             indent(o, ind); fprintf(o, "{\n");
             indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s);\n", id, scope);
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, NULL);   /* bounds eval once, pre-loop */
-            indent(o, ind + 1); fprintf(o, "long _stop%d = %s, _step%d = %s;\n", id, stop, id, step);
+            indent(o, ind + 1); fprintf(o, "tycho_int _stop%d = %s, _step%d = %s;\n", id, stop, id, step);
             indent(o, ind + 1); fprintf(o, "if (_step%d == 0) { fprintf(stderr, \"tycho: range step is zero\\n\"); exit(1); }\n", id);
             indent(o, ind + 1);
-            fprintf(o, "for (long h_%s = %s; _step%d > 0 ? h_%s < _stop%d : h_%s > _stop%d; h_%s += _step%d) {\n",
+            fprintf(o, "for (tycho_int h_%s = %s; _step%d > 0 ? h_%s < _stop%d : h_%s > _stop%d; h_%s += _step%d) {\n",
                     s->name, start, id, s->name, id, s->name, id, s->name, id);
             indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
             int m = cv_mark();
@@ -9764,16 +9764,16 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
     for (int i = 0; i < pr->nparams; i++) {
         const char *arrp = ffi_arr_ptr_ctype(pr->params[i].type);
         if (pr->params[i].type == T_BYTES)
-            fprintf(o, "%sconst unsigned char *, long", emitted++ ? ", " : "");
+            fprintf(o, "%sconst unsigned char *, tycho_int", emitted++ ? ", " : "");
         else if (arrp)                     /* [int]/[float] cross as (const T*, long) */
-            fprintf(o, "%s%s, long", emitted++ ? ", " : "", arrp);
+            fprintf(o, "%s%s, tycho_int", emitted++ ? ", " : "", arrp);
         else if (pr->params[i].is_inout)   /* FFI R4: out-param — the C fn takes a pointer to T */
             fprintf(o, "%s%s*", emitted++ ? ", " : "", c_type(pr->params[i].type));
         else
             fprintf(o, "%s%s", emitted++ ? ", " : "", pr->params[i].ffi_ct ? pr->params[i].ffi_ct : c_type(pr->params[i].type));
     }
-    if (bret) fprintf(o, "%sunsigned char **, long *", emitted++ ? ", " : "");
-    else if (aret) fprintf(o, "%s%s **, long *", emitted++ ? ", " : "", pr->ret == T_ARRAY_INT ? "long" : "double");
+    if (bret) fprintf(o, "%sunsigned char **, tycho_int *", emitted++ ? ", " : "");
+    else if (aret) fprintf(o, "%s%s **, tycho_int *", emitted++ ? ", " : "", pr->ret == T_ARRAY_INT ? "tycho_int" : "double");
     if (emitted == 0) fprintf(o, "void");
     fprintf(o, ");\n");
 }
@@ -10093,12 +10093,12 @@ static Proc *ginst_to_proc(GInst *gi) {
  * key variant (composite / int-rep / string); each preserves that variant's
  * exact key hashing, matching, and copy semantics. ---- */
 static const char *mapc_kslot(Type k) {   /* C type of one key slot in ekeys[] */
-    if (mapkey_intrep(k)) return "long ";
+    if (mapkey_intrep(k)) return "tycho_int ";
     if (!mapkey_composite(k)) return "char *";
     return c_type(k);
 }
 static char *mapc_kparam(Type k) {        /* the key function parameter */
-    if (mapkey_intrep(k)) return sfmt("long k");
+    if (mapkey_intrep(k)) return sfmt("tycho_int k");
     if (!mapkey_composite(k)) return sfmt("const char *k");
     return sfmt("%sk", c_type(k));
 }
@@ -10207,14 +10207,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array bodies (tags forward-declared above) */
         if (g_arrtypes[i].bnd)                       /* bounded[N]T: inline storage + a runtime count */
-            fprintf(o, "struct TychoArrC%d_ { %s v[%ld]; long len; };\n", i, c_type(g_arrtypes[i].elem), g_arrtypes[i].size);
+            fprintf(o, "struct TychoArrC%d_ { %s v[%ld]; tycho_int len; };\n", i, c_type(g_arrtypes[i].elem), g_arrtypes[i].size);
         else if (g_arrtypes[i].size > 0)            /* fixed-size [N]T (1.6): inline storage, no heap descriptor */
             fprintf(o, "struct TychoArrC%d_ { %s v[%ld]; };\n", i, c_type(g_arrtypes[i].elem), g_arrtypes[i].size);
         else
-            fprintf(o, "struct TychoArrC%d_ { %s*data; long len; long cap; };\n",
+            fprintf(o, "struct TychoArrC%d_ { %s*data; tycho_int len; tycho_int cap; };\n",
                     i, c_type(g_arrtypes[i].elem));
     for (int i = 0; i < g_nmaptypes; i++)           /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
-        fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; long len; long ecount; long ecap; long icap; };\n",
+        fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n",
                 i, mapc_kslot(g_maptypes[i].key), c_type(g_maptypes[i].val));
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.
      * Members are pointers, so the element struct's tag forward-decl above is
@@ -10225,9 +10225,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "typedef struct {");
         for (int f = 0; f < sd->nfields; f++)
             fprintf(o, " %s*f%d;", c_type(sd->fields[f].type), f);
-        fprintf(o, " long len; long cap; } Soa%d;\n", i);
-        fprintf(o, "static long Soa%d_bound(Soa%d *s, long i) { if (i < 0 || i >= s->len) { "
-                   "fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, s->len); exit(1); } return i; }\n", i, i);
+        fprintf(o, " tycho_int len; tycho_int cap; } Soa%d;\n", i);
+        fprintf(o, "static tycho_int Soa%d_bound(Soa%d *s, tycho_int i) { if (i < 0 || i >= s->len) { "
+                   "fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, s->len); exit(1); } return i; }\n", i, i);
     }
     fputs("\n", o);
     /* (3) struct bodies + Option typedefs in containment order (infinite types
@@ -10334,9 +10334,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_arrtypes[i].elem);
         if (g_arrtypes[i].bnd) {                       /* bounded[N]T: read/copy/eq like a fixarr, PLUS a trap-on-full push */
             fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
-            fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, long);\n", ct, i, i);
-            fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, long);\n", ct, i, i);
-            fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, long, %s);\n", i, i, ct);
+            fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, tycho_int);\n", ct, i, i);
+            fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, tycho_int);\n", ct, i, i);
+            fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i))
@@ -10344,23 +10344,23 @@ static void gen_program(FILE *o, ProcVec *prog) {
             continue;
         }
         if (g_arrtypes[i].size > 0) {                 /* fixed [N]T: only read/copy/eq -- no growth */
-            fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, long);\n", ct, i, i);
-            fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, long);\n", ct, i, i);
-            fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, long, %s);\n", i, i, ct);
+            fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, tycho_int);\n", ct, i, i);
+            fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, tycho_int);\n", ct, i, i);
+            fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i))
                 fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
             continue;
         }
-        fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, long);\n", i, i);
+        fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, tycho_int);\n", i, i);
         fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
-        fprintf(o, "static void tycho_arr_C%d_reserve(Arena*, TychoArrC%d*, long);\n", i, i);
-        fprintf(o, "static void tycho_arr_C%d_grow(Arena*, %s**, long*, long);\n", i, ct);
+        fprintf(o, "static void tycho_arr_C%d_reserve(Arena*, TychoArrC%d*, tycho_int);\n", i, i);
+        fprintf(o, "static void tycho_arr_C%d_grow(Arena*, %s**, tycho_int*, tycho_int);\n", i, ct);
         fprintf(o, "static %stycho_arr_C%d_pop(Arena*, TychoArrC%d*);\n", ct, i, i);
-        fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, long);\n", ct, i, i);
-        fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, long);\n", ct, i, i);
-        fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, long, %s);\n", i, i, ct);
+        fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, tycho_int);\n", ct, i, i);
+        fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, tycho_int);\n", ct, i, i);
+        fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
         fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
         if (struct_keyused(T_ARRC_BASE + i))   /* composite map key: deep hash */
@@ -10460,32 +10460,32 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    if (xs->len >= %ld) { fprintf(stderr, \"tycho: push to a full bounded[%ld]\\n\"); exit(1); }\n"
                 "    xs->v[xs->len++] = %s;\n}\n", i, i, ct, n, n, copy_into(et, "a", "v"));
             fprintf(o,
-                "static %stycho_arr_C%d_get(TychoArrC%d xs, long i) {\n"
-                "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs.len); exit(1); }\n"
+                "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
+                "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n"
                 "    return xs.v[i];\n}\n", ct, i, i);
             fprintf(o,
-                "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, long i) {\n"
-                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
+                "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
                 "    return &xs->v[i];\n}\n", ct, i, i);
             fprintf(o,
-                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, long i, %sv) {\n"
-                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
+                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
                 "    xs->v[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
             fprintf(o,   /* copy: struct assign carries v[] + len; deep-copy the live elements */
                 "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
                 "    TychoArrC%d r = src;\n"
-                "    for (long i = 0; i < src.len; i++) r.v[i] = %s;\n"
+                "    for (tycho_int i = 0; i < src.len; i++) r.v[i] = %s;\n"
                 "    return r;\n}\n", i, i, i, i, copy_into(et, "a", "src.v[i]"));
             fprintf(o,
                 "static int tycho_arr_C%d_eq(TychoArrC%d x, TychoArrC%d y) {\n"
                 "    if (x.len != y.len) return 0;\n"
-                "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
+                "    for (tycho_int i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
                 "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.v[i]", "y.v[i]"));
             if (struct_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
                     "static unsigned long tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    unsigned long h = 1469598103934665603UL;\n"
-                    "    for (long i = 0; i < xs.len; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
+                    "    for (tycho_int i = 0; i < xs.len; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
                     "    return h;\n}\n", i, i, "(unsigned long)xs.v[i]");
             }
             continue;
@@ -10493,62 +10493,62 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_arrtypes[i].size > 0) {             /* fixed-size [N]T (1.6): inline; read/copy/eq only */
             long n = g_arrtypes[i].size;
             fprintf(o,
-                "static %stycho_arr_C%d_get(TychoArrC%d xs, long i) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %ld)\\n\", i); exit(1); }\n"
+                "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
+                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
                 "    return xs.v[i];\n}\n", ct, i, i, n, n);
             fprintf(o,
-                "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, long i) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %ld)\\n\", i); exit(1); }\n"
+                "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
+                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
                 "    return &xs->v[i];\n}\n", ct, i, i, n, n);
             fprintf(o,
-                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, long i, %sv) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %ld)\\n\", i); exit(1); }\n"
+                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
                 "    xs->v[i] = %s;\n}\n", i, i, ct, n, n, copy_into(et, "a", "v"));
             fprintf(o,   /* copy: the struct copy memcpys the inline array; deep-copy each element for a heap element type */
                 "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
                 "    TychoArrC%d r = src;\n"
-                "    for (long i = 0; i < %ld; i++) r.v[i] = %s;\n"
+                "    for (tycho_int i = 0; i < %ld; i++) r.v[i] = %s;\n"
                 "    return r;\n}\n", i, i, i, i, n, copy_into(et, "a", "src.v[i]"));
             fprintf(o,
                 "static int tycho_arr_C%d_eq(TychoArrC%d x, TychoArrC%d y) {\n"
-                "    for (long i = 0; i < %ld; i++) if (!(%s)) return 0;\n"
+                "    for (tycho_int i = 0; i < %ld; i++) if (!(%s)) return 0;\n"
                 "    return 1;\n}\n\n", i, i, i, n, gen_eq(et, "x.v[i]", "y.v[i]"));
             if (struct_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
                     "static unsigned long tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    unsigned long h = 1469598103934665603UL;\n"
-                    "    for (long i = 0; i < %ld; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
+                    "    for (tycho_int i = 0; i < %ld; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
                     "    return h;\n}\n", i, i, n, "(unsigned long)xs.v[i]");
             }
             continue;
         }
         fprintf(o,
-            "static TychoArrC%d tycho_arr_C%d_with_cap(Arena *a, long cap) {\n"
+            "static TychoArrC%d tycho_arr_C%d_with_cap(Arena *a, tycho_int cap) {\n"
             "    TychoArrC%d r; r.len = 0; r.cap = cap;\n"
             "    r.data = cap > 0 ? (%s*)arena_alloc(a, (size_t)cap * sizeof(%s)) : 0;\n"
             "    return r;\n}\n", i, i, i, ct, ct);
         fprintf(o,
             "static void tycho_arr_C%d_push(Arena *a, TychoArrC%d *xs, %sv) {\n"
             "    if (xs->len == xs->cap) {\n"
-            "        long nc = xs->cap ? xs->cap * 2 : 4;\n"
+            "        tycho_int nc = xs->cap ? xs->cap * 2 : 4;\n"
             "        %s*nd = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s));\n"
-            "        for (long i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
+            "        for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
             "        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"  /* dead spine; element heap lives on via nd */
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
         fprintf(o,   /* capacity hint (reserve): grow the spine to n if larger; elements' heap lives on via nd (shallow spine copy, like push's regrow) */
-            "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, long n) {\n"
+            "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, tycho_int n) {\n"
             "    if (n <= xs->cap) return;\n"
             "    %s*nd = (%s*)arena_alloc(a, (size_t)n * sizeof(%s));\n"
-            "    for (long i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
+            "    for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
             "    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"
             "    xs->data = nd; xs->cap = n;\n}\n", i, i, ct, ct, ct, ct);
         fprintf(o,   /* push-loop fusion grow hook: regrow the spine (shallow copy); elements were already deep-copied into `a` at each fused store */
-            "static void tycho_arr_C%d_grow(Arena *a, %s**data, long *cap, long len) {\n"
-            "    long nc = *cap ? *cap * 2 : 4;\n"
+            "static void tycho_arr_C%d_grow(Arena *a, %s**data, tycho_int *cap, tycho_int len) {\n"
+            "    tycho_int nc = *cap ? *cap * 2 : 4;\n"
             "    %s*nd = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s));\n"
-            "    for (long i = 0; i < len; i++) nd[i] = (*data)[i];\n"
+            "    for (tycho_int i = 0; i < len; i++) nd[i] = (*data)[i];\n"
             "    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(%s));\n"
             "    *data = nd; *cap = nc;\n}\n",
             i, ct, ct, ct, ct, ct);
@@ -10558,32 +10558,32 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    xs->len--;\n    return %s;\n}\n",
             ct, i, i, copy_into(et, "a", "xs->data[xs->len]"));
         fprintf(o,
-            "static %stycho_arr_C%d_get(TychoArrC%d xs, long i) {\n"
-            "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs.len); exit(1); }\n"
+            "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
+            "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n"
             "    return xs.data[i];\n}\n", ct, i, i);
         fprintf(o,   /* projection: a bounds-checked pointer into the buffer, so an */
-            "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, long i) {\n"   /* element is a mutable lvalue */
-            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
+            "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"   /* element is a mutable lvalue */
+            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
             "    return &xs->data[i];\n}\n", ct, i, i);
         fprintf(o,
-            "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, long i, %sv) {\n"
-            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%ld out of bounds (len %%ld)\\n\", i, xs->len); exit(1); }\n"
+            "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
             "    xs->data[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
         fprintf(o,
             "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
             "    TychoArrC%d r = tycho_arr_C%d_with_cap(a, src.len); r.len = src.len;\n"
-            "    for (long i = 0; i < src.len; i++) r.data[i] = %s;\n"
+            "    for (tycho_int i = 0; i < src.len; i++) r.data[i] = %s;\n"
             "    return r;\n}\n", i, i, i, i, i, copy_into(et, "a", "src.data[i]"));
         fprintf(o,
             "static int tycho_arr_C%d_eq(TychoArrC%d x, TychoArrC%d y) {\n"
             "    if (x.len != y.len) return 0;\n"
-            "    for (long i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
+            "    for (tycho_int i = 0; i < x.len; i++) if (!(%s)) return 0;\n"
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
         if (struct_keyused(T_ARRC_BASE + i))   /* composite-element array used as a (nested) map key: order-sensitive deep hash */
             fprintf(o,
                 "static unsigned long tycho_arr_C%d_hash(TychoArrC%d x) {\n"
                 "    unsigned long h = tycho_hash_k0;\n"
-                "    for (long i = 0; i < x.len; i++) h = h * 1099511628211UL ^ %s;\n"
+                "    for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ %s;\n"
                 "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
     }
     /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
@@ -10606,73 +10606,73 @@ static void gen_program(FILE *o, ProcVec *prog) {
          * table -> dense insertion-ordered entries; tombstone + backward-shift-index
          * delete + allocation-free in-place compaction (churn bound). --- */
         fprintf(o,
-            "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, long cap) {\n"
+            "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, tycho_int cap) {\n"
             "    TychoMapC%d m; m.len = 0; m.ecount = 0;\n"
             "    if (cap <= 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; }\n"
-            "    long ec = 4; while (ec < cap) ec *= 2; long ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n"
+            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n"
             "    m.ekeys = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    m.evals = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
             "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
-            "    for (long i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
+            "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
         fprintf(o,
-            "static long tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
-            "    if (m.icap == 0) return -1; unsigned long mask = (unsigned long)m.icap - 1; long i = (long)(%s & mask); int e;\n"
-            "    while ((e = m.idx[i]) != 0) { if (%s) return e - 1; i = (long)((i + 1) & mask); }\n"
+            "static tycho_int tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
+            "    if (m.icap == 0) return -1; unsigned long mask = (unsigned long)m.icap - 1; tycho_int i = (tycho_int)(%s & mask); int e;\n"
+            "    while ((e = m.idx[i]) != 0) { if (%s) return e - 1; i = (tycho_int)((i + 1) & mask); }\n"
             "    return -1;\n}\n", i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m.ekeys[e - 1]", "k"));
         fprintf(o,
-            "static void tycho_mapc%d_idxput(TychoMapC%d *m, long ei) {\n"
-            "    unsigned long mask = (unsigned long)m->icap - 1; long i = (long)(%s & mask);\n"
-            "    while (m->idx[i] != 0) i = (long)((i + 1) & mask); m->idx[i] = (int)(ei + 1);\n}\n",
+            "static void tycho_mapc%d_idxput(TychoMapC%d *m, tycho_int ei) {\n"
+            "    unsigned long mask = (unsigned long)m->icap - 1; tycho_int i = (tycho_int)(%s & mask);\n"
+            "    while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask); m->idx[i] = (int)(ei + 1);\n}\n",
             i, i, mapc_khash(keyt, "m->ekeys[ei]"));
         fprintf(o,
             "static void tycho_mapc%d_idxgrow(Arena *a, TychoMapC%d *m) {\n"
-            "    long ic = m->icap ? m->icap * 2 : 8; int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
-            "    for (long i = 0; i < ic; i++) ni[i] = 0; m->idx = ni; m->icap = ic;\n"
-            "    for (long e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
+            "    tycho_int ic = m->icap ? m->icap * 2 : 8; int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
+            "    for (tycho_int i = 0; i < ic; i++) ni[i] = 0; m->idx = ni; m->icap = ic;\n"
+            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
         fprintf(o,
             "static void tycho_mapc%d_compact(TychoMapC%d *m) {\n"
-            "    long w = 0; for (long r = 0; r < m->ecount; r++) if (m->elive[r]) { if (w != r) { m->ekeys[w] = m->ekeys[r]; m->evals[w] = m->evals[r]; m->elive[w] = 1; } w++; }\n"
-            "    m->ecount = w; for (long i = 0; i < m->icap; i++) m->idx[i] = 0;\n"
-            "    for (long e = 0; e < m->ecount; e++) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
+            "    tycho_int w = 0; for (tycho_int r = 0; r < m->ecount; r++) if (m->elive[r]) { if (w != r) { m->ekeys[w] = m->ekeys[r]; m->evals[w] = m->evals[r]; m->elive[w] = 1; } w++; }\n"
+            "    m->ecount = w; for (tycho_int i = 0; i < m->icap; i++) m->idx[i] = 0;\n"
+            "    for (tycho_int e = 0; e < m->ecount; e++) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
         fprintf(o,
-            "static long tycho_mapc%d_append(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
-            "    if (m->ecount == m->ecap) { long dead = m->ecount - m->len;\n"
+            "static tycho_int tycho_mapc%d_append(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+            "    if (m->ecount == m->ecap) { tycho_int dead = m->ecount - m->len;\n"
             "        if (dead > m->ecap / 2) tycho_mapc%d_compact(m);\n"
-            "        else { long nc = m->ecap ? m->ecap * 2 : 4;\n"
+            "        else { tycho_int nc = m->ecap ? m->ecap * 2 : 4;\n"
             "            %s*nk = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); %s*nv = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)nc);\n"
-            "            for (long e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
+            "            for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
             "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n"
-            "    long e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
+            "    tycho_int e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
             i, i, kp, ct, i, ks, ks, ks, ct, ct, ct);
         fprintf(o,
             "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
-            "    long e = tycho_mapc%d_find(*m, k); if (e >= 0) { m->evals[e] = %s; return; }\n"
+            "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) { m->evals[e] = %s; return; }\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
-            "    long ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
+            "    tycho_int ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
             i, i, kp, ct, i, vcopy, i, i, kcopy, vcopy, i);
         fprintf(o,
             "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %s) {\n"
-            "    long e = tycho_mapc%d_find(*m, k); if (e >= 0) return &m->evals[e];\n"
+            "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) return &m->evals[e];\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
-            "    long ne = tycho_mapc%d_append(a, m, %s, (%s){0}); m->len++; tycho_mapc%d_idxput(m, ne);\n"
+            "    tycho_int ne = tycho_mapc%d_append(a, m, %s, (%s){0}); m->len++; tycho_mapc%d_idxput(m, ne);\n"
             "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, kcopy, ct, i);
         fprintf(o,
             "static void tycho_mapc%d_del(TychoMapC%d *m, %s) {\n"
-            "    if (m->icap == 0) return; unsigned long mask = (unsigned long)m->icap - 1; long i = (long)(%s & mask), found = -1;\n"
-            "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (long)((i + 1) & mask); }\n"
-            "    if (found < 0) return; long ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n"
-            "    long g = found;\n"
-            "    for (;;) { m->idx[g] = 0; long j = g;\n"
-            "        for (;;) { j = (long)((j + 1) & mask); if (m->idx[j] == 0) return;\n"
-            "            long h = (long)(%s & mask);\n"
+            "    if (m->icap == 0) return; unsigned long mask = (unsigned long)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
+            "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n"
+            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n"
+            "    tycho_int g = found;\n"
+            "    for (;;) { m->idx[g] = 0; tycho_int j = g;\n"
+            "        for (;;) { j = (tycho_int)((j + 1) & mask); if (m->idx[j] == 0) return;\n"
+            "            tycho_int h = (tycho_int)(%s & mask);\n"
             "            if (g <= j) { if (g < h && h <= j) continue; } else { if (g < h || h <= j) continue; } break; }\n"
             "        m->idx[g] = m->idx[j]; g = j; }\n}\n",
             i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"), mapc_khash(keyt, "m->ekeys[m->idx[j] - 1]"));
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
             "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len : 0);\n"
-            "    for (long e = 0; e < src.ecount; e++) if (src.elive[e]) tycho_mapc%d_put(a, &r, src.ekeys[e], src.evals[e]);\n"
+            "    for (tycho_int e = 0; e < src.ecount; e++) if (src.elive[e]) tycho_mapc%d_put(a, &r, src.ekeys[e], src.evals[e]);\n"
             "    return r;\n}\n", i, i, i, i, i, i);
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_set(Arena *a, TychoMapC%d m, %s, %sv) {\n"
@@ -10682,18 +10682,18 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, kp, i, i, i);
         fprintf(o,
             "static %stycho_mapc%d_get(TychoMapC%d m, %s, %sdflt) {\n"
-            "    long e = tycho_mapc%d_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n", ct, i, i, kp, ct, i);
+            "    tycho_int e = tycho_mapc%d_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n", ct, i, i, kp, ct, i);
         fprintf(o,
             "static int tycho_mapc%d_has(TychoMapC%d m, %s) { return tycho_mapc%d_find(m, k) >= 0; }\n", i, i, kp, i);
         fprintf(o,
             "static %stycho_mapc%d_keys(Arena *a, TychoMapC%d m) {\n"
             "    %sr = tycho_arr_%s_with_cap(a, m.len);\n"
-            "    for (long e = 0; e < m.ecount; e++) if (m.elive[e]) tycho_arr_%s_push(a, &r, %s);\n"
+            "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) tycho_arr_%s_push(a, &r, %s);\n"
             "    return r;\n}\n", katc, i, i, katc, katf, katf, kelem);
         fprintf(o,
             "static int tycho_mapc%d_eq(TychoMapC%d x, TychoMapC%d y) {\n"
             "    if (x.len != y.len) return 0;\n"
-            "    for (long e = 0; e < x.ecount; e++) if (x.elive[e]) { long s = tycho_mapc%d_find(y, x.ekeys[e]); if (s < 0 || !(%s)) return 0; }\n"
+            "    for (tycho_int e = 0; e < x.ecount; e++) if (x.elive[e]) { tycho_int s = tycho_mapc%d_find(y, x.ekeys[e]); if (s < 0 || !(%s)) return 0; }\n"
             "    return 1;\n}\n\n", i, i, i, i, gen_eq(g_maptypes[i].val, "y.evals[s]", "x.evals[e]"));
     }
     /* (7b) SOA types: struct-of-arrays. One growable arena buffer per struct
@@ -10705,11 +10705,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
         const char *sn = sd->name;   /* typedef + Soa<id>_bound were emitted early (2c) */
         fprintf(o, "static void Soa%d_push(Arena *a, Soa%d *s, S_%s v) {\n", i, i, sn);
-        fprintf(o, "    if (s->len == s->cap) {\n        long nc = s->cap ? s->cap * 2 : 4;\n");
+        fprintf(o, "    if (s->len == s->cap) {\n        tycho_int nc = s->cap ? s->cap * 2 : 4;\n");
         for (int f = 0; f < sd->nfields; f++) {
             const char *ct = c_type(sd->fields[f].type);
             fprintf(o, "        %s*n%d = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s)); "
-                       "for (long i = 0; i < s->len; i++) n%d[i] = s->f%d[i]; s->f%d = n%d;\n",
+                       "for (tycho_int i = 0; i < s->len; i++) n%d[i] = s->f%d[i]; s->f%d = n%d;\n",
                     ct, f, ct, ct, f, f, f, f);
         }
         fprintf(o, "        s->cap = nc;\n    }\n");
@@ -10732,7 +10732,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int f = 0; f < sd->nfields; f++) {
             const char *ct = c_type(sd->fields[f].type);
             fprintf(o, "    r.f%d = s.len ? (%s*)arena_alloc(a, (size_t)s.len * sizeof(%s)) : 0;\n", f, ct, ct);
-            fprintf(o, "    for (long i = 0; i < s.len; i++) r.f%d[i] = %s;\n", f,
+            fprintf(o, "    for (tycho_int i = 0; i < s.len; i++) r.f%d[i] = %s;\n", f,
                     copy_into(sd->fields[f].type, "a", sfmt("s.f%d[i]", f)));
         }
         fprintf(o, "    return r;\n}\n");
@@ -10744,7 +10744,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             char *fe = gen_eq(sd->fields[f].type, sfmt("a.f%d[i]", f), sfmt("b.f%d[i]", f));
             conj = conj ? sfmt("%s && %s", conj, fe) : fe;
         }
-        fprintf(o, "    for (long i = 0; i < a.len; i++) if (!(%s)) return 0;\n", conj);
+        fprintf(o, "    for (tycho_int i = 0; i < a.len; i++) if (!(%s)) return 0;\n", conj);
         fprintf(o, "    return 1;\n}\n\n");
     }
     /* (8) Option copy bodies (typedefs already emitted in step 3). A copy fn is
@@ -10859,15 +10859,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static char *tycho_str_arr_C%d(Arena *a, TychoArrC%d xs) {\n", i, i);
         fprintf(o, "    char *r = tycho_str_from_c(a, \"[\");\n");
         if (g_arrtypes[i].bnd) {   /* bounded[N]T: inline storage xs.v[i], runtime count xs.len */
-            fprintf(o, "    for (long i = 0; i < xs.len; i++) {\n");
+            fprintf(o, "    for (tycho_int i = 0; i < xs.len; i++) {\n");
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));
         } else if (g_arrtypes[i].size > 0) {   /* fixed [N]T: inline storage xs.v[i] */
-            fprintf(o, "    for (long i = 0; i < %ld; i++) {\n", (long)g_arrtypes[i].size);
+            fprintf(o, "    for (tycho_int i = 0; i < %ld; i++) {\n", (long)g_arrtypes[i].size);
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));
         } else {
-            fprintf(o, "    for (long i = 0; i < xs.len; i++) {\n");
+            fprintf(o, "    for (tycho_int i = 0; i < xs.len; i++) {\n");
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.data[i]"));
         }
@@ -10881,7 +10881,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                                   : sfmt("m.ekeys[e]");
         fprintf(o, "static char *tycho_str_mapc%d(Arena *a, TychoMapC%d m) {\n", i, i);
         fprintf(o, "    char *r = tycho_str_from_c(a, \"[\"); int first = 1;\n");
-        fprintf(o, "    for (long e = 0; e < m.ecount; e++) if (m.elive[e]) {\n");
+        fprintf(o, "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) {\n");
         fprintf(o, "        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \")); first = 0;\n");
         fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(kt, "a", kexpr));
         fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \": \"));\n");

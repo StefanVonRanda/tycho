@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-#include <limits.h>    /* LONG_MIN for the integer-division overflow guard */
+#include <limits.h>    /* size/width limits (INT64_MIN for the div-overflow guard comes from <stdint.h>) */
 #include <math.h>
 #include <dirent.h>
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
@@ -100,18 +100,18 @@ static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1)
 /* Integer division/modulo guard. The int-overflow contract
  * (docs/internals/integer-overflow.md) defines signed overflow as two's-complement
  * wrapping via -fwrapv -- but division is the one arithmetic op -fwrapv does NOT
- * make total: `x / 0` and `x % 0` are undefined (SIGFPE on x86), and LONG_MIN/-1
+ * make total: `x / 0` and `x % 0` are undefined (SIGFPE on x86), and INT64_MIN/-1
  * overflows the quotient (also a trap). Abort cleanly with a tycho: message, like
- * the bounds checks. LONG_MIN % -1 is mathematically 0, so modulo returns it
+ * the bounds checks. INT64_MIN % -1 is mathematically 0, so modulo returns it
  * directly instead of trapping. Int `/`/`%` route through these (codegen). */
 static tycho_int tycho_idiv(tycho_int a, tycho_int b) {
     if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); exit(1); }
-    if (a == LONG_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); exit(1); }
+    if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); exit(1); }
     return a / b;
 }
 static tycho_int tycho_imod(tycho_int a, tycho_int b) {
     if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
-    if (a == LONG_MIN && b == -1) return 0;
+    if (a == INT64_MIN && b == -1) return 0;
     return a % b;
 }
 /* Unsigned div/mod for u32/u64: same clean-abort guard as the signed path. No
@@ -134,7 +134,7 @@ static unsigned long long tycho_umod(unsigned long long a, unsigned long long b)
 static tycho_int tycho_shl_i(tycho_int x, long long n) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
     if (n >= 64) return 0;
-    return (tycho_int)((unsigned long)x << n);
+    return (tycho_int)((uint64_t)x << n);
 }
 static tycho_int tycho_shr_i(tycho_int x, long long n) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
