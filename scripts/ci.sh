@@ -29,6 +29,14 @@ make -s tychoc
 step "[2/19] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
+# `make test` above runs on this LP64 host, where long == int64 hides every width
+# bug. This lane re-runs the SAME fixture suite under `gcc -m32` (ILP32: 32-bit
+# long, 32-bit pointers), so anything that lowered Tycho `int` to a 32-bit C type
+# truncates and reddens. tests/int64_width.ty is the in-glob fixture that makes it
+# non-vacuous (every value there exceeds 2^31).
+step "[2b/19] make ilp32  (fixture suite rebuilt under -m32: Tycho int stays 64-bit off LP64)"
+make -s ilp32
+
 step "[3/19] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 

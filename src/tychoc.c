@@ -8345,8 +8345,11 @@ static char *gen_expr(Expr *e, const char *arena) {
              * 2^64, not 2^32. `U`/`ULL` keep the arithmetic at the value's width. */
             if (e->type == T_U32) return sfmt("%ldU", e->ival);
             if (e->type == T_U64) return sfmt("%ldULL", e->ival);
-            return sfmt("%ldL", e->ival);
-        case E_CHAR: return sfmt("%ldL", e->ival);   /* a byte value carried as long */
+            /* `LL` (C long long, >= 64-bit on EVERY data model), not `L`: a plain
+             * `L` is 32-bit under ILP32/LLP64, so `100000L * 100000L` truncates in
+             * the multiply -- before the store into the 64-bit destination. */
+            return sfmt("%ldLL", e->ival);
+        case E_CHAR: return sfmt("%ldLL", e->ival);  /* a byte value carried as tycho_int */
         case E_FLOAT: {
             /* %.17g round-trips the double exactly; ensure the C literal reads
              * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is

@@ -494,7 +494,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       quality only; no observable output change (map iteration is insertion-
       ordered). See Phase 6c.
 
-- [ ] **Phase 6b — CORRECTIVE (escalated from Phase 6): emitted int literals are 32-bit — tychoc0 MISCOMPILES on LP64 TODAY**
+- [x] **Phase 6b — CORRECTIVE (escalated from Phase 6): emitted int literals are 32-bit — tychoc0 MISCOMPILES on LP64 TODAY**
   - Raised by Phase 6's new fixture on 2026-07-24. **Severity upgraded while
     investigating: this is NOT only an ILP32 portability defect. `tychoc0`
     miscompiles integer-literal arithmetic on THIS LP64 box, right now**, and
@@ -547,6 +547,77 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `make fixpoint`, `make ffi`, `make spec-check`, `make ilp32` — each its own
     command, paste each summary line. `fixpoint` MUST stay B==C **and** must now
     pass `int64_width`.
+  - **DONE 2026-07-24.** Emitted int/char literals are now width-safe in both
+    compilers; the live LP64 tychoc0 miscompile is gone.
+  - **The two literal-emission sites changed (old → new):**
+    - `src/tychoc.c:8348-8349` (`gen_expr`, after the u32/u64 early-returns,
+      which were left untouched):
+      `return sfmt("%ldL", e->ival);` → `return sfmt("%ldLL", e->ival);`
+      `case E_CHAR: return sfmt("%ldL", e->ival);` → `... sfmt("%ldLL", ...)`
+    - `compiler/tychoc0.ty:6007-6012` (`gen_expr`):
+      `EInt(t, _el): return t` → `return t + "LL"`
+      `EChar(t, _el): return t` → `return t + "LL"`
+    - **`EBool` deliberately left bare** (`return t`). Checked before deciding:
+      tychoc emits `case E_BOOL: return sfmt("%ld", e->ival);`
+      (`src/tychoc.c:8361`) — also bare, no suffix. A bool is 0/1, so width is
+      not a correctness question, and leaving both bare keeps the two compilers
+      SYMMETRIC. Suffixing only tychoc0 would have *introduced* an asymmetry.
+  - **Why `LL` and not `L`:** `L` is C `long` — 32-bit under ILP32/LLP64, so
+    `100000L * 100000L` truncates *in the multiply*, before the store into the
+    64-bit destination. `LL` is C `long long`, ≥64-bit on every data model.
+    A bare literal is worse still: C `int`, 32-bit even on LP64 — that was the
+    live miscompile.
+  - **Before/after, LP64, same source (`int64_width.ty`), proving the miscompile
+    is gone.** tychoc = the C compiler; tychoc0 = the self-hosted compiler
+    (`./tychoc compiler/tychoc0.ty -o A`, then `A` compiles the fixture, cc'd):
+    | expression | tychoc (before & after) | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `5000000000` | `5000000000` | `5000000000` | `5000000000` |
+    | `100000 * 100000` | `10000000000` | **`1410065408`** | `10000000000` |
+    | `1 << 40` | `1099511627776` | `1099511627776` | `1099511627776` |
+    | sum | `1114511627776` | **`1105921693184`** | `1114511627776` |
+    Emitted C, before: tychoc `tycho_int h_prod = (100000L * 100000L);` vs
+    tychoc0 `tycho_int h_prod = (100000 * 100000);`. After, BOTH emit
+    `tycho_int h_prod = (100000LL * 100000LL);` and
+    `tycho_int h_big = 5000000000LL;` — the emission asymmetry is removed.
+  - **Fixture un-parked (the gate is no longer vacuous):** `git mv` of
+    `tests/ilp32/int64_width.ty` → `tests/int64_width.ty` and `.out` likewise, so
+    the `tests/*.ty` glob now covers it in `make test`, `make fixpoint` AND
+    `make ilp32`. `tests/ilp32/` removed (empty), and the now-dead
+    `!/tests/ilp32/*.out` un-ignore stanza dropped from `.gitignore` (the
+    fixture is covered by the pre-existing `!/tests/*.out` rule).
+    Confirmed in-glob under `-m32`: `make ilp32` prints `ok    int64_width`.
+  - **`ilp32` wired into CI:** `scripts/ci.sh` now runs `make -s ilp32` as step
+    `[2b/19]`, immediately after `make test` — matching the file's own existing
+    inserted-lane convention (`[10b/19]` for `fuzz-pkg`), which avoids
+    renumbering 17 unrelated labels. `sh -n scripts/ci.sh` clean.
+  - **Gates (each its own foreground command, `env -u LD_PRELOAD` for the 64-bit
+    lanes per the dev-shell LD_PRELOAD note):**
+    - `make test` → `passed: 409   failed: 0` / `all green`
+      (408 → 409: the un-parked fixture joined the main suite)
+    - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+    - `make rtparity` → `rtparity: the two runtimes agree on env knobs, diagnostics and arena stats`
+      (3 env knobs / 27 diagnostics / 5 arena-stats rows, **0** differences)
+    - `make conc` → `conc: passed 36   failed 0`
+    - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically (34679 lines C)`
+      and `fixpoint: all green (self-hosting; B==C; single files + packages;
+      tychoc0 self-split dogfood)`. **B==C held, and the `FAIL int64_width.ty
+      (B differs from the C compiler)` line is gone** — this was the exact gate
+      the bug reddened.
+    - `make ffi` → `ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden ...)`
+    - `make spec-check` → `spec-examples: 7 runnable example(s), all pass`
+    - `make ilp32` → `passed: 409   failed: 0` / `all green`, **and this is the
+      first NON-VACUOUS ILP32 result**: `ok    int64_width` appears in the run,
+      so an in-glob fixture whose every value exceeds 2^31 now really is rebuilt
+      and executed under 32-bit `long`.
+  - **No golden was re-recorded.** `git status` after the full sweep shows only
+    the two compilers, `.gitignore`, `scripts/ci.sh` and the fixture rename —
+    zero modified `.out` files, so nothing shifted on LP64 except the
+    previously-miscompiled tychoc0 output becoming correct.
+  - **Note (cosmetic, not fixed — out of this phase's scope):**
+    `tests/int64_width.ty`'s trailing comment on the `total` line reads
+    `# 16099511627776`, but the correct sum (and the tracked golden) is
+    `1114511627776`. Comment only; the golden and the assertion are right.
 
 - [ ] **Phase 6 — add the `make ilp32` gate (the real proof) + lock a fixture**
   - Scope: add an `ilp32` target to `Makefile` that emits the fixture suite's C

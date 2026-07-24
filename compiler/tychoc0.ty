@@ -6005,11 +6005,11 @@ fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx,
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t, _el):
-            return t
-        EBool(t, _el):
-            return t
-        EChar(t, _el):
-            return t
+            return t + "LL"           # `LL` = C long long, >= 64-bit on EVERY data model.
+        EBool(t, _el):                # A BARE literal is C `int` -> 32-bit even on LP64, so
+            return t                  # `100000 * 100000` truncated to 1410065408. Bool stays
+        EChar(t, _el):                # bare (0/1, no width question) -- matches tychoc.
+            return t + "LL"
         EFloat(f, _el):
             return f
         EStr(s, _el):                                    # length-headered, interned once per occurrence (cached static)
