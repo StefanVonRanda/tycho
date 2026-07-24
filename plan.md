@@ -1135,7 +1135,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       this phase's defect; logged as Phase 9 rather than silently absorbed (RULE 6
       scope lock).
 
-- [ ] **Phase 9 — (discovered by Phase 8, NOT fixed there) sweep the remaining host `long`s outside the value path**
+- [x] **Phase 9 — (discovered by Phase 8, NOT fixed there) sweep the remaining host `long`s outside the value path**
   - Phase 8 made the compile-time *integer value* path width-fixed and proved it on
     a `-m32`-hosted tychoc. It deliberately did NOT touch the other host `long`s,
     which carry **sizes/indices**, not tycho `int` values: `ArrType.size`
@@ -1151,6 +1151,135 @@ to `run.sh` (that would blind the check for real link-order bugs).
     and why that is safe.
   - Verify: `make test`, `make fixpoint`, `make ilp32` green; plus a `gcc -m32`
     -hosted tychoc build with `-Wall -Wextra` showing no new warnings.
+
+  - **DONE (2026-07-24) — outcome: RETYPE, not documentation. The "sizes are small,
+    32 bits is ample" rationale this phase was written on is FALSE, and the
+    counter-example was reproduced on a 32-bit-hosted tychoc.**
+
+    **The false assumption, named (RULE 6).** The phase text assumed a size/index is
+    bounded by something — an arity, a capacity, "what you could plausibly allocate".
+    Reading the parser end to end shows it is bounded by *nothing*. A `[N]T` size is
+    written straight out of the value path:
+    - `src/tychoc.c:1795-1804` (pre-edit `:1777-1786`) — `int64_t fixn; ... fixn =
+      cur(ps)->ival;` else `fixn = cf->ival;` then the ONLY validation
+      `if (fixn <= 0) die_at(t->line, "a fixed-size array length must be positive");`
+    - `src/tychoc.c:1710-1718` (pre-edit `:1692-1700`) — the same shape for
+      `bounded[N]T`'s `cap`, same lone `cap <= 0` guard.
+
+    `ival` became `int64_t` in Phase 8. So an arbitrary 64-bit literal reached a host
+    `long` field with no upper bound in between. That is the seam: the constant folder
+    Phase 8 widened feeds the size slot Phase 8 left narrow. And it runs both ways —
+    `src/tychoc.c:10161` `lit->ival = g_ginsts[i].spvals[k]` pushes a const-generic
+    size value BACK onto the value path, so `spvals` was never off the value path at all.
+
+    **PROBE RESULTS — `--emit-c`, same source, two hosts (this is what decided it):**
+
+    | probe | LP64 `cc` | ILP32 `gcc -m32` BEFORE | ILP32 AFTER |
+    |---|---|---|---|
+    | `[3]int` (control) | `v[3]` | `v[3]` | `v[3]` |
+    | `[4294967297]int` (2^32+1) | `v[4294967297]` | **`v[1]`** silent, fail-OPEN | `v[4294967297]` |
+    | `bounded[4294967297]int` | `v[4294967297]` | **`v[1]`** silent, fail-OPEN | `v[4294967297]` |
+    | `[3000000000]int` | accepted | **rejected** "length must be positive" | accepted |
+
+    Row 2/3 are the serious ones: **not** a clean rejection and **not** a loud
+    truncation — the 32-bit-hosted compiler silently emitted a ONE-element array for a
+    program asking for 2^32+1, i.e. it miscompiled a valid program into a buffer 4
+    billion times too small. Row 4 truncates 3e9 into a negative int32 and then
+    fail-closes on the `<= 0` guard, so the two hosts disagree on whether a program is
+    even legal. No LP64 gate could see any of this.
+
+    **Fields retyped `long` -> `int64_t` (post-edit lines).** The whole slot had to move
+    together — they all alias `ArrType.size`, so narrowing any one re-opens the hole:
+
+    | site | field |
+    |---|---|
+    | `src/tychoc.c:663` | `ArrType.size` |
+    | `:668,681,683,684` | `arrc_sized_b` / `arrc_sized` / `fixarr_of` / `bounded_of` params |
+    | `:686,691` | `bounded_cap` / `fixarr_size` returns |
+    | `:730,732,736,738` | `sizeparam_enc` return + its two `-(int64_t)(i+1)` encodings, `sizeparam_id` param |
+    | `:741,6720,6722` | `g_sizebinds`, the `sizebinds[256]` array, `saved_sb` |
+    | `:1710,1784,1795` | `cap`, `enc`, `fixn` parser locals |
+    | `:4047` | `GInst.spvals[16]` (the value-path feedback at `:10161`) |
+    | `:1242,1482,1484,1548,1549,5686,5698,6666,10491,10528` | locals reading the slot |
+
+    **Left alone deliberately** (verified NOT on the size slot): `long cv` (`:413`, a
+    char literal, range 0-255), `(long)parse_type(...)` (`:2181,10069`, a `Type` enum
+    riding in `ival`), `long sz = ftell(f)` (`:11044`, a C stdio contract).
+
+    **`%ld` fallout — and commit `5dca01f` paid off exactly as predicted.** `int64_t` is
+    `long` on LP64 but `long long` on ILP32, so all 16 formats consuming the size slot
+    became `%lld` + explicit `(long long)`. Because `sfmt` is now format-checked,
+    `-Wformat` flagged **11 of them for me** (`:10475,10512,10516,10520,10524,10529,
+    10534`) instead of leaving them to grep as in Phase 8 — the first time this class
+    of bug was caught by the build rather than by hand.
+
+    **Warning count, `gcc -m32 -O2 -fwrapv -Wall -Wextra -std=c11`: 3 before, 3 after.**
+    All 3 are the pre-existing `missing initializer for field 'is_sink'`
+    (`:6051,6052,6054`). Zero new. LP64 likewise 3 before / 3 after.
+
+    **Fixture `tests/diag/fixarr_size_width.ty` + goldens `.err` / `.h0err`.** A count
+    mismatch on `[3000000000]int`, so the size prints through the `%lld` path twice
+    without ever allocating 3e9 ints. Non-vacuous: the golden contains `3000000000`
+    three times, and the ILP32-hosted tychoc now produces the `.err` **byte-identically**
+    (`cmp -s` clean) where before the fix it died with a different message entirely.
+    The diag lane is DIFFERENTIAL (`tests/run.sh:228` tychoc, `:260` tychoc0), so the
+    fixture required both goldens and both compilers must reject — verified.
+
+    **Gates (each its own foreground command, `env -u LD_PRELOAD`):**
+    ```
+    make test        passed: 417   failed: 0        / all green      (416 -> 417)
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make rtparity    rtparity: the two runtimes agree on env knobs, diagnostics and arena stats
+    make conc        conc: passed 36   failed 0
+    make fixpoint    ok   B == C : tychoc0 reproduces itself byte-identically (34679 lines C)
+                     fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32       passed: 417   failed: 0        / all green
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    ```
+
+    **No golden was re-recorded.** `git status --porcelain`: `M src/tychoc.c` plus the
+    three new `tests/diag/fixarr_size_width.*` files — zero modified `.out`/`.err`.
+    `fixpoint`'s byte-identical B==C is the witness that the `%ld`->`%lld` sweep is
+    output-neutral on LP64.
+
+    **Assumption record (RULE 13).** Verified by reproduction on `gcc -m32`: the size
+    slot is width-fixed end to end and both hosts agree. Not verified: tychoc still is
+    not *run* as a 32-bit binary across the whole suite — `make ilp32` cross-compiles
+    the EMITTED programs with a 64-bit-hosted tychoc, and the 32-bit-hosted tychoc was
+    exercised only on the probes and the new fixture. Risk if wrong: a host-width
+    assumption in some *third* category (neither value nor size) could still bite an
+    ILP32-hosted build. After this phase, `grep -nE '\blong\b' src/tychoc.c` leaves only
+    the four sites listed as deliberately-left above, all argued from source.
+
+- [ ] **Phase 11 — CORRECTIVE: tychoc0 does not check fixed-array SIZE in argument position**
+  - Discovered 2026-07-24 by Phase 9 while choosing a fixture. NOT caused by Phase 9
+    (which touched only `src/tychoc.c`; `compiler/tychoc0.ty` is untouched) and NOT
+    width-related — it reproduces with small sizes. Logged rather than absorbed
+    (RULE 2 #6 scope lock).
+  - **The divergence:** passing a `[3]int` where a `[4]int` is expected —
+    ```
+    fn take(a: [4]int) -> int: return a[0]
+    fn main():
+        small: [3]int = [1, 2, 3]
+        println(str(take(small)))
+    ```
+    | compiler | result |
+    |---|---|
+    | tychoc | `error: argument 1 of 'take' is [3]int, expected [4]int` |
+    | tychoc0 | **ACCEPTS** (rc=0, emits C) |
+  - **Severity: fail-OPEN in tychoc0** — the opposite of Phase 10's fail-closed case.
+    tychoc0 compiles a program tychoc rejects, so a fixed-array bound can be violated
+    silently under the bootstrap compiler. Not caught by `make fixpoint` because
+    `tychoc0.ty` itself never passes a mismatched fixed array.
+  - Note the *element-count* check IS present in tychoc0 (`a: [3000000000]int =
+    [1,2,3]` is rejected by both, which is why the Phase 9 fixture uses that shape);
+    the gap is specifically the **argument-position size compatibility check**.
+  - Fix: find tychoc0's argument type-compatibility path and teach it that two
+    `[N]T` arrs of differing N are incompatible, mirroring tychoc. Read tychoc's
+    check first and quote it.
+  - Done when: both compilers reject the case above; a fixture locks it.
+  - Verify: `make test`, `make corelib`, `make conc`, `make fixpoint`, `make ilp32`,
+    `make spec-check` — each its own command, paste summary lines.
 
 - [x] **Phase 10 — CORRECTIVE: tychoc0 rejects unary `-` applied directly to an index expression**
   - Discovered 2026-07-24 by the new numeric-boundary fixtures (the hardening

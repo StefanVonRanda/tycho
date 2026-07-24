@@ -1,0 +1,2 @@
+tests/diag/fixarr_size_width.ty:14: error: a fixed-size array of length 3000000000 needs 3000000000 elements, got 3
+    14 |     a: [3000000000]int = [1, 2, 3]

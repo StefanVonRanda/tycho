@@ -642,12 +642,30 @@ static Type chan_inner(Type t) { return g_chantypes[CHAN_ID(t)].inner; }
  * runtime count and a push that traps on overflow. It reuses the fixed-array
  * `size` slot (size == capacity N > 0) but is a DISTINCT interned entry, so a
  * `bounded[4]int` and a `[4]int` never alias. */
-typedef struct { Type elem; long size; char bnd; } ArrType;
+/* HOST-WIDTH-SAFE: `size` is fixed 64-bit, never `long`. This is NOT cosmetic and
+ * NOT a "sizes are small so anything fits" slot. A `[N]T` size is written by the
+ * PARSER straight out of a token/const value (`fixn = cur(ps)->ival` and
+ * `cap = cf->ival`, parse_type below), and `ival` is int64_t since the constant
+ * folder was widened — so an arbitrary 64-bit literal reaches this field, and the
+ * only validation on the way in is `> 0`. There is no upper bound. While this was
+ * host `long`, an ILP32-hosted tychoc truncated it SILENTLY and fail-OPEN:
+ * `[4294967297]int` emitted `v[1]` (2^32+1 mod 2^32) where LP64 emitted
+ * `v[4294967297]`, and `[3000000000]int` wrapped negative and was rejected as
+ * "a fixed-size array length must be positive". Reproduced on `gcc -m32`, fixed by
+ * this retype, locked by tests/diag/fixarr_size_width.err.
+ * The whole slot moves together, because these all alias this one field: the
+ * `sizeparam_enc`/`sizeparam_id`/`g_sizebinds` NEGATIVE `[$N]T` encoding, the
+ * `bounded_cap`/`fixarr_size` readers, and `GInst.spvals` — which feeds a size
+ * back onto the VALUE path (`lit->ival = spvals[k]` in the const-generic
+ * instantiator), so narrowing any one of them re-opens the truncation.
+ * Consequence for printing: int64_t is `long` on LP64 but `long long` on ILP32, so
+ * every format consuming `size` uses `%lld` with an explicit `(long long)` cast. */
+typedef struct { Type elem; int64_t size; char bnd; } ArrType;
 static ArrType *g_arrtypes;
 static int g_narrtypes = 0, g_arrtypes_cap = 0;
 #define IS_ARRC(t)  ((t) >= T_ARRC_BASE && (t) < T_OPT_BASE)   /* options sit above */
 #define ARRC_ID(t)  ((int)((t) - T_ARRC_BASE))
-static Type arrc_sized_b(Type elem, long size, char bnd) {   /* find-or-create [elem] (size 0) / [size]elem / bounded[size]elem */
+static Type arrc_sized_b(Type elem, int64_t size, char bnd) {   /* find-or-create [elem] (size 0) / [size]elem / bounded[size]elem */
     if (IS_TASK(elem)) task_container_err();
     if (IS_HANDLE(elem)) handle_container_err();
     if (IS_CHAN(elem)) chan_container_err();
@@ -660,17 +678,17 @@ static Type arrc_sized_b(Type elem, long size, char bnd) {   /* find-or-create [
     g_arrtypes[g_narrtypes].bnd  = bnd;
     return T_ARRC_BASE + g_narrtypes++;
 }
-static Type arrc_sized(Type elem, long size) { return arrc_sized_b(elem, size, 0); }
+static Type arrc_sized(Type elem, int64_t size) { return arrc_sized_b(elem, size, 0); }
 static Type arrc_of(Type elem) { return arrc_sized(elem, 0); }             /* dynamic [elem] */
-static Type fixarr_of(Type elem, long n) { return arrc_sized(elem, n); }   /* fixed [n]elem */
-static Type bounded_of(Type elem, long n) { return arrc_sized_b(elem, n, 1); }  /* bounded[n]elem */
+static Type fixarr_of(Type elem, int64_t n) { return arrc_sized(elem, n); }   /* fixed [n]elem */
+static Type bounded_of(Type elem, int64_t n) { return arrc_sized_b(elem, n, 1); }  /* bounded[n]elem */
 #define IS_BOUNDED(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].bnd)
-static long bounded_cap(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
+static int64_t bounded_cap(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
 #define IS_FIXARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0 && !g_arrtypes[ARRC_ID(t)].bnd)
 /* const generics 1.6B: `[$N]T` — the size is a *parameter* (encoded as a NEGATIVE
  * size, see sizeparam_enc). Template-only: never a concrete fixed array, never emitted. */
 #define IS_SIZEPARAM_ARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size < 0)
-static long fixarr_size(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
+static int64_t fixarr_size(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
 static int is_array(Type t) {
     return t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_ARRAY_FLOAT || IS_ARRC(t);
 }
@@ -709,18 +727,18 @@ static int   g_ncur_typarams = 0;
 typedef struct { char *name; } SizeParam;
 static SizeParam *g_sizeparams;
 static int g_nsizeparams = 0, g_sizeparams_cap = 0;
-static long sizeparam_enc(char *name) {           /* find-or-create; returns the NEGATIVE size encoding for `[$name]T` */
+static int64_t sizeparam_enc(char *name) {           /* find-or-create; returns the NEGATIVE size encoding for `[$name]T` */
     for (int i = 0; i < g_nsizeparams; i++)
-        if (!strcmp(g_sizeparams[i].name, name)) return -(long)(i + 1);
+        if (!strcmp(g_sizeparams[i].name, name)) return -(int64_t)(i + 1);
     TBL_ENSURE(g_sizeparams, g_nsizeparams, g_sizeparams_cap);
     int id = g_nsizeparams;
     g_sizeparams[id].name = name; g_nsizeparams++;
-    return -(long)(id + 1);
+    return -(int64_t)(id + 1);
 }
-static int   sizeparam_id(long enc) { return (int)(-enc - 1); }   /* decode the NEGATIVE size back to a table index */
+static int   sizeparam_id(int64_t enc) { return (int)(-enc - 1); }   /* decode the NEGATIVE size back to a table index */
 static char *g_cur_sizeparams[16];
 static int   g_ncur_sizeparams = 0;
-static long *g_sizebinds = NULL;   /* during instantiate_generic: sizebinds[sizeparam_id] = concrete N (0 == unbound; real sizes are > 0) */
+static int64_t *g_sizebinds = NULL;   /* during instantiate_generic: sizebinds[sizeparam_id] = concrete N (0 == unbound; real sizes are > 0) */
 
 /* Option(T) — a tagged optional (Some(value) or None). Interned like composite
  * arrays; one monomorphic TychoOpt<id> { char has; T val; } is generated per
@@ -1221,9 +1239,9 @@ static const char *type_name(Type t) {
     if (IS_HANDLE(t))  return g_handles[HANDLE_ID(t)].name;
     if (IS_STRUCT(t)) return g_structs[STRUCT_ID(t)].name;
     if (IS_ARRC(t)) {   /* [T] dynamic, [N]T fixed (1.6), [$N]T size-param (1.6B), bounded[N]T */
-        long sz = g_arrtypes[ARRC_ID(t)].size;
-        if (IS_BOUNDED(t)) return sfmt("bounded[%ld]%s", sz, type_name(arr_elem(t)));
-        if (sz > 0) return sfmt("[%ld]%s", sz, type_name(arr_elem(t)));
+        int64_t sz = g_arrtypes[ARRC_ID(t)].size;
+        if (IS_BOUNDED(t)) return sfmt("bounded[%lld]%s", (long long)sz, type_name(arr_elem(t)));
+        if (sz > 0) return sfmt("[%lld]%s", (long long)sz, type_name(arr_elem(t)));
         if (sz < 0) return sfmt("[$%s]%s", g_sizeparams[sizeparam_id(sz)].name, type_name(arr_elem(t)));
         return sfmt("[%s]", type_name(arr_elem(t)));
     }
@@ -1461,9 +1479,9 @@ static Type subst_type(Type t, Type *binds) {
     if (is_array(t)) {
         Type se = subst_type(arr_elem(t), binds);
         if (IS_ARRC(t)) {
-            long sz = g_arrtypes[ARRC_ID(t)].size;
+            int64_t sz = g_arrtypes[ARRC_ID(t)].size;
             if (sz < 0) {   /* [$N]T (1.6B): substitute the bound concrete N; if still unbound, stay a size-param */
-                long cn = (g_sizebinds && g_sizebinds[sizeparam_id(sz)] > 0) ? g_sizebinds[sizeparam_id(sz)] : 0;
+                int64_t cn = (g_sizebinds && g_sizebinds[sizeparam_id(sz)] > 0) ? g_sizebinds[sizeparam_id(sz)] : 0;
                 return cn > 0 ? fixarr_of(se, cn) : arrc_sized(se, sz);
             }
             if (sz > 0) return fixarr_of(se, sz);   /* [3]$T -> [3]int: preserve the fixed size */
@@ -1527,8 +1545,8 @@ static int match_type(Type pat, Type concrete, Type *binds) {
         binds[id] = concrete; return 1;
     }
     if (is_array(pat) && is_array(concrete)) {
-        long ps_ = IS_ARRC(pat)      ? g_arrtypes[ARRC_ID(pat)].size      : 0;   /* built-in arrays (T_ARRAY_INT ...) are dynamic: size 0 */
-        long cs_ = IS_ARRC(concrete) ? g_arrtypes[ARRC_ID(concrete)].size : 0;
+        int64_t ps_ = IS_ARRC(pat)      ? g_arrtypes[ARRC_ID(pat)].size      : 0;   /* built-in arrays (T_ARRAY_INT ...) are dynamic: size 0 */
+        int64_t cs_ = IS_ARRC(concrete) ? g_arrtypes[ARRC_ID(concrete)].size : 0;
         if (ps_ < 0) {                          /* [$N]T pattern (1.6B): bind N; the argument must be a fixed array */
             if (cs_ <= 0 || !g_sizebinds) return 0;
             int sid = sizeparam_id(ps_);
@@ -1689,7 +1707,7 @@ static Type parse_type_inner(Parser *ps) {
     if (t->kind == TK_IDENT && !strcmp(t->text, "bounded")) {   /* bounded[N]T: inline fixed-cap, variable-count */
         ps->p++;
         eat(ps, TK_LBRACKET, "'[' after bounded");
-        long cap;   /* capacity N: an int literal or an int `const` name, same as a fixed [N]T */
+        int64_t cap;   /* capacity N: an int literal or an int `const` name, same as a fixed [N]T */
         if (at(ps, TK_INT)) { cap = cur(ps)->ival; ps->p++; }
         else if (at(ps, TK_IDENT)) {
             Expr *cf = consts_find(pkg_mangle(cur(ps)->text));
@@ -1763,7 +1781,7 @@ static Type parse_type_inner(Parser *ps) {
                 if (g_ncur_sizeparams >= 16) die_at(snm->line, "too many size parameters (max 16)");
                 g_cur_sizeparams[g_ncur_sizeparams++] = snm->text;
             }
-            long enc = sizeparam_enc(snm->text);
+            int64_t enc = sizeparam_enc(snm->text);
             eat(ps, TK_RBRACKET, "']'");
             Type felem = parse_type(ps);
             if (felem == T_VOID || felem == T_BOOL)   /* fixed-size [N]bool stays rejected on both compilers (tychoc0 has no fixarr-bool codegen) */
@@ -1774,7 +1792,7 @@ static Type parse_type_inner(Parser *ps) {
         int size_is_const = at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_RBRACKET &&
                             tok_starts_type(peek(ps, 2)->kind);
         if (size_is_int || size_is_const) {
-            long fixn;
+            int64_t fixn;
             if (size_is_int) { fixn = cur(ps)->ival; ps->p++; }
             else {
                 Expr *cf = consts_find(pkg_mangle(cur(ps)->text));
@@ -4026,7 +4044,7 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
  * independently with no shared/sticky resolved state (the source of the prior
  * multi-instantiation, typed-local, and nested-call bugs). */
 typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody;
-                 long spvals[16]; int nsp; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams) */
+                 int64_t spvals[16]; int nsp; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams) */
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
 static Stmt **clone_block(Stmt **body, int n, Type *binds);   /* per-instance body clone; defined near ginst_to_proc */
 static Proc **g_inst_procs; static int g_ninst_procs = 0, g_inst_procs_cap = 0;   /* resolved generic-instance Procs, shared by the prototype + body emit loops (Stage-2 #3) */
@@ -5665,9 +5683,9 @@ static Type resolve_exp(Expr *e, Type want) {
      * fixed, the count matches, and each element fits T. Otherwise a bracket literal stays
      * a dynamic `[T]`. */
     if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && IS_FIXARR(want)) {
-        long n = fixarr_size(want);
+        int64_t n = fixarr_size(want);
         if (e->nargs != n)
-            die_at(e->line, "a fixed-size array of length %ld needs %ld elements, got %d", n, n, e->nargs);
+            die_at(e->line, "a fixed-size array of length %lld needs %lld elements, got %d", (long long)n, (long long)n, e->nargs);
         Type el = arr_elem(want);
         for (int i = 0; i < e->nargs; i++)
             if (resolve_exp(e->args[i], el) != el)
@@ -5677,9 +5695,9 @@ static Type resolve_exp(Expr *e, Type want) {
     /* [e0, ..., ek-1] coerces to a bounded[N]T when the destination is bounded and the
      * count fits the capacity (k <= N). len becomes k; the rest of the inline v[] is unused. */
     if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && IS_BOUNDED(want)) {
-        long cap = bounded_cap(want);
+        int64_t cap = bounded_cap(want);
         if (e->nargs > cap)
-            die_at(e->line, "a bounded[%ld] holds at most %ld elements, got %d", cap, cap, e->nargs);
+            die_at(e->line, "a bounded[%lld] holds at most %lld elements, got %d", (long long)cap, (long long)cap, e->nargs);
         Type el = arr_elem(want);
         for (int i = 0; i < e->nargs; i++)
             if (resolve_exp(e->args[i], el) != el)
@@ -6645,9 +6663,9 @@ static char *type_mangle_ident(Type t) {
     if (IS_STRUCT(t))  return g_structs[STRUCT_ID(t)].name;
     if (IS_ENUM(t))    return g_enums[ENUM_ID(t)].name;
     if (is_array(t)) {
-        long sz = IS_ARRC(t) ? g_arrtypes[ARRC_ID(t)].size : 0;
-        if (IS_BOUNDED(t)) return sfmt("bnd%ld_%s", sz, type_mangle_ident(arr_elem(t)));   /* distinct from a fixed [N]T of the same size/elem */
-        if (sz > 0) return sfmt("arr%ld_%s", sz, type_mangle_ident(arr_elem(t)));   /* [N]T (1.6): distinct per fixed size */
+        int64_t sz = IS_ARRC(t) ? g_arrtypes[ARRC_ID(t)].size : 0;
+        if (IS_BOUNDED(t)) return sfmt("bnd%lld_%s", (long long)sz, type_mangle_ident(arr_elem(t)));   /* distinct from a fixed [N]T of the same size/elem */
+        if (sz > 0) return sfmt("arr%lld_%s", (long long)sz, type_mangle_ident(arr_elem(t)));   /* [N]T (1.6): distinct per fixed size */
         return sfmt("arr_%s", type_mangle_ident(arr_elem(t)));
     }
     if (IS_OPT(t))     return sfmt("opt_%s", type_mangle_ident(opt_inner(t)));
@@ -6699,9 +6717,9 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
     Type binds[256];
     for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
-    long sizebinds[256];                                       /* const generics 1.6B: sizebinds[sizeparam_id] = concrete N */
+    int64_t sizebinds[256];                                       /* const generics 1.6B: sizebinds[sizeparam_id] = concrete N */
     for (int i = 0; i < g_nsizeparams && i < 256; i++) sizebinds[i] = 0;   /* 0 == unbound (real sizes are > 0) */
-    long *saved_sb = g_sizebinds; g_sizebinds = sizebinds;     /* match_type/subst_type bind & substitute `$N` while this is live */
+    int64_t *saved_sb = g_sizebinds; g_sizebinds = sizebinds;     /* match_type/subst_type bind & substitute `$N` while this is live */
     if (e->ntypeargs > 0) {   /* explicit call-site type args bind the params in declaration order */
         if (e->ntypeargs != gt->ntyparams)
             die_at(e->line, "'%s' has %d type parameter(s), but %d explicit type argument(s) were given",
@@ -8013,7 +8031,7 @@ static char *gen_call(Expr *e, const char *arena) {
         if (e->args[0]->type == T_STRING || e->args[0]->type == T_BYTES)   /* bytes: same length-headered buffer */
             return sfmt("tycho_str_len(%s)", a);
         if (IS_FIXARR(e->args[0]->type))   /* [N]T: length is the compile-time N (no .len field) */
-            return sfmt("((void)(%s), %ldL)", a, fixarr_size(e->args[0]->type));
+            return sfmt("((void)(%s), %lldLL)", a, (long long)fixarr_size(e->args[0]->type));
         return sfmt("((%s).len)", a);   /* arrays AND maps both have .len */
     }
     /* map builtins: map_set is pure (deep-copy + insert into `arena`); the
@@ -10223,9 +10241,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++)           /* (2b) composite-array bodies (tags forward-declared above) */
         if (g_arrtypes[i].bnd)                       /* bounded[N]T: inline storage + a runtime count */
-            fprintf(o, "struct TychoArrC%d_ { %s v[%ld]; tycho_int len; };\n", i, c_type(g_arrtypes[i].elem), g_arrtypes[i].size);
+            fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; tycho_int len; };\n", i, c_type(g_arrtypes[i].elem), (long long)g_arrtypes[i].size);
         else if (g_arrtypes[i].size > 0)            /* fixed-size [N]T (1.6): inline storage, no heap descriptor */
-            fprintf(o, "struct TychoArrC%d_ { %s v[%ld]; };\n", i, c_type(g_arrtypes[i].elem), g_arrtypes[i].size);
+            fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; };\n", i, c_type(g_arrtypes[i].elem), (long long)g_arrtypes[i].size);
         else
             fprintf(o, "struct TychoArrC%d_ { %s*data; tycho_int len; tycho_int cap; };\n",
                     i, c_type(g_arrtypes[i].elem));
@@ -10470,11 +10488,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         Type et = g_arrtypes[i].elem;
         const char *ct = c_type(et);              /* element C type (trailing space) */
         if (g_arrtypes[i].bnd) {                  /* bounded[N]T: inline v[N] + runtime len; push traps on overflow */
-            long n = g_arrtypes[i].size;          /* capacity */
+            int64_t n = g_arrtypes[i].size;          /* capacity */
             fprintf(o,   /* push: trap when full instead of growing (the whole point of a bounded) */
                 "static void tycho_arr_C%d_push(Arena *a, TychoArrC%d *xs, %sv) {\n"
-                "    if (xs->len >= %ld) { fprintf(stderr, \"tycho: push to a full bounded[%ld]\\n\"); exit(1); }\n"
-                "    xs->v[xs->len++] = %s;\n}\n", i, i, ct, n, n, copy_into(et, "a", "v"));
+                "    if (xs->len >= %lld) { fprintf(stderr, \"tycho: push to a full bounded[%lld]\\n\"); exit(1); }\n"
+                "    xs->v[xs->len++] = %s;\n}\n", i, i, ct, (long long)n, (long long)n, copy_into(et, "a", "v"));
             fprintf(o,
                 "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n"
@@ -10507,34 +10525,34 @@ static void gen_program(FILE *o, ProcVec *prog) {
             continue;
         }
         if (g_arrtypes[i].size > 0) {             /* fixed-size [N]T (1.6): inline; read/copy/eq only */
-            long n = g_arrtypes[i].size;
+            int64_t n = g_arrtypes[i].size;
             fprintf(o,
                 "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
-                "    return xs.v[i];\n}\n", ct, i, i, n, n);
+                "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
+                "    return xs.v[i];\n}\n", ct, i, i, (long long)n, (long long)n);
             fprintf(o,
                 "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
-                "    return &xs->v[i];\n}\n", ct, i, i, n, n);
+                "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
+                "    return &xs->v[i];\n}\n", ct, i, i, (long long)n, (long long)n);
             fprintf(o,
                 "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
-                "    if (i < 0 || i >= %ld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %ld)\\n\", i); exit(1); }\n"
-                "    xs->v[i] = %s;\n}\n", i, i, ct, n, n, copy_into(et, "a", "v"));
+                "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
+                "    xs->v[i] = %s;\n}\n", i, i, ct, (long long)n, (long long)n, copy_into(et, "a", "v"));
             fprintf(o,   /* copy: the struct copy memcpys the inline array; deep-copy each element for a heap element type */
                 "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
                 "    TychoArrC%d r = src;\n"
-                "    for (tycho_int i = 0; i < %ld; i++) r.v[i] = %s;\n"
-                "    return r;\n}\n", i, i, i, i, n, copy_into(et, "a", "src.v[i]"));
+                "    for (tycho_int i = 0; i < %lld; i++) r.v[i] = %s;\n"
+                "    return r;\n}\n", i, i, i, i, (long long)n, copy_into(et, "a", "src.v[i]"));
             fprintf(o,
                 "static int tycho_arr_C%d_eq(TychoArrC%d x, TychoArrC%d y) {\n"
-                "    for (tycho_int i = 0; i < %ld; i++) if (!(%s)) return 0;\n"
-                "    return 1;\n}\n\n", i, i, i, n, gen_eq(et, "x.v[i]", "y.v[i]"));
+                "    for (tycho_int i = 0; i < %lld; i++) if (!(%s)) return 0;\n"
+                "    return 1;\n}\n\n", i, i, i, (long long)n, gen_eq(et, "x.v[i]", "y.v[i]"));
             if (struct_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
                     "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
                     "    uint64_t h = UINT64_C(1469598103934665603);\n"
-                    "    for (tycho_int i = 0; i < %ld; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
-                    "    return h;\n}\n", i, i, n, "(uint64_t)xs.v[i]");
+                    "    for (tycho_int i = 0; i < %lld; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
+                    "    return h;\n}\n", i, i, (long long)n, "(uint64_t)xs.v[i]");
             }
             continue;
         }
@@ -10879,7 +10897,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));
         } else if (g_arrtypes[i].size > 0) {   /* fixed [N]T: inline storage xs.v[i] */
-            fprintf(o, "    for (tycho_int i = 0; i < %ld; i++) {\n", (long)g_arrtypes[i].size);
+            fprintf(o, "    for (tycho_int i = 0; i < %lld; i++) {\n", (long long)g_arrtypes[i].size);
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));
         } else {

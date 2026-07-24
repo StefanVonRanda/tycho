@@ -1,0 +1,15 @@
+# HOST-WIDTH regression lock (Phase 9). A fixed-array size above 2^31 must survive
+# the compiler's own storage intact. The size travels Tok.ival (int64_t, since the
+# constant folder was widened) -> the `fixn` local -> ArrType.size -> the
+# element-count diagnostic, and every one of those was a host `long` before Phase 9.
+# On an ILP32-hosted tychoc that truncated SILENTLY and fail-OPEN:
+# `[4294967297]int` emitted `v[1]` where LP64 emitted `v[4294967297]`, and
+# `[3000000000]int` wrapped negative and died "length must be positive" instead.
+#
+# The goldens pin the digits, so re-narrowing the size slot shows up as a diff
+# rather than as silence. A count mismatch is the vehicle deliberately: it prints
+# the size through the "%lld" path twice without the program ever having to
+# allocate 3e9 ints, and BOTH compilers reject it (the diag lane is differential).
+fn main():
+    a: [3000000000]int = [1, 2, 3]
+    println(str(a[0]))
