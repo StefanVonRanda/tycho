@@ -285,46 +285,52 @@ doc↔implementation drifts. **This list is the spec's actual labor** — each i
 is resolved by *reading both compilers to find what they actually do* (and if
 they diverge, filing a bug). Grouped; each carries its resolution owner.
 
+> **Audited item-by-item against the written spec on 2026-07-24** — full evidence
+> in [`spec-plan-audit-2026-07-24.md`](spec-plan-audit-2026-07-24.md). Result:
+> 38 closed, 1 partial (**#12**), **0 open**. Each item below carries its verdict
+> tag. Four items closed with a rule *different* from the one the item assumed
+> (#19, #21, #22, #32) — read the tag, not just the item text.
+
 ### A. Grammar & lexical — extract from the C parser; reconcile tree-sitter
-1. `while` appears in tree-sitter but **does not exist** — loops are `for` only.
+1. `while` appears in tree-sitter but **does not exist** — loops are `for` only. **[CLOSED — 01-lexical.md:306]**
 2. `char` / `void` listed as types in tree-sitter but are **not spellable** type
-   keywords (no `: char` annotation form exists).
+   keywords (no `: char` annotation form exists). **[CLOSED — 01-lexical.md:307]**
 3. tree-sitter treats `import`/`package`/`extern`/`soa` as reserved keywords;
-   they are **contextual identifiers**. It omits the real keyword `handle`.
-4. tree-sitter `number` regex misses exponents and leading-dot floats.
+   they are **contextual identifiers**. It omits the real keyword `handle`. **[CLOSED — 01-lexical.md:308-309]**
+4. tree-sitter `number` regex misses exponents and leading-dot floats. **[CLOSED — 01-lexical.md:310]**
 5. `::` is lexed but **unused** (dead token); `...` is a real operator
-   (variadic/spread); `{`/`}` are **not tokens** (only inside f-strings).
+   (variadic/spread); `{`/`}` are **not tokens** (only inside f-strings). **[CLOSED — 01-lexical.md:155, :311-312]**
 6. tree-sitter's builtin list is partial and includes **removed** `map_get`/
-   `map_set` (now a hard parse error).
+   `map_set` (now a hard parse error). **[CLOSED — 01-lexical.md:313-314]**
 7. tree-sitter models **no indentation** (by design) → cannot be the grammar of
    record. **Resolution:** extract from `src/tychoc.c`; then either fix
-   tree-sitter to match or mark it explicitly non-normative in Ch 3.
+   tree-sitter to match or mark it explicitly non-normative in Ch 3. **[CLOSED — non-normative: 00-conventions.md:161-165, 01-lexical.md:315-319]**
 8. **Integer literal grammar is decimal-only** — no hex/octal/binary, no
    underscores, no numeric suffix. `0u64`-style suffixes do not exist at source
-   level (that `U`/`ULL` is codegen-side). Pin explicitly.
+   level (that `U`/`ULL` is codegen-side). Pin explicitly. **[CLOSED — 01-lexical.md:192-194]**
 
 ### B. Evaluation order & scoping — the biggest genuine gap (nothing is stated)
 9. **Argument evaluation order** of `f(a,b,c)` — unspecified today. Decide
-   (recommend: left-to-right, MUST) by reading both codegens.
+   (recommend: left-to-right, MUST) by reading both codegens. **[CLOSED — unspecified, appendix-f:14; 09-expressions.md:87-91]**
 10. **`match` subject evaluated exactly once** — implied by the desugar, never
-    stated. Pin.
+    stated. Pin. **[CLOSED — 09-expressions.md:79-80]**
 11. **Compound-assign single-evaluation** — `a[i] += e` must evaluate `i` (and
-    the array place) once. Pin.
+    the array place) once. Pin. **[CLOSED — 09-expressions.md:82-83]**
 12. **General place-evaluation order** — receiver vs. index vs. RHS for
-    `p.x[i] = e`. Pin.
+    `p.x[i] = e`. Pin. **[PARTIAL — index→RHS pinned 09-expressions.md:84-86; receiver leg unstated]**
 13. **Exact scope→arena set** — the docs name function / if / else /
     loop-iteration / per-statement arenas but never close the set: do `match`
     arms, `elif` arms, expression-`if`/`match` arms, and bare indented blocks own
     an arena? Is an untaken arm's arena ever created? What is the inter-arm free
     ordering? (Declare the observable consequence; the arena mechanics are an
     implementation realization but the *reachability of freed storage* is
-    normative.)
+    normative.) **[CLOSED — mechanism unspecified 07-memory-model.md:97-99; consequence :120-131]**
 14. **Nested-place escape target** — the arena-selection rule for
     `outer.field[i] = e` / `m[k] = e` when `outer` lives several scopes up. Docs
-    give only the single-variable cases.
+    give only the single-variable cases. **[CLOSED — 07-memory-model.md:114-118]**
 15. **`inout` exclusivity through aliasing places** — is `f(&a[i], &a[j])` with
     `i == j`, or `&a` together with `&a[i]`, rejected? Docs state the rule only
-    for "the same variable."
+    for "the same variable." **[CLOSED — 07-memory-model.md:169-175]**
 
 ### C. Numerics, floats, conversions — sharpened by the abstract-exact decision
 16. **`int` = 64-bit exact vs. C `long`.** The abstract-exact choice makes 64-bit
@@ -351,10 +357,10 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
     exercises `5000000000`, `100000*100000` and `1 << 40`. Appendix F.3 now records
     conformance on LP64, LLP64 and ILP32, with the honest caveat that ILP32 is
     empirically gated (x86-64 host, `gcc -m32`) while LLP64 is guaranteed
-    architecturally by `int64_t` + the static assertion, not measured on Windows.
+    architecturally by `int64_t` + the static assertion, not measured on Windows. **[CLOSED — 03-types.md:40-45, appendix-f:56-58/:66-90]**
 17. **Float semantics** — declare IEEE-754 binary64/binary32 conformance:
     NaN/inf/signed-zero behavior, `==` on floats is bitwise (`0.0/0.0`, NaN
-    ordering, `NaN == NaN`). Currently unspecified.
+    ordering, `NaN == NaN`). Currently unspecified. **[CLOSED — 03-types.md:54-62, :136]**
 18. **Shift amount ≥ bit-width or negative** (`<<`/`>>`). **RESOLVED
     (2026-07-23, user ruling):** DEFINED, not unspecified — the runtime guards
     every shift (`runtime/tycho_rt.c:129`): count ≥ width → `0`, negative → abort
@@ -362,69 +368,69 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
     Normative in `docs/spec/09-expressions.md` §13.2 and `docs/spec/17-runtime.md`
     §30; removed from the unspecified list (`appendix-f-impl-defined.md`). Locked
     by `tests/shift_edge.ty`. (The original "no runtime guard visible" wording
-    predates the guard — see the superseded probe note in §6a.)
+    predates the guard — see the superseded probe note in §6a.) **[CLOSED — 09-expressions.md:59-62]**
 19. **`to_int`/`to_float`/`to_u32…` out-of-range** conversion behavior — pin
-    (truncate/saturate/wrap/reinterpret) per pair.
+    (truncate/saturate/wrap/reinterpret) per pair. **[CLOSED — now DEFINED (abort), 06-conversions.md:69-77; §6a stale]**
 20. **FFI sized-int round-trip** — does `int → u32 param → int return` preserve
     value / sign-extend? "C's defined conversion" must become a Tycho-observable
-    rule.
-21. **`range` with step 0** — behavior unstated.
+    rule. **[CLOSED — 14-ffi.md:51-56]**
+21. **`range` with step 0** — behavior unstated. **[CLOSED — now reject/abort, 10-statements.md:58-60; §6a stale]**
 22. **`char ± int` byte-domain** — docs say it "stays within a byte" but the
-    checker only fixes the *type*; the runtime wrap of `'a' + 300` needs a rule.
+    checker only fixes the *type*; the runtime wrap of `'a' + 300` needs a rule. **[CLOSED — REVERSED: wraps to a byte, 03-types.md:75-76, appendix-h:24; §6a stale]**
 
 ### D. Concurrency ordering & memory model — informal today
 23. **Channel MPMC message ordering** — the Vyukov ring is FIFO per ticket, but
     no per-sender / total-order guarantee is stated for multiple producers/
-    consumers. Pin the guarantee.
+    consumers. Pin the guarantee. **[CLOSED — 13-concurrency.md:118-125]**
 24. **`select` arm fairness/priority** — tried in listed order, or fair?
-    (Implementation scans in listed order via `try_recv`.) Pin.
+    (Implementation scans in listed order via `try_recv`.) Pin. **[CLOSED — 13-concurrency.md:141-142]**
 25. **Happens-before axioms** — what a deep copy publishes across spawn→body,
-    send→recv, task→wait. Assert as ordering rules, not prose.
+    send→recv, task→wait. Assert as ordering rules, not prose. **[CLOSED — 13-concurrency.md:31-42]**
 26. **`wait` re-entrancy** — waiting a task from a thread other than the spawner.
-    Not addressed.
+    Not addressed. **[CLOSED — not expressible, 13-concurrency.md:70-74]**
 
 ### E. Type identity & generics edge cases
 27. **`empty$(T)` is not a builtin** — only `zero$(T)` is special-cased;
     `name$(Types…)` is the generic explicit-type-argument call form. Reconcile
-    `docs/generics.md`'s conflation; the spec defines only `zero$` + `name$(...)`.
+    `docs/generics.md`'s conflation; the spec defines only `zero$` + `name$(...)`. **[CLOSED — 05-generics.md:106-109, 16-builtins.md:197-199]**
 28. **Function-value equality is identity, not structural** — the one
-    non-structural `==` in an otherwise fully value-semantic language. Call out.
+    non-structural `==` in an otherwise fully value-semantic language. Call out. **[CLOSED — REFINED: direct `fn ==` is a compile error, 03-types.md:274-281]**
 29. **Structural vs. nominal interning** — tuples/arrays/maps/options/results/
     functions/soa/task/chan are structurally interned; structs/enums/newtypes/
-    handles are nominal. State the identity model per constructor.
+    handles are nominal. State the identity model per constructor. **[CLOSED — 03-types.md:25-34]**
 30. **`defaultable` excludes newtypes** (uses `t ==`, not `base_of`, unlike every
-    other predicate) → `zero$(newtype)` fails even over a defaultable base. State.
+    other predicate) → `zero$(newtype)` fails even over a defaultable base. State. **[CLOSED — 05-generics.md:53-58]**
 31. **Newtype underlying set** — restricted to int/float/string/bool/array/map/
     struct; **excludes** enum/tuple/sized-numerics/char/bytes/nested-newtype. Pin
-    precisely (docs give only positive examples).
+    precisely (docs give only positive examples). **[CLOSED — 03-types.md:249-253]**
 32. **`str(char)` is intentionally an error** though `char` is comparable/
-    orderable — state the asymmetry deliberately.
+    orderable — state the asymmetry deliberately. **[CLOSED — OBSOLETE: `str(char)` is now defined, 03-types.md:77-78, :290-292]**
 
 ### F. Doc↔implementation drift to reconcile (Appendix H)
 33. **Int-keyed map value restriction** — the literal-map error text says "int/
     float values only," but `map_of` actually allows **any** value type. Pin the
-    real rule (V unrestricted) and fix the stale message.
+    real rule (V unrestricted) and fix the stale message. **[CLOSED — 03-types.md:191, 12-aggregates.md:330, appendix-h:22]**
 34. **f-string hole types** — docs say int/float/bool/string, but the `str(...)`
-    desugar also accepts u32/u64/f32. Reconcile.
+    desugar also accepts u32/u64/f32. Reconcile. **[CLOSED — 01-lexical.md:284-285, 06-conversions.md:37]**
 35. **`builtins.md` is an incomplete catalog** — missing `eprint`, `is_null`,
     `to_ptr`, `to_i32`, `to_u32/64`, `to_f32`, `to_under`, `keys`. Ch 29 is the
-    complete dispatch-derived set.
+    complete dispatch-derived set. **[CLOSED — 16-builtins.md:5, appendix-h:26]**
 36. **No `assert`/`abort`/`panic` builtin** — `die` is the only user abort;
-    internal aborts are not callable. State precisely.
+    internal aborts are not callable. State precisely. **[CLOSED — 16-builtins.md:267, :280-281]**
 37. **6 undocumented corelib packages** — bignum, compress, decimal, image, net,
-    tls exist in the tree but not in `docs/corelib.md`. Part XII must add them.
+    tls exist in the tree but not in `docs/corelib.md`. Part XII must add them. **[CLOSED — 18-library.md:254/:265/:274/:313/:321/:330]**
 
 ### G. Consequences of the two big scope decisions
 38. **Corelib in scope** → the spec must define the **language↔corelib interface
     contract** normatively (arena-allocation-into-caller, `deps`/shim mechanics,
-    the tier boundary), not just list functions.
+    the tier boundary), not just list functions. **[CLOSED — 18-library.md:22-40, :42-61, 15-program.md:296-316]**
 39. **Conformance tiers** — `deps`/pkg-config packages (http, crypto, compress,
     image, tls) form an **extended tier** an implementation MAY omit and the test
     harness already skips when the C lib is absent; pure-Tycho + libc-only is the
     **core tier**. Ch 1/31 must formalize this so "conforming" is well-defined
     without libcurl/openssl. **RESOLVED (2026-07-23):** formalized normatively in
     `docs/spec/00-conventions.md` §1.3 (two-tier conformance) and
-    `docs/spec/15-program.md` §28.6.
+    `docs/spec/15-program.md` §28.6. **[CLOSED — 00-conventions.md:52-75, 18-library.md:42-61]**
 
 ## 6a. Resolved by differential probing (2026-07-12)
 
