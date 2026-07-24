@@ -1,0 +1,76 @@
+# NUMERIC-BOUNDARY fixture 5/5: map keys and hashing at boundary values.
+#
+# This is the Phase 6a / 6c bug class. The hash path carried int keys through
+# host-width words: 6a retyped the runtime's hash words and seeds, 6c found the
+# per-type hash EMITTERS were still narrowing. A hash that truncates its key to
+# 32 bits is not a crash and not a wrong hash -- it is a COLLISION between two
+# distinct keys that differ only above bit 31. The map still "works": it just
+# returns the wrong value. No fixture used a key above 2^32, so nothing collided
+# and nothing failed.
+#
+# The pairs below are chosen so that a 32-bit-truncating hash or comparison maps
+# them onto the SAME slot while the values are genuinely distinct:
+#   2^32 vs 0            -- differ only in bit 32
+#   2^32 + 7 vs 7        -- differ only in bit 32
+#   2^63-1 vs -1         -- all low 32 bits identical (0xFFFFFFFF)
+#   -2^63 vs 0           -- all low 32 bits identical (0x00000000)
+# If any of these aliased, the lookups below would return each other's values.
+#
+# Spec basis: docs/spec/03-types.md 5.2.1 (64-bit two's-complement int).
+
+fn main():
+    imax := 9223372036854775807
+    imin := -imax - 1
+
+    m := []int: string
+    m[0] = "zero"
+    m[4294967296] = "2^32"
+    m[7] = "seven"
+    m[4294967303] = "2^32+7"
+    m[-1] = "minus-one"
+    m[imax] = "imax"
+    m[imin] = "imin"
+    m[2147483647] = "2^31-1"
+    m[2147483648] = "2^31"
+
+    println("--- distinct keys must not alias ---")
+    println(m.get(0, "?"))            # zero
+    println(m.get(4294967296, "?"))   # 2^32
+    println(m.get(7, "?"))            # seven
+    println(m.get(4294967303, "?"))   # 2^32+7
+    println(m.get(-1, "?"))           # minus-one
+    println(m.get(imax, "?"))         # imax
+    println(m.get(imin, "?"))         # imin
+    println(m.get(2147483647, "?"))   # 2^31-1
+    println(m.get(2147483648, "?"))   # 2^31
+    println("len=" + str(len(m)))     # 9 -- one slot per key, no collisions
+
+    println("--- membership at the boundaries ---")
+    println(str(4294967296 in m))     # true
+    println(str(imin in m))           # true
+    println(str(4294967297 in m))     # false
+    println(str((imin + 1) in m))     # false
+
+    println("--- update, don't insert, at a boundary key ---")
+    m[imax] = "imax2"
+    println(m.get(imax, "?"))         # imax2
+    println("len=" + str(len(m)))     # still 9
+    delete m[imin]
+    println("after delete: len=" + str(len(m)) + " gone=" + str(not (imin in m)))
+
+    println("--- int-keyed counters accumulating past 2^32 ---")
+    c := []int: int
+    c[4294967296] = 0
+    c[4294967296] += 4294967296
+    c[4294967296] += 1
+    println(str(c.get(4294967296, -1)))   # 4294967297 = 2^32 + 1
+    println(str(c.get(0, -1)))            # -1 (key 0 was never inserted here)
+
+    println("--- boundary values used as map VALUES too ---")
+    w := []string: int
+    w["imax"] = imax
+    w["imin"] = imin
+    w["p32"] = 4294967296
+    println(str(w.get("imax", 0)))    # 9223372036854775807
+    println(str(w.get("imin", 0)))    # -9223372036854775808
+    println(str(w.get("p32", 0)))     # 4294967296

@@ -1,0 +1,66 @@
+# NUMERIC-BOUNDARY fixture 1/5: arithmetic at 2^31, 2^32, 2^63-1 and -2^63.
+#
+# Why this exists: the int64 migration found a live LP64 miscompile
+# (`100000 * 100000` truncating to 1410065408) in a tree with 408 fixtures, a
+# differential fuzzer and byte-identical self-hosting. It survived because no
+# fixture multiplied two literals past 2^31. The suite tested BEHAVIOUR well and
+# BOUNDARIES not at all. This file tests the boundaries.
+#
+# Every expectation below is spec-REQUIRED, not merely observed:
+#   docs/spec/03-types.md 5.2.1 -- `int` is 64-bit two's-complement, values
+#     -2^63 .. 2^63-1; overflow WRAPS and is "fully defined and never traps";
+#     `(-2^63) % -1` is 0.  (`(-2^63) / -1` ABORTS, so it is deliberately NOT
+#     exercised here -- that would be a non-zero-exit test, not a golden test.)
+#   docs/spec/09-expressions.md 54-62 -- `>>` on `int` is arithmetic.
+# Nothing unspecified is encoded.
+#
+# All operands are RUNTIME values (read out of an array the compiler cannot
+# see through), so these are genuine runtime ops, not constant folds. The
+# constant-fold side of the same boundaries is tests/boundary_fold.ty.
+
+fn main():
+    # A runtime source of boundary constants. Taking them out of an array
+    # defeats const-folding: the compiler must emit real arithmetic.
+    v := [2147483647, 2147483648, 4294967295, 4294967296, 9223372036854775807]
+    # (named p31/p32 rather than i31/i32 -- `i32` is a reserved type keyword)
+    p31m1 := v[0]        # 2^31 - 1
+    p31   := v[1]        # 2^31
+    p32m1 := v[2]        # 2^32 - 1
+    p32   := v[3]        # 2^32
+    imax  := v[4]        # 2^63 - 1
+    imin  := -imax - 1   # -2^63; the spec forbids writing it as a literal
+
+    println("--- identities ---")
+    println(str(imax))               # 9223372036854775807
+    println(str(imin))               # -9223372036854775808
+
+    println("--- crossing 2^31 / 2^32 ---")
+    println(str(p31m1 + 1))          # 2147483648   (32-bit int would wrap here)
+    println(str(p31 * 2))            # 4294967296
+    println(str(p32m1 + 1))          # 4294967296
+    println(str(p31 * p31))          # 4611686018427387904 = 2^62
+    # p32*p32 is 2^64, which wraps to exactly 0 (spec 5.2.1: defined, not UB),
+    # so the quotient is 0 -- NOT 2^32. A compiler that widened past 64 bits, or
+    # that trapped on overflow, would disagree here.
+    println(str(p32 * p32 / p32))    # 0
+
+    println("--- exact at the top of the range ---")
+    println(str(imax - 1))           # 9223372036854775806
+    println(str(imax / 2))           # 4611686018427387903
+    println(str(imax % 1000000007))  # 291172003
+    println(str(imin + 1))           # -9223372036854775807
+    println(str(imin / 2))           # -4611686018427387904
+
+    println("--- wrap is DEFINED (spec 5.2.1), not UB ---")
+    println(str(imax + 1))           # -9223372036854775808  (wraps to -2^63)
+    println(str(imin - 1))           # 9223372036854775807   (wraps to 2^63-1)
+    println(str(imax * 2))           # -2
+    println(str(imin * -1))          # -9223372036854775808  (negation of -2^63)
+
+    println("--- the one defined -2^63 division case ---")
+    println(str(imin % -1))          # 0   (spec 5.2.1 states this explicitly)
+
+    println("--- sign handling near the boundary ---")
+    println(str(-p32))               # -4294967296
+    println(str(-p32 / p31))         # -2
+    println(str(-p32 % 1000000007))  # see golden (truncated toward zero)

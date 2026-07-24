@@ -1,0 +1,27 @@
+--- distinct keys must not alias ---
+zero
+2^32
+seven
+2^32+7
+minus-one
+imax
+imin
+2^31-1
+2^31
+len=9
+--- membership at the boundaries ---
+true
+true
+false
+false
+--- update, don't insert, at a boundary key ---
+imax2
+len=9
+after delete: len=8 gone=true
+--- int-keyed counters accumulating past 2^32 ---
+4294967297
+-1
+--- boundary values used as map VALUES too ---
+9223372036854775807
+-9223372036854775808
+4294967296

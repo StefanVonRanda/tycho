@@ -1,0 +1,52 @@
+# NUMERIC-BOUNDARY fixture 2/5: integer literals and COMPILE-TIME folding at
+# 2^31, 2^32, 2^63-1 and -2^63.
+#
+# This is the Phase 6b / Phase 8 bug class, from the other side. Phase 6b found
+# that emitted int literals carried a 32-bit C rank, so `100000 * 100000` was
+# evaluated as 32-bit *before* being stored into a 64-bit destination; Phase 8
+# found the compiler's own folder did its arithmetic in host `long`. Both bugs
+# live entirely in the constant path, which no boundary fixture covered.
+#
+# tests/const_fold_width.ty already folds 2^40 and 2^62. This file deliberately
+# does NOT duplicate it: it pins the exact powers-of-two BOUNDARIES (2^31, 2^32,
+# 2^63-1, -2^63) and the fold of a wrap, which that file does not touch.
+#
+# A top-level `const` MUST fold to a single literal or the compiler rejects it
+# (tychoc: parse_const -> const_fold -> is_literal_expr), so every value below is
+# guaranteed to be produced by the constant folder, never at run time. Verified
+# non-vacuous by reading the emitted C: each value appears as a folded literal
+# and the file emits zero runtime shift/arith helpers for them.
+#
+# Spec basis: docs/spec/03-types.md 5.2.1 (64-bit two's-complement; overflow
+# wraps and is fully defined; -2^63 obtainable only by computation).
+
+const B31      = 2147483647 + 1              # 2^31      = 2147483648
+const B31_MUL  = 65536 * 32768               # 2^31      = 2147483648
+const B32      = 2147483648 * 2              # 2^32      = 4294967296
+const B32_SHL  = 1 << 32                     # 2^32      = 4294967296
+const B32_MUL  = 65536 * 65536               # 2^32      = 4294967296
+const IMAX     = 9223372036854775807         # 2^63 - 1  (largest legal literal)
+const IMIN     = -9223372036854775807 - 1    # -2^63     (must be computed)
+const IMAX_M1  = 9223372036854775807 - 1
+const WRAP_HI  = 9223372036854775807 + 1     # wraps to -2^63 (defined, spec 5.2.1)
+const WRAP_LO  = (-9223372036854775807 - 1) - 1   # wraps to 2^63-1
+const P62      = 1 << 62
+const P63_NEG  = 1 << 63                     # 2^63 has no positive int -> -2^63
+const DIV_BIG  = 4294967296 / 65536          # 65536
+const MOD_BIG  = 4294967296 % 1000000007
+
+fn main():
+    println(str(B31))         # 2147483648
+    println(str(B31_MUL))     # 2147483648
+    println(str(B32))         # 4294967296
+    println(str(B32_SHL))     # 4294967296
+    println(str(B32_MUL))     # 4294967296
+    println(str(IMAX))        # 9223372036854775807
+    println(str(IMIN))        # -9223372036854775808
+    println(str(IMAX_M1))     # 9223372036854775806
+    println(str(WRAP_HI))     # -9223372036854775808
+    println(str(WRAP_LO))     # 9223372036854775807
+    println(str(P62))         # 4611686018427387904
+    println(str(P63_NEG))     # -9223372036854775808
+    println(str(DIV_BIG))     # 65536
+    println(str(MOD_BIG))     # see golden

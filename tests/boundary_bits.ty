@@ -1,0 +1,73 @@
+# NUMERIC-BOUNDARY fixture 3/5: bit operations and shifts at 2^31, 2^32,
+# 2^63-1 and -2^63.
+#
+# COMPLEMENTS tests/shift_edge.ty, does not duplicate it. shift_edge covers the
+# OVER-WIDE count rule (count >= width yields 0) and the u32/u64 widths.
+# This file covers the in-range boundary the spec pins at the other end -- counts
+# 30/31/32/62/63 (all inside the required 0..width-1 range, spec
+# docs/spec/09-expressions.md 58-60) -- and the boundary VALUES themselves under
+# & | ^ ~ and an arithmetic >>.
+#
+# Spec basis:
+#   09-expressions.md 54-57 -- `>>` is ARITHMETIC (sign-preserving) on signed
+#     `int`, LOGICAL on u32/u64. That is what makes the -2^63 >> case below
+#     specified rather than implementation-defined.
+#   09-expressions.md 58-60 -- a count >= the operand's bit width yields 0.
+#     Counts here are all < width, so they are ordinary in-range shifts.
+#   03-types.md 5.2.1 -- 64-bit two's-complement.
+#
+# Mixed runtime and constant operands on purpose: `n` comes out of an array so
+# the shift cannot be folded, while the literal-count lines exercise the folder.
+
+fn main():
+    v := [31, 32, 62, 63, 1]
+    s31 := v[0]
+    s32 := v[1]
+    s62 := v[2]
+    s63 := v[3]
+    one := v[4]
+
+    println("--- runtime shifts across the 32-bit boundary ---")
+    println(str(one << s31))      # 2147483648  = 2^31
+    println(str(one << s32))      # 4294967296  = 2^32
+    println(str(one << s62))      # 4611686018427387904
+    println(str(one << s63))      # -9223372036854775808  (2^63 has no + int)
+
+    # Literal operands, same counts. Checked in the emitted C: these are NOT
+    # folded -- tychoc lowers them to `tycho_shl_i(1LL, 31LL)`, the same runtime
+    # helper as above (folding of shifts happens only for a top-level `const`,
+    # which is what tests/boundary_fold.ty covers). So this block pins the
+    # helper's behaviour on literal arguments, not the folder's.
+    println("--- literal-operand shifts (runtime helper, not folded) ---")
+    println(str(1 << 31))         # 2147483648
+    println(str(1 << 32))         # 4294967296
+    println(str(1 << 62))         # 4611686018427387904
+    println(str(1 << 63))         # -9223372036854775808
+
+    println("--- arithmetic >> is sign-preserving (spec 09 54-57) ---")
+    imin := -9223372036854775807 - 1
+    println(str(imin >> s63))     # -1  (sign bit smeared, NOT 1)
+    println(str(imin >> 1))       # -4611686018427387904
+    println(str(-1 >> s62))       # -1
+    println(str((one << s62) >> s31))   # 2147483648
+
+    println("--- masks at the 32-bit boundary ---")
+    imax := 9223372036854775807
+    lo32 := 4294967295           # 2^32 - 1
+    println(str(imax & lo32))    # 4294967295
+    println(str(imax ^ imax))    # 0
+    println(str(imax & imin))    # 0    (disjoint bit patterns)
+    println(str(imax | imin))    # -1   (all 64 bits set)
+    println(str(~imax))          # -9223372036854775808
+    println(str(~imin))          # 9223372036854775807
+    println(str(~0))             # -1
+    println(str((one << s32) - 1))   # 4294967295
+
+    println("--- u32 / u64 at their own boundaries ---")
+    u := to_u32(4294967295)      # u32 max
+    println(str(to_int(u)))      # 4294967295
+    println(str(to_int(u >> 31)))    # 1   (LOGICAL shift: no sign smear)
+    println(str(to_int(~to_u32(0))))  # 4294967295
+    q := to_u64(1)
+    println(str(to_int(q << 63)))     # -9223372036854775808 as int bits
+    println(str(to_int((q << 63) >> 63)))  # 1  (logical, so 1 not -1)

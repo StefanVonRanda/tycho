@@ -1,0 +1,55 @@
+# NUMERIC-BOUNDARY fixture 4/5: int -> string conversion at the boundaries.
+#
+# This is the Phase 6a bug class. The runtime's int->string helper (`i2s` /
+# tycho_int_to_str) truncated on ILP32 because it formatted through a host
+# `long`. A converter is also the classic home of the -2^63 negation bug: the
+# usual "if (n < 0) { out '-'; n = -n; }" shape overflows on exactly one input,
+# -2^63, because +2^63 is not representable. Nothing in the suite printed that
+# value, so nothing would have caught it.
+#
+# `str(int)` is the only way a program observes an int, so every other fixture's
+# golden depends on this path being exact. That makes it worth pinning directly.
+#
+# Spec basis: docs/spec/03-types.md 5.2.1 -- values -2^63 .. 2^63-1.
+# Values are read from an array so the conversion happens at RUN TIME.
+
+fn main():
+    v := [2147483647, 2147483648, 4294967295, 4294967296,
+          9223372036854775807, 1000000000000000000, 0, 1]
+    imax := v[4]
+    imin := -imax - 1        # -2^63; the one input that breaks naive negation
+
+    println("--- positive boundaries ---")
+    println(str(v[6]))       # 0
+    println(str(v[7]))       # 1
+    println(str(v[0]))       # 2147483647   (2^31 - 1, 10 digits)
+    println(str(v[1]))       # 2147483648   (2^31)
+    println(str(v[2]))       # 4294967295   (2^32 - 1)
+    println(str(v[3]))       # 4294967296   (2^32)
+    println(str(v[5]))       # 1000000000000000000  (19 digits)
+    println(str(imax))       # 9223372036854775807  (2^63 - 1, longest positive)
+
+    println("--- negative boundaries ---")
+    println(str(-v[0]))      # -2147483647
+    println(str(-v[1]))      # -2147483648  (2^31; a 32-bit path dies at +2^31)
+    println(str(-v[3]))      # -4294967296
+    println(str(-imax))      # -9223372036854775807
+    println(str(imin))       # -9223372036854775808  (-2^63: the negation trap)
+
+    println("--- round-trip through concatenation ---")
+    # str() results are compared as text, so a truncating converter cannot hide
+    # behind a numeric comparison here.
+    println("imin=" + str(imin) + " imax=" + str(imax))
+    println("len(imin)=" + str(len(str(imin))))   # 20 chars incl. the '-'
+    println("len(imax)=" + str(len(str(imax))))   # 19 chars
+
+    println("--- digit-by-digit decomposition of 2^63-1 ---")
+    # Forces the whole magnitude through / and % rather than one printf call.
+    n := imax
+    acc := ""
+    for n > 0:
+        d := n % 10
+        acc = str(d) + acc
+        n = n / 10
+    println(acc)             # 9223372036854775807 -- must equal str(imax)
+    println(str(acc == str(imax)))   # true

@@ -1151,3 +1151,49 @@ to `run.sh` (that would blind the check for real link-order bugs).
     and why that is safe.
   - Verify: `make test`, `make fixpoint`, `make ilp32` green; plus a `gcc -m32`
     -hosted tychoc build with `-Wall -Wextra` showing no new warnings.
+
+- [ ] **Phase 10 — CORRECTIVE: tychoc0 rejects unary `-` applied directly to an index expression**
+  - Discovered 2026-07-24 by the new numeric-boundary fixtures (the hardening
+    pass that followed Phase 8), NOT by the int64 migration itself. It is a
+    pre-existing tychoc/tychoc0 divergence; nothing in the 408-fixture suite
+    negated a subscript directly.
+  - **The divergence:** `tychoc` accepts, `tychoc0` rejects a VALID program.
+    ```
+    line 33: unary - needs an int or a float
+            println(str(-v[0]))
+                        ^
+    ```
+    Minimal characterization (`v := [7,8]` array, `m := []int: int` map):
+    | form | tychoc | tychoc0 |
+    |---|---|---|
+    | `-v[0]` (array index) | OK | **REJECT** |
+    | `-m[0]` (map index) | OK | **REJECT** |
+    | `-(v[0])` (parenthesized) | OK | OK |
+    | `x := v[0]` then `-x` | OK | OK |
+    | `0 - v[0]` (binary minus) | OK | OK |
+    | `-len(v)` (call) | OK | OK |
+    | `-7` (literal) | OK | OK |
+    So the gap is specifically **unary minus whose operand is a subscript**;
+    every other operand shape types correctly. Parenthesizing is a workaround —
+    do NOT use it to make the fixture pass; the compiler is what is wrong.
+  - **Severity: fail-CLOSED, not a miscompile.** tychoc0 refuses to compile a
+    valid program rather than compiling it wrongly, so no output is corrupted.
+    But it is a genuine two-compiler divergence, which is the exact property the
+    project's harness exists to prevent, and it makes `make fixpoint` red the
+    moment any fixture negates a subscript (`FAIL boundary_i2s.ty (B differs
+    from the C compiler)`).
+  - Fix: in `compiler/tychoc0.ty`, find the unary-minus type check (the site
+    emitting "unary - needs an int or a float") and teach it the index-expression
+    operand shape, matching how `src/tychoc.c` types it. Read tychoc's unary
+    handling first and mirror it.
+  - **Also owned by this phase: un-park the fixture.** `tests/pending/boundary_i2s.ty`
+    + `.out` are committed OUTSIDE every `run.sh` glob (`tests/*.ty`,
+    `tests/{pkg,reject,abort,diag,warn}/`) so the tree stays green while the bug
+    is open — the same parking pattern Phase 6/6b used. Once tychoc0 accepts the
+    form, `git mv` both files up into `tests/` and delete `tests/pending/`.
+    Until then the int→string boundary class (the Phase 6a bug class) is NOT
+    covered by the suite.
+  - Done when: both compilers accept `-v[0]`/`-m[0]`; `boundary_i2s` is back in
+    `tests/` and passes under both compilers and under `make ilp32`; all gates green.
+  - Verify: `make test`, `make corelib`, `make conc`, `make fixpoint`,
+    `make ilp32`, `make spec-check` — each its own command, paste summary lines.
