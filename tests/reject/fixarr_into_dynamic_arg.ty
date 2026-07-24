@@ -1,0 +1,8 @@
+# There is NO decay from a fixed [N]T to a dynamic [T]: they are different types and
+# have different C representations (inline Arr_f3_int vs heap Arr_int). tychoc rejects;
+# tychoc0 used to accept because resolve_ginst normalized "[3]int" to "[int]".
+fn take(a: [int]) -> int:
+    return a[0]
+fn main():
+    small: [3]int = [1, 2, 3]
+    println(str(take(small)))

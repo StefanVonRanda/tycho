@@ -1251,7 +1251,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     ILP32-hosted build. After this phase, `grep -nE '\blong\b' src/tychoc.c` leaves only
     the four sites listed as deliberately-left above, all argued from source.
 
-- [ ] **Phase 11 — CORRECTIVE: tychoc0 does not check fixed-array SIZE in argument position**
+- [x] **Phase 11 — CORRECTIVE: tychoc0 does not check fixed-array SIZE in argument position**
   - Discovered 2026-07-24 by Phase 9 while choosing a fixture. NOT caused by Phase 9
     (which touched only `src/tychoc.c`; `compiler/tychoc0.ty` is untouched) and NOT
     width-related — it reproduces with small sizes. Logged rather than absorbed
@@ -1280,6 +1280,113 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Done when: both compilers reject the case above; a fixture locks it.
   - Verify: `make test`, `make corelib`, `make conc`, `make fixpoint`, `make ilp32`,
     `make spec-check` — each its own command, paste summary lines.
+
+  **DONE 2026-07-24.**
+
+  **tychoc's check (the rule mirrored).** `src/tychoc.c:5447` — an EXACT interned-type
+  comparison, no structural leniency at all:
+  ```c
+  5447:  if (at_ != s->params[i]) {
+  ...
+  5459:      die_at(e->line, "argument %d of '%s' is %s, expected %s",
+  5460:             i + 1, e->sval, type_name(at_), type_name(s->params[i]));
+  ```
+  `Type` is an interned id, so `[3]int` and `[4]int` are distinct ids → mismatch → error.
+  There is no fixed→dynamic decay in Tycho (verified empirically, rows p10/p11 below).
+
+  **The real defect was NOT in the argument check.** The scope was much wider than the
+  phase text assumed (RULE 11 — probed rather than assumed). tychoc0's argument path
+  (`compiler/tychoc0.ty:10698`, `check_call_args` → `base_type_mismatch`) was already
+  comparing types; so were the decl path (`:10976`), the return path (`:10959`) and the
+  struct-field path. All of them normalize both sides through `resolve_ginst` before
+  comparing — and `resolve_ginst` **erased the fixed size**, so every one of those
+  compares saw two identical strings.
+
+  **Site changed — `compiler/tychoc0.ty:13309` (one function, `resolve_ginst`):**
+  ```
+  OLD:  if is_array(ty):                       # is_array is TRUE for "[3]int" and "[b64]T" too
+            return "[" + resolve_ginst(elem_ty(ty), dc, ctx) + "]"
+            # -> resolve_ginst("[3]int") == resolve_ginst("[4]int") == "[int]"
+
+  NEW:  if is_fixarr(ty) or is_bounded(ty):    # keep the size marker, resolve only the element
+            i := 1
+            for i < len(ty) and ty[i] != 93:   # scan past the digits (and bounded's 'b') to ']'
+                i = i + 1
+            return substr(ty, 0, i + 1) + resolve_ginst(elem_ty(ty), dc, ctx)
+        if is_array(ty):                       # dynamic [T] and the [$N]T size-param template
+            return "[" + resolve_ginst(elem_ty(ty), dc, ctx) + "]"
+  ```
+  Mirrors the precedent already in the same file — `mangle_type` at `:2783-2784` keeps the
+  size for exactly this reason. `[$N]T` deliberately still normalizes to `[T]` (is_fixarr is
+  false for `$`), so size-parameterized generic code keeps unifying: NOT over-tightened.
+
+  **Before/after probe (13 programs, every supplying position; `/tmp/probe/p*.ty`).**
+  A `[3]int` value supplied where `[4]int` (or `[int]` / `bounded[4]int`) is expected:
+
+  | # | position | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+  |---|---|---|---|---|
+  | p1 | call argument (the reported bug) | REJECT | **ACCEPT (fail-open)** | REJECT |
+  | p2 | return (`fn f() -> [4]int: return small`) | REJECT | **ACCEPT** | REJECT |
+  | p3 | annotated decl (`a: [4]int = small`) | REJECT | **ACCEPT** | REJECT |
+  | p4 | assignment to an existing `[4]int` var | REJECT | **ACCEPT** | REJECT |
+  | p5 | struct field via ctor `S(small)` | REJECT | **ACCEPT** | REJECT |
+  | p6 | struct field assign `s.v = small` | REJECT | **ACCEPT** | REJECT |
+  | p7 | nested container elem (`[[4]int] = [small]`) | REJECT | **ACCEPT** | REJECT |
+  | p8 | tuple elem (`([4]int, int)`) | REJECT | REJECT (was already ok) | REJECT |
+  | p9 | array literal as arg (`take([1,2,3])`) | REJECT | REJECT (element-count check) | REJECT |
+  | p10 | fixed `[3]int` into a dynamic `[int]` param | REJECT | **ACCEPT** | REJECT |
+  | p11 | dynamic `[int]` value into a `[3]int` param | REJECT | **ACCEPT** | REJECT |
+  | p12 | fixed `[3]int` into a `bounded[4]int` param | REJECT | **ACCEPT** | REJECT |
+  | q1 | **same-size** `[3]int` into `[3]int` (control) | ACCEPT | ACCEPT | **ACCEPT** |
+
+  10 fail-open divergences closed, 0 new rejections of valid code. Diagnostic text is now
+  byte-identical to tychoc's: tychoc `p1_arg.ty:6: error: argument 1 of 'take' is [3]int,
+  expected [4]int` / tychoc0 `line 6: argument 1 of 'take' is [3]int, expected [4]int`.
+  p8/p9 were already closed because `resolve_ginst` leaves a tuple type alone (`pp > 0`
+  fails for a leading `(`), which is the same evidence for the root cause.
+
+  **Legitimate sized/generic code still compiles** — recompiled each with the NEW tychoc0,
+  all exit 0: `tests/sized_array.ty`, `tests/sized_family.ty`, `tests/const_generic_size.ty`
+  (this is the `[$N]T` size-parameterized generic lane — the one that would have broken had
+  the fix been over-tight), `tests/fixed_array.ty`, `tests/bounded.ty`. Plus the whole
+  423-fixture suite green with no fixture edited and no golden re-recorded.
+
+  **Fixtures added (6, all `tests/reject/` — the reject lane is differential, so each one
+  asserts tychoc0 refuses too, which is precisely this bug).** One per distinct supplying
+  position that was empirically fail-open; p4/p6 fold into p3/p5's shape, p7 into p3's:
+  - `tests/reject/fixarr_size_arg.ty` — the reported case, argument position
+  - `tests/reject/fixarr_size_decl.ty` — annotated decl (covers the assignment shape)
+  - `tests/reject/fixarr_size_return.ty` — return position
+  - `tests/reject/fixarr_size_field.ty` — struct field (covers the field-assign shape)
+  - `tests/reject/fixarr_into_dynamic_arg.ty` — no `[N]T` → `[T]` decay
+  - `tests/reject/fixarr_into_bounded_arg.ty` — `[N]T` is not `bounded[N]T`
+
+  Nothing added under `tests/diag/` (that lane is differential over `.err` AND `.h0err`
+  goldens; the reject lane already asserts both compilers refuse, which is the invariant
+  this phase is about).
+
+  **Gates (each its own foreground command, `env -u LD_PRELOAD`):**
+  ```
+  make test        passed: 423   failed: 0        all green      (417 -> 423: the 6 new rejects)
+  make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  make conc        conc: passed 36   failed 0
+  make fixpoint    ok   B == C : tychoc0 reproduces itself byte-identically (34690 lines C)
+                   fixpoint: all green (self-hosting; B==C; single files + packages; self-split dogfood)
+  make ilp32       passed: 423   failed: 0        all green
+  make spec-check  spec-examples: 7 runnable example(s), all pass
+  ```
+  `fixpoint` stayed B==C, so the change is self-hosting-stable.
+
+  **Assumption recorded for a future reader:** the fix assumes `resolve_ginst`'s only
+  legitimate array job is resolving a generic-struct *application* inside the element type
+  — never rewriting the array's own shape. Verified across its 21 call sites: the codegen
+  users (`cty`:4509, `cp_field`:6823, field lookup:4568) all branch on `is_fixarr`/
+  `is_bounded` BEFORE the `resolve_ginst` fallback (`cty`:4487), so no emitted C type
+  changed — which `make fixpoint` (B==C, byte-identical self-emission) independently
+  confirms. If that were wrong, the symptom would be a changed emitted C type for a fixed
+  array, and fixpoint would have gone red.
+
+  No new defect found; no new phase filed.
 
 - [x] **Phase 10 — CORRECTIVE: tychoc0 rejects unary `-` applied directly to an index expression**
   - Discovered 2026-07-24 by the new numeric-boundary fixtures (the hardening

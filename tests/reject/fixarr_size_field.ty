@@ -1,0 +1,7 @@
+# A fixed-array SIZE mismatch at a struct field: [3]int into a [4]int field.
+struct S:
+    v: [4]int
+fn main():
+    small: [3]int = [1, 2, 3]
+    s := S(small)
+    println(str(s.v[0]))

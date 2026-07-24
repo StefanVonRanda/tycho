@@ -1,0 +1,7 @@
+# A fixed-array SIZE mismatch on a return: [3]int returned from a -> [4]int function.
+fn f() -> [4]int:
+    small: [3]int = [1, 2, 3]
+    return small
+fn main():
+    r := f()
+    println(str(r[0]))

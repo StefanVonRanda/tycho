@@ -1,0 +1,8 @@
+# A fixed [3]int is not a bounded[4]int (different type constructor, different layout:
+# bounded carries a runtime len). Same erasure -- resolve_ginst dropped both the fixed
+# size and the bounded 'b' marker, so tychoc0 accepted what tychoc rejects.
+fn take(a: bounded[4]int) -> int:
+    return a[0]
+fn main():
+    small: [3]int = [1, 2, 3]
+    println(str(take(small)))

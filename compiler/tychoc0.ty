@@ -13306,7 +13306,12 @@ fn resolve_ginst(ty: string, dc: Decls, ctx: Ctx) -> string:
     n := len(ty)
     if n == 0:
         return ty
-    if is_array(ty):
+    if is_fixarr(ty) or is_bounded(ty):         # [N]T fixed / bounded [bN]T: KEEP the size marker, resolve only the element (mirrors mangle_type ~2783). Folding it into the dynamic branch below erased N, so every type compare that normalizes through here ([3]int vs [4]int, [3]int vs [int], [3]int vs bounded[4]int) saw two equal strings and FAILED OPEN -- tychoc compares interned type ids exactly (src/tychoc.c:5447) and rejects all three.
+        i := 1
+        for i < len(ty) and ty[i] != 93:        # scan past the digits (and bounded's 'b') to ']' (93)
+            i = i + 1
+        return substr(ty, 0, i + 1) + resolve_ginst(elem_ty(ty), dc, ctx)
+    if is_array(ty):                            # dynamic [T] (and the [$N]T size-param template, which must keep normalizing to [T] so sized-generic code still unifies)
         return "[" + resolve_ginst(elem_ty(ty), dc, ctx) + "]"
     if is_map(ty):
         return "{" + map_key(ty) + ":" + resolve_ginst(map_val(ty), dc, ctx) + "}"
