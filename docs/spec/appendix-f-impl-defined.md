@@ -66,11 +66,25 @@ differ:
 > **Reference-implementation note (not a spec allowance).** The required 64-bit
 > `int` width above is normative for *every* conforming implementation; it is
 > **not** implementation-defined. The reference compilers (`tychoc`, `tychoc0`)
-> currently lower `int` to C `long`. `long` is 64-bit on **LP64** targets (Linux,
-> macOS, the 64-bit BSDs), so the reference codegen satisfies the requirement
-> there, but `long` is **32-bit on LLP64** (64-bit Windows) and **ILP32** —
-> targets on which the reference codegen does **not** conform. Migrating the
-> lowering to a fixed-width 64-bit C type (`int64_t` / `long long`) closes the gap
-> and is a tracked follow-up (`docs/internals/spec-plan.md`, punch-list #16). The
-> requirement is 64-bit; the `long` lowering is an impl-limited realization, not a
-> relaxation of the spec.
+> realize `int` as a **fixed-width 64-bit** C type — `typedef int64_t tycho_int;`
+> in the emitted prelude, which is the single width authority for `int`, the
+> `int`-carried `char` representation, array/slice length headers, map keys and
+> the FFI crossing signatures — and emit `long long`-suffixed integer literals so
+> that constant arithmetic is evaluated at 64-bit rank. `int64_t` does not vary
+> with the C data model, so the lowering is 64-bit on **LP64**, **LLP64** and
+> **ILP32** alike, and a build in which it were not is rejected outright by the
+> always-on `_Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");`
+> carried in the same prelude. The reference implementation therefore conforms to
+> the 64-bit `int` requirement on all three data models; no target is excluded.
+>
+> *Extent of the evidence (so the claim is not read as broader than it is).* The
+> data-model independence above is a property of `int64_t` plus the static
+> assertion, and holds by construction. It is additionally **gated empirically on
+> ILP32**: `make ilp32` rebuilds the emitted C of the whole fixture suite with
+> `gcc -m32` and re-runs it against the unmodified 64-bit goldens on every CI run
+> (`scripts/ci.sh`), so a width regression fails the build (see
+> [Appendix E §5.2.1](appendix-e-conformance.md#5-types)). That lane runs an ILP32
+> data model on an x86-64 host; it is not a test on 64-bit Windows hardware, and
+> **LLP64 is asserted architecturally, not measured**. The ILP32 lane also
+> deliberately omits the sanitizer pass (no 32-bit ASan runtime under multilib);
+> ASan coverage comes from the 64-bit `make test` lane.

@@ -861,7 +861,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       `hi_udiv`/`hi_shl_u64` family (`tychoc0.ty:9857-9866,9881`) are the `u64`
       TYPE's `unsigned long long` lowering — correct as written, untouched.
 
-- [ ] **Phase 7 — spec + spec-plan: mark the reference impl conformant**
+- [x] **Phase 7 — spec + spec-plan: mark the reference impl conformant**
   - Scope: update `docs/spec/appendix-f-impl-defined.md` F.3 — reference compilers
     now realize `int` via fixed-width 64-bit `tycho_int`, conform on LP64, LLP64,
     ILP32 (strike "conforms on LP64 only"); add an `appendix-e-conformance.md` row
@@ -871,6 +871,128 @@ to `run.sh` (that would blind the check for real link-order bugs).
     exists; #16's follow-up struck with commit citations.
   - Verify: `make spec-check`, `make check-links` — each its own command, paste
     each summary line; `git diff --stat` only `docs/`.
+  - **DONE 2026-07-24.** Docs only — no source, no fixture, no Makefile touched.
+
+    **1. `docs/spec/appendix-f-impl-defined.md` §F.3 — the note rewritten.** The
+    struck text was `:66-76`: "The reference compilers (`tychoc`, `tychoc0`)
+    currently lower `int` to C `long`… `long` is **32-bit on LLP64** (64-bit
+    Windows) and **ILP32** — targets on which the reference codegen does **not**
+    conform. Migrating the lowering … is a tracked follow-up". Replaced by:
+
+    > **Reference-implementation note (not a spec allowance).** The required 64-bit
+    > `int` width above is normative for *every* conforming implementation; it is
+    > **not** implementation-defined. The reference compilers (`tychoc`, `tychoc0`)
+    > realize `int` as a **fixed-width 64-bit** C type — `typedef int64_t tycho_int;`
+    > in the emitted prelude, which is the single width authority for `int`, the
+    > `int`-carried `char` representation, array/slice length headers, map keys and
+    > the FFI crossing signatures — and emit `long long`-suffixed integer literals so
+    > that constant arithmetic is evaluated at 64-bit rank. `int64_t` does not vary
+    > with the C data model, so the lowering is 64-bit on **LP64**, **LLP64** and
+    > **ILP32** alike, and a build in which it were not is rejected outright by the
+    > always-on `_Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");`
+    > carried in the same prelude. The reference implementation therefore conforms to
+    > the 64-bit `int` requirement on all three data models; no target is excluded.
+    >
+    > *Extent of the evidence (so the claim is not read as broader than it is).* The
+    > data-model independence above is a property of `int64_t` plus the static
+    > assertion, and holds by construction. It is additionally **gated empirically on
+    > ILP32**: `make ilp32` rebuilds the emitted C of the whole fixture suite with
+    > `gcc -m32` and re-runs it against the unmodified 64-bit goldens on every CI run
+    > (`scripts/ci.sh`), so a width regression fails the build (see
+    > [Appendix E §5.2.1](appendix-e-conformance.md#5-types)). That lane runs an ILP32
+    > data model on an x86-64 host; it is not a test on 64-bit Windows hardware, and
+    > **LLP64 is asserted architecturally, not measured**. The ILP32 lane also
+    > deliberately omits the sanitizer pass (no 32-bit ASan runtime under multilib);
+    > ASan coverage comes from the 64-bit `make test` lane.
+
+    Every claim in it was read out of the tree, not from the phase brief:
+    `runtime/tycho_rt.c:52` `typedef int64_t tycho_int;` and `:54` the
+    `_Static_assert`; the byte-identical twin emitted by
+    `compiler/tychoc0.ty:9699`; `Makefile:204` `ilp32:`; `tests/int64_width.ty`
+    tracked in-glob.
+
+    **2. The honesty caveat, and why that one.** The second paragraph exists
+    because the one-line version ("conforms on LP64, LLP64 and ILP32") is true but
+    would be *read* as "all three were tested". They were not. The caveat splits
+    the claim in two: what is **architecturally guaranteed** (`int64_t` is
+    fixed-width by definition, and the `_Static_assert` turns any host where it
+    were not into a build failure rather than a silent miscompile — so LLP64
+    cannot be wrong without failing to build) versus what is **empirically
+    gated** (`make ilp32`, whole suite, every CI run). It names the two limits
+    explicitly: the ILP32 lane is `gcc -m32` on an x86-64 host, NOT real 64-bit
+    Windows hardware, and it carries no ASan (64-bit `make test` does). This is a
+    normative document making a conformance claim — RULE 5/10: state the
+    mechanism, do not let the reader infer a stronger one.
+    Not claimed anywhere: that `corelib/image` was compile-verified. It still is
+    not (no libpng in this env, Phase 3), but it is an extended-tier corelib
+    package, not part of the `int` width claim, and Appendix E already scopes
+    `deps`-tier packages as extended-tier only (`appendix-e-conformance.md:201`).
+
+    **3. `docs/spec/appendix-e-conformance.md` — one row added** under `### §5
+    Types`, directly after the existing `§5.2.1` row, matching the file's
+    `| Clause | Requirement (abbrev.) | Fixture(s) |` format:
+
+    ```
+    | §5.2.1 | `int` stays 64-bit under a non-LP64 C data model (no truncation of values, literal arithmetic or length headers) | `tests/int64_width`, the `make ilp32` lane (whole suite rebuilt `gcc -m32`, 64-bit goldens unchanged) |
+    ```
+
+    Citation checked against the gate that enforces it: `scripts/spec_check.sh:50`
+    greps backticked ``tests/…`` spans and asserts each resolves as a file, dir or
+    `.ty`; `tests/int64_width.ty` + `.out` are tracked, so it resolves.
+    ``make ilp32`` is not matched by that regex (not a `tests/` path), so naming
+    the lane cannot create a dangling citation.
+
+    **4. `docs/internals/spec-plan.md` — punch-list #16's codegen half CLOSED.**
+    Item #16 (`:336-341`) previously ended "…is noted as an impl limitation
+    (Appendix F.3), with a fixed-width 64-bit codegen migration (`int64_t`/`long
+    long`) tracked as a follow-up (not done in this pass)." That sentence is gone;
+    #16 now records **CODEGEN FOLLOW-UP CLOSED (2026-07-24)** with the commit
+    chain `1d79400` (prelude + runtime) → `c43d745` (corelib FFI shims) →
+    `e5a7a4e` (both compilers emit `tycho_int`; `INT64_MIN` div-guard, 64-bit
+    shift cast) → `38b04ba` (`unsigned long` narrowing in both runtimes, incl. the
+    fail-open `tycho_cap_check`) → `04a6357` (`LL`-suffixed literals; also fixed a
+    live tychoc0 LP64 miscompile of `100000*100000`) → `8c754bb` (hash
+    accumulators → `uint64_t`), with `a09dbb6` adding the `make ilp32` gate
+    (409/0, non-vacuous via `tests/int64_width`). The §11 residual-decisions entry
+    (`:580-583`), which read "reference `long` lowering conforms on LP64 only", is
+    struck the same way and points back at #16 for the commit list. Grep confirms
+    those were the ONLY two references to #16 in the file, and the only remaining
+    `LP64/LLP64/ILP32` mentions outside the archived audit/plan docs.
+    `docs/spec/03-types.md:14` was deliberately left alone: it constrains *any* C
+    backend ("a C backend MUST realize `int` as a 64-bit type even on a target
+    where C `long` is 32 bits"), which this change makes *satisfied*, not false.
+
+    **5. TRANSPARENT SCOPE DEVIATION — one line outside the three named files.**
+    `make check-links` was **already RED at HEAD (`8c754bb`), before this phase
+    touched anything** — verified by `git stash` → re-run → same single failure →
+    `git stash pop`. The dead link is
+    `docs/internals/plan-1.0-freeze-DONE.md:436`, `[§2](00-conventions.md)`, a
+    quotation of `appendix-a-grammar.md:21` whose *relative* target stopped
+    resolving when commit `3508a29` (this plan's own archival commit) moved the
+    file from `docs/spec/` into `docs/internals/`. Fixed minimally —
+    `(00-conventions.md)` → `(../spec/00-conventions.md)`, one line, still
+    `docs/`-only — because this phase's Verify block names `check-links` and a
+    gate that was red before the phase began cannot certify it. Nothing else in
+    that archived file was touched.
+
+    **Gate summary lines (each its own foreground command):**
+    ```
+    env -u LD_PRELOAD make spec-check  -> spec-check: Appendix A grammar matches §3/§4 (ok)
+                                          spec-check: all Appendix E fixture citations resolve (ok)
+                                          spec-examples: 7 runnable example(s), all pass
+    env -u LD_PRELOAD make check-links -> link check: ok (118 markdown files, no dead relative links)
+    ```
+    `git diff --stat` before commit: `docs/internals/plan-1.0-freeze-DONE.md`,
+    `docs/internals/spec-plan.md`, `docs/spec/appendix-e-conformance.md`,
+    `docs/spec/appendix-f-impl-defined.md`, `plan.md` — no source, no fixture, no
+    Makefile.
+
+  - **NOTE for whoever runs next (not fixed here, scope lock):** Phase 6's
+    checkbox above is still `- [ ]`. It halted deliberately on a RED `make ilp32`
+    and its own text says "Re-run this phase's Verify block after 6a+6b"; 6a/6b/6c
+    have since landed and `make ilp32` is `passed: 409 failed: 0`. Ticking it is a
+    bookkeeping action belonging to whoever re-runs that Verify block, not to this
+    docs phase.
 
 - [ ] **Phase 8 — HOST portability of tychoc's own constant folder (discovered by 6c, scope-locked out of it)**
   - Raised by Phase 6c on 2026-07-24 while sweeping emitted `unsigned long`.

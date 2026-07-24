@@ -433,7 +433,7 @@ command; commits carry NO trailers (repo convention).
     plus `"x"`, `UPPER`, `A B`, `A | B`, `A?`, `A*`, `A+`); fence language fixed at
     `00-conventions.md:170` ("**`ebnf`** — a grammar production (see §2.1)");
     restated `docs/spec/appendix-a-grammar.md:21` ("Productions use the W3C-style
-    EBNF of [§2](00-conventions.md)") and `docs/spec/README.md:42` ("The grammar is
+    EBNF of [§2](../spec/00-conventions.md)") and `docs/spec/README.md:42` ("The grammar is
     W3C-style EBNF over lexer-produced tokens").
     Consistency measured, not assumed: 154 `::=` lines total — appendix-a-grammar 76,
     02-grammar 65, 01-lexical 9, 05-generics 3, 03-types 1.

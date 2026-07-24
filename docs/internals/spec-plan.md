@@ -335,10 +335,23 @@ they diverge, filing a bug). Grouped; each carries its resolution owner.
     codegen satisfies it on LP64 only. **This is the single sharpest consequence
     of decision §0.** **RESOLVED (2026-07-23, user ruling):** option (a) — the
     spec REQUIRES a fixed-width 64-bit two's-complement `int` (normative in
-    `docs/spec/03-types.md` §5.2.1). The reference `long` lowering satisfies it on
-    **LP64 only** and is noted as an impl limitation (Appendix F.3), with a
-    fixed-width 64-bit codegen migration (`int64_t`/`long long`) tracked as a
-    follow-up (not done in this pass). Conformance row: Appendix E §5.2.1.
+    `docs/spec/03-types.md` §5.2.1). Conformance row: Appendix E §5.2.1.
+    **CODEGEN FOLLOW-UP CLOSED (2026-07-24).** The `long` lowering (LP64-only) is
+    gone: `int` is realized as `typedef int64_t tycho_int;` in both runtime
+    preludes, with `_Static_assert(sizeof(tycho_int)==8)` as an always-on guard —
+    `1d79400` (prelude + runtime), `c43d745` (corelib FFI shims), `e5a7a4e` (both
+    compilers emit `tycho_int`; `INT64_MIN` div-guard, 64-bit shift cast),
+    `38b04ba` (`unsigned long` narrowing in both runtimes, including a fail-open
+    `tycho_cap_check`), `04a6357` (`LL`-suffixed int/char literals — this also
+    fixed a live tychoc0 LP64 miscompile of `100000*100000`), `8c754bb` (emitted
+    hash accumulators → `uint64_t`). Proof is a real gate, not an assertion:
+    `a09dbb6` added `make ilp32` (whole fixture suite re-emitted and rebuilt with
+    `gcc -m32`, run against the unmodified 64-bit goldens; loud-fails if multilib
+    is absent), now `passed: 409 failed: 0` and non-vacuous — `tests/int64_width`
+    exercises `5000000000`, `100000*100000` and `1 << 40`. Appendix F.3 now records
+    conformance on LP64, LLP64 and ILP32, with the honest caveat that ILP32 is
+    empirically gated (x86-64 host, `gcc -m32`) while LLP64 is guaranteed
+    architecturally by `int64_t` + the static assertion, not measured on Windows.
 17. **Float semantics** — declare IEEE-754 binary64/binary32 conformance:
     NaN/inf/signed-zero behavior, `==` on floats is bitwise (`0.0/0.0`, NaN
     ordering, `NaN == NaN`). Currently unspecified.
@@ -579,8 +592,11 @@ changes an observable behavior claim.
   differential suite + `make fixpoint`, not one fixture).
 - ~~`int`-width conformance (punch-list 16): require 64-bit lowering vs. scope to
   LP64. Recommend require-64-bit.~~ **RESOLVED (2026-07-23):** require 64-bit
-  (option a) — normative in `docs/spec/03-types.md` §5.2.1; reference `long`
-  lowering conforms on LP64 only (Appendix F.3). See punch-list #16.
+  (option a) — normative in `docs/spec/03-types.md` §5.2.1. **Codegen follow-up
+  CLOSED (2026-07-24):** the `long` lowering was replaced by a fixed-width
+  `tycho_int` (`int64_t`), so the reference implementation conforms on LP64,
+  LLP64 and ILP32 (Appendix F.3), gated by `make ilp32`. See punch-list #16 for
+  the commit list.
 - ~~Whether the `deps` extended tier is *normative-but-optional* or *informative*.
   Recommend normative-but-optional (an implementation MAY omit it and still
   conform at the core tier).~~ **RESOLVED (2026-07-23):** normative-but-optional —
