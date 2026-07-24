@@ -930,7 +930,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     > ILP32**: `make ilp32` rebuilds the emitted C of the whole fixture suite with
     > `gcc -m32` and re-runs it against the unmodified 64-bit goldens on every CI run
     > (`scripts/ci.sh`), so a width regression fails the build (see
-    > [Appendix E §5.2.1](appendix-e-conformance.md#5-types)). That lane runs an ILP32
+    > [Appendix E §5.2.1](docs/spec/appendix-e-conformance.md#5-types)). That lane runs an ILP32
     > data model on an x86-64 host; it is not a test on 64-bit Windows hardware, and
     > **LLP64 is asserted architecturally, not measured**. The ILP32 lane also
     > deliberately omits the sanitizer pass (no 32-bit ASan runtime under multilib);
