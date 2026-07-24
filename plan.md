@@ -347,7 +347,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       `-m32` gate is the only completeness proof; migration was made exhaustive
       against the audit rather than relying on local green.
 
-- [ ] **Phase 5 — regenerate the embedded/bootstrap C if the tree ships one**
+- [x] **Phase 5 — regenerate the embedded/bootstrap C if the tree ships one**
   - Scope: Phase 1 determines whether a pre-generated `tychoc0` C artifact is
     committed (embed/bootstrap). If so, regenerate it from the Phase-4 compiler so
     the checked-in bootstrap also emits `tycho_int`, keeping `make bootstrap`
@@ -355,6 +355,19 @@ to `run.sh` (that would blind the check for real link-order bugs).
     and skip; do not invent work.
   - Done when: `make bootstrap` green from clean, or documented no-op.
   - Verify: `make bootstrap`, `make fixpoint` — paste summary lines.
+  - DONE (2026-07-24) — NO-OP as Phase 1 pre-determined. No code change.
+    - Confirmed no committed generated-C artifact: `git ls-files '*.c'` has nothing
+      under `compiler/` or a `bootstrap` path; `git ls-files compiler/` is only
+      `*.ty` sources + `*.sh` scripts + `compiler/tests/*.ty`. The `bootstrap`
+      target (`Makefile`) runs `sh compiler/run.sh`, which regenerates the C from
+      `compiler/tychoc0.ty` at build time — there is no checked-in C to re-emit.
+    - So the Phase-4 `tycho_int` emission flows into the bootstrap automatically;
+      nothing to regenerate. Verified the tree still bootstraps + self-hosts on the
+      post-Phase-4 sources (each `env -u LD_PRELOAD make …`):
+      - `make bootstrap` → `bootstrap: all green (tychoc0 matches the C compiler)`.
+      - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` / `fixpoint: all green`.
+    - Only plan.md changed this phase (this DONE block); no source touched.
 
 - [ ] **Phase 6 — add the `make ilp32` gate (the real proof) + lock a fixture**
   - Scope: add an `ilp32` target to `Makefile` that emits the fixture suite's C
