@@ -12,16 +12,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. The libc-facing
+ * `int st` wait-status stays int; the decoded exit code is a Tycho int. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 #ifdef _WIN32
 #define TY_POPEN  _popen
 #define TY_PCLOSE _pclose
-static long ty_os_decode(int st) { return (long)st; }   /* Windows: system/_pclose return the code directly */
+static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: system/_pclose return the code directly */
 #else
 #include <sys/wait.h>
 #define TY_POPEN  popen
 #define TY_PCLOSE pclose
-static long ty_os_decode(int st) {                       /* POSIX wait-status -> a plain code */
+static tycho_int ty_os_decode(int st) {                       /* POSIX wait-status -> a plain code */
     if (st == -1)        return -1;
     if (WIFEXITED(st))   return WEXITSTATUS(st);
     if (WIFSIGNALED(st)) return 128 + WTERMSIG(st);
@@ -29,11 +38,11 @@ static long ty_os_decode(int st) {                       /* POSIX wait-status ->
 }
 #endif
 
-long osx_system(const char *cmd) {
+tycho_int osx_system(const char *cmd) {
     return ty_os_decode(system(cmd));
 }
 
-typedef struct { long code; char *out; } OsRun;
+typedef struct { tycho_int code; char *out; } OsRun;
 
 void *osx_run(const char *cmd) {
     FILE *f = TY_POPEN(cmd, "r");
@@ -62,6 +71,6 @@ void *osx_run(const char *cmd) {
     return r;
 }
 
-long        osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }
+tycho_int   osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }
 const char *osx_run_out (void *p) { return p ? ((OsRun *)p)->out  : ""; }
 void        osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r); } }

@@ -12,11 +12,19 @@
 #include <zlib.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 /* windowBits 15 | 16 selects zlib's gzip wrapper (header + CRC32 + length). */
 #define GZIP_WBITS (15 + 16)
 
-void zx_compress(const unsigned char *data, long len, unsigned char **out, long *outlen) {
+void zx_compress(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (len < 0) return;
@@ -34,12 +42,12 @@ void zx_compress(const unsigned char *data, long len, unsigned char **out, long 
     s.avail_out = (uInt)cap;
     int rc = deflate(&s, Z_FINISH);
     if (rc != Z_STREAM_END) { free(buf); deflateEnd(&s); return; }   /* fail closed */
-    *outlen = (long)s.total_out;
+    *outlen = (tycho_int)s.total_out;
     *out = buf;
     deflateEnd(&s);
 }
 
-void zx_decompress(const unsigned char *data, long len, unsigned char **out, long *outlen) {
+void zx_decompress(const unsigned char *data, tycho_int len, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (len < 0) return;
@@ -74,7 +82,7 @@ void zx_decompress(const unsigned char *data, long len, unsigned char **out, lon
         }
         /* rc == Z_OK with room remaining: inflate made progress, call it again */
     }
-    *outlen = (long)s.total_out;
+    *outlen = (tycho_int)s.total_out;
     *out = buf;
     inflateEnd(&s);
 }

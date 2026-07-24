@@ -19,14 +19,22 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 typedef struct { SSL_CTX *ctx; SSL *ssl; int fd; } Tls;
 
 /* Resolve host:port and open a blocking TCP connection; -1 on any failure. */
-static int tcp_connect(const char *host, long port) {
+static int tcp_connect(const char *host, tycho_int port) {
     if (!host || port < 0 || port > 65535) return -1;
     char portstr[16];
-    snprintf(portstr, sizeof portstr, "%ld", port);
+    snprintf(portstr, sizeof portstr, "%d", (int)port);   /* port validated 0..65535 above */
     struct addrinfo hints, *res = NULL, *rp;
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -44,7 +52,7 @@ static int tcp_connect(const char *host, long port) {
     return fd;
 }
 
-void *tlsx_connect(const char *host, long port) {
+void *tlsx_connect(const char *host, tycho_int port) {
     int fd = tcp_connect(host, port);
     if (fd < 0) return NULL;
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
@@ -69,10 +77,10 @@ void *tlsx_connect(const char *host, long port) {
 }
 
 /* Write the whole buffer over the encrypted stream; bytes sent (== len) or -1. */
-long tlsx_write(void *p, const unsigned char *data, long len) {
+tycho_int tlsx_write(void *p, const unsigned char *data, tycho_int len) {
     if (!p || len < 0) return -1;
     Tls *t = (Tls *)p;
-    long off = 0;
+    tycho_int off = 0;
     while (off < len) {
         int n = SSL_write(t->ssl, data + off, (int)(len - off));
         if (n <= 0) return -1;                                 /* fail closed */
@@ -82,7 +90,7 @@ long tlsx_write(void *p, const unsigned char *data, long len) {
 }
 
 /* Read up to `max` decrypted bytes (one SSL_read); empty on close/error. */
-void tlsx_read(void *p, long max, unsigned char **out, long *outlen) {
+void tlsx_read(void *p, tycho_int max, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (!p || max <= 0) return;

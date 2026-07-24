@@ -13,16 +13,26 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. `secs` (epoch)
+ * and the returned offset are Tycho ints; the libc `time_t` cast and reading
+ * glibc's `long tm_gmtoff` stay on the C side. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 /* The SYSTEM local timezone's UTC offset at `secs`, DST-aware. Reads the process
  * timezone (the TZ env var, else the OS default) via localtime_r. The exact value
  * is host-dependent, so a test must not hard-code it -- use offset_at for a
  * reproducible zone. */
-long dtx_local_offset(long secs) {
+tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;
     struct tm lt;
     if (!localtime_r(&t, &lt)) return 0;   /* fail closed: unknown -> UTC */
-    return (long)lt.tm_gmtoff;
+    return (tycho_int)lt.tm_gmtoff;
 }
 
 /* UTC offset at `secs` for an EXPLICIT POSIX TZ string, DST-aware. A POSIX rule
@@ -33,15 +43,15 @@ long dtx_local_offset(long secs) {
  * NOT thread-safe: it sets the process TZ (setenv + tzset), reads, then restores.
  * The FFI boundary is outside Tycho's race-free guarantee anyway (see
  * docs/reference/ffi.md#threads) -- serialize datetime.offset_at across threads. */
-long dtx_offset_at(const char *tz, long secs) {
+tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
     char *cur = getenv("TZ");
     char *saved = cur ? strdup(cur) : NULL;   /* NULL if unset or on OOM: restore by unsetting */
     setenv("TZ", tz, 1);
     tzset();
     time_t t = (time_t)secs;
     struct tm lt;
-    long off = 0;
-    if (localtime_r(&t, &lt)) off = (long)lt.tm_gmtoff;
+    tycho_int off = 0;
+    if (localtime_r(&t, &lt)) off = (tycho_int)lt.tm_gmtoff;
     if (saved) { setenv("TZ", saved, 1); free(saved); } else { unsetenv("TZ"); }
     tzset();                                  /* restore the process zone exactly once */
     return off;

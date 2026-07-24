@@ -12,7 +12,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
+/* `status` stays a genuine C `long`: curl_easy_getinfo(CURLINFO_RESPONSE_CODE,
+ * &status) writes a libc `long` here, so the field must match curl's ABI. Only
+ * http_status()'s Tycho-facing RETURN is tycho_int. */
 typedef struct { long status; char *body; size_t len; } Resp;
 
 static size_t collect(char *ptr, size_t size, size_t nmemb, void *userp) {
@@ -71,6 +82,6 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
 
 void *http_get(const char *url) { return perform(url, NULL, NULL); }
 void *http_post(const char *url, const char *body, const char *ctype) { return perform(url, body ? body : "", ctype); }
-long http_status(void *resp) { return resp ? ((Resp *)resp)->status : 0; }
+tycho_int http_status(void *resp) { return resp ? (tycho_int)((Resp *)resp)->status : 0; }
 const char *http_body(void *resp) { return resp ? ((Resp *)resp)->body : ""; }
 void http_free(void *resp) { if (resp) { free(((Resp *)resp)->body); free(resp); } }

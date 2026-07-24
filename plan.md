@@ -190,7 +190,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
       - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`.
       - `make conc` → `conc: passed 36   failed 0`.
 
-- [ ] **Phase 3 — corelib FFI shims + any hand-written `long` ABI surface**
+- [x] **Phase 3 — corelib FFI shims + any hand-written `long` ABI surface**
   - Scope: migrate INT-SEMANTIC `long` in `corelib/net/net_shim.c`,
     `corelib/tls/tls_shim.c`, and any other hand-written C the audit flags, to
     `tycho_int`, so the shim ABI matches what Phase 4 emits. Leave genuine
@@ -199,6 +199,78 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Done when: shims use `tycho_int` on the Tycho-facing side; tree green.
   - Verify: `make test`, `make corelib`, `make ffi`, `make fixpoint` — each its
     own command, paste each summary line.
+  - DONE (2026-07-24). All 10 shims migrated INT-SEMANTIC `long`→`tycho_int` on the
+    Tycho-facing side; genuine libc types left C `long`/`int`. No compiler/runtime/
+    fixture touched.
+    - **CRITICAL build fact (verified before editing):** shims are compiled as
+      SEPARATE translation units and linked — `cc … base.c <pkg>_shim.c -lm`
+      (`src/tychoc.c:11457`; `corelib/run.sh:41,45`; `tests/ffi/run.sh:36`). They do
+      NOT receive the emitted runtime prelude, so a shim does NOT see the runtime's
+      `tycho_int` typedef. Each migrated shim therefore now carries its own
+      `#include <stdint.h>` + guarded `#ifndef TYCHO_INT_T / typedef int64_t tycho_int;`.
+      Confirmed each sees it via standalone `gcc -fsyntax-only -Wall`: net, tls,
+      regex, os, datetime, io, crypto, compress, http all clean. On LP64
+      `tycho_int`==`long`, so the still-`long` Phase-4-pending emission stays
+      ABI-compatible and every gate is green now; the `-m32` catch is Phase 6.
+    - **Per-file INT-SEMANTIC migrated vs libc-facing LEFT:**
+      - `net_shim.c` — migrated every fd/port/len/max/off/n/outlen param+return+local
+        and the `(long)`→`(tycho_int)` casts of `socket/accept/send/recv/sendto/
+        recvfrom/ntohs` returns; `"%ld",port`→`"%d",(int)port` (port validated
+        0..65535). LEFT: `(int)fd` casts into the socket API, `(size_t)max/len`. No
+        genuine libc `long` present.
+      - `tls_shim.c` — migrated `port` (tcp_connect+tlsx_connect), `tlsx_write`
+        len+ret, `off`, `tlsx_read` max+outlen; `%ld`→`%d,(int)port`. LEFT: tcp_connect
+        RETURN `int` and `Tls.fd int` (internal libc fd, never crosses to Tycho), and
+        `int n = SSL_read/SSL_write` (OpenSSL int).
+      - `regex_shim.c` — all 12 → `tycho_int` (returns, `long n` group indices, `r`,
+        and `(tycho_int)` casts of `rm_so/rm_eo/re_nsub`). `rx_compile` (void*/char*)
+        unchanged. None left.
+      - `image_shim.c` — all 12 → `tycho_int` (Img.w/h, decode len, encode plen/w/h,
+        `need`, outlen×2, width/height/nbytes casts). None libc-facing. **NOT
+        compile-tested in this env: libpng/`png.h` absent** (`gcc -E` on `<png.h>`
+        fails; corelib skips image). Migrated by mirror of the other bytes-out shims;
+        compile proof deferred to a host with libpng (and Phase 6 `-m32`).
+      - `crypto_shim.c` — 8 → `tycho_int` (cx_key_random n, cx_key_len ret+cast,
+        cx_random_hex n, pbkdf2 iters+dklen, ct_equal ret+eq, ed25519_verify ret+ok).
+        LEFT untouched: every `(int)` cast into OpenSSL (RAND_bytes, PKCS5_PBKDF2_HMAC,
+        strlen), the `1L<<20` bound literals, `size_t`.
+      - `os_shim.c` — 5 → `tycho_int` (ty_os_decode return, both #ifdef branches;
+        osx_system return; `OsRun.code`; osx_run_code return). REVIEW resolved: the
+        `int st` param of `ty_os_decode` is the libc wait-status from `system`/`pclose`
+        and STAYS `int`; only the decoded exit code is a Tycho int.
+      - `datetime_shim.c` — 5 → `tycho_int` (dtx_local_offset ret+secs, dtx_offset_at
+        ret+secs, `off`, both `tm_gmtoff` casts). REVIEW resolved: `secs` (epoch) and
+        the returned offset are the Tycho ints the `.ty` side passes/receives; the
+        libc `time_t t=(time_t)secs` cast and glibc's `long tm_gmtoff` read stay
+        C-side (the gmtoff is converted into the `tycho_int` return). No genuine libc
+        `long`-typed FFI boundary remains.
+      - `compress_shim.c` — 5 → `tycho_int` (zx_compress/zx_decompress len+outlen, two
+        `(tycho_int)s.total_out`). zlib `uLong/uInt/size_t` internals untouched.
+      - `http_shim.c` — 1 migrated: `http_status` RETURN → `tycho_int` (+cast). 1 LEFT
+        DELIBERATELY (fail-closed, RULE 7): `Resp.status` stays C `long` because
+        `curl_easy_getinfo(CURLINFO_RESPONSE_CODE, &r->status)` (`:66`) writes a genuine
+        libc `long` into it — an int64_t field would be a real ILP32 ABI bug (curl
+        writes 4 bytes into an 8-byte slot). The Tycho boundary is only the return.
+      - `io_shim.c` — 2 → `tycho_int` (iox_read_file outlen param + `(tycho_int)len`).
+    - **Bug caught + fixed (RULE 6):** first `make corelib` → `FAIL regex (tychoc
+      compile)`, ld `undefined reference to rx_compile`. False assumption: my full-file
+      rewrite of `regex_shim.c` had dropped the untouched `rx_compile` function. Root
+      cause read from the linker error (only rx_compile undefined, other rx_* resolved
+      → single missing symbol, not a broken TU). Restored `rx_compile` verbatim;
+      re-ran — green. `git diff` audited for net/image/regex: every removed def line has
+      a type-renamed `+` counterpart, no other function lost.
+    - **Gates (each `env -u LD_PRELOAD make …`):**
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+        (exercises net/tls/regex/os/datetime/io/crypto/compress/http shims; image test
+        skipped — no libpng).
+      - `make ffi` → `ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden …
+        -L + --shim, package-scoped extern)`.
+      - `make fixpoint` → `ok B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` · `fixpoint: all green`.
+      - `make test` → `passed: 408   failed: 0` · `all green`.
+    - **Phase 6 note (scope-locked):** `image_shim.c` needs a libpng host to compile;
+      the `-m32` gate must run where libpng-dev (multilib) is present, or explicitly
+      skip image with a loud notice.
 
 - [ ] **Phase 4 — BOTH compilers emit `tycho_int` (atomic, self-hosting-critical)**
   - Scope: in ONE commit, change every INT-SEMANTIC emission site in

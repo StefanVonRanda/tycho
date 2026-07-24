@@ -12,6 +12,14 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 typedef struct { FILE *f; char *buf; size_t cap; } IoLines;
 
@@ -50,7 +58,7 @@ void iox_close_lines(void *p) {
  * bytes survive (unlike the read_file builtin's string). Out-param bytes contract
  * (same as net_shim's netx_read): *out is a malloc'd buffer the runtime copies
  * *outlen bytes from and frees; a missing/unreadable file yields empty bytes. */
-void iox_read_file(const char *path, unsigned char **out, long *outlen) {
+void iox_read_file(const char *path, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     FILE *f = fopen(path, "rb");
@@ -69,5 +77,5 @@ void iox_read_file(const char *path, unsigned char **out, long *outlen) {
     }
     fclose(f);
     *out = buf;
-    *outlen = (long)len;
+    *outlen = (tycho_int)len;
 }

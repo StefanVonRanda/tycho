@@ -28,6 +28,14 @@
 #include <openssl/crypto.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
 static const char *const ERRTAG = "!err";     /* non-hex failure sentinel for string returns */
 
@@ -93,7 +101,7 @@ void cx_key_free(void *kp) {
 }
 
 /* n cryptographically secure random bytes -> a new secret key handle (NULL on failure) */
-void *cx_key_random(long n) {
+void *cx_key_random(tycho_int n) {
     if (n < 1 || n > (1L << 20)) return NULL;
     CxKey *k = key_new((size_t)n);
     if (!k) return NULL;
@@ -120,12 +128,12 @@ const char *cx_key_export_hex(void *kp) {
     return out_hex(k->buf, k->len);
 }
 
-long cx_key_len(void *kp) { CxKey *k = kp; return k ? (long)k->len : -1; }
+tycho_int cx_key_len(void *kp) { CxKey *k = kp; return k ? (tycho_int)k->len : -1; }
 
 /* =====================================================================
  * CSPRNG (public bytes: nonces, salts) -> hex
  * ===================================================================== */
-const char *cx_random_hex(long n) {
+const char *cx_random_hex(tycho_int n) {
     if (n < 0 || n > (1L << 20)) return ERRTAG;
     unsigned char *b = malloc(n ? (size_t)n : 1);
     if (!b) return ERRTAG;
@@ -171,7 +179,7 @@ const char *cx_hmac_sha256_hex(void *kp, const char *msg_hex) {
 /* =====================================================================
  * PBKDF2-HMAC-SHA256(password text, salt_hex, iters, dklen) -> derived KEY handle
  * ===================================================================== */
-void *cx_pbkdf2_sha256(const char *password, const char *salt_hex, long iters, long dklen) {
+void *cx_pbkdf2_sha256(const char *password, const char *salt_hex, tycho_int iters, tycho_int dklen) {
     if (iters < 1 || dklen < 1 || dklen > 1024) return NULL;
     size_t slen;
     unsigned char *salt = hexdec(salt_hex, &slen);
@@ -189,13 +197,13 @@ void *cx_pbkdf2_sha256(const char *password, const char *salt_hex, long iters, l
 /* =====================================================================
  * Constant-time equality of two hex byte strings (e.g. MAC verify) -> 1 / 0
  * ===================================================================== */
-long cx_ct_equal(const char *a_hex, const char *b_hex) {
+tycho_int cx_ct_equal(const char *a_hex, const char *b_hex) {
     size_t an, bn;
     unsigned char *a = hexdec(a_hex, &an);
     if (!a) return 0;
     unsigned char *b = hexdec(b_hex, &bn);
     if (!b) { free(a); return 0; }
-    long eq = (an == bn && CRYPTO_memcmp(a, b, an) == 0) ? 1 : 0;
+    tycho_int eq = (an == bn && CRYPTO_memcmp(a, b, an) == 0) ? 1 : 0;
     free(a); free(b);
     return eq;
 }
@@ -316,12 +324,12 @@ done:
     return res;
 }
 
-long cx_ed25519_verify(const char *pub_hex, const char *msg_hex, const char *sig_hex) {
+tycho_int cx_ed25519_verify(const char *pub_hex, const char *msg_hex, const char *sig_hex) {
     size_t pl = 0, ml = 0, gl = 0;
     unsigned char *pub = hexdec(pub_hex, &pl);
     unsigned char *msg = hexdec(msg_hex, &ml);
     unsigned char *sig = hexdec(sig_hex, &gl);
-    long ok = 0;
+    tycho_int ok = 0;
     EVP_PKEY *pk = NULL;
     EVP_MD_CTX *md = NULL;
     if (!pub || !msg || !sig || pl != 32 || gl != 64) goto done;

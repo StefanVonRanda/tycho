@@ -13,10 +13,18 @@
 #include <png.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+/* int64-migration (Phase 3): Tycho `int` lowers to tycho_int (int64_t) in the
+ * emitted program; this shim is a separate translation unit, so it defines the
+ * same type to match the FFI ABI on ILP32/LLP64, not just LP64. */
+#ifndef TYCHO_INT_T
+#define TYCHO_INT_T
+typedef int64_t tycho_int;
+#endif
 
-typedef struct { long w, h; unsigned char *rgba; size_t nbytes; } Img;
+typedef struct { tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
 
-void *imgx_decode(const unsigned char *data, long len) {
+void *imgx_decode(const unsigned char *data, tycho_int len) {
     if (len <= 0) return NULL;
     png_image image;
     memset(&image, 0, sizeof image);
@@ -31,18 +39,18 @@ void *imgx_decode(const unsigned char *data, long len) {
     }
     Img *im = (Img *)malloc(sizeof *im);
     if (!im) { free(buf); return NULL; }
-    im->w = (long)image.width;
-    im->h = (long)image.height;
+    im->w = (tycho_int)image.width;
+    im->h = (tycho_int)image.height;
     im->rgba = buf;
     im->nbytes = nbytes;
     return im;                                       /* png_image_free not needed after finish_read */
 }
 
-long imgx_width(void *p)  { return p ? ((Img *)p)->w : 0; }
-long imgx_height(void *p) { return p ? ((Img *)p)->h : 0; }
+tycho_int imgx_width(void *p)  { return p ? ((Img *)p)->w : 0; }
+tycho_int imgx_height(void *p) { return p ? ((Img *)p)->h : 0; }
 
 /* Copy the decoded RGBA out as `bytes` (out-param convention). */
-void imgx_pixels(void *p, unsigned char **out, long *outlen) {
+void imgx_pixels(void *p, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (!p) return;
@@ -51,7 +59,7 @@ void imgx_pixels(void *p, unsigned char **out, long *outlen) {
     if (!cp) return;
     memcpy(cp, im->rgba, im->nbytes);
     *out = cp;
-    *outlen = (long)im->nbytes;
+    *outlen = (tycho_int)im->nbytes;
 }
 
 void imgx_free(void *p) {
@@ -59,12 +67,12 @@ void imgx_free(void *p) {
 }
 
 /* Encode w*h RGBA pixels (plen must be >= w*h*4) to a PNG in memory. */
-void imgx_encode(const unsigned char *pixels, long plen, long w, long h,
-                 unsigned char **out, long *outlen) {
+void imgx_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho_int h,
+                 unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
     if (w <= 0 || h <= 0 || w > 100000 || h > 100000) return;   /* sane bounds, no overflow */
-    long need = w * h * 4;
+    tycho_int need = w * h * 4;
     if (plen < need) return;                                    /* fail closed: not enough pixels */
     png_image image;
     memset(&image, 0, sizeof image);
@@ -80,5 +88,5 @@ void imgx_encode(const unsigned char *pixels, long plen, long w, long h,
         free(buf); return;
     }
     *out = buf;
-    *outlen = (long)nbytes;
+    *outlen = (tycho_int)nbytes;
 }
