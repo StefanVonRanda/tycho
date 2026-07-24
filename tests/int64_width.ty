@@ -10,5 +10,5 @@ fn main():
     println(str(prod))             # 10000000000
     shifted := 1 << 40             # 1099511627776 -- bit past the 32-bit range
     println(str(shifted))          # 1099511627776
-    total := big + prod + shifted  # 16099511627776
-    println(str(total))            # 16099511627776
+    total := big + prod + shifted  # 1114511627776
+    println(str(total))            # 1114511627776

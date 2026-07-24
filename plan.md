@@ -707,7 +707,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
         `scripts/ci.sh` (verified absent) until 6a+6b make it green, so `make ci`
         and the pre-push hook are unaffected. Wiring it in is 6b's closing step.
 
-- [ ] **Phase 6c — follow-up discovered by 6a (scope-locked out of it): per-type hash emitters still narrow on ILP32**
+- [x] **Phase 6c — follow-up discovered by 6a (scope-locked out of it): per-type hash emitters still narrow on ILP32**
   - Raised by Phase 6a on 2026-07-24. 6a retyped the runtime's hash words, seeds
     and `mask` family to `uint64_t`, but the *per-type* hash helpers that each
     compiler EMITS for user structs / tuples / composite arrays still declare
@@ -731,6 +731,136 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
     `make fixpoint`, `make ilp32` — each its own command, paste each summary line.
 
+  - **DONE 2026-07-24.** Every emitted hash accumulator, seed and 64-bit constant
+    is now fixed-width. Line numbers below are the PRE-EDIT ones, re-verified
+    against the tree at `04a6357` (6a's filing was stale for the mask sites —
+    see the correction note).
+
+    **`src/tychoc.c` — 13 emitter sites (all `unsigned long` -> `uint64_t`, all
+    `…UL` 64-bit constants -> `UINT64_C(…)`):**
+    | site | old emitted text | new emitted text |
+    |---|---|---|
+    | `:10307` | `static unsigned long tycho_hash_S_%s(…);` | `static uint64_t …` |
+    | `:10311` | `static unsigned long tycho_hash_T%d(…);` | `static uint64_t …` |
+    | `:10346,10356,10370` | `static unsigned long tycho_arr_C%d_hash(…);` | `static uint64_t …` |
+    | `:10432-10433` | `static unsigned long tycho_hash_S_%s(…) {` / `unsigned long h = tycho_hash_k0;` | `uint64_t` both |
+    | `:10436` | `h = h * 1099511628211UL ^ …` | `h = h * UINT64_C(1099511628211) ^ …` |
+    | `:10445-10446` | tuple hash sig + `unsigned long h` | `uint64_t` both |
+    | `:10449` | `1099511628211UL` | `UINT64_C(1099511628211)` |
+    | `:10489-10492` | bounded[N]T hash: sig, `unsigned long h = 1469598103934665603UL`, `unsigned long e`, `* 1099511628211UL`, cast `(unsigned long)xs.v[i]` | `uint64_t` / `UINT64_C(1469598103934665603)` / `UINT64_C(1099511628211)` / `(uint64_t)xs.v[i]` |
+    | `:10521-10524` | fixed `[N]T` hash: same five spellings | same five, fixed-width |
+    | `:10587-10589` | composite-elem array hash: sig, `unsigned long h = tycho_hash_k0`, `1099511628211UL` | `uint64_t` / `UINT64_C(…)` |
+    | `:10623, 10628, 10665` | `unsigned long mask = (unsigned long)m…icap - 1` | `uint64_t mask = (uint64_t)m…icap - 1` |
+
+    **`compiler/tychoc0.ty` — 6 emitter sites, the same transform:**
+    | site | old | new |
+    |---|---|---|
+    | `:9386` (`gen_tuple_hash`) | `"static unsigned long " … " v) { unsigned long h = hash_k0;"` | `uint64_t` both |
+    | `:9389` | `" h = h * 1099511628211UL ^ "` | `" h = h * UINT64_C(1099511628211) ^ "` |
+    | `:9397` (`gen_arr_hash`) | `unsigned long` return + `unsigned long h` + `1099511628211UL` | `uint64_t` ×2 + `UINT64_C(…)` |
+    | `:10278` (`gen_struct_hash`) | `unsigned long` return + `unsigned long h = hash_k0` | `uint64_t` both |
+    | `:10281` | `1099511628211UL` | `UINT64_C(1099511628211)` |
+    | `:16026, 16031, 16036` | `static unsigned long <T>_hash(…);` prototypes | `static uint64_t …` |
+
+  - **Both compilers changed identically — but "identically" is SEMANTIC, not
+    byte-identical, and the phase brief's premise was wrong.** The two emitters
+    were never textually parallel: tychoc spells the helpers `tycho_hash_S_X` /
+    `tycho_hash_T%d` / `tycho_arr_C%d_hash` seeded from `tycho_hash_k0`, tychoc0
+    spells them `X_hash` / `Tup_*_hash` / `Arr_*_hash` seeded from `hash_k0`.
+    `compiler/fixpoint.sh:21` compares tychoc0 against ITSELF byte-for-byte
+    (`cmp cA.c cB.c`) and against tychoc only BEHAVIOURALLY (`:23-30`), so
+    cross-compiler byte-identity is not a gate and never held. What was applied
+    to both is the same transform on the same construct: every hash return type,
+    accumulator, element temp and 64-bit FNV constant is now fixed-width.
+  - **Correction to 6a's filing:** the emitted map `mask` was cited as pending in
+    BOTH compilers. Re-reading the tree showed tychoc0 `:10379-10380` was already
+    `uint64_t mask = (uint64_t)m…icap - 1` (6a fixed it there). Only
+    `src/tychoc.c:10623/10628/10665` still emitted `unsigned long mask`; retyping
+    them CLOSES a real cross-compiler divergence rather than adding one.
+
+  - **`-m32 -Wall -Wextra` on emitted C — before/after (RULE 5 evidence).**
+    Probes: `tests/{mapstructkey,maptuplekey,maparraykey,map_literal_composite_key,enum_key,generic_hashable}.ty`
+    plus a scratch `fixarrkey.ty` (a `[3]int` and a `bounded[4]int` map key) —
+    needed because NO tracked fixture reaches `src/tychoc.c:10489/10521`, the two
+    sites carrying the 64-bit FNV offset basis.
+
+    | | total warnings | `-Woverflow` / `-Wshift-count-overflow` | `unsigned long` in emitted C |
+    |---|---|---|---|
+    | before | 688 | **2** | present in all 7 probes |
+    | after  | 686 | **0** | **0 in all 7** |
+
+    The delta is exactly the two overflow warnings; the 686 residual are
+    pre-existing `-Wunused-function` (496), `-Wmisleading-indentation` (161) and
+    `-Wunused-parameter` (29), unchanged by this phase. The two that vanished
+    were the real defect, and gcc named the corruption precisely:
+
+    ```
+    fixarrkey.c:2502:23: warning: conversion from 'long long unsigned int' to
+      'long unsigned int' changes value from '1469598103934665603' to '1939669891' [-Woverflow]
+    fixarrkey.c:2591:23: warning: conversion from 'long long unsigned int' to
+      'long unsigned int' changes value from '1469598103934665603' to '1939669891' [-Woverflow]
+    ```
+
+    i.e. on ILP32 the FNV-1a offset basis was silently truncated to its low 32
+    bits, so `tycho_arr_C*_hash` for fixed/bounded array keys was seeded with a
+    DIFFERENT constant than on LP64. That is why the gates alone could not
+    distinguish this phase: a differently-seeded hash is still a well-defined
+    hash.
+
+  - **No golden shifted; the change is provably a no-op on LP64.** `git status`
+    after the edit lists exactly three modified files — `src/tychoc.c`,
+    `compiler/tychoc0.ty`, `tests/int64_width.ty` — and **zero** `.out`/
+    `.expected` files. Two independent reasons this had to hold:
+    1. `uint64_t` IS `unsigned long` on LP64, and `UINT64_C(x)` expands to the
+       same value as `xUL`; asserted by a compiled probe:
+       `_Static_assert(sizeof(uint64_t)==sizeof(unsigned long))` plus
+       `UINT64_C(1099511628211)==1099511628211UL` and
+       `UINT64_C(1469598103934665603)==1469598103934665603UL` — all pass. The
+       before/after emitted-C diff contains ONLY type and constant spellings.
+    2. Even where the hash VALUE does change (ILP32), no output can move:
+       `runtime/tycho_rt.c:1661` and `:1682-1686` state, and the code confirms,
+       that `keys()` / `for k in m` iterate in INSERTION order via the
+       `tycho_ord_*` linked list (`:1675-1678`), independent of bucket layout or
+       seed. 6a's "hash quality only" characterization is re-verified, not
+       assumed.
+
+  - **Comment sweep (6b's finding), comment-only:** `tests/int64_width.ty:13-14`
+    read `# 16099511627776` on both `total := big + prod + shifted` and its
+    `println`. The true sum is 5000000000 + 10000000000 + 1099511627776 =
+    **1114511627776**, which is what the tracked golden `tests/int64_width.out`
+    line 4 already contains. Both comments corrected; fixture code and golden
+    untouched.
+
+  - **Gate summary lines (each its own foreground command, 64-bit lanes run as
+    `env -u LD_PRELOAD` per the dev-shell `block-nnp.so` workaround):**
+    ```
+    make test      -> passed: 409   failed: 0 / all green
+    make corelib   -> corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make rtparity  -> env knobs 3 shared, diagnostics 27 shared, arena-stats rows 5 shared,
+                      0 allowlisted difference(s) each -- the two runtimes agree
+    make conc      -> conc: passed 36   failed 0
+    make fixpoint  -> ok B == C : tychoc0 reproduces itself byte-identically (34679 lines C)
+                      ok split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler
+                      fixpoint: all green
+    make ilp32     -> passed: 409   failed: 0 / all green
+    ```
+
+  - **Left alone deliberately (RULE 7, fail closed) — the only two
+    `unsigned long` spellings that survive a repo-wide grep of both compilers:**
+    - `compiler/tychoc0.ty:9908` — `hbox(Arena* ar, unsigned long n, void* src)`
+      feeds `n` straight to `amem`/`memcpy`. A byte count, libc-facing; a size,
+      not a hash word. Explicitly out of scope.
+    - `src/tychoc.c:3854` — `r = y >= 64 ? 0 : (long)((unsigned long)x << y);`
+      is tychoc's OWN constant folder for `<<`, i.e. host arithmetic inside the
+      compiler process, not emitted text. It is width-correct on every host the
+      compiler is actually built for today (`make ilp32` cross-compiles the
+      EMITTED programs with `-m32`; tychoc itself is always built 64-bit). It
+      would fold shifts wrongly only if tychoc were itself compiled ILP32.
+      **Appended below as Phase 8 rather than silently absorbed** (scope lock).
+    - `src/tychoc.c:1184` / `compiler/tychoc0.ty:2090,4277,4458` and the
+      `hi_udiv`/`hi_shl_u64` family (`tychoc0.ty:9857-9866,9881`) are the `u64`
+      TYPE's `unsigned long long` lowering — correct as written, untouched.
+
 - [ ] **Phase 7 — spec + spec-plan: mark the reference impl conformant**
   - Scope: update `docs/spec/appendix-f-impl-defined.md` F.3 — reference compilers
     now realize `int` via fixed-width 64-bit `tycho_int`, conform on LP64, LLP64,
@@ -741,3 +871,25 @@ to `run.sh` (that would blind the check for real link-order bugs).
     exists; #16's follow-up struck with commit citations.
   - Verify: `make spec-check`, `make check-links` — each its own command, paste
     each summary line; `git diff --stat` only `docs/`.
+
+- [ ] **Phase 8 — HOST portability of tychoc's own constant folder (discovered by 6c, scope-locked out of it)**
+  - Raised by Phase 6c on 2026-07-24 while sweeping emitted `unsigned long`.
+    Everything 6a/6b/6c fixed concerns the code the compilers EMIT. This is the
+    one remaining `unsigned long` in the compilers' own arithmetic:
+    - `src/tychoc.c:3854` — `r = y >= 64 ? 0 : (long)((unsigned long)x << y);`
+      inside tychoc's compile-time `<<` folder. On an ILP32 HOST `unsigned long`
+      is 32 bits, so folding `1 << 40` would yield 0 instead of 1099511627776 —
+      the compiler would miscompile a constant expression that the emitted code
+      (now `int64_t` throughout) handles correctly.
+  - **Severity: latent, zero impact today.** `make ilp32` cross-compiles the
+    EMITTED programs with `-m32`; tychoc itself is always built 64-bit, where
+    `unsigned long` is 64 bits and the fold is exact. This bites only if someone
+    builds the compiler for a 32-bit host. Deliberately not folded into 6c: 6c's
+    scope was emitted text, and a host-arithmetic change cannot be validated by
+    the `-m32` emitted-code gate that justified 6c.
+  - Fix: retype the fold to `(int64_t)((uint64_t)x << y)` (and audit the
+    neighbouring fold arms for the same `long`-width assumption). Check whether
+    `compiler/tychoc0.ty` has a matching fold that needs the same treatment.
+  - Done when: tychoc's constant folder makes no `sizeof(long)` assumption.
+  - Verify: `make test`, `make fixpoint`, `make ilp32`; ideally add a fixture
+    folding a >2^31 shift at compile time and confirm it is exact.

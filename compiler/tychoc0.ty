@@ -9383,10 +9383,10 @@ fn gen_tuple_eq(dc: Decls, ctx: Ctx, ty: string) -> string:
 fn gen_tuple_hash(dc: Decls, ctx: Ctx, ty: string) -> string:
     nm := "Tup_" + tup_suffix(ty)
     parts := tuple_parts(ty)
-    out := "static unsigned long " + nm + "_hash(" + nm + " v) { unsigned long h = hash_k0;"
+    out := "static uint64_t " + nm + "_hash(" + nm + " v) { uint64_t h = hash_k0;"
     i := 0
     for i < len(parts):
-        out = out + " h = h * 1099511628211UL ^ " + hash_field(dc, ctx, parts[i], "v.f" + str(i)) + ";"
+        out = out + " h = h * UINT64_C(1099511628211) ^ " + hash_field(dc, ctx, parts[i], "v.f" + str(i)) + ";"
         i = i + 1
     return out + " return h; }\n"
 
@@ -9394,7 +9394,7 @@ fn gen_tuple_hash(dc: Decls, ctx: Ctx, ty: string) -> string:
 # element hashes left-to-right (the multiply runs before the xor), seeded from hash_k0.
 fn gen_arr_hash(dc: Decls, ctx: Ctx, et: string) -> string:
     nm := "Arr_" + mangle(et)
-    return "static unsigned long " + nm + "_hash(" + nm + " x) { unsigned long h = hash_k0; for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ " + hash_field(dc, ctx, et, "x.data[i]") + "; return h; }\n"
+    return "static uint64_t " + nm + "_hash(" + nm + " x) { uint64_t h = hash_k0; for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ " + hash_field(dc, ctx, et, "x.data[i]") + "; return h; }\n"
 
 # Struct/tuple types directly embedded BY VALUE in struct/tuple `ty` (its fields/elements).
 # Those bodies must precede ty's. Enum/array/map/scalar fields are by pointer or emitted in
@@ -10275,10 +10275,10 @@ fn hash_field(dc: Decls, ctx: Ctx, ty: string, v: string) -> string:
 # struct and its field-swapped twin hash differently. Pairs with <nm>_eq.
 fn gen_struct_hash(dc: Decls, ctx: Ctx, sd: StructDef) -> string:
     nm := ust(sd.name)
-    out := "static unsigned long " + nm + "_hash(" + nm + " v) { unsigned long h = hash_k0;"
+    out := "static uint64_t " + nm + "_hash(" + nm + " v) { uint64_t h = hash_k0;"
     j := 0
     for j < len(sd.fields):
-        out = out + " h = h * 1099511628211UL ^ " + hash_field(dc, ctx, sd.fields[j].ty, "v." + uf(sd.fields[j].name)) + ";"
+        out = out + " h = h * UINT64_C(1099511628211) ^ " + hash_field(dc, ctx, sd.fields[j].ty, "v." + uf(sd.fields[j].name)) + ";"
         j = j + 1
     return out + " return h; }\n"
 
@@ -16023,17 +16023,17 @@ fn main():
     for i < len(prog.structs):
         out = out + "static int " + ust(prog.structs[i].name) + "_eq(" + ust(prog.structs[i].name) + " a, " + ust(prog.structs[i].name) + " b);\n"
         if struct_keyused(dc, ctx, ets, prog.structs[i].name):   # composite map key: forward-declare the deep hash so map slot fns (emitted earlier) can call it
-            out = out + "static unsigned long " + ust(prog.structs[i].name) + "_hash(" + ust(prog.structs[i].name) + " v);\n"
+            out = out + "static uint64_t " + ust(prog.structs[i].name) + "_hash(" + ust(prog.structs[i].name) + " v);\n"
         i = i + 1
     i = 0                                        # tuple deep-hash protos (keyed tuples): before any hash body, so struct/tuple hashes can reference each other
     for i < len(ets):
         if is_tuple(ets[i]) and struct_keyused(dc, ctx, ets, ets[i]):
-            out = out + "static unsigned long Tup_" + tup_suffix(ets[i]) + "_hash(Tup_" + tup_suffix(ets[i]) + " v);\n"
+            out = out + "static uint64_t Tup_" + tup_suffix(ets[i]) + "_hash(Tup_" + tup_suffix(ets[i]) + " v);\n"
         i = i + 1
     i = 0                                        # array deep-hash protos (arrays used as keys): before any hash body
     for i < len(ets):
         if not is_map(ets[i]) and not is_soa(ets[i]) and struct_keyused(dc, ctx, ets, "[" + ets[i] + "]"):
-            out = out + "static unsigned long Arr_" + mangle(ets[i]) + "_hash(Arr_" + mangle(ets[i]) + " x);\n"
+            out = out + "static uint64_t Arr_" + mangle(ets[i]) + "_hash(Arr_" + mangle(ets[i]) + " x);\n"
         i = i + 1
     # 4 + 5a. struct AND tuple bodies in topological order — a struct may embed a tuple by
     # value and a tuple may embed a struct, so a single dependency-ordered pass (not two

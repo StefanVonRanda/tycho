@@ -10304,11 +10304,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static S_%s tycho_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
         if (struct_keyused(STRUCT_TYPE(i)))   /* composite map key: deep hash (paired with tycho_eq_S_) */
-            fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v);\n", nm, nm);
+            fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v);\n", nm, nm);
     }
     for (int i = 0; i < g_ntuptypes; i++)           /* (4) tuple deep-hash prototypes (composite map keys; emitted before bodies so struct/tuple hashes can reference each other) */
         if (struct_keyused(T_TUP_BASE + i))
-            fprintf(o, "static unsigned long tycho_hash_T%d(TychoTup%d v);\n", i, i);
+            fprintf(o, "static uint64_t tycho_hash_T%d(TychoTup%d v);\n", i, i);
     for (int i = 0; i < g_nopttypes; i++)           /* (4) Option-copy prototypes */
         if (type_is_heap(g_opttypes[i].inner) && !has_typaram(T_OPT_BASE + i))
             fprintf(o, "static TychoOpt%d tycho_opt%d_copy(Arena *a, TychoOpt%d v);\n", i, i, i);
@@ -10343,7 +10343,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i))
-                fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+                fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
             continue;
         }
         if (g_arrtypes[i].size > 0) {                 /* fixed [N]T: only read/copy/eq -- no growth */
@@ -10353,7 +10353,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
             fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
             if (struct_keyused(T_ARRC_BASE + i))
-                fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+                fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
             continue;
         }
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, tycho_int);\n", i, i);
@@ -10367,7 +10367,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_copy(Arena*, TychoArrC%d);\n", i, i, i);
         fprintf(o, "static int tycho_arr_C%d_eq(TychoArrC%d, TychoArrC%d);\n", i, i, i);
         if (struct_keyused(T_ARRC_BASE + i))   /* composite map key: deep hash */
-            fprintf(o, "static unsigned long tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
+            fprintf(o, "static uint64_t tycho_arr_C%d_hash(TychoArrC%d);\n", i, i);
     }
     for (int i = 0; i < g_nmaptypes; i++) {         /* (4) composite-map copy/eq prototypes: a struct/array/tuple FIELD of composite-map type calls these in its copy/eq body, which is emitted before the map family itself (7a') -- without the proto the struct copier sees an implicit declaration */
         if (has_typaram(T_MAPC_BASE + i)) continue;   /* generics: a `[$K: $V]` template map -- transient, never emitted */
@@ -10429,11 +10429,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_structs[i].generic) continue;
         if (!struct_keyused(STRUCT_TYPE(i))) continue;
         StructDef *sd = &g_structs[i];
-        fprintf(o, "static unsigned long tycho_hash_S_%s(S_%s v) {\n", sd->name, sd->name);
-        fprintf(o, "    unsigned long h = tycho_hash_k0;\n");
+        fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v) {\n", sd->name, sd->name);
+        fprintf(o, "    uint64_t h = tycho_hash_k0;\n");
         for (int j = 0; j < sd->nfields; j++) {
             char *vf = sfmt("v.f_%s", sd->fields[j].name);
-            fprintf(o, "    h = h * 1099511628211UL ^ %s;\n", gen_hash(sd->fields[j].type, vf));
+            fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(sd->fields[j].type, vf));
         }
         fprintf(o, "    return h;\n}\n\n");
     }
@@ -10442,11 +10442,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * access is ._0/._1. Same seeded fold as the struct hash. */
     for (int i = 0; i < g_ntuptypes; i++) {
         if (!struct_keyused(T_TUP_BASE + i)) continue;
-        fprintf(o, "static unsigned long tycho_hash_T%d(TychoTup%d v) {\n", i, i);
-        fprintf(o, "    unsigned long h = tycho_hash_k0;\n");
+        fprintf(o, "static uint64_t tycho_hash_T%d(TychoTup%d v) {\n", i, i);
+        fprintf(o, "    uint64_t h = tycho_hash_k0;\n");
         for (int j = 0; j < tup_n(T_TUP_BASE + i); j++) {
             char *vf = sfmt("v._%d", j);
-            fprintf(o, "    h = h * 1099511628211UL ^ %s;\n", gen_hash(tup_elem(T_TUP_BASE + i, j), vf));
+            fprintf(o, "    h = h * UINT64_C(1099511628211) ^ %s;\n", gen_hash(tup_elem(T_TUP_BASE + i, j), vf));
         }
         fprintf(o, "    return h;\n}\n\n");
     }
@@ -10486,10 +10486,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.v[i]", "y.v[i]"));
             if (struct_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
-                    "static unsigned long tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
-                    "    unsigned long h = 1469598103934665603UL;\n"
-                    "    for (tycho_int i = 0; i < xs.len; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
-                    "    return h;\n}\n", i, i, "(unsigned long)xs.v[i]");
+                    "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
+                    "    uint64_t h = UINT64_C(1469598103934665603);\n"
+                    "    for (tycho_int i = 0; i < xs.len; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
+                    "    return h;\n}\n", i, i, "(uint64_t)xs.v[i]");
             }
             continue;
         }
@@ -10518,10 +10518,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "    return 1;\n}\n\n", i, i, i, n, gen_eq(et, "x.v[i]", "y.v[i]"));
             if (struct_keyused(T_ARRC_BASE + i)) {
                 fprintf(o,
-                    "static unsigned long tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
-                    "    unsigned long h = 1469598103934665603UL;\n"
-                    "    for (tycho_int i = 0; i < %ld; i++) { unsigned long e = %s; h = (h ^ e) * 1099511628211UL; }\n"
-                    "    return h;\n}\n", i, i, n, "(unsigned long)xs.v[i]");
+                    "static uint64_t tycho_arr_C%d_hash(TychoArrC%d xs) {\n"
+                    "    uint64_t h = UINT64_C(1469598103934665603);\n"
+                    "    for (tycho_int i = 0; i < %ld; i++) { uint64_t e = %s; h = (h ^ e) * UINT64_C(1099511628211); }\n"
+                    "    return h;\n}\n", i, i, n, "(uint64_t)xs.v[i]");
             }
             continue;
         }
@@ -10584,9 +10584,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    return 1;\n}\n\n", i, i, i, gen_eq(et, "x.data[i]", "y.data[i]"));
         if (struct_keyused(T_ARRC_BASE + i))   /* composite-element array used as a (nested) map key: order-sensitive deep hash */
             fprintf(o,
-                "static unsigned long tycho_arr_C%d_hash(TychoArrC%d x) {\n"
-                "    unsigned long h = tycho_hash_k0;\n"
-                "    for (tycho_int i = 0; i < x.len; i++) h = h * 1099511628211UL ^ %s;\n"
+                "static uint64_t tycho_arr_C%d_hash(TychoArrC%d x) {\n"
+                "    uint64_t h = tycho_hash_k0;\n"
+                "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ %s;\n"
                 "    return h;\n}\n\n", i, i, gen_hash(et, "x.data[i]"));
     }
     /* (7a') composite-map ops [string: V] — a parameterized copy of the embedded
@@ -10620,12 +10620,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
         fprintf(o,
             "static tycho_int tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
-            "    if (m.icap == 0) return -1; unsigned long mask = (unsigned long)m.icap - 1; tycho_int i = (tycho_int)(%s & mask); int e;\n"
+            "    if (m.icap == 0) return -1; uint64_t mask = (uint64_t)m.icap - 1; tycho_int i = (tycho_int)(%s & mask); int e;\n"
             "    while ((e = m.idx[i]) != 0) { if (%s) return e - 1; i = (tycho_int)((i + 1) & mask); }\n"
             "    return -1;\n}\n", i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m.ekeys[e - 1]", "k"));
         fprintf(o,
             "static void tycho_mapc%d_idxput(TychoMapC%d *m, tycho_int ei) {\n"
-            "    unsigned long mask = (unsigned long)m->icap - 1; tycho_int i = (tycho_int)(%s & mask);\n"
+            "    uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(%s & mask);\n"
             "    while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask); m->idx[i] = (int)(ei + 1);\n}\n",
             i, i, mapc_khash(keyt, "m->ekeys[ei]"));
         fprintf(o,
@@ -10662,7 +10662,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, kcopy, ct, i);
         fprintf(o,
             "static void tycho_mapc%d_del(TychoMapC%d *m, %s) {\n"
-            "    if (m->icap == 0) return; unsigned long mask = (unsigned long)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
+            "    if (m->icap == 0) return; uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
             "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n"
             "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n"
             "    tycho_int g = found;\n"
