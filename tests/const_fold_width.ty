@@ -1,0 +1,29 @@
+# HOST-width conformance fixture for the COMPILER'S OWN constant folder.
+#
+# Every value below is produced at COMPILE TIME by `const_fold` (a top-level
+# `const` must fold to a single literal or the compiler rejects it), and every
+# one exceeds 2^31. If the folder does its arithmetic in C `long` instead of a
+# fixed 64-bit type, a compiler HOSTED on an ILP32 machine truncates them --
+# `1 << 40` folds to 256 (1 << (40 mod 32)) rather than 1099511627776. That is a
+# miscompile the emitted code cannot recover from: the wrong number is baked
+# into the generated C as a literal.
+#
+# Measured before the fix with a `gcc -m32`-hosted tychoc: the emitted C read
+# `tycho_int_to_str(&_t, 256LL)`. After the fix: `1099511627776LL`. On an LP64
+# host both spellings were always 1099511627776LL, which is exactly why the
+# `make ilp32` gate (which cross-compiles the EMITTED program, not the compiler)
+# cannot see this class of bug.
+const SHIFT_BIG  = 1 << 40                  # 1099511627776
+const SHIFT_HUGE = 1 << 62                  # 4611686018427387904
+const MUL_BIG    = 100000 * 100000          # 10000000000
+const ADD_BIG    = 4000000000 + 1000000000  # 5000000000
+const MASK_BIG   = (1 << 40) - 1            # 1099511627775
+const SHR_BIG    = (1 << 62) >> 20          # 4398046511104
+
+fn main():
+    println(str(SHIFT_BIG))     # 1099511627776
+    println(str(SHIFT_HUGE))    # 4611686018427387904
+    println(str(MUL_BIG))       # 10000000000
+    println(str(ADD_BIG))       # 5000000000
+    println(str(MASK_BIG))      # 1099511627775
+    println(str(SHR_BIG))       # 4398046511104

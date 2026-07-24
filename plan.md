@@ -619,7 +619,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `# 16099511627776`, but the correct sum (and the tracked golden) is
     `1114511627776`. Comment only; the golden and the assertion are right.
 
-- [ ] **Phase 6 — add the `make ilp32` gate (the real proof) + lock a fixture**
+- [x] **Phase 6 — add the `make ilp32` gate (the real proof) + lock a fixture**
   - Scope: add an `ilp32` target to `Makefile` that emits the fixture suite's C
     with the Phase-4 compiler and compiles+runs it under `-m32` (ILP32), comparing
     against existing goldens — they must match bit-for-bit because `int` is now
@@ -706,6 +706,37 @@ to `run.sh` (that would blind the check for real link-order bugs).
       - `ilp32` is a standalone target, deliberately NOT wired into
         `scripts/ci.sh` (verified absent) until 6a+6b make it green, so `make ci`
         and the pre-push hook are unaffected. Wiring it in is 6b's closing step.
+  - **CLOSED (2026-07-24) — ticked by Phase 8's gate sweep. The HALTED narrative
+    above stands unedited; this is only the re-run it asked for.**
+    - This phase halted on a RED `make ilp32` and instructed: "Re-run this phase's
+      Verify block after 6a+6b." Its infrastructure (the `ilp32` target, the
+      `NO_ASAN` knob in `tests/run.sh`, the fixture + golden) was committed at the
+      time and is unchanged. Nothing was re-run to *make* it pass and no gate was
+      weakened — the three defects the gate caught were fixed by the corrective
+      phases it spawned:
+      - `38b04ba` — **6a**: the 8 ILP32-truncating sites, incl. `abort_reserve_range`
+        (a memory-safety guard that was failing OPEN).
+      - `04a6357` — **6b**: the LP64 `100000 * 100000` tychoc0 miscompile that had
+        forced the fixture to be parked in `tests/ilp32/`; the fixture moved back
+        into `tests/` and `fixpoint`'s `FAIL int64_width.ty (B differs from the C
+        compiler)` line is gone.
+      - `8c754bb` — **6c**: the emitted per-type hash accumulators narrowing on ILP32.
+    - **Verify block re-run (one sweep, shared with Phase 8 — these are the same
+      three commands, reported once, not re-run per phase):**
+      - `make ilp32` → `passed: 410   failed: 0` · `all green` — the gate that was
+        RED at 400/8 is green, and non-vacuously so (`int64_width` is back inside
+        `tests/*.ty` and really is rebuilt + executed under 32-bit `long`).
+      - `make test` → `passed: 410   failed: 0` · `all green`
+      - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically
+        (34679 lines C)` · `fixpoint: all green (self-hosting; B==C; single files +
+        packages; tychoc0 self-split dogfood)`
+    - Counts read 410 (not the 409 recorded when 6c landed) purely because Phase 8
+      added `tests/const_fold_width.ty` in the same commit. No golden was
+      re-recorded: `git status --porcelain` shows zero modified `.out` files.
+    - The one loose end this phase logged — "wiring it in is 6b's closing step" —
+      is **already done**, verified not assumed: `scripts/ci.sh:37-38` now runs
+      `make -s ilp32` as step `[2b/19]`. So the gate is not merely green, it is
+      enforced by `make ci` and the pre-push hook. Nothing is left outstanding.
 
 - [x] **Phase 6c — follow-up discovered by 6a (scope-locked out of it): per-type hash emitters still narrow on ILP32**
   - Raised by Phase 6a on 2026-07-24. 6a retyped the runtime's hash words, seeds
@@ -994,7 +1025,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     bookkeeping action belonging to whoever re-runs that Verify block, not to this
     docs phase.
 
-- [ ] **Phase 8 — HOST portability of tychoc's own constant folder (discovered by 6c, scope-locked out of it)**
+- [x] **Phase 8 — HOST portability of tychoc's own constant folder (discovered by 6c, scope-locked out of it)**
   - Raised by Phase 6c on 2026-07-24 while sweeping emitted `unsigned long`.
     Everything 6a/6b/6c fixed concerns the code the compilers EMIT. This is the
     one remaining `unsigned long` in the compilers' own arithmetic:
@@ -1015,3 +1046,108 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Done when: tychoc's constant folder makes no `sizeof(long)` assumption.
   - Verify: `make test`, `make fixpoint`, `make ilp32`; ideally add a fixture
     folding a >2^31 shift at compile time and confirm it is exact.
+  - **DONE (2026-07-24) — and the ILP32-host bug was REPRODUCED, not just argued.**
+    - **The defect was WIDER than the one line this phase named.** 6c reported the
+      `unsigned long` cast at (then) `src/tychoc.c:3854`. Reading the folder end to
+      end showed the cast is only the last link: the compile-time integer *value*
+      travels `lexer accumulator -> Tok.ival -> Expr.ival -> fold locals -> emitted
+      literal`, and **every one of those was C `long`**. Fixing only the cast would
+      have been measurably useless — `n->ival = r` would truncate straight back on
+      an ILP32 host. All five links were retyped to fixed-width `int64_t`:
+
+      | site (post-edit line) | old | new |
+      |---|---|---|
+      | `src/tychoc.c:23-24` | *(no `<stdint.h>`/`<inttypes.h>`)* | both `#include`d |
+      | `src/tychoc.c:130` `Tok.ival` | `long    ival;` | `int64_t ival;` |
+      | `src/tychoc.c:294,299` lexer literal accumulator | `long v = 0;` / `v > (LONG_MAX - d) / 10` | `int64_t v = 0;` / `v > (INT64_MAX - d) / 10` |
+      | `src/tychoc.c:1307` `Expr.ival` | `long     ival;` | `int64_t  ival;` |
+      | `src/tychoc.c:3851` fold locals (**all arms**, not just `<<`) | `long x = a->ival, y = b->ival, r;` | `int64_t x = a->ival, y = b->ival, r;` |
+      | `src/tychoc.c:3862` the `<<` arm | `r = y >= 64 ? 0 : (long)((unsigned long)x << y);` | `r = y >= 64 ? 0 : (int64_t)((uint64_t)x << y);` |
+
+      Retyping the locals is what makes the **neighbouring arms** (`+ - * / % & \| ^ >>`)
+      width-safe too; the `<<` arm additionally needed its explicit cast pair fixed.
+    - **Format-string fallout, found by compiling `-m32` with `-Wall -Wextra`.**
+      `int64_t` is `long` on LP64 but `long long` on ILP32, so every `%ld` consuming
+      `ival` becomes UB there. `-Wformat` caught 2 (`die_at`, lines 4508/4510); the
+      other **7 are invisible to the compiler** because `sfmt` is an unchecked
+      vararg helper — they were found by grep, not by the build, and they are the
+      sites that bake the literal into the emitted C (`8354, 8355, 8359, 8360,
+      8372, 8413, 8815`). All 9 now use `%lld` + an explicit `(long long)` cast,
+      which is correct on **every** data model. On LP64 the printed digits are
+      byte-identical, which is why no golden moved.
+    - **`compiler/tychoc0.ty` needs NO change — verified by reading it, not assumed.**
+      `fold_ii` (`compiler/tychoc0.ty:2975-3005`) does its arithmetic in Tycho `int`,
+      which *is* `int64_t` by construction, and stores results as **strings**
+      (`return EInt(str(x << y), line)` at `:3000`) — there is no `long` anywhere in
+      the path. Its `<<` lowers to the runtime helper `hi_shl_i`, emitted at
+      `compiler/tychoc0.ty:9859` as `(tycho_int)((uint64_t)x << n)` — already the
+      exact shape Phase 8 gives tychoc. tychoc0 is host-width-immune for free.
+    - **ILP32-HOST BUILD: ATTEMPTED AND IT WORKED — this is measured, not argued.**
+      `CC` flows straight through (`Makefile:7 CC ?= cc`, `Makefile:31-32
+      $(CC) $(CFLAGS) -Ibuild src/tychoc.c -o tychoc`), so tychoc itself builds
+      32-bit with `gcc -m32 -O2 -fwrapv -Wall -Wextra -std=c11 -Ibuild src/tychoc.c`.
+      It links (tychoc needs only libc) and both hosts now emit **zero** new
+      warnings — the 3 residual `missing initializer for field 'is_sink'` warnings
+      are pre-existing and byte-identical on 64-bit and 32-bit.
+      Control experiment on `const BIG = 1 << 40`, reading the emitted C:
+
+      | tychoc host | before the fix | after the fix |
+      |---|---|---|
+      | LP64 (`cc`) | `tycho_int_to_str(&_t, 1099511627776LL)` | `tycho_int_to_str(&_t, 1099511627776LL)` |
+      | **ILP32 (`gcc -m32`)** | **`tycho_int_to_str(&_t, 256LL)`** ← miscompile | `tycho_int_to_str(&_t, 1099511627776LL)` |
+
+      `256` is `1 << (40 mod 32)` — the shift count wrapping against a 32-bit
+      `unsigned long`, exactly the failure 6c predicted. **This is genuine
+      ILP32-host validation: the bug was reproduced on a 32-bit-hosted compiler and
+      the fix removed it.** It confirms the phase's premise too — LP64 output is
+      unchanged in both columns, so no LP64 gate could ever have caught this.
+    - **Fixture `tests/const_fold_width.ty` + golden `tests/const_fold_width.out`.**
+      Six top-level `const`s, all > 2^31, exercising `<<` (x2), `*`, `+`, `-` and
+      `>>`. A top-level `const` MUST fold to a single literal or tychoc rejects it
+      (`parse_const` -> `const_fold` -> `is_literal_expr`), so the folder is
+      guaranteed to be on the path.
+    - **The fixture is NON-VACUOUS — checked, not assumed.** Emitted C contains all
+      six values as folded literals (`1099511627776LL`, `4611686018427387904LL`,
+      `10000000000LL`, `5000000000LL`, `1099511627775LL`, `4398046511104LL`) and
+      **`grep -c 'hi_shl_i(' == 0`** — zero runtime shift helpers, so the constants
+      really are computed by the compiler's folder, not deferred to run time. The
+      `-m32`-hosted tychoc emits all six identically (6/6 match).
+    - **Gates (one sweep, each run once, `env -u LD_PRELOAD` on the 64-bit lanes):**
+      - `make test` → `passed: 410   failed: 0` / `all green` (409 -> 410: the new fixture)
+      - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+      - `make rtparity` → `rtparity: the two runtimes agree on env knobs, diagnostics and arena stats` (27 diagnostics / 5 arena-stats rows, 0 differences)
+      - `make conc` → `conc: passed 36   failed 0`
+      - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically (34679 lines C)` / `fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)`
+      - `make ilp32` → `passed: 410   failed: 0` / `all green`
+    - **No golden was re-recorded.** `git status --porcelain` after the sweep:
+      `M src/tychoc.c`, `?? tests/const_fold_width.ty`, `?? tests/const_fold_width.out`
+      — zero modified `.out` files. The `%ld`->`%lld` sweep is provably output-neutral
+      on LP64, and `fixpoint`'s byte-identical B==C is the strongest witness.
+    - **Assumption record (RULE 13).** Verified: the value path is width-fixed
+      end to end on both hosts, by reproduction. Not verified: tychoc has never been
+      *run* as a 32-bit binary across the whole suite — `make ilp32` still
+      cross-compiles the EMITTED programs with a 64-bit-hosted tychoc, and the
+      32-bit-hosted tychoc was exercised only on the two fold fixtures above. Risk
+      if wrong: some *other* host-width assumption outside the constant folder
+      (e.g. `long` used for sizes/offsets — `arrc_sized` `:658`, `fixarr_size` `:668`,
+      `sizeparam_enc` `:707` all still take `long`) could bite a 32-bit-hosted build. Those
+      are size/index quantities, not tycho `int` values, so they are not part of
+      this phase's defect; logged as Phase 9 rather than silently absorbed (RULE 6
+      scope lock).
+
+- [ ] **Phase 9 — (discovered by Phase 8, NOT fixed there) sweep the remaining host `long`s outside the value path**
+  - Phase 8 made the compile-time *integer value* path width-fixed and proved it on
+    a `-m32`-hosted tychoc. It deliberately did NOT touch the other host `long`s,
+    which carry **sizes/indices**, not tycho `int` values: `ArrType.size`
+    (`src/tychoc.c:640`), `arrc_sized_b`/`arrc_sized`/`fixarr_of`/`bounded_of`
+    (`:645,658,660,661`), `bounded_cap`/`fixarr_size` (`:663,668`), `sizeparam_enc`/
+    `sizeparam_id`/`g_sizebinds` (`:707,715,718`), `GInst.spvals` (`:4024`).
+  - Why it was left: on an ILP32 host these are 32-bit, which is ample for an array
+    capacity or a tuple arity, so there is no known miscompile — unlike the value
+    path, where a real one was reproduced. Changing them is a wide, low-yield diff
+    with its own `%ld` fallout, and Phase 8's scope was the constant folder.
+  - Done when: either they are retyped to a fixed width, or a comment at
+    `src/tychoc.c:640` records the deliberate decision that sizes stay host-`long`
+    and why that is safe.
+  - Verify: `make test`, `make fixpoint`, `make ilp32` green; plus a `gcc -m32`
+    -hosted tychoc build with `-Wall -Wextra` showing no new warnings.

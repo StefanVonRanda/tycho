@@ -20,6 +20,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <dirent.h>
 #include <unistd.h>
 
@@ -125,7 +127,8 @@ typedef enum {
 typedef struct {
     TokKind kind;
     char   *text;   /* identifier name, or raw string contents */
-    long    ival;
+    int64_t ival;   /* HOST-WIDTH-SAFE: fixed 64-bit, never `long` — tycho `int` is 64-bit
+                     * by spec, so an ILP32 host must still carry every literal exactly. */
     int     line;
     double  fval;   /* TK_FLOAT literal value */
     int     col;    /* 1-based column of the token start, for the error caret (0 = unknown) */
@@ -288,10 +291,12 @@ static TokVec lex(const char *src) {
                     double dv = strtod(s, NULL);
                     tv_push(&out, (Tok){TK_FLOAT, NULL, 0, line, dv, tcol});
                 } else {
-                    long v = 0;
+                    int64_t v = 0;      /* fixed 64-bit, not `long`: on an ILP32 host a
+                                         * `long` accumulator would reject every literal
+                                         * above 2^31 that tycho `int` must represent. */
                     for (const char *q = s; q < p; q++) {
                         int d = *q - '0';
-                        if (v > (LONG_MAX - d) / 10) die_at(line, "integer literal out of range");
+                        if (v > (INT64_MAX - d) / 10) die_at(line, "integer literal out of range");
                         v = v * 10 + d;
                     }
                     tv_push(&out, (Tok){TK_INT, NULL, v, line, 0, tcol});
@@ -1299,7 +1304,7 @@ struct Expr {
     ExprKind kind;
     Type     type;     /* filled in by resolver */
     int      line;
-    long     ival;     /* E_INT / E_BOOL */
+    int64_t  ival;     /* E_INT / E_BOOL — fixed 64-bit, host-width-independent */
     double   fval;     /* E_FLOAT */
     char    *sval;     /* E_STR contents / E_IDENT name / E_CALL callee */
     TokKind  op;       /* E_BINOP */
@@ -3840,7 +3845,10 @@ static Expr *const_fold(Expr *e, int refs) {
     }
     Expr *a = const_fold(e->lhs, refs), *b = const_fold(e->rhs, refs);
     if (a->kind != E_INT || b->kind != E_INT) return e;   /* int-only const arithmetic */
-    long x = a->ival, y = b->ival, r;
+    /* HOST WIDTH: every fold arm runs in fixed 64-bit, never in `long`. tycho `int` is
+     * 64-bit two's-complement by spec, so a compiler hosted on an ILP32 machine (where
+     * `long` is 32 bits) must still fold `1 << 40` to 1099511627776, not truncate it. */
+    int64_t x = a->ival, y = b->ival, r;
     switch (e->op) {
         case TK_PLUS:    r = x + y; break;
         case TK_MINUS:   r = x - y; break;
@@ -3851,7 +3859,7 @@ static Expr *const_fold(Expr *e, int refs) {
         case TK_PIPE:    r = x | y; break;
         case TK_CARET:   r = x ^ y; break;
         case TK_SHL:     if (y < 0) die_at(e->line, "const expression shifts by a negative count");
-                         r = y >= 64 ? 0 : (long)((unsigned long)x << y); break;
+                         r = y >= 64 ? 0 : (int64_t)((uint64_t)x << y); break;
         case TK_SHR:     if (y < 0) die_at(e->line, "const expression shifts by a negative count");
                          r = y >= 64 ? 0 : x >> y; break;
         default: return e;
@@ -4497,9 +4505,9 @@ static Type resolve_expr_inner(Expr *e) {
             g_place = _place;                  /* t.i is a place iff t is (spine) */
             Type bt = resolve_expr(e->lhs);
             if (!IS_TUP(bt))
-                die_at(e->line, "tuple index .%ld on a non-tuple value (%s)", e->ival, type_name(bt));
+                die_at(e->line, "tuple index .%lld on a non-tuple value (%s)", (long long)e->ival, type_name(bt));
             if (e->ival < 0 || e->ival >= tup_n(bt))
-                die_at(e->line, "tuple index %ld out of range (the tuple has %d elements)", e->ival, tup_n(bt));
+                die_at(e->line, "tuple index %lld out of range (the tuple has %d elements)", (long long)e->ival, tup_n(bt));
             return e->type = tup_elem(bt, (int)e->ival);
         }
         case E_ORRETURN: {   /* unwrap Ok(v)/Some(v) to v, or short-circuit the enclosing fn with Err(e)/None */
@@ -8343,13 +8351,13 @@ static char *gen_expr(Expr *e, const char *arena) {
             /* u32/u64 literals need an unsigned C suffix: an unadorned `...L` is signed
              * long, so `u32_var + 3000000000L` would promote to signed 64-bit and wrap at
              * 2^64, not 2^32. `U`/`ULL` keep the arithmetic at the value's width. */
-            if (e->type == T_U32) return sfmt("%ldU", e->ival);
-            if (e->type == T_U64) return sfmt("%ldULL", e->ival);
+            if (e->type == T_U32) return sfmt("%lldU", (long long)e->ival);
+            if (e->type == T_U64) return sfmt("%lldULL", (long long)e->ival);
             /* `LL` (C long long, >= 64-bit on EVERY data model), not `L`: a plain
              * `L` is 32-bit under ILP32/LLP64, so `100000L * 100000L` truncates in
              * the multiply -- before the store into the 64-bit destination. */
-            return sfmt("%ldLL", e->ival);
-        case E_CHAR: return sfmt("%ldLL", e->ival);  /* a byte value carried as tycho_int */
+            return sfmt("%lldLL", (long long)e->ival);
+        case E_CHAR: return sfmt("%lldLL", (long long)e->ival);  /* a byte value carried as tycho_int */
         case E_FLOAT: {
             /* %.17g round-trips the double exactly; ensure the C literal reads
              * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is
@@ -8361,7 +8369,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (*q == '.' || *q == 'e' || *q == 'E' || *q == 'n' || *q == 'i') { isfloaty = 1; break; }
             return isfloaty ? sfmt("%s", b) : sfmt("%s.0", b);
         }
-        case E_BOOL: return sfmt("%ld", e->ival);
+        case E_BOOL: return sfmt("%lld", (long long)e->ival);
         case E_NULL: return sfmt("((void*)0)");
         case E_STR:  /* a length-headered, interned-once copy (cached per occurrence) */
             return sfmt("({ static char *_l = 0; if (!_l) _l = tycho_str_intern(\"%s\"); _l; })", e->sval);
@@ -8402,7 +8410,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s }", out);
         }
         case E_TUPIDX:   /* t.0 -> (t)._0 */
-            return sfmt("((%s)._%ld)", gen_expr(e->lhs, arena), e->ival);
+            return sfmt("((%s)._%lld)", gen_expr(e->lhs, arena), (long long)e->ival);
         case E_LAMBDA: {   /* closure creation: {env, thunk}; the env holds the captures, in the current scope arena */
             LamInfo *li = &g_laminfo[e->ival];
             int fid = FUNC_ID(li->ftype), id = (int)e->ival;
@@ -8804,7 +8812,7 @@ static char *gen_lvalue(Expr *e, const char *arena) {
         return sfmt("((%s).f_%s)", gen_lvalue(e->lhs, arena), e->sval);
     }
     if (e->kind == E_TUPIDX)
-        return sfmt("((%s)._%ld)", gen_lvalue(e->lhs, arena), e->ival);
+        return sfmt("((%s)._%lld)", gen_lvalue(e->lhs, arena), (long long)e->ival);
     if (e->kind == E_INDEX) {
         if (is_map(e->lhs->type)) {   /* m[k] place: find-or-insert, deref the value slot (#2) */
             Expr *root = e->lhs;
