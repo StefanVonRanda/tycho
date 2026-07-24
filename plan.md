@@ -369,6 +369,106 @@ to `run.sh` (that would blind the check for real link-order bugs).
         (34679 lines C)` / `fixpoint: all green`.
     - Only plan.md changed this phase (this DONE block); no source touched.
 
+- [ ] **Phase 6a — CORRECTIVE (escalated from Phase 6): runtime int→string truncates on ILP32**
+  - Raised by Phase 6's new `make ilp32` gate on 2026-07-24. This is a **missed
+    INT-SEMANTIC site from Phase 2** (runtime migration), invisible on LP64.
+  - **Root cause, generalized:** Phase 2 protected the whole `unsigned long`
+    family as NON-INT (hash/mask). That over-protected. `unsigned long` is
+    **32 bits on ILP32/LLP64**, so *every* use of it that holds a 64-bit quantity
+    narrows there — whether the quantity is a Tycho int, a hash word, or a
+    capacity bound. `runtime/tycho_rt.c` has 46 `unsigned long` lines (vs 7
+    `unsigned long long`); tychoc0's emitted runtime carries 8 of the casts.
+  - **Confirmed-broken sites (each observed failing, not inferred):**
+    1. `runtime/tycho_rt.c:1203` (+ parity copy `compiler/tychoc0.ty:9880`, the
+       emitted `i2s(...)`) — `unsigned long u = n < 0 ? -(unsigned long)n :
+       (unsigned long)n;`. The parameter is correctly `tycho_int`, but the
+       magnitude narrows, so **every printed int above 2^32 is reduced mod 2^32**.
+       This alone accounts for 7 of the 8 `make ilp32` failures.
+    2. `runtime/tycho_rt.c:196` — `tycho_cap_check`:
+       `if (n < 0 || (unsigned long)n > (size_t)-1 / elem)`. **This guard FAILS
+       OPEN on ILP32.** `reserve(a, 2305843009213693953)` (= 2^61+1) narrows to
+       `1`, the bound test passes, and the very heap-overflow the guard exists to
+       stop proceeds silently. `tests/abort/reserve_range.ty` stops aborting →
+       `FAIL abort_reserve_range (runtime abort did not fire (exit 0))`. Treat as
+       the highest-severity item here: it is a memory-safety guard, not a format.
+    3. `runtime/tycho_rt.c:1700-1736` — siphash13's 64-bit words are
+       `unsigned long`, so `(unsigned long)in[4] << 32 … << 56` shift past the
+       type width on ILP32 (gcc `-Wshift-count-overflow` fires on every one), and
+       the seeds `0x736f6d6570736575UL` / `0x646f72616e646f6dUL` (`:1688-1689`)
+       and `0x9e3779b97f4a7c15UL` (`:2027`) truncate (gcc `-Woverflow`). Map
+       hashing is therefore a different function on ILP32.
+    4. `runtime/tycho_rt.c` map `mask`/`icap` family (`:1755,1764,1823,1898,…`) —
+       derived from a `tycho_int` capacity; retype with the rest for consistency.
+  - **Observed truncations** (`gcc -m32`, existing fixtures, golden vs actual):
+    `clock` `sum=4999950000`→`704982704`; `int_overflow` INT64_MIN/MAX
+    `-9223372036854775808`/`9223372036854775807`→`-0`/`4294967295`; `shift_edge`,
+    `sized_array`, `sized_family`, `pkg_sized_pkg` `1099511627776` (2^40)→`0`;
+    `strbuild` `9223372036854775807|-9223372036854775808`→`4294967295|-0`. The
+    shift/arith helpers are correct — the narrowing is in the print and guard
+    paths.
+  - Fix: retype these to a **fixed-width** 64-bit unsigned (`uint64_t` /
+    `UINT64_C` for the seed constants) in BOTH runtimes, textually identical, so
+    `rtparity` does not drift. Leave genuinely `size_t`/libc-facing values alone.
+  - Done when: `make ilp32` no longer truncates printed ints AND
+    `abort_reserve_range` aborts again under `-m32`; `make rtparity` still 0 diff
+    (both runtimes changed in lockstep); `make fixpoint` B==C.
+  - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
+    `make fixpoint`, `make ilp32` — each its own command, paste each summary line.
+
+- [ ] **Phase 6b — CORRECTIVE (escalated from Phase 6): emitted int literals are 32-bit — tychoc0 MISCOMPILES on LP64 TODAY**
+  - Raised by Phase 6's new fixture on 2026-07-24. **Severity upgraded while
+    investigating: this is NOT only an ILP32 portability defect. `tychoc0`
+    miscompiles integer-literal arithmetic on THIS LP64 box, right now**, and
+    `make fixpoint` catches it the moment a fixture multiplies two literals past
+    2^31. It predates the int64 migration; nothing covered it because no fixture
+    did such a multiply.
+  - **Demonstrated divergence (LP64, `tests/ilp32/int64_width.ty`, same source):**
+    | expression | tychoc | tychoc0 |
+    |---|---|---|
+    | `5000000000` | `5000000000` | `5000000000` |
+    | `100000 * 100000` | `10000000000` | **`1410065408`** |
+    | `1 << 40` | `1099511627776` | `1099511627776` |
+    | sum | `1114511627776` | **`1105921693184`** |
+    Emitted C: tychoc `tycho_int h_prod = (100000L * 100000L);` vs tychoc0
+    `tycho_int h_prod = (100000 * 100000);`. `make fixpoint` compares the two
+    binaries' **runtime output** (`compiler/fixpoint.sh:24-29`), so this reports as
+    `FAIL int64_width.ty (B differs from the C compiler)`.
+  - Sites (the two compilers disagree here, and BOTH are wrong off-LP64):
+    - `src/tychoc.c:8343-8344` — `case E_INT: … return sfmt("%ldL", e->ival);`
+      and `case E_CHAR: return sfmt("%ldL", e->ival);`. The `L` suffix is C
+      `long` → **32-bit on ILP32**.
+    - `compiler/tychoc0.ty:6007-6011` — `gen_expr`'s `EInt(t,_el)/EBool/EChar`
+      arms `return t`, emitting the literal **bare**, i.e. C `int` → also 32-bit.
+  - Why it is wrong: Phase 4 migrated the emitted *type keyword* `long` →
+    `tycho_int`, but an integer **literal's width suffix** is not a type keyword,
+    so the string-literal transform never saw it. The destination variable is
+    64-bit, but the *arithmetic* is evaluated at the literal's own rank and
+    truncates **before** the store:
+    - tychoc `…L` = C `long` → 32-bit on ILP32/LLP64 (correct on LP64 only).
+    - tychoc0 bare = C **`int`** → 32-bit on **every** data model, LP64 included.
+      This is the live miscompile above.
+    `5000000000` survives in both (a decimal constant too large for its suffix
+    rank is promoted to `long long`); it is the *small* literals whose product
+    overflows that break.
+  - Fix: emit a width-safe literal in BOTH compilers — an `LL` suffix (`long
+    long`, ≥64-bit on every data model) for int and char literals, leaving the
+    `U`/`ULL` (u32/u64) forms alone. This also *removes* the tychoc/tychoc0
+    emission asymmetry (`100000L` vs `100000`), so it should improve, not
+    endanger, agreement.
+  - **Also owned by this phase: un-park the fixture.** Phase 6 committed it to
+    `tests/ilp32/int64_width.ty` + `.out` — deliberately OUTSIDE the `tests/*.ty`
+    glob so it could not redden `make test`/`make fixpoint`/`make ci` while the
+    bug is unfixed. Once literals are width-safe, `git mv` both files up into
+    `tests/` so the main suite, fixpoint AND `make ilp32` all cover them. **Until
+    that move, `make ilp32` is VACUOUS** (no in-glob fixture exercises a value
+    above 2^32) and must not be read as evidence of ILP32 conformance.
+  - Done when: emitted int arithmetic is 64-bit under `-m32` AND tychoc0 agrees
+    with tychoc on LP64; the fixture is back in `tests/` and every gate is green.
+  - Verify: `make test`, `make corelib`, `make rtparity`, `make conc`,
+    `make fixpoint`, `make ffi`, `make spec-check`, `make ilp32` — each its own
+    command, paste each summary line. `fixpoint` MUST stay B==C **and** must now
+    pass `int64_width`.
+
 - [ ] **Phase 6 — add the `make ilp32` gate (the real proof) + lock a fixture**
   - Scope: add an `ilp32` target to `Makefile` that emits the fixture suite's C
     with the Phase-4 compiler and compiles+runs it under `-m32` (ILP32), comparing
@@ -384,6 +484,78 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Verify: `make ilp32` green; `make test`, `make fixpoint` still green — paste
     each summary line; paste the fixture's old-`long`(ILP32-truncated) vs
     new(`tycho_int`) values proving the gate distinguishes them.
+  - **HALTED, NOT TICKED (2026-07-24) — the gate works and it caught real bugs.**
+    The infrastructure this phase owes is BUILT and COMMITTED (target, harness
+    flag, fixture, golden), but `make ilp32` is RED, because the emitted C really
+    does truncate on ILP32. Per this plan's own rule ("a missed site is caught by
+    the `-m32` gate … not shipped") and RULE 6, the failure was NOT patched under
+    this phase and the gate was NOT weakened; two corrective phases (**6a**, **6b**
+    above) were appended with file:line evidence and must land FIRST. Re-run this
+    phase's Verify block after 6a+6b.
+    - **Delivered here (committed, green where it can be):**
+      - `Makefile` target `ilp32` (after `mandelbrot`, before `ffi`):
+        preflight-compiles a `_Static_assert(sizeof(long)==4)` + `int64_t` probe
+        with `gcc -m32` and **exits nonzero with a loud stderr banner if the
+        multilib toolchain is absent — never silently skips** (RULE 4); then runs
+        `CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh`.
+      - REUSES `tests/run.sh` rather than duplicating fixture enumeration: the
+        existing `for hi in examples/*.ty tests/*.ty` loop and the existing
+        `tests/*.out` goldens are the ILP32 oracle unchanged. The only harness
+        change is a new `NO_ASAN="${TYCHO_NO_ASAN:-0}"` knob that skips the
+        sanitizer BUILD, RUN and native-vs-ASan diff while keeping the native
+        build, run and golden compare.
+      - **ASan lane is SKIPPED for ilp32 and this is LOGGED, not silent** — the
+        target echoes `ilp32: ASan lane SKIPPED for ilp32 (32-bit ASan runtime
+        absent under multilib; 64-bit 'make test' covers ASan)`. ASan coverage is
+        unchanged on 64-bit.
+      - Fixture `tests/ilp32/int64_width.ty` + golden `tests/ilp32/int64_width.out`
+        (recorded from the reference compiler's native 64-bit stdout): four values
+        all above 2^31 — `5000000000`, `100000 * 100000`, `1 << 40`, and their sum.
+        **PARKED under `tests/ilp32/` on purpose.** It was first placed at
+        `tests/int64_width.ty`, where `make test` passed it **409/0 all green**,
+        but `make fixpoint` went **RED** — `FAIL int64_width.ty (B differs from the
+        C compiler)` — because tychoc0 miscompiles `100000 * 100000` on LP64 (see
+        6b). Rather than commit a red `fixpoint` (it gates `make ci` and the
+        pre-push hook) or weaken the fixture, it is parked outside every glob
+        (`tests/*.ty`, `tests/{pkg,reject,abort,diag,warn}` are all unaffected by a
+        new `tests/ilp32/` directory) so the whole tree stays green. **6b owns
+        moving it back into `tests/`.** Parking it costs the gate nothing today:
+        the gate is emphatically NOT vacuous without it (see the run below).
+    - **TEETH PROVEN ON REAL CODE (stronger than the planned hand-edit):** the
+      gate does not need a synthetic reverted-width build to show it discriminates
+      — the same emitted C, same goldens, only the data model changed:
+      | value | native LP64 (golden) | `gcc -m32` ILP32 (actual) |
+      |---|---|---|
+      | `5000000000` | `5000000000` | `705032704` |
+      | `100000 * 100000` | `10000000000` | `1410065408` |
+      | `1 << 40` | `1099511627776` | `0` |
+      | sum | `1114511627776` | `2115098112` |
+      A confirming control was also run: hand-swapping `tycho_int`→`long` in the
+      emitted C is not even compilable (`typedef int64_t long;`), which is itself
+      evidence that `tycho_int` is now the single width authority in the prelude.
+      The isolated-literal probe `gcc -m32` on `int64_t a=5000000000L,
+      b=100000L*100000L, c=1L<<40, d=100000LL*100000LL, e=1LL<<40` printed
+      `aL=5000000000 bL=1410065408 cL=0 dLL=10000000000 eLL=1099511627776 szl=4`,
+      isolating 6b's fix (`LL`) from 6a's (print path).
+    - **Gates run this phase (each `env -u LD_PRELOAD make …`):**
+      - `make test` → `passed: 409   failed: 0` · `all green` (409 = 408 + the new
+        fixture, run while it was still in `tests/`; it is correct on LP64).
+      - `make fixpoint` (fixture in `tests/`) → **RED**: `FAIL int64_width.ty (B
+        differs from the C compiler)` · `fixpoint: FAIL` — the 6b LP64 miscompile.
+      - `make fixpoint` (fixture parked, tree as committed) → `fixpoint: all green
+        (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)`.
+      - `make ilp32` → **RED, and this is the deliverable working:**
+        `ilp32: -m32 toolchain OK (32-bit long, 64-bit int64_t verified)` ·
+        `ilp32: ASan lane SKIPPED for ilp32 (…)` · `passed: 400   failed: 8` ·
+        `failed: clock int_overflow shift_edge sized_array sized_family strbuild
+        pkg_sized_pkg abort_reserve_range`.
+        **8 pre-existing fixtures — none of them mine — truncate on ILP32**, and
+        one (`abort_reserve_range`) is a memory-safety guard failing OPEN. The
+        gate needed no bespoke fixture to find real bugs; see 6a for the
+        per-failure attribution.
+      - `ilp32` is a standalone target, deliberately NOT wired into
+        `scripts/ci.sh` (verified absent) until 6a+6b make it green, so `make ci`
+        and the pre-push hook are unaffected. Wiring it in is 6b's closing step.
 
 - [ ] **Phase 7 — spec + spec-plan: mark the reference impl conformant**
   - Scope: update `docs/spec/appendix-f-impl-defined.md` F.3 — reference compilers

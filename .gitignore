@@ -86,6 +86,9 @@ gmon.out
 !/corelib/test/*.out
 # FFI regression golden (tests/ffi/expected.out) is tracked too
 !/tests/ffi/*.out
+# ILP32 (`make ilp32`) fixture golden — parked in its own subdir until the
+# literal-width fix lands, so it needs its own un-ignore
+!/tests/ilp32/*.out
 # the sqlite FFI example's golden is tracked too
 !/examples/sqlite/*.out
 # the Conway's Life example's golden is tracked too

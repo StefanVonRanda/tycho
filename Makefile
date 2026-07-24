@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 clean
 
 all: tychoc
 
@@ -192,6 +192,26 @@ raytrace: tychoc
 # examples/mandelbrot/run.sh. In `make ci`.
 mandelbrot: tychoc
 	@sh examples/mandelbrot/run.sh
+
+# ILP32 conformance gate (the real int64 proof): rebuild every emitted fixture C
+# under `gcc -m32` (a 32-bit-`long` / ILP32 data model) and golden-compare against
+# the SAME tests/*.out recorded on 64-bit. They must match bit-for-bit because
+# Tycho `int` is now the width-fixed `tycho_int` (int64_t): a value above 2^31
+# would truncate under the old `long` lowering but must survive int64. This is the
+# ONLY gate that proves the migration off LP64 (dev box has long==int64). Reuses
+# tests/run.sh via TYCHO_NO_ASAN=1 (32-bit ASan runtime is absent under multilib;
+# ASan stays covered by the 64-bit `make test`). Fails LOUDLY if -m32 is absent.
+ilp32: tychoc
+	@printf '#include <stdint.h>\n_Static_assert(sizeof(long)==4,"want ILP32 long");\nint main(void){int64_t x=5000000000LL;return x==5000000000LL?0:1;}\n' > build/.m32probe.c
+	@gcc -m32 build/.m32probe.c -o build/.m32probe 2>build/.m32probe.log || { \
+	  echo "ilp32: FATAL -- 'gcc -m32' cannot build a 32-bit int64 program." >&2; \
+	  echo "ilp32: install gcc-multilib + lib32gcc-*-dev, or run on an ILP32 host. NOT skipping (RULE 4)." >&2; \
+	  sed 's/^/ilp32:   /' build/.m32probe.log >&2; \
+	  rm -f build/.m32probe.c build/.m32probe build/.m32probe.log; exit 1; }
+	@rm -f build/.m32probe.c build/.m32probe build/.m32probe.log
+	@echo "ilp32: -m32 toolchain OK (32-bit long, 64-bit int64_t verified)"
+	@echo "ilp32: ASan lane SKIPPED for ilp32 (32-bit ASan runtime absent under multilib; 64-bit 'make test' covers ASan)"
+	@CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
 # through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.

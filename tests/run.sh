@@ -35,6 +35,11 @@ TYCHOC=./tychoc
 
 CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
+# ILP32 lane (make ilp32): rebuild the emitted C under `gcc -m32` and golden-
+# compare, to prove Tycho `int` is width-fixed (int64) and does not truncate on a
+# 32-bit-`long` data model. The 32-bit ASan runtime is not shipped under multilib,
+# so that lane is skipped here; ASan coverage stays in the 64-bit `make test`.
+NO_ASAN="${TYCHO_NO_ASAN:-0}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 # Leak detection requires LeakSanitizer, which Apple's arm64/x86_64 ASan does
@@ -66,21 +71,23 @@ run_one() {
         note "$name" "transpile"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     elif ! $CC -O2 -fwrapv -std=c11 -o "$nat" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "native cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
-    elif ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
+    elif [ "$NO_ASAN" = 0 ] && ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
                -std=c11 -o "$san" "$c" -lm 2>"$TMP/$name.log"; then
         note "$name" "sanitizer cc"; sed 's/^/      /' "$TMP/$name.log"; ok=0
     else
         "$nat" <"$in" >"$TMP/$name.nout" 2>/dev/null; nrc=$?
-        "$san" <"$in" >"$TMP/$name.sout" 2>"$TMP/$name.serr"; src=$?
         [ "$nrc" -eq 0 ] || { note "$name" "native exit $nrc"; ok=0; }
-        if [ "$src" -ne 0 ]; then
-            note "$name" "sanitizer exit $src"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
-        elif grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$TMP/$name.serr"; then
-            note "$name" "sanitizer report"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
-        fi
-        if [ "$ok" -eq 1 ] && ! cmp -s "$TMP/$name.nout" "$TMP/$name.sout"; then
-            note "$name" "native vs sanitizer output differ"
-            diff "$TMP/$name.nout" "$TMP/$name.sout" | head | sed 's/^/      /'; ok=0
+        if [ "$NO_ASAN" = 0 ]; then
+            "$san" <"$in" >"$TMP/$name.sout" 2>"$TMP/$name.serr"; src=$?
+            if [ "$src" -ne 0 ]; then
+                note "$name" "sanitizer exit $src"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
+            elif grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$TMP/$name.serr"; then
+                note "$name" "sanitizer report"; sed 's/^/      /' "$TMP/$name.serr"; ok=0
+            fi
+            if [ "$ok" -eq 1 ] && ! cmp -s "$TMP/$name.nout" "$TMP/$name.sout"; then
+                note "$name" "native vs sanitizer output differ"
+                diff "$TMP/$name.nout" "$TMP/$name.sout" | head | sed 's/^/      /'; ok=0
+            fi
         fi
     fi
 
