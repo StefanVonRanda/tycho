@@ -1459,25 +1459,65 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
                 # Collect the place spine over the call, then dispatch on `=` / `OP=`.
                 # A bare `recv.name(args)` (no trailer, no `=`) is still a statement call;
                 # a plain (non-subscript) call target is rejected in codegen.
-                qlv := qcall
+                qkinds := []int                  # 0 = field, 1 = index
+                qflds := []string
+                qidxs := []Expr
                 for toks[pos].kind == TDot or toks[pos].kind == TLBracket:
                     if toks[pos].kind == TDot:
                         pos = pos + 1
                         if toks[pos].kind != TIdent and toks[pos].kind != TInt:
                             die("parse: line " + str(toks[pos].line) + ": expected a field name or tuple index after '.'")
-                        qlv = EField(qlv, toks[pos].text, _el)
+                        push(qkinds, 0)
+                        push(qflds, toks[pos].text)
+                        push(qidxs, EInt("0", _el))   # placeholder; unused for a field step
                         pos = pos + 1
                     else:
                         pos = pos + 1
-                        qix := parse_expr(toks, &pos)
+                        push(qkinds, 1)
+                        push(qflds, "")
+                        push(qidxs, parse_expr(toks, &pos))
                         expect(toks, &pos, TRBracket)
-                        qlv = EIndex(qlv, qix, _el)
+                qcomp := is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq
+                if qcomp:
+                    # spec §13.4 single-evaluation. A compound assign READS and then
+                    # WRITES the place, and a subscript call is inlined to its yielded
+                    # place -- so a side-effecting argument would run twice and the read
+                    # and the store would land on DIFFERENT slots. Bind every
+                    # call-bearing leg (subscript argument first, then any trailing
+                    # index) to a temp that sequences before the assignment. Mirrors
+                    # tychoc's hoist_index_calls(place, line, compound=1).
+                    qha := []Expr
+                    qa := 0
+                    for qa < len(qargs):
+                        av := qargs[qa]
+                        if expr_has_call(av):
+                            tn := "_cx" + str(pos) + "_a" + str(qa)
+                            push(pending, SDecl(tn, av, _sl))
+                            av = EVar(tn, _el)
+                        push(qha, av)
+                        qa = qa + 1
+                    qcall = ECall(qn, qha, _el)
+                    qk := 0
+                    for qk < len(qkinds):
+                        if qkinds[qk] == 1 and expr_has_call(qidxs[qk]):
+                            tn2 := "_cx" + str(pos) + "_i" + str(qk)
+                            push(pending, SDecl(tn2, qidxs[qk], _sl))
+                            qidxs[qk] = EVar(tn2, _el)
+                        qk = qk + 1
+                qlv := qcall
+                qj := 0
+                for qj < len(qkinds):
+                    if qkinds[qj] == 0:
+                        qlv = EField(qlv, qflds[qj], _el)
+                    else:
+                        qlv = EIndex(qlv, qidxs[qj], _el)
+                    qj = qj + 1
                 if toks[pos].kind == TEq:
                     pos = pos + 1
                     if is_value_ctrl_kw(toks[pos]):   # `place = if.../match...`
                         return ctrl_rewrite_tails(parse_value_ctrl(toks, &pos), 2, "", qlv)
                     return SFieldAssign(qlv, parse_expr(toks, &pos), _sl)
-                if is_caop_kind(toks[pos].kind) and toks[pos + 1].kind == TEq:   # place OP= rhs -> = <place> OP rhs
+                if qcomp:                        # place OP= rhs -> = <place> OP rhs (legs already hoisted)
                     op := toks[pos].text
                     pos = pos + 1
                     expect(toks, &pos, TEq)

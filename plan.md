@@ -1574,7 +1574,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     both output-level, so any re-association that changed a program's meaning
     would show up as a diff, not as silence.
 
-- [ ] **Phase 12 — CORRECTIVE: compound assignment through a user-defined SUBSCRIPT evaluates its argument TWICE (both compilers) — contradicts spec §13.4**
+- [x] **Phase 12 — CORRECTIVE: compound assignment through a user-defined SUBSCRIPT evaluates its argument TWICE (both compilers) — contradicts spec §13.4**
   - Discovered 2026-07-24 while probing punch-list #12 (general place-evaluation
     order). Scope-locked OUT of that item, which only pinned ordering; this is a
     single-vs-double *evaluation* defect and belongs to punch-list #11's rule.
@@ -1614,6 +1614,55 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - `tests/place_eval_order.ty` (added by the #12 close) deliberately does NOT
     exercise a compound assign through a subscript, so this behaviour is not baked
     into any golden and a fix will not have to re-record one.
+  - **DONE 2026-07-24.** Resolution (a): extended the compound-assign hoist to
+    subscript arguments in BOTH compilers; §13.4 stands as written.
+  - **Root cause.** A subscript call in a place is inlined to its yielded place at
+    resolve time (`src/tychoc.c:4791` `find_subscript` → `subst_place`), so its
+    ARGUMENT ends up embedded in the place expression. The compound-assign hoist
+    (`hoist_index_calls`) only walked E_INDEX legs, never the subscript-call args,
+    so the read-half and store-half each re-evaluated the argument.
+  - **tychoc (`src/tychoc.c`).** `hoist_index_calls(place, line)` → gained a
+    `compound` flag. When set, the spine walk also collects E_CALL nodes
+    (descending a subscript's receiver via `->qual` bare-ident / `->lhs->lhs`
+    field-chain) and hoists every call-bearing arg to a `_cxN` temp via the new
+    `hoist_place_leg`. The two call sites: plain place-set passes `compound=0`
+    (`:3133`, byte-identical to before); compound passes `compound=1` (`:3148`).
+    Old: `static void hoist_index_calls(Expr *place, int line)` walking only
+    E_INDEX. New: `(Expr *place, int line, int compound)` walking E_INDEX + (when
+    compound) E_CALL args.
+  - **tychoc0 (`compiler/tychoc0.ty`).** The subscript-target place path (the
+    `qcall`/`qlv` branch, `:1462`) rebuilt the place spine directly. Replaced the
+    inline `qlv` spine-build with a collect-then-emit pass mirroring the ordinary
+    place path: gather `qkinds`/`qflds`/`qidxs`, and when the trailer is `OP=`
+    (`qcomp`), hoist each call-bearing subscript ARG (`_cxN_aK` temps) and each
+    call-bearing trailing index (`_cxN_iK`) into `pending` before rebuilding
+    `qlv`. Plain `=` leaves the spine untouched (place evaluated once by
+    construction).
+  - **Observable repro** (`g.edge(nextidx(&c)).weight += 1`, c starts 0, nodes
+    100/200/300): BEFORE `c=2`, `n=100,101,300` (read nodes[0], wrote nodes[1]);
+    AFTER `c=1`, `n=101,200,300` (read and wrote nodes[0]). Identical on both
+    compilers before and after.
+  - **Operators/constructs probed.** All ten compound ops
+    (`+= -= *= /= %= &= |= ^= <<= >>=`, `is_compound_op` /`is_caop_kind`) through a
+    subscript — each single-evaluates. Shapes: bare `b.at(f()) += e` (tychoc0
+    only — tychoc rejects a bare-subscript compound with "cannot compound-assign
+    to this expression", pre-existing, unchanged); chained receiver
+    `o.g.edge(f()).weight += 1`; trailing index after a subscript
+    `t.row(f()).v[h()] += e` (tychoc0 accepts + now single-evals both legs;
+    tychoc rejects "can only index-assign an array or map variable or field",
+    pre-existing). Plain `=` through a subscript and a pure (variable) subscript
+    arg confirmed unchanged. Tycho has no `++`/`--`; `or_return`/swap are not
+    read-modify-write places — `+=`-family is the only affected lowering.
+  - **Builtin path still single-evaluates** — `tests/compound_index_eval` (golden
+    `c=1`) and `tests/eval_order` both pass unchanged; the `compound=0`/plain-`=`
+    legs are byte-identical (fixpoint B==C holds).
+  - **Fixture** `tests/compound_subscript_eval.ty` (+`.out`): the plan's
+    `g.edge(nextidx(&c)).weight += 1` shape with hand-verified single-eval goldens
+    (`c=1`, `n=101,200,300`), all ten operators, a pure-arg case, and a plain-`=`
+    case. Fails on old behaviour, passes on new. Appendix E row added under §13.4.
+  - **Gates** (all foreground, `env -u LD_PRELOAD`): `test` passed 425 failed 0;
+    `corelib` all green; `rtparity` 0 diffs; `conc` 36/0; `fixpoint` B==C green;
+    `ilp32` 425/0; `spec-check` 7 examples pass; `check-links` ok 119 files.
 
 - [ ] **Phase 13 — CORRECTIVE: tychoc0 fails open on a method-call place receiver (tychoc rejects; tychoc0 emits invalid C)**
   - Discovered 2026-07-24 alongside Phase 12, same probe pass. Scope-locked out of

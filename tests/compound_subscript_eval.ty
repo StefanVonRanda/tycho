@@ -1,0 +1,68 @@
+# Spec §13.4 single-evaluation, through a USER-DEFINED SUBSCRIPT.
+#
+# A compound assignment reads the place and then writes it, and a subscript call
+# is inlined to its yielded place -- so a side-effecting subscript ARGUMENT must
+# be evaluated exactly once, else the read and the store land on DIFFERENT slots.
+# Before the fix both compilers printed `c=2` and `n=100,101,300`: the argument
+# ran twice, the read took nodes[0] (100) and the store went to nodes[1] (101),
+# leaving nodes[0] untouched. `tests/compound_index_eval.ty` pins the same rule
+# for the builtin index place `a[f()] += e`.
+struct Node:
+    weight: int
+
+struct Graph:
+    nodes: [Node]
+
+subscript edge(g: Graph, i: int) -> inout Node:
+    yield &g.nodes[i]
+
+fn nextidx(c: inout int) -> int:
+    r := c
+    c = c + 1
+    return r
+
+fn main():
+    g := Graph([Node(100), Node(200), Node(300)])
+    c := 0
+    g.edge(nextidx(&c)).weight += 1     # nextidx runs ONCE -> reads and writes nodes[0]
+    println("c=" + str(c))              # 1  (double-eval gave 2)
+    println("n=" + str(g.nodes[0].weight) + "," + str(g.nodes[1].weight) + "," + str(g.nodes[2].weight))
+    # 101,200,300  (double-eval gave 100,101,300 -- read one slot, wrote another)
+
+    # every compound operator, one statement each: slot j gets `96 OP k`, and the
+    # counter must land on exactly 10 (one call per statement, not two).
+    ns := []Node
+    i := 0
+    for i < 12:
+        push(ns, Node(96))
+        i = i + 1
+    ops := Graph(ns)
+    d := 0
+    ops.edge(nextidx(&d)).weight += 3     # 99
+    ops.edge(nextidx(&d)).weight -= 3     # 93
+    ops.edge(nextidx(&d)).weight *= 3     # 288
+    ops.edge(nextidx(&d)).weight /= 3     # 32
+    ops.edge(nextidx(&d)).weight %= 7     # 5
+    ops.edge(nextidx(&d)).weight &= 12    # 0
+    ops.edge(nextidx(&d)).weight |= 3     # 99
+    ops.edge(nextidx(&d)).weight ^= 5     # 101
+    ops.edge(nextidx(&d)).weight <<= 2    # 384
+    ops.edge(nextidx(&d)).weight >>= 2    # 24
+    println("d=" + str(d))                # 10
+    j := 0
+    s := ""
+    for j < 12:
+        s = s + str(ops.nodes[j].weight) + ","
+        j = j + 1
+    println("ops=" + s)                   # the 10 results, then the two untouched 96s
+
+    # a pure subscript argument is left alone: re-evaluating a variable is harmless
+    k := 1
+    g.edge(k).weight *= 2
+    println("pure=" + str(g.nodes[1].weight))   # 400
+
+    # plain (non-compound) assignment through a subscript evaluates its argument
+    # once too -- the place is evaluated once by construction
+    e := 0
+    g.edge(nextidx(&e)).weight = 7
+    println("e=" + str(e) + " n0=" + str(g.nodes[0].weight))   # 1 7
