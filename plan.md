@@ -1664,7 +1664,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     `corelib` all green; `rtparity` 0 diffs; `conc` 36/0; `fixpoint` B==C green;
     `ilp32` 425/0; `spec-check` 7 examples pass; `check-links` ok 119 files.
 
-- [ ] **Phase 13 — CORRECTIVE: tychoc0 fails open on a method-call place receiver (tychoc rejects; tychoc0 emits invalid C)**
+- [x] **Phase 13 — CORRECTIVE: tychoc0 fails open on a method-call place receiver (tychoc rejects; tychoc0 emits invalid C)**
   - Discovered 2026-07-24 alongside Phase 12, same probe pass. Scope-locked out of
     punch-list #12.
   - `b.get().v[f()] = e()` (a call in place-receiver position, via a method):
@@ -1684,3 +1684,61 @@ to `run.sh` (that would blind the check for real link-order bugs).
   - Fix: teach tychoc0's place checker to reject a call in receiver position, then
     add `tests/reject/place_call_receiver.ty` (the reject lane is differential —
     `tests/run.sh:142-158` requires BOTH compilers to reject with a diagnostic).
+
+  - **DONE 2026-07-24.**
+  - **tychoc's rejection (quoted):** `src/tychoc.c:6578` —
+    `die_at(s->line, "can only index-assign an array or map variable or field");`
+    fires when an index-assign target's base is not a variable/field-of-variable
+    (here the base is a call temp). tychoc allows a call as a place target *only*
+    when `resolve_stmt` corrects it to a user subscript's projected place
+    (`src/tychoc.c:3115-3117`, "E_CALL is allowed as a target only if it resolves
+    to a user subscript's place ... a plain call is rejected there").
+  - **Root cause:** tychoc0 already had `place_target_ok` (`compiler/tychoc0.ty`),
+    called from the `SFieldAssign` codegen (`compiler/tychoc0.ty:8533`), and it
+    correctly rejects a *bare* call target (`ECall`/`ECallV` at top level). But it
+    matched a field/index-topped place (`EField`/`EIndex`) on the `_` arm and
+    returned `true` WITHOUT walking the spine — so `b.get().v[i]` and `b.get().v`
+    (a call ROOT under one field/index step) slipped through and reached
+    `gen_place`, whose `ECall`/`ECallV` arms (`:6994`, `:7016`) fall back to
+    `gen_expr` for a non-subscript call, emitting `&(h_get(...).f_v)` — the invalid
+    C `cc` rejected.
+  - **Site changed:** `compiler/tychoc0.ty` `fn place_target_ok`. Added two
+    recursion arms so the check descends the place spine to its root:
+    - old: `match lv:` went straight to `ECall(...)` / `ECallV(...)` / `_: return true`.
+    - new: `EField(b, f, _el): return place_target_ok(b, ...)` and
+      `EIndex(b, ix, _el): return place_target_ok(b, ...)` added BEFORE the
+      `ECall`/`ECallV` arms; a variable root still lands on `_` → `true`, a
+      user-subscript call root still resolves via `find_subscript` → `true`, a
+      non-subscript call root → `false` → `die_at(... "cannot assign to this
+      expression")`. No `src/tychoc.c` change (it already rejects). No golden
+      re-recorded.
+  - **Before/after probe (`--emit-c`, both compilers; REJ = refused w/ diagnostic):**
+
+        shape                              PRE tychoc/tychoc0   POST tychoc/tychoc0
+        p().x = e            (i1)          REJ / REJ            REJ / REJ
+        pv()[0] = e          (i2)          REJ / REJ            REJ / REJ
+        b.get().v[f()] = e() (i3, plan)    REJ / ACC  <-bug     REJ / REJ  fixed
+        b.get().v = e        (i4)          REJ / ACC  <-bug     REJ / REJ  fixed
+        b.get().v[0] += 1    (i5)          REJ / ACC  <-bug     REJ / REJ  fixed
+        a.xx().yy().z = e    (i6)          REJ / REJ            REJ / REJ
+    tychoc0 now emits `line N: cannot assign to this expression` for i3/i4/i5.
+    i1/i2/i6 were already caught (distinct parse paths); the divergence was solely
+    the method-call-receiver-with-trailing-step spelling.
+  - **Legal places still compile (ACC/ACC, verified post-fix):** `v[i] = e` (l1),
+    `s.field = e` (l2), `arr[i].field = e` (l3), `m[k] = e` (l4, `["x":9]` map),
+    `grid[i][j] = e` (l5), and — the critical call-rooted legal case — the user
+    `subscript` place `g.edge(i).weight += 1` in `tests/compound_subscript_eval.ty`
+    (find_subscript matches → allowed). No legal form over-tightened.
+  - **Reject fixtures added (fold rationale):** two files, one per recursion leg
+    of the shared root cause — `tests/reject/place_call_receiver.ty` (EIndex leg,
+    the plan's `b.get().v[0] = 9`) and `tests/reject/place_call_receiver_field.ty`
+    (EField leg, `b.get().v = [7]`). The compound `+=` form funnels through the
+    same `place_target_ok` check and is not fixtured separately.
+  - **Gates (all foreground, `env -u LD_PRELOAD`):**
+    - `make test`     → `passed: 427   failed: 0` / `all green`
+    - `make corelib`  → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+    - `make conc`     → `conc: passed 36   failed 0`
+    - `make fixpoint` → `B == C` / `fixpoint: all green (self-hosting; B==C; ...)`
+    - `make ilp32`    → `passed: 427   failed: 0` / `all green`
+    - `make spec-check`→ `spec-examples: 7 runnable example(s), all pass`
+    - `make check-links`→ `link check: ok (119 markdown files, no dead relative links)`

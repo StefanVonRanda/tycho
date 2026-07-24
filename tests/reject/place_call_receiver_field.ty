@@ -1,0 +1,20 @@
+# Companion to place_call_receiver.ty: the FIELD-place spelling of the same
+# root cause. The target `b.get().v` is a field step off a method-call receiver;
+# a call is never a place receiver, so both compilers must reject it (Phase 13:
+# tychoc0 used to fail-open here and emit `&(h_get(...).f_v)`, an address-of a
+# non-lvalue that only `cc` rejected). This guards the EField recursion leg of
+# tychoc0's place_target_ok, as the index form guards the EIndex leg. The
+# compound-assign form `b.get().v[i] += 1` funnels through the same check and is
+# not fixtured separately.
+struct Inner:
+    v: [int]
+
+struct Box:
+    inr: Inner
+
+fn get(b: Box) -> Inner:
+    return b.inr
+
+fn main():
+    b := Box(Inner([1]))
+    b.get().v = [7]

@@ -7170,13 +7170,24 @@ fn is_place(e: Expr) -> bool:
         ESpawn(id, nm, a, _el):
             return false
 
-# Is `lv` a valid assignment target? Only a bare CALL is ever invalid here: it's a
-# place iff it names a user subscript (ROADMAP 2.4). A dotted `recv.name(args)` call
-# is an ECall whose name has a '.'; a chained `base.name(args)` is an ECallV whose
-# callee is an EField. Any non-call target (var/field/index/...) is fine and lowers
-# through gen_place as usual. Mirrors tychoc rejecting a non-subscript call target.
+# Is `lv` a valid assignment target? A place is ROOTED at a variable (spec
+# §13.1 / docs/spec/09-expressions.md:87-95); a call is never a place receiver.
+# A bare CALL is a place iff it names a user subscript (ROADMAP 2.4): a dotted
+# `recv.name(args)` is an ECall whose name has a '.'; a chained `base.name(args)`
+# is an ECallV whose callee is an EField. A field/index step (EField/EIndex) does
+# NOT make a call root legal -- `b.get().v = e` and `b.get().v[i] = e` are
+# rejected too -- so recurse the place SPINE down to its root and check THAT.
+# (Without the recursion tychoc0 fail-opened on the method-call-receiver spelling
+# and emitted invalid C that only `cc` then rejected; tychoc rejects it up front
+# with "can only index-assign an array or map variable or field".) A variable
+# root lands on `_` and lowers through gen_place as usual. Mirrors tychoc
+# rejecting a non-subscript call in place-receiver position.
 fn place_target_ok(lv: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> bool:
     match lv:
+        EField(b, f, _el):
+            return place_target_ok(b, names, types, dc, ctx)
+        EIndex(b, ix, _el):
+            return place_target_ok(b, names, types, dc, ctx)
         ECall(nm, ar, _el):
             di := find(nm, ".")
             if di >= 0 and has_str(names, substr(nm, 0, di)):
