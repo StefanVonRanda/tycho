@@ -3538,6 +3538,19 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     generic", but tychoc enforces **16 for functions** (`:1714`) and **8 for structs
     and enums** (`:3605`, `:3661`). Decide which number is right and make the spec and
     both compilers agree — do not encode 8 in tychoc0 while the spec says 16.
+  - **USER RULING 2026-07-25: RAISE structs and enums to 16.** The spec text at
+    `05-generics.md:20` is correct as written and does NOT change; tychoc's `:3605`
+    and `:3661` limits go 8 → 16, and tychoc0 gains the 16 limit it currently lacks
+    entirely. Rationale: one number everywhere, no spec asymmetry for a reader to
+    remember, and — decisively — **no program that compiles today is rejected**.
+    Lowering the spec to 8 would have made any existing 9..16-parameter struct
+    illegal, which is a breaking change adopted to document an implementation
+    accident. Widening two fixed-size arrays in tychoc is the smaller cost.
+  - Implementation note for F2/G2: check whether the 8 is a bare array bound or is
+    coupled to other fixed-size state (a parallel array, a bitmask, a mangling
+    buffer). Widen every place the bound is assumed, not only the check — a
+    half-widened limit is a buffer overrun, not a rejected program. The other eight
+    rows are spec-backed and need no ruling.
   - Done when: every row's decision agrees, each is fixture-locked, the spec states one
     number per limit, gates green.
 
@@ -3573,8 +3586,25 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 
   - The ruling needed per row: does the restriction become normative (spec it, then add
     it to tychoc0), or is it an unspec'd implementation limit tychoc should drop?
-  - I6 is the urgent one — it is the only row where the accepted program produces
-    *wrong output* rather than merely running.
+  - **USER RULING 2026-07-25: ALL FOUR BECOME NORMATIVE.** Spec each of I6, I7, I8
+    and E1, then add the check to tychoc0. tychoc keeps every restriction it
+    currently enforces; nothing is dropped, so **no program tychoc accepts today
+    starts being rejected, and no program it rejects today starts compiling**. The
+    alternative — dropping I7/I8/E1 as unspec'd implementation limits — would have
+    LOOSENED tychoc, and loosening a compiler to resolve a documentation gap is the
+    wrong direction when the restrictions are defensible on their own terms.
+  - I6 is independent of the ruling and must be fixed regardless: tychoc0 accepts
+    `inout Channel(T)`, runs it, and prints `Some(7)` where a `recv` should yield
+    `7`. That is a WRONG-OUTPUT bug, the only one the whole audit found — every
+    other divergence is accepted-when-it-should-be-rejected. Treat I6 as the
+    priority row and verify the corrected behaviour by running, not only by
+    rejecting.
+  - Spec placement: I6 and I8 belong with the `inout` rules (`07-memory-model.md`
+    §11 / `11-functions.md`), I7 with the other arity limits (`02-grammar.md` /
+    `11-functions.md` — put it beside whatever Phase 29 does for its ten limits so
+    the two are consistent), E1 with the `handle` declaration rules
+    (`12-aggregates.md`). Match each neighbourhood's house style and MUST/MAY
+    conventions rather than inventing a new section shape.
   - Done when: each row has a ruling recorded here, the spec says what was ruled, both
     compilers agree, fixture-locked, gates green.
 
