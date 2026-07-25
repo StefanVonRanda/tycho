@@ -3702,7 +3702,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     ```
   - Fixtures: `tests/reject/main_with_param.ty`, `tests/reject/main_with_ret.ty`.
 
-- [ ] **Phase 29 — tychoc0 has no counterpart to ANY of tychoc's arity limits (audit rows B6, B8, B9, B11, B12, C5, C7, F2, G2, G5)**
+- [x] **Phase 29 — tychoc0 has no counterpart to ANY of tychoc's arity limits (audit rows B6, B8, B9, B11, B12, C5, C7, F2, G2, G5)**
   - Ten rows, **all ten RUN**. Each limit is a fixed-size array bound in tychoc:
 
     | row | limit | tychoc site | spec |
@@ -3738,6 +3738,207 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     rows are spec-backed and need no ruling.
   - Done when: every row's decision agrees, each is fixture-locked, the spec states one
     number per limit, gates green.
+  - **DONE 2026-07-25.** All ten rows now agree, message-for-message and line-for-line.
+
+    **THE F2/G2 COUPLING TRACE, written before any edit.** Every fixed-size array in
+    `src/tychoc.c` indexed by a struct/enum *type-parameter number* — the complete set,
+    found by reading every one of the 60 `typarams`/`from_args`/`ntyparams` hits in the
+    file (pre-edit line numbers):
+
+    | # | site (pre-edit) | array | why it is coupled to the 8 |
+    |---|---|---|---|
+    | 1 | `:531` | `StructDef.typarams[8]` | written `for i < _ntp` at `:3627` |
+    | 2 | `:532` | `StructDef.from_args[8]` | written `for i < ntyparams` at `:1626`, read at `:1592` |
+    | 3 | `:796` | `EnumDef.typarams[8]` | written `for i < _ntp` at `:3679` |
+    | 4 | `:797` | `EnumDef.from_args[8]` | written `for i < ntyparams` at `:1663`, read at `:1599` |
+    | 5 | `:3600` | `parse_struct` local `_tp[8]` | staged, then copied into #1 |
+    | 6 | `:3656` | `parse_enum` local `_tp[8]` | staged, then copied into #3 |
+    | 7 | `:1891` | `parse_type_inner` local `args[8]` (generic **struct** application) | filled `for i < np` where `np = ntyparams` — **this is the overrun**: a 9-parameter `Box(...)` in type position writes `args[8]` |
+    | 8 | `:1921` | `parse_type_inner` local `args[8]` (generic **enum** application) | same, for `Bag(...)` |
+
+    **What is NOT coupled, and why — checked, not assumed.**
+    - Mangled instance names: `nm = sfmt("%s__%s", …)` (`:1617`, `:1654`) — heap, grows
+      per parameter, no buffer.
+    - `Type binds[256]` (`:1908`, `:1938`, `:5095`, `:5130`, `:6791`) and `Type b[256]`
+      (`:4087`) are indexed by the **global** typaram id (`t - T_TYPARAM_BASE`,
+      `:637`), i.e. by how many distinct `$Name`s the whole program uses — not by the
+      per-generic count. Untouched by this widening. (They have their own pre-existing
+      defect; filed as Phase 37 below.)
+    - `Variant.payload[8]` (`:794`) and the `pl[8]` staging buffer (`:1673`) are sized by
+      the payload-field count (row G5), which stays **8**. Deliberately not widened.
+    - No bitmask over type parameters exists — grep over all 60 `typarams` hits shows
+      only array indexing and `strcmp`, never a shift.
+    - `Type tas[16]` (`:2240`, explicit call-site type args) is already 16 and admits
+      exactly 16, so a 16-parameter generic's `V0$(t1,…,t16)` fits with no change. The
+      positive fixture exercises that spelling.
+
+    **The widening.** A named bound replaces the eight literal `8`s so it cannot be
+    half-landed again: `#define TYCHO_MAX_TYPARAMS 16` (`src/tychoc.c:538`, with the
+    trace above recorded as its comment), then `:542`, `:543`, `:807`, `:808`, `:1902`,
+    `:1932`, `:3611`, `:3667`, and the two limit checks `:3616` / `:3672` (`8` → `16`,
+    messages `(max 8)` → `(max 16)`). The spec is unchanged: `05-generics.md:20` already
+    said 16 for every generic, which is why the RULING chose to raise rather than lower.
+
+    **Proof the widening is safe (not "should be").** An ASan+UBSan build of tychoc
+    (`cc -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1`) over the
+    boundary set, `ASAN_OPTIONS=detect_leaks=0` (tychoc is arena-style and frees
+    nothing, so LeakSanitizer fires on every input, before and after):
+    ```
+    f2_8       rc=0 sanitizer_errors=0
+    f2_9       rc=0 sanitizer_errors=0
+    f2_15      rc=0 sanitizer_errors=0
+    f2_16      rc=0 sanitizer_errors=0
+    f2_17      rc=1 sanitizer_errors=0   p/f2_17.ty:1: error: too many type parameters (max 16)
+    f2_dup17   rc=1 sanitizer_errors=0   p/f2_dup17.ty:1: error: too many struct type parameters (max 16)
+    g2_8       rc=0 sanitizer_errors=0
+    g2_16      rc=0 sanitizer_errors=0
+    g2_17      rc=1 sanitizer_errors=0   p/g2_17.ty:1: error: too many type parameters (max 16)
+    g2_dup17   rc=1 sanitizer_errors=0   p/g2_dup17.ty:1: error: too many enum type parameters (max 16)
+    b11_16     rc=0 sanitizer_errors=0
+    b12_16     rc=0 sanitizer_errors=0
+    ```
+    A 16-type-parameter struct and a 16-type-parameter enum both **compile and RUN**
+    (`tests/arity_limits_max.ty`, printing `0 15` and `99`); 17 rejects cleanly, never
+    crashes.
+
+    **Two distinct rejections at 17, both reproduced.** With 17 *distinct* names the
+    shared per-generic cap fires first, inside `parse_type` (`:1725`), so the message is
+    `too many type parameters (max 16)`. Only 17 *repeats of one name* reach the
+    struct/enum slot cap (`:3616`/`:3672`), because the `seen` test at `:1723` stops the
+    repeat from re-registering. Both orders are reproduced in tychoc0 and both are
+    fixture-locked (`generic_typaram_max.ty` vs `struct_typaram_max.ty` /
+    `enum_typaram_max.ty`).
+
+    **CITATION AUDIT — 9 of the 10 rows' spec citations were right; one was wrong.**
+    | row | plan said | verdict |
+    |---|---|---|
+    | B6 | `02-grammar.md:170` | **correct** — "A function type has up to 8 parameters." Also `03-types.md:246`. |
+    | B8/B9 | `02-grammar.md:137,:170` | **correct** — `:137` is the grammar comment `/* tuple, 2..8 elements */`, `:170` the prose. |
+    | B8/B9 | `03-types.md:175` | **WRONG.** `:175` is about **bracket-array** element types (`void`/`bool` not permitted). The tuple sentence — "A tuple `(T1, …, Tn)` is an **anonymous product** of 2 to 8 elements" — is `03-types.md:193`. |
+    | B11 | `05-generics.md:20` | **correct** (verbatim: "At most 16 type parameters and 16 size parameters may be introduced per generic"). |
+    | B12 | `05-generics.md:20` | **correct** (same sentence). |
+    | C5 | `02-grammar.md:78`, `05-generics.md:63` | **both correct.** |
+    | C7 | `02-grammar.md:78`, `05-generics.md:61` | **both correct.** |
+    | F2/G2 | see RULING | RULING applied; `05-generics.md:20` unchanged. |
+    | G5 | `02-grammar.md:97`, `12-aggregates.md:484` | **both correct.** Also `03-types.md:232`. |
+    All ten tychoc site line numbers (`:1752`, `:1768`, `:1772`, `:1714`, `:1801`,
+    `:3312`, `:3324`, `:3605`, `:3661`, `:3695`) were **correct** pre-edit.
+
+    **The spec states exactly one number per limit, and it matches both compilers.**
+    Verified by grepping every "at most / up to / 2–8" statement in `docs/`: 8 for
+    function-type parameters, tuple elements (2 floor), `where` constraints and variant
+    payload fields; 16 for type parameters, size parameters and `where` type-set members.
+    No struct/enum-specific type-parameter number exists anywhere in the spec, so
+    nothing had to be edited to land the 8 → 16 raise.
+
+    **TEN-ROW BEFORE / AFTER — FRONT/CC/RUN on BOTH compilers with `--emit-c` plus a
+    separate `cc` step** (`tychoc0` emits its C to *stdout*, tychoc to `BASE.c`; raw `rc`
+    is never compared). ✔ = both compilers agree, same message text, same line number.
+
+    | row | limit | tychoc BEFORE | tychoc AFTER | tychoc0 BEFORE (N+1) | tychoc0 AFTER (N+1) |
+    |---|---|---|---|---|---|
+    | B6 | fn type ≤ 8 params | 8 ok / 9 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | B8 | tuple ≤ 8 elems | 8 ok / 9 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | B9 | tuple ≥ 2 elems | 2 ok / 1 REJECT | unchanged | rejected, but for the WRONG reason (`returning int but this function returns (int)` — it parsed the 1-tuple) | REJECT with tychoc's own wording ✔ |
+    | B11 | ≤ 16 type params | 16 ok / 17 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | B12 | ≤ 16 size params | 16 ok / 17 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | C5 | ≤ 8 `where` constraints | 8 ok / 9 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | C7 | ≤ 16 types in a type set | 16 ok / 17 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+    | F2 | struct type params | **8** ok / 9 REJECT | **16** ok / 17 REJECT | **ACCEPT/CCOK/RUN** at any count | 16 ok / 17 REJECT ✔ |
+    | G2 | enum type params | **8** ok / 9 REJECT | **16** ok / 17 REJECT | **ACCEPT/CCOK/RUN** at any count | 16 ok / 17 REJECT ✔ |
+    | G5 | ≤ 8 payload fields | 8 ok / 9 REJECT | unchanged | **ACCEPT/CCOK/RUN** | REJECT ✔ |
+
+    **BOUNDARY PROBES — N-1 / N / N+1 for every limit, both compilers, after the fix.**
+    35 probes, zero disagreements. `RUN` means the emitted C compiled with
+    `cc -O2 -fwrapv -std=c11` and the binary exited 0 with identical output on both sides.
+    ```
+    B6  N=7   tychoc RUN(21)   tychoc0 RUN(21)
+    B6  N=8   tychoc RUN(28)   tychoc0 RUN(28)
+    B6  N=9   both REJECT  "a function type has at most 8 parameters"        (line 5 / line 5)
+    B9  N=1   both REJECT  "a tuple type needs at least two elements"        (line 1 / line 1)
+    B8  N=2   tychoc RUN    tychoc0 RUN
+    B8  N=7   tychoc RUN    tychoc0 RUN
+    B8  N=8   tychoc RUN    tychoc0 RUN
+    B8  N=9   both REJECT  "a tuple has at most 8 elements"                  (line 1 / line 1)
+    B11 N=15  tychoc RUN    tychoc0 RUN
+    B11 N=16  tychoc RUN    tychoc0 RUN
+    B11 N=17  both REJECT  "too many type parameters (max 16)"              (line 1 / line 1)
+    B12 N=15  tychoc RUN    tychoc0 RUN
+    B12 N=16  tychoc RUN    tychoc0 RUN
+    B12 N=17  both REJECT  "too many size parameters (max 16)"              (line 1 / line 1)
+    C5  N=7   tychoc RUN    tychoc0 RUN
+    C5  N=8   tychoc RUN    tychoc0 RUN
+    C5  N=9   both REJECT  "at most 8 `where` constraints per function"     (line 1 / line 1)
+    C7  N=15  tychoc RUN    tychoc0 RUN
+    C7  N=16  tychoc RUN    tychoc0 RUN
+    C7  N=17  both REJECT  "at most 16 types in a `where` type set"         (line 1 / line 1)
+    F2  N=8   tychoc RUN    tychoc0 RUN          (was 8 = the old max; still legal)
+    F2  N=9   tychoc RUN    tychoc0 RUN          (NEWLY legal, per the RULING)
+    F2  N=15  tychoc RUN    tychoc0 RUN
+    F2  N=16  tychoc RUN    tychoc0 RUN
+    F2  N=17  both REJECT  "too many type parameters (max 16)"              (line 1 / line 1)
+    F2  17 repeats of one name  both REJECT "too many struct type parameters (max 16)"
+    G2  N=8   tychoc RUN    tychoc0 RUN
+    G2  N=9   tychoc RUN    tychoc0 RUN          (NEWLY legal, per the RULING)
+    G2  N=15  tychoc RUN    tychoc0 RUN
+    G2  N=16  tychoc RUN    tychoc0 RUN
+    G2  N=17  both REJECT  "too many type parameters (max 16)"              (line 1 / line 1)
+    G2  17 repeats of one name  both REJECT "too many enum type parameters (max 16)"
+    G5  N=7   tychoc RUN    tychoc0 RUN
+    G5  N=8   tychoc RUN    tychoc0 RUN
+    G5  N=9   both REJECT  "too many payload fields (max 8)"                (line 2 / line 2)
+    ```
+
+    **The tychoc0 side, and the one place it needed a new primitive.** Eight of the ten
+    rows are a length test on a list the parser already builds: `parse_type_d`'s tuple
+    branch (`compiler/tychoc0.ty:1764`, `:1766`) and `fn`-type branch (`:1892`), the
+    `where` loop (`:2170`, `:2194`), `parse_struct` (`:2555`), `parse_enum` (`:2899`) and
+    the variant payload (`:2932`). Every message is tychoc's, verbatim, and every line
+    number is the token tychoc reports at (the `(`, the `fn`, the struct/enum name, the
+    variant name) — so the Phase 2 divergence set gains **no** new entries.
+
+    B11/B12 could not be done that way. tychoc counts type and size parameters in
+    signature-wide scopes (`g_cur_typarams` / `g_cur_sizeparams`, `src/tychoc.c:1725`,
+    `:1812`) that `parse_type_d` has no equivalent of, and the *encoded type string* is
+    ambiguous: a dynamic array of a type parameter and a size-parameter array are both
+    spelled `[$X]`, told apart only by whether a type follows the `]`. Rather than guess
+    from the string, `ck_generic_param_counts` (`compiler/tychoc0.ty:2093`) takes both
+    counts over the signature's **token range** using the identical disambiguation
+    `parse_type_d` itself applies at `:1805` — `[` `$` NAME `]` followed by a type that is
+    not the contextual keyword `where`. Distinct names, first-appearance order, exactly
+    like the C. Called once per function over `sigstart..pos` (`:2223`, covering
+    parameters, return type and `where`) and per struct/enum header parameter (`:2553`,
+    `:2897`). It can only ever count **fewer** `$`-introductions than tychoc (it does not
+    scan struct field types), so it cannot over-tighten.
+
+    **No over-tightening, checked three ways.** (1) Every N-1 and N probe above still
+    compiles and RUNs on both compilers. (2) `tests/arity_limits_max.ty` is a single
+    program sitting exactly ON all ten maxima at once and it runs, so any future
+    narrowing of any one of them turns the suite red. (3) `make fixpoint` — tychoc0's own
+    16 833 lines, which lean on generics, tuples and `where` throughout — is green, and
+    tychoc0 rebuilt itself through the new checks without tripping one.
+
+    **Fixtures.** Ten `tests/reject/` files, one per distinct diagnostic (the compiler
+    halts at the first error, so they cannot be merged): `fnty_arity.ty`,
+    `tuple_arity_max.ty`, `tuple_arity_min.ty`, `generic_typaram_max.ty`,
+    `generic_sizeparam_max.ty`, `where_constraint_max.ty`, `where_typeset_max.ty`,
+    `struct_typaram_max.ty`, `enum_typaram_max.ty`, `variant_payload_max.ty` — each
+    verified REJECT with identical text and line on both compilers. Plus the positive
+    boundary lock `tests/arity_limits_max.ty` + `.out`. Test count 502 → **513**.
+
+    **Gate set — one per command, foreground, `env -u LD_PRELOAD`.**
+    ```
+    make test         passed: 513   failed: 0   /  all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok   B == C : tychoc0 reproduces itself byte-identically (35376 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 513   failed: 0   /  all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+    ```
+    `git status --short` shows only the two edited compilers, the eleven new fixtures and
+    `plan.md`. No build spill. All scratch output stayed in `/tmp/ph29`.
 
 - [x] **Phase 30 — tychoc0 accepts a generic type argument that partially mentions a type parameter (audit rows B20, B21)**
   - tychoc: `src/tychoc.c:1905` (generic struct), `:1935` (generic enum). Spec:
@@ -3985,6 +4186,38 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     sentence saying so.
   - Done when: the spec sentence is unambiguous, both compilers agree on the decision,
     the `Box($T)` self-reference control still runs on both, fixture-locked, gates green.
+
+- [ ] **Phase 37 — tychoc's `binds[256]` arrays are indexed by the GLOBAL type-parameter id, which is unbounded: a program with >256 distinct `$Name`s overruns a stack array (found by Phase 29's coupling trace, out of its F2/G2 scope)**
+  - **This is NOT the 8 → 16 widening Phase 29 did.** Those were *per-generic* arrays and
+    are now all sized by `TYCHO_MAX_TYPARAMS` (`src/tychoc.c:538`). These are a different
+    family: six fixed locals sized **256** that are indexed by `t - T_TYPARAM_BASE`
+    (`:637`), the id of a type parameter in the **program-wide** `g_typarams` table —
+    and that table grows without a bound (`typaram_of`, `:708-716`, plain `TBL_ENSURE`,
+    no cap, no `die_at`).
+  - Sites: `Type binds[256]` at `src/tychoc.c:1919`, `:1949`, `:5106`, `:5141`, `:6802`;
+    `Type b[256]` at `:4098`; and the sibling `int64_t sizebinds[256]` at `:6804`, which
+    is indexed by size-parameter id and has the same shape.
+  - **Reproduced, not theorised.** 40 generic functions × 8 distinct type parameters =
+    320 distinct `$Name`s, then one call. An ASan+UBSan build of tychoc
+    (`ASAN_OPTIONS=detect_leaks=0`) says:
+    ```
+    src/tychoc.c:6803:48: runtime error: index 256 out of bounds for type 'Type [256]'
+    ```
+    That is `for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;` walking off the
+    end of the local at `:6802`. The release build has no such check: it writes past the
+    array into the frame. So this is a memory-safety hole reachable from a *valid*
+    program (each individual generic is well under the 16-parameter cap), not a rejected
+    one.
+  - Two candidate fixes, both need the spec consulted first: (a) heap-allocate the bind
+    vectors at `g_ntyparams` (`ginst`'s `gi.binds` at `:6870` already does exactly this,
+    so the pattern exists in-file), or (b) cap the global table and diagnose, which needs
+    a spec sentence because no implementation limit on *total distinct type-parameter
+    names* is stated anywhere in `docs/spec/`.
+  - Check tychoc0 for the same defect: it stores bindings in `[string]` name/type lists
+    (`match_typaram_str`, `compiler/tychoc0.ty:13902`), which grow, so it is probably
+    unaffected — but "probably" is not a verdict; probe it.
+  - Done when: the 320-distinct-name program either compiles clean under ASan+UBSan or is
+    diagnosed by a spec-backed limit; both compilers agree; fixture-locked; gates green.
 
 ## Out of scope
 

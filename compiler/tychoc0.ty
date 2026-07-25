@@ -1749,6 +1749,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         pos = pos + 1
         return "$" + nm
     if toks[pos].kind == TLParen:                # tuple type (T, U, ...)
+        tupln := toks[pos].line                  # the '(' line -- tychoc reports at t->line
         pos = pos + 1
         parts := []string
         push(parts, parse_type_d(toks, &pos, depth + 1))
@@ -1756,6 +1757,13 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             pos = pos + 1
             push(parts, parse_type_d(toks, &pos, depth + 1))
         expect(toks, &pos, TRParen)
+        # A tuple type has 2-8 elements (02-grammar.md:137, :170; 03-types.md:193).
+        # tychoc: src/tychoc.c:1768 (the 8 cap, inside the comma loop) and :1772
+        # (the 2 floor, after ')'). Its wording, verbatim.
+        if len(parts) > 8:
+            die("parse: line " + str(tupln) + ": a tuple has at most 8 elements")
+        if len(parts) < 2:
+            die("parse: line " + str(tupln) + ": a tuple type needs at least two elements")
         out := "("
         i := 0
         for i < len(parts):
@@ -1868,6 +1876,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         ck_affine_part(toks, belem, toks[pos].line)           # arrc_sized_b, src/tychoc.c:669-671
         return bpfx + belem
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
+        fnln := toks[pos].line                   # the 'fn' line -- tychoc reports at t->line
         pos = pos + 1
         expect(toks, &pos, TLParen)
         params := []string
@@ -1877,6 +1886,10 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
                 pos = pos + 1
                 push(params, parse_type_d(toks, &pos, depth + 1))
         expect(toks, &pos, TRParen)
+        # A function type has up to 8 parameters (02-grammar.md:170, 03-types.md:246).
+        # tychoc: src/tychoc.c:1752; its wording, verbatim.
+        if len(params) > 8:
+            die("parse: line " + str(fnln) + ": a function type has at most 8 parameters")
         ret := "void"
         if toks[pos].kind == TArrow:
             pos = pos + 1
@@ -2068,6 +2081,37 @@ fn func_is_generic(f: Func) -> bool:
         i = i + 1
     return ty_is_generic(f.ret)
 
+# B11/B12 -- "At most 16 type parameters and 16 size parameters may be introduced
+# per generic" (05-generics.md:20). tychoc counts them as parse_type introduces
+# each NEW name into the signature-wide scopes g_cur_typarams / g_cur_sizeparams
+# (src/tychoc.c:1714, :1801, reset per declaration at :3253). tychoc0's
+# parse_type_d carries no such scope, so the same two counts are taken over the
+# signature's TOKEN range instead, with the identical size-vs-type test the
+# parser itself uses at :1805 -- `[` `$` NAME `]` followed by a type that is not
+# the contextual keyword `where`. Distinct names only, first-appearance order,
+# exactly like the C. Messages are tychoc's, verbatim.
+fn ck_generic_param_counts(toks: [Token], from: int, to: int):
+    tps := []string                              # distinct `$T` type-parameter names
+    sps := []string                              # distinct `$N` size-parameter names
+    i := from
+    for i < to:
+        if toks[i].kind == TDollar and toks[i + 1].kind == TIdent:
+            nm := toks[i + 1].text
+            issz := i > 0 and toks[i - 1].kind == TLBracket and i + 3 < len(toks) and toks[i + 2].kind == TRBracket and tok_starts_type(toks[i + 3].kind) and not (toks[i + 3].kind == TIdent and toks[i + 3].text == "where")
+            if issz:
+                if not has_str(sps, nm):
+                    if len(sps) >= 16:
+                        die("parse: line " + str(toks[i + 1].line) + ": too many size parameters (max 16)")
+                    push(sps, nm)
+            else:
+                if not has_str(tps, nm):
+                    if len(tps) >= 16:
+                        die("parse: line " + str(toks[i + 1].line) + ": too many type parameters (max 16)")
+                    push(tps, nm)
+            i = i + 2
+        else:
+            i = i + 1
+
 fn parse_func(toks: [Token], pos: inout int) -> Func:
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
@@ -2075,6 +2119,7 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
     name := toks[pos].text
     ck_ident(name, toks[pos].line)               # a function cannot be named after a built-in type
     pos = pos + 1
+    sigstart := pos                              # B11/B12: the signature's token range starts at '('
     expect(toks, &pos, TLParen)
     params := []string
     ptypes := []string
@@ -2116,10 +2161,17 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
             die("parse: line " + str(toks[pos].line) + ": `where` constraints require a generic function (a `$T` parameter)")
         pos = pos + 1
         cont := true
+        ncon := 0                                # C5: `where` constraints so far
         for cont:
+            # "A `where` clause requires a generic function and allows at most 8
+            # constraints" (05-generics.md:63, 02-grammar.md:78). tychoc:
+            # src/tychoc.c:3312, checked at the head of each constraint; its wording.
+            if ncon >= 8:
+                die("parse: line " + str(toks[pos].line) + ": at most 8 `where` constraints per function")
             if toks[pos].kind != TIdent:
                 die("parse: line " + str(toks[pos].line) + ": expected a `where` predicate (numeric, comparable, has_str, hashable, defaultable) or a type parameter")
             first := toks[pos].text
+            firstln := toks[pos].line            # C7 reports at the type-parameter name (tychoc: pt->line)
             pos = pos + 1
             entry := ""
             known := false
@@ -2133,9 +2185,16 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
                     die("parse: line " + str(toks[pos].line) + ": `where " + first + ": ...`: '" + first + "' is not a type parameter of this function")
                 pos = pos + 1
                 set := parse_type(toks, &pos)
+                nset := 1
                 for toks[pos].kind == TPipe:
+                    # "The type-set form `T: A | B | ...` (up to 16 types)"
+                    # (05-generics.md:61, 02-grammar.md:78). tychoc: src/tychoc.c:3324,
+                    # checked inside the `|` loop; its wording, verbatim.
+                    if nset >= 16:
+                        die("parse: line " + str(firstln) + ": at most 16 types in a `where` type set")
                     pos = pos + 1
                     set = set + "|" + parse_type(toks, &pos)
+                    nset = nset + 1
                 entry = first + "=" + set          # encoded `T=t1|t2|...` (`=` marks a type-set)
             else:                                  # predicate form: pred(T)
                 if first != "numeric" and first != "comparable" and first != "has_str" and first != "hashable" and first != "defaultable":
@@ -2156,10 +2215,12 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
             if constraints != "":
                 constraints = constraints + "#"
             constraints = constraints + entry
+            ncon = ncon + 1
             if toks[pos].kind == TComma:
                 pos = pos + 1
             else:
                 cont = false
+    ck_generic_param_counts(toks, sigstart, pos)   # B11/B12, over the whole signature (params, return type, `where`)
     expect(toks, &pos, TColon)
     body := parse_block(toks, &pos)
     return Func(name, params, ptypes, ret, body, 0, "", constraints)
@@ -2472,14 +2533,26 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
         die("parse: line " + str(toks[pos].line) + ": expected a struct name")
     name := toks[pos].text
     ck_ident(name, toks[pos].line)
+    nmln := toks[pos].line                       # F2/B11 report at the struct name (tychoc: nameT->line)
     pos = pos + 1
     typeparams := []string                       # generics: `struct Box($T, $U)` type parameters
     if toks[pos].kind == TLParen:
+        tpstart := pos
         pos = pos + 1
         for toks[pos].kind != TRParen:
             tp := parse_type(toks, &pos)
             if not ty_is_generic(tp):
                 die("parse: line " + str(toks[pos].line) + ": a struct type parameter must be written `$Name`")
+            # 05-generics.md:20 -- 16 per generic, the SAME number as a generic
+            # function (:1714). tychoc reaches the distinct-name cap first, inside
+            # parse_type (so `$A..$Q` reports "too many type parameters"), and the
+            # struct-specific cap only for a REPEATED name (`$T` x17). Both orders
+            # are reproduced: the scan below counts distinct names, this counts slots.
+            # tychoc: src/tychoc.c:3605 (was 8; widened to 16 with its typarams[] and
+            # from_args[] arrays in the same change). Its wording, verbatim.
+            ck_generic_param_counts(toks, tpstart, pos)
+            if len(typeparams) >= 16:
+                die("parse: line " + str(nmln) + ": too many struct type parameters (max 16)")
             push(typeparams, substr(tp, 1, len(tp)))
             if toks[pos].kind == TComma:
                 pos = pos + 1
@@ -2808,14 +2881,22 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
         die("parse: line " + str(toks[pos].line) + ": expected an enum name")
     name := toks[pos].text
     ck_ident(name, toks[pos].line)
+    nmln := toks[pos].line                       # G2/B11 report at the enum name (tychoc: nameT->line)
     pos = pos + 1
     typeparams := []string                       # generics: `enum Tree($T, $U)` type parameters
     if toks[pos].kind == TLParen:
+        tpstart := pos
         pos = pos + 1
         for toks[pos].kind != TRParen:
             tp := parse_type(toks, &pos)
             if not ty_is_generic(tp):
                 die("parse: line " + str(toks[pos].line) + ": an enum type parameter must be written `$Name`")
+            # 05-generics.md:20 -- 16 per generic; see the twin comment in
+            # parse_struct. tychoc: src/tychoc.c:3661 (was 8; widened to 16 with its
+            # typarams[] and from_args[] arrays). Its wording, verbatim.
+            ck_generic_param_counts(toks, tpstart, pos)
+            if len(typeparams) >= 16:
+                die("parse: line " + str(nmln) + ": too many enum type parameters (max 16)")
             push(typeparams, substr(tp, 1, len(tp)))
             if toks[pos].kind == TComma:
                 pos = pos + 1
@@ -2833,6 +2914,7 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
                 die("parse: line " + str(toks[pos].line) + ": expected a variant name")
             vname := toks[pos].text
             ck_ident(vname, toks[pos].line)
+            vln := toks[pos].line                # G5 reports at the variant name (tychoc: vn->line)
             pos = pos + 1
             ptypes := []string
             if toks[pos].kind == TLParen:
@@ -2843,6 +2925,11 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
                         pos = pos + 1
                         push(ptypes, parse_type(toks, &pos))
                 expect(toks, &pos, TRParen)
+                # A variant payload is "zero to eight types" (02-grammar.md:97,
+                # 12-aggregates.md:484, 03-types.md:232). tychoc: src/tychoc.c:3695;
+                # its wording, verbatim.
+                if len(ptypes) > 8:
+                    die("parse: line " + str(vln) + ": too many payload fields (max 8)")
             pk := 0                              # enum payload = an aggregate slot (resolve_program, src/tychoc.c:7019-7023); tychoc's wording, verbatim
             for pk < len(ptypes):
                 if has_prefix(ptypes[pk], "Channel("):

@@ -1,0 +1,11 @@
+# 05-generics.md:20: 16 type parameters per generic -- enums included.
+# src/tychoc.c:3661. 17 SLOTS here (one repeated name, so the distinct-name cap
+# at :1714 is not what fires).
+enum Bag($T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T):
+    V($T)
+
+fn main():
+    b := V(3)
+    match b:
+        V(x):
+            print(str(x))

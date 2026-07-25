@@ -1,0 +1,143 @@
+# Phase 29 boundary lock. Every arity limit in this program sits exactly ON its
+# maximum, so a future NARROWING of any of them turns this test red:
+#   8-parameter function type          (02-grammar.md:170, src/tychoc.c:1752)
+#   8-element tuple                    (02-grammar.md:137, src/tychoc.c:1768)
+#   2-element tuple (the minimum)      (02-grammar.md:170, src/tychoc.c:1772)
+#   16 type parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1714)
+#   16 size parameters in a generic fn (05-generics.md:20,  src/tychoc.c:1801)
+#   8 `where` constraints              (05-generics.md:63,  src/tychoc.c:3312)
+#   16 types in a `where` type set     (05-generics.md:61,  src/tychoc.c:3324)
+#   16 struct type parameters          (05-generics.md:20,  src/tychoc.c:3605)
+#   16 enum type parameters            (05-generics.md:20,  src/tychoc.c:3661)
+#   8 variant payload fields           (02-grammar.md:97,   src/tychoc.c:3695)
+
+struct Box16($T0, $T1, $T2, $T3, $T4, $T5, $T6, $T7, $T8, $T9, $T10, $T11, $T12, $T13, $T14, $T15):
+    f0: $T0
+    f1: $T1
+    f2: $T2
+    f3: $T3
+    f4: $T4
+    f5: $T5
+    f6: $T6
+    f7: $T7
+    f8: $T8
+    f9: $T9
+    f10: $T10
+    f11: $T11
+    f12: $T12
+    f13: $T13
+    f14: $T14
+    f15: $T15
+
+enum Bag16($T0, $T1, $T2, $T3, $T4, $T5, $T6, $T7, $T8, $T9, $T10, $T11, $T12, $T13, $T14, $T15):
+    V0($T0)
+    V1($T1)
+    V2($T2)
+    V3($T3)
+    V4($T4)
+    V5($T5)
+    V6($T6)
+    V7($T7)
+    V8($T8)
+    V9($T9)
+    V10($T10)
+    V11($T11)
+    V12($T12)
+    V13($T13)
+    V14($T14)
+    V15($T15)
+
+enum Pay8:
+    Eight(int, int, int, int, int, int, int, int)
+    None8
+
+fn add8(a0: int, a1: int, a2: int, a3: int, a4: int, a5: int, a6: int, a7: int) -> int:
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7
+
+fn tup8() -> (int, int, int, int, int, int, int, int):
+    return (0, 1, 2, 3, 4, 5, 6, 7)
+
+fn tup2() -> (int, int):
+    return (11, 22)
+
+fn tp16fn(a0: $T0, a1: $T1, a2: $T2, a3: $T3, a4: $T4, a5: $T5, a6: $T6, a7: $T7, a8: $T8, a9: $T9, a10: $T10, a11: $T11, a12: $T12, a13: $T13, a14: $T14, a15: $T15) -> int:
+    return 16
+
+fn sz16fn(a0: [$N0]int, a1: [$N1]int, a2: [$N2]int, a3: [$N3]int, a4: [$N4]int, a5: [$N5]int, a6: [$N6]int, a7: [$N7]int, a8: [$N8]int, a9: [$N9]int, a10: [$N10]int, a11: [$N11]int, a12: [$N12]int, a13: [$N13]int, a14: [$N14]int, a15: [$N15]int) -> int:
+    return len(a0) + len(a1) + len(a2) + len(a3) + len(a4) + len(a5) + len(a6) + len(a7) + len(a8) + len(a9) + len(a10) + len(a11) + len(a12) + len(a13) + len(a14) + len(a15)
+
+fn con8(a0: $C0, a1: $C1, a2: $C2, a3: $C3, a4: $C4, a5: $C5, a6: $C6, a7: $C7) -> int where numeric(C0), numeric(C1), numeric(C2), numeric(C3), numeric(C4), numeric(C5), numeric(C6), numeric(C7):
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7
+
+fn set16(a: $S) -> int where S: int | int | int | int | int | int | int | int | int | int | int | int | int | int | int | int:
+    return 1
+
+fn main():
+    f8: fn(int, int, int, int, int, int, int, int) -> int = add8
+    println(str(f8(0, 1, 2, 3, 4, 5, 6, 7)))
+    t8 := tup8()
+    println(str(t8.0) + " " + str(t8.7))
+    t2 := tup2()
+    println(str(t2.0) + " " + str(t2.1))
+    println(str(tp16fn(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)))
+    v0: [1]int = [1]
+    v1: [2]int = [1, 1]
+    v2: [3]int = [1, 1, 1]
+    v3: [4]int = [1, 1, 1, 1]
+    v4: [5]int = [1, 1, 1, 1, 1]
+    v5: [6]int = [1, 1, 1, 1, 1, 1]
+    v6: [7]int = [1, 1, 1, 1, 1, 1, 1]
+    v7: [8]int = [1, 1, 1, 1, 1, 1, 1, 1]
+    v8: [9]int = [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v9: [10]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v10: [11]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v11: [12]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v12: [13]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v13: [14]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v14: [15]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    v15: [16]int = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    println(str(sz16fn(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15)))
+    println(str(con8(1, 2, 3, 4, 5, 6, 7, 8)))
+    println(str(set16(5)))
+    b := Box16(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+    println(str(b.f0) + " " + str(b.f15))
+    g := V0$(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)(99)
+    match g:
+        V0(x0):
+            println(str(x0))
+        V1(x1):
+            println(str(x1))
+        V2(x2):
+            println(str(x2))
+        V3(x3):
+            println(str(x3))
+        V4(x4):
+            println(str(x4))
+        V5(x5):
+            println(str(x5))
+        V6(x6):
+            println(str(x6))
+        V7(x7):
+            println(str(x7))
+        V8(x8):
+            println(str(x8))
+        V9(x9):
+            println(str(x9))
+        V10(x10):
+            println(str(x10))
+        V11(x11):
+            println(str(x11))
+        V12(x12):
+            println(str(x12))
+        V13(x13):
+            println(str(x13))
+        V14(x14):
+            println(str(x14))
+        V15(x15):
+            println(str(x15))
+    p := Eight(0, 1, 2, 3, 4, 5, 6, 7)
+    match p:
+        Eight(x0, x1, x2, x3, x4, x5, x6, x7):
+            println(str(x0) + " " + str(x7))
+        None8:
+            println("none")

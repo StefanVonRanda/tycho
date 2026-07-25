@@ -526,10 +526,21 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
         (cap) = _c; (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
 } while (0)
 
+/* generics: the per-generic type-parameter cap (docs/spec/05-generics.md:20 --
+ * "At most 16 type parameters and 16 size parameters may be introduced per
+ * generic"). ONE number for functions (g_cur_typarams, :719), structs and enums.
+ * Every fixed-size array indexed by a type-parameter NUMBER is sized by this
+ * macro so the bound cannot be half-widened: StructDef/EnumDef `typarams` and
+ * `from_args` below, the `_tp[]` staging arrays in parse_struct/parse_enum, and
+ * the `args[]` type-argument list in parse_type_inner's generic application.
+ * (Names are built with sfmt, which grows on the heap; `binds[]` is indexed by
+ * the GLOBAL typaram id, not by this count, so neither is coupled to it.) */
+#define TYCHO_MAX_TYPARAMS 16
+
 typedef struct { char *name; Type type; } Field;
 typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line;
-                 int generic; Type typarams[8]; int ntyparams;
-                 int from_tmpl; Type from_args[8]; int nfrom_args; } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
+                 int generic; Type typarams[TYCHO_MAX_TYPARAMS]; int ntyparams;
+                 int from_tmpl; Type from_args[TYCHO_MAX_TYPARAMS]; int nfrom_args; } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
 static StructDef *g_structs;
 static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
@@ -793,8 +804,8 @@ static Type res_err(Type t) { return g_restypes[RES_ID(t)].err; }
  * variant directly with no qualification. */
 typedef struct { char *name; Type payload[8]; int npayload; } Variant;
 typedef struct { char *name; Variant *variants; int nvariants; int variants_cap; int line;
-                 int generic; Type typarams[8]; int ntyparams;
-                 int from_tmpl; Type from_args[8]; int nfrom_args; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
+                 int generic; Type typarams[TYCHO_MAX_TYPARAMS]; int ntyparams;
+                 int from_tmpl; Type from_args[TYCHO_MAX_TYPARAMS]; int nfrom_args; } EnumDef;   /* generics: `enum Tree($T)` template; instances substitute $T in variant payloads. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
 static EnumDef *g_enums;
 static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
@@ -1888,7 +1899,7 @@ static Type parse_type_inner(Parser *ps) {
             if (g_structs[sid].generic) {        /* `Box(int)` in type position: explicit type args -> a concrete instance */
                 eat(ps, TK_LPAREN, "'(' with the type arguments for a generic struct");
                 int np = g_structs[sid].ntyparams;
-                Type args[8];
+                Type args[TYCHO_MAX_TYPARAMS];
                 for (int i = 0; i < np; i++) {
                     args[i] = parse_type(ps);
                     if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
@@ -1918,7 +1929,7 @@ static Type parse_type_inner(Parser *ps) {
             if (g_enums[eid].generic) {        /* `Tree(int)` in type position: explicit type args -> a concrete instance */
                 eat(ps, TK_LPAREN, "'(' with the type arguments for a generic enum");
                 int np = g_enums[eid].ntyparams;
-                Type args[8];
+                Type args[TYCHO_MAX_TYPARAMS];
                 for (int i = 0; i < np; i++) {
                     args[i] = parse_type(ps);
                     if (i + 1 < np) eat(ps, TK_COMMA, "',' between type arguments");
@@ -3597,12 +3608,12 @@ static void parse_struct(Parser *ps) {
     eat(ps, TK_STRUCT, "'struct'");
     Tok *nameT = eat(ps, TK_IDENT, "a struct name");
     g_ncur_typarams = 0;                         /* generics: fresh `$T` scope for this struct */
-    Type _tp[8]; int _ntp = 0;                   /* `struct Box($T, $U)` type parameters */
+    Type _tp[TYCHO_MAX_TYPARAMS]; int _ntp = 0;  /* `struct Box($T, $U)` type parameters */
     if (accept(ps, TK_LPAREN)) {
         while (!at(ps, TK_RPAREN)) {
             Type tp = parse_type(ps);            /* `$T` registers the name + returns its typaram type; a bare field `T` then refers to it */
             if (!IS_TYPARAM(tp)) die_at(nameT->line, "a struct type parameter must be written `$Name`");
-            if (_ntp >= 8) die_at(nameT->line, "too many struct type parameters (max 8)");
+            if (_ntp >= TYCHO_MAX_TYPARAMS) die_at(nameT->line, "too many struct type parameters (max 16)");
             _tp[_ntp++] = tp;
             if (!accept(ps, TK_COMMA)) break;
         }
@@ -3653,12 +3664,12 @@ static void parse_enum(Parser *ps) {
     eat(ps, TK_ENUM, "'enum'");
     Tok *nameT = eat(ps, TK_IDENT, "an enum name");
     g_ncur_typarams = 0;                         /* generics: fresh `$T` scope for this enum */
-    Type _tp[8]; int _ntp = 0;                   /* `enum Tree($T, $U)` type parameters */
+    Type _tp[TYCHO_MAX_TYPARAMS]; int _ntp = 0;  /* `enum Tree($T, $U)` type parameters */
     if (accept(ps, TK_LPAREN)) {
         while (!at(ps, TK_RPAREN)) {
             Type tp = parse_type(ps);            /* `$T` registers the name + returns its typaram type; a bare payload `T` then refers to it */
             if (!IS_TYPARAM(tp)) die_at(nameT->line, "an enum type parameter must be written `$Name`");
-            if (_ntp >= 8) die_at(nameT->line, "too many enum type parameters (max 8)");
+            if (_ntp >= TYCHO_MAX_TYPARAMS) die_at(nameT->line, "too many enum type parameters (max 16)");
             _tp[_ntp++] = tp;
             if (!accept(ps, TK_COMMA)) break;
         }
