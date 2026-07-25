@@ -380,7 +380,7 @@ or fixpoint goes red.
     `tests/diag/g6_*` files. No build spill (tychoc0 was built to a scratch dir
     outside the tree, per Phase 2's note that `-o` drops a sibling `.c`).
 
-- [ ] **Phase 4 — emitted C is warning-clean under `-Wall -Wextra` (#4)**
+- [x] **Phase 4 — emitted C is warning-clean under `-Wall -Wextra` (#4)**
   - Scope: `src/tychoc.c` map-append emitter (`:10701` emits the store;
     `:10272` emits `struct TychoMapC%d_` with `%s*ekeys` from `mapc_kslot`,
     `:10150`) and its `compiler/tychoc0.ty` twin — **both, in one commit**, or
@@ -396,6 +396,130 @@ or fixpoint goes red.
   - Verify: paste the pre-fix and post-fix warning counts over the whole suite;
     `make fixpoint` green (proves the two emitters stayed byte-identical); full
     gate set green.
+
+  **EVIDENCE (2026-07-25).** Two premises in the phase text above were wrong and
+  are corrected here rather than edited away.
+
+  *Line citations.* All three were off by ~20: the store is `src/tychoc.c:10721`
+  (not `:10701`), the `struct TychoMapC%d_` emitter is `:10292` (not `:10272`),
+  `mapc_kslot` is `:10170` (not `:10150`).
+
+  *`make fixpoint` does NOT compare tychoc against tychoc0 byte-for-byte.*
+  `compiler/fixpoint.sh:16-21`: `A = ./tychoc` building `tychoc0.ty`; `cA` = A
+  emitting; `B = cc(cA)`; `cB` = B emitting; `cmp cA cB`. Both `cA` and `cB` come
+  from **tychoc0**-derived binaries — it proves tychoc0 is a fixed point of
+  itself. tychoc's emitted text is only compared *behaviourally* (`ref` output
+  equality over `tests/*.ty` + `examples/*.ty`, `:23-30`). The two emitters
+  already differ in text today and are green: tychoc emits `char **ekeys`
+  (`%s*ekeys`, `:10292`, `ks="char *"`) while tychoc0 emits `char** ekeys`
+  (`compiler/tychoc0.ty:10400`). So this phase did NOT have to change tychoc0 —
+  and did not need to, because **tychoc0 never had the defect** (below).
+
+  **STEP 1 — write-through trace. VERDICT: NO WRITE-THROUGH. Qualifier bug, not
+  an aliasing bug.** Every use of `ekeys[…]` in the emitted string-key family
+  (`TychoMapC0` in `/tmp/ph4/mpc.c`, from `tests/map_param_composite.ty`), with
+  the callee signature that decides it:
+
+  | emitted site | use | verdict |
+  |---|---|---|
+  | `:2458` `strcmp(m.ekeys[e-1], k)` | `const char *` params | read |
+  | `:2462`, `:2502` `tycho_si_hash(m->ekeys[…])` | `:1734` `(const char *s)` | read |
+  | `:2497` `strcmp(m->ekeys[m->idx[i]-1], k)` | `const char *` params | read |
+  | `:2508` `tycho_mapc0_put(a,&r,src.ekeys[e],…)` | `const char *k` → `tycho_str_copy` `:971 (const char *s)` | read |
+  | `:2523` `tycho_arr_str_push(a,&r,m.ekeys[e])` | `:1487 (const char *v)`, body `:1496` stores `tycho_str_copy(a,v)` — a **copy**, pointer does not escape | read |
+  | `:2528` `tycho_mapc0_find(y, x.ekeys[e])` | `const char *k` | read |
+  | `:2629` `tycho_str_concat(a,r,m.ekeys[e])` | `:874 (const char *x, const char *y)` | read |
+  | `:2471` `m->ekeys[w] = m->ekeys[r]` (compact) | writes the **slot**, not the pointee | slot write |
+  | `:2480` `nk[e] = m->ekeys[e]` (grow) | slot write | slot write |
+  | `:2481` `m->ekeys = nk` | array write | array write |
+  | `:2482` `m->ekeys[e] = k` (the warning) | slot write | slot write |
+
+  Nothing dereferences a key for mutation and nothing hands a key to a callee
+  that could; the only non-`const` escape (`tycho_arr_str_push`) copies the bytes.
+  So the warning is a missing/incorrect qualifier, and the fix is a qualifier —
+  **no cast was used anywhere.**
+
+  **STEP 2 — the fix, and why it is on the parameter and not the slot.**
+  The defect is **tychoc-only**. tychoc0 states the invariant directly —
+  `compiler/tychoc0.ty:10475` `kpar := kslot + " k"`, so its key parameter *is*
+  its slot type and its `_app` (`:10490`) never discards anything. tychoc broke
+  that invariant by deriving the two independently: `mapc_kslot` → `"char *"`
+  (`:10172`) but `mapc_kparam` → `"const char *k"` (`:10177`).
+
+  The slot was **not** made `const`, deliberately: `c_type(T_STRING)` is
+  `"char *"` (`:1223`), and every string container in the system is `char **` —
+  `TychoArrStr.data` (emitted `:1468`) and the hand-written runtime's own
+  `TychoMapSI.ekeys` (`:1652`), whose `tycho_map_si_append` (`:1786`) takes
+  `char *k` for exactly this reason. Const-ifying the slot would make the emitted
+  map the only const string container in the language and would contradict the
+  runtime family this emitter explicitly mirrors (`src/tychoc.c:10680-10681`).
+  `const` is kept on every read-only entry point (`find`/`get`/`has`/`del`/`set`/
+  `del_pure`/`put`/`slotptr`), where it is true and still catches a future
+  write-through; it is dropped only on `_append` (`:10732`), whose contract is
+  ownership transfer — both callers (`_put` `:10742`, `_slotptr` `:10748`) pass
+  the freshly arena-owned copy from `mapc_kcopy`, i.e. `tycho_str_copy(a,k)`
+  returning `char *`.
+
+  Emitter sites actually changed, `src/tychoc.c`, **tychoc only**:
+  - `:10175` — `mapc_kparam` kept as-is, comment marks it the READ-only param.
+  - `:10180-10196` — new `mapc_kparam_own(Type)` returning
+    `sfmt("%sk", mapc_kslot(k))` (tychoc0's `kpar := kslot + " k"`), with the
+    ownership rationale in its header comment.
+  - `:10693` — `char *kpo = mapc_kparam_own(keyt);`
+  - `:10740` — the `_append` `fprintf` arg list takes `kpo` in place of `kp`.
+
+  Emitted text delta is exactly one token on one line, only for string keys:
+  `_append(Arena *a, TychoMapC0 *m, const char *k, …)` → `… char *k, …`.
+  The int-rep and composite branches are byte-unchanged (`mapc_kslot` and
+  `mapc_kparam` already agreed there) — which is why `make corelib`
+  ("tychoc and tychoc0 agree, match goldens") stayed green.
+
+  **STEP 3 — suite sweep.** Emitted C for all `tests/*.ty examples/*.ty
+  corelib/*/*.ty compiler/*.ty` via `--emit-c` (263 seen, 227 emitted, 36 are
+  reject fixtures that correctly refuse to emit), each `cc -O2 -fwrapv -std=c11
+  -c`, 0 errors both runs.
+
+  | | pre-fix | post-fix |
+  |---|---|---|
+  | **default-on** (what `tychoc`'s own `cc` line uses — `src/tychoc.c:11532` passes **no** `-Wall`/`-Wextra`) | **24** | **4** |
+  | ` └ -Wdiscarded-qualifiers` | **20** | **0** |
+  | ` └ integer-literal (2 fixtures)` | 4 | 4 → new Phase 12 |
+  | **opt-in `-Wall -Wextra`** | 13366 | 13346 |
+  | ` └ -Wunused-function` | 8507 | 8507 → new Phase 13 |
+  | ` └ -Wunused-variable` | 3363 | 3363 → new Phase 13 |
+  | ` └ -Wmisleading-indentation` | 1286 | 1286 → new Phase 13 |
+  | ` └ -Wunused-parameter` | 149 | 149 → new Phase 13 |
+  | ` └ -Wmissing-field-initializers` | 23 | 23 → new Phase 13 |
+  | ` └ -Wunused-but-set-variable` | 13 | 13 → new Phase 13 |
+  | ` └ -Woverflow / -Wmissing-braces` | 1 / 1 | 1 / 1 → new Phase 12 |
+
+  Direct repro, before and after (`./tychoc tests/map_param_composite.ty -o …`):
+  pre — `mpc.c:2482:44: warning: assignment discards 'const' qualifier from
+  pointer target type [-Wdiscarded-qualifiers]`; post — no diagnostic.
+
+  **Done-when clause "the full fixture suite emits ZERO warnings" is NOT met, and
+  is not meetable by this phase.** The plan's premise ("#4 is one emitted string
+  literal", Pre-flight) held for the named defect — that one *is* closed, 20 → 0 —
+  but the `-Wall -Wextra` surface underneath it is 13346 warnings, ~89% of them
+  `-Wunused-function`/`-Wunused-variable` fired on the whole `runtime/tycho_rt.c`
+  prelude and the whole per-type family (`tycho_arr_C12_pop`, `_sing_Tok_3`, …)
+  that every program pastes in and mostly does not call. Removing those means
+  demand-driven emission or `__attribute__((unused))` across the family emitters —
+  a design change, squarely outside "smallest change / do not restructure the map
+  emitter". Filed whole as Phase 13 rather than absorbed or silenced. What this
+  phase actually closes is the surface a user sees: `tychoc` compiles emitted C
+  with no `-Wall`/`-Wextra`, so its user-visible warning count went **24 → 4**,
+  and the 4 remaining are the unrelated literal emitter (Phase 12).
+
+  **Gates** (each its own foreground command, `env -u LD_PRELOAD make …`):
+  - `make test` → `passed: 437   failed: 0` / `all green`
+  - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+  - `make conc` → `conc: passed 36   failed 0`
+  - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically (34839 lines C)` / `fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)`
+  - `make ilp32` → `passed: 437   failed: 0` / `all green`
+  - `make spec-check` → `spec-examples: 7 runnable example(s), all pass`
+  - `make check-links` → `link check: ok (121 markdown files, no dead relative links)`
+  - `git status --short` → `M src/tychoc.c` only; no build spill.
 
 - [ ] **Phase 5 — examples stop describing a restriction that no longer exists (#5)**
   - Scope: `examples/json.ty` and `examples/invindex.ty`. Both state maps are
@@ -849,6 +973,73 @@ or fixpoint goes red.
     element may not be `void`/`bool` — `:1729`). Docs only; no compiler change.
   - Done when: the grammar admits every type form both compilers accept, and
     `make check-links` + `make spec-check` stay green.
+
+- [ ] **Phase 12 — the integer-literal emitter produces two default-on C warnings (found by Phase 4, out of its scope)**
+  - These are the only emitted-C warnings left on the **default-on** path after
+    Phase 4 (4 of the post-fix 4). Both are the literal/arith emitter, not the
+    map emitter Phase 4 was scoped to, so they were filed rather than absorbed.
+  - **(a) i64 MIN is emitted as a negated out-of-range literal.**
+    `tests/boundary_fold.ty` emits, three times,
+    `tycho_int_to_str(&_t, -9223372036854775808LL)` (emitted C `:2435 :2437
+    :2440`) → `warning: integer constant is so large that it is unsigned`.
+    In C the `-` is a *unary operator on* `9223372036854775808LL`, which does not
+    fit `long long`; the constant's type is decided before the negation. The
+    printed value is right on two's-complement, so `make test` is green and this
+    is not a live miscompile — but the emitter is relying on a construct the C
+    standard does not give it. Conventional fix: emit `(-9223372036854775807LL - 1)`
+    (or `INT64_MIN`) when the folded value is the minimum of its width.
+  - **(b) a deliberate i32 wrap is constant-folded at translation time.**
+    `tests/sized_family.ty` emits
+    `(int )((((int )1000000LL) * ((int )1000000LL)))` (emitted C `:2438`) →
+    `-Woverflow: integer overflow in expression of type 'int' results in
+    '-727379968'`. The wrap is the *point* of the fixture (the `-fwrapv`
+    contract), so the diagnostic is arguably a false positive — but it fires on
+    every user build of such a program, unsuppressed. Decide explicitly: either
+    emit the fold already reduced (no overflowing expression survives into C), or
+    document it as accepted noise. Do not silence it with a cast.
+  - Done when: `cc -O2 -fwrapv -std=c11` over the emitted C of the whole fixture
+    suite reports **0** warnings (Phase 4 left it at 4), or each survivor carries
+    a written justification; full gate set green.
+
+- [ ] **Phase 13 — emitted C is not clean under opt-in `-Wall -Wextra`: 13346 warnings, ~89% unused-symbol (measured by Phase 4)**
+  - Phase 4's Done-when asked for zero warnings over the suite under `-Wall
+    -Wextra` and **could not deliver it** — see its evidence block for the full
+    table. This is that residue, filed whole rather than absorbed or silenced.
+  - Measured 2026-07-25 over 227 emitted programs (`tests/`, `examples/`,
+    `corelib/`, `compiler/`), `cc -O2 -fwrapv -Wall -Wextra -std=c11 -c`, 0 errors:
+    `-Wunused-function` 8507, `-Wunused-variable` 3363,
+    `-Wmisleading-indentation` 1286, `-Wunused-parameter` 149,
+    `-Wmissing-field-initializers` 23, `-Wunused-but-set-variable` 13.
+  - **Root cause is emission strategy, not a bug.** Every program pastes the
+    entire `runtime/tycho_rt.c` prelude plus the entire per-type family
+    (`tycho_arr_C12_pop`, `tycho_arr_C13_eq`, `_sing_Tok_3`, … one full set per
+    array/map/enum type reached) and then calls a small fraction of it. The
+    `-Wmisleading-indentation` block is a separate, purely cosmetic cause: the
+    emitter writes multi-statement one-liners like
+    `for (…) if (…) { … } w++;`.
+  - Why it is not free: fixing it means demand-driven emission (emit a family
+    member only when reached) or blanket `__attribute__((unused))` on the family
+    emitters. The first is a real design change with a fixpoint risk; the second
+    is a suppression that would hide a genuinely dead emitter forever. That
+    choice needs a ruling before code.
+  - Note: this is about **emitted** C only. `-Wall -Wextra` is *not* on the path
+    `tychoc` uses to compile emitted C (`src/tychoc.c:11532` — no `-Wall`, no
+    `-Wextra`), so none of these reach a user today; they appear only if someone
+    compiles the emitted `.c` themselves with those flags.
+  - Done when: a ruling is recorded on demand-driven-emission vs. attribute, then
+    the chosen route lands with `make fixpoint` green (emission changes are
+    exactly what fixpoint guards).
+
+- [ ] **Phase 14 — `tychoc`'s own build has 3 `-Wmissing-field-initializers` (observed by Phase 1, re-confirmed by Phase 4)**
+  - `src/tychoc.c:6092`, `:6093`, `:6095` — `missing initializer for field
+    'is_sink' of 'Param'`. Count was 3 before Phase 1 and is still 3 after
+    Phase 4; nothing in this plan changed it.
+  - **Explicitly ruled out of "emitted C is warning-clean" (Phase 4).** This is
+    the *compiler's own* `-Wall -Wextra` build (`Makefile:11`), not emitted
+    output. Different surface, different fix, so it gets its own phase rather
+    than riding along on a codegen change.
+  - Done when: `make` compiles `src/tychoc.c` with zero warnings; full gate set
+    green.
 
 ## Out of scope
 

@@ -10172,10 +10172,27 @@ static const char *mapc_kslot(Type k) {   /* C type of one key slot in ekeys[] *
     if (!mapkey_composite(k)) return "char *";
     return c_type(k);
 }
-static char *mapc_kparam(Type k) {        /* the key function parameter */
+static char *mapc_kparam(Type k) {        /* the key function parameter (READ-only fns) */
     if (mapkey_intrep(k)) return sfmt("tycho_int k");
     if (!mapkey_composite(k)) return sfmt("const char *k");
     return sfmt("%sk", c_type(k));
+}
+/* The key parameter of a function that STORES the key into an ekeys[] slot
+ * (_append only). mapc_kparam is `const char *` for string keys -- correct for
+ * the read-only fns (find/get/has/del/put all only hash, compare, or copy it),
+ * but a lie for _append, whose contract is ownership transfer: its two callers
+ * (_put and _slotptr) hand it the freshly arena-owned copy from mapc_kcopy, and
+ * it stores that pointer into m->ekeys[e], a `char *` slot (mapc_kslot). Passing
+ * an owned pointer through a `const char *` parameter is what made the store
+ * discard the qualifier (-Wdiscarded-qualifiers). The slot is NOT made const:
+ * c_type(T_STRING) is "char *" (:1223) and every string container in the system
+ * -- TychoArrStr.data, the runtime's own TychoMapSI.ekeys -- is `char **`;
+ * tycho_map_si_append, the hand-written twin this family mirrors, likewise takes
+ * `char *k`. So the owning param is exactly the slot type, which is also the
+ * invariant tychoc0 states directly (`kpar := kslot + " k"`, tychoc0.ty:10475).
+ * Nothing writes THROUGH the slot -- see the trace under Phase 4 in plan.md. */
+static char *mapc_kparam_own(Type k) {
+    return sfmt("%sk", mapc_kslot(k));
 }
 static char *mapc_khash(Type k, const char *e) {   /* hash of a key expression e */
     if (mapkey_composite(k)) return gen_hash(k, e);
@@ -10673,6 +10690,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_maptypes[i].val);   /* value C type -- stored inline in the dense entries (the [int:Trie] win) */
         const char *ks = mapc_kslot(keyt);
         char *kp = mapc_kparam(keyt);
+        char *kpo = mapc_kparam_own(keyt);   /* _append takes ownership -- see mapc_kparam_own */
         char *kcopy = mapc_kcopy(keyt);
         char *vcopy = copy_into(g_maptypes[i].val, "a", "v");
         Type kat = arr_of(keyt); const char *katc = c_type(kat), *katf = arr_fn(kat);
@@ -10719,7 +10737,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "            for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
             "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n"
             "    tycho_int e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
-            i, i, kp, ct, i, ks, ks, ks, ct, ct, ct);
+            i, i, kpo, ct, i, ks, ks, ks, ct, ct, ct);
         fprintf(o,
             "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
             "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) { m->evals[e] = %s; return; }\n"
