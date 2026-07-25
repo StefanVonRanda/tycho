@@ -64,7 +64,7 @@ Written while trying to stand up the simplest possible concurrent server.
 
 ## Phases
 
-- [ ] **Phase 1 — decide the concurrency shape (probe only, no library change)**
+- [x] **Phase 1 — decide the concurrency shape (probe only, no library change)**
   - Task handles cannot be stored, so thread-per-connection-with-tracking is out. Probe
     what IS expressible for N long-lived workers, and pick one:
     (a) N `spawn`s into N named locals, each running its own `accept` loop on the shared
@@ -77,6 +77,92 @@ Written while trying to stand up the simplest possible concurrent server.
   - Done when: one shape is chosen with a measurement behind it (N concurrent clients
     served in ~1 unit of time, not N), and the losing options have a recorded reason.
     This is the server's architecture; get it right before writing the server.
+
+  **DONE 2026-07-25 — chose (a'), recursive fan-out of shape (a).**
+
+  Method: four probe programs, each its own directory (`package main` compiles the
+  whole directory). Handler does a fixed 500ms spin on `time.elapsed_ms` — a wall-clock
+  wait `-O2` cannot fold away. Client is N parallel `curl`s, wall clock measured around
+  the batch (`scratchpad/bench.sh`). Build: `env -u LD_PRELOAD ./tychoc <dir>/main.ty -o
+  <dir>/prog`. Host: 16 CPUs. One unit = ~500ms.
+
+  | Shape | Workers | Clients | Wall | Verdict |
+  |---|---|---|---|---|
+  | (a) N spawns into N named locals | 4 | 1 | 513ms | baseline = 1 unit |
+  | (a) same | 4 | **4** | **511ms** | **1 unit — real concurrency** |
+  | (a) same — control | 4 | 8 | 1011ms | 2 units, as it must be |
+  | (a) 8 named locals | 8 | 8 | 510ms | 1 unit |
+  | (a') recursive fan-out, N=8 runtime | 8 | 8 | **509ms** | **1 unit — chosen** |
+  | (a') same — control | 8 | 16 | 1012ms | 2 units, so exactly 8 loops are live |
+  | (b) `parallel for i in range(4)` | 4 | 4 | 510ms | 1 unit *on a 16-CPU host only* |
+  | (b) same, `TYCHO_THREADS=2` | **2** | 4 | 1012ms | **2 units — chunking collapsed it** |
+  | (b) same, `TYCHO_THREADS=1` | **1** | 2 | 1010ms | 2 units |
+  | (c) accept on main, spawn per conn | — | 1 | 510ms | 1 unit |
+  | (c) same | — | **4** | **2011ms** | **4 units — fully serial** |
+
+  **(c) is disqualified, and the source says why.** `spawn` must bind a handle: a bare
+  `spawn work(1)` statement is rejected — `error: a statement must be a declaration,
+  assignment, or call -- a bare expression has no effect`. Once bound, the compiler
+  emits an implicit join at the handle's scope exit — `src/tychoc.c:9148`
+  (`taskvar_push(sfmt("tycho_task_finish(h_%s)", s->name))`) and `compiler/tychoc0.ty:9100,:9116`
+  — which runs `pthread_join` for any un-waited task (`runtime/tycho_rt.c:602-606`). In an
+  accept loop the handle is a loop-body local, so every iteration joins before the next
+  `accept`: 4 clients cost 4 units. Answering the phase's question directly: an un-waited
+  task does **not** leak, abort, or get reaped asynchronously — the parent blocks for it.
+  Measured: `main` reached its last statement at 0ms, the process exited at 505ms.
+  Fire-and-forget is not expressible in Tycho.
+
+  **(b) is disqualified as unsound, not as slow.** `parallel for` fans out
+  `tycho_ncpu()` chunk threads (`runtime/tycho_rt.c:843-852`), so `range(N)` yields
+  `min(N, ncpu)` *live* iterations. Iterations chunked behind a non-returning one never
+  start at all — an accept loop never returns. It read as the prettiest shape and passed
+  at N=4 purely because the host has 16 CPUs; `TYCHO_THREADS=2` silently cut the server
+  to 2 workers with no diagnostic. A worker count that depends on the machine, not the
+  program, is not an architecture.
+
+  **Chosen: (a') recursive fan-out.** Source:
+
+  ```tycho
+  fn accept_loop(srv: int, id: int) -> int:
+      served := 0
+      for served < 1000:
+          conn := net.accept(srv)
+          if conn < 0:
+              return served
+          req := httpd.read_request(conn)
+          spin_ms(500)
+          httpd.write_response(conn, httpd.response(200, "worker " + str(id) + "\n"))
+          net.close_fd(conn)
+          served = served + 1
+      return served
+
+  fn worker(srv: int, id: int, remaining: int) -> int:
+      if remaining > 1:
+          peer := spawn worker(srv, id + 1, remaining - 1)
+          n := accept_loop(srv, id)
+          return n + wait(peer)
+      return accept_loop(srv, id)
+
+  fn main():
+      srv := net.listen("127.0.0.1", 8105)
+      print(str(worker(srv, 1, 8)))
+  ```
+
+  **Readability, honestly.** Plain (a) at N=8 is literally eight near-identical
+  `w1 := spawn worker(srv, 1)` lines followed by eight `wait(w1)` lines — sixteen lines
+  of copy-paste where every other language writes one loop, and the worker count is
+  frozen at *write* time, not run time. That is a real ergonomic finding about Tycho and
+  it belongs on the record even though (a) won on measurement.
+
+  (a') gets the count back to a runtime value with one function and no repetition, and
+  it is the shape the server will use. But it is a workaround wearing a nice coat: the
+  recursion exists solely because a task handle is affine and cannot be stored, so the
+  only place to put N handles is N stack frames. `peer := spawn worker(...)` is doing
+  the job of `for _ in range(n): spawn worker(...)`, and a reader has to already know
+  the affinity rule to see why. It also builds an N-deep join chain, so shutdown unwinds
+  through every frame — fine at N=8, and something to remember if N ever gets large.
+  The honest summary: Tycho can express a concurrent server cleanly enough to write one,
+  but "start N workers" — the most ordinary thing a server does — has no direct spelling.
 
 - [ ] **Phase 2 — BLOCKER: `httpd` carries `bytes` bodies**
   - `Request.body` and `Response.body` become `bytes`; `render()` stops building the
