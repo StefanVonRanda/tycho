@@ -1,6 +1,6 @@
 # Diagnostic-text parity between `tychoc` and `tychoc0` — measurement, 2026-07-25
 
-Phase 2 of the front-door-defects plan (`../../plan.md` finding #3). **Measurement only.**
+Phase 2 of the front-door-defects plan (`plan-front-door-DONE.md` finding #3). **Measurement only.**
 Nothing here is a fix, a gate, or a spec claim. Phase 3 decides what — if anything — to do
 with these numbers.
 
@@ -438,7 +438,7 @@ Bodies shown for DIVERGENT rows only, per the phase brief.
 
 **No blanket diagnostic-text parity gate. The divergence is recorded as ACCEPTED.**
 
-The criterion was pre-registered in `../../plan.md` Pre-flight: *"If DIVERGENT is large or
+The criterion was pre-registered in `plan-front-door-DONE.md` Pre-flight: *"If DIVERGENT is large or
 the differences are deliberate, do NOT force them equal — record the divergence as accepted,
 write the rationale, and drop the gate."* The measurement above returned 75/143 = **52%**
 DIVERGENT. That is the "large" branch, and it is taken.
@@ -490,7 +490,7 @@ sending the reader to the wrong place in their own program) and were fixed. The 
 are two independently-true diagnoses of the same program, or the same rule said better on one
 side; those were left alone. The classification table and the fixtures that lock the new
 wording (`tests/diag/g6_*.ty`, with per-compiler `.err`/`.h0err` goldens) are in
-`../../plan.md` under Phase 3.
+`plan-front-door-DONE.md` under Phase 3.
 
 ## Reproducing this
 
