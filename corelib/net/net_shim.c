@@ -37,6 +37,24 @@ static void ty_net_init(void) {
 }
 #endif
 
+/* Writing to a socket whose peer has gone away raises SIGPIPE, whose default
+ * disposition terminates the PROCESS -- every task, every other connection. For
+ * a server that is a remote kill switch: one client that sends a partial request
+ * and closes without reading is enough (measured 2026-07-26, `poll()` = -13).
+ * MSG_NOSIGNAL turns that into a plain EPIPE return, which netx_write already
+ * handles as "fail closed, report -1".
+ *
+ * This cannot be worked around by the Tycho caller. Signal disposition is a
+ * process-wide property with no Tycho spelling, and netx_write loops over short
+ * writes internally, so even a single logical net.write() can issue several
+ * send() calls -- the first returns ECONNRESET, the second raises the signal.
+ * Winsock has no such flag and no SIGPIPE, so the fallback of 0 is correct
+ * there. BSD/macOS additionally get SO_NOSIGPIPE set on the socket in
+ * make_sock(), because MSG_NOSIGNAL is not portable to older Darwin. */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -101,10 +119,48 @@ tycho_int netx_listen(const char *host, tycho_int port) {
     return fd;
 }
 
+/* Per-connection tuning applied to every CONNECTED stream socket (accepted or
+ * dialled). Both settings are best-effort; a failure leaves the kernel default.
+ *
+ * SO_NOSIGPIPE  -- BSD/macOS only. Linux uses the per-send MSG_NOSIGNAL flag in
+ *                  netx_write instead; Windows has no SIGPIPE. See the note at
+ *                  the top of this file.
+ *
+ * TCP_NODELAY   -- disable Nagle. This is not a micro-optimization, it is a
+ *                  correctness-grade latency fix for request/response protocols.
+ *                  A caller that writes a response as a header write followed by
+ *                  a body write -- which is exactly what corelib/httpd's
+ *                  write_response does, on purpose, to avoid copying the body --
+ *                  has its second small segment held by Nagle until the first is
+ *                  ACKed, and the peer's delayed-ACK timer is ~40 ms. Measured
+ *                  2026-07-26 with tycho-httpd on loopback, 300 keep-alive
+ *                  requests for a 294-byte file:
+ *
+ *                      two writes, Nagle on   43.73 ms/req      23 req/s
+ *                      one write,  Nagle on    0.07 ms/req   14465 req/s
+ *
+ *                  Same server, same bytes; the whole difference is one stalled
+ *                  segment per response. Every production HTTP server sets this,
+ *                  and no Tycho program can: there is no setsockopt surface in
+ *                  core:net, and this is a property of the connection, not of
+ *                  anything the caller writes. */
+static void ty_tune_stream(tycho_int fd) {
+    int on = 1;
+#ifdef SO_NOSIGPIPE
+    setsockopt((int)fd, SOL_SOCKET, SO_NOSIGPIPE, (const void *)&on, sizeof on);
+#endif
+#ifdef TCP_NODELAY
+    setsockopt((int)fd, IPPROTO_TCP, TCP_NODELAY, (const void *)&on, sizeof on);
+#endif
+    (void)on;
+    (void)fd;
+}
+
 /* Accept one pending connection off a listener; returns the connected fd or -1. */
 tycho_int netx_accept(tycho_int fd) {
     if (fd < 0) return -1;
     tycho_int c = (tycho_int)accept((int)fd, NULL, NULL);
+    if (c >= 0) ty_tune_stream(c);
     return c;
 }
 
@@ -118,6 +174,7 @@ tycho_int netx_connect(const char *host, tycho_int port) {
         TY_CLOSE((int)fd);
         return -1;
     }
+    ty_tune_stream(fd);
     return fd;
 }
 
@@ -132,12 +189,14 @@ tycho_int netx_port_of(tycho_int fd) {
 }
 
 /* Send the whole buffer (looping over short writes); returns the byte count sent
- * (== len) or -1 on error. A 0-length payload is a valid no-op that returns 0. */
+ * (== len) or -1 on error. A 0-length payload is a valid no-op that returns 0.
+ * MSG_NOSIGNAL: a peer that vanished mid-write must yield EPIPE here, never a
+ * SIGPIPE that kills the process -- see the note at the top of this file. */
 tycho_int netx_write(tycho_int fd, const unsigned char *data, tycho_int len) {
     if (fd < 0 || len < 0) return -1;
     tycho_int off = 0;
     while (off < len) {
-        tycho_int n = (tycho_int)send((int)fd, (const char *)data + off, (size_t)(len - off), 0);
+        tycho_int n = (tycho_int)send((int)fd, (const char *)data + off, (size_t)(len - off), MSG_NOSIGNAL);
         if (n <= 0) return -1;   /* fail closed: report the partial-send as an error */
         off += n;
     }

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tycho-httpd</title>
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <img src="/img/logo.png" alt="tycho" width="480" height="270" class="logo">
+  <h1>tycho-httpd</h1>
+  <p class="tag">A static web server written in Tycho.</p>
+</header>
+
+<main>
+  <section>
+    <h2>What this page proves</h2>
+    <p>
+      Everything you are looking at came off a socket handled by a Tycho program:
+      this HTML, the stylesheet, the script below, the PNG in the header, the
+      favicon in your tab, and the font these words are set in. Nothing is
+      proxied and nothing is precompiled into the binary &mdash; each response is
+      a file read off disk at request time, with a content type picked from its
+      extension.
+    </p>
+    <ul class="facts">
+      <li><code>bytes</code> bodies, so binary assets are served byte-for-byte</li>
+      <li>HTTP/1.1 keep-alive, so this page costs one TCP connection, not seven</li>
+      <li>a fixed pool of worker tasks, each running its own <code>accept</code> loop</li>
+      <li>path traversal refused before the filesystem is touched</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <p>Links that exercise the interesting paths:</p>
+    <ul class="links">
+      <li><a href="/about/">/about/</a> &mdash; a directory index</li>
+      <li><a href="/about">/about</a> &mdash; redirects to <code>/about/</code></li>
+      <li><a href="/img/dot.png">/img/dot.png</a> &mdash; a 16&times;16 PNG</li>
+      <li><a href="/fonts/quicksand-regular.ttf">/fonts/quicksand-regular.ttf</a> &mdash; 95 KB of font</li>
+      <li><a href="/robots.txt">/robots.txt</a> &mdash; <code>text/plain</code></li>
+      <li><a href="/data.json">/data.json</a> &mdash; <code>application/json</code></li>
+      <li><a href="/nope">/nope</a> &mdash; a 404</li>
+      <li><a href="/../etc/passwd">/../etc/passwd</a> &mdash; refused (your browser will normalise it away; use <code>curl --path-as-is</code>)</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Live check</h2>
+    <p>
+      The script fetches <code>/data.json</code> and reports what came back, so
+      you can see a second request served over the same connection.
+    </p>
+    <pre id="out">(script has not run yet)</pre>
+  </section>
+</main>
+
+<footer>
+  <p>
+    Served by <code>tycho-httpd</code>. Font: Quicksand by Andrew Paglinawan,
+    <a href="/fonts/LICENSE.txt">SIL Open Font License</a>.
+  </p>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

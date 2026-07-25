@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links server wiki ci hooks ilp32 asan-self clean
 
 all: tychoc
 
@@ -182,6 +182,14 @@ corelib-examples: tychoc
 # corelib-examples. See examples/fetch/run.sh.
 fetch: tychoc
 	@sh examples/fetch/run.sh
+
+# server: build tycho-httpd, the static web server in server/. A BUILD target
+# only -- it is deliberately NOT in `make ci` and asserts nothing, because the
+# thing it produces is a long-running network daemon, not a fixture with a
+# golden. Run it and point a browser at it; see server/README.md.
+server: tychoc
+	@./tychoc server/main.ty -o tycho-httpd
+	@echo "built ./tycho-httpd -- try: ./tycho-httpd --root server/www --port 8080"
 
 # site: a static-site generator dogfood composing eight corelib modules
 # (io+path+json+csv+strings+sort+datetime+sha256) -- no FFI, no external deps, so

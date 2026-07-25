@@ -1,0 +1,504 @@
+package main
+# tycho-httpd -- a static web server written in Tycho.
+#
+#   ./tycho-httpd --root server/www --port 8080 --workers 8
+#
+# It serves a directory of real files -- HTML, CSS, JS, images, fonts -- over
+# HTTP/1.1 with persistent connections, correct content types, index resolution,
+# and a hard refusal of anything that tries to climb out of the document root.
+#
+# CONCURRENCY. A fixed pool of worker tasks, each running its own accept(2) loop
+# on the one shared listening fd. The pool is built by RECURSIVE FAN-OUT: worker
+# k spawns worker k+1 into a frame-local before entering its own loop. That is
+# not a stylistic choice. A task handle in Tycho is affine -- it cannot be stored
+# in an array, a struct, or any aggregate -- so the only place to keep N live
+# handles is N stack frames. See plan.md, phase 1, for the measurements that
+# settled this (8 workers, 8 concurrent 500ms clients, 509ms wall).
+#
+# REQUEST READING. This file does its own head read rather than calling
+# httpd.read_request. The reason is narrow and worth stating: read_request
+# reports EOF, an idle timeout, and a malformed request line the same way --
+# `method == ""`. A server that has to answer 400 to garbage while closing
+# silently on a hangup needs to tell those apart, and the only way to do that is
+# to hold the raw buffer. read_head below is that buffer, plus a 16 KiB cap so a
+# peer cannot make us grow a string forever.
+#
+# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, byte ranges, compression,
+# conditional requests, pipelining, virtual hosts. See README.md.
+
+import "core:httpd"
+import "core:net"
+import "core:io"
+import "core:path"
+import "core:url"
+import "core:strings"
+import "core:time"
+import "core:datetime"
+
+const VERSION     = "tycho-httpd/1.0"
+const DEF_HOST    = "127.0.0.1"
+const DEF_PORT    = 8080
+const DEF_WORKERS = 8
+const DEF_IDLE_MS = 5000
+const MAX_HEAD    = 16384      # request head cap; past this -> 431, connection closed
+const CHUNK       = 4096       # socket read size
+const MAX_REQS    = 1024       # requests served on one connection before we close it
+const LOG_FIELD   = 160        # longest request target we will echo into a log line
+
+struct Config:
+    root: string
+    host: string
+    port: int
+    workers: int
+    idle_ms: int
+    quiet: bool
+    help: bool          # --help was asked for; main prints usage and exits 0
+
+# What a request target resolved to. `status` 200 means serve `file`; 301 means
+# redirect to `location`; anything else is an error to render.
+struct Route:
+    status: int
+    file: string
+    location: string
+
+# ---- small helpers ---------------------------------------------------------
+
+# The header terminator, CRLF CRLF. Tycho string literals have no \r escape.
+fn term() -> string:
+    return httpd.crlf() + httpd.crlf()
+
+fn is_ctl(c: int) -> bool:
+    return c < 32 or c == 127
+
+fn is_digits(s: string) -> bool:
+    if len(s) == 0:
+        return false
+    for i in range(len(s)):
+        if s[i] < 48 or s[i] > 57:
+            return false
+    return true
+
+# RFC 1123 date, the format an HTTP Date header wants:
+#   Sun, 26 Jul 2026 08:49:37 GMT
+fn http_date() -> string:
+    dt := datetime.now_utc()
+    out := datetime.weekday_name(dt.weekday) + ", " + datetime.pad2(dt.day)
+    out += " " + datetime.month_name(dt.month) + " " + datetime.pad4(dt.year)
+    out += " " + datetime.pad2(dt.hour) + ":" + datetime.pad2(dt.minute)
+    return out + ":" + datetime.pad2(dt.second) + " GMT"
+
+# Microseconds as "1.234ms", for the log line.
+fn fmt_ms(us: int) -> string:
+    frac := str(us % 1000)
+    for len(frac) < 3:
+        frac = "0" + frac
+    return str(us / 1000) + "." + frac + "ms"
+
+# Make an arbitrary byte string safe to put in a log line: control bytes become
+# '.', and it is truncated. A request target is attacker-controlled; it must not
+# be able to inject newlines into the log or paint the terminal.
+fn log_safe(s: string) -> string:
+    n := len(s)
+    cut := false
+    if n > LOG_FIELD:
+        n = LOG_FIELD
+        cut = true
+    cs := []int
+    for i in range(n):
+        c := s[i]
+        if is_ctl(c):
+            push(cs, 46)
+        else:
+            push(cs, c)
+    out := to_str(to_bytes(cs))
+    if cut:
+        out += "..."
+    return out
+
+# The request line of a raw buffer, for logging a request we could not parse.
+fn first_line(raw: string) -> string:
+    e := find(raw, "\n")
+    if e >= 0:
+        return log_safe(raw[0:e])
+    return log_safe(raw)
+
+# ---- content types ---------------------------------------------------------
+
+# core:httpd's table covers the web's common types but not the two font formats
+# people actually self-host (.ttf/.otf), nor source maps. Extend it here rather
+# than in the corelib package: an application knowing its own assets is the right
+# layer for this, and the fallback is still application/octet-stream.
+fn ctype_for(p: string) -> string:
+    if httpd.has_ext(p, ".ttf"):
+        return "font/ttf"
+    if httpd.has_ext(p, ".otf"):
+        return "font/otf"
+    if httpd.has_ext(p, ".map"):
+        return "application/json"
+    if httpd.has_ext(p, ".webmanifest"):
+        return "application/manifest+json"
+    if httpd.has_ext(p, ".md"):
+        return "text/markdown; charset=utf-8"
+    return httpd.content_type(p)
+
+# ---- error pages -----------------------------------------------------------
+
+fn explain(status: int) -> string:
+    if status == 400:
+        return "The request could not be parsed as HTTP."
+    if status == 403:
+        return "That path is not inside the document root."
+    if status == 404:
+        return "No file is published at that path."
+    if status == 405:
+        return "This server is read-only. Use GET or HEAD."
+    if status == 431:
+        return "The request headers exceeded this server's limit."
+    return "The server could not complete the request."
+
+fn error_body(status: int, reason: string) -> string:
+    s := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n"
+    s += "<title>" + str(status) + " " + reason + "</title>\n<style>"
+    s += "body{background:#181c30;color:#f0eee6;margin:0;min-height:100vh;"
+    s += "display:grid;place-items:center;font:17px/1.6 ui-sans-serif,system-ui,sans-serif}"
+    s += "main{max-width:32rem;padding:2rem;text-align:center}"
+    s += "h1{font-size:3.5rem;margin:0;color:#7c5cf0;letter-spacing:-.03em}"
+    s += "p{color:#a9a6bb}a{color:#7c5cf0}</style>\n</head>\n<body><main>\n"
+    s += "<h1>" + str(status) + "</h1>\n<p><strong>" + reason + "</strong></p>\n"
+    s += "<p>" + explain(status) + "</p>\n"
+    s += "<p><a href=\"/\">back to the index</a></p>\n"
+    s += "<p style=\"font-size:.8rem\">" + VERSION + "</p>\n"
+    return s + "</main></body></html>\n"
+
+fn error_response(status: int) -> httpd.Response:
+    reason := httpd.reason_phrase(status)
+    r := httpd.response(status, to_bytes(error_body(status, reason)))
+    r = httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
+    if status == 405:
+        r = httpd.with_header(r, "Allow", "GET, HEAD")
+    return r
+
+# 431 is outside httpd.reason_phrase's table, which would render it as the
+# placeholder "Status". Build the Response directly so the wire carries the real
+# reason phrase.
+fn oversize_response() -> httpd.Response:
+    reason := "Request Header Fields Too Large"
+    body := to_bytes(error_body(431, reason))
+    r := httpd.Response(431, reason, []string, []string, body)
+    return httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
+
+fn redirect_response(location: string) -> httpd.Response:
+    body := to_bytes("<!doctype html><meta charset=\"utf-8\"><title>301</title>\n")
+    r := httpd.response(301, body)
+    r = httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
+    return httpd.with_header(r, "Location", location)
+
+# ---- path resolution -------------------------------------------------------
+#
+# THE SECURITY BOUNDARY. Everything a request can influence about which file we
+# open passes through here, and the order matters:
+#
+#   1. cut the query and fragment                (?a=1, #frag are not path)
+#   2. require origin-form                       (must start with "/")
+#   3. percent-decode ONCE                       (so %2e%2e cannot hide a "..")
+#   4. reject control bytes, NUL included        (path smuggling, log injection)
+#   5. reject any segment starting with "."      (.git, .env, .htpasswd)
+#   6. path.safe_join, which returns "" for an absolute rel or one that
+#      climbs above the root                     (corelib/path/path.ty:140)
+#
+# Decoding before the traversal test is the part that is easy to get backwards.
+# A single decode is also deliberate: decoding twice would let %252e%252e
+# through, which is exactly the historical IIS bug.
+
+fn hidden_segment(rel: string) -> bool:
+    opening := true
+    for i in range(len(rel)):
+        c := rel[i]
+        if opening and c == 46:
+            return true
+        opening = c == 47
+    return false
+
+fn resolve(root: string, target: string) -> Route:
+    p := target
+    q := find(p, "?")
+    if q >= 0:
+        p = p[0:q]
+    fr := find(p, "#")
+    if fr >= 0:
+        p = p[0:fr]
+    if len(p) == 0 or p[0] != 47:
+        return Route(400, "", "")                  # absolute-form or garbage
+    dec := url.decode(p)
+    for i in range(len(dec)):
+        if is_ctl(dec[i]):
+            return Route(400, "", "")
+    rel := dec[1:len(dec)]
+    dir_form := len(rel) == 0 or rel[len(rel) - 1] == 47
+    if dir_form:
+        rel += "index.html"
+    if hidden_segment(path.clean(rel)):
+        return Route(403, "", "")
+    fsp := path.safe_join(root, rel)
+    if fsp == "":
+        return Route(403, "", "")                  # absolute, or escapes root
+    if not io.exists(fsp):
+        return Route(404, "", "")
+    if len(io.list(fsp)) > 0:                      # it is a directory
+        if dir_form:
+            return Route(404, "", "")              # /dir/ with no index.html
+        return Route(301, "", p + "/")             # /dir -> /dir/
+    return Route(200, fsp, "")
+
+# ---- the connection loop ---------------------------------------------------
+
+# Read until the header terminator, EOF, the idle timeout, or the cap. Returns
+# the raw buffer; "" means the peer went away without saying anything, which is
+# an ordinary keep-alive expiry and not worth a log line.
+fn read_head(conn: int) -> string:
+    buf := ""
+    reading := true
+    for reading:
+        if find(buf, term()) >= 0:
+            reading = false
+        elif len(buf) >= MAX_HEAD:
+            reading = false
+        else:
+            chunk := net.read(conn, CHUNK)
+            if len(chunk) == 0:                    # EOF, error, or read timeout
+                reading = false
+            else:
+                buf += to_str(chunk)
+    return buf
+
+fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> int:
+    out := httpd.with_connection(r, keep)
+    out = httpd.with_header(out, "Server", VERSION)
+    out = httpd.with_header(out, "Date", http_date())
+    if head_only:
+        # HEAD: the headers a GET would have produced, and no body at all.
+        # Setting Content-Length explicitly stops render_head recomputing it
+        # from the now-empty body.
+        out = httpd.with_header(out, "Content-Length", str(len(out.body)))
+        out = httpd.with_body(out, to_bytes(""))
+    return httpd.write_response(conn, out)
+
+# One line per request on stderr: worker, method, target, status, body bytes,
+# duration. Built whole and written with a single eprint, because N workers
+# share one stderr and there is no lock to take.
+#
+# `wrote` is what write_response returned. It is < 0 when the peer vanished
+# mid-response; the line then reports 0 bytes and says so, rather than claiming
+# a body that never reached anyone.
+fn log_req(cfg: Config, wid: int, method: string, target: string, status: int, nbytes: int, wrote: int, us: int):
+    if cfg.quiet:
+        return
+    n := nbytes
+    tail := ""
+    if wrote < 0:
+        n = 0
+        tail = " write-failed"
+    ln := "w" + str(wid) + " " + log_safe(method) + " " + target + " "
+    ln += str(status) + " " + str(n) + " " + fmt_ms(us) + tail + "\n"
+    eprint(ln)
+
+fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
+    served := 0
+    alive := true
+    for alive and served < MAX_REQS:
+        raw := read_head(conn)
+        if len(raw) == 0:
+            alive = false                          # idle expiry or clean hangup
+        else:
+            sw := time.start()
+            served += 1
+            if find(raw, term()) < 0:
+                # No terminator: either the peer blew the cap, or it stopped
+                # talking mid-head. Both end the connection; only the codes differ.
+                st := 400
+                r := error_response(400)
+                if len(raw) >= MAX_HEAD:
+                    st = 431
+                    r = oversize_response()
+                n := emit(conn, r, false, false)
+                log_req(cfg, wid, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
+                alive = false
+            else:
+                req := httpd.parse_request(raw)
+                keep := not httpd.connection_close(req)
+                # We serve no method that takes a body, and read_head stops at
+                # the terminator, so an entity body would be left in the socket
+                # and desync the next request. Answer, then close.
+                clh := httpd.header(req, "content-length")
+                if clh != "" or httpd.header(req, "transfer-encoding") != "":
+                    keep = false
+                # A Content-Length that is not a plain decimal count ("-5", "1x",
+                # "0x10") is a request smuggling primitive, not a typo. Refuse it
+                # rather than letting to_uint's lenient parse pick a number.
+                bad_len := clh != "" and not is_digits(clh)
+                head_only := req.method == "HEAD"
+                target := log_safe(req.path)
+                if req.method == "" or bad_len:
+                    r := error_response(400)
+                    n := emit(conn, r, false, false)
+                    log_req(cfg, wid, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                    alive = false
+                elif req.method != "GET" and req.method != "HEAD":
+                    r := error_response(405)
+                    n := emit(conn, r, false, keep)
+                    log_req(cfg, wid, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
+                    if n < 0:
+                        alive = false
+                else:
+                    rt := resolve(cfg.root, req.path)
+                    r := error_response(rt.status)
+                    if rt.status == 200:
+                        body := io.read_bytes(rt.file)
+                        r = httpd.response(200, body)
+                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                        r = httpd.with_header(r, "Cache-Control", "no-cache")
+                    elif rt.status == 301:
+                        r = redirect_response(rt.location)
+                    nb := len(r.body)
+                    if head_only:
+                        nb = 0
+                    n := emit(conn, r, head_only, keep)
+                    log_req(cfg, wid, req.method, target, rt.status, nb, n, time.elapsed_us(sw))
+                    if n < 0:
+                        alive = false               # peer hung up mid-write
+                if not keep:
+                    alive = false
+    return served
+
+# ---- the worker pool -------------------------------------------------------
+
+fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
+    served := 0
+    running := true
+    for running:
+        conn := net.accept(srv)
+        if conn < 0:
+            running = false                        # listener closed: wind down
+        else:
+            armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
+            if not armed and not cfg.quiet:
+                eprint("w" + str(wid) + " warn: idle timeout not armed\n")
+            served += serve_conn(cfg, conn, wid)
+            net.close_fd(conn)
+    return served
+
+# Worker k spawns worker k+1 into a frame-local, then runs its own accept loop;
+# the last one just runs the loop. See the header note on affine task handles.
+fn worker(cfg: Config, srv: int, wid: int, remaining: int) -> int:
+    if remaining > 1:
+        peer := spawn worker(cfg, srv, wid + 1, remaining - 1)
+        n := accept_loop(cfg, srv, wid)
+        return n + wait(peer)
+    return accept_loop(cfg, srv, wid)
+
+# ---- command line ----------------------------------------------------------
+
+fn usage() -> string:
+    s := "tycho-httpd -- a static web server written in Tycho\n\n"
+    s += "usage: tycho-httpd [options]\n\n"
+    s += "  --root DIR       directory to serve            (default: .)\n"
+    s += "  --host ADDR      address to bind               (default: " + DEF_HOST + ")\n"
+    s += "  --port N         port to bind, 0 = pick free   (default: " + str(DEF_PORT) + ")\n"
+    s += "  --workers N      concurrent accept loops       (default: " + str(DEF_WORKERS) + ")\n"
+    s += "  --idle-ms N      keep-alive idle timeout, ms   (default: " + str(DEF_IDLE_MS) + ")\n"
+    s += "  --quiet, -q      do not log requests\n"
+    s += "  --help, -h       this text\n\n"
+    s += "Both spellings work: --port 8080 and --port=8080.\n"
+    return s
+
+fn opt_name(a: string) -> string:
+    eq := find(a, "=")
+    if eq > 0:
+        return a[0:eq]
+    return a
+
+fn opt_inline(a: string) -> string:
+    eq := find(a, "=")
+    if eq > 0:
+        return a[eq + 1:len(a)]
+    return ""
+
+fn wants_value(k: string) -> bool:
+    return k == "--root" or k == "--host" or k == "--port" or k == "--workers" or k == "--idle-ms"
+
+fn as_uint(s: string, what: string) -> int:
+    if not is_digits(s):
+        die("tycho-httpd: " + what + " wants a non-negative integer, got: " + s + "\n")
+    return strings.parse_int(s)
+
+fn parse_args(argv: [string]) -> Config:
+    root := "."
+    host := DEF_HOST
+    port := DEF_PORT
+    workers := DEF_WORKERS
+    idle := DEF_IDLE_MS
+    quiet := false
+    i := 0
+    for i < len(argv):
+        a := argv[i]
+        k := opt_name(a)
+        v := opt_inline(a)
+        step := 1
+        if wants_value(k) and find(a, "=") < 0:
+            if i + 1 >= len(argv):
+                die("tycho-httpd: " + k + " needs a value\n\n" + usage())
+            v = argv[i + 1]
+            step = 2
+        if k == "--root":
+            root = v
+        elif k == "--host":
+            host = v
+        elif k == "--port":
+            port = as_uint(v, "--port")
+        elif k == "--workers":
+            workers = as_uint(v, "--workers")
+        elif k == "--idle-ms":
+            idle = as_uint(v, "--idle-ms")
+        elif k == "--quiet" or k == "-q":
+            quiet = true
+        elif k == "--help" or k == "-h":
+            # Cannot just die(): die is the language's only exit and it always
+            # exits 1, which is the wrong status for an answered --help.
+            return Config("", "", 0, 1, 1, false, true)
+        else:
+            die("tycho-httpd: unknown option: " + a + "\n\n" + usage())
+        i += step
+    if port > 65535:
+        die("tycho-httpd: --port must be 0..65535\n")
+    if workers < 1 or workers > 256:
+        die("tycho-httpd: --workers must be 1..256\n")
+    if idle < 1:
+        die("tycho-httpd: --idle-ms must be at least 1\n")
+    return Config(path.clean(root), host, port, workers, idle, quiet, false)
+
+fn main():
+    raw := args()
+    argv := []string
+    for i in range(1, len(raw)):
+        push(argv, raw[i])
+    cfg := parse_args(argv)
+    if cfg.help:
+        print(usage())
+        return
+
+    if len(io.list(cfg.root)) == 0:
+        eprint("tycho-httpd: warning: " + cfg.root + " is empty or not a directory\n")
+
+    srv := net.listen(cfg.host, cfg.port)
+    if srv < 0:
+        die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
+    bound := net.port_of(srv)
+
+    banner := "tycho-httpd: serving " + cfg.root
+    banner += " on http://" + cfg.host + ":" + str(bound) + "/"
+    banner += "  workers=" + str(cfg.workers)
+    banner += " idle=" + str(cfg.idle_ms) + "ms\n"
+    eprint(banner)
+
+    total := worker(cfg, srv, 1, cfg.workers)
+    eprint("tycho-httpd: stopped after " + str(total) + " requests\n")

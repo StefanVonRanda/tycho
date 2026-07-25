@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>about &mdash; tycho-httpd</title>
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>about</h1>
+  <p class="tag">This page exists to prove directory index resolution works.</p>
+</header>
+
+<main>
+  <section>
+    <p>
+      You reached this file by asking for <code>/about/</code>. The server
+      appended <code>index.html</code> to the trailing slash and served
+      <code>www/about/index.html</code>. Asking for <code>/about</code> without
+      the slash gets a <code>301</code> to <code>/about/</code> first, so relative
+      links on this page resolve against the right directory.
+    </p>
+    <p><a href="/">&larr; back</a> &mdash; <a href="/img/dot.png">a relative-ish asset</a></p>
+  </section>
+</main>
+</body>
+</html>

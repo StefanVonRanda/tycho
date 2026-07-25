@@ -1,0 +1,11 @@
+{
+  "server": "tycho-httpd",
+  "language": "Tycho",
+  "concurrency": "recursive spawn fan-out, one accept loop per worker",
+  "body_type": "bytes",
+  "keep_alive": true,
+  "notes": [
+    "this file is read off disk on every request",
+    "its content type comes from the .json extension"
+  ]
+}

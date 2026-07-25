@@ -42,6 +42,18 @@ gmon.out
 /tycho-lsp
 /tycho-lsp.c
 
+# The compiled static web server (built by `make server` from server/main.ty).
+# server/main.ty and server/www/ ARE tracked; the binary is not. Also catch the
+# form built next to its source.
+/tycho-httpd
+/tycho-httpd.c
+/server/tycho-httpd
+/server/main
+/server/main.c
+
+# Playwright MCP scratch (screenshots, snapshots) — never source
+/.playwright-mcp/
+
 # Editor-extension dev artifacts (the sources under editors/ ARE tracked)
 /editors/**/node_modules/
 /editors/**/*.vsix
