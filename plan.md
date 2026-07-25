@@ -3066,7 +3066,7 @@ codegen.
   - Done when: all four positions give tychoc's wording on both compilers, the
     diag fixtures lock it, full gate set green.
 
-- [ ] **Phase 22 — tychoc0 does not restrict a newtype's UNDERLYING type the way tychoc does (found by Phase 20, out of its scope)**
+- [x] **Phase 22 — tychoc0 does not restrict a newtype's UNDERLYING type the way tychoc does (found by Phase 20, out of its scope)** — **CLOSED BY REFERENCE, 2026-07-25: measured in full by Phase 25 (row H2), fix re-filed as Phase 27.** The "not known" list below is now known: `type C = (int,int)` / `Option(int)` / `Result(int,string)` / `fn(int)->int` / an enum / `soa[P]` / another newtype / `ptr` / `bytes` / `u8` / `f32` are ALL rejected by tychoc and ALL accepted by tychoc0, and eight of the eleven compile and run. The legal set (`int`, `float`, `string`, `bool`, `[int]`, `[2]int`, `[string:int]`, a struct, `bounded[4]int`) agrees on both. Evidence: `docs/internals/frontend-restriction-audit-2026-07-25.md` §5 row H2. The diagnostic-quality observation about `soa[Channel(int)]` carries forward into Phase 27's scope. This box is ticked because the MEASUREMENT this phase asked for is done; the FIX is Phase 27 (Phase 25 was measurement-only by ruling).
   - Phase 20 needed one newtype probe (`type C = Channel(int)`) and found that
     tychoc rejects it with a *general* rule — `a newtype's underlying type must
     be int, float, string…` (measured 2026-07-25, `/tmp/ph20/x.py`) — while
@@ -3150,7 +3150,7 @@ codegen.
   - Done when: the 4 `-Wmisleading-indentation` sites are diagnosed as cosmetic or
     real (with the reasoning written down) and fixed; full gate set green.
 
-- [ ] **Phase 25 — SYSTEMATIC AUDIT: every frontend restriction tychoc enforces, checked against tychoc0 (user-ordered, 2026-07-25)**
+- [x] **Phase 25 — SYSTEMATIC AUDIT: every frontend restriction tychoc enforces, checked against tychoc0 (user-ordered, 2026-07-25)**
   - **Why this exists.** Six consecutive phases each found another instance of the
     same shape: tychoc enforces a restriction, tychoc0 does not, and tychoc0
     fail-opens — Phase 9 (`str`/`void` as type names), Phase 15 (non-bool
@@ -3193,6 +3193,115 @@ codegen.
     its completeness; every divergence is filed as a new phase, ranked by whether
     it runs; full gate set green (this phase changes no compiler source).
 
+  **DONE 2026-07-25. Measurement only — NO compiler source touched.** Deliverable:
+  `docs/internals/frontend-restriction-audit-2026-07-25.md`.
+
+  **1. Enumeration method (four passes, from tychoc's structure, not from memory).**
+  1. A script walked `src/tychoc.c` (11 689 lines) attributing every `die_at(` /
+     `die(` / `*_err(` call to its enclosing function: **501 sites**
+     (`/tmp/ph25/dieat.txt`).
+  2. The population was restricted to the layer where the intern/no-intern asymmetry
+     lives — the seven type interners (`chan_of :610`, `arrc_sized_b :668`,
+     `opt_of :751`, `res_of :774`, `tup_of :837`, `mapc_of :1004`, and the seventh,
+     which is **`funcc_of :1027`**, not `func_of` as Phase 20's evidence names it —
+     its guards at `:1030`/`:1032` are exactly where Phase 20 put them),
+     `parse_type_inner` (26 sites), the declaration parsers (`parse_fn` 9,
+     `parse_extern_fn` 3, `parse_handle` 3, `parse_struct` 6, `parse_enum` 7,
+     `parse_typedecl` 3) and `resolve_program`'s declaration scan (14). The 188
+     `resolve_expr_inner` + 69 `resolve_stmt` sites are the Phase 2/3 diagnostic-parity
+     domain and are excluded by name, not by omission. **60 distinct rules after
+     grouping.**
+  3. Every row was looked up in `docs/spec/`; a row with no clause is marked
+     `unspec'd` and is itself a finding.
+  4. **Completeness cross-check:** all 182 single-file `tests/reject/` fixtures were run
+     through tychoc and their diagnostics collected (`/tmp/ph25/rjmsgs.json`) — 182
+     fixtures, **135 distinct messages**, every one mapped back to an enumerated rule.
+     **No fixture exercised a rule the enumeration had missed.**
+
+  **The structural filter that makes 60 a complete rather than arbitrary boundary:**
+  `tests/run.sh:150-164` runs BOTH compilers over every `tests/reject/*.ty` and fails
+  with `"tychoc0 ACCEPTED an invalid program (fail-open)"`. So a rule with a reject
+  fixture **cannot** be a live fail-open — the gate would already be red. The candidate
+  population is exactly the rules tychoc enforces that have no fixture.
+
+  **2. Measurement.** FRONT/CC/RUN, `--emit-c` on BOTH sides plus a separate `cc`;
+  never a raw `rc` comparison. Harness `/tmp/ph25/probe.py` (Phase 11/18/20's, retargeted),
+  probe sets `/tmp/ph25/rows.py` (76 probes) and `/tmp/ph25/rows2.py` (37 probes, the
+  re-probes for rules whose first probe tripped an earlier error, plus `…_used` variants
+  that actually exercise the accepted construct). tychoc0 built to `/tmp/ph25/`.
+
+  **3. TOTALS.**
+  ```
+  rules enumerated                                  60
+    AGREE                                           40
+    tychoc0-FAIL-OPEN (spec requires the reject)    15
+    NEEDS-A-RULING    (spec silent, both differ)     4
+    tychoc-FAIL-OPEN                                 0
+    not probed (E2, >256 handle types)               1
+  probes executed                                  113   (76 + 37)
+  DIVERGENT ROWS WHOSE EMITTED C COMPILES AND RUNS  18 of 19
+  ```
+
+  **4. The dangerous (running) fail-opens, by name.** Only `E1` (duplicate `handle`
+  name) stops at CCFAIL. Every other divergence produces a working binary:
+  - **I10 `main` signature** — `fn main(x: int):` compiles and runs on tychoc0.
+    `15-program.md:27-32` makes this a MUST-reject and even names reference sites.
+  - **H2 newtype underlying type** — eleven forbidden underlying types accepted
+    (`(int,int)`, `Option`, `Result`, `fn(…)`, an enum, `soa[P]`, another newtype,
+    `ptr`, `bytes`, `u8`, `f32`); eight run. `03-types.md:317-321` is an explicit
+    MUST-NOT list. **This is plan Phase 22, now measured in full.**
+  - **I6 `inout Channel(T)` parameter** — accepted, runs, and prints `Some(7)` where
+    the program is supposed to be rejected: an aliasing rule and a semantic divergence
+    in one.
+  - **D2 `extern fn` struct parameter** — `14-ffi.md:21-22,:38-39` rejects a struct at
+    the C boundary; tychoc0 emits the call and it runs.
+  - **B20 / B21 partial generic type arguments** (`05-generics.md:76-83`).
+  - **The arity family, all RUN** — B6 `fn(…)` > 8 params, B8 tuple > 8, B9 tuple < 2,
+    B11 > 16 type params, B12 > 16 size params, C5 > 8 `where` constraints, C7 > 16
+    types in a `where` type set, F2 > 8 struct type params, G2 > 8 enum type params,
+    G5 > 8 enum payload fields. Every one of these is a fixed-size array bound in
+    tychoc (`Type params[8]`, `g_cur_typarams[16]`, …); tychoc0 has no equivalent.
+  - **I7 > 16 function parameters** (runs, prints `18`) and **I8 `inout` function
+    value** — both unspec'd, both run.
+
+  **No memory-unsafety was found.** Every divergence is accepted-when-it-should-be-
+  rejected; none produced an out-of-bounds read or write. The arity rows are the
+  closest call — they are bounds-keeping limits — but tychoc's arrays are never
+  reached, because tychoc is the side that rejects.
+
+  **5. A second class the sweep surfaced (both frontends AGREE, tychoc0's C does not
+  build):** `type C = [2]int` / `[string:int]` / `bounded[4]int` used as a parameter
+  type — tychoc0 emits `unknown type name 'Arr_f2_int'` / `'Map_str_int'` /
+  `'Arr_b4_int'`, the mangled aggregate name without its declaration. Phase 19/23
+  family. Filed as Phase 33.
+
+  **6. Incidental doc drift:** `docs/spec/15-program.md:31-32` cites
+  `src/tychoc.c:6354-6355` and `:6379-6380` for the `main`-signature rules; those lines
+  are now `s->decl_type = t; vars_push(…)` and the `declared type %s but value is %s`
+  diagnostic. The live sites are `:7097-7098` and `:7123-7124`. Filed as Phase 34.
+
+  **7. Gates — all seven green, each its own foreground `env -u LD_PRELOAD make …`:**
+  ```
+  test        passed: 478   failed: 0  /  all green
+  corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  conc        conc: passed 37   failed 0
+  fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (35141 lines C)
+              ok  split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler
+              fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  ilp32       passed: 478   failed: 0  /  all green
+  spec-check  spec-examples: 7 runnable example(s), all pass
+  check-links link check: ok (122 markdown files, no dead relative links)   (121 -> 122, this doc;
+              scripts/check_links.sh:51 counts `git ls-files '*.md'`, so it only rises once staged)
+  ```
+  `git status --short`: the new audit doc + `plan.md` only. No build spill. All probe
+  artefacts and the tychoc0 build stayed in `/tmp/ph25/`.
+
+  **Residual uncertainty.** (a) The audit does not cover the 257 expression/statement
+  abort sites, the lexer, runtime traps, multi-package programs, or output equivalence
+  beyond "did the binary print something" — §9 of the doc states this explicitly.
+  (b) `E2` (> 256 handle types) was not probed. (c) The `tychoc-FAIL-OPEN = 0` result is
+  measured — the harness flags both directions — but only over these 60 rows.
+
 - [ ] **Phase 26 — `char_at(s, i) -> char`, the ergonomics helper (Phase 6's ruling (c))**
   - **UNBLOCKED 2026-07-25.** The open question recorded under Phase 6 was put to
     the user, who confirmed: **`char_at(s, i) -> char`** — the string-index helper
@@ -3214,6 +3323,127 @@ codegen.
   - Done when: the helper compiles and runs identically on both compilers, the
     spec documents it and the `s[i]` rationale, `s[i]` semantics are UNCHANGED
     (that is the whole point of ruling (c)), full gate set green.
+
+### Filed by Phase 25's audit (2026-07-25), ranked fail-open-that-RUNS first
+
+Ranking rule: a fail-open whose emitted C **compiles and runs** outranks one that
+CCFAILs, and a row the spec already decides outranks one that needs a ruling. All of
+27–31 are spec-backed and all of them RUN. Every row id below indexes
+`docs/internals/frontend-restriction-audit-2026-07-25.md` §5.
+
+**Consider doing 27–31 as ONE structural change rather than five.** Phase 20's lesson
+was that fixing per-instance produces scattered ad-hoc checks; its own fix collapsed 50
+divergences into two shared guards (`ck_affine_part`, `ck_affine_inferred`) because
+tychoc0 has exactly two places a composite type string is built. Rows 27–31 are all
+*declaration-shape* rules rather than type-construction rules, so they may collapse the
+same way onto tychoc0's declaration parsers. Check that before writing five checks.
+
+- [ ] **Phase 27 — tychoc0 has no newtype UNDERLYING-type restriction (audit row H2; supersedes Phase 22)**
+  - tychoc: `src/tychoc.c:3719-3721` — `U` must be `int`/`float`/`string`/`bool`/an
+    array/a map/a struct. Spec: `docs/spec/03-types.md:317-321`, an explicit MUST-NOT
+    list. tychoc0 has only the affine-handle case Phase 20 added
+    (`compiler/tychoc0.ty:2799`).
+  - Eleven forbidden underlying types accepted by tychoc0; **eight compile and run**:
+    `Option(int)`, `Result(int,string)`, an enum, `soa[P]`, another newtype, `ptr`,
+    `bytes`, `u8`, `f32` run; `(int,int)` and `fn(int)->int` CCFAIL.
+  - Note `soa` is in neither the spec's permitted nor its forbidden list — it is
+    excluded by "MUST be one of". Say so in the fix, or add it to the forbidden list.
+  - Fold in Phase 22's diagnostic-quality observation: `soa[Channel(int)]` is rejected
+    by both, but tychoc says `soa requires a struct element type` where tychoc0 says the
+    affine-container message.
+  - Done when: the underlying-type decision agrees across the full swept space, each
+    distinct rejection is fixture-locked (the compiler halts at the first error, so one
+    file per rejection), full gate set green.
+
+- [ ] **Phase 28 — tychoc0 accepts a `main` with parameters or a non-void return (audit row I10)**
+  - tychoc: `src/tychoc.c:7123-7124`. Spec: `docs/spec/15-program.md:27-32` — "MUST
+    reject a `main` that declares any parameter or a non-`void` return type".
+  - `fn main(x: int):` is accepted by tychoc0, **compiles and runs**. `fn main() -> int:`
+    is accepted and CCFAILs.
+  - This is the single most load-bearing row in the audit: it is the program entry
+    point, and the spec states the rule as a MUST with named reference sites.
+  - Done when: both forms reject on both compilers, both fixture-locked, gates green.
+
+- [ ] **Phase 29 — tychoc0 has no counterpart to ANY of tychoc's arity limits (audit rows B6, B8, B9, B11, B12, C5, C7, F2, G2, G5)**
+  - Ten rows, **all ten RUN**. Each limit is a fixed-size array bound in tychoc:
+
+    | row | limit | tychoc site | spec |
+    |---|---|---|---|
+    | B6 | function type ≤ 8 parameters | `:1752` | `02-grammar.md:170` |
+    | B8 | tuple ≤ 8 elements | `:1768` | `02-grammar.md:137,:170`, `03-types.md:175` |
+    | B9 | tuple ≥ 2 elements | `:1772` | same |
+    | B11 | ≤ 16 type parameters per generic | `:1714` | `05-generics.md:20` |
+    | B12 | ≤ 16 size parameters per generic | `:1801` | `05-generics.md:20` |
+    | C5 | ≤ 8 `where` constraints | `:3312` | `02-grammar.md:78`, `05-generics.md:63` |
+    | C7 | ≤ 16 types in a `where` type set | `:3324` | `02-grammar.md:78`, `05-generics.md:61` |
+    | F2 | ≤ 8 struct type parameters | `:3605` | **conflict, see below** |
+    | G2 | ≤ 8 enum type parameters | `:3661` | **conflict, see below** |
+    | G5 | ≤ 8 variant payload fields | `:3695` | `02-grammar.md:97`, `12-aggregates.md:484` |
+
+  - **A spec conflict must be resolved before F2/G2 are fixed:** `05-generics.md:20`
+    says "At most 16 type parameters and 16 size parameters may be introduced per
+    generic", but tychoc enforces **16 for functions** (`:1714`) and **8 for structs
+    and enums** (`:3605`, `:3661`). Decide which number is right and make the spec and
+    both compilers agree — do not encode 8 in tychoc0 while the spec says 16.
+  - Done when: every row's decision agrees, each is fixture-locked, the spec states one
+    number per limit, gates green.
+
+- [ ] **Phase 30 — tychoc0 accepts a generic type argument that partially mentions a type parameter (audit rows B20, B21)**
+  - tychoc: `src/tychoc.c:1905` (generic struct), `:1935` (generic enum). Spec:
+    `docs/spec/05-generics.md:76-83` — "A type argument MUST be either fully concrete or
+    a whole own-parameter reference; it may not *partially* mention a type parameter."
+  - `Box([$U])` and `Opt([$U])` are accepted by tychoc0 and **compile and run**.
+  - Done when: both forms reject on both compilers, fixture-locked, gates green.
+
+- [ ] **Phase 31 — tychoc0 accepts a struct as an `extern fn` parameter (audit row D2)**
+  - tychoc: `src/tychoc.c:3530`. Spec: `docs/spec/14-ffi.md:21-22` ("a **map, struct, or
+    non-scalar array** is rejected at the boundary") and `:38-39`.
+  - tychoc0 enforces the rule **partially**: it rejects `[string]` but accepts a struct
+    parameter, and the emitted C **compiles and runs** — a struct crossing the C
+    boundary with no flat, self-describing ABI.
+  - Scope check while there: D1 (`inout` out-parameter) and D3 (return type) both agree
+    today; verify the fix does not over-tighten them.
+  - Done when: the FFI boundary type set agrees on both compilers, fixture-locked,
+    `make test`'s FFI lane (`tests/ffi/`) still green, gates green.
+
+- [ ] **Phase 32 — NEEDS A USER RULING: four restrictions tychoc enforces that the spec does not state (audit rows E1, I6, I7, I8)**
+  - The spec is silent on all four, so the direction of the fix is a decision, not a
+    lookup. `docs/spec/` was grepped for each phrasing before asserting the absence;
+    §9 of the audit doc records the searches.
+
+    | row | tychoc enforces | site | tychoc0 | runs? |
+    |---|---|---|---|---|
+    | I6 | a `Channel(T)` parameter may not be `inout` | `:7068` | accepts | **RUNS**, and prints `Some(7)` where a `recv` should yield `7` — a semantic divergence, not only a decision one |
+    | I7 | at most 16 function parameters | `:7075` | accepts | **RUNS** (prints `18`) |
+    | I8 | an `inout` parameter may not be a function value | `:7090` | accepts | **RUNS** |
+    | E1 | a `handle` name may not collide with a struct/enum/newtype/handle | `:3579` | accepts | CCFAIL — the only divergence in the whole audit that does not run |
+
+  - The ruling needed per row: does the restriction become normative (spec it, then add
+    it to tychoc0), or is it an unspec'd implementation limit tychoc should drop?
+  - I6 is the urgent one — it is the only row where the accepted program produces
+    *wrong output* rather than merely running.
+  - Done when: each row has a ruling recorded here, the spec says what was ruled, both
+    compilers agree, fixture-locked, gates green.
+
+- [ ] **Phase 33 — a newtype over a fixed array / map / `bounded` emits uncompilable C on tychoc0 (audit §7)**
+  - NOT a fail-open: both frontends ACCEPT. tychoc builds and runs; tychoc0's C does not
+    compile — `type C = [2]int` / `[string:int]` / `bounded[4]int` used as a parameter
+    type emits `unknown type name 'Arr_f2_int'` / `'Map_str_int'` / `'Arr_b4_int'`, the
+    mangled aggregate name with no declaration ever emitted.
+  - Same family as Phase 19 (bounded aggregate elements) and Phase 23 (the `Arr_*`
+    mangling collision) — check whether one emitter fix closes all three before writing
+    a third separate patch.
+  - Done when: the three probes build and run on both compilers with identical output,
+    fixture-locked in the positive lane (they are legal programs), gates green.
+
+- [ ] **Phase 34 — `15-program.md`'s `main`-signature provenance cites the wrong lines (audit §8)**
+  - `docs/spec/15-program.md:31-32` cites `src/tychoc.c:6354-6355` and `:6379-6380`.
+    Those lines are `s->decl_type = t; vars_push(…)` and the `declared type %s but value
+    is %s` diagnostic — unrelated code. The live sites are `:7097-7098` (`no 'main'
+    procedure`) and `:7123-7124` (the signature rule).
+  - Docs only. Worth pairing with Phase 28, which touches the same rule.
+  - Done when: the citation resolves to the code it claims, `make spec-check` and
+    `make check-links` green.
 
 ## Out of scope
 
