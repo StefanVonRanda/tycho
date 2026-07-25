@@ -2113,6 +2113,7 @@ fn ck_generic_param_counts(toks: [Token], from: int, to: int):
             i = i + 1
 
 fn parse_func(toks: [Token], pos: inout int) -> Func:
+    fnln := toks[pos].line                       # I6/I7/I8 report at the `fn` keyword (tychoc: pr->line)
     expect_ident(toks, &pos, "fn")
     if toks[pos].kind != TIdent:
         die("parse: line " + str(toks[pos].line) + ": expected a function name")
@@ -2154,6 +2155,41 @@ fn parse_func(toks: [Token], pos: inout int) -> Func:
             ptypes[bi] = subst_bare_typaram(ptypes[bi], bases)
             bi = bi + 1
         ret = subst_bare_typaram(ret, bases)
+    # I6 / I7 / I8 -- three per-declaration restrictions tychoc enforces in
+    # resolve_program (src/tychoc.c:7100-7102, :7109, :7123-7126), now stated by the
+    # spec: I6+I8 07-memory-model.md §11.5, I7 11-functions.md §15.1.
+    #   I6  a `Channel(T)` parameter cannot be `inout`
+    #   I7  at most 16 parameters
+    #   I8  an `inout` parameter cannot be a function value
+    # Order matches tychoc: the I6 sweep, then the count, then the I8 sweep, so a
+    # declaration tripping two of them reports the same one the C compiler does.
+    # I6 and I8 are guarded on non-genericity because resolve_program `continue`s
+    # past a `$T` template (src/tychoc.c:7091-7096) before reaching either check --
+    # probed: tychoc ACCEPTS and RUNS `fn f(c: inout Channel(int), p: $T)`, so an
+    # unguarded check here would reject a program the C compiler compiles. I7 is
+    # unguarded: tychoc rejects a 17-parameter generic too (at its call site), so no
+    # accepted program is lost, and the limit then holds for every declaration.
+    # Messages are tychoc's, verbatim.
+    isgen := ty_is_generic(ret)
+    gi := 0
+    for gi < len(ptypes):
+        if ty_is_generic(ptypes[gi]):
+            isgen = true
+        gi = gi + 1
+    if not isgen:
+        gi = 0
+        for gi < len(ptypes):
+            if is_inout(ptypes[gi]) and is_chan(substr(ptypes[gi], 1, len(ptypes[gi]))):
+                die("parse: line " + str(fnln) + ": a channel parameter cannot be inout (the handle is already shared)")
+            gi = gi + 1
+    if len(ptypes) > 16:
+        die("parse: line " + str(fnln) + ": too many parameters (max 16)")
+    if not isgen:
+        gi = 0
+        for gi < len(ptypes):
+            if is_inout(ptypes[gi]) and is_func(substr(ptypes[gi], 1, len(ptypes[gi]))):
+                die("parse: line " + str(fnln) + ": inout parameter '" + params[gi] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+            gi = gi + 1
     # generics: optional `where pred(T), pred2(T2)` -- a fixed compiler-known predicate set
     constraints := ""
     if toks[pos].kind == TIdent and toks[pos].text == "where":
@@ -2424,6 +2460,7 @@ fn extern_param_ok(toks: [Token], ty: string) -> bool:
 # extern [ "Lib" ] fn name(p: T, ...) [-> T]   (bodyless; calls a C symbol).
 # Name is NOT mangled — a C symbol is global.
 fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
+    exln := toks[pos].line                     # I7 reports at the `extern` keyword (tychoc: pr->line)
     expect_ident(toks, &pos, "extern")
     lib := ""
     if toks[pos].kind == TStr:                 # optional link-library name
@@ -2451,6 +2488,11 @@ fn parse_extern_func(toks: [Token], pos: inout int) -> Func:
             push(params, p2.name)
             push(ptypes, p2.ty)
     expect(toks, &pos, TRParen)
+    # I7 (11-functions.md §15.1): at most 16 parameters. resolve_program applies the
+    # limit to an `extern fn` too -- it is not generic, so it never takes the `continue`
+    # (src/tychoc.c:7109). tychoc's wording, verbatim.
+    if len(ptypes) > 16:
+        die("parse: line " + str(exln) + ": too many parameters (max 16)")
     ret := "void"
     if toks[pos].kind == TArrow:
         pos = pos + 1
@@ -2498,6 +2540,39 @@ fn parse_lambda(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
     expect(toks, &pos, TColon)
     bexpr := parse_expr_d(toks, &pos, pc)   # thread depth so nested inline lambdas can't overflow the stack (H2)
     return ELambda(0, params, ptypes, ret, bexpr, []string, []string, _el)   # body is the single expr; lift wraps it in a Func
+
+# E1 (14-ffi.md §25) -- a `handle` name must not already name a struct, enum,
+# newtype or another handle. Mirrors src/tychoc.c:3616-3617
+# (`struct_find(nm) || enum_find(nm) || newtype_find(nm) || handle_find(nm)`), which
+# runs at the handle's own declaration point, so only names declared EARLIER in the
+# file collide -- exactly what the incremental decl lists here hold. Struct/enum/
+# newtype names are stored bare with the package prefix alongside, so the mangled
+# name is rebuilt for the comparison; handle names carry no prefix in tychoc0's
+# table (a pre-existing difference from tychoc's pkg_mangle, immaterial for a
+# single-file program, where every prefix is ""). tychoc's wording, verbatim.
+fn ck_handle_dup(nm: string, line: int, pfx: string, sts: [StructDef], spfx: [string], ens: [EnumDef], epfx: [string], ntn: [string], npfx: [string], hs: [string]):
+    mg := pfx + nm
+    i := 0
+    for i < len(sts):
+        if spfx[i] + sts[i].name == mg:
+            die("parse: line " + str(line) + ": '" + nm + "' is already defined")
+        i = i + 1
+    i = 0
+    for i < len(ens):
+        if epfx[i] + ens[i].name == mg:
+            die("parse: line " + str(line) + ": '" + nm + "' is already defined")
+        i = i + 1
+    i = 0
+    for i < len(ntn):
+        if npfx[i] + ntn[i] == mg:
+            die("parse: line " + str(line) + ": '" + nm + "' is already defined")
+        i = i + 1
+    i = 0
+    for i < len(hs):
+        eq := find(hs[i], "=")
+        if eq >= 0 and substr(hs[i], 0, eq) == nm:
+            die("parse: line " + str(line) + ": '" + nm + "' is already defined")
+        i = i + 1
 
 # handle Name:
 #     free: c_free_fn
@@ -3706,6 +3781,15 @@ fn parse_program(toks: [Token], pos: inout int) -> Program:
             push(fpfx, curpfx)
             push(externs, ef.name)                                      # global C symbol — bare calls to it stay unmangled
         elif toks[pos].kind == TIdent and toks[pos].text == "handle":   # FFI R2: typed handle decl
+            # E1 (14-ffi.md §25): a `handle` name MUST NOT already name a struct, enum,
+            # newtype or another handle. tychoc checks this inside parse_handle, i.e. in
+            # DECLARATION order and against the package-MANGLED name
+            # (src/tychoc.c:3616-3617); this is that same test one call earlier, because
+            # tychoc0's parse_handle has no view of the decl tables. Guarded on TIdent so
+            # parse_handle's own "expected a handle name" still fires first for `handle 1:`.
+            # tychoc's wording, verbatim.
+            if toks[pos + 1].kind == TIdent:
+                ck_handle_dup(toks[pos + 1].text, toks[pos + 1].line, curpfx, rstructs, spfx, renums, epfx, rntn, npfx, handles)
             push(handles, parse_handle(toks, &pos))
         elif toks[pos].kind == TIdent and toks[pos].text == "const":   # `const NAME = <literal>` module-level (folded at use)
             pos = pos + 1

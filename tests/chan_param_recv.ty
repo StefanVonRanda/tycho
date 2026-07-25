@@ -1,0 +1,22 @@
+# Phase 32 positive lock for the I6 rule (07-memory-model.md §11.5): only
+# `inout Channel(T)` is rejected -- a PLAIN `Channel(T)` parameter is legal and
+# must keep working. It also pins what a `recv` yields: `recv(ch)` has type
+# `Option(T)` (16-builtins.md:227, 13-concurrency.md:109), so `str(recv(ch))`
+# renders `Some(7)` while a `match` binding yields the bare `7`. The 2026-07-25
+# frontend audit read that `Some(7)` as a wrong-output bug; it is the specified
+# rendering, and keeping both forms in one golden means the question cannot be
+# re-opened by inspection alone.
+fn pump(ch: Channel(int), v: int):
+    send(ch, v)
+
+fn main():
+    ch := channel(int, 4)
+    pump(ch, 7)
+    println(str(recv(ch)))       # Some(7) -- an Option(int), not an int
+    pump(ch, 7)
+    match recv(ch):
+        Some(v):
+            println(str(v))      # 7 -- the unwrapped element
+        None:
+            println("closed")
+    close(ch)

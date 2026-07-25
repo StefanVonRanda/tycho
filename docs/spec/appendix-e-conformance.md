@@ -95,6 +95,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | §11.1 | `inout` copy-in / copy-out | `tests/inout_string`, `tests/scalar_elem_inout` |
 | §11.2 | `inout` exclusivity (aliasing rejected) | `tests/reject/inout_alias`, `reject/inout_byval_alias`, `reject/slice_inout_alias` |
 | §11.4 | `sink` move convention | `tests/sink`, `reject/sink_use_after` |
+| §11.5 | types that cannot be `inout` (channel, function value) | `tests/reject/chan_inout_param`, `reject/inout_fnvalue`, `tests/chan_param_recv` |
 
 ### §12 Declarations & scoping
 
@@ -132,6 +133,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §15.1 | declaration; duplicate/no-main rejected | `tests/early_return_main`, `reject/dup_fn`, `reject/no_main` |
+| §15.1 | at most 16 parameters (`fn` and `extern fn`) | `tests/params_16_max`, `reject/params_17`, `reject/extern_params_17` |
 | §15.2 | parameter passing modes | `tests/inout_string`, `tests/sink`, `reject/mut_arg_no_amp` |
 | §15.3 | variadic parameters | `tests/variadic` |
 | §15.5 | methods (UFCS) | `tests/methods`, `tests/pkg/methods`, `tests/pkg/methodscalar` |
@@ -162,6 +164,7 @@ dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
 | §23.x | parallel-for; channel-drain | `tests/conc/parfor`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
 | §24.1 | FFI crossable types (scalars/str/bytes/handles/sized) | `tests/ffi`, `examples/sqlite/demo.ty` |
 | §24.2 | linking / cc invocation | `tests/ffi/run.sh`, `examples/sqlite` |
+| §25 | typed handle decl: name must not collide with a struct/enum/newtype/handle | `tests/reject/handle_dup_name` |
 
 ### §27–28 Program & packages
 

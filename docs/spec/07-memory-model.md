@@ -199,3 +199,25 @@ argument (§15.2). Unlike `inout`, `sink` does not write a value back;
 it takes ownership, and the caller MUST NOT use the argument after the call.
 `sink` and `inout` are mutually exclusive on a parameter, and neither may combine
 with a variadic parameter.
+
+### 11.5 Types that cannot be `inout`
+
+Two parameter types MUST NOT be declared `inout`, because copy-out through the
+borrow would defeat the affinity or the lifetime rule that governs the value:
+
+- **`Channel(T)`** ([§23.1](13-concurrency.md)). A channel parameter is already a
+  shared handle onto one queue: every by-value copy names the same queue, so an
+  `inout` borrow buys no additional sharing, while a copy-out could write a
+  *different* channel back into the caller's variable and so retarget a queue the
+  caller still owns. A plain (by-value) `Channel(T)` parameter is the supported —
+  and sufficient — way to pass a channel to a callee.
+- **A function value** (`fn(P…) -> R`, [§15.4](11-functions.md)). Copy-out could
+  store a callee-local closure into the caller's variable, outliving the storage
+  its captures were re-homed into ([§10.2](#102-the-escape-rule)) — a dangling
+  call. A function value may be passed and returned by value; it may not be
+  borrowed mutably.
+
+Both implementations reject both forms at the declaration
+(`src/tychoc.c:7100-7102`, `:7123-7126`; `compiler/tychoc0.ty` `parse_func`),
+locked by `tests/reject/chan_inout_param.ty` and
+`tests/reject/inout_fnvalue.ty`.

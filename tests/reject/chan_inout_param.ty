@@ -1,0 +1,10 @@
+# 07-memory-model.md §11.5: a `Channel(T)` parameter MUST NOT be `inout` -- the
+# handle is already shared, and a copy-out could retarget the caller's queue.
+# tychoc: src/tychoc.c:7100-7102. Both compilers reject (differential).
+fn pump(ch: inout Channel(int)):
+    send(ch, 7)
+
+fn main():
+    c := channel(int, 2)
+    pump(&c)
+    close(c)

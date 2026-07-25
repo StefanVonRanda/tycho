@@ -1,0 +1,13 @@
+# 07-memory-model.md §11.5: an `inout` parameter MUST NOT be a function value --
+# a callee could write a closure back into the caller and it would dangle.
+# tychoc: src/tychoc.c:7123-7126. Both compilers reject (differential).
+fn g(x: int) -> int:
+    return x + 1
+
+fn apply(h: inout fn(int) -> int):
+    return
+
+fn main():
+    k := g
+    apply(&k)
+    println(str(k(1)))

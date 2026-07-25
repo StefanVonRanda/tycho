@@ -14,9 +14,11 @@ A function has a name, a parameter list, an optional `-> R` return type (absent
 means `void`), an optional `where` clause (for a generic function,
 [§7.2](05-generics.md#72-constraints-where)), and a block body. A function that
 mentions a `$T` or `$N` in its signature is generic (§7). A function MUST NOT
-return a `handle` ([§25](14-ffi.md)). Exactly one function named
-`main`, with no parameters and `void` return, is the program entry point
-([§27](15-program.md)).
+return a `handle` ([§25](14-ffi.md)), and MUST NOT declare more than **16**
+parameters (the same cap for an `extern fn`; a *function type*, which is a
+distinct construct, allows up to 8 — [§5.3.8](03-types.md#538-function-types)).
+Exactly one function named `main`, with no parameters and `void` return, is the
+program entry point ([§27](15-program.md)).
 
 ## 15.2 Parameter passing modes
 

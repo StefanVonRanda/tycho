@@ -4031,7 +4031,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Fixtures: `tests/reject/extern_param_struct.ty`, `extern_param_enum.ty`,
     `extern_param_newtype.ty`, `extern_ret_struct.ty`.
 
-- [ ] **Phase 32 — NEEDS A USER RULING: four restrictions tychoc enforces that the spec does not state (audit rows E1, I6, I7, I8)**
+- [x] **Phase 32 — NEEDS A USER RULING: four restrictions tychoc enforces that the spec does not state (audit rows E1, I6, I7, I8)**
   - The spec is silent on all four, so the direction of the fix is a decision, not a
     lookup. `docs/spec/` was grepped for each phrasing before asserting the absence;
     §9 of the audit doc records the searches.
@@ -4066,6 +4066,203 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     conventions rather than inventing a new section shape.
   - Done when: each row has a ruling recorded here, the spec says what was ruled, both
     compilers agree, fixture-locked, gates green.
+  - **DONE 2026-07-25.** All four rows agree on the frontend decision, with tychoc's
+    wording verbatim and the same reported line. The spec now states all four.
+
+    **I6 IS NOT A WRONG-OUTPUT BUG. The audit misread its own probe.** This phase was
+    told to treat I6's `Some(7)` as a semantic divergence and to trace the lowering
+    before rejecting. The trace says the lowering is correct and the *expectation* was
+    wrong, so the finding is retracted here rather than repaired.
+
+    The audit's probe (recovered from `/tmp/ph25/rows2.py:48`) is:
+    ```
+    fn g(c: inout Channel(int)):
+        send(c, 7)
+
+    fn main():
+        ch := channel(int, 2)
+        g(&ch)
+        println(str(recv(ch)))
+    ```
+    `recv(ch)` has type **`Option(T)`**, not `T` — `docs/spec/16-builtins.md:227`
+    ("`recv(ch)` | `Channel(T) -> Option(T)`") and `13-concurrency.md:109` ("yields
+    `Option(T)`: `Some(v)` for a …"). So `str(recv(ch))` renders `Some(7)`, and
+    `Some(7)` is the **correct** output for that program. The audit compared it against
+    a bare `7`, which no spelling of that line produces.
+
+    **Proved by running the legal spellings, both compilers** (`--emit-c` + a separate
+    `cc`, never a raw `rc` comparison):
+    ```
+    audit_chan_plain_used   fn g(c: Channel(int))  tychoc  RUN -> Some(7)
+                                                   tychoc0 RUN -> Some(7)
+    audit_chan_nofn_used    send/recv inline, no fn tychoc RUN -> Some(7)
+                                                   tychoc0 RUN -> Some(7)
+    ```
+    Neither goes anywhere near an `inout` channel, and both print `Some(7)`.
+
+    **The emitted-C trace, `inout` vs by-value (tychoc0, the accepting side):**
+    ```
+    inout    void h_g(Arena* _parent, HChan** h_c) { ... HChan* _ch = (*h_c); ... }
+             call site:  h_g(&_t, &h_ch);
+    by-value void h_g(Arena* _parent, HChan* h_c)  { ... HChan* _ch = h_c;    ... }
+             call site:  h_g(&_t, h_ch);
+    ```
+    One extra level of indirection, correctly dereferenced on entry, then the identical
+    `tycho_chan_send_cell` / `_commit` sequence. There is no mis-lowering to hide.
+
+    **"Is there a legal route to the same lowering?" — YES, and that is the point, not
+    a problem.** The `HChan*`-by-value form is what every plain `Channel(T)` parameter
+    compiles to; the whole `tests/conc/` lane (37 fixtures) exercises it, and it is
+    correct. The `inout` form only wrapped it in one pointer. So rejecting
+    `inout Channel(T)` hides nothing: I6 is an ordinary missing-gate row, exactly like
+    I7 and I8, and the audit's `Some(7)` note should be read as retracted. Locked
+    against silent return by the positive fixture `tests/chan_param_recv.ty`, whose
+    golden holds **both** renderings side by side (`Some(7)` from `str(recv(ch))` and
+    `7` from the `match` binding), so the same misreading cannot be made from the
+    fixture alone.
+
+    **CITATION AUDIT — all four tychoc sites in the prompt and the table above were
+    WRONG** (drift from Phase 37's edits to `src/tychoc.c`, plus one that was never
+    right). Corrected, each verified by reading the line:
+    | row | prompt said | actual | the line that is actually there |
+    |---|---|---|---|
+    | I6 | `:7068` | **`:7101-7102`** | `:7068` is `"an enum payload cannot be a channel"` |
+    | I7 | `:7075` | **`:7109`** | `:7075` is the `[$N]T` struct-field loop head |
+    | I8 | `:7090` | **`:7123-7126`** | `:7090` is `diag_use_proc(pr)` |
+    | E1 | `:3579` | **`:3616-3617`** | `:3579` is a `}` inside `parse_extern_fn`'s param loop |
+    Exact strings, verbatim (they are what tychoc0 now emits):
+    `"a channel parameter cannot be inout (the handle is already shared)"`,
+    `"too many parameters (max 16)"`,
+    `"inout parameter '%s': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)"`,
+    `"'%s' is already defined"`.
+
+    **CORRECTION to this phase's own spec-placement instructions.** Two were wrong.
+    (1) *"Phase 29 just specced ten arity limits — put I7 in the same place."* Phase 29
+    (`f0f7a2e`) touched **no** file under `docs/` — `git show --stat f0f7a2e` lists only
+    `compiler/tychoc0.ty`, `src/tychoc.c`, `plan.md` and twelve fixtures. Its own
+    evidence says so: *"nothing had to be edited to land the 8 → 16 raise"*, because
+    every one of its ten limits was **already** stated. So there is no Phase 29 section
+    to sit beside; what I matched is its *form* — one sentence in the prose of the
+    chapter that owns the construct, like `02-grammar.md:170` and `05-generics.md:20`.
+    (2) *"E1 → `12-aggregates.md`."* That file contains no `handle` declaration content
+    at all (`grep -n handle 12-aggregates.md` returns one hit, the word "handles" in a
+    sentence about `Result`). The handle declaration rules are `14-ffi.md` **§25 Typed
+    handles**, which is also where the audit's sibling row E3 (handle body shape) is
+    already spec'd (`14-ffi.md:68`). E1 went there.
+
+    **Spec added — four files:**
+    - `docs/spec/07-memory-model.md` — new **§11.5 "Types that cannot be `inout`"** at
+      the end of §11, covering I6 and I8 with the reason each is unsound (a channel
+      copy-out could retarget the caller's queue; a function-value copy-out could store
+      a callee-local closure past its re-homed captures, citing §10.2). MUST NOT, both
+      implementations named, both fixtures named — the shape of the existing §11.2.
+    - `docs/spec/11-functions.md` **§15.1** — I7, appended to the existing MUST-NOT
+      sentence: *"and MUST NOT declare more than **16** parameters (the same cap for an
+      `extern fn`; a function type, which is a distinct construct, allows up to 8 —
+      §5.3.8)"*. The parenthetical exists because `05-generics.md:20`'s 16 is about
+      *type* parameters and `03-types.md:246`'s 8 is about *function types* — the two
+      numbers a reader would otherwise conflate.
+    - `docs/spec/14-ffi.md` **§25** — E1 as the first bullet, *"A handle name is a type
+      name"*, MUST NOT collide with a struct/enum/newtype/handle **declared earlier in
+      the file** (declaration order is what tychoc actually enforces — see the Phase 39
+      finding below), with the C-typedef-collision rationale and the fixture.
+    - `docs/spec/appendix-e-conformance.md` — three coverage rows: §11.5 in the
+      §9–11 table, a second §15.1 row for the parameter cap, and a §25 row in the
+      §23–24 table. Phase 11 and Phase 26 both established that this appendix carries
+      such rows, and it is the file the conformance oracle is read from.
+
+    **tychoc0 — four edits, `compiler/tychoc0.ty`** (all parse-time, the house style
+    Phase 29 established: `die("parse: line " + str(N) + ": <tychoc's wording>")` with
+    a comment citing both the spec clause and the `src/tychoc.c` site):
+    1. `parse_func` — `fnln` captured at the `fn` keyword (tychoc reports `pr->line`).
+    2. `parse_func`, after the typaram rewrite — the I6 sweep, then the I7 count, then
+       the I8 sweep, **in that order**, because tychoc checks them in that order
+       (`:7100-7102`, `:7109`, `:7123`) and a declaration tripping two must report the
+       same one the C compiler reports.
+    3. `parse_extern_func` — the I7 count (`exln` at the `extern` keyword).
+    4. New `ck_handle_dup()` + its call from the top-level `handle` arm of
+       `parse_program`, which is where the incremental decl lists still reflect
+       declaration order. tychoc0's `parse_handle` has no view of those tables, so the
+       check sits one call earlier, guarded on `TIdent` so `parse_handle`'s own
+       *"expected a handle name"* still wins for `handle 1:`.
+
+    **I6 and I8 are deliberately guarded on non-genericity; I7 deliberately is not.**
+    Not a shortcut — measured. tychoc's `resolve_program` `continue`s past a `$T`
+    template at `:7091-7096`, *before* any of the three checks, so:
+    ```
+    gen_chan_inout   fn f(c: inout Channel(int), p: $T)   tychoc RUN -> 1   (ACCEPTS!)
+    ```
+    An unguarded I6/I8 in tychoc0 would therefore reject a program tychoc compiles,
+    violating the ruling's "nothing tychoc accepts starts being rejected". I7 is left
+    unguarded because tychoc rejects a 17-parameter generic anyway (at the call site:
+    `'f__int__…' takes 0 argument(s), got 17`), so no accepted program is lost and the
+    cap then holds for every declaration. The genericity gap in tychoc's own I6/I8 is
+    filed as Phase 39.
+
+    **FOUR-ROW BEFORE / AFTER — FRONT/CC/RUN on BOTH compilers, `--emit-c` plus a
+    separate `cc` step** (tychoc0 emits to stdout, tychoc to `BASE.c`; raw `rc` never
+    compared). ✔ = same decision, same wording, same line.
+
+    | row | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|---|
+    | I6 | `chan_inout_param` | REJECT `:1` | **ACCEPT/CCOK/RUN** | REJECT `line 1`, same text ✔ |
+    | I6 | `chan_inout_used` (send+recv) | REJECT `:1` | **RUN → `7`** | REJECT `line 1` ✔ |
+    | I6 | `audit_chan_inout_used` (the audit's own probe) | REJECT `:1` | **RUN → `Some(7)`** | REJECT `line 1` ✔ |
+    | I7 | `params_17` | REJECT `:1` | **RUN → `153`** | REJECT `line 1`, same text ✔ |
+    | I7 | `extern_params_17` | REJECT `:1` | **RUN → `hi`** | REJECT `line 1` ✔ |
+    | I8 | `inout_fnvalue` | REJECT `:4` | **RUN → `2`** | REJECT `line 4`, same text ✔ |
+    | E1 | `handle_dup_name` (struct then handle) | REJECT `:4` | rejected, but for the WRONG reason (`line 7: extern fn 'hclose': a parameter must be …` — tychoc0 had drifted since the audit measured `ACCEPT/CCFAIL`) | REJECT `line 4`, tychoc's text ✔ |
+    | E1 | `e1_struct` (no extern touching `H`) | REJECT `:4` | **ACCEPT/CCFAIL** (`incompatible type for argument 1 of ‘S_H_eq’`) | REJECT `line 4` ✔ |
+    | E1 | `e1_enum` | REJECT `:5` | **RUN → `hi`** | REJECT `line 5` ✔ |
+    | E1 | `e1_newtype` | REJECT `:3` | **RUN → `hi`** | REJECT `line 3` ✔ |
+    | E1 | `e1_handle` (handle twice) | REJECT `:4` | **RUN → `hi`** | REJECT `line 4` ✔ |
+
+    Note the two extra E1 collision kinds (`enum`, `newtype`) and the extern-arity
+    variant: the audit probed only one shape per row, and three of these were live
+    fail-opens it never saw.
+
+    **I7's 15 / 16 / 17 BOUNDARY, both compilers, both directions:**
+    ```
+    params_15   tychoc RUN -> 120    tychoc0 RUN -> 120     (legal, unchanged)
+    params_16   tychoc RUN -> 136    tychoc0 RUN -> 136     (ON the maximum, unchanged)
+    params_17   tychoc REJECT        tychoc0 REJECT         (was RUN -> 153)
+    ```
+    16 compiles and runs on both; 17 rejects on both. `tests/params_16_max.ty` pins the
+    16 permanently, so a future narrowing turns the suite red.
+
+    **LEGAL-PROGRAM CONTROLS — nothing over-tightened.** Every one still compiles and
+    runs identically on both compilers after the change:
+    ```
+    chan_plain_ok      fn pump(ch: Channel(int))        RUN -> 7    / RUN -> 7
+    fnvalue_ok         fn f(h: fn(int) -> int)          RUN -> 42   / RUN -> 42
+    handle_ok          struct S + handle H (no clash)   RUN -> 1    / RUN -> 1
+    params_15/16       15 and 16 parameters             RUN         / RUN
+    gen_chan_inout     fn f(c: inout Channel(int), p: $T)  RUN -> 1 / RUN -> 1
+    make conc          the whole channel lane           passed 37   failed 0
+    make fixpoint      tychoc0 rebuilds itself          B == C, byte-identical
+    ```
+
+    **Fixtures — seven new files. Test count 514 → 521.** Five `tests/reject/` (one per
+    distinct rejection; the compiler halts at the first error so they cannot be merged):
+    `chan_inout_param.ty`, `inout_fnvalue.ty`, `params_17.ty`, `extern_params_17.ty`,
+    `handle_dup_name.ty` — each verified REJECT on both compilers with identical text
+    and line. Plus two positives with goldens: `tests/chan_param_recv.ty`/`.out` (the
+    I6 wrong-output tripwire described above; tychoc and tychoc0 outputs byte-identical)
+    and `tests/params_16_max.ty`/`.out` (the 16-parameter boundary lock).
+
+    **Gate set — one per command, foreground, `env -u LD_PRELOAD`.**
+    ```
+    make test         passed: 521   failed: 0   /  all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok   B == C : tychoc0 reproduces itself byte-identically (35474 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 521   failed: 0   /  all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+    ```
+    `git status --short` shows only the five edited files and the seven new fixtures.
+    No build spill. All scratch output stayed in `/tmp/ph32`.
 
 - [ ] **Phase 33 — a newtype over a fixed array / map / `bounded` emits uncompilable C on tychoc0 (audit §7)**
   - NOT a fail-open: both frontends ACCEPT. tychoc builds and runs; tychoc0's C does not
@@ -4448,6 +4645,52 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: a sanitized-tychoc lane exists, is demonstrated green AND demonstrated
     red, its cost is measured and its coverage stated honestly, findings are filed as
     separate phases, and the full gate set stays green.
+
+### Filed by Phase 32 (2026-07-25)
+
+- [ ] **Phase 39 — the type-name collision check is ONE-DIRECTIONAL: `handle H` after `struct H` is rejected, `struct H` after `handle H` is not (found by Phase 32, out of its E1 scope)**
+  - **NOT the E1 row Phase 32 closed.** E1 is the `handle` declaration checking the
+    names already taken. This is the reverse: the three *other* declaration forms do
+    **not** check the handle table, so the same collision is legal in one order and
+    illegal in the other.
+  - **Read, not inferred.** `parse_handle` checks all four namespaces
+    (`src/tychoc.c:3616`: `struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0 || handle_find(nm) >= 0`).
+    The siblings check only three — `handle_find` is absent from every one:
+    `parse_struct` `:3652`, `parse_enum` `:3705`, `parse_typedecl` `:3751`. (For
+    contrast, `parse_const` `:3996-3997` *does* include `handle_find`, so the omission
+    reads as an oversight, not a design decision.)
+  - **Reproduced on both compilers.** Probe `e1_struct_rev` — `handle H: free: hclose`
+    first, then `struct H: x: int`:
+    ```
+    tychoc  ACCEPT / CCOK / RUN -> hi
+    tychoc0 ACCEPT / CCFAIL -> error: incompatible type for argument 1 of 'S_H_eq'
+    ```
+    So it is **two** defects in one program: a tychoc fail-open (it emits a binary for a
+    program its own mirrored rule forbids) and a tychoc0 uncompilable-C row of the
+    Phase 33 family (frontends agree, tychoc0's C does not build). Phase 32 could not
+    absorb it: the ruling forbids making tychoc reject anything it accepts today, and
+    this fix does exactly that.
+  - **A second, independent gap in the same neighbourhood: `resolve_program` skips a
+    generic template before three of its per-declaration checks.** `src/tychoc.c:7091-7096`
+    `continue`s past a `$T` proc, so the I6 (`:7101`), I7 (`:7109`) and I8 (`:7123`)
+    checks never see one. Measured:
+    ```
+    fn f(c: inout Channel(int), p: $T) -> int   tychoc ACCEPT / CCOK / RUN -> 1
+    ```
+    That is the rule 07-memory-model.md §11.5 now states as a MUST NOT, passing on a
+    technicality. Phase 32 deliberately mirrored the gap in tychoc0 rather than close
+    it (same reason: it would reject a program tychoc compiles), so the two agree and
+    the divergence set did not grow — but the spec and the implementations disagree
+    until this is fixed.
+  - Scope when taken: decide whether the collision rule is symmetric (it is stated
+    symmetrically in `14-ffi.md` §25 as "declared earlier in the file", which is
+    honest about today's behaviour but weaker than the rule deserves), then add
+    `handle_find` to the three sibling sites and move the I6/I7/I8 checks ahead of the
+    generic `continue` — or into the instantiation path. Both changes REJECT programs
+    that compile today, so both need a ruling before code.
+  - Done when: both orders of every collision pair agree on both compilers, a generic
+    declaration is held to §11.5 and §15.1, each is fixture-locked, and the full gate
+    set is green.
 
 ## Out of scope
 
