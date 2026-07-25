@@ -16,6 +16,7 @@
 #ifndef _WIN32
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>           /* struct timeval, for SO_RCVTIMEO */
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
@@ -157,6 +158,29 @@ void netx_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outl
     if (n <= 0) { free(buf); return; }      /* EOF or error -> empty */
     *out = buf;
     *outlen = n;
+}
+
+/* Arm a receive timeout on `fd` (SO_RCVTIMEO). After `ms` milliseconds with no
+ * data, recv() fails with EAGAIN/EWOULDBLOCK and netx_read yields the empty
+ * bytes -- indistinguishable from EOF on purpose, because a server's response to
+ * both is the same: drop the connection. ms <= 0 clears the timeout (block
+ * forever, the default). Returns 1 on success, 0 on failure -- fail closed, so a
+ * caller that ignores the result still gets the blocking default, never a
+ * silently-half-armed socket. This is what lets a keep-alive loop refuse to be
+ * pinned by an idle or slow-loris peer. */
+tycho_int netx_set_read_timeout(tycho_int fd, tycho_int ms) {
+    if (fd < 0) return 0;
+    if (ms < 0) ms = 0;
+#ifndef _WIN32
+    struct timeval tv;
+    tv.tv_sec = (time_t)(ms / 1000);
+    tv.tv_usec = (suseconds_t)((ms % 1000) * 1000);
+    if (setsockopt((int)fd, SOL_SOCKET, SO_RCVTIMEO, (const void *)&tv, sizeof tv) != 0) return 0;
+#else
+    DWORD tv = (DWORD)ms;   /* Winsock takes a DWORD of milliseconds, not a timeval */
+    if (setsockopt((int)fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) != 0) return 0;
+#endif
+    return 1;
 }
 
 /* Close an fd (idempotent-safe on a negative fd). */

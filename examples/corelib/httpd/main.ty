@@ -19,9 +19,14 @@ fn main():
     println("host   = " + httpd.header(req, "host"))      # localhost  (lookup is case-insensitive)
 
     # --- build + render a response (Content-Length + default Content-Type added) ---
-    resp := httpd.with_header(httpd.response(200, "hi\n"), "X-Demo", "1")
-    wire := httpd.render(resp)
+    # Bodies are `bytes` (binary-safe); text_response is the string convenience.
+    resp := httpd.with_header(httpd.text_response(200, "hi\n"), "X-Demo", "1")
+    wire := to_str(httpd.render(resp))
     println("status ok = " + str(find(wire, "HTTP/1.1 200 OK") == 0))   # true
+
+    # --- content type comes from the extension; unknown is never text/plain ---
+    println("ctype  = " + httpd.content_type("/img/logo.png"))          # image/png
+    println("ctype? = " + httpd.content_type("/data.bin"))              # application/octet-stream
 
     # --- a real one-request round trip to ourselves over 127.0.0.1 ---
     srv := net.listen("127.0.0.1", 0)                    # port 0 -> kernel picks one
@@ -32,7 +37,8 @@ fn main():
     net.write(conn_out, to_bytes("GET / HTTP/1.1" + nl + nl))
     served := httpd.read_request(conn_in)
     println("served = " + served.method + " " + served.path)   # GET /
-    httpd.write_response(conn_in, httpd.response(200, "pong"))
+    println("alive  = " + str(not httpd.connection_close(served)))   # true: HTTP/1.1
+    httpd.write_response(conn_in, httpd.text_response(200, "pong"))
     net.close_fd(conn_in)
 
     reply := to_str(net.read(conn_out, 512))

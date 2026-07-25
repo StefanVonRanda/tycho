@@ -20,7 +20,12 @@
 #   net.write(fd, data) -> int      Send the whole buffer; bytes sent (== len(data))
 #                                   or -1.
 #   net.read(fd, max) -> bytes      Read up to `max` bytes (one recv); the bytes
-#                                   read, or empty on EOF/error.
+#                                   read, or empty on EOF/error/timeout.
+#   net.set_read_timeout_ms(fd, ms) -> bool
+#                                   Arm a receive timeout (SO_RCVTIMEO): after `ms`
+#                                   idle milliseconds a read returns EMPTY, exactly
+#                                   as it does at EOF. ms <= 0 restores the blocking
+#                                   default. false if the option could not be set.
 #   net.close_fd(fd)                Close the descriptor.
 #
 #   -- UDP --
@@ -43,6 +48,7 @@ extern fn netx_connect(host: string, port: int) -> int
 extern fn netx_port_of(fd: int) -> int
 extern fn netx_write(fd: int, data: bytes) -> int
 extern fn netx_read(fd: int, max: int) -> bytes
+extern fn netx_set_read_timeout(fd: int, ms: int) -> int
 extern fn netx_close(fd: int)
 extern fn netx_udp_bind(host: string, port: int) -> int
 extern fn netx_udp_send(fd: int, host: string, port: int, data: bytes) -> int
@@ -66,6 +72,13 @@ fn write(fd: int, data: bytes) -> int:
 
 fn read(fd: int, max: int) -> bytes:
     return netx_read(fd, max)
+
+# Arm a receive timeout on `fd`: after `ms` idle milliseconds a read yields the
+# empty bytes, the same result as EOF -- deliberately, because a server drops the
+# connection either way. `ms <= 0` restores the blocking default. Returns false if
+# the socket option could not be set (fail closed: the socket keeps blocking).
+fn set_read_timeout_ms(fd: int, ms: int) -> bool:
+    return netx_set_read_timeout(fd, ms) == 1
 
 fn close_fd(fd: int):
     netx_close(fd)

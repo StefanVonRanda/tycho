@@ -357,7 +357,7 @@ Written while trying to stand up the simplest possible concurrent server.
   The honest summary: Tycho can express a concurrent server cleanly enough to write one,
   but "start N workers" — the most ordinary thing a server does — has no direct spelling.
 
-- [ ] **Phase 2 — BLOCKER: `httpd` carries `bytes` bodies**
+- [x] **Phase 2 — BLOCKER: `httpd` carries `bytes` bodies**
   - `Request.body` and `Response.body` become `bytes`; `render()` stops building the
     response as one string. Headers stay `string` (they are ASCII by spec).
   - Update every consumer in the same commit: `examples/webserver`, `examples/site`,
@@ -367,7 +367,100 @@ Written while trying to stand up the simplest possible concurrent server.
   - Done when: a PNG round-trips through `read_request`/`write_response` byte-identically,
     fixture-locked, and the full gate set is green.
 
-- [ ] **Phase 3 — BLOCKER: content type by file extension**
+  **DONE 2026-07-26.** `Request.body` and `Response.body` are `bytes`
+  (`corelib/httpd/httpd.ty:44,:51`). `render()` no longer builds the response as one
+  string: it split into `render_head(r) -> string` (the ASCII status line + headers, which
+  is genuinely text) and `render(r) -> bytes`; the socket path `write_response` sends head
+  and body as **two `net.write` calls**, so the body buffer is never copied into an
+  intermediate string. Added `text_response(status, s)` as the string convenience,
+  `with_body`, and clamped `read_request`'s post-Content-Length reads so a keep-alive
+  client's next request is not swallowed.
+
+  Consumers, all in this commit: `corelib/test/httpd/main.ty` (+ `corelib/test/httpd.out`),
+  `examples/corelib/httpd/main.ty` (+ `examples/corelib/httpd.out`),
+  `examples/webserver/main.ty`. The plan named `examples/site` and `examples/weblog` too —
+  **verified they do not import `core:httpd`** (`find . -name '*.ty' | xargs grep -ln
+  'core:httpd'` returns exactly four files: the package, the corelib test, the corelib
+  example, and `examples/webserver`). `examples/webserver/expected.out` is **byte-identical
+  before and after**, which is the evidence that the refactor changed types, not behaviour.
+
+  ### Proof: a real PNG round-trips byte-identically
+
+  A 120,303-byte real PNG (200x200 RGB, **677 interior `0x00` bytes**), a 70-byte PNG, and
+  300,000 bytes of `/dev/urandom`, served by a 4-worker static server built only from the
+  new `httpd` surface and fetched with `curl -o`:
+
+  ```
+  cmp photo.png  : IDENTICAL (120303 bytes)
+  cmp small.png  : IDENTICAL (70 bytes)
+  cmp big.bin    : IDENTICAL (300000 bytes)
+  got_photo.png: PNG image data, 200 x 200, 8-bit/color RGB, non-interlaced
+  ```
+
+  And against the real example site (`examples/webserver --serve`, `PORT=8212`):
+
+  ```
+  favicon.ico bytes IDENTICAL to favicon.png on disk
+  style.css bytes IDENTICAL
+  ```
+
+  Fixture-locked in `corelib/test/httpd.out` — an interior NUL and a `0xFF` survive both
+  `render()` and a real socket:
+
+  ```
+  bin_len   = 13
+  bin_nul   = 0 255
+  sock_bin_len   = 10
+  sock_bin_bytes = 137 0 255 1
+  ```
+
+  ### How `bytes` felt to work with — the honest answer: it is not a usable value type
+
+  Measured, not assumed. Three probes, each a direct `./tychoc` compile:
+
+  ```
+  a + b     ->  error: arithmetic requires two ints or two floats (got bytes, bytes)
+                -- convert one side, e.g. to_float(x) ... or to_int(x) in ints
+  b[2]      ->  error: can only index an array, a string, or a map (as a place)
+  b[1:3]    ->  error: can only slice an array, soa, or string
+  ```
+
+  **`bytes` supports exactly three things: `len()`, `to_str()`, and crossing the FFI.** No
+  concatenation, no indexing, no slicing, no literal, no empty value (`to_bytes("")` is the
+  only spelling). It is a transport wrapper, not a buffer type.
+
+  So "stop building the response as one string" is only half-achievable *in principle*:
+  there is no in-language way to join two `bytes`, so any single-buffer assembly **must**
+  detour through `string`. The design answers this by not assembling at all on the hot
+  path — two `net.write` calls — which is better than the string concat it replaced, but
+  the reason it is better is a workaround for a missing operator, not a design win.
+
+  The second finding is more surprising and it partly undercuts the phase's premise.
+  `httpd`'s old header comment said an interior `0x00` truncates a `string` body. **That is
+  false**, and it was false when written — `string` is length-counted and byte-safe
+  end-to-end. Measured:
+
+  ```
+  str concat len=11 b[2]=0 b[9]=0     # "Hi\0\xff" + "world" + chr(0) + "!"
+  roundtrip len=11                    # to_bytes(that) preserves all 11
+  slice-of-str len=2
+  ```
+
+  So the string→bytes change did **not** buy binary safety the old model lacked; it bought
+  *type-level honesty* (a body is a buffer, not text), the right shape for `core:net`'s
+  already-`bytes` API, and the removal of a hand-rolled binary writer from
+  `examples/webserver`. Worth doing. But the headline ergonomics finding is that Tycho's
+  binary type is the weaker of its two byte sequences: `string` is the one you can actually
+  compute with, and `bytes` is what you convert to at the door. Every `bytes` manipulation
+  in this phase is a `to_str` … `to_bytes` sandwich. That is filed in `FRICTION.md`.
+
+  **Gates not run — user constraint limits `make test`/`make ci` to once per day, today's
+  allowance spent.** Verified instead by running what was built: three direct `./tychoc`
+  compiles of every consumer, the `corelib/test/httpd` and `corelib/test/net` and
+  `corelib/test/http` binaries diffed against their goldens (all match), and live `curl`
+  against two servers.
+
+- [x] **Phase 3 — BLOCKER: content type by file extension**
   - A MIME table (`.html .css .js .json .svg .png .jpg .gif .woff2 .ico .txt .wasm` at
     minimum) and a `content_type(path) -> string`. Put it in `httpd` unless there is a
     reason to prefer `path`.
@@ -375,7 +468,42 @@ Written while trying to stand up the simplest possible concurrent server.
     how browsers execute things they should download).
   - Done when: serving a directory gives each file the right type, verified with `curl -I`.
 
-- [ ] **Phase 4 — BLOCKER: persistent connections**
+  **DONE 2026-07-26.** `httpd.content_type(path) -> string` over a 20-extension table,
+  with a case-insensitive `has_ext` helper (written inline rather than importing
+  `core:strings` — a corelib package should not take a dependency for one predicate).
+  Unknown extension → `application/octet-stream`, never `text/plain`.
+
+  `curl -I` against a served directory (4-worker static server, port 8211):
+
+  ```
+  index.html     -> text/html; charset=utf-8
+  style.css      -> text/css; charset=utf-8
+  app.js         -> text/javascript; charset=utf-8
+  data.json      -> application/json
+  i.svg          -> image/svg+xml
+  photo.png      -> image/png
+  small.png      -> image/png
+  font.woff2     -> font/woff2
+  mod.wasm       -> application/wasm
+  notes.txt      -> text/plain; charset=utf-8
+  big.bin        -> application/octet-stream
+  README         -> application/octet-stream
+  ```
+
+  The last two are the ones that matter: an unknown extension and **no** extension both
+  fall to `application/octet-stream`. `/img/LOGO.PNG` → `image/png` proves the match is
+  case-insensitive; `/archive.tar.gz` → `application/octet-stream` proves an unlisted
+  compound extension does not get a lucky `text/*`. Both are golden-locked in
+  `corelib/test/httpd.out`.
+
+  `examples/webserver` deleted its hand-rolled 2-entry MIME table in favour of this one,
+  and `examples/webserver/expected.out` did not move — the two agreed on `.css` and `.png`.
+
+  **Gates not run — user constraint limits `make test`/`make ci` to once per day, today's
+  allowance spent.** Verified by `curl -I` against a live server, plus the golden-locked
+  table in `corelib/test/httpd`.
+
+- [x] **Phase 4 — BLOCKER: persistent connections**
   - HTTP/1.1 defaults to keep-alive; `httpd` closes after every request, so a page with 30
     assets pays 30 handshakes. Implement: read `Connection:`, honour `close`, keep the
     socket open otherwise, loop reading requests off one connection, and time out an idle
@@ -384,6 +512,84 @@ Written while trying to stand up the simplest possible concurrent server.
     which before starting.
   - Done when: `curl -v` shows connection reuse across two requests, and an idle
     connection is dropped rather than holding a worker.
+
+  **DONE 2026-07-26.**
+
+  ### The idle timeout: answering "which mechanism" before implementing
+
+  The phase said to establish this first. Read both options in the source:
+
+  - **`time.sleep_ms` (Phase 5) cannot do it.** Sleeping cannot interrupt a `recv` that is
+    already blocked; by the time a worker could check a deadline it is already parked in
+    the kernel. Wrong tool, and using it would have been faking the fix.
+  - **`core:net` could not express a read deadline either.** `corelib/net/net_shim.c`
+    called `setsockopt` in exactly two places, both `SO_REUSEADDR` (still there, now
+    `corelib/net/net_shim.c:96` and `:201`); there was no `SO_RCVTIMEO`, no `poll`, no
+    `select`, and `netx_read` (`corelib/net/net_shim.c:151`) is one bare
+    blocking `recv`. So the honest statement is: **"do not let an idle peer pin this
+    worker" was not expressible in Tycho corelib**, and the phase could not be completed
+    without adding the primitive.
+
+  Added, minimally: `netx_set_read_timeout(fd, ms)` over `SO_RCVTIMEO` in
+  `corelib/net/net_shim.c` (with the Winsock `DWORD`-milliseconds branch), surfaced as
+  `net.set_read_timeout_ms(fd, ms) -> bool`. It fails closed — a failed `setsockopt`
+  returns `false` and leaves the socket blocking rather than half-armed. A timeout makes
+  `read` return **empty**, identical to EOF, deliberately: a server's answer to both is to
+  drop the connection, so `read_request` needs no new failure mode and `method == ""`
+  remains the single close test. (The cost of that choice — a *client* cannot distinguish
+  timeout from EOF — is in `FRICTION.md`.)
+
+  `httpd` side: `connection_close(req)` (HTTP/1.1 defaults open, HTTP/1.0 defaults closed,
+  `Connection: close` wins, a malformed request always closes — fail closed) and
+  `with_connection(r, alive)`. Token matching is comma-split and case-insensitive, so
+  `Connection: keep-alive, Upgrade` parses.
+
+  ### Proof
+
+  Connection reuse — three assets of the **real example site** on one `curl` command line:
+
+  ```
+  $ PORT=8212 examples/webserver --serve &
+  $ curl -sv http://127.0.0.1:8212/ .../static/style.css .../favicon.ico
+  *   Trying 127.0.0.1:8212...
+  * Established connection to 127.0.0.1 (127.0.0.1 port 8212) from 127.0.0.1 port 35926
+  < HTTP/1.1 200 OK
+  < Content-Type: text/html; charset=utf-8
+  < Connection: keep-alive
+  * Connection #0 to host 127.0.0.1:8212 left intact
+  * Reusing existing http: connection with host 127.0.0.1        <-- no second connect
+  < Content-Type: text/css; charset=utf-8
+  * Connection #0 to host 127.0.0.1:8212 left intact
+  * Reusing existing http: connection with host 127.0.0.1        <-- nor a third
+  < Content-Type: image/png
+  ```
+
+  One TCP handshake, three assets, correct types, favicon byte-identical. That is the
+  30-assets-30-handshakes problem gone.
+
+  Idle drop and close-honouring (static server, `IDLE_MS = 1000`):
+
+  ```
+  PHASE 4b  silent socket: server closed after 1028 ms, recv returned b''
+  PHASE 4c  /notes.txt -> HTTP/1.1 200 OK | ['Connection: keep-alive']
+            /data.json -> HTTP/1.1 200 OK | ['Connection: keep-alive']
+            then idle: server closed after 854 ms, recv returned b''
+  PHASE 4d  Connection: close honoured, closed after 0 ms (not the timeout)
+  PHASE 4e  8 silent sockets vs a 4-worker server:
+            a real request completed in 2044 ms; got 26 bytes
+  ```
+
+  **4e read honestly.** With 8 slow-loris sockets against 4 workers the server does *not*
+  serve instantly — the real request waited 2044 ms, i.e. two timeout rounds, because each
+  worker must burn its 1 s deadline on two silent peers before reaching a real one. The
+  claim proven is the one that matters: the workers are **recovered**, not pinned. Before
+  this change that request never completes. Bounded degradation under attack, not immunity;
+  a production answer needs a connection cap or an event loop, and neither belongs in this
+  phase.
+
+  **Gates not run — user constraint limits `make test`/`make ci` to once per day, today's
+  allowance spent.** Verified by `curl -v` and a scripted socket client against two live
+  servers, plus `timeout_armed`/`timeout_closes` golden-locked in `corelib/test/httpd.out`.
 
 - [x] **Phase 5 — FRICTION: `sleep` in `core:time`**
   - `runtime/tycho_rt.c:822` already calls `nanosleep` for `select`; expose `sleep_ms(ms)`

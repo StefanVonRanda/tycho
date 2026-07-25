@@ -27,7 +27,7 @@ fn main():
     println("ctype  = " + httpd.header(p, "content-type"))     # case-insensitive lookup
     println("clen   = " + httpd.header(p, "Content-Length"))
     println("missing= [" + httpd.header(p, "X-None") + "]")
-    println("body   = " + p.body)
+    println("body   = " + to_str(p.body))
     println("bodylen= " + str(len(p.body)))
 
     # a malformed request line fails closed
@@ -35,9 +35,41 @@ fn main():
     println("bad_method_empty = " + str(b(bad.method == "")))
 
     # render a response: auto Content-Length + default Content-Type
-    r0 := httpd.response(404, "nope")
+    r0 := httpd.text_response(404, "nope")
     println("--- render ---")
-    println(httpd.render(r0))
+    println(to_str(httpd.render(r0)))
+
+    # ---- content types by extension (unknown must NOT be text/plain) ----
+    println("ct_html = " + httpd.content_type("/index.html"))
+    println("ct_css  = " + httpd.content_type("/static/style.css"))
+    println("ct_png  = " + httpd.content_type("/img/LOGO.PNG"))        # case-insensitive
+    println("ct_woff2= " + httpd.content_type("/f/inter.woff2"))
+    println("ct_wasm = " + httpd.content_type("/m.wasm"))
+    println("ct_none = " + httpd.content_type("/README"))
+    println("ct_odd  = " + httpd.content_type("/archive.tar.gz"))
+
+    # ---- keep-alive decisions ----
+    k11 := httpd.parse_request("GET / HTTP/1.1" + nl + nl)
+    k11c := httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: close" + nl + nl)
+    k11m := httpd.parse_request("GET / HTTP/1.1" + nl + "Connection: keep-alive, Upgrade" + nl + nl)
+    k10 := httpd.parse_request("GET / HTTP/1.0" + nl + nl)
+    k10k := httpd.parse_request("GET / HTTP/1.0" + nl + "Connection: Keep-Alive" + nl + nl)
+    println("close_11      = " + str(b(httpd.connection_close(k11))))
+    println("close_11_close= " + str(b(httpd.connection_close(k11c))))
+    println("close_11_multi= " + str(b(httpd.connection_close(k11m))))
+    println("close_10      = " + str(b(httpd.connection_close(k10))))
+    println("close_10_ka   = " + str(b(httpd.connection_close(k10k))))
+    println("close_bad     = " + str(b(httpd.connection_close(bad))))
+
+    # ---- a binary body survives an interior NUL and a 0xFF byte ----
+    png := to_bytes([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 255])
+    bin := httpd.with_header(httpd.response(200, png), "Content-Type", httpd.content_type("x.png"))
+    wire_bin := to_str(httpd.render(bin))
+    bsep := find(wire_bin, nl + nl)
+    got_bin := wire_bin[bsep + 4:len(wire_bin)]
+    println("bin_len   = " + str(len(got_bin)))
+    println("bin_nul   = " + str(got_bin[8]) + " " + str(got_bin[12]))
+    println("bin_ctype = " + str(b(find(wire_bin, "Content-Type: image/png") >= 0)))
 
     # ---- loopback round trip over core:net ----
     srv := net.listen("127.0.0.1", 0)
@@ -51,11 +83,11 @@ fn main():
     got := httpd.read_request(conn)
     println("srv_method = " + got.method)
     println("srv_path   = " + got.path)
-    println("srv_body   = " + got.body)
+    println("srv_body   = " + to_str(got.body))
     println("srv_bodylen= " + str(len(got.body)))
 
     # server -> client: build + send a response with an extra header
-    resp := httpd.with_header(httpd.response(200, "pong"), "X-Extra", "yes")
+    resp := httpd.with_header(httpd.text_response(200, "pong"), "X-Extra", "yes")
     n := httpd.write_response(conn, resp)
     println("wrote_ok = " + str(b(n > 0)))
     net.close_fd(conn)
@@ -72,4 +104,34 @@ fn main():
     println("rbody = " + rbody)                             # pong
 
     net.close_fd(cli)
+
+    # ---- binary body over a real socket: every byte must survive ----
+    cli2 := net.connect("127.0.0.1", port)
+    conn2 := net.accept(srv)
+    net.write(cli2, to_bytes("GET /logo.png HTTP/1.1" + nl + nl))
+    rq2 := httpd.read_request(conn2)
+    blob := to_bytes([137, 80, 78, 71, 0, 255, 13, 10, 0, 1])
+    br := httpd.with_header(httpd.response(200, blob), "Content-Type", httpd.content_type(rq2.path))
+    bn := httpd.write_response(conn2, httpd.with_connection(br, false))
+    net.close_fd(conn2)
+    w2 := to_str(net.read(cli2, 4096))
+    s2 := find(w2, nl + nl)
+    body2 := w2[s2 + 4:len(w2)]
+    println("sock_bin_len   = " + str(len(body2)))
+    println("sock_bin_bytes = " + str(body2[0]) + " " + str(body2[4]) + " " + str(body2[5]) + " " + str(body2[9]))
+    println("sock_bin_ctype = " + str(b(find(w2, "Content-Type: image/png") >= 0)))
+    println("sock_bin_conn  = " + str(b(find(w2, "Connection: close") >= 0)))
+    println("sock_bin_wrote = " + str(b(bn > 0)))
+    net.close_fd(cli2)
+
+    # ---- an idle peer is dropped, not waited on forever ----
+    cli3 := net.connect("127.0.0.1", port)
+    conn3 := net.accept(srv)
+    armed := net.set_read_timeout_ms(conn3, 200)
+    idle := httpd.read_request(conn3)                       # cli3 sends nothing
+    println("timeout_armed  = " + str(b(armed)))
+    println("timeout_closes = " + str(b(idle.method == "" and httpd.connection_close(idle))))
+    net.close_fd(conn3)
+    net.close_fd(cli3)
+
     net.close_fd(srv)

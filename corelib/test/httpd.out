@@ -14,6 +14,22 @@ Content-Length: 4
 Content-Type: text/plain
 
 nope
+ct_html = text/html; charset=utf-8
+ct_css  = text/css; charset=utf-8
+ct_png  = image/png
+ct_woff2= font/woff2
+ct_wasm = application/wasm
+ct_none = application/octet-stream
+ct_odd  = application/octet-stream
+close_11      = 0
+close_11_close= 1
+close_11_multi= 0
+close_10      = 1
+close_10_ka   = 0
+close_bad     = 1
+bin_len   = 13
+bin_nul   = 0 255
+bin_ctype = 1
 net_ok = 1
 srv_method = POST
 srv_path   = /submit?id=7
@@ -25,3 +41,10 @@ has_extra = 1
 has_clen  = 1
 has_ctype = 1
 rbody = pong
+sock_bin_len   = 10
+sock_bin_bytes = 137 0 255 1
+sock_bin_ctype = 1
+sock_bin_conn  = 1
+sock_bin_wrote = 1
+timeout_armed  = 1
+timeout_closes = 1

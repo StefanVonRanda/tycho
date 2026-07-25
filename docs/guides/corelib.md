@@ -263,18 +263,32 @@ element type instead of a family of per-type siblings.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
   no `deps`, nothing to install). `listen`/`accept`/`connect`/`port_of`/`write`/`read`/
   `close_fd` and `udp_bind`/`udp_send`/`udp_read`; fds are `int` (negative = failure),
-  payloads are binary-safe `bytes`.
+  payloads are binary-safe `bytes`. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO`:
+  after `ms` idle milliseconds a read returns **empty**, exactly as it does at EOF —
+  deliberately indistinguishable, because a server drops the connection either way.
+  `ms <= 0` restores the blocking default; `false` means the option could not be set
+  (fail closed — the socket keeps blocking).
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
   accept loop. `parse_request(raw) -> Request` (method/path/version, case-insensitive
   `header(r, name)`, honors Content-Length; `method == ""` on a malformed line);
-  `response(status, body)` / `with_header(r, k, v)` / `render(r)` (Content-Length and a
-  default `text/plain` Content-Type are added automatically); and the socket glue
-  `read_request(fd)` (reads until the header terminator, then exactly Content-Length body
-  bytes, bounded so a hostile peer can't spin) / `write_response(fd, r)`. **Text bodies** —
-  they cross as tycho strings, the same interior-`0x00` limit `core:http` notes (fine for
-  HTML/JSON/form APIs, not binary blobs). CRLF is built with `chr(13)` (tycho strings have no
-  `\r` escape).
+  `response(status, body: bytes)` / `text_response(status, body: string)` /
+  `with_header(r, k, v)` / `with_body(r, b)` / `render_head(r) -> string` /
+  `render(r) -> bytes` (Content-Length and a default `text/plain` Content-Type are added
+  automatically); and the socket glue `read_request(fd)` (reads until the header
+  terminator, then exactly Content-Length body bytes, bounded so a hostile peer can't
+  spin) / `write_response(fd, r)`. **Binary-safe bodies** — `Request.body` and
+  `Response.body` are `bytes`, so a PNG or a font round-trips byte for byte; headers stay
+  `string` (ASCII by spec). `write_response` sends head and body as two `net.write` calls,
+  so the body buffer is never copied into an intermediate string.
+  `content_type(path)` maps a file extension to a MIME type — `.html .htm .css .js .mjs
+  .json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm` — and an
+  **unknown extension yields `application/octet-stream`, never `text/plain`** (a wrong
+  `text/*` guess is how a browser is talked into rendering something it should download).
+  Keep-alive: `connection_close(req)` (HTTP/1.1 defaults open, 1.0 defaults closed, a
+  malformed request always closes) and `with_connection(r, alive)`; pair it with
+  `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
+  `chr(13)` (tycho strings have no `\r` escape).
 - **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` (pass
   your arguments **without** `argv[0]`) sorts the vector into three buckets: `--key=value`
   **options**, boolean **flags** (`--flag`, and short clusters `-abc` → `a`/`b`/`c`), and

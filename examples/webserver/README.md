@@ -45,9 +45,14 @@ Composes `core:httpd`, `core:net`, `core:io`, `core:strings`, `core:sort`, and
 - **Binary/static serving now works.** With `io.read_bytes` (added for this) and the
   compiler fix, the server serves CSS and a favicon PNG (20 NUL bytes) **byte-identical
   over the socket** — the string-model `0x00` limit is sidestepped by keeping the body
-  as `bytes` and writing it via `net.write`. The write stays in this package (`net`
+  as `bytes` and writing it via `net.write`. ~~The write stays in this package (`net`
   directly) rather than a cross-package `httpd` helper; a `httpd.write_bytes` is a
-  reasonable follow-up now that the bytes-lifetime bug is gone.
+  reasonable follow-up now that the bytes-lifetime bug is gone.~~ **Done (plan.md
+  Phase 2):** `httpd.Response.body` is now `bytes`, so the hand-rolled `write_asset`
+  header writer this example carried is gone — assets go through the ordinary
+  `httpd.response` / `httpd.write_response` path. The MIME table this example
+  hand-rolled is now `httpd.content_type` (Phase 3), and the accept loop keeps the
+  socket open across requests with an idle timeout (Phase 4).
 - **`core:markdown`'s second consumer.** The renderer (built for this) works
   end-to-end — the blog index is even *built as Markdown and rendered*.
 - **No router in `core:httpd`.** You hand-write the path matching. A small pattern

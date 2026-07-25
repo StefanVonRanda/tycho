@@ -7,17 +7,31 @@
 #   srv := net.listen("127.0.0.1", 8080)
 #   for true:
 #       conn := net.accept(srv)
-#       req  := httpd.read_request(conn)          # read + parse one request
-#       if req.method == "GET" and req.path == "/":
-#           httpd.write_response(conn, httpd.response(200, "hello\n"))
-#       else:
-#           httpd.write_response(conn, httpd.response(404, "not found\n"))
+#       x := net.set_read_timeout_ms(conn, 5000)   # so an idle peer cannot pin us
+#       alive := true
+#       for alive:
+#           req := httpd.read_request(conn)        # read + parse one request
+#           if req.method == "":                   # EOF, idle timeout, or malformed
+#               alive = false
+#           else:
+#               alive = not httpd.connection_close(req)
+#               r := httpd.text_response(200, "hello\n")
+#               httpd.write_response(conn, httpd.with_connection(r, alive))
 #       net.close_fd(conn)
 #
-# TEXT bodies only: request/response bodies cross as tycho strings, so an interior
-# 0x00 truncates the body (the same string-model limit core:http notes). Fine for
-# HTML/JSON/form/text APIs; not for serving binary blobs. Content-Length is honored
-# on read and emitted automatically on write.
+# BINARY-SAFE bodies: `Request.body` and `Response.body` are `bytes`, so a PNG or a
+# font round-trips byte for byte. Headers stay `string` -- they are ASCII by spec.
+# Build a text body with `text_response(status, s)` (or `response(status,
+# to_bytes(s))`); read one back with `to_str(r.body)`.
+#
+# `write_response` sends the ASCII head and the body as two separate `net.write`
+# calls, so the body buffer is never copied into an intermediate string. `render`
+# is still there for one-shot use and returns `bytes`.
+#
+# Content-Length is honored on read and emitted automatically on write.
+# `content_type(path)` maps a file extension to a MIME type (unknown ->
+# application/octet-stream, never text/plain). `connection_close(req)` /
+# `with_connection(r, alive)` implement HTTP/1.1 keep-alive.
 package httpd
 import "core:net"
 
@@ -27,14 +41,14 @@ struct Request:
     version: string       # "HTTP/1.1"
     header_keys: [string]  # header names, parallel to header_vals
     header_vals: [string]  # header values (trimmed), parallel to header_keys
-    body: string          # the entity body (as many bytes as Content-Length)
+    body: bytes           # the entity body (as many bytes as Content-Length)
 
 struct Response:
     status: int
     reason: string
     header_keys: [string]
     header_vals: [string]
-    body: string
+    body: bytes
 
 # ---- small pure helpers ----------------------------------------------------
 
@@ -79,8 +93,17 @@ fn to_uint(s: string) -> int:
         v = v * 10 + (c - 48)
     return v
 
+# True when `hay` contains `needle` as a comma-separated token, case-insensitively
+# (the shape of `Connection: keep-alive, Upgrade`).
+fn has_token(hay: string, needle: string) -> bool:
+    parts := split(ascii_lower(hay), ",")
+    for i in range(len(parts)):
+        if trim(parts[i]) == needle:
+            return true
+    return false
+
 fn bad_request() -> Request:
-    return Request("", "", "", []string, []string, "")
+    return Request("", "", "", []string, []string, to_bytes(""))
 
 # ---- request parsing -------------------------------------------------------
 
@@ -107,7 +130,7 @@ fn parse_request(raw: string) -> Request:
         if col > 0:
             push(keys, trim(ln[0:col]))
             push(vals, trim(ln[col + 1:len(ln)]))
-    return Request(parts[0], parts[1], parts[2], keys, vals, body)
+    return Request(parts[0], parts[1], parts[2], keys, vals, to_bytes(body))
 
 # The value of header `name` (case-insensitive), or "" if absent.
 fn header(r: Request, name: string) -> string:
@@ -121,6 +144,15 @@ fn header(r: Request, name: string) -> string:
 # Read one request off a connected socket and parse it. Reads until the header
 # terminator and then exactly Content-Length body bytes (or EOF), bounded so a
 # truncated/hostile peer can't spin forever.
+#
+# On EOF, on a socket read timeout (see net.set_read_timeout_ms), or on a hostile
+# peer that never terminates its headers, the result is a Request whose `method`
+# is "" -- so a keep-alive loop closes the connection on exactly one test.
+#
+# Once Content-Length is known the read is clamped to the remaining bytes, so a
+# well-behaved client's NEXT request is not swallowed. A client that pipelines
+# (sends request 2 before reading response 1) can still have bytes consumed
+# inside the pre-header 4 KiB read; pipelining is not supported.
 fn read_request(fd: int) -> Request:
     buf := ""
     need := -1                                  # total expected bytes once known
@@ -137,12 +169,30 @@ fn read_request(fd: int) -> Request:
         if (need >= 0 and len(buf) >= need) or len(buf) >= 1048576:
             reading = false
         else:
-            chunk := net.read(fd, 4096)
-            if len(chunk) == 0:                 # EOF / error
+            want := 4096
+            if need >= 0 and need - len(buf) < want:
+                want = need - len(buf)
+            chunk := net.read(fd, want)
+            if len(chunk) == 0:                 # EOF, error, or read timeout
                 reading = false
             else:
                 buf = buf + to_str(chunk)
     return parse_request(buf)
+
+# ---- keep-alive ------------------------------------------------------------
+
+# Does this request ask for the connection to be closed after the response?
+# HTTP/1.1 defaults to keep-alive; HTTP/1.0 defaults to close. A malformed
+# request (method == "") always closes -- fail closed.
+fn connection_close(r: Request) -> bool:
+    if r.method == "":
+        return true
+    conn := header(r, "connection")
+    if has_token(conn, "close"):
+        return true
+    if r.version == "HTTP/1.1":
+        return false
+    return not has_token(conn, "keep-alive")    # 1.0 and anything unknown
 
 # ---- responses -------------------------------------------------------------
 
@@ -171,9 +221,14 @@ fn reason_phrase(status: int) -> string:
         return "Internal Server Error"
     return "Status"
 
-# Build a response with a standard reason phrase, no extra headers yet.
-fn response(status: int, body: string) -> Response:
+# Build a response with a standard reason phrase, no extra headers yet. The body
+# is `bytes`, so it is binary-safe; for a text body use text_response.
+fn response(status: int, body: bytes) -> Response:
     return Response(status, reason_phrase(status), []string, []string, body)
+
+# The text convenience: response(status, to_bytes(body)).
+fn text_response(status: int, body: string) -> Response:
+    return response(status, to_bytes(body))
 
 # A copy of `r` with one header appended (value semantics -- returns a new value).
 fn with_header(r: Response, key: string, val: string) -> Response:
@@ -183,9 +238,70 @@ fn with_header(r: Response, key: string, val: string) -> Response:
     push(vs, val)
     return Response(r.status, r.reason, ks, vs, r.body)
 
-# Serialize a response to the wire. Content-Length is added automatically (unless
-# you set one); Content-Type defaults to text/plain when you set none.
-fn render(r: Response) -> string:
+# A copy of `r` with a body replacing the old one.
+fn with_body(r: Response, body: bytes) -> Response:
+    return Response(r.status, r.reason, r.header_keys, r.header_vals, body)
+
+# A copy of `r` carrying the Connection header the keep-alive decision implies.
+# Pass the value connection_close(req) gave you, negated: `alive == true` means
+# the server intends to keep reading requests off this socket.
+fn with_connection(r: Response, alive: bool) -> Response:
+    if alive:
+        return with_header(r, "Connection", "keep-alive")
+    return with_header(r, "Connection", "close")
+
+# ---- content types ---------------------------------------------------------
+
+# Case-insensitive ".ext" suffix test.
+fn has_ext(path: string, ext: string) -> bool:
+    if len(path) < len(ext):
+        return false
+    return ascii_lower(path[len(path) - len(ext):len(path)]) == ext
+
+# The MIME type for a filename or URL path, by extension. An UNKNOWN extension
+# yields application/octet-stream, never text/plain: a wrong text/* guess is how
+# a browser gets talked into rendering (or running) something it should download.
+fn content_type(path: string) -> string:
+    if has_ext(path, ".html") or has_ext(path, ".htm"):
+        return "text/html; charset=utf-8"
+    if has_ext(path, ".css"):
+        return "text/css; charset=utf-8"
+    if has_ext(path, ".js") or has_ext(path, ".mjs"):
+        return "text/javascript; charset=utf-8"
+    if has_ext(path, ".json"):
+        return "application/json"
+    if has_ext(path, ".txt"):
+        return "text/plain; charset=utf-8"
+    if has_ext(path, ".xml"):
+        return "application/xml"
+    if has_ext(path, ".svg"):
+        return "image/svg+xml"
+    if has_ext(path, ".png"):
+        return "image/png"
+    if has_ext(path, ".jpg") or has_ext(path, ".jpeg"):
+        return "image/jpeg"
+    if has_ext(path, ".gif"):
+        return "image/gif"
+    if has_ext(path, ".webp"):
+        return "image/webp"
+    if has_ext(path, ".ico"):
+        return "image/x-icon"
+    if has_ext(path, ".woff2"):
+        return "font/woff2"
+    if has_ext(path, ".woff"):
+        return "font/woff"
+    if has_ext(path, ".pdf"):
+        return "application/pdf"
+    if has_ext(path, ".wasm"):
+        return "application/wasm"
+    return "application/octet-stream"
+
+# ---- serialization ---------------------------------------------------------
+
+# The ASCII head: status line, headers, and the blank line that ends them.
+# Content-Length is added automatically (unless you set one); Content-Type
+# defaults to text/plain when you set none.
+fn render_head(r: Response) -> string:
     nl := crlf()
     out := "HTTP/1.1 " + str(r.status) + " " + r.reason + nl
     has_len := false
@@ -201,8 +317,23 @@ fn render(r: Response) -> string:
         out = out + "Content-Length: " + str(len(r.body)) + nl
     if not has_type:
         out = out + "Content-Type: text/plain" + nl
-    return out + nl + r.body
+    return out + nl
 
-# Render and send a response over the socket; returns bytes written (or -1).
+# The whole response as one buffer. Convenient, but it copies the body; the
+# socket path (write_response) does not.
+fn render(r: Response) -> bytes:
+    return to_bytes(render_head(r) + to_str(r.body))
+
+# Send a response over the socket as head + body, two writes, so the body buffer
+# is never copied into an intermediate string. Returns the total bytes written,
+# or -1 if either write failed (fail closed -- a partial send is an error).
 fn write_response(fd: int, r: Response) -> int:
-    return net.write(fd, to_bytes(render(r)))
+    n := net.write(fd, to_bytes(render_head(r)))
+    if n < 0:
+        return -1
+    if len(r.body) == 0:
+        return n
+    m := net.write(fd, r.body)
+    if m < 0:
+        return -1
+    return n + m

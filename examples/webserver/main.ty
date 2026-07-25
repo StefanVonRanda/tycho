@@ -22,6 +22,7 @@ import "core:sort"
 import "core:markdown"
 
 const ROOT = "examples/webserver/content"
+const IDLE_MS = 5000        # drop a keep-alive connection idle this long
 
 struct Page:
     ok: bool
@@ -48,13 +49,6 @@ struct Asset:
     ok: bool
     ctype: string
     body: bytes
-
-fn content_type(name: string) -> string:
-    if strings.ends_with(name, ".css"):
-        return "text/css; charset=utf-8"
-    if strings.ends_with(name, ".png"):
-        return "image/png"
-    return "application/octet-stream"
 
 fn safe_asset(name: string) -> bool:
     if name == "" or len(name) > 64:
@@ -83,14 +77,12 @@ fn static_asset(p: string) -> Asset:
     body := io.read_bytes(ROOT + "/static/" + name)
     if len(body) == 0:
         return Asset(false, "", to_bytes(""))
-    return Asset(true, content_type(name), body)
+    return Asset(true, httpd.content_type(name), body)
 
-fn write_asset(fd: int, a: Asset) -> int:
-    blen := len(a.body)
-    nl := httpd.crlf()
-    hdr := "HTTP/1.1 200 OK" + nl + "Content-Type: " + a.ctype + nl + "Content-Length: " + str(blen) + nl + nl
-    x := net.write(fd, to_bytes(hdr))
-    return net.write(fd, a.body)
+# Assets go through the ordinary Response path now that bodies are `bytes` --
+# the hand-rolled header writer this example used to carry is gone.
+fn asset_response(a: Asset) -> httpd.Response:
+    return httpd.with_header(httpd.response(200, a.body), "Content-Type", a.ctype)
 
 # Read `<ROOT>/<rel>`, peel an optional leading `date: ...` frontmatter line, take
 # the title from the first `# ` heading, and render the body Markdown to HTML.
@@ -128,7 +120,7 @@ fn layout(title: string, body: string) -> string:
     return "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>" + markdown.esc(t) + "</title><link rel=\"stylesheet\" href=\"/static/style.css\"><link rel=\"icon\" href=\"/favicon.ico\"></head>\n<body>\n<nav><a href=\"/\">Home</a> &middot; <a href=\"/blog\">Blog</a> &middot; <a href=\"/wiki/getting-started\">Wiki</a></nav>\n<main>\n" + body + "</main>\n<footer>Served by Tycho.</footer>\n</body></html>\n"
 
 fn html(status: int, body: string) -> httpd.Response:
-    return httpd.with_header(httpd.response(status, body), "Content-Type", "text/html; charset=utf-8")
+    return httpd.with_header(httpd.text_response(status, body), "Content-Type", "text/html; charset=utf-8")
 
 fn not_found() -> httpd.Response:
     return html(404, layout("Not Found", "<h1>404 Not Found</h1>\n<p>No such page.</p>\n"))
@@ -206,12 +198,25 @@ fn main():
             conn := net.accept(srv)
             if conn < 0:
                 continue
-            req := httpd.read_request(conn)
-            a := static_asset(req.path)
-            if a.ok:
-                x := write_asset(conn, a)
-            else:
-                httpd.write_response(conn, route(req))
+            # HTTP/1.1 keep-alive: serve requests off one socket until the peer
+            # asks to close, hangs up, or goes idle for IDLE_MS -- the timeout is
+            # what stops a slow-loris peer from pinning this loop forever.
+            armed := net.set_read_timeout_ms(conn, IDLE_MS)
+            alive := true
+            for alive:
+                req := httpd.read_request(conn)
+                if req.method == "":            # EOF, idle timeout, or malformed
+                    alive = false
+                else:
+                    alive = not httpd.connection_close(req)
+                    a := static_asset(req.path)
+                    resp := httpd.text_response(200, "")
+                    if a.ok:
+                        resp = asset_response(a)
+                    else:
+                        resp = route(req)
+                    if httpd.write_response(conn, httpd.with_connection(resp, alive)) < 0:
+                        alive = false           # peer hung up mid-write
             net.close_fd(conn)
     else:
         # Deterministic self-test: dispatch a fixed route list through the same
@@ -223,7 +228,7 @@ fn main():
             req := httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr)
             resp := route(req)
             println("### GET " + paths[j] + " -> " + str(resp.status))
-            print(resp.body)
+            print(to_str(resp.body))
             println("")
         # static assets are served as raw bytes (not through route); print their
         # metadata -- content type + byte length -- rather than dumping binary.

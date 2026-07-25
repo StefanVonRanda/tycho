@@ -2,5 +2,8 @@ method = GET
 path   = /hello?name=ada
 host   = localhost
 status ok = true
+ctype  = image/png
+ctype? = application/octet-stream
 served = GET /
+alive  = true
 reply  = pong
