@@ -665,7 +665,7 @@ or fixpoint goes red.
   compound-prefix form was not probed. Class is the same; exposure is not
   demonstrated. Logged as Phase 10 rather than absorbed here.
 
-- [ ] **Phase 10 — sweep the COMPOUND-type internal spellings for the same fail-open shape (discovered by Phase 9, out of its scope)**
+- [x] **Phase 10 — sweep the COMPOUND-type internal spellings for the same fail-open shape (discovered by Phase 9, out of its scope)**
   - Phase 9 closed the bare-NAME fall-through in `parse_type_d`
     (`compiler/tychoc0.ty:1817`) and swept all 23 base type names. It did NOT
     sweep tychoc0's internal spellings of *compound* type forms: `parse_param`
@@ -690,6 +690,165 @@ or fixpoint goes red.
     and fixture-locked, legal compound annotations still compile on both, full
     gate set green. A table with zero divergences is a legitimate outcome and
     closes the phase — the measurement is the deliverable.
+
+  **DONE 2026-07-25 — MEASURED, not argued: 45 probes, 0 divergences. No source
+  change. Phase 9's residual-uncertainty note is now closed by measurement.**
+
+  **1. Correction to this phase's own line numbers.** Phase 9's edit shifted the
+  file, and two of the cited ranges were the *mangler*, not the *producer*:
+
+  | Plan text said | Actually at | What is there |
+  |---|---|---|
+  | `parse_param` `:1832-1838` | **`compiler/tychoc0.ty:1835-1851`** | `:1844` `"&" + parse_type(...)`, `:1847` `"~" + …`, `:1850` `"..." + …`. (`:1832-1833` is now `parse_type`, the public entry point.) |
+  | bounded `[bN]T` `:2825-2826` | **`:1718-1731`** (produced), `:2825-2826` is `mangle_type` consuming it | `:1731 return "[b" + str(bcap) + "]" + belem` |
+  | `fn(P->R)` `:2837-2843` | **`:1732-1753`** (produced), `:2837-2843` is `mangle_type` | `:1753 return out + "->" + ret + ")"` |
+
+  Two further internal compound encodings the phase text did not name were found
+  by reading `parse_type_d` and swept as extras: the map spelling `{K:V}`
+  (`:1709`, user writes `[K:V]`) and the const-sized-array spelling `[#N]T`
+  (`:1692`, user writes `[C]T`).
+
+  **2. THE SWEEP TABLE — 7 forms × 5 positions = 35 probes.** Each probe is a
+  complete program whose only questionable token is the annotation; the `param`,
+  `field` and `arrelem` probes never call the function or build the struct, so
+  they isolate the annotation alone with no value-type noise. Messages are the
+  last non-warning fatal line, location prefix stripped.
+
+  | form (as WRITTEN) | position | tychoc | tychoc message | tychoc0 | tychoc0 message | verdict |
+  |---|---|---|---|---|---|---|
+  | `&int` | param | REJECT | expected a type (int, float, bool, string, [int], or a struct) | REJECT | expected a type | agree |
+  | `&int` | local | REJECT | " | REJECT | " | agree |
+  | `&int` | return | REJECT | " | REJECT | " | agree |
+  | `&int` | field | REJECT | " | REJECT | " | agree |
+  | `&int` | arrelem | REJECT | " | REJECT | " | agree |
+  | `~int` | param | REJECT | expected a type (int, float, bool, string, [int], or a struct) | REJECT | expected a type | agree |
+  | `~int` | local | REJECT | " | REJECT | " | agree |
+  | `~int` | return | REJECT | " | REJECT | " | agree |
+  | `~int` | field | REJECT | " | REJECT | " | agree |
+  | `~int` | arrelem | REJECT | " | REJECT | " | agree |
+  | **`...int`** | **param** | **accept** | — (emits C) | **accept** | — (emits C) | **agree — and CORRECT, see §3** |
+  | `...int` | local | REJECT | expected a type (int, float, bool, string, [int], or a struct) | REJECT | expected a type | agree |
+  | `...int` | return | REJECT | " | REJECT | " | agree |
+  | `...int` | field | REJECT | " | REJECT | " | agree |
+  | `...int` | arrelem | REJECT | " | REJECT | " | agree |
+  | `[b4]int` | param | REJECT | a fixed-size array length must be an integer literal or an int `const` -- 'b4' is not | REJECT | unknown type '#b4]in' | agree |
+  | `[b4]int` | local | REJECT | " | REJECT | a fixed-size array length must be an integer literal or an int `const` -- 'b4' is not | agree |
+  | `[b4]int` | return | REJECT | " | REJECT | returning [int] but this function returns [#b4]int | agree |
+  | `[b4]int` | field | REJECT | " | REJECT | unknown type '#b4]in' | agree |
+  | `[b4]int` | arrelem | REJECT | " | REJECT | unknown type '#b4]in' | agree |
+  | `fn(int->int)` | param | REJECT | expected ')' | REJECT | unexpected token | agree |
+  | `fn(int->int)` | local | REJECT | " | REJECT | " | agree |
+  | `fn(int->int)` | return | REJECT | " | REJECT | " | agree |
+  | `fn(int->int)` | field | REJECT | " | REJECT | " | agree |
+  | `fn(int->int)` | arrelem | REJECT | " | REJECT | " | agree |
+  | `{int:int}` (extra) | param | REJECT | unexpected character '{' | REJECT | unexpected character | agree |
+  | `{int:int}` | local | REJECT | " | REJECT | " | agree |
+  | `{int:int}` | return | REJECT | " | REJECT | " | agree |
+  | `{int:int}` | field | REJECT | " | REJECT | " | agree |
+  | `{int:int}` | arrelem | REJECT | " | REJECT | " | agree |
+  | `[#4]int` (extra) | param | REJECT | unknown type 'println' | REJECT | expected a type | agree |
+  | `[#4]int` | local | REJECT | unknown type 'println' | REJECT | expected a type | agree |
+  | `[#4]int` | return | REJECT | expected a type (int, float, …) | REJECT | unexpected token | agree |
+  | `[#4]int` | field | REJECT | expected '(' after fn in a function type | REJECT | unexpected token | agree |
+  | `[#4]int` | arrelem | REJECT | unknown type 'println' | REJECT | expected a type | agree |
+
+  **Plus 10 RECURSIVE-nesting probes** (the 5 named forms inside a map value
+  `[string: FORM]` and inside `Option(FORM)`, which re-enter `parse_type_d`
+  through a different call site): **10 probes, 0 DIVERGENT**, same messages as
+  the `arrelem` row of each form.
+
+  ```
+  TOTAL 45 probes (35 positional + 10 nested)   DIVERGENT 0
+  ```
+
+  **3. The one `accept` is not a fail-open — the grammar says it is legal.**
+  `docs/spec/appendix-a-grammar.md:66`:
+  ```
+  Param      ::= IDENT ":" ( "inout" | "sink" )? "..."? Type
+  ```
+  `...` is a PARAM-position prefix in the user grammar, so `a: ...int` is
+  grammatical and both compilers are right to accept it. `...T` differs from the
+  other four forms in kind: it is the one whose internal encoding *coincides
+  with* the legal user spelling (`compiler/tychoc0.ty:1848-1850` reads a real
+  `TEllipsis` token, it does not fall through a name lookup). Both compilers
+  reject it in all four NON-param positions, which the grammar also requires —
+  `Type` (`appendix-a-grammar.md:81-98`) has no `"..."` alternative.
+
+  **4. Why the other four cannot be the Phase 9 shape — now with the measurement
+  behind it, not instead of it.** `Type ::=` at `appendix-a-grammar.md:81-90`
+  enumerates every type form; none begins with `&` or `~`, so `&int`/`~int` die
+  at "expected a type" in both. `:83` spells the function type
+  `"fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?` — the arrow is OUTSIDE
+  the parens, so the internal `fn(int->int)` is ungrammatical in both. `[b4]int`
+  matches `ArrayOrMap ::= IDENT "]" Type` (`:93`, the `[C]T` const-sized array),
+  so `b4` is read as a const NAME and both reject it as a non-const — tychoc at
+  parse, tychoc0 at the guard Phase 3 added. `{` never appears in `Type` and is
+  not a tycho lexeme at all. `[#4]int` cannot even reach the parser: `#` opens a
+  comment (`docs/spec/01-lexical.md`), so `[#4]int` lexes as `[` + comment-to-EOL
+  and the parse resumes on the following line — hence tychoc's `unknown type
+  'println'`. Fail-closed on all five; nothing was accepted on a guess.
+
+  **5. Nothing fixed, because nothing diverged.** No `tests/reject/` fixture was
+  added: the phase's own text makes a zero table a legitimate close, and a
+  fixture can only lock a *decision*, which is already identical on both sides
+  for all 45 probes. Test count stays **437**. `git status --short` is empty
+  apart from this file.
+
+  **6. NOT over-tightened — every LEGAL compound spelling still compiles AND
+  RUNS, identically on both.** One program using `inout int`, `sink string`,
+  `...int` variadic, `bounded[4]int` (struct field), `bounded[8]int` (return +
+  local), `fn(int) -> int` (param, passed a named function), `soa [Pt]`,
+  `[string: int]` and `Option(int)`. tychoc via `-o`; tychoc0 via `--emit-c`
+  piped through `cc -O2 -fwrapv -std=c11 … -lm` (mirrors `tests/run.sh:72`):
+  ```
+  tychoc   -> 42 5 10 42 2 16 3 12 1 3   (rc 0)
+  tychoc0  -> 42 5 10 42 2 16 3 12 1 3   (rc 0)
+  diff out_c.txt out_0.txt  ->  BYTE-IDENTICAL
+  ```
+  (No compiler source was edited, so over-tightening was structurally impossible;
+  this is run anyway because the phase text asks for it explicitly.)
+
+  **7. Gates — all seven green** (each its own foreground `env -u LD_PRELOAD
+  make …`; tychoc0 built at `/tmp/ph10/`, outside the repo tree):
+  ```
+  test        passed: 437   failed: 0  /  all green
+  corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  conc        conc: passed 36   failed 0
+  fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (34839 lines C)
+              fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  ilp32       passed: 437   failed: 0  /  all green
+  spec-check  spec-examples: 7 runnable example(s), all pass
+  check-links link check: ok (121 markdown files, no dead relative links)
+  ```
+  `git status --short` after the run: empty except `plan.md`. No build spill.
+
+  **Residual uncertainty:** the sweep covers the five compound encodings the
+  phase named plus two found by reading `parse_type_d`, in five syntactic
+  positions plus two nested ones. Not swept: tuple `(A,B)` and `soa[T]` internal
+  spellings, which are *identical* to their user spellings (`:1717`;
+  `appendix-a-grammar.md:82,:84`) and so cannot diverge by construction.
+
+- [ ] **Phase 11 — `bounded[N]T` is implemented by both compilers but absent from the spec grammar (found by Phase 10, out of its scope)**
+  - Both compilers accept `bounded[N]T` as a type form — `compiler/tychoc0.ty:1718-1731`
+    parses it and `tests/bounded.ty:6,:8,:34` exercises it in a struct field, a
+    return type and a local, all green under `make test`.
+  - But the type grammar does not have it. `Type ::=` at
+    `docs/spec/appendix-a-grammar.md:81-90` lists `$IDENT`, `soa[T]`, `fn(…)`,
+    tuple, `[`-forms, `Option`/`Result`/`Channel`, `QualName TypeArgs?` and
+    `PrimType` — no `bounded`. `grep -rn 'bounded' docs/spec/` returns 4 hits in
+    3 files (`16-builtins.md:214`, `13-concurrency.md:100,:115`,
+    `07-memory-model.md:136`) and every one is about a *bounded channel* or
+    bounded memory, not the type form. `docs/spec/02-grammar.md` has none.
+  - Class: **doc drift / spec incompleteness, NOT a compiler divergence** — both
+    compilers agree on accept, so the normative accept/reject property
+    (`00-conventions.md` §1.3) is intact. Logged rather than absorbed because
+    Phase 10's scope was compound-form *validation*, not spec authoring.
+  - Scope when taken: add the `bounded` alternative to `Type` in
+    `appendix-a-grammar.md` and to `02-grammar.md`, and give it a section in
+    `03-types.md` (capacity must be a positive integer literal — `:1721-1725`;
+    element may not be `void`/`bool` — `:1729`). Docs only; no compiler change.
+  - Done when: the grammar admits every type form both compilers accept, and
+    `make check-links` + `make spec-check` stay green.
 
 ## Out of scope
 
