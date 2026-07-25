@@ -1514,7 +1514,7 @@ codegen.
     `cond_value_if_int.ty`. The reject lane is differential
     (`tests/run.sh:142-163`), so each asserts BOTH compilers reject.
 
-- [ ] **Phase 16 — `if <bool array element>:` makes tychoc0 emit invalid C (found by Phase 15, out of its scope)**
+- [x] **Phase 16 — `if <bool array element>:` makes tychoc0 emit invalid C (found by Phase 15, out of its scope)**
   - **PRE-EXISTING, NOT introduced by Phase 15** — reproduced on the *baseline*
     tychoc0 built from `HEAD` before the Phase 15 edit, byte-for-byte the same
     broken line. Phase 15 only found it, while building its legal-forms control.
@@ -1545,6 +1545,203 @@ codegen.
     (a `tests/reject/` fixture is wrong here — the program is legal).
   - Not attempted in Phase 15: out of scope (Phase 15 is condition
     *typechecking*), and it is an emitter defect, not a front-end one.
+  - **DONE 2026-07-25.**
+
+    **Citation corrections (this phase's own text was wrong once, the prior
+    phases' pattern held).** `cond_unwrap` is at `compiler/tychoc0.ty:8331`
+    (correct as written) but its second call site is **`:8809`**, not `:8804`
+    as the phase text claimed. Post-edit the anchors are: tychoc0
+    `cond_unwrap` `:8353`, call sites `:8810` and `:8833`; tychoc
+    `cond_unwrap` `src/tychoc.c:8007` (was `:7986`), call sites `:9555` and
+    `:9708`. (Four of these five I first wrote from the pre-edit offsets and
+    had to correct against `grep` before committing — the same failure mode
+    this plan has now hit in five phases. Every anchor below is grep-verified
+    post-edit.) Exactly **two** call sites per compiler, both confirmed by
+    reading the switch: `case S_IF` and `case S_WHILE`.
+
+    **The value-`if` form DOES reach `cond_unwrap` — I asserted otherwise and
+    was wrong.** My first draft of this evidence claimed "there is no value-`if`
+    route, ternary is a permanent non-goal". The non-goal is real but the
+    inference from it was false: Tycho has a block-form value-`if`
+    (`x := if c:` / `else:`, ROADMAP 2.1, `SValDecl` at
+    `compiler/tychoc0.ty:502`), and `:8802` states in the source that "`elif` is
+    parsed into a nested SIf (`:1185`) and a value-`if` re-enters here via
+    SValDecl (`:8519`), so this one site covers every `if`-shaped condition."
+    So value-`if` is not a *third* call site, but it is a distinct *user-visible
+    form* that was equally broken, and the phase explicitly asked for it.
+    Verified by probe on the baseline binary:
+    ```
+    x := if arr[0]:      baseline tychoc0 -> if ({ Arr_bool  _a = h_arr; … }) {   BROKEN
+        10               fixed    tychoc0 -> if (({ Arr_bool  _a = h_arr; … })) { ok, prints 10
+    ```
+    It is now covered in the fixture. Caught only because a truncated `grep`
+    hid `:12220` and re-running it surfaced the `SValDecl` "value if/match
+    decl" comment — the absence claim had not actually been searched for.
+
+    **The phase premise "tychoc is unaffected" is FALSE — probed, not assumed.**
+    tychoc survives the *array* repro only because it lowers a checked array
+    read to a helper call (`tycho_arr_C0_get(h_arr, 0LL)`) instead of a
+    statement-expression. But tychoc's `wait()` lowering **is** one, so
+    `if wait(t):` over a bool-returning task broke tychoc identically on
+    baseline:
+    ```
+    if ({ HTask *_tk = h_t; tycho_task_join(_tk); int _w = (*(int *)_tk->ret); arena_free(&_tk->root); _w; }) {
+        ^  cc: error: expected expression before '{' token
+    tychoc: C compilation failed (cc -O3 -fwrapv -pthread -o /tmp/ph16/pA …)
+    ```
+    So this was **two live instances of one root cause, one per compiler**, and
+    both compilers are fixed. `src/tychoc.c` was in scope under the phase's own
+    "or `src/tychoc.c` if it has an equivalent".
+
+    **Input-shape enumeration — the required evidence.** The real
+    `cond_unwrap` from each compiler was extracted verbatim and driven against
+    every shape; `valid(in)`/`valid(out)` are `cc -fsyntax-only -std=gnu11`
+    verdicts on `if (<expr>) {}`, not a reading of the code. Harness:
+    `/tmp/ph16/shapes_t0.ty` (tychoc0, spliced verbatim) and
+    `/tmp/ph16/shapes_c.py` (tychoc, extracted + linked).
+    ```
+    shape                       | valid(in) | BEFORE    | AFTER     | verdict
+    ----------------------------|-----------|-----------|-----------|------------------------------------
+    S1  plain-paren-binop       | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S2  stmt-expr               | yes       | STRIP/BAD | KEEP /ok  | WAS BROKEN -> FIXED
+    S3  nested-parens           | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S4  call-not-paren-lead     | yes       | KEEP /ok  | KEEP /ok  | ok, unchanged
+    S5  two-groups              | yes       | KEEP /ok  | KEEP /ok  | ok, unchanged
+    S6  cast-like               | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S7  empty                   | no        | KEEP /BAD | KEEP /BAD | degenerate (invalid in, invalid out)
+    S8  unbalanced-open         | no        | KEEP /BAD | KEEP /BAD | degenerate (invalid in, invalid out)
+    S9  paren-in-string-lit     | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S10 stmt-expr-inside-group  | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S11 stmt-expr-operand       | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    S12 unterminated-literal    | no        | KEEP /BAD | KEEP /BAD | degenerate (invalid in, invalid out)
+    S13 stmt-expr-wait          | yes       | STRIP/BAD | KEEP /ok  | WAS BROKEN -> FIXED
+    S14 bare-ident              | yes       | KEEP /ok  | KEEP /ok  | ok, unchanged
+    S15 lone-open-paren         | no        | KEEP /BAD | KEEP /BAD | degenerate (invalid in, invalid out)
+    S16 empty-group `()`        | no        | STRIP/BAD | KEEP /BAD | degenerate; now refused anyway
+    S17 group-then-trailer      | yes       | KEEP /ok  | KEEP /ok  | ok, unchanged
+    S18 double-stmt-expr        | yes       | STRIP/ok  | STRIP/ok  | ok, unchanged
+    ----------------------------|-----------|-----------|-----------|------------------------------------
+    valid input turned INVALID  --  BEFORE: 2    AFTER: 0
+    ```
+    A real example per shape, in order: `(h_a < 3LL)` ·
+    `({ Arr_bool _a = h_arr; _a.data[hi_bchk(0LL, _a.len)]; })` ·
+    `((h_a && h_b))` · `h_f(h_x)` · `(h_a) && (h_b)` · `((tycho_int)h_x)` ·
+    `` (empty) · `(h_a` · `(hi_streq(h_s, ")") == 1LL)` ·
+    `(({ Arr_int _a = h_v; _a.data[0]; }) == 1LL)` ·
+    `(hi_streq(({ static char* _l = 0; … _l; }), h_s))` ·
+    `(hi_streq(h_s, "abc)` ·
+    `({ HTask* _tk = h_t; tycho_task_join(_tk); tycho_int _w = 1; _w; })` ·
+    `h_flag` · `(` · `()` · `(h_a) == 1LL` ·
+    `(({ int _x = 1; _x; }) && ({ int _y = 2; _y; }))`.
+
+    Readings that matter:
+    - **S5 `(a) && (b)` is NOT mis-stripped** — the classic off-by-one for this
+      kind of scanner is genuinely absent. The `i != n - 1` / `p[1] != '\0'`
+      test sees the `)` at index 2 close before the end and refuses. Checked
+      because the phase asked; it is a correct KEEP, not a second instance.
+    - **S10/S11/S18 still STRIP and that is right** — a statement-expression
+      that is not the *whole* group keeps its own parens when the redundant
+      outer layer comes off, so the result is valid C.
+    - **S7/S8/S12/S15 were already invalid C on the way in** — `cond_unwrap`
+      returns them unchanged. It never *makes* them worse. The load-bearing
+      property is the bottom line: valid input turned INVALID went 2 → 0.
+    - **S16 `()` was a third mis-strip**, producing an empty condition
+      (`if () {`). Not reachable from `gen_expr` today, so it never fired in
+      the wild; refused anyway under fail-closed.
+
+    **The fix — fail-closed, both compilers.** Two guards ahead of the scan:
+    refuse anything shorter than 3 bytes (covers ``, `(`, `()`), and refuse
+    when the byte after `(` is `{`, because `({ … })` is a GCC
+    statement-expression whose `(` is *syntax*, not a redundant layer.
+    ```
+    tychoc0 (compiler/tychoc0.ty:8355-8358)
+        if n < 3 or s[0] != 40:      # 40 = '(' ; n < 3 covers "", "(", "()"
+            return s
+        if s[1] == 123:              # 123 = '{' : `({ ... })` is a GCC
+            return s                 # statement-expression, not a paren layer
+
+    tychoc (src/tychoc.c:8009-8010)
+        if (!s || s[0] != '(' || !s[1] || !s[2]) return s;
+        if (s[1] == '{') return s;   /* `({ ... })` statement-expression */
+    ```
+    `s[1] == '{'` is exact, not approximate: **no emitter in either compiler
+    produces `( {`** — `grep -n '"( ' compiler/tychoc0.ty src/tychoc.c` returns
+    nothing, and every statement-expression emission site spells it `({ `
+    (`grep -c '"({ '` = 21 in tychoc0, `grep -c '({ '` = 35 in tychoc). The
+    full enumeration is now a comment block above each function, per the
+    parser/reconstructor rule.
+
+    **Sweep for the same hazard elsewhere — nothing else found.**
+    `cond_unwrap` is the **only** paren-stripping / string-surgery site on
+    emitted C in either compiler. In `src/tychoc.c` the sole paren surgery is
+    inside `cond_unwrap` itself (`:8009`, `:8022`, `:8023`). In
+    `compiler/tychoc0.ty` every other paren/brace scan operates on **source or
+    type names**, never on emitted C: `:278`, `:4027`, `:4269`, `:4397`,
+    `:4417` are lexer paren-depth counters over *source*; `:4633` splits a
+    generic *struct name* (`sname`); `:12220` (`fnty_split`) splits a *function
+    type* string (`"fn(a,b->r)"`); `:13508` splits a *type* string (`ty`);
+    `:13597`/`:13602` match *type patterns* (`pat`/`concrete`); `:9153` is an
+    `Expr` array slice, not text. **No new phase filed** — nothing
+    structurally different turned up.
+
+    **Repro, before → after, both compilers.**
+    ```
+    BEFORE (tychoc0, baseline HEAD 46aa05f)
+        if ({ Arr_bool  _a = h_arr; _a.data[hi_bchk(0LL, _a.len)]; })  {
+        cc: error: expected expression before '{' token   (tychoc0 exit 0 = fail-open)
+    AFTER  (tychoc0)
+        if (({ Arr_bool  _a = h_arr; _a.data[hi_bchk(0LL, _a.len)]; }))  {
+        cc exit=0
+    ```
+    ```
+    $ ./tychoc     /tmp/ph16/bug16.ty -o b_tychoc && ./b_tychoc      ->  hit
+    $ ./tychoc0    /tmp/ph16/bug16.ty | cc -o b_t0 - && ./b_t0       ->  hit
+    $ ./tychoc     /tmp/ph16/probeA.ty -o pA && ./pA                 ->  A-hit   (if wait(t):)
+    $ ./tychoc0    /tmp/ph16/probeA.ty | cc -o pA_t0 - && ./pA_t0    ->  A-hit
+    ```
+    Output identical on both compilers for both repros.
+
+    **No emitted-text drift.** A baseline tychoc + tychoc0 were built from
+    `HEAD` in a throwaway worktree and every pre-existing fixture emitted
+    through old and new: **226 fixtures compared (`tests/*.ty` +
+    `examples/*.ty`), tychoc differing 0, tychoc0 differing 0** — byte-identical,
+    so no golden needed re-recording and the shape table's "unchanged" column
+    is confirmed end-to-end rather than inferred.
+
+    **Fixtures added** (compiling + running, NOT `tests/reject/` — the programs
+    are legal):
+    - `tests/cond_stmt_expr.ty` / `.out` — the tychoc0 side. Covers `if arr[0]:`,
+      the while-form `for arr[0]:` (so **both** `cond_unwrap` call sites),
+      nested `n[1][1]`, struct field `s.bits[1]`, map value `m["k"][0]`,
+      statement-expression as only part of a condition (`arr[1] == false`,
+      `n[0][0] and s.bits[1]`), the **value-`if`** form (`v := if arr[1]:` and
+      `w := if n[1][1]:`), plus plain conditions that must still unwrap
+      (`a < b`, `(a + 1) == b`, `t == "x"`) and `t == ")"` for the literal skip.
+      Strength of the lock, measured: emitted through the **baseline** tychoc0
+      this one fixture yields **7** malformed conditions and exactly **7**
+      `error: expected expression before '{' token` from cc; through the fixed
+      tychoc0, 0 — and the 8 statement-expression conditions it now emits are
+      all correctly doubly-parenthesised (`if (({ … })) {`).
+    - `tests/conc/cond_wait.ty` / `.out` — the tychoc side, `if wait(t):` over a
+      bool-returning task, plus `wait(v) == true` and `wait(w) and not wait(x)`
+      for the still-must-strip shapes.
+
+    **Gates — all seven green, one per command, foreground.**
+    ```
+    make test         passed: 447   failed: 0   /  all green      (446 + cond_stmt_expr)
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0                  (36 + cond_wait)
+    make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (34907 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages;
+                                           tychoc0 self-split dogfood)
+    make ilp32        passed: 447   failed: 0   /  all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (121 markdown files, no dead relative links)
+    ```
+    `make fixpoint` is the load-bearing one here: `tychoc0.ty`'s own source is
+    full of conditions, so an over- or under-strip in the emitter would show up
+    as a self-hosting failure. `B == C` holds.
+    `git status --short` shows only the four intended paths; no build spill.
 
 ## Out of scope
 

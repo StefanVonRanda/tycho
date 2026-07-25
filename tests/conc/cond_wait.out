@@ -1,0 +1,4 @@
+wait-true
+wait-false
+wait-eq
+wait-and

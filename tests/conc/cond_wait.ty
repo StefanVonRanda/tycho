@@ -1,0 +1,41 @@
+# `if wait(t):` over a bool-returning task -- the tychoc-side instance of the
+# cond_unwrap statement-expression bug (tests/cond_stmt_expr.ty is the tychoc0
+# side, via a bool array element).
+#
+# `wait(t)` lowers to a GCC statement-expression:
+#   ({ HTask *_tk = h_t; tycho_task_join(_tk); int _w = ...; _w; })
+# and cond_unwrap used to strip the leading '(' off any condition whose first
+# byte was '(' and whose matching ')' was the last byte. That is exactly this
+# shape, so BOTH compilers emitted `if ({ ... }) {` -- which cc rejects with
+# "expected expression before '{' token". tychoc accepted the program and then
+# failed in its own cc invocation; tychoc0 emitted the broken C and exited 0.
+#
+# Both now refuse to strip when the byte after '(' is '{'.
+
+fn yes() -> bool:
+    return true
+
+fn no() -> bool:
+    return false
+
+fn main():
+    t := spawn yes()
+    if wait(t):
+        println("wait-true")
+
+    u := spawn no()
+    if wait(u):
+        println("unreachable")
+    else:
+        println("wait-false")
+
+    # statement-expression as only PART of the condition: the outer paren is
+    # genuinely redundant there and must still be stripped, staying valid C
+    v := spawn yes()
+    if wait(v) == true:
+        println("wait-eq")
+
+    w := spawn yes()
+    x := spawn no()
+    if wait(w) and not wait(x):
+        println("wait-and")

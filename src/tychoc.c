@@ -7982,9 +7982,32 @@ static char *gen_str(Type t, const char *ar, const char *v) {
  * its matching ')' is the very last char. C string/char literals are skipped, so
  * a paren inside a literal (e.g. `s == ")"`) can't fool the matcher. Fail-closed:
  * on any uncertainty `s` is returned unchanged, so a missed strip is a harmless
- * extra paren, never malformed C. */
+ * extra paren, never malformed C.
+ *
+ * Every input shape gen_expr can hand this, and the verdict for each:
+ *   `(h_a < 3LL)`                     STRIP -> `h_a < 3LL`            ok
+ *   `({ HTask *_tk = h_t; ...; _w; })` KEEP -- GCC statement-expression: the
+ *        '(' is part of the `({ ... })` syntax, NOT a redundant layer.
+ *        Stripping it emitted `if ({ ... }) {`, which cc rejects with
+ *        "expected expression before '{' token". Reached by `if wait(t):`
+ *        over a bool-returning task. This is the s[1] == '{' guard below.
+ *   `((h_a && h_b))`                  STRIP -> `(h_a && h_b)`         ok
+ *   `h_f(h_x)`                        KEEP  -- does not lead with '('
+ *   `(h_a) && (h_b)`                  KEEP  -- two groups; the ')' at index 2
+ *        closes before the end, so the p[1] != '\0' test below refuses. (The
+ *        classic off-by-one for this kind of scanner; verified absent.)
+ *   `((tycho_int)h_x)`                STRIP -> `(tycho_int)h_x`       ok
+ *   NULL / `(h_a`                     KEEP  -- empty / unbalanced
+ *   `(tycho_streq(h_s, ")") == 1LL)`  STRIP -- literal skip keeps depth honest
+ *   `(({ ... }) == 1LL)`              STRIP -> `({ ... }) == 1LL`     ok
+ *        (a statement-expression that is not the WHOLE group is safe to expose)
+ *   `(tycho_streq(h_s, "abc)`         KEEP  -- unterminated literal
+ *   `()`                              KEEP  -- degenerate; stripping emitted
+ *        `if () {`. Not reachable from gen_expr today, refused anyway. */
 static char *cond_unwrap(char *s) {
-    if (!s || s[0] != '(') return s;
+    /* s[1] && s[2] rejects "", "(" and "()" -- nothing strippable inside. */
+    if (!s || s[0] != '(' || !s[1] || !s[2]) return s;
+    if (s[1] == '{') return s;                /* `({ ... })` statement-expression */
     int depth = 0;
     for (char *p = s; *p; p++) {
         if (*p == '"' || *p == '\'') {            /* skip a string/char literal */

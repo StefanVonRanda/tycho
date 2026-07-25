@@ -8328,10 +8328,34 @@ fn conc_loop_finals(names: [string], ctx: Ctx) -> string:   # finals since the i
 # paren inside a literal (e.g. `s == ")"`) can't fool the matcher. Fail-closed:
 # any uncertainty returns s unchanged, so a missed strip is a harmless extra
 # paren, never malformed C.
+#
+# Every input shape gen_expr can hand this, and the verdict for each:
+#   `(h_a < 3LL)`                        STRIP -> `h_a < 3LL`            ok
+#   `({ Arr_bool _a = h_arr; ...; })`    KEEP  -- GCC statement-expression:
+#         the '(' is part of the `({ ... })` syntax, NOT a redundant layer.
+#         Stripping it emitted `if ({ ... }) {`, which cc rejects with
+#         "expected expression before '{' token". This is the guard below.
+#   `((h_a && h_b))`                     STRIP -> `(h_a && h_b)`         ok
+#   `h_f(h_x)`                           KEEP  -- does not lead with '('
+#   `(h_a) && (h_b)`                     KEEP  -- two groups; the ')' at index 2
+#         closes before the end, so the `i != n - 1` test below refuses. (This
+#         is the classic off-by-one for this kind of scanner; verified absent.)
+#   `((tycho_int)h_x)`                   STRIP -> `(tycho_int)h_x`       ok
+#   ``                                   KEEP  -- empty
+#   `(h_a`                               KEEP  -- unbalanced
+#   `(hi_streq(h_s, ")") == 1LL)`        STRIP -- literal skip keeps depth honest
+#   `(({ ... }) == 1LL)`                 STRIP -> `({ ... }) == 1LL`     ok
+#         (a statement-expression that is not the WHOLE group is safe to expose)
+#   `(hi_streq(({ ... }), h_s))`         STRIP                           ok
+#   `(hi_streq(h_s, "abc)`               KEEP  -- unterminated literal
+#   `()`                                 KEEP  -- degenerate; stripping emitted
+#         `if () {`. Not reachable from gen_expr today, refused anyway.
 fn cond_unwrap(s: string) -> string:
     n := len(s)
-    if n == 0 or s[0] != 40:                      # 40 = '('
+    if n < 3 or s[0] != 40:                       # 40 = '(' ; n < 3 covers "", "(", "()"
         return s
+    if s[1] == 123:                               # 123 = '{' : `({ ... })` is a GCC
+        return s                                  # statement-expression, not a paren layer
     depth := 0
     i := 0
     for i < n:
