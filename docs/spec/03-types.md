@@ -14,7 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:453-469`; C lowering `c_type`
-> `:1103-1126`; equality/ordering `:5088-5114`; newtype decl `:3430-3446`.
+> `:1103-1126`; equality/ordering `:5088-5114`; newtype decl `parse_typedecl`
+> `:3710-3726`.
 
 ## 5.1 The type-identity model
 
@@ -334,8 +335,10 @@ TypeDecl ::= "type" IDENT "=" Type NEWLINE
 A newtype `type X = U` introduces a **distinct** type `X` over an underlying
 type `U`. `U` MUST be one of: `int`, `float`, `string`, `bool`, an array type, a
 map type, or a struct type. It MUST NOT be an enum, a tuple, a sized numeric
-(`u32`/`u64`/`f32`), `char`, `bytes`, `ptr`, an `Option`/`Result`, a function
-type, a handle, or another newtype.
+(`u8`…`u64`/`i8`…`i64`/`f32`), `char`, `bytes`, `ptr`, an `Option`/`Result`, a
+function type, a `soa`, a channel, a task handle, a typed handle, or another
+newtype. The permitted list is closed, so a shape named in neither list — `soa`
+was one — is refused by the same rule.
 
 `X` is type-incompatible with `U` and with every other newtype: passing a `U`
 where `X` is expected, or mixing `X` with `U` in arithmetic, is a compile error.
@@ -347,7 +350,12 @@ Unwrapping to the underlying value uses the base-specific `to_int`/`to_float`/
 `to_str`/`to_bool` or the generic `to_under` (§8). A newtype over `int` or
 `string` is a valid map key carrying its wrapped identity (§5.3.5).
 
-> Provenance: underlying restriction `src/tychoc.c:3439-3441`.
+> Provenance: underlying restriction `src/tychoc.c:3719-3721`; its twin
+> `compiler/tychoc0.ty` `newtype_under_ok` `:2880-2893`, called from
+> `parse_newtype` `:2906-2907`. Fixtures: `tests/reject/newtype_under_option.ty`
+> and its eleven siblings (`_result`, `_enum`, `_soa`, `_newtype`, `_ptr`,
+> `_bytes`, `_u8`, `_f32`, `_tuple`, `_fnty`, `_handle`) — one per rejection,
+> because the compiler halts at the first error.
 
 ## 5.5 Equality and ordering
 

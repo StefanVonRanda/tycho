@@ -1,0 +1,5 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap a sized numeric.
+type A = u8
+
+fn main():
+    print("unreachable")

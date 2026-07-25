@@ -1,0 +1,8 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap an enum.
+enum E:
+    X
+
+type A = E
+
+fn main():
+    print("unreachable")

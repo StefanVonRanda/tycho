@@ -1,0 +1,5 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap `bytes`.
+type A = bytes
+
+fn main():
+    print("unreachable")

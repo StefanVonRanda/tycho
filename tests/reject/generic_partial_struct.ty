@@ -1,0 +1,11 @@
+# 05-generics.md:80-82 / src/tychoc.c:1905: a generic type argument MUST be either
+# fully concrete or a WHOLE own-parameter reference -- `[$T]` mentions $T partially.
+struct Box($T):
+    v: $T
+
+fn wrap(x: $T) -> Box([$T]):
+    return Box([x])
+
+fn main():
+    b := wrap(3)
+    print(str(len(b.v)))

@@ -1,0 +1,8 @@
+# 14-ffi.md:21-22,:38-39 / src/tychoc.c:3556: a struct RETURN is rejected too.
+struct P:
+    x: int
+
+extern fn ffi_make(a: int) -> P
+
+fn main():
+    print("unreachable")

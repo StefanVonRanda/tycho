@@ -1,0 +1,9 @@
+# 14-ffi.md:21-22,:38-39 / src/tychoc.c:3530: a struct has no flat, self-describing
+# C ABI and MUST NOT cross the boundary. tychoc0 accepted it and the C RAN.
+struct P:
+    x: int
+
+extern fn ffi_take(s: P) -> int
+
+fn main():
+    print("unreachable")

@@ -1,0 +1,4 @@
+# 15-program.md:27-32 / src/tychoc.c:7124-7125: `main` MUST take no parameters.
+# Accepted by tychoc0 before plan.md Phase 28, and it COMPILED AND RAN.
+fn main(x: int):
+    print(str(x))

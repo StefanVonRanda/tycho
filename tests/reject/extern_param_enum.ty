@@ -1,0 +1,8 @@
+# 14-ffi.md:21-22: same boundary rule, an enum parameter.
+enum E:
+    X
+
+extern fn ffi_take(s: E) -> int
+
+fn main():
+    print("unreachable")

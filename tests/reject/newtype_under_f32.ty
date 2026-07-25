@@ -1,0 +1,5 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap `f32`.
+type A = f32
+
+fn main():
+    print("unreachable")

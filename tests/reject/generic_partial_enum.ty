@@ -1,0 +1,10 @@
+# 05-generics.md:80-82 / src/tychoc.c:1935: same rule, generic enum.
+enum Opt($T):
+    N
+    S($T)
+
+fn f(x: $T) -> Opt([$T]):
+    return N
+
+fn main():
+    print("unreachable")

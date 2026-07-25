@@ -1,0 +1,6 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap another newtype.
+type B = int
+type A = B
+
+fn main():
+    print("unreachable")

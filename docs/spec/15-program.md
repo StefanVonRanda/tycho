@@ -16,7 +16,7 @@ the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
-> Provenance: entry point `src/tychoc.c:6354-6355`, `:6379-6380`; compilation
+> Provenance: entry point `src/tychoc.c:7098-7099`, `:7124-7125`; compilation
 > unit `compile_package` `:10355-10360`, driver `:10566-10570`; `extern`
 > `parse_extern_fn` `:3212-3282`; the C compiler invocation `:10592-10606`.
 
@@ -28,8 +28,8 @@ A program MUST define exactly one procedure named `main`. It MUST take no
 parameters and MUST return `void`; the declaration form is `fn main():`. An
 implementation MUST reject a program that defines no `main` (the reference
 diagnoses `no 'main' procedure`) and MUST reject a `main` that declares any
-parameter or a non-`void` return type (`src/tychoc.c:6354-6355`,
-`:6379-6380`).
+parameter or a non-`void` return type (`src/tychoc.c:7098-7099`,
+`:7124-7125`; `compiler/tychoc0.ty` `parse_program` `:3637-3648`).
 
 A minimal complete program is therefore:
 

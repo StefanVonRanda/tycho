@@ -1,0 +1,5 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap a tuple.
+type A = (int, int)
+
+fn main():
+    print("unreachable")

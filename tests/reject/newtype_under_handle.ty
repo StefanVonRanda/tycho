@@ -1,0 +1,10 @@
+# 03-types.md:334-338: a newtype MUST NOT wrap a typed handle.
+handle H:
+    free: hfree
+
+extern fn hfree(h: H) -> int
+
+type A = H
+
+fn main():
+    print("unreachable")

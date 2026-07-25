@@ -3491,7 +3491,7 @@ tychoc0 has exactly two places a composite type string is built. Rows 27–31 ar
 *declaration-shape* rules rather than type-construction rules, so they may collapse the
 same way onto tychoc0's declaration parsers. Check that before writing five checks.
 
-- [ ] **Phase 27 — tychoc0 has no newtype UNDERLYING-type restriction (audit row H2; supersedes Phase 22)**
+- [x] **Phase 27 — tychoc0 has no newtype UNDERLYING-type restriction (audit row H2; supersedes Phase 22)**
   - tychoc: `src/tychoc.c:3719-3721` — `U` must be `int`/`float`/`string`/`bool`/an
     array/a map/a struct. Spec: `docs/spec/03-types.md:317-321`, an explicit MUST-NOT
     list. tychoc0 has only the affine-handle case Phase 20 added
@@ -3507,8 +3507,163 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: the underlying-type decision agrees across the full swept space, each
     distinct rejection is fixture-locked (the compiler halts at the first error, so one
     file per rejection), full gate set green.
+  - **DONE 2026-07-25**, as one phase group with 28, 30, 31 and 34.
 
-- [ ] **Phase 28 — tychoc0 accepts a `main` with parameters or a non-void return (audit row I10)**
+    ### THE CONSOLIDATION FINDING (referenced by Phases 28, 30, 31)
+
+    **Answer: they do NOT collapse onto one or two shared choke points. Four rules,
+    four call sites — but they DO share one missing primitive, and that primitive was
+    written once.** Evidence, site by site:
+
+    | row | tychoc site(s) | tychoc0 site (post-fix) | the predicate it asks |
+    |---|---|---|---|
+    | 27 | `src/tychoc.c:3719-3721` (1) | `compiler/tychoc0.ty:2906-2907` in `parse_newtype` | is this type in the newtype-underlying whitelist? |
+    | 28 | `src/tychoc.c:7124-7125` (1) | `compiler/tychoc0.ty:3637-3648` in `parse_program` | *(not a type predicate at all)* is this declaration named `main`, and does it have parameters or a return? |
+    | 30 | `src/tychoc.c:1905` + `:1935` (2) | `compiler/tychoc0.ty:1981` in `parse_type_d` | does this type argument mention a type parameter *partially*? |
+    | 31 | `src/tychoc.c:3530` + `:3556` (2) | `compiler/tychoc0.ty:2345` `extern_ok_ty` | is this type in the FFI-crossable whitelist? |
+
+    **Why this is unlike Phase 20.** Phase 20's 50 divergences were 50 *positions*
+    asking ONE predicate ("is this type affine?"), so one predicate function
+    (`ck_affine_part`) plus two call sites covered all 50. Rows 27/30/31 are three
+    *different* predicates asked at three different positions — no position sees more
+    than one of them, and no predicate answers more than one of them — and row 28 is
+    not a type rule at all. Forcing them through one guard would mean a guard that
+    takes a mode flag and switches on it, i.e. four checks with extra plumbing.
+
+    **What DID consolidate, and was exploited.** All four rows failed open for the
+    *same underlying reason*: tychoc resolves a type to a `Type` id and can ask its
+    decl tables what kind of declaration a name has (`struct_find`/`enum_find`/
+    `newtype_find`/`handle_find`), while tychoc0 checks these at parse time and has no
+    decl table. Phase 20 already built the substitute — a token-stream scan
+    (`declares_type_name`, `compiler/tychoc0.ty:1671-1687`). This phase generalised it
+    ONCE into `declares_kind_name(toks, kw, nm)` (`:1690-1706`) plus
+    `type_head_name(ty)` (`:1729-1737`), and **three of the four rows call it**:
+    27 (struct vs. enum vs. newtype vs. handle), 30 (struct vs. enum, for the message
+    word), 31 (handle vs. struct/enum/newtype). So the consolidation is in the shared
+    *primitive*, not a shared call site. Row 28 needs no type knowledge and shares
+    nothing.
+
+    **One genuine site collapse, in row 30.** tychoc needs two checks
+    (`:1905` generic struct, `:1935` generic enum) because it has two branches;
+    tychoc0's `parse_type_d` has a single `Name(args)` branch serving both, so
+    `ck_generic_targ` is called from **one** site and reads the `struct`/`enum` word
+    for the diagnostic off the declaration.
+
+    ### CITATION AUDIT (every citation in these five phase blocks, verified)
+
+    | claim in the plan | verdict |
+    |---|---|
+    | 27: tychoc `:3719-3721` | **correct** |
+    | 27: spec `03-types.md:317-321` | **WRONG** — `:317-321` is the `bounded` provenance block. The MUST-NOT list is `03-types.md:334-338` (§5.4) |
+    | 27: tychoc0 affine case `:2799` | **correct** (pre-edit) |
+    | 28: tychoc `:7123-7124` | **off by one** — the `if` is `:7124`, the `die_at` `:7125` |
+    | 30: tychoc `:1905` / `:1935` | **both correct** |
+    | 31: tychoc `:3530` | **correct**; its return-side sibling is `:3556`, not `:3546` |
+    | 31: spec `14-ffi.md:21-22`, `:38-39` | **correct** |
+    | 34: `15-program.md:31-32` cites `:6354-6355`, `:6379-6380` | **confirmed wrong** — `:6354-6355` is `a value if/match cannot produce a task handle` + `s->decl_type = t`; `:6379-6380` is `if (s->typed_decl) { if (t != s->annot)`. Neither is about `main` |
+    | 34: "the live sites are `:7097-7098` and `:7123-7124`" | **both off by one** — `sig_find("main")` is `:7098`, `no 'main' procedure` `:7099`; the signature rule is `:7124-7125` |
+
+    Two further stale citations found in the file Phase 27 had to edit, corrected in
+    the same breath because they name the very rule this phase implements:
+    `03-types.md:350` said the underlying restriction lives at `src/tychoc.c:3439-3441`
+    (actually `subst_place`, unrelated) and the chapter header `:17` said "newtype decl
+    `:3430-3446`" (same wrong region). Both now point at `parse_typedecl` `:3710-3726`
+    / the check `:3719-3721`.
+
+    ### `soa` — stated explicitly, not left ambiguous
+
+    `soa` was in **neither** of `03-types.md` §5.4's two lists. It is excluded by the
+    permitted list being *closed* ("`U` MUST be one of: …"), and tychoc agrees: a soa
+    type is not `is_array`, not `is_map` and not `IS_STRUCT`, so `:3719-3721` refuses
+    it. Resolution: **refused in tychoc0, and added to the spec's MUST-NOT list** so no
+    future reader has to re-derive it (`docs/spec/03-types.md:336-339`). The same edit
+    also corrected the sized-numeric wording from `u32/u64/f32` to the whole
+    `u8`…`u64`/`i8`…`i64`/`f32` family, which is what both compilers actually refuse
+    (measured: `nt_u8`, `nt_i64`, `nt_u32`, `nt_f32` all reject on both).
+
+    ### `soa[Channel(int)]` diagnostic, aligned to tychoc (Phase 22's observation)
+
+    Same accept/reject decision on both before and after; only tychoc0's *wording*
+    changed, to tychoc's (`src/tychoc.c:1724`), so no third phrasing was invented:
+    ```
+    BEFORE  tychoc  : soa requires a struct element type, e.g. soa [Point]
+            tychoc0 : a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
+    AFTER   tychoc  : soa requires a struct element type, e.g. soa [Point]
+            tychoc0 : soa requires a struct element type, e.g. soa [Point]
+    ```
+
+    ### Phase 27 before / after — FRONT/CC/RUN, both compilers
+
+    Method (Phase 11's, as used by 18/20/25): `--emit-c` on BOTH sides, then a separate
+    `cc` step, then run. Raw `rc` is never compared between compilers — tychoc0 never
+    invokes `cc`, so its status is a frontend verdict only. Harness `/tmp/ph27/probe.sh`.
+
+    | probe (`type A = U`) | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `Option(int)` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `Result(int,string)` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | an enum `E` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `soa[P]` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | another newtype `B` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `ptr` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `bytes` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `u8` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `f32` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `u32` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `i64` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `(int,int)` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `fn(int)->int` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | a handle `H` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+
+    **Correction to the phase text's own measurement.** It said eleven forbidden types
+    were accepted and *eight* run, with `(int,int)` and `fn(int)->int` CCFAILing. On a
+    probe whose newtype is merely *declared* (not used), **fourteen** were accepted and
+    **all fourteen compiled and ran** — the tuple and function-type cases CCFAIL only
+    when the newtype is also used. The fail-open was wider than the row recorded. Two
+    types beyond the eleven (`u32`, `i64`) were swept in and are equally closed.
+
+    tychoc0's message is tychoc's, verbatim (`compiler/tychoc0.ty:2907`):
+    ```
+    tychoc  /tmp/ph27/p/nt_option.ty:1: error: a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Option(int))
+    tychoc0 parse: line 1: a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Option(int))
+    ```
+
+    ### Legal-program controls (must still ACCEPT/CCOK/RUN on both — all do)
+
+    `type A = int` · `= float` · `= string` · `= bool` · `= [int]` · `= [string: int]`
+    · `= P` (a struct) — 7/7 `ACCEPT/CCOK/RUN` on both compilers, after the fix. The
+    repo corpus's own newtypes (`grep -h '^type X = '` over every `.ty`: 16 `int`,
+    5 `string`, 4 `float`, 2 `[int]`, 1 `[string: int]`, 1 struct, 1 `bool`, 1
+    `Channel(int)` in a reject fixture) are entirely inside the permitted set, so the
+    whitelist could not regress one — confirmed by `make test` 502/502 and `make
+    fixpoint` B==C.
+
+    ### Files changed by this phase group
+
+    - `compiler/tychoc0.ty` — `declares_kind_name` `:1690`, `ck_generic_targ` `:1717`,
+      `type_head_name` `:1729`, soa wording `:1835`, `ck_generic_targ` call `:1981`,
+      `extern_ok_ty` `:2345`, `extern_param_ok` `:2350`, `newtype_under_ok` `:2880`,
+      `parse_newtype` check `:2906`, `main` check `:3637-3648`.
+    - `docs/spec/03-types.md` — `soa` + the full sized-integer family added to §5.4's
+      MUST-NOT list; §5.4 provenance and the chapter header re-pointed at live code.
+    - `docs/spec/15-program.md` — Phase 34 (below).
+    - `tests/reject/` — 20 new fixtures.
+
+    ### Gate set (each its own foreground command, `env -u LD_PRELOAD`)
+
+    ```
+    make test        passed: 502   failed: 0   /  all green      (482 -> 502: +20 fixtures)
+    make corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc        conc: passed 37   failed 0
+    make fixpoint    ok   B == C : tychoc0 reproduces itself byte-identically (35277 lines C)
+                     fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32       passed: 502   failed: 0   /  all green
+    make spec-check  spec-examples: 7 runnable example(s), all pass
+    make check-links link check: ok (122 markdown files, no dead relative links)
+    ```
+    `git status --short` showed only the intended files — no build spill.
+
+- [x] **Phase 28 — tychoc0 accepts a `main` with parameters or a non-void return (audit row I10)**
   - tychoc: `src/tychoc.c:7123-7124`. Spec: `docs/spec/15-program.md:27-32` — "MUST
     reject a `main` that declares any parameter or a non-`void` return type".
   - `fn main(x: int):` is accepted by tychoc0, **compiles and runs**. `fn main() -> int:`
@@ -3516,6 +3671,36 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - This is the single most load-bearing row in the audit: it is the program entry
     point, and the spec states the rule as a MUST with named reference sites.
   - Done when: both forms reject on both compilers, both fixture-locked, gates green.
+  - **DONE 2026-07-25** — see the consolidation finding and the gate set under Phase 27.
+  - **Citation corrected:** the live rule is `src/tychoc.c:7124-7125`, not `:7123-7124`
+    (`:7124` is the `if`, `:7125` the `die_at`). Verified by `grep -n "must be 'fn main():'"`.
+  - **Where it landed, and why there.** `compiler/tychoc0.ty:3637-3648`, in
+    `parse_program`'s `fn` arm — NOT in `parse_func`. tychoc tests the **post-mangle**
+    name (`!strcmp(pr->name, "main")` at `:7124`), so only the *entry* package's `main`
+    is the entry point; an imported package's `fn main` is `<pkg>__main` and is an
+    ordinary procedure. tychoc0 mangles in pass 2, so the faithful test one pass earlier
+    is `curpfx == "" and pf.name == "main"` — `package main` and a plain single-file
+    program both keep the empty prefix, an imported package gets `<pkg>__`. Testing the
+    raw name inside `parse_func` would have rejected a legal `fn main(x: int)` in a
+    non-entry package: an over-tightening avoided by reading tychoc's site first.
+  - The diagnostic line number is the `fn` token's (`fnline`, captured before the body
+    is parsed), because tychoc reports `pr->line`. Taking `toks[pos].line` after
+    `parse_func` returned pointed at the line *after* the body — caught and fixed.
+
+    **Before / after — FRONT/CC/RUN, both compilers**
+
+    | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `fn main(x: int):` | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `fn main() -> int:` | REJECT | ACCEPT/CCFAIL/- | REJECT |
+    | `fn main():` (control) | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN |
+
+    Message and line agree exactly:
+    ```
+    tychoc  /tmp/ph27/p/main_param.ty:1: error: 'main' must be 'fn main():' with no return
+    tychoc0 parse: line 1: 'main' must be 'fn main():' with no return
+    ```
+  - Fixtures: `tests/reject/main_with_param.ty`, `tests/reject/main_with_ret.ty`.
 
 - [ ] **Phase 29 — tychoc0 has no counterpart to ANY of tychoc's arity limits (audit rows B6, B8, B9, B11, B12, C5, C7, F2, G2, G5)**
   - Ten rows, **all ten RUN**. Each limit is a fixed-size array bound in tychoc:
@@ -3554,14 +3739,49 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: every row's decision agrees, each is fixture-locked, the spec states one
     number per limit, gates green.
 
-- [ ] **Phase 30 — tychoc0 accepts a generic type argument that partially mentions a type parameter (audit rows B20, B21)**
+- [x] **Phase 30 — tychoc0 accepts a generic type argument that partially mentions a type parameter (audit rows B20, B21)**
   - tychoc: `src/tychoc.c:1905` (generic struct), `:1935` (generic enum). Spec:
     `docs/spec/05-generics.md:76-83` — "A type argument MUST be either fully concrete or
     a whole own-parameter reference; it may not *partially* mention a type parameter."
   - `Box([$U])` and `Opt([$U])` are accepted by tychoc0 and **compile and run**.
   - Done when: both forms reject on both compilers, fixture-locked, gates green.
+  - **DONE 2026-07-25** — see the consolidation finding and the gate set under Phase 27.
+  - **Citations verified: `:1905` and `:1935` are both correct**, and the spec text at
+    `05-generics.md:80-82` is the sentence quoted.
+  - **The one genuine site collapse in this group.** tychoc needs two checks because it
+    has a generic-struct branch and a generic-enum branch; tychoc0's `parse_type_d` has
+    a single `Name(args)` branch (`compiler/tychoc0.ty:1969-1987`), so ONE call to
+    `ck_generic_targ` (`:1981`) covers both. The `struct`/`enum` word in the message is
+    read off the declaration via `declares_kind_name`, so tychoc's wording is reproduced
+    verbatim for both kinds rather than a generic third phrasing being invented.
+  - **The rule, and why it cannot over-tighten.** A bare `$T` is the only spelling
+    `parse_type_d` returns that starts with `'$'` (`:1685-1691`); every composite that
+    embeds one starts with `'['`, `'{'`, `'('`, `fn(` or a nominal head. So
+    "contains `$` **and** does not start with `$`" is exactly "partially mentions a type
+    parameter", with no decl table needed and no legal spelling caught.
 
-- [ ] **Phase 31 — tychoc0 accepts a struct as an `extern fn` parameter (audit row D2)**
+    **Before / after — FRONT/CC/RUN, both compilers**
+
+    | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `Box([$T])` (generic struct, B20) | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `Opt([$T])` (generic enum, B21) | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `Box(int)` (control) | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN |
+    | `Box($T)` whole own-parameter ref (control) | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN |
+    | `Opt($T)` whole own-parameter ref (control) | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN | ACCEPT/CCOK/RUN |
+
+    ```
+    tychoc  ...:3: error: generic struct 'Box': a type argument may not partially mention a type parameter; use the generic applied to its own parameters (a recursive reference) or to concrete types
+    tychoc0 parse: line 3: generic struct 'Box': a type argument may not partially mention a type parameter; use the generic applied to its own parameters (a recursive reference) or to concrete types
+    ```
+  - Fixtures: `tests/reject/generic_partial_struct.ty`,
+    `tests/reject/generic_partial_enum.ty`.
+  - **Out of scope, filed as Phase 36:** tychoc *also* refuses a WHOLE reference to a
+    type parameter that is not the generic's own (`Box($U)` where `struct Box($T)`);
+    tychoc0 still accepts it and it runs. That is a distinct row from B20/B21 (which are
+    the *partial* case) and closing it needs the generic's own parameter list.
+
+- [x] **Phase 31 — tychoc0 accepts a struct as an `extern fn` parameter (audit row D2)**
   - tychoc: `src/tychoc.c:3530`. Spec: `docs/spec/14-ffi.md:21-22` ("a **map, struct, or
     non-scalar array** is rejected at the boundary") and `:38-39`.
   - tychoc0 enforces the rule **partially**: it rejects `[string]` but accepts a struct
@@ -3571,6 +3791,44 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     today; verify the fix does not over-tighten them.
   - Done when: the FFI boundary type set agrees on both compilers, fixture-locked,
     `make test`'s FFI lane (`tests/ffi/`) still green, gates green.
+  - **DONE 2026-07-25** — see the consolidation finding and the gate set under Phase 27.
+  - **Citations verified:** tychoc `:3530` (parameter) correct; spec `14-ffi.md:21-22`
+    and `:38-39` correct. The return-side sibling is `:3556`, not `:3546` (`:3546` is the
+    sized-int return path).
+  - **Root cause, read off the source.** `extern_ok_ty`'s bare-name arm accepted ANY
+    non-composite identifier, on the stated theory that only a `handle` can be spelled
+    that way. It cannot: a struct, an enum and a newtype are spelled identically, and the
+    old comment said as much ("can't consult dc here at parse time"). The fix replaces
+    the guess with an answer — `declares_type_name(toks, ty)` (the Phase 20 scan) is true
+    for a `struct`/`enum`/`type` declaration and false for a `handle`, which is a
+    different keyword. Fails **closed**: only a name the program does not declare as one
+    of those three still crosses.
+  - **D1/D3 scope check — and D3 was NOT actually agreeing.** The phase text said "D1
+    (`inout` out-parameter) and D3 (return type) both agree today; verify the fix does
+    not over-tighten them." D1 did agree and still does. **D3 did not**: the same
+    bare-name arm let a struct RETURN cross, and it compiled and ran. The fix closes it
+    as a side effect (`extern_ok_ty` serves both positions), which is why
+    `tests/reject/extern_ret_struct.ty` is in the fixture set.
+
+    **Before / after — FRONT/CC/RUN, both compilers**
+
+    | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `extern fn f(s: P)`, `struct P` (D2) | REJECT | ACCEPT/CCFAIL/- | REJECT |
+    | `extern fn f(s: E)`, `enum E` | REJECT | ACCEPT/CCFAIL/- | REJECT |
+    | `extern fn f(s: NT)`, `type NT = int` | REJECT | ACCEPT/CCFAIL/- | REJECT |
+    | `extern fn f(a: int) -> P` (D3) | REJECT | ACCEPT/CCOK/**RUN** | REJECT |
+    | `extern fn f(s: [string])` (already agreed) | REJECT | REJECT | REJECT |
+    | `extern fn f(s: [string: int])` (already agreed) | REJECT | REJECT | REJECT |
+    | `extern fn f(s: inout string)` (D1, must stay) | REJECT | REJECT | REJECT |
+
+    **Legal FFI controls — every one still ACCEPT on both, and the ones with a real C
+    symbol still CCOK/RUN:** `string` param · `bytes` param · `[int]` param ·
+    `int` + `inout int` params · `u8` param with `-> u32` · a typed `handle` param and
+    return (`handle FILEH:` / `free: hclose`). 6/6 unchanged. The whole `tests/ffi/`
+    lane (including `tests/ffi/pkgext`) is green inside `make test` 502/502.
+  - Fixtures: `tests/reject/extern_param_struct.ty`, `extern_param_enum.ty`,
+    `extern_param_newtype.ty`, `extern_ret_struct.ty`.
 
 - [ ] **Phase 32 — NEEDS A USER RULING: four restrictions tychoc enforces that the spec does not state (audit rows E1, I6, I7, I8)**
   - The spec is silent on all four, so the direction of the fix is a decision, not a
@@ -3619,7 +3877,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: the three probes build and run on both compilers with identical output,
     fixture-locked in the positive lane (they are legal programs), gates green.
 
-- [ ] **Phase 34 — `15-program.md`'s `main`-signature provenance cites the wrong lines (audit §8)**
+- [x] **Phase 34 — `15-program.md`'s `main`-signature provenance cites the wrong lines (audit §8)**
   - `docs/spec/15-program.md:31-32` cites `src/tychoc.c:6354-6355` and `:6379-6380`.
     Those lines are `s->decl_type = t; vars_push(…)` and the `declared type %s but value
     is %s` diagnostic — unrelated code. The live sites are `:7097-7098` (`no 'main'
@@ -3627,6 +3885,28 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Docs only. Worth pairing with Phase 28, which touches the same rule.
   - Done when: the citation resolves to the code it claims, `make spec-check` and
     `make check-links` green.
+  - **DONE 2026-07-25**, paired with Phase 28 as the plan suggested.
+  - **All four line ranges verified by reading them, not by trusting the plan.**
+
+    | cited range | what is actually there |
+    |---|---|
+    | `src/tychoc.c:6354-6355` | `die_at(… "a value if/match cannot produce a task handle")` and `s->decl_type = t;` — unrelated |
+    | `:6379-6380` | `if (s->typed_decl) {` / `if (t != s->annot)` — the `declared type %s but value is %s` path, unrelated |
+    | `:7097-7098` (the plan's proposed replacement) | `}` and `Sig *m = sig_find("main");` — **off by one**; the diagnostic `no 'main' procedure` is at `:7099` |
+    | `:7123-7124` (the plan's proposed replacement) | `vars_push(…)` / the `if` — **off by one**; the `die_at` is at `:7125` |
+
+    So the plan's own replacement lines were wrong too. The citation now written is
+    **`src/tychoc.c:7098-7099`** (the `sig_find("main")` lookup and the `no 'main'
+    procedure` diagnostic) and **`:7124-7125`** (the `if` and its `die_at`), verified
+    against the file after Phase 28 landed — Phase 28 changed `compiler/tychoc0.ty`
+    only, so no `src/tychoc.c` line moved.
+  - Both sites in `docs/spec/15-program.md` were stale, not one: the chapter provenance
+    block at `:19` and the normative sentence at `:31-32`. Both corrected, and `:32` now
+    also names the twin site `compiler/tychoc0.ty` `parse_program` `:3637-3648` that
+    Phase 28 added, so the rule has a citation on both compilers.
+  - `make spec-check`: `spec-examples: 7 runnable example(s), all pass` (including
+    `docs/spec/15-program.md:36`, the `fn main():` example in this very section).
+    `make check-links`: `link check: ok (122 markdown files, no dead relative links)`.
 
 ### Filed by Phase 26 (2026-07-25)
 
@@ -3663,6 +3943,48 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: a wrong-arity builtin call produces a located diagnostic on
     tychoc0 naming the builtin and both arities, reject fixtures lock it for a
     representative sample, and the gate set is green.
+
+### Filed by Phases 27/28/30/31/34 (2026-07-25)
+
+- [ ] **Phase 36 — tychoc0 accepts a generic type argument that WHOLLY names a foreign type parameter (found by Phase 30, out of its B20/B21 scope)**
+  - Phase 30 closed the *partial* mention (`Box([$T])`). tychoc refuses more than that:
+    at `src/tychoc.c:1900-1907` it defers only the **self-reference** — the generic
+    applied to *exactly its own* type parameters — and then dies on any remaining
+    argument for which `has_typaram()` holds. So a WHOLE reference to a *different*
+    parameter is refused too. Measured 2026-07-25, both compilers, FRONT/CC/RUN:
+    ```
+    struct Box($T):
+        v: $T
+    fn wrap(x: $U) -> Box($U):
+        return Box(x)
+    fn main():
+        b := wrap(5)
+        print(str(b.v))
+
+    tychoc  :3: error: generic struct 'Box': a type argument may not partially mention a
+                       type parameter; use the generic applied to its own parameters
+                       (a recursive reference) or to concrete types
+    tychoc0 ACCEPT / CCOK / RUNS -> prints `5`
+    ```
+    The control `Box($T)` (the SAME name as the struct's own parameter) is
+    `ACCEPT/CCOK/RUN` on **both** — tychoc interns type parameters globally by name, so
+    the self-reference test matches on the name.
+  - **Not folded into Phase 30 deliberately.** Rows B20/B21 name the *partial* case, and
+    that is what the audit measured. Closing this one needs the generic's own parameter
+    list at parse time — obtainable from the token stream (`struct Box($T)` is right
+    there) but a bigger scan than `declares_kind_name`, and getting it wrong
+    over-tightens every generic aggregate in the corpus. It wanted its own phase with its
+    own verification rather than being absorbed silently.
+  - **Which way it should go is not obvious and should be settled first.**
+    `05-generics.md:80-82` says a type argument "MUST be either fully concrete or a whole
+    own-parameter reference". `Box($U)` inside `fn wrap(x: $U)` *is* a whole reference to
+    a parameter, just not to `Box`'s own — so the spec sentence can be read either way
+    depending on whose "own" is meant. Decide what the sentence means BEFORE changing
+    either compiler; if it means the generic's own, tychoc is right and tychoc0 gains a
+    check; if it means any in-scope parameter, tychoc is over-tight and the spec needs a
+    sentence saying so.
+  - Done when: the spec sentence is unambiguous, both compilers agree on the decision,
+    the `Box($T)` self-reference control still runs on both, fixture-locked, gates green.
 
 ## Out of scope
 
