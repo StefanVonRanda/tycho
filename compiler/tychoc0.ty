@@ -2092,6 +2092,7 @@ fn parse_subscript(toks: [Token], pos: inout int) -> Func:
     open_block(toks, &pos)
     for toks[pos].kind == TNewline:
         pos = pos + 1
+    yloc := tloc(toks[pos])                      # the `yield` line/col, so a declared-vs-yielded type mismatch can point HERE (the violating expression) rather than at the `subscript` head or the call site
     expect_ident(toks, &pos, "yield")
     y := parse_expr(toks, &pos)
     place := EInt("0", sline * 100000)
@@ -2120,7 +2121,7 @@ fn parse_subscript(toks: [Token], pos: inout int) -> Func:
             die("parse: line " + str(sline) + ": subscript parameter '" + params[i] + "' is used more than once in the yielded place (v1: at most once)")
         i = i + 1
     # MARKED Func: ret = "inout U", body = [SExpr(place)]. Never a Sig / C function.
-    return Func(name, params, ptypes, "inout " + u, [SExpr(place, sline * 100000)], 0, "", "")
+    return Func(name, params, ptypes, "inout " + u, [SExpr(place, yloc)], 0, "", "")
 
 # FFI Stage 1: only scalars + string cross the C boundary (composites have
 # tycho-internal C reps, not a stable ABI). Reject everything else (fail closed).
@@ -2534,7 +2535,11 @@ fn parse_value_if(toks: [Token], pos: inout int, sl: int) -> Stmt:
         expect(toks, &pos, TColon)
         els = parse_value_block(toks, &pos)
     else:
-        die("parse: line " + str(t.line) + ": an `if` used as a value must have an `else` — every path must produce a value")
+        # Report the `if`/`elif` HEAD, not `t.line` -- `t` is the lookahead statement
+        # that merely happens to follow the then-body, and it is not the line the user
+        # must edit (parity with tychoc, src/tychoc.c:2620). `sl` is a PACKED tloc
+        # (line * 100000 + col, see tloc at :123), so decode the line out of it.
+        die("parse: line " + str(sl / 100000) + ": an `if` used as a value must have an `else` — every path must produce a value")
     return SIf(cond, then_body, els, sl)
 
 # parse an `if`/`match` in value (tail) position; caller is ON the keyword.
@@ -3825,6 +3830,17 @@ fn subscript_place(f: Func) -> Expr:
         _:
             die("internal: subscript body is not a place")
             return EInt("0", 0)
+
+# The source line of that yielded place. A declared/actual type mismatch is a defect
+# in the subscript DEFINITION, so the diagnostic must name this line -- not the call
+# site, which is well-formed code the user would edit by mistake (parity with tychoc,
+# src/tychoc.c:4857).
+fn subscript_place_line(f: Func) -> int:
+    match f.body[0]:
+        SExpr(_place, sl):
+            return sl
+        _:
+            return 0
 
 # Every subscript func in `funcs` (the marked ones), for Decls.subs.
 fn collect_subs(funcs: [Func]) -> [Func]:
@@ -5228,7 +5244,10 @@ fn subscript_call_type(dc: Decls, ctx: Ctx, names: [string], types: [string], si
     place := subscript_projected_place(dc, si, recv, args)
     got := type_of(place, names, types, dc, ctx)
     if got != want:
-        die_at(dc, _el, "subscript '" + dc.subs[si].name + "' is declared `-> inout " + subscript_ret(dc.subs[si]) + "` but yields a place of type " + got)
+        yl := subscript_place_line(dc.subs[si])       # the `yield` line inside the definition, not `_el` (the call site)
+        if yl == 0:
+            yl = _el                                  # fail-open: no line on the body, fall back to the call site
+        die_at(dc, yl, "subscript '" + dc.subs[si].name + "' is declared `-> inout " + subscript_ret(dc.subs[si]) + "` but yields a place of type " + got)
     return got
 
 fn gen_args(args: [Expr], names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:

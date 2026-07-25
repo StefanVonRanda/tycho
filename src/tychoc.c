@@ -2022,7 +2022,15 @@ static Expr *desugar_interp(const char *s, int line) {
              * (die_at also reads g_srcname and g_err_col; lex touches neither on a
              * non-fatal path.) */
             const char *save_src = g_src;
-            TokVec tv = lex(sub); Parser sp = { tv.v, 0, 0 }; Expr *ex = parse_expr(&sp);
+            TokVec tv = lex(sub);
+            /* lex() restarts its own line counter at 1 (see `int line = 0;` at the top
+             * of lex), so every node parsed out of a hole would carry line 1 — a
+             * diagnostic inside `f"{len(x)}"` on line 6 pointed at line 6's file line 1
+             * (often a comment). The hole's text all belongs to `line` in the real file,
+             * so stamp it onto the sub-tokens before parsing; col is hole-relative and
+             * meaningless against the real line, so drop it (0 = no caret). */
+            for (int k = 0; k < tv.n; k++) { tv.v[k].line = line; tv.v[k].col = 0; }
+            Parser sp = { tv.v, 0, 0 }; Expr *ex = parse_expr(&sp);
             g_src = save_src;
             Expr *call = new_expr(E_CALL, line); call->sval = "str";
             call->args = (Expr **)xmalloc(sizeof(Expr *)); call->args[0] = ex; call->nargs = 1;

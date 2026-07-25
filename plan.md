@@ -928,7 +928,7 @@ codegen.
     `make fixpoint` green is the evidence the change never reached codegen: both
     guards `die` before any type is installed, so emitted C is byte-identical.
 
-- [ ] **Phase 8 — two concrete diagnostic defects surfaced by Phase 2's G6 (NOT fixed there)**
+- [x] **Phase 8 — two concrete diagnostic defects surfaced by Phase 2's G6 (NOT fixed there)**
   - **(a) IS CLOSED BY PHASE 3** (2026-07-25), together with three more G6
     misdiagnoses the phase's non-scope note had assumed were defensible
     (`explicit_nongeneric`, `genenum_bare_nullary`, `fixed_array_nonconst_size`).
@@ -961,6 +961,165 @@ codegen.
   - Done when: (a) tychoc0 names the argument's actual type; (b) each of the six
     has a recorded ruling and the compilers agree where a ruling says they
     should; full gate set green.
+
+  **DONE 2026-07-25 — part (b) only ((a) was closed by Phase 3). 3 of 6 changed,
+  1 ruled both-defensible, 2 ruled preferable-but-disproportionate → Phase 17.**
+
+  **1. Re-verified line table.** Both compilers rebuilt from HEAD (`make tychoc`;
+  `./tychoc compiler/tychoc0.ty -o /tmp/ph8/tychoc0`) and all six run through
+  both. **The plan's table was correct in all six pairs** — the first plan table
+  in this document to survive verification intact (contrast Phases 4/7/10/16).
+
+  | fixture | tychoc BEFORE | tychoc0 BEFORE | plan claimed | ruling | AFTER |
+  |---|---|---|---|---|---|
+  | `if_expr_no_else` | 3 | 5 | 3 / 5 ✓ | **line 3** | 3 / **3** |
+  | `if_expr_type_mismatch` | 6 | 3 | 6 / 3 ✓ | both defensible | 6 / 3 (unchanged) |
+  | `len_scalar` | 1 | 6 | 1 / 6 ✓ | **line 6** | **6** / 6 |
+  | `match_dup_arm` | 10 | 8 | 10 / 8 ✓ | 10 preferred, 8 defensible | 10 / 8 (unchanged, → Phase 17) |
+  | `match_wildcard_not_last` | 12 | 10 | 12 / 10 ✓ | 12 preferred, 10 defensible | 12 / 10 (unchanged, → Phase 17) |
+  | `subscript_type_mismatch` | 5 | 8 | 5 / 8 ✓ | **line 5** | 5 / **5** |
+
+  Governing principle applied throughout: **point at the line the user must EDIT
+  to fix the program, not the line where the compiler happened to notice.**
+
+  **2. The six rulings.**
+
+  **(i) `if_expr_no_else` → line 3 (the `if` head). tychoc0 was WRONG.**
+  Source: `3: x := if true:` / `4: 1` / `5: println(str(x))`. The incomplete
+  construct is the `if` on line 3; line 5 is a well-formed `println` the parser
+  merely reached while looking for `else`. Sending the user to edit line 5 points
+  at code with nothing wrong with it. tychoc already reported 3
+  (`src/tychoc.c:2620`). tychoc0 reported the lookahead token's line
+  (`compiler/tychoc0.ty:2537`, `t.line` where `t := toks[pos]` at `:2528`).
+  Fix: report the head, which `parse_value_if` already receives as `sl`
+  (`:2527`, passed from `parse_value_ctrl` `:2544`). **Trap found by running it:**
+  `sl` is not a raw line — `tloc` packs `line * 100000 + col` (`:123-124`), which
+  `die_at` decodes at `:5528-5529`. The naive `str(sl)` printed `line 300009`.
+  Corrected to `str(sl / 100000)`, keeping this site's existing `parse: line N:`
+  text (no wording churn). An `elif` chain still reports the *elif* that lacks
+  the else, because the recursive call passes `esl` (`:2530-2531`).
+
+  **(ii) `if_expr_type_mismatch` → BOTH DEFENSIBLE, no change.**
+  Source: head at 3, arms at 4 (`1`) and 6 (`"two"`). The message already names
+  both types. **Neither line is uniquely the edit site** — the user fixes this by
+  editing arm 4 *or* arm 6; there is no declaration to make one side
+  authoritative and the other the violator. tychoc names the arm that broke
+  agreement (6, `src/tychoc.c:6325`, `tails[i]->line`); tychoc0 names the
+  construct whose arms disagree (3, `compiler/tychoc0.ty:8429/8462`, `sl`). Both
+  land the user inside the same four-line construct and each is internally
+  consistent with that compiler's policy. Changing either would be preference
+  dressed as a fix, so neither was touched.
+
+  **(iii) `len_scalar` → line 6 (the `len(x)` call). tychoc was WRONG — and this
+  was a real bug, not a policy difference.** tychoc reported **line 1, a
+  COMMENT**. Root cause traced, not guessed: `desugar_interp`
+  (`src/tychoc.c:1995`) re-lexes each `{…}` hole with `lex(sub)` (`:2025`), and
+  `lex` restarts its own counter at `int line = 0;` (`:217`), so every node parsed
+  out of a hole carried line 1 regardless of where the f-string sat.
+  **Generalized by probe** — this hit *every* diagnostic inside an f-string hole,
+  not only `len`:
+  ```
+  # two comment lines, then fn main(): / x := 5 / <the call>
+  plain   y := len(x)         on line 5  ->  p_len_plain.ty:5: error: len(...) ...
+  f-str   print(f"{len(x)}")  on line 5  ->  p_len_fstr.ty:1: error: len(...) ...   <-- line 1 = a comment
+  ```
+  Fix (`src/tychoc.c:2025-2033`): stamp the f-string's real line onto the
+  sub-tokens before parsing —
+  `for (int k = 0; k < tv.n; k++) { tv.v[k].line = line; tv.v[k].col = 0; }`.
+  `col` is deliberately zeroed: a hole-relative column is meaningless against the
+  real source line, and `die_at` treats `0` as "no caret" (`:36`, `:54-55`), so
+  the fix reports the right line rather than the right line with a lying caret.
+
+  **(iv) `match_dup_arm` → line 10 preferred (the duplicate arm); tychoc0's line 8
+  defensible; NOT changed — the honest fix is disproportionate, filed as Phase 17.**
+  Line 10 is the arm the user deletes, so it wins on the edit-site principle.
+  tychoc0's `match c:` (line 8) is still defensible: the message names the variant
+  ("duplicate arm for Red"), so it does lead to the fix.
+  **Why not fixed:** `check_match` (`compiler/tychoc0.ty:10946`, single caller
+  `:11207`) receives arm *names* as `[string]` plus one line. The per-arm lines do
+  not exist anywhere — the AST variant itself is
+  `SMatch(Expr, [string], [[string]], [[Stmt]], int)` (`:493`): one loc for the
+  whole construct, none per arm. Supplying them means widening `SMatch`, which
+  `grep -n "SMatch("` shows is destructured or constructed at **43 sites** in the
+  self-hosting compiler, all of which must then round-trip `make fixpoint`. A
+  43-site AST change to a bootstrap compiler **to move a caret two lines** is not
+  proportionate; per this phase's own method step 4, it is filed rather than
+  forced. The cheap proxy (use `bodies[j][0]`'s line) was considered and
+  **rejected**: it is correct only when the arm body sits on the arm's own line
+  and reports the *following* line for the block form
+  (`Red:` newline `    println("b")`), i.e. it would be wrong in a way the current
+  behaviour is not.
+
+  **(v) `match_wildcard_not_last` → line 12 preferred (the misplaced `_` arm);
+  tychoc0's line 10 defensible; NOT changed — same blocker, same filing.**
+  Identical analysis: same `check_match`, same missing per-arm lines, same 43-site
+  cost. Line 12 is the arm the user moves; line 10 names the construct and the
+  message names the offending arm kind.
+
+  **(vi) `subscript_type_mismatch` → line 5 (the `yield`). tychoc0 was WRONG.**
+  Source: `4: subscript at(...) -> inout string:` / `5: yield &r.cells[i]` /
+  `8: print(r.at(0))`. The defect lives entirely in the *definition*; line 8 is a
+  correct call, so tychoc0 sent the user to edit innocent code at a site that
+  cannot be fixed there. **Why line 5 and not line 4, when (ii) ruled two lines
+  both-defensible:** unlike (ii), one side here IS authoritative. Line 4 is the
+  declaration; line 5 is the expression that violates it. Pointing the caret at
+  the violator (with the declaration named in the message text, which it already
+  is) is the standard declaration-vs-actual convention. That is also what tychoc
+  does (`src/tychoc.c:4857`, `e->line`).
+  Fix, two edits in `compiler/tychoc0.ty`: (1) `parse_subscript` stamped the body
+  stmt with the `subscript` keyword's line (`sline * 100000`), so the yield's own
+  loc was being *discarded at parse time* — capture it instead
+  (`yloc := tloc(toks[pos])` before `expect_ident(toks, &pos, "yield")`) and build
+  `[SExpr(place, yloc)]`; (2) `subscript_call_type` now reads it through a new
+  `subscript_place_line(f)` helper (sibling of the existing `subscript_place`)
+  instead of using `_el`, the call-site loc. **Fails open**: a `0` line falls back
+  to `_el`, so a body shape the helper cannot read still produces a located
+  message rather than a bare `line 0`.
+  Note this was an *intermediate* wrong answer caught by re-running rather than
+  assuming: the first version read the body stmt's stored loc and reported line
+  **4**, because the parser had stamped the head line there. The `yield` line was
+  never lost downstream — it was thrown away at construction.
+
+  **3. What changed vs what deliberately did not.**
+  - `src/tychoc.c:2025-2033` — f-string hole tokens carry the f-string's real line
+    (fixes (iii), and every other diagnostic inside an interpolation hole).
+  - `compiler/tychoc0.ty:2537` — value-`if` missing-`else` reports the head,
+    decoded out of the packed tloc (fixes (i)).
+  - `compiler/tychoc0.ty:2095`, `:2123`, `:3830-3840`, `:5246-5249` — the
+    subscript body carries the `yield` loc and the mismatch diagnostic uses it
+    (fixes (vi)).
+  - **Deliberately unchanged:** all message TEXT. Phase 3 declined a blanket
+    text-parity gate and the pre-flight pre-registered that; wording edits here
+    would add fresh entries to Phase 2's divergence set for no gain. The
+    surviving `string` vs `str` wording split in (vi) is therefore left as-is —
+    it is a text divergence, not a location one, and out of this phase's scope.
+  - **Deliberately unchanged:** `if_expr_type_mismatch` (ruled both-defensible)
+    and the two `match` arm-line cases (ruled preferable but disproportionate).
+
+  **4. Golden updates: NONE — and that was checked, not assumed.** All 17
+  `tests/diag/*.ty` fixtures were run through both rebuilt compilers and `cmp`'d
+  against their `.err` and `.h0err` goldens; every one matched byte-for-byte, so
+  nothing was re-recorded. None of the six fixtures in this phase has a recorded
+  golden (the reject lane asserts only that a non-empty diagnostic is produced,
+  `tests/run.sh:150-158`), which is why changing three reported lines needed no
+  golden churn. `tests/warn/*.err` likewise unchanged (covered by `make test`).
+
+  **5. Gate set — each its own foreground command, `env -u LD_PRELOAD`.**
+  ```
+  make test         passed: 447   failed: 0   /  all green
+  make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+  make conc         conc: passed 37   failed 0
+  make fixpoint     ok   B == C : tychoc0 reproduces itself byte-identically (34929 lines C)
+                    fixpoint: all green (self-hosting; B==C; single files + packages;
+                                         tychoc0 self-split dogfood)
+  make ilp32        passed: 447   failed: 0   /  all green
+  make spec-check   spec-examples: 7 runnable example(s), all pass
+  make check-links  link check: ok (121 markdown files, no dead relative links)
+  ```
+  `git status --short`: only `src/tychoc.c` and `compiler/tychoc0.ty` (plus this
+  file). No build spill. `make fixpoint` green is the evidence the tychoc0 edits
+  never reached codegen: the subscript loc is diagnostic-only and `B == C` still
+  holds at the same 34929 lines of C.
 
 - [x] **Phase 9 — DECISION divergence: tychoc0 accepts `str` as a written type annotation, tychoc rejects it (found by Phase 3, NOT fixed there)**
   - Found while checking whether tychoc's `unknown type 'str'` on
@@ -1742,6 +1901,39 @@ codegen.
     full of conditions, so an over- or under-strip in the emitter would show up
     as a self-hosting failure. `B == C` holds.
     `git status --short` shows only the four intended paths; no build spill.
+
+- [ ] **Phase 17 — `SMatch` carries no per-arm source locations in tychoc0 (found by Phase 8, deliberately NOT forced there)**
+  - Phase 8 ruled that `match_dup_arm` should point at the duplicate arm (line 10
+    of the fixture) and `match_wildcard_not_last` at the misplaced `_` arm (line
+    12) — the lines the user must edit. tychoc already does
+    (`src/tychoc.c:6477`, `:6540`, both `s->arms[i].line`). tychoc0 cannot: it
+    reports the `match` head for both (8 and 10), and the information to do
+    better does not exist in its AST.
+  - Root cause, verified: `check_match` (`compiler/tychoc0.ty:10946`, one caller
+    at `:11207`) is handed arm *names* as `[string]` plus a single construct-level
+    line. That is all its caller has, because the variant itself is declared
+    `SMatch(Expr, [string], [[string]], [[Stmt]], int)` (`:493`) — one loc for the
+    whole `match`, none per arm.
+  - Why it was not done in Phase 8: `grep -n "SMatch("` reports **43 sites** in
+    `compiler/tychoc0.ty` that destructure or construct the variant, every one of
+    which would need updating, in the self-hosting compiler, with `make fixpoint`
+    (`B == C`) as the acceptance bar. Phase 8's method explicitly forbids forcing
+    plumbing that large to move a caret two lines. Filed here instead.
+  - Rejected shortcut, recorded so it is not re-proposed: using
+    `bodies[j][0]`'s line as a proxy for the arm's line. It is right only when the
+    arm body sits on the arm's own line (`Red: println("b")`) and reports the
+    *following* line for the block form, plus it needs a fallback for an empty
+    body — wrong in cases where today's behaviour is merely coarse.
+  - Scope when taken: widen `SMatch` with an arm-locs `[int]` (or fold the arm
+    name and loc into one struct), thread it from `parse_match` through all 43
+    sites, and use it at `tychoc0.ty:10955` / `:10959`. Both diagnostics then
+    agree with tychoc.
+  - Also worth folding in when taken: the other `die_at(dc, el, …)` calls inside
+    `check_match` (`:10967`, `:10970`, and the `is_result` arm below them) name a
+    specific offending arm in their text and would benefit from the same locs.
+  - Done when: `tests/reject/match_dup_arm.ty` reports line 10 and
+    `tests/reject/match_wildcard_not_last.ty` line 12 from **both** compilers;
+    full gate set green including `make fixpoint`.
 
 ## Out of scope
 
