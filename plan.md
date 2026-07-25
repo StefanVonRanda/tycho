@@ -722,7 +722,17 @@ codegen.
     `M examples/invindex.ty`, `M examples/json.ty` — no build spill. **No golden
     file was modified.**
 
-- [ ] **Phase 6 — PARKED, NEEDS A USER RULING: `s[i]` → `int` vs `char` (#1)**
+- [x] **Phase 6 — RULED AND CLOSED: `s[i]` stays `int`; `char_at` added (#1)**
+  - **CLOSED 2026-07-25.** Its Done-when was "the ruling is recorded here
+    verbatim, then the chosen option is implemented in its own phase(s)". Both
+    hold: the ruling is recorded below verbatim, and option (c) shipped as
+    **Phase 26** (`bb396dc`) — `char_at(s, i) -> char` on both compilers, with
+    `s[i]` still yielding `int` (`s[1]` on `"hello"` → `101`, probed on both) and
+    an out-of-bounds abort byte-identical to `s[i]`'s. Point #1 of the original
+    five is therefore closed as a documented-and-mitigated design choice, not as
+    a semantic change.
+  - *(Original parked text follows, kept for the reasoning that produced the
+    ruling.)*
   - **Do not start this phase without an explicit ruling.** It changes what an
     expression means, and every option has a real cost.
   - The situation: `char` is a real type with real literals (`'e'` works, `char ==
