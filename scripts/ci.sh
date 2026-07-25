@@ -50,6 +50,17 @@ make -s ilp32
 step "[2c/19] make asan-self  (the COMPILER built with ASan+UBSan, compiling the whole corpus)"
 make -s asan-self
 
+# `make test` above runs tychoc on the positive lane and tychoc0 only where it must
+# REFUSE (tests/run.sh:159/:178/:199/:262), so a program tychoc accepts and tychoc0
+# over-rejects scored green -- plan.md Phase 40's eleven and Phase 33's five all did.
+# fixpoint below does cover most of this glob, but reports every cause as one string
+# ("B differs from the C compiler", stderr discarded at compiler/fixpoint.sh:28) and
+# never walks tests/warn/ or tools/*.ty. This lane runs both FRONTENDS only (--emit-c,
+# no cc, no run) and names the refusal. ~3s, so it runs unsubsetted and reddens before
+# the 3-stage bootstrap does. See scripts/frontparity.sh.
+step "[2d/19] make frontparity  (tychoc0's frontend must ACCEPT every program tychoc accepts)"
+make -s frontparity
+
 step "[3/19] make fixpoint  (self-host B==C + packages + standalone driver)"
 make -s fixpoint
 

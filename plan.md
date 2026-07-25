@@ -5769,7 +5769,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 
 ### Filed by Phase 40 (2026-07-25)
 
-- [ ] **Phase 41 — the positive lane never runs tychoc0, which is why a tychoc0-only over-rejection is invisible to `make test` (found by Phase 40; the same blind spot let Phase 33's five over-rejections ship)**
+- [x] **Phase 41 — the positive lane never runs tychoc0, which is why a tychoc0-only over-rejection is invisible to `make test` (found by Phase 40; the same blind spot let Phase 33's five over-rejections ship)**
   - `tests/run.sh:70` compiles each `tests/*.ty` with **tychoc only**; tychoc0 appears on
     the positive lane nowhere. `tests/run.sh:159` runs it on the *reject* lane only. So a
     program tychoc accepts and tychoc0 refuses scores green, and the only gates that
@@ -5786,6 +5786,166 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: a green/red gate exists that fails when tychoc0 refuses a program tychoc
     accepts in `tests/` + `examples/`, its cost is measured and stated, and it is wired
     into `ci.sh` next to `asan-self`.
+  - **DONE 2026-07-25.** New: `scripts/frontparity.sh`, `make frontparity`
+    (`Makefile:102-113`), wired at `scripts/ci.sh:53-62` as step `[2d/19]`, between
+    `asan-self` and `fixpoint`.
+
+    ### CORRECTION TO THIS PHASE'S OWN TEXT — two citations were wrong
+
+    `tests/run.sh:70` is inside `run_one()`, not the loop; the positive loop is
+    `tests/run.sh:113` (`for hi in examples/*.ty tests/*.ty`). And tychoc0 is used in
+    `run.sh` on **four** lanes, not one: reject `:159`, reject-pkg `:178`, abort `:199`,
+    diag goldens `:262`. What they have in common is the point: every one of them scores
+    tychoc0 **refusing**. Nothing there scores tychoc0 **accepting**. The warn lane
+    (`:291-314`) is the positive lane that runs `$TYCHOC` alone.
+
+    ### THE SHAPE QUESTION, ANSWERED FIRST — and the answer is not the flattering one
+
+    **What `make fixpoint` already covers.** `compiler/fixpoint.sh:24-30` walks
+    `tests/*.ty examples/*.ty`, `continue`s past whatever tychoc cannot build (`:26`),
+    then requires **B** — a tychoc0-derived binary — to emit C, cc it, and match tychoc's
+    golden output (`:28-29`). A tychoc0 refusal makes `"$T/B" < "$f"` exit nonzero, so
+    fixpoint **does** redden on the missing property over that glob. `tests/pkg/*/` is
+    covered the same way (`:41-52`). Measured, not assumed: over `tests/*.ty` +
+    `examples/*.ty`, the number of files whose `--emit-c` frontend succeeds but whose
+    `-o` (cc-inclusive) ref build fails — i.e. files fixpoint's `:26 || continue`
+    silently drops — is **0**. So fixpoint's positive glob is not being thinned.
+
+    Elsewhere: `tests/conc/*.ty` is tychoc0-parity'd at `tests/conc/run.sh:63-67`,
+    `tests/abort/*.ty` at `tests/run.sh:199`, `corelib/` by `make corelib`, and all 15
+    `tests/diag/*.ty` are rejected by tychoc so they are not in the property's domain.
+
+    **Why fixpoint caught Phase 33's break and not Phase 40's eleven.** Not a gate gap —
+    a **fixture** gap. Phase 33's over-tightening hit `tests/newtype_agg.ty:33`
+    (`if dup == ids:`), a committed program that exercised the shape, so fixpoint printed
+    `FAIL newtype_agg.ty (B differs from the C compiler)` (quoted at plan.md:5510-5514).
+    Phase 40's eleven were found by a generated legal-set probe (`/tmp/ph40/legal.py`);
+    nine were `dup := a` over nine underlying types, a shape **no committed program
+    contained**. The two that did correspond to a fixture had been deliberately written
+    AROUND — `tests/newtype_over_aggregate.ty` carried `["one": FA([1,2])]` and a
+    throwaway `a3 := mk_fa()`, with in-file comments saying tychoc0 rejects the natural
+    spelling (see the `git show bfae65d -- tests/newtype_over_aggregate.ty` diff).
+
+    **Consequence, stated plainly: a second full positive lane over the same glob would
+    have missed all eleven too.** So would this front-only sweep. Neither shape buys
+    coverage of an absent fixture, and no gate can. That is the honest limit of this
+    phase, and it is why the lane below is deliberately small rather than a second
+    `run.sh`.
+
+    **What was built, and the three things it does buy.**
+    1. **It names the verdict.** fixpoint discards tychoc0's stderr
+       (`compiler/fixpoint.sh:28`, `2>/dev/null`) and reports a frontend refusal, a cc
+       failure of the emitted C, and a genuine output divergence as one string,
+       `B differs from the C compiler`. Phase 40 had to re-run tychoc0 by hand to learn
+       which. The lane's failure line *is* the refusal and its diagnostic.
+    2. **It widens the glob by 9 programs no gate front-checks against tychoc0**:
+       `tests/warn/*.ty` (6 — `tests/run.sh:291-314` runs `$TYCHOC` only) and
+       `tools/*.ty` (3 — `tycho.ty`, `tychofmt.ty`, `lsp.ty`, built at `Makefile:38,:44,
+       :49` with tychoc alone, and among the largest real Tycho programs in the tree).
+       Verified by grep over every `*.sh` plus the `Makefile`; the only other hits are
+       `scripts/asan_self.sh`, which runs the *sanitized tychoc*, not tychoc0.
+    3. **It is a fast tripwire** — no cc, no run, no 3-stage bootstrap — so it reddens
+       ahead of fixpoint.
+
+    **Why the alternative was not built.** A second full positive lane (tychoc0 →
+    `cc` → run → compare goldens over `tests/*.ty`) is what `compiler/fixpoint.sh:24-30`
+    already is. It would duplicate ~250 compiles plus a cc and a run each for zero new
+    property, and the one property it adds over the front-only sweep — output equality —
+    is fixpoint's job and is already green.
+
+    ### THE LANE
+
+    Both compilers frontend-only, which is the method requirement: `./tychoc F --emit-c
+    -o X` stops after emitting `X.c` (`tests/run.sh:70` cc's it as a separate step) and
+    `tychoc0 F --emit-c` writes C to stdout. A bare `./tychoc F -o X` would conflate
+    tychoc's `cc` step with tychoc0's frontend exit; it is not used. One direction only:
+    tychoc accepts and tychoc0 refuses. tychoc refusing → skip (owned by
+    `tests/reject/`, `tests/diag/`); tychoc0 fail-OPEN → owned by `tests/run.sh:159`,
+    `:178`. Nothing is grepped for — the verdict is the two exit statuses — so Phase 38's
+    marker false-positive class does not arise here. `H0=<path>` reuses a prebuilt
+    tychoc0; unset in every gate run. `mktemp -d` + `trap rm`, so no working-tree spill.
+
+    Glob: `examples/*.ty tests/*.ty tests/conc/*.ty tests/warn/*.ty tests/abort/*.ty
+    tests/diag/*.ty tools/*.ty compiler/tychoc0.ty` + `tests/pkg/*/main.ty` (the
+    standalone `tychoc0 <entry>` driver form of `compiler/fixpoint.sh:48`).
+    NOT: `tests/reject/**` (other direction, already gated); `corelib/` and
+    `examples/corelib/` (`make corelib` runs both compilers there with per-module
+    dependency skips this lane does not replicate — the same boundary
+    `scripts/asan_self.sh:69-70` draws); output equality (fixpoint's).
+    `tests/diag/*.ty` is in the glob although all 15 skip today, so the day one starts
+    being accepted it is covered with no script edit.
+
+    ### GREEN
+
+    ```
+    $ env -u LD_PRELOAD make frontparity
+    -----------------------------------------
+    frontparity: agreed: 287   diverged: 0   (skipped, tychoc refused: 15)
+    frontparity: all green (tychoc0's frontend accepts every program tychoc accepts)
+    rc=0
+    ```
+    287 = 23 examples + 213 tests + 11 conc + 6 warn + 16 abort + 3 tools + tychoc0.ty
+    + 14 pkg. The 15 skips are exactly `tests/diag/*.ty`, all 15 rejected by tychoc.
+    **No current divergence — so nothing to file.** The lane found the tree already
+    correct on this property, which is the expected result one phase after Phase 40
+    closed the last eleven.
+
+    ### RED — a real Phase 40 fix reverted, plus the control that proves the blind spot
+
+    Reverted Phase 40's `EMapLit` arm of `type_of` (`compiler/tychoc0.ty:5576-5581`) to
+    its pre-Phase-40 form (`mkt := type_of(keys[0], …)` / `mvt := type_of(vals[0], …)`,
+    the `-` side of `bfae65d`'s `@@ -5531,8 +5551,12 @@` hunk), rebuilt, ran both gates
+    on the SAME tree:
+
+    ```
+    ########## RED: make frontparity with Phase 40's EMapLit fix reverted ##########
+    FAIL  tests/newtype_over_aggregate.ty  (tychoc ACCEPTED it, tychoc0 REFUSED it)
+          line 66: declared type {str:FA} but value is {str:[2]int}
+                  mv: [string: FA] = ["one": a]
+                  ^
+    -----------------------------------------
+    frontparity: agreed: 286   diverged: 1   (skipped, tychoc refused: 15)
+    failed: tests/newtype_over_aggregate.ty
+    make frontparity rc=2
+
+    ########## control: make test with the SAME regression in place ##########
+    ok    warn_result_discarded
+    -----------------------------------------
+    passed: 540   failed: 0
+    all green
+    ```
+    That control is the whole phase in four lines: a live tychoc0 over-rejection of a
+    committed fixture, and `make test` says `all green`. Restored with
+    `git checkout -- compiler/tychoc0.ty`; `git status --short` clean of it; the lane
+    back to `agreed: 287  diverged: 0  rc=0`.
+
+    ### COST — 23.5s, of which 22.3s is the tychoc0 build every such gate already pays
+
+    | | wall |
+    |---|---|
+    | `env -u LD_PRELOAD make frontparity` (2 runs) | **23.76s**, **23.52s** |
+    | of that: `./tychoc compiler/tychoc0.ty -o …` | **22.25s** |
+    | of that: the 287-program sweep itself | **~1.5s** |
+
+    Wired **unconditionally** into `scripts/ci.sh:53-62`, no subsetting: comparable to
+    `asan-self`'s 13.9s (Phase 38), and its *marginal* cost is the 1.5s sweep — the 22.3s
+    is the same tychoc0 build `tests/run.sh:148`, `tests/conc/run.sh:34` and
+    `scripts/tools_check.sh:121` each already pay. Placed before `fixpoint` so the cheap
+    frontend verdict reddens first.
+
+    ### GATE SET — all green, `git status --short` shows no build spill
+
+    ```
+    make test         passed: 540   failed: 0 / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok B == C (35691 lines C) / fixpoint: all green
+    make ilp32        passed: 540   failed: 0 / all green
+    make asan-self    asan-self: compiled: 540   failed: 0 / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+    make frontparity  frontparity: agreed: 287   diverged: 0   (skipped: 15) / all green
+    ```
 
 - [ ] **Phase 42 — `src/tychoc.c:N` / `compiler/tychoc0.ty:N` provenance citations across `docs/` have now gone stale three times in one plan, and nothing checks them (Phase 34, Phase 35, Phase 40)**
   - Phase 34 fixed `15-program.md`, Phase 35 fixed `16-builtins.md`'s

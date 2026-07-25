@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self clean
+.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self frontparity clean
 
 all: tychoc
 
@@ -98,6 +98,19 @@ test: tychoc
 # design. Rationale, coverage, and what is NOT covered: scripts/asan_self.sh.
 asan-self: $(EMBED)
 	@sh scripts/asan_self.sh
+
+# The POSITIVE lane's missing half. tests/run.sh:113 compiles every fixture with
+# tychoc alone; tychoc0 is used there only where it must REFUSE (reject :159/:178,
+# abort :199, diag :262). So a program tychoc accepts and tychoc0 over-rejects can
+# score `all green` -- which is how plan.md Phase 40's eleven newtype
+# over-rejections and Phase 33's five stayed invisible to `make test`. This lane
+# runs BOTH frontends (--emit-c, no cc, no run) and fails on any program tychoc
+# accepts and tychoc0 refuses. ~3s. fixpoint covers most of this glob already but
+# reports every cause as "B differs from the C compiler"; the overlap, the surface
+# only this lane reaches (tests/warn, tools/*.ty), and what is NOT covered:
+# scripts/frontparity.sh.
+frontparity: tychoc
+	@sh scripts/frontparity.sh
 
 # Concurrency suite (spawn/wait, parallel for, channels): tychoc builds each
 # positive fixture native + ASan/LSan + TSan against the goldens, the
