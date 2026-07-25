@@ -15,9 +15,9 @@ Operators and keywords that read as calls but are **not** builtins — `m[k]`,
 their own chapters and are out of scope here.
 
 > Provenance: `Sig` builtins `src/tychoc.c:4140-4171`; conversion magic
-> `:4716-4787`; `len` `:4789-4794`; `keys`/`push`/`pop`/`reserve` `:4845-4930`;
-> `m.get` sugar `:4397-4408`,`:4477-4488`; `zero$` `:4355-4371`; concurrency
-> magic `:4671-4714`; `map_*` removal `:2100-2103`; `die` codegen `:7421-7423`.
+> `:5248-5321`; `len` `:5323-5329`; `keys`/`push`/`pop`/`reserve` `:5378-5468`;
+> `m.get` sugar `:4876-4889`,`:4963-4975`; `zero$` `:4834-4850`; concurrency
+> magic `:5203-5247`; `map_*` removal `:2308-2311`; `die` codegen `:8362-8364`.
 
 ## 29.1 Builtins are part of the language
 
@@ -81,8 +81,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All eight are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4144-4163`; `eprint` codegen `:7342`; `die` codegen
-> `:7421-7423`.
+> Provenance: `src/tychoc.c:4144-4163`; `eprint` codegen `:8283`; `die` codegen
+> `:8362-8364`.
 
 ## 29.4 Conversions
 
@@ -112,8 +112,10 @@ The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 [§5.4](03-types.md#54-newtypes)). `str(char)` yields the char's one-byte glyph
 string ([§5.2.4](03-types.md#524-char)).
 
-> Provenance: conversion magic `src/tychoc.c:4716-4787`; `chr`/`to_ptr`/`to_i32`/
-> `is_null` `Sig` `:3830`,`:3841-3843`.
+> Provenance: conversion magic `src/tychoc.c:5248-5321`; `chr` `Sig` `:4152`,
+> `is_null`/`to_ptr` `Sig` `:4164-4165`. `to_i32` (and the rest of
+> `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:948-952` /
+> `sized_conv_target` `:937-947`, resolved inline at `:5281-5286`.
 
 ## 29.5 Strings
 
@@ -139,10 +141,10 @@ other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 
 > Provenance: `substr`/`find` `Sig` `src/tychoc.c:4155-4156`, `split` `:4158`;
 > `len` magic
-> `:4789-4794`; `char_at` `Sig` `src/tychoc.c:4157`, codegen `:8179-8187`
-> (`tycho_str_get`, the same call `s[i]` emits at `:8653`), tychoc0
-> `compiler/tychoc0.ty:4827-4828`,`:6792-6797` (`hi_sidx`, the same helper `s[i]`
-> emits at `:6337`).
+> `:5323-5329`; `char_at` `Sig` `src/tychoc.c:4157`, codegen `:8212-8220`
+> (`tycho_str_get`, the same call `s[i]` emits at `:8686`), tychoc0
+> `compiler/tychoc0.ty:4853-4854`,`:7180-7185` (`hi_sidx`, the same helper `s[i]`
+> emits at `:6698`).
 
 ## 29.6 Arrays
 
@@ -159,8 +161,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`); also accepts a map place `m[k]`. |
 
-> Provenance: `len` `src/tychoc.c:4789-4794`; `push` `:4852-4885`; `pop`
-> `:4887-4904`; `reserve` `:4906-4929`.
+> Provenance: `len` `src/tychoc.c:5323-5329`; `push` `:5386-5420`; `pop`
+> `:5421-5441`; `reserve` `:5442-5468`.
 
 ## 29.7 Maps
 
@@ -188,8 +190,10 @@ to `m[k] = v`, `m.get(k, default)`, `k in m`, and `delete m[k]` respectively.
 (The identically-named nodes that the desugars build internally are not
 user-callable.)
 
-> Provenance: `keys` `src/tychoc.c:4845-4851`; `m.get` sugar `:4397-4408`,
-> `:4477-4488`; `map_*` removal (parse error) `:2100-2103`.
+> Provenance: `keys` `src/tychoc.c:5378-5385`; `m.get` sugar `:4876-4889`,
+> `:4963-4975`; `map_*` removal (parse error) `:2308-2311`, tychoc0
+> `compiler/tychoc0.ty:879-885` (expression form) and `:1625-1631` (statement
+> form).
 
 ## 29.8 Type builtins
 
@@ -210,7 +214,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:4355-4371`; `defaultable` predicate `:6191`.
+> Provenance: `zero$` `src/tychoc.c:4834-4850`; `defaultable` predicate `:6819`.
 
 ## 29.9 Concurrency
 
@@ -234,9 +238,9 @@ builtins below are their only consumers.
 likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle;
 `ncpu` is the sole `Sig` builtin here.
 
-> Provenance: `wait` `src/tychoc.c:4671-4678`; `channel` `:4682-4689`; `send`
-> `:4690-4698`; `recv` `:4699-4704`; `close` `:4705-4714`; `ncpu` `Sig` `:3829`;
-> task/channel method sugar `:4372-4386`.
+> Provenance: `wait` `src/tychoc.c:5203-5210`; `channel` `:5211-5221`; `send`
+> `:5222-5230`; `recv` `:5231-5236`; `close` `:5237-5247`; `ncpu` `Sig` `:4151`;
+> task/channel method sugar `:4851-4865`.
 
 ## 29.10 Filesystem and time
 
@@ -290,6 +294,7 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:4153`, codegen `:7421-7423`; no
+> Provenance: `die` `Sig` `src/tychoc.c:4153`, codegen `:8362-8364`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4140-4171` or the
-> `resolve_expr` magic block `:4355-4930`.
+> `resolve_expr` magic block (`case E_CALL:` `:4833`, running through `reserve`
+> at `:5468`).

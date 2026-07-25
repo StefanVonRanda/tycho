@@ -1,0 +1,17 @@
+# Two DISTINCT newtypes over the same underlying type are not comparable: the
+# newtype is the identity, not the representation. Both operands are INFERRED
+# locals, which is the shape that used to fail open on tychoc0 -- `nt_skin_of`
+# read the recorded var type, and `a := A([1, 2])` recorded the RESOLVED [int],
+# so both skins read as "carries no newtype" and the identity check never fired.
+# tychoc: "cannot compare A with B".
+
+type A = [int]
+type B = [int]
+
+fn main():
+    a := A([1, 2])
+    b := B([1, 2])
+    if a == b:
+        println("eq")
+    else:
+        println("ne")

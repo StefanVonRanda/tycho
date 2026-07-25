@@ -876,13 +876,13 @@ fn parse_atom_d(toks: [Token], pos: inout int, pc: Pctx) -> Expr:
             return ECall(enc, eargs, _el)
         if toks[pos].kind == TLParen:
             if name == "map_set":          # B5: removed -> reject user calls (the delete desugar builds map_del directly)
-                die("parse: map_set was removed; use m[k] = v")
+                die("parse: line " + str(toks[pos].line) + ": map_set was removed; use m[k] = v")
             if name == "map_has":
-                die("parse: map_has was removed; use k in m")
+                die("parse: line " + str(toks[pos].line) + ": map_has was removed; use k in m")
             if name == "map_del":
-                die("parse: map_del was removed; use delete m[k]")
+                die("parse: line " + str(toks[pos].line) + ": map_del was removed; use delete m[k]")
             if name == "map_get":
-                die("parse: map_get was removed; use m.get(k, default)")
+                die("parse: line " + str(toks[pos].line) + ": map_get was removed; use m.get(k, default)")
             pos = pos + 1
             args := []Expr
             anames := []string                                   # F4: per-arg field name ("" = positional)
@@ -1203,7 +1203,19 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
     if t.kind == TIdent and t.text == "print":
         pos = pos + 1
         expect(toks, &pos, TLParen)
+        # print is parsed specially, so the general builtin-arity gate (ck_builtin_arity)
+        # never sees it: a wrong arity fell out of the grammar as "expected an atom" /
+        # "unexpected token", which names the token stream instead of the rule. Say what
+        # tychoc says. (Phase 35 left these two rows outside its arity table by design.)
+        if toks[pos].kind == TRParen:
+            die("parse: line " + str(toks[pos].line) + ": 'print' takes 1 argument(s), got 0")
         e := parse_expr(toks, &pos)
+        if toks[pos].kind == TComma:
+            xtra := []Expr
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(xtra, parse_expr(toks, &pos))
+            die("parse: line " + str(toks[pos].line) + ": 'print' takes 1 argument(s), got " + str(1 + len(xtra)))
         expect(toks, &pos, TRParen)
         return SPrint(e, _sl)
     elif t.kind == TIdent and t.text == "const" and toks[pos + 1].kind == TIdent:   # `const NAME = <literal>` local (folded at each use; contextual keyword)
@@ -1256,7 +1268,15 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
     elif t.kind == TIdent and t.text == "println":   # desugar: println(x)
         pos = pos + 1
         expect(toks, &pos, TLParen)
+        if toks[pos].kind == TRParen:                # same special-parse arity gap as print (see above)
+            die("parse: line " + str(toks[pos].line) + ": 'println' takes 1 argument(s), got 0")
         e := parse_expr(toks, &pos)
+        if toks[pos].kind == TComma:
+            xtra := []Expr
+            for toks[pos].kind == TComma:
+                pos = pos + 1
+                push(xtra, parse_expr(toks, &pos))
+            die("parse: line " + str(toks[pos].line) + ": 'println' takes 1 argument(s), got " + str(1 + len(xtra)))
         expect(toks, &pos, TRParen)
         return SPrint(EBin("+", e, EStr("\\n", _el), _el), _sl)
     elif t.kind == TIdent and t.text == "return":
@@ -1602,13 +1622,13 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
             return SFieldAssign(lv, parse_expr(toks, &pos), _sl)
         elif toks[pos].kind == TLParen:          # bare call statement: f(args)
             if name == "map_set":          # B5: removed -> reject (the parse_atom copy covers the expression form)
-                die("parse: map_set was removed; use m[k] = v")
+                die("parse: line " + str(toks[pos].line) + ": map_set was removed; use m[k] = v")
             if name == "map_has":
-                die("parse: map_has was removed; use k in m")
+                die("parse: line " + str(toks[pos].line) + ": map_has was removed; use k in m")
             if name == "map_del":
-                die("parse: map_del was removed; use delete m[k]")
+                die("parse: line " + str(toks[pos].line) + ": map_del was removed; use delete m[k]")
             if name == "map_get":
-                die("parse: map_get was removed; use m.get(k, default)")
+                die("parse: line " + str(toks[pos].line) + ": map_get was removed; use m.get(k, default)")
             pos = pos + 1
             args := []Expr
             if toks[pos].kind != TRParen:
@@ -5531,8 +5551,12 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
             ck_affine_inferred(dc, ctx, _el, vty)
             return "{" + kty + ":" + vty + "}"
         EMapLit(keys, vals, _el):
-            mkt := type_of(keys[0], names, types, dc, ctx)
-            mvt := type_of(vals[0], names, types, dc, ctx)
+            mkt := nt_skin_of(keys[0], names, types, dc, ctx)   # keep a NEWTYPE key/value's identity: `["one": a]` where a: C is {str:C}, not {str:int} (mirrors EArrLit / ETuple / the EIndex value case + tychoc); type_of would resolve-erase it and a `[string: C]` annotation then rejected the literal
+            if mkt == "":
+                mkt = type_of(keys[0], names, types, dc, ctx)
+            mvt := nt_skin_of(vals[0], names, types, dc, ctx)
+            if mvt == "":
+                mvt = type_of(vals[0], names, types, dc, ctx)
             ck_affine_inferred(dc, ctx, _el, mkt)             # mapc_of, src/tychoc.c:1009-1011
             ck_affine_inferred(dc, ctx, _el, mvt)
             return "{" + mkt + ":" + mvt + "}"
@@ -6897,14 +6921,25 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # newtype -- one side spelled `FA`, the other `[2]int`.
                 # `[int] == [string]` still differs after resolve_nt, so the gap the
                 # eq-parity lane caught stays closed.
-                # NOT also compared here: newtype IDENTITY. `nt_skin_of` returns "" for
-                # an INFERRED local (`dup := ids` in tests/newtype_agg.ty), so adding it
-                # rejects that legal program. `A == B` over two distinct newtypes with
-                # the same underlying therefore still fails open exactly as it did
-                # before -- pre-existing, and filed as Phase 40 together with the
-                # nt_skin_of gap that has to be closed first.
-                if resolve_nt(dc, ctx, lt) != resolve_nt(dc, ctx, rty):
-                    die_at(dc, _el, "cannot compare " + lt + " with " + rty)
+                # ALSO compared here (Phase 40): newtype IDENTITY, exactly as the scalar
+                # arm below has always done with sl/sr. This was blocked until now because
+                # `nt_skin_of` returned "" for an INFERRED local, which rejected
+                # tests/newtype_agg.ty's legal `dup == ids`; `decl_ty_of` closed that gap
+                # first, so `dup` reads as `Ids` and the fixture stays legal. What the
+                # skin compare closes is the fail-OPEN pair tychoc rejects: `A == B` over
+                # two distinct newtypes with the same underlying, and `a == [1]` against a
+                # raw literal of the underlying. Name the skin in the message when there is
+                # one, so the text matches tychoc's `cannot compare A with B`.
+                lsk := nt_skin_of(l, names, types, dc, ctx)
+                rsk := nt_skin_of(r, names, types, dc, ctx)
+                if resolve_nt(dc, ctx, lt) != resolve_nt(dc, ctx, rty) or lsk != rsk:
+                    lnm := lt
+                    if lsk != "":
+                        lnm = lsk
+                    rnm := rty
+                    if rsk != "":
+                        rnm = rsk
+                    die_at(dc, _el, "cannot compare " + lnm + " with " + rnm)
                 eqx := eq_field(dc, ctx, lt, gen_expr(l, names, types, dc, ctx), gen_expr(r, names, types, dc, ctx))
                 if op == "!=":
                     return "(!(" + eqx + "))"
@@ -7143,7 +7178,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             if name == "find":
                 return "hi_find(" + gen_expr(args[0], names, types, dc, ctx) + ", " + gen_expr(args[1], names, types, dc, ctx) + ")"
             if name == "char_at":
-                # deliberately the SAME emit s[i] uses (hi_sidx, :6337): identical
+                # deliberately the SAME emit s[i] uses (hi_sidx, :6698): identical
                 # O(1) read, identical bounds abort and message. Only the STATIC
                 # type differs -- char_at is `char`, s[i] stays `int` -- and a
                 # char is carried as tycho_int in C, so the text is the same.
@@ -8938,7 +8973,7 @@ fn extend_tail_scope(body: [Stmt], names: [string], types: [string], dc: Decls, 
     for i < len(body) - 1:
         match body[i]:
             SDecl(dn, de, _l):
-                dt := type_of(de, bn, bt, dc, ctx)
+                dt := decl_ty_of(de, bn, bt, dc, ctx)   # keep an inferred local's newtype identity (see decl_ty_of)
                 push(bn, dn)
                 push(bt, dt)
             STypedDecl(dn, dty, de, _l):
@@ -9020,8 +9055,8 @@ fn gen_stmt(s: Stmt, names: inout [string], types: inout [string], dc: Decls, ct
                 if names[di] == name and var_block_depth(dc, ctx, di) == ctx.depth:
                     die("'" + name + "' is already declared in this scope")
                 di = di + 1
-            ty := type_of(e, names, types, dc, ctx)
-            if ty_has_void(ty):                   # `x := nop()` / `ys := [nop()]` / `t := (1, nop())`: a proc call has no value, so this decl would emit a `void` C local (or a `void` array element). Statement-position `nop()` is SExpr and never reaches here
+            ty := decl_ty_of(e, names, types, dc, ctx)   # keep an inferred local's newtype identity (see decl_ty_of); every use below resolves through cty/resolve_nt
+            if ty_has_void(ty):                 # `x := nop()` / `ys := [nop()]` / `t := (1, nop())`: a proc call has no value, so this decl would emit a `void` C local (or a `void` array element). Statement-position `nop()` is SExpr and never reaches here
                 die_at(dc, _sl, "cannot bind a void value")
             if ty_has_handle(dc, ctx, ty) and not is_handle(dc, ty):   # FFI R2: a handle nested in a container/aggregate could be aliased into a double-free
                 die_at(dc, _sl, "a handle cannot be stored in a container or aggregate -- it is freed at the end of its scope")
@@ -9714,7 +9749,7 @@ fn sacc_block(acc: inout [string], stmts: [Stmt], names: [string], types: [strin
 fn sacc_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inout [string], dc: Decls, ctx: Ctx):
     match s:
         SDecl(n, e, _sl):
-            dty := type_of(e, names, types, dc, ctx)   # compute BEFORE pushing n (keep names/types in sync)
+            dty := decl_ty_of(e, names, types, dc, ctx)   # compute BEFORE pushing n (keep names/types in sync); decl_ty_of keeps an inferred local's newtype identity
             push(names, n)
             push(types, dty)
         SAssign(n, e, _sl):
@@ -11241,6 +11276,26 @@ fn nt_skin_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
             si := dc.sigmap.get(nm, -1)
             if si >= 0:
                 return nt_or_empty(dc, ctx, dc.sigs[si].ret)   # a fn returning a newtype
+            ztm := find(nm, "$<")                          # zero$<C>(): its type IS the type argument (type_of's ECall arm)
+            if ztm >= 0 and substr(nm, 0, ztm) == "zero":
+                return nt_or_empty(dc, ctx, substr(nm, ztm + 2, len(nm) - 1))
+            if nm == "pop" and len(args) == 1:             # pop(xs) over a [C] yields a C -- type_of returns elem_ty UNRESOLVED, so the skin must too
+                pkt := type_of(args[0], names, types, dc, ctx)
+                if is_array(pkt):
+                    return nt_or_empty(dc, ctx, elem_ty(pkt))
+            return ""
+        ECallV(vcallee, vargs, _el):
+            vfn := efield_fname(vcallee)
+            if vfn == "get":                               # m.get(k[, default]): type_of returns map_val UNRESOLVED, so a newtype value keeps its identity here too
+                gmt := type_of(efield_base(vcallee), names, types, dc, ctx)
+                if is_map(gmt):
+                    return nt_or_empty(dc, ctx, map_val(gmt))
+            if vfn != "":
+                umn := ufcs_name(dc, ctx, names, types, vcallee)   # a UFCS method whose declared return is a newtype
+                if umn != "":
+                    usi := dc.sigmap.get(umn, -1)
+                    if usi >= 0 and not ty_is_generic(dc.sigs[usi].ret):
+                        return nt_or_empty(dc, ctx, dc.sigs[usi].ret)
             return ""
         EField(b, f, _el):
             bt := resolve_ginst(type_of(b, names, types, dc, ctx), dc, ctx)   # resolve a generic app form (Box(Id) -> Box__Id, e.g. inside a body monomorphized over a newtype type-arg) so is_struct/field_type see the instance
@@ -11275,6 +11330,22 @@ fn nt_skin_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) ->
             return nt_skin_of(inner, names, types, dc, ctx)
         _:
             return ""
+
+# The type to RECORD for an INFERRED local `n := e`. Phase 40: `type_of` resolves a
+# newtype at a var read, so recording it erased the identity `nt_skin_of` has to
+# recover -- `dup := ids` recorded the resolved `[int]`, `nt_skin_of(dup)` was "", and
+# a valid newtype value read as "carries no newtype". That fails OPEN where an
+# identity check compares two skins and fails CLOSED where one side is known
+# (a `[string: C]` map literal built from such a local was rejected as `{str:int}`).
+# Recording the unresolved name is not a new spelling: an ANNOTATED local already
+# pushes its annotation (`STypedDecl`), and `type_of` itself already returns the
+# unresolved newtype for an array element, a map value and `m.get`. Every consumer
+# resolves through `resolve_nt`/`cty`, so the C type is unchanged.
+fn decl_ty_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
+    sk := nt_skin_of(e, names, types, dc, ctx)
+    if sk != "":
+        return sk
+    return type_of(e, names, types, dc, ctx)
 
 # Reject if `e`'s newtype identity does not match the `expected` type. Generic
 # (typaram-bearing) expected types are exempt -- typaram binding handles those.
@@ -11713,7 +11784,7 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
                 die("type: cannot infer the Result type of " + okerr + "(...) -- annotate it (x : Result(T, E) = " + okerr + "(...))")
             if not is_channel_call(e):                  # a bare `ch := channel(...)` is the ONE legal channel() position -- don't let collect_expr's channel ban reject it
                 collect_expr(&acc, e, names, types, dc, ctx)
-            ty := type_of(e, names, types, dc, ctx)
+            ty := decl_ty_of(e, names, types, dc, ctx)   # keep an inferred local's newtype identity (see decl_ty_of)
             push(names, n)
             push(types, ty)
         SAssign(n, e, _sl):
@@ -13616,7 +13687,7 @@ fn lift_stmt(s: Stmt, lifted: inout [Func], ctr: inout int, lams: inout [LamInfo
     match s:
         SDecl(n, e, _sl):
             ne := lift_expr(e, &lifted, &ctr, &lams, &spawns, &pars, &names, &types, dc, ctx)
-            nty := type_of(e, names, types, dc, ctx)  # type BEFORE pushing the name (sacc_stmt order):
+            nty := decl_ty_of(e, names, types, dc, ctx)  # type BEFORE pushing the name (sacc_stmt order):
             push(names, n)                            # a shadowing `y := y + 2` must resolve y to the
             push(types, nty)                          # OUTER decl, and names/types must stay in lockstep
             return SDecl(n, ne, _sl)
@@ -15235,7 +15306,7 @@ fn mono_stmt(s: Stmt, names: inout [string], types: inout [string], gens: [Func]
             # sigs (still in dc) to "$T" — a harmless env placeholder. The rewritten
             # `mr` names instances not yet in dc; the final codegen recomputes the
             # real type from the instance-bearing dc.
-            ty := type_of(rhs, names, types, dc, ctx)
+            ty := decl_ty_of(rhs, names, types, dc, ctx)   # decl_ty_of keeps an inferred local's newtype identity, so mono's env agrees with lift/collect/gen
             # BUT a generic-struct construction (`x := Box(5)`) types to the bare template
             # "Box" — which loses the instantiation, so a later `f(x)` against `f(b: Box($T))`
             # can't bind $T. The mono'd `mr` IS the instance constructor `Box__int(..)`; record
@@ -16333,7 +16404,7 @@ fn gfix_stmt(dc: Decls, ctx: Ctx, s: Stmt, names: inout [string], types: inout [
     match s:
         SDecl(n, e, sl):
             ne := gfix_expr(dc, ctx, "", e, names, types)
-            ty := type_of(e, names, types, dc, ctx)
+            ty := decl_ty_of(e, names, types, dc, ctx)   # keep an inferred local's newtype identity (see decl_ty_of)
             push(names, n)
             push(types, ty)
             return SDecl(n, ne, sl)

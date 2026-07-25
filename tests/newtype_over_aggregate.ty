@@ -58,11 +58,12 @@ fn main():
     bds := [b]
     println("arrelem " + str(sum_fa(fas[1])) + " " + str(get_mp(mps[0], "k")) + " " + str(len_bd(bds[0])))
 
-    # map value. The value must be spelled as a constructor call, not a variable
-    # already of the newtype: tychoc0 rejects `["one": a]` here -- a pre-existing
-    # over-rejection that hits `type C = int` identically (filed as Phase 40), so it
-    # is not this fixture's subject.
-    mv: [string: FA] = ["one": FA([1, 2])]
+    # map value, spelled as a variable that ALREADY carries the newtype -- the natural
+    # spelling, restored by Phase 40. It used to be rejected: type_of erases a newtype
+    # at a var read, so the literal typed to {str:[2]int} and the annotation refused it.
+    # EMapLit now keeps the value's newtype skin (as EArrLit / ETuple already did) and
+    # decl_ty_of records `a := FA(...)` as FA rather than the resolved [2]int.
+    mv: [string: FA] = ["one": a]
     mv2: [string: MP] = ["two": MP(["k": 5])]
     mv3: [string: BD] = ["three": BD([3, 4])]
     println("mapval " + str(sum_fa(mv["one"])) + " " + str(get_mp(mv2["two"], "k")) + " " + str(len_bd(mv3["three"])))
@@ -80,16 +81,16 @@ fn main():
     tp := (a, m, b)                            # tuple element
     println("tupelem " + str(sum_fa(tp.0)) + " " + str(get_mp(tp.1, "k")) + " " + str(len_bd(tp.2)))
 
-    # equality is the UNDERLYING's deep equality, not a raw C struct compare.
-    # Both sides are spelled as locals: comparing a local against a CALL that returns
-    # the newtype (`a == mk_fa()`) is over-rejected by tychoc0 for every aggregate
-    # newtype including the long-standing `type C = [int]` -- pre-existing, filed as
-    # Phase 40, and not this fixture's subject.
+    # equality is the UNDERLYING's deep equality, not a raw C struct compare. The right
+    # operand is a CALL returning the newtype -- the natural spelling, restored by
+    # Phase 40; the structural == compares resolve_nt on both sides (Phase 33) AND the
+    # newtype skins (Phase 40), and a fn's declared return type is one of the forms
+    # nt_skin_of recovers, so `a == mk_fa()` is legal while `A == B` over two distinct
+    # newtypes is not (tests/reject/newtype_eq_two_newtypes.ty).
     a2 := FA([1, 2])
-    a3 := mk_fa()
     m2 := MP(["k": 5])
     b2 := BD([3, 4])
-    println("eq " + str(a == a2) + " " + str(a == a3))
+    println("eq " + str(a == a2) + " " + str(a == mk_fa()))
     println("eqmap " + str(m == m2))
     println("eqbd " + str(b == b2))
 

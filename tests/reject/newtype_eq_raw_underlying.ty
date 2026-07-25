@@ -1,0 +1,14 @@
+# A newtype value is not comparable with a raw literal of its underlying type --
+# the same rule as `A == B`, with the right operand carrying no newtype at all.
+# The left operand is an INFERRED local, the shape that used to fail open on
+# tychoc0 (see newtype_eq_two_newtypes.ty).
+# tychoc: "cannot compare A with [int]".
+
+type A = [int]
+
+fn main():
+    a := A([1])
+    if a == [1]:
+        println("eq")
+    else:
+        println("ne")

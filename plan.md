@@ -5225,7 +5225,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 
 ### Filed by Phases 33/35 (2026-07-25)
 
-- [ ] **Phase 40 — `nt_skin_of` is incomplete for an INFERRED local, which fails open on newtype identity in three places; plus two message-location gaps and a `16-builtins.md` citation sweep (found by Phases 33/35, out of both scopes)**
+- [x] **Phase 40 — `nt_skin_of` is incomplete for an INFERRED local, which fails open on newtype identity in three places; plus two message-location gaps and a `16-builtins.md` citation sweep (found by Phases 33/35, out of both scopes)**
   - **One root cause, three symptoms.** `nt_skin_of`
     (`compiler/tychoc0.ty:11174-11219`) recovers the newtype an expression's value
     carries. Its own doc comment states the requirement: *"Must be complete over the
@@ -5303,6 +5303,254 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     produce one from; the four probe rows above agree with tychoc; `make fixpoint` stays
     green (it is the gate that catches an over-tightening here); each new rejection is
     fixture-locked; `16-builtins.md`'s citations all resolve.
+
+  - **DONE 2026-07-25.**
+
+    **PLAN CITATIONS RE-DERIVED (stale, as warned).** `nt_skin_of` was cited at
+    `compiler/tychoc0.ty:11174-11219`; at the start of this phase it was at
+    **`:11232-11277`**, and the structural-`==` check cited at `:6847` was at
+    **`:6906`**. Everything below quotes post-phase line numbers.
+
+    ### THE ORDER TAKEN, AND WHY IT WAS FORCED
+
+    Step A (complete the identity recovery) landed and was verified BEFORE step B
+    (tighten `==`) was written. The intermediate measurement is the proof that the
+    reverse order would have failed: after step A alone the two over-rejections were
+    gone and the two fail-opens were **still open**, and `make fixpoint` — the gate that
+    caught Phase 33's break — was green with `tests/newtype_agg.ty` passing:
+    ```
+    after step A only, tychoc0 rebuilt from source:
+      row1  A == B          tychoc FRONT  | tychoc0 ok      DIVERGE   <-- still fails open
+      row2  A == [1]        tychoc FRONT  | tychoc0 ok      DIVERGE   <-- still fails open
+      row3  ["one": a]      tychoc ok     | tychoc0 ok      AGREE     <-- fixed
+      row4  a == mk()       tychoc ok     | tychoc0 ok      AGREE
+    env -u LD_PRELOAD make fixpoint
+      ok   B == C : tychoc0 reproduces itself byte-identically (35607 lines C)
+      fixpoint: all green
+    ```
+    Only then was the skin compare added to the structural `==`. Had it gone first it
+    would have hit exactly Phase 33's `newtype_agg.ty` failure, because `dup := ids`
+    still read as "carries no newtype" until step A recorded it as `Ids`.
+
+    ### THE FOUR ROWS, BEFORE AND AFTER
+
+    Method: FRONT/CC/RUN on BOTH compilers via `--emit-c` plus a separate
+    `cc -O1 -fwrapv -pthread -std=c11` (`/tmp/ph40/probe.py`); tychoc0's rc is a
+    frontend verdict only, it never invokes `cc`, so raw rc is never compared. Rows 3
+    and 4 were each run for `type C = int`, `[int]` and `[2]int`.
+
+    | row | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|---|
+    | 1 | `type A = [int]` / `type B = [int]` / `a == b` | `cannot compare A with B` | **ACCEPT** (fail-open) | `line 7: cannot compare A with B` |
+    | 2 | `type A = [int]` / `a == [1]` | `cannot compare A with [int]` | **ACCEPT** (fail-open) | `line 5: cannot compare A with [int]` |
+    | 3 | `mv: [string: C] = ["one": a]`, `a := C(...)` | ACCEPT, prints `1` | **REJECT** `declared type {str:C} but value is {str:int}` | ACCEPT, prints `1` |
+    | 4 | `a == mk()` where `mk() -> C` | ACCEPT, prints | ACCEPT (see below) | ACCEPT |
+
+    All four now AGREE. Rows 1 and 2's text is byte-identical to tychoc modulo the two
+    compilers' known prefix formats (`file:LINE: error:` vs `line LINE:`).
+
+    **Row 4 did NOT reproduce at HEAD, and the reason is on the record.** The plan
+    measured it against `/tmp/ph33/tychoc0_head`, a **pre**-Phase-33 binary. Phase 33's
+    own fifth fix (the structural `==` comparing `resolve_nt` on both sides,
+    now `:6935`) already closed it. Verified two ways at HEAD before any edit: the standalone
+    probe (`a := C(...)`; `a == mk()`) is `ok/ok` for `int` / `[int]` / `[2]int` /
+    `[string:int]`, and `tests/newtype_over_aggregate.ty` with only line 92 restored to
+    `a == mk_fa()` compiles clean on tychoc0 (`rc0=0`). So the over-rejection Phase 33
+    wrote its fixture around was already gone; only the map-literal one was live.
+
+    ### THE FIXES
+
+    1. **`decl_ty_of` (`compiler/tychoc0.ty:11334-11349`) — the root cause.** `type_of`
+       resolves a newtype at a var read, so an INFERRED local recorded the RESOLVED type
+       and `nt_skin_of` had nothing left to recover. `decl_ty_of` records the skin when
+       there is one. This is **not** a new spelling: an annotated local already pushes
+       its annotation (`STypedDecl`), and `type_of` itself already returns the
+       unresolved newtype for an array element (`:5529-5530`), a map value
+       (`:5524-5526`) and `m.get` (`:5585`). Applied at every walk that records an `SDecl` type, so the six
+       envs agree: branch-tail typing `:8976`, `gen_stmt` `:9058`, `:9752`,
+       `collect_stmt` `:11787`, the lift pass `:13690`, `mono_stmt` `:15309`, `gfix_stmt`
+       `:16407`. Consistency matters because `nt_skin_of` is consulted from BOTH the
+       check walk and codegen (`gen_expr`'s `==`), and a disagreement between the two
+       envs is what re-creates Phase 33's break.
+    2. **`nt_skin_of`'s missing arms (`:11267-11332`).** Audited against every
+       newtype-producing leaf of `type_of`. Added: `zero$<C>()` (its type IS the type
+       argument), `pop(xs)` over a `[C]` (`type_of` returns `elem_ty` unresolved, so the
+       skin must too), and a whole `ECallV` arm — `m.get(k[, d])` on a `[K: C]` map, and
+       a UFCS method whose declared return is a newtype. `ECallV` previously fell to
+       `_: return ""`, i.e. every method-spelled call read as "no newtype".
+    3. **`EMapLit` keeps the key's and the value's skin (`:5553-5562`).** This is row 3.
+       `EArrLit` (`:5535`) and `ETuple` (`:5569`) had done this since they were written;
+       the map literal did not, so `["one": a]` typed to `{str:int}` and a
+       `[string: C]` annotation rejected its own value. It over-rejected the ANNOTATED
+       spelling too, so it is a second gap in the same family, not a consequence of the
+       first — both had to be fixed for row 3.
+    4. **The structural `==` compares skins (`:6933-6942`) — step B.** Mirrors what the
+       scalar arm below it (`:6979`) has always done with `sl`/`sr`. The message names
+       the skin when there is one, so the text matches tychoc's `cannot compare A with B`
+       rather than `cannot compare [int] with [int]`.
+
+    ### LEGAL-SET DIFF (the over-tightening check)
+
+    19 programs: a newtype over `int` / `float` / `string` / `bool` / `[int]` / `[2]int` /
+    `[string:int]` / `bounded[4]int` / a struct, each exercised in **eleven** positions in
+    one program (inferred local, annotated local, inferred-from-a-call, inferred-from-
+    another-newtype-local, param, return, uncalled-param, struct field, array element,
+    map value, tuple element) plus same-newtype `==` four ways
+    (`a == b`, `a == dup`, `a == mk()`, `xs[0] == a`), a different-value `==`,
+    `to_under`; plus newtype arithmetic, newtype string ordering, a newtype-KEYED map
+    literal, `zero$`, `pop`, `m.get`; plus `tests/newtype_agg.ty`,
+    `tests/newtype_over_aggregate.ty`, and that fixture in its natural spelling.
+    FRONT/CC/RUN on both compilers, stdout compared (`/tmp/ph40/legal.py`).
+
+    | | BEFORE (HEAD) | AFTER |
+    |---|---|---|
+    | DIVERGE | **11** | **0** |
+    | AGREE | 8 | 19 |
+
+    Not one legal shape regressed; eleven that tychoc accepted and tychoc0 refused now
+    pass. The eleven were all the same root cause and the BEFORE run found three the
+    phase block had not listed:
+    ```
+    - legal_{int,float,string,bool,arr,fixarr,map,bnd,struct}
+        line 23: argument 1 of 'take' expects C, got a plain <base> value (newtype identity differs)
+        (`dup := a` — an inferred local of an inferred newtype local, ALL nine underlying types)
+    - legal_nt_key       line 5: declared type {K:int} but value is {str:int}   (a newtype-KEYED map literal)
+    - fixture_over_agg_natural  line 65: declared type {str:FA} but value is {str:[2]int}
+    + all nineteen: tychoc=ok tychoc0=ok, byte-identical stdout
+    ```
+
+    ### FIXTURES
+
+    - `tests/newtype_over_aggregate.ty`: **both** shapes restored to their natural
+      spelling, as this phase block asked. `mv: [string: FA] = ["one": a]` (was
+      `["one": FA([1, 2])]`) and `a == mk_fa()` (was `a == a3` with a throwaway
+      `a3 := mk_fa()`, now deleted). Same values, so `.out` is unchanged; the in-file
+      comments now describe the rule instead of pointing here.
+    - `tests/reject/newtype_eq_two_newtypes.ty` — row 1. Both operands INFERRED locals,
+      which is the shape that used to fail open.
+    - `tests/reject/newtype_eq_raw_underlying.ty` — row 2.
+    - `tests/reject/print_arity_zero.ty`, `tests/reject/println_arity_many.ty` — the
+      message-location work below. All four rejected by BOTH compilers (`make test`'s
+      reject lane asserts exactly that).
+
+    ### THE TWO MESSAGE-LOCATION GAPS — both reproduced, both FIXED
+
+    Both were small; neither was filed.
+
+    | probe | tychoc | tychoc0 BEFORE | tychoc0 AFTER |
+    |---|---|---|---|
+    | `map_get(m, "a")` | `mg.ty:3: error: map_get was removed; use \`m.get(k, default)\`` | `parse: map_get was removed; ...` **(no line)** | `parse: line 3: map_get was removed; ...` |
+    | `print()` | `pr0.ty:2: error: 'print' takes 1 argument(s), got 0` | `parse: line 2: expected an atom` | `parse: line 2: 'print' takes 1 argument(s), got 0` |
+    | `print("a", "b")` | `:2: error: 'print' takes 1 argument(s), got 2` | `parse: line 2: unexpected token` | `parse: line 2: 'print' takes 1 argument(s), got 2` |
+    | `println()` / `println("a","b")` | same, `'println'` | same grammar noise | matching arity text |
+
+    - The `map_*` removal message: all **eight** sites (four names x the expression form
+      `:879-885` and the statement form `:1625-1631`) now carry
+      `"parse: line " + str(toks[pos].line) + ": "`, the located spelling `expect` and
+      `parse_atom` already use (`:620-622`, `:972`).
+    - `print`/`println` are parsed specially (`:1203-1223`, `:1268-1283`), so Phase 35's
+      `ck_builtin_arity` never sees them and a wrong arity fell out of the *grammar*.
+      Both now check arity at the parse site and quote tychoc's `Sig` wording verbatim.
+      Text is byte-identical to tychoc modulo the prefix format.
+
+    ### `16-builtins.md` CITATION SWEEP — every citation verified by READING the line
+
+    Phase 35's nine `register_builtins` ranges re-checked and all still correct. Every
+    NON-`register_builtins` citation was stale and is re-derived below; the offset is not
+    constant (it runs from +0 through +941), so each was found by its content, never by a
+    delta. Verified by `/tmp/ph40/verify_cites.sh`, which re-reads all 43 citations now in
+    the file and prints what is at each.
+
+    | claim | was | now | what is actually there |
+    |---|---|---|---|
+    | conversion magic | `:4716-4787` | `:5248-5321` | `/* str is polymorphic ... */` through `to_under` |
+    | `len` magic | `:4789-4794` | `:5323-5329` | `if (!strcmp(e->sval, "len"))` |
+    | `keys`/`push`/`pop`/`reserve` | `:4845-4930` | `:5378-5468` | the four magic blocks |
+    | `keys` | `:4845-4851` | `:5378-5385` | `keys(m) -> [string] or [int]` |
+    | `push` | `:4852-4885` | `:5386-5420` | `if (!strcmp(e->sval, "push"))` |
+    | `pop` | `:4887-4904` | `:5421-5441` | `if (!strcmp(e->sval, "pop"))` |
+    | `reserve` | `:4906-4929` | `:5442-5468` | `if (!strcmp(e->sval, "reserve"))` |
+    | `m.get` sugar | `:4397-4408`,`:4477-4488` | `:4876-4889`,`:4963-4975` | the two `!strcmp(..., "get")` rewrites |
+    | `zero$` | `:4355-4371` | `:4834-4850` | the `zero$(T)` lowering |
+    | `defaultable` predicate | `:6191` | `:6819` | `if (!strcmp(pred, "defaultable"))` |
+    | concurrency magic | `:4671-4714` | `:5203-5247` | `wait` `:5203-5210`, `channel` `:5211-5221`, `send` `:5222-5230`, `recv` `:5231-5236`, `close` `:5237-5247` |
+    | task/channel method sugar | `:4372-4386` | `:4851-4865` | `t.wait() / ch.send(v) ... sugar` |
+    | `map_*` removal (parse) | `:2100-2103` | `:2308-2311` | the four `die_at(t->line, "... was removed ...")` |
+    | `eprint` codegen | `:7342` (blank line) | `:8283` | `tycho_eprint(...)` |
+    | `die` codegen | `:7421-7423` | `:8362-8364` | `tycho_die(...)` |
+    | `char_at` codegen | `:8179-8187` | `:8212-8220` | the `tycho_str_get` emit |
+    | `s[i]` codegen | `:8653` | `:8686` | `sfmt("tycho_str_get(%s, %s)", a, ix)` |
+    | `ncpu` `Sig` | `:3829` | `:4151` | `.name="ncpu"` |
+    | `chr` `Sig` | `:3830` | `:4152` | `.name="chr"` |
+    | `resolve_expr` magic block | `:4355-4930` | `case E_CALL:` `:4833` … `reserve` `:5468` | |
+    | tychoc0 `char_at` arity | `:4827-4828` | `:4853-4854` | `builtin_arity`'s 2-arg row |
+    | tychoc0 `char_at` codegen | `:6792-6797` | `:7180-7185` | the `hi_sidx` emit |
+    | tychoc0 `s[i]` emit | `:6337` | `:6698` | `EIndex` on `str` -> `hi_sidx` (the in-source comment at `:7181` cited this too and was corrected with it) |
+
+    One citation was not merely stale but **wrong about the mechanism**: `to_i32` was
+    cited as a `Sig` (`:3841-3843`). It is not in `register_builtins` at all — it is
+    `is_sized_conv` (`:948-952`) / `sized_conv_target` (`:937-947`), resolved inline at
+    `:5281-5286`. Corrected in place, with the distinction stated. `is_null`/`to_ptr`
+    genuinely are `Sig`s (`:4164-4165`).
+
+    ### GATES (each its own foreground command, `env -u LD_PRELOAD`)
+
+    Test count rose 527 -> 531: the four new reject fixtures.
+    ```
+    make test         passed: 531   failed: 0        / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok   B == C : tychoc0 reproduces itself byte-identically (35663 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; self-split dogfood)
+    make ilp32        passed: 531   failed: 0        / all green
+    make asan-self    asan-self: compiled: 531   failed: 0   / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+    git status --short  only the 3 modified + 4 new fixture files; no build spill
+    ```
+
+### Filed by Phase 40 (2026-07-25)
+
+- [ ] **Phase 41 — the positive lane never runs tychoc0, which is why a tychoc0-only over-rejection is invisible to `make test` (found by Phase 40; the same blind spot let Phase 33's five over-rejections ship)**
+  - `tests/run.sh:70` compiles each `tests/*.ty` with **tychoc only**; tychoc0 appears on
+    the positive lane nowhere. `tests/run.sh:159` runs it on the *reject* lane only. So a
+    program tychoc accepts and tychoc0 refuses scores green, and the only gates that
+    would notice are `make fixpoint` (goldens over `tests/` + `examples/`, via a
+    tychoc0-built B) and `make corelib`.
+  - Measured cost of the gap: Phase 40 found **eleven** legal newtype shapes tychoc0
+    over-rejected, nine of them the plain `dup := a` binding over every legal underlying
+    type. `make test` was green for all eleven, before and after.
+  - Not free: fixpoint already covers `tests/*.ty` behaviourally, so a naive second lane
+    duplicates ~530 compiles. The question to answer first is whether the right shape is
+    a lane at all or a `--front-only` sweep (tychoc0 frontend verdict vs tychoc's, no cc,
+    no run) — cheap, and it scores exactly the property fixpoint's golden comparison
+    cannot: *which* compiler refused.
+  - Done when: a green/red gate exists that fails when tychoc0 refuses a program tychoc
+    accepts in `tests/` + `examples/`, its cost is measured and stated, and it is wired
+    into `ci.sh` next to `asan-self`.
+
+- [ ] **Phase 42 — `src/tychoc.c:N` / `compiler/tychoc0.ty:N` provenance citations across `docs/` have now gone stale three times in one plan, and nothing checks them (Phase 34, Phase 35, Phase 40)**
+  - Phase 34 fixed `15-program.md`, Phase 35 fixed `16-builtins.md`'s
+    `register_builtins` ranges, Phase 40 fixed the rest of `16-builtins.md`. Each time
+    the finding was "the plan's own replacement lines were wrong too". There are **96**
+    `tychoc0.ty:N` citations under `docs/` alone, plus the `src/tychoc.c:N` ones, and
+    every phase that edits either file shifts a share of them.
+  - Already measured stale, and NOT fixed by Phase 40 (out of its `16-builtins.md`
+    scope): `docs/spec/03-types.md:305` cites `compiler/tychoc0.ty:1718-1750` for the
+    `bounded` branch of `parse_type_d` — that branch is now at `:1866-1897`; `:309`
+    cites `:1746-1749` for the affine-element check, now `:1890-1896`; `:306` cites
+    `mangle_type` at `:2859`, now `:3237`; `:307` cites the unresolved-name guard at
+    `:11211`, now `:11840`. All four were already wrong by >100 lines before Phase 40
+    touched the file. In-source comments carry the same rot (`tychoc0.ty:1870-1874`
+    cites `:1669`, `:1686`, `:2859`, `:3451`).
+  - The fix the Phase 40 block suggested: a gate that resolves each `path:N` citation to
+    an expected symbol or substring, so the class becomes green/red instead of
+    "audit again next time". `make check-links` already walks every markdown file and is
+    the natural host. The hard part is the *expected content*, which the citation does
+    not carry today — so the gate probably needs the citation syntax to name an anchor
+    (e.g. `` `src/tychoc.c:5323 len` ``), which is a docs-wide edit.
+  - Done when: every `path:N` citation under `docs/` resolves to the code it claims,
+    verified by reading, and a gate fails when one stops resolving.
 
 ## Out of scope
 
