@@ -6275,14 +6275,36 @@ fn concat_pieces(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx,
         ESpawn(sid, snm, sa, _el):
             push(out, e)
 
+# Emit one signed integer literal as C source of rank >= `long long`.
+#
+# `LL` = C long long, >= 64-bit on EVERY data model. A BARE literal is C `int` ->
+# 32-bit even on LP64, so `100000 * 100000` truncated to 1410065408.
+#
+# THE MINIMUM IS SPECIAL. C has no negative integer constants: `-9223372036854775808LL`
+# is unary `-` applied to the constant `9223372036854775808LL`, whose type is chosen
+# BEFORE the negation. 2^63 does not fit `long long`, so C99/C11 6.4.4.1p5 gives it no
+# type -- GCC/clang take it as an extension and emit the DEFAULT-ON "integer constant
+# is so large that it is unsigned", on every user build. The printed value was right
+# on two's-complement, but the emitter was leaning on a construct C does not grant it.
+# `(-9223372036854775807LL - 1)` is the conventional spelling (how <stdint.h> defines
+# INT64_MIN): every constant in it fits `long long`, the subtraction cannot overflow,
+# the result is still `long long`, and the parens make it safe in any operand slot.
+# Only the 64-bit minimum needs this -- i8 -128 / i16 -32768 / i32 -2147483648 all
+# have magnitudes that fit `long long`, so their negation is already well-typed.
+# Mirrors tychoc's c_int_lit() (src/tychoc.c).
+fn c_int_lit(t: string) -> string:
+    if t == "-9223372036854775808":
+        return "(-9223372036854775807LL - 1)"
+    return t + "LL"
+
 fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t, _el):
-            return t + "LL"           # `LL` = C long long, >= 64-bit on EVERY data model.
-        EBool(t, _el):                # A BARE literal is C `int` -> 32-bit even on LP64, so
-            return t                  # `100000 * 100000` truncated to 1410065408. Bool stays
-        EChar(t, _el):                # bare (0/1, no width question) -- matches tychoc.
-            return t + "LL"
+            return c_int_lit(t)
+        EBool(t, _el):                # Bool stays bare (0/1, no width question) -- matches tychoc.
+            return t
+        EChar(t, _el):
+            return c_int_lit(t)
         EFloat(f, _el):
             return f
         EStr(s, _el):                                    # length-headered, interned once per occurrence (cached static)

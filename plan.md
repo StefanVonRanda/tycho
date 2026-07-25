@@ -1601,7 +1601,7 @@ codegen.
     - `make check-links` → `link check: ok (121 markdown files, no dead relative links)`
     - `git status --short` → only the 4 edited `docs/spec/` files; no build spill.
 
-- [ ] **Phase 12 — the integer-literal emitter produces two default-on C warnings (found by Phase 4, out of its scope)**
+- [x] **Phase 12 — the integer-literal emitter produces two default-on C warnings (found by Phase 4, out of its scope)**
   - These are the only emitted-C warnings left on the **default-on** path after
     Phase 4 (4 of the post-fix 4). Both are the literal/arith emitter, not the
     map emitter Phase 4 was scoped to, so they were filed rather than absorbed.
@@ -1627,6 +1627,222 @@ codegen.
   - Done when: `cc -O2 -fwrapv -std=c11` over the emitted C of the whole fixture
     suite reports **0** warnings (Phase 4 left it at 4), or each survivor carries
     a written justification; full gate set green.
+
+  **EVIDENCE (2026-07-25). 4 → 1; the survivor is (b), accepted under decision
+  (ii) with the reasoning below.**
+
+  *Corrected citations.* The phase text's emitted-C line numbers still hold
+  (`bf.c:2435 :2437 :2440`, `sf.c:2438`), but the compiler-side citations it did
+  not give are:
+  - tychoc: the literal emitter is `gen_expr`'s `case E_INT` / `case E_CHAR`,
+    now `src/tychoc.c:8490-8498` (the `%lldLL` line was `:8466` before this
+    phase). The only other `%lld…LL`-family emission is `:8118`
+    (`((void)(%s), %lldLL)` over `fixarr_size`) — an array length, never
+    `INT64_MIN`. Every remaining `%lld` in the file (`:1249 :1250 :4592 :4594
+    :5749 :5761 :6728 :6729 :8479 :8520 :8922 :10060 :10063 :10644 :10681 :10685
+    :10689 :10694 :10698 :10704 :11051`) is a type name, a diagnostic string, a
+    tuple index, a bool 0/1, or an array size — none carries a user integer
+    value, so `case E_INT`/`case E_CHAR` is the whole surface.
+  - tychoc0: `gen_expr`'s `EInt`/`EChar` arms, `compiler/tychoc0.ty:6300-6307`
+    (was `:6280-6285`, `return t + "LL"`).
+  - The `-fwrapv` width contract this phase had to preserve: `src/tychoc.c:494-497`
+    ("i32/i64 map to C int/long long and wrap natively (-fwrapv)") and
+    `trunc_result` at `:8423-8426`.
+  - `<stdint.h>` **is** already in both emitted preludes (`runtime/tycho_rt.c:50-51`;
+    `compiler/tychoc0.ty:10060` emits `#include <stdint.h>\n#include <inttypes.h>`),
+    so `INT64_MIN` was available — see the spelling choice below for why it was
+    not used.
+
+  **BOTH compilers had BOTH defects** — probed before patching, not assumed.
+  Pre-fix, from `./tychoc0 tests/…` (tychoc0 built per the prompt into `/tmp/ph12`):
+  `bf0.c:217 :219 :222` carry `i2s(&_t, -9223372036854775808LL)` and
+  `sf0.c:220` carries `(int)((((int)(1000000LL)) * ((int)(1000000LL))))`. So unlike
+  Phase 4 (tychoc-only) and Phase 16 (tychoc0-only), this one is genuinely paired.
+
+  ### (a) the 2^63 minimum — FIXED in both compilers
+
+  C has no negative integer constants. `-9223372036854775808LL` is unary `-`
+  applied to the constant `9223372036854775808LL`, and **the constant's type is
+  chosen before the negation** (C11 6.4.4.1p5). 2^63 has no `long long`, so the
+  standard gives the token no type at all; GCC/clang accept it as an extension and
+  emit the default-on `integer constant is so large that it is unsigned`. The
+  printed value came out right on two's-complement, so `make test` never caught
+  it — the emitter was leaning on a construct C does not grant it.
+
+  Fix: a single new helper in each compiler, called from both the `E_INT`/`EInt`
+  and `E_CHAR`/`EChar` arms.
+  - `src/tychoc.c:8419-8459` — new `c_int_lit(int64_t v)`:
+    `v == INT64_MIN` → `"(-9223372036854775807LL - 1)"`, else `"%lldLL"`.
+    Call sites `:8497` (`E_INT`, signed path) and `:8498` (`E_CHAR`).
+  - `compiler/tychoc0.ty:6278-6298` — new `fn c_int_lit(t: string) -> string`
+    keyed on the decimal text `"-9223372036854775808"` (tychoc0's `EInt` carries
+    the literal as a *string*, produced by `str()` in its folder at `:3134 :3144
+    :3151…`). Call sites `:6303`, `:6307`.
+
+  *Why `(-9223372036854775807LL - 1)` and not `INT64_MIN`,* even though
+  `<stdint.h>` is present: (1) the surrounding invariant is an explicit **`LL`
+  rank** guarantee (`src/tychoc.c:8421-8423`: a plain `L` is 32-bit under
+  ILP32/LLP64, so `100000L * 100000L` truncates in the multiply) — `LL` states
+  that in the emitted text instead of delegating it to a macro whose expansion is
+  `long` on LP64; (2) the standard does not promise `INT64_MIN` is parenthesized,
+  and this string is pasted into arbitrary operand positions, so the emitter
+  supplies its own parens; (3) it is header-independent, which matters because the
+  same emitter feeds the `--emit-c` path. It is the same shape `<stdint.h>` itself
+  uses for the macro.
+
+  *Whole-family coverage — the reason ONE test is enough.* Only the **64-bit**
+  minimum can hit this, established by width rather than by fixture:
+  | rep | MIN | magnitude negated | fits `long long`? |
+  |---|---|---|---|
+  | i8 | -128 | 128 | yes → already legal |
+  | i16 | -32768 | 32768 | yes → already legal |
+  | i32 | -2147483648 | 2147483648 | yes → already legal |
+  | i64 / `int` | -9223372036854775808 | 9223372036854775808 | **NO** → fixed here |
+  | u32 | n/a | takes the `%lldU` arm (`:8493`) — an unsigned suffix makes even a top-bit-set value a legal constant | n/a |
+  | u64 | n/a | takes the `%lldULL` arm (`:8494`); e.g. 2^63 emits `-9223372036854775808ULL`, whose constant *has* a type (`unsigned long long`) and whose negation is defined modulo 2^64 → right value, no warning | n/a |
+  | `char` rep | 0..255 | cannot be negative | n/a |
+  | newtype over `int` | reaches the signed arm via `base_of` | same `int64_t` field | covered by the same test |
+  The narrow signed reps and the newtype/char reps therefore need no separate
+  case, and the empirical sweep below confirms it: zero
+  `integer constant is so large` warnings remain anywhere in 231 emitted files.
+
+  ### (b) the deliberate i32 wrap — **DECISION (ii): ACCEPTED NOISE, documented**
+
+  `to_i32(1000000) * to_i32(1000000)` emits
+  `(int )((((int )1000000LL) * ((int )1000000LL)))` and GCC reports
+  `-Woverflow: integer overflow in expression of type 'int' results in
+  '-727379968'`. Recorded decision: **(ii)**. Four reasons, in order of weight:
+
+  1. **The premise behind (i) is false, and this had to be checked before
+     choosing.** The prompt offered (i) as "the compiler has already computed the
+     value — emitting `-727379968` directly is honest". **It has not.** tychoc's
+     only constant folder is `const_fold` (`src/tychoc.c:3901-3940`), which runs
+     at *parse* time, is reached only from `parse_const` (`:3953`) and a local
+     `const` (`:2860`), and folds **`int` (64-bit) literals only** —
+     `:3919` `if (a->kind != E_INT || b->kind != E_INT) return e;`. It has no
+     notion of a sized type and never sees `to_i32(…)`. The `1000000` values here
+     are not `const`s at all; they are ordinary expressions in a function body.
+     So (i) is not "emit what we already know" — it is **building a new
+     sized-integer constant evaluator**, in both compilers.
+  2. **That evaluator is a miscompile risk out of all proportion to one
+     warning.** It would have to reproduce `-fwrapv` wrapping for
+     `+ - * / % << >> & | ^` across 8/16/32/64 bits, signed and unsigned, twice,
+     byte-exactly — including the traps the existing folder already had to be
+     told about (`INT64_MIN / -1`, negative and over-width shift counts:
+     `:3928-3936`). A wrong fold is a **silent wrong value in every user
+     program**; the warning is noise on one. Trading a cosmetic defect for a
+     correctness surface is the wrong direction, and it is squarely the
+     "don't build a subsystem for a 5-line problem" case.
+  3. **The warning is currently a free cross-check of the `-fwrapv` contract, and
+     (i) would destroy it.** GCC's text names the value: `results in
+     '-727379968'` — which is exactly what `tests/sized_family.out` asserts and
+     what `tests/sized_family.ty:16` documents (`# 10^12 wraps i32 ->
+     -727379968`). An independent implementation confirming the fixture's
+     expected value, on every build, is *evidence*, not noise. Folding it in the
+     emitter would move that computation inside the thing being tested.
+  4. **It is bounded and it is a true statement.** One warning, one fixture, and
+     what it says is accurate: an `int` expression overflows. The program is
+     nonetheless well-defined because `tychoc` compiles emitted C with `-fwrapv`
+     (`src/tychoc.c`'s cc line, and `Makefile:11` for the compiler itself), per
+     `docs/spec/03-types.md` §5.2.1. A reader who follows the warning finds a
+     documented, intended wrap.
+
+  **No cast was added** — the prompt's prohibition is honoured, and note that a
+  cast would have been the *worst* option here: it would have suppressed
+  `-Woverflow` for every genuinely-wrong constant expression the emitter produces
+  later, which is exactly the class of bug this diagnostic exists to catch.
+  The justification is written where a maintainer meets the construct, not only
+  here: `src/tychoc.c:8419-8459` (`c_int_lit`'s header) and
+  `compiler/tychoc0.ty:6278-6294`.
+
+  **One adjacent difference probed and DISMISSED — no new phase filed.** tychoc
+  has unsigned-suffix arms (`src/tychoc.c:8493-8494`, `%lldU` / `%lldULL`) that
+  tychoc0 does **not**: tychoc0's `EInt` emits `…LL` for every literal regardless
+  of type. That looked like a u32/u64 width divergence, so it was probed rather
+  than filed on suspicion:
+  - `x: u32 = 3000000000` / `x + 3000000000` — tychoc emits `3000000000U`,
+    tychoc0 emits `3000000000LL`, and **both print `1705032704`**. tychoc0 is
+    saved by its own result-truncating cast, which re-narrows before the value is
+    observed.
+  - `to_u64(1) << to_u64(63)` then `/ to_u64(3)` — both print
+    `3074457345618258602`, tychoc0's emitted C compiles with 0 warnings.
+  - A literal that would actually need `ULL` (`c: u64 = 18446744073709551615`) is
+    **rejected by both**: tychoc `integer literal out of range`, tychoc0
+    `lex: line 5: integer literal out of range`. A top-bit-set u64 is reachable
+    only by computation, which never passes through the literal emitter.
+  No divergence in emitted *value* was demonstrated, so per RULE 11 nothing is
+  asserted about it and no phase is opened — the difference is in emitted text
+  only, which the corrected fixpoint premise (Phases preamble) already permits.
+
+  **Pre/post default-on warning counts, whole suite.** Method mirrors Phase 4's
+  STEP 3: emit C for `tests/*.ty examples/*.ty corelib/*/*.ty compiler/*.ty`,
+  compile each with the flags `tychoc` actually uses for user programs —
+  `cc -O2 -fwrapv -std=c11 -c`, **no `-Wall`/`-Wextra`**. Pre-fix binary built
+  from `git show HEAD:src/tychoc.c` so the two runs differ only by this patch
+  (script: `/tmp/ph12/sweep.sh`).
+
+  ```
+  PRE   seen=267 emitted=231 cc_errors=0
+        default-on warnings: 4
+              3 integer constant is so large that it is unsigned
+              1 integer overflow in expression of type ‘int’ results in ‘-727379968’ [-Woverflow]
+
+  POST  seen=267 emitted=231 cc_errors=0
+        default-on warnings: 1
+              1 integer overflow in expression of type ‘int’ results in ‘-727379968’ [-Woverflow]
+  ```
+  (267/231 vs Phase 4's 263/227: four fixtures were added by Phases 15-20.)
+
+  **Emitted line, before and after.**
+
+  (a) `tests/boundary_fold.ty`, tychoc, emitted `:2435` (identically at `:2437`,
+  `:2440`):
+  ```
+  BEFORE  { Arena _t = arena_new(0); (tycho_print_s(tycho_int_to_str(&_t, -9223372036854775808LL)), tycho_print("\n")); arena_free(&_t); }
+  AFTER   { Arena _t = arena_new(0); (tycho_print_s(tycho_int_to_str(&_t, (-9223372036854775807LL - 1))), tycho_print("\n")); arena_free(&_t); }
+  ```
+  the same fixture through tychoc0, emitted `:217` (also `:219`, `:222`):
+  ```
+  BEFORE  { Arena _t = arena_new(0); hi_puts(sc(&_t, i2s(&_t, -9223372036854775808LL), …)); arena_free(&_t); }
+  AFTER   { Arena _t = arena_new(0); hi_puts(sc(&_t, i2s(&_t, (-9223372036854775807LL - 1)), …)); arena_free(&_t); }
+  ```
+  (b) `tests/sized_family.ty`, emitted `:2438` — **unchanged by decision**:
+  ```
+  BEFORE  … tycho_int_to_str(&_t, (int )((((int )1000000LL) * ((int )1000000LL)))) …
+  AFTER   … tycho_int_to_str(&_t, (int )((((int )1000000LL) * ((int )1000000LL)))) …
+  ```
+
+  **Runtime output unchanged — demonstrated by running, and by a byte-diff of the
+  whole emitted suite.**
+  - Byte-diff of all 231 emitted `.c` files, pre vs post
+    (`diff -rq /tmp/ph12/pre /tmp/ph12/post`): **exactly one file differs**,
+    `tests_boundary_fold.c`, and its entire delta is the three lines above.
+    Every other emitted file in the suite is byte-identical, so no other
+    fixture's behaviour can have moved.
+  - Both versions of that one file compiled and **run**:
+    `diff out_old.txt out_new.txt` → identical;
+    tychoc0's post-fix emission run too, `diff out_new.txt out_h0.txt` →
+    identical; and `diff out_new.txt tests/boundary_fold.out` → **GOLDEN MATCH**
+    (the `-9223372036854775808` lines print unchanged).
+  - `make test` / `make ilp32` re-ran all 478 fixtures against their goldens on
+    both data models — `failed: 0` on each.
+
+  **Gates** (each its own foreground command, `env -u LD_PRELOAD make …`):
+  - `make test` → `passed: 478   failed: 0` / `all green`
+  - `make corelib` → `corelib: all green (tychoc and tychoc0 agree, match goldens)`
+  - `make conc` → `conc: passed 37   failed 0`
+  - `make fixpoint` → `ok   B == C : tychoc0 reproduces itself byte-identically (35141 lines C)` / `fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)` — load-bearing here: the tychoc0 edit changed tychoc0's own emitted text, and B==C proves tychoc0 still reproduces itself through it.
+  - `make ilp32` → `passed: 478   failed: 0` / `all green`
+  - `make spec-check` → `spec-examples: 7 runnable example(s), all pass`
+  - `make check-links` → `link check: ok (121 markdown files, no dead relative links)`
+  - `git status --short` → `M compiler/tychoc0.ty` + `M src/tychoc.c` only; no build spill.
+
+  **What is NOT closed.** The Done-when's first branch (0 warnings) is met for
+  (a) and taken via its second branch ("or each survivor carries a written
+  justification") for (b). The one survivor is `-Woverflow` on
+  `tests/sized_family.ty`; if a future maintainer wants it gone, the only
+  non-silencing route is a real sized-integer constant evaluator, and reason 3
+  above is the argument against wanting that.
 
 - [ ] **Phase 13 — emitted C is not clean under opt-in `-Wall -Wextra`: 13346 warnings, ~89% unused-symbol (measured by Phase 4)**
   - Phase 4's Done-when asked for zero warnings over the suite under `-Wall

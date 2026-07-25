@@ -8426,6 +8426,38 @@ static char *trunc_result(Type t, char *expr) {
     return is_sized_int(b) ? sfmt("(%s)(%s)", c_type(b), expr) : expr;
 }
 
+/* Emit one signed integer literal as C source of rank >= `long long`.
+ *
+ * `LL` (C long long, >= 64-bit on EVERY data model), not `L`: a plain `L` is
+ * 32-bit under ILP32/LLP64, so `100000L * 100000L` truncates in the multiply --
+ * before the store into the 64-bit destination.
+ *
+ * THE MINIMUM IS SPECIAL. C has no negative integer constants: `-9223372036854775808LL`
+ * is unary `-` applied to the constant `9223372036854775808LL`, and that constant's
+ * type is chosen BEFORE the negation. 2^63 does not fit `long long`, so C99/C11
+ * 6.4.4.1p5 has no type for it -- GCC/clang accept it as an extension with
+ * "warning: integer constant is so large that it is unsigned" (default-on, fires
+ * on every user build; tychoc's own cc line at the bottom of this file passes no
+ * -Wall, so this was the only thing announcing it). The value came out right on
+ * two's-complement hosts, but the emitter was relying on a construct the standard
+ * does not grant it. `(-9223372036854775807LL - 1)` is the conventional spelling
+ * (it is how <stdint.h> itself defines INT64_MIN): every constituent constant fits
+ * `long long`, the arithmetic is exact and non-overflowing, and the result type is
+ * still `long long`. Parenthesized so it is safe in any operand position.
+ *
+ * ONLY the 64-bit minimum needs this. The narrower sized minima (i8 -128, i16
+ * -32768, i32 -2147483648) are emitted through this same path, and their magnitudes
+ * (128 / 32768 / 2147483648) all fit `long long`, so the negation is well-typed --
+ * verified by emitting the whole fixture suite and finding zero such warnings once
+ * the 64-bit case is handled. u32/u64 never reach here: they take the `%lldU` /
+ * `%lldULL` arms above, where an unsigned suffix makes even a top-bit-set value a
+ * legal constant. Newtypes over `int` and `char` reach here through `base_of`, and
+ * are covered by the same test because they carry their value in the same int64_t. */
+static char *c_int_lit(int64_t v) {
+    if (v == INT64_MIN) return sfmt("(-9223372036854775807LL - 1)");
+    return sfmt("%lldLL", (long long)v);
+}
+
 static const char *op_str(TokKind op) {
     switch (op) {
         case TK_PLUS:  return "+";
@@ -8460,11 +8492,10 @@ static char *gen_expr(Expr *e, const char *arena) {
              * 2^64, not 2^32. `U`/`ULL` keep the arithmetic at the value's width. */
             if (e->type == T_U32) return sfmt("%lldU", (long long)e->ival);
             if (e->type == T_U64) return sfmt("%lldULL", (long long)e->ival);
-            /* `LL` (C long long, >= 64-bit on EVERY data model), not `L`: a plain
-             * `L` is 32-bit under ILP32/LLP64, so `100000L * 100000L` truncates in
-             * the multiply -- before the store into the 64-bit destination. */
-            return sfmt("%lldLL", (long long)e->ival);
-        case E_CHAR: return sfmt("%lldLL", (long long)e->ival);  /* a byte value carried as tycho_int */
+            /* signed: `LL` rank, with the 2^63 minimum spelled so it stays a legal
+             * C constant expression -- see c_int_lit(). */
+            return c_int_lit(e->ival);
+        case E_CHAR: return c_int_lit(e->ival);  /* a byte value carried as tycho_int */
         case E_FLOAT: {
             /* %.17g round-trips the double exactly; ensure the C literal reads
              * as a double (has '.', 'e', or is inf/nan) so e.g. 3.0 / 2.0 is
