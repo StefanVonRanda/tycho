@@ -1,0 +1,104 @@
+# A newtype over a FIXED array / a map / a `bounded` is legal (03-types.md §5.4
+# permits an array or a map as the underlying type), and the C both compilers emit
+# must declare the underlying aggregate's family in EVERY position the newtype can
+# appear -- not only where a literal of that shape happens to ground it.
+#
+# Phase 33: tychoc0 emitted the mangled family name (`Arr_f2_int` / `Map_str_int` /
+# `Arr_b4_int`) with no declaration whenever no literal grounded it (a `C` parameter
+# on an uncalled function was enough); it compared two such values with a raw C `==`;
+# and it emitted the array-of-newtype-of-map functions before the map's own. tychoc
+# left the newtype out of its by-value containment DFS, so the same type as a struct
+# field or a tuple element gave "field has incomplete type".
+
+type FA = [2]int                 # fixed array
+type MP = [string: int]          # map
+type BD = bounded[4]int          # bounded
+
+struct Box:
+    a: FA
+    m: MP
+    b: BD
+
+# Parameter position on a function that is never called: nothing grounds the
+# underlying families except the newtype declarations themselves.
+fn unreached(a: FA, m: MP, b: BD) -> int:
+    return 0
+
+fn sum_fa(a: FA) -> int:                       # param
+    raw := to_under(a)
+    return raw[0] + raw[1]
+
+fn get_mp(m: MP, k: string) -> int:            # param
+    return to_under(m).get(k, 0)
+
+fn len_bd(b: BD) -> int:                       # param
+    return len(to_under(b))
+
+fn mk_fa() -> FA:                              # return
+    return FA([10, 20])
+
+fn mk_mp() -> MP:                              # return
+    return MP(["a": 1, "b": 2])
+
+fn mk_bd() -> BD:                              # return
+    return BD([7, 8, 9])
+
+fn main():
+    a := FA([1, 2])                            # local
+    m := MP(["k": 5])
+    b := BD([3, 4])
+    println("param " + str(sum_fa(a)) + " " + str(get_mp(m, "k")) + " " + str(len_bd(b)))
+    println("return " + str(sum_fa(mk_fa())) + " " + str(get_mp(mk_mp(), "b")) + " " + str(len_bd(mk_bd())))
+
+    bx := Box(a, m, b)                         # struct field
+    println("field " + str(sum_fa(bx.a)) + " " + str(get_mp(bx.m, "k")) + " " + str(len_bd(bx.b)))
+
+    fas := [a, mk_fa()]                        # dynamic-array element
+    mps := [m]
+    bds := [b]
+    println("arrelem " + str(sum_fa(fas[1])) + " " + str(get_mp(mps[0], "k")) + " " + str(len_bd(bds[0])))
+
+    # map value. The value must be spelled as a constructor call, not a variable
+    # already of the newtype: tychoc0 rejects `["one": a]` here -- a pre-existing
+    # over-rejection that hits `type C = int` identically (filed as Phase 40), so it
+    # is not this fixture's subject.
+    mv: [string: FA] = ["one": FA([1, 2])]
+    mv2: [string: MP] = ["two": MP(["k": 5])]
+    mv3: [string: BD] = ["three": BD([3, 4])]
+    println("mapval " + str(sum_fa(mv["one"])) + " " + str(get_mp(mv2["two"], "k")) + " " + str(len_bd(mv3["three"])))
+
+    fx: [1]FA = [a]                            # fixed-array element
+    fx2: [1]MP = [m]
+    fx3: [1]BD = [b]
+    println("fixarrelem " + str(sum_fa(fx[0])) + " " + str(get_mp(fx2[0], "k")) + " " + str(len_bd(fx3[0])))
+
+    bn: bounded[2]FA = [a]                     # bounded element
+    bn2: bounded[2]MP = [m]
+    bn3: bounded[2]BD = [b]
+    println("boundedelem " + str(sum_fa(bn[0])) + " " + str(get_mp(bn2[0], "k")) + " " + str(len_bd(bn3[0])))
+
+    tp := (a, m, b)                            # tuple element
+    println("tupelem " + str(sum_fa(tp.0)) + " " + str(get_mp(tp.1, "k")) + " " + str(len_bd(tp.2)))
+
+    # equality is the UNDERLYING's deep equality, not a raw C struct compare.
+    # Both sides are spelled as locals: comparing a local against a CALL that returns
+    # the newtype (`a == mk_fa()`) is over-rejected by tychoc0 for every aggregate
+    # newtype including the long-standing `type C = [int]` -- pre-existing, filed as
+    # Phase 40, and not this fixture's subject.
+    a2 := FA([1, 2])
+    a3 := mk_fa()
+    m2 := MP(["k": 5])
+    b2 := BD([3, 4])
+    println("eq " + str(a == a2) + " " + str(a == a3))
+    println("eqmap " + str(m == m2))
+    println("eqbd " + str(b == b2))
+
+    # ... including through a container element (the Arr_/Map_ _eq bodies)
+    println("eqelem " + str(fas[0] == a) + " " + str(mps[0] == m) + " " + str(bds[0] == b))
+
+    # value semantics: a stored copy is independent of later mutation
+    raw := to_under(m)
+    raw["k"] = 99
+    println("indep " + str(get_mp(mps[0], "k")) + " " + str(get_mp(MP(raw), "k")))
+
+    println("str " + str(to_under(a)) + " " + str(to_under(b)))

@@ -1,0 +1,8 @@
+# A builtin called with too FEW arguments. tychoc has arity from its Sig table
+# (register_builtins, src/tychoc.c:4140-4171, checked at :5522-5524); tychoc0 had
+# none, so `substr` walked off the end of its own args array and died with
+# "tycho: index 2 out of bounds (len 1)" -- an internal message, no source line.
+# Both must now reject with a located arity diagnostic.
+
+fn main():
+    println(substr("hi"))

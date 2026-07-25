@@ -14,7 +14,7 @@ Operators and keywords that read as calls but are **not** builtins — `m[k]`,
 `k in m`, `delete m[k]`, `for x in xs`, `&place`, `or_return` — are specified in
 their own chapters and are out of scope here.
 
-> Provenance: `Sig` builtins `src/tychoc.c:3818-3849`; conversion magic
+> Provenance: `Sig` builtins `src/tychoc.c:4140-4171`; conversion magic
 > `:4716-4787`; `len` `:4789-4794`; `keys`/`push`/`pop`/`reserve` `:4845-4930`;
 > `m.get` sugar `:4397-4408`,`:4477-4488`; `zero$` `:4355-4371`; concurrency
 > magic `:4671-4714`; `map_*` removal `:2100-2103`; `die` codegen `:7421-7423`.
@@ -30,7 +30,7 @@ distinguished from user functions only by being predefined.
 The line between the **language** and the **corelib** is drawn precisely:
 
 - A name is a **builtin** (part of the language) iff `register_builtins`
-  (`src/tychoc.c:3818-3849`) registers it **or** a case in `resolve_expr` /
+  (`src/tychoc.c:4140-4171`) registers it **or** a case in `resolve_expr` /
   codegen special-cases it by name (§29.2). Such a name is available with no
   import.
 - Every other predefined function is a **corelib** procedure, reached only
@@ -81,7 +81,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All eight are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:3822-3840`; `eprint` codegen `:7342`; `die` codegen
+> Provenance: `src/tychoc.c:4144-4163`; `eprint` codegen `:7342`; `die` codegen
 > `:7421-7423`.
 
 ## 29.4 Conversions
@@ -137,8 +137,9 @@ literally the same bounds-checked call — so neither is faster or safer than th
 other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
 [§5.2.5](03-types.md#525-string) for why the wart exists.
 
-> Provenance: `substr`/`find`/`split` `Sig` `src/tychoc.c:3833-3835`; `len` magic
-> `:4789-4794`; `char_at` `Sig` `src/tychoc.c:4120`, codegen `:8179-8187`
+> Provenance: `substr`/`find` `Sig` `src/tychoc.c:4155-4156`, `split` `:4158`;
+> `len` magic
+> `:4789-4794`; `char_at` `Sig` `src/tychoc.c:4157`, codegen `:8179-8187`
 > (`tycho_str_get`, the same call `s[i]` emits at `:8653`), tychoc0
 > `compiler/tychoc0.ty:4827-4828`,`:6792-6797` (`hi_sidx`, the same helper `s[i]`
 > emits at `:6337`).
@@ -251,7 +252,8 @@ aborting.
 | `clock()` | `-> int` | Sig | Monotonic nanoseconds — differences are meaningful; the absolute value is not. |
 | `now()` | `-> int` | Sig | Wall-clock seconds since the UNIX epoch. |
 
-> Provenance: `src/tychoc.c:3827-3828`,`:3836-3838`.
+> Provenance: `clock`/`now` `src/tychoc.c:4149-4150`;
+> `read_file`/`write_file`/`list_dir` `:4159-4161`.
 
 ## 29.11 Float math (libm)
 
@@ -269,7 +271,7 @@ Other numeric functions — `min`, `max`, `clamp`, and the trigonometric functio
 — are **not** builtins; they are provided by the standard library (§31)
 and require an import.
 
-> Provenance: `src/tychoc.c:3844-3848`.
+> Provenance: `src/tychoc.c:4167-4170`.
 
 ## 29.12 Abnormal termination
 
@@ -288,6 +290,6 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:3831`, codegen `:7421-7423`; no
-> `assert`/`panic`/`abort` name in `register_builtins` `:3818-3849` or the
+> Provenance: `die` `Sig` `src/tychoc.c:4153`, codegen `:7421-7423`; no
+> `assert`/`panic`/`abort` name in `register_builtins` `:4140-4171` or the
 > `resolve_expr` magic block `:4355-4930`.

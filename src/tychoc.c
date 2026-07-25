@@ -10123,10 +10123,14 @@ static int g_emit_line;
  * template-only, and a dynamic `[T]` is size == 0 and holds a pointer). */
 static int inline_arrc(Type t) { return IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0; }
 static int needs_body_first(Type t) {
+    t = base_of(t);   /* a newtype is zero-cost: c_type(newtype) IS the underlying's C type,
+                       * so `type C = [2]int` as a struct field / tuple element needs the
+                       * inline array's body first, exactly as a bare `[2]int` would. */
     return IS_STRUCT(t) || IS_OPT(t) || IS_RES(t) || IS_TUP(t) || inline_arrc(t);
 }
 
 static void emit_aggregate(FILE *o, Type t) {
+    t = base_of(t);   /* see needs_body_first: a newtype carries no C body of its own */
     if (IS_ARRC(t) && !inline_arrc(t)) return;   /* a dynamic `[T]` / a `[$N]T` template holds a POINTER: its body is emitted with step (2b) */
     if (has_typaram(t)) return;   /* generics: a type mentioning `$T` (from a template) is transient -- never emitted */
     if (IS_ARRC(t)) {   /* [N]T / bounded[N]T: the element is stored INLINE, so its body must precede this one */

@@ -1,0 +1,14 @@
+param 3 5 2
+return 30 2 3
+field 3 5 2
+arrelem 30 5 2
+mapval 3 5 2
+fixarrelem 3 5 2
+boundedelem 3 5 2
+tupelem 3 5 2
+eq true false
+eqmap true
+eqbd true
+eqelem true true true
+indep 5 99
+str [1, 2] [3, 4]

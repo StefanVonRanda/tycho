@@ -4808,6 +4808,51 @@ fn sized_conv_target(n: string) -> string:
 fn is_sized_conv(n: string) -> bool:
     return n == "to_u8" or n == "to_u16" or n == "to_u32" or n == "to_u64" or n == "to_i8" or n == "to_i16" or n == "to_i32" or n == "to_i64" or n == "to_f32"
 
+# ---- builtin ARITY table (Phase 35) ---------------------------------------
+# tychoc gets arity checking for free: every Sig builtin carries `.nparams`
+# (register_builtins, src/tychoc.c:4140-4171) and one check rejects a mismatch
+# (src/tychoc.c:5522-5524, `'%s' takes %d argument(s), got %d`); its magic
+# builtins each carry a bespoke "takes one argument" check. tychoc0 had NEITHER,
+# so a short arg list walked off the end of `args` and hit tychoc0's own bounds
+# abort ("tycho: index 0 out of bounds (len 0)") -- an internal message with no
+# source location -- while a LONG arg list was silently accepted. This table is
+# the single source of arity truth for tychoc0's builtin set; the numbers are
+# 16-builtins.md's signature column, cross-checked against tychoc by sweep.
+# -1 means "not arity-checked here": `print`/`println` are parsed specially and
+# already produce a located parse diagnostic; `null` is not a callable builtin
+# on either compiler; the `map_*` names are rejected as removed before this runs;
+# and `channel`/`spawn`/`wait`/`send`/`recv`/`close` route through the channel
+# path with its own checks.
+fn builtin_arity(name: string) -> int:
+    if name == "input" or name == "read_all" or name == "clock" or name == "now" or name == "ncpu" or name == "args" or name == "None":
+        return 0
+    if name == "str" or name == "chr" or name == "keys" or name == "len" or name == "pop" or name == "sqrt" or name == "floor" or name == "fabs" or name == "to_float" or name == "to_int" or name == "to_str" or name == "to_bytes" or name == "to_ptr" or name == "to_bool" or name == "to_under" or name == "read_file" or name == "list_dir" or name == "getenv" or name == "is_null" or name == "die" or name == "eprint" or name == "Some" or name == "Ok" or name == "Err" or is_sized_conv(name):
+        return 1
+    if name == "recv" or name == "wait" or name == "close":
+        return 1
+    if name == "find" or name == "char_at" or name == "split" or name == "pow" or name == "write_file" or name == "push" or name == "reserve" or name == "send":
+        return 2
+    if name == "substr":
+        return 3
+    return 0 - 1
+
+# The arity gate itself. Called from BOTH `type_of`'s ECall arm -- the EARLIEST place
+# a builtin's args are indexed, and where `pop()` / `keys()` / `Some()` / `recv()` hit
+# the bounds abort before any later check could run -- and `check_call_args`, which
+# every call in every body passes through. A name the program declares itself (a
+# struct ctor, an enum variant such as a user `Some`, or a user fn) is NOT a builtin
+# call and is left alone. Wording is tychoc's Sig-table diagnostic verbatim
+# (src/tychoc.c:5522-5524): byte-identical for the ~27 Sig builtins; for tychoc's
+# magic builtins (len/pop/push/to_*) tychoc uses its own "takes one argument" text
+# and only the accept/reject verdict is shared, which is the normative part
+# (00-conventions.md §1.3, appendix-f-impl-defined.md).
+fn ck_builtin_arity(dc: Decls, ctx: Ctx, nm: string, nargs: int, el: int):
+    if is_variant(dc, ctx, nm) or is_struct(dc, ctx, nm) or dc.sigmap.get(nm, -1) >= 0:
+        return
+    ar := builtin_arity(nm)
+    if ar >= 0 and nargs != ar:
+        die_at(dc, el, "'" + nm + "' takes " + str(ar) + " argument(s), got " + str(nargs))
+
 fn is_func(ty: string) -> bool:
     return len(ty) >= 3 and ty[0] == 102 and ty[1] == 110 and ty[2] == 40   # "fn("
 
@@ -5608,6 +5653,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 vt := base_ty(var_type(names, types, name))
                 if is_func(vt):
                     return resolve_nt(dc, ctx, func_ret(vt))
+            ck_builtin_arity(dc, ctx, name, len(args), _el)   # Phase 35: every arm below indexes args[0]/args[1] unguarded
             if name == "map_set" or name == "map_del":   # return the first arg's map type
                 return type_of(args[0], names, types, dc, ctx)
             if name == "map_get":                 # returns the map's value type
@@ -6832,7 +6878,11 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # == / != on a structural type (enum/struct/tuple/array/Option/Result):
             # use the generated structural eq; negate for !=. (Enums are boxed
             # pointers, so a raw `!=` would compare addresses, not values.)
-            if (op == "==" or op == "!=") and (is_enum(dc, ctx, lt) or is_struct(dc, ctx, lt) or is_tuple(lt) or is_array(lt) or is_option(lt) or is_result(lt) or is_soa(lt) or is_map(lt)):
+            leq := resolve_nt(dc, ctx, lt)               # an ELEMENT read (`xs[0]` of a `[C]`) yields the newtype NAME
+                                                         # unresolved, so the structural test must see through it or
+                                                         # `C == C` for `type C = [2]int` fell to the scalar arm below
+                                                         # and emitted a raw struct `==` that cc rejects
+            if (op == "==" or op == "!=") and (is_enum(dc, ctx, leq) or is_struct(dc, ctx, leq) or is_tuple(leq) or is_array(leq) or is_option(leq) or is_result(leq) or is_soa(leq) or is_map(leq)):
                 # BOTH operands must have the same (erased) type: the structural eq
                 # codegen below uses `lt` for both, so a mismatched right operand
                 # would be type-punned (read as `lt`). This branch keys off the LEFT
@@ -6841,7 +6891,19 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
                 # `lt != rt` reject (src/tychoc.c ~4035). A scalar-left mismatch is
                 # already caught by the `lt != frt` check further down.
                 rty := type_of(r, names, types, dc, ctx)
-                if lt != rty:
+                # Compare the ERASED shapes. type_of resolves a newtype at a VAR read
+                # but NOT at an element read or a sig return, so a raw `lt != rty`
+                # over-rejected `xs[0] == a` and `a == mk()` for every aggregate
+                # newtype -- one side spelled `FA`, the other `[2]int`.
+                # `[int] == [string]` still differs after resolve_nt, so the gap the
+                # eq-parity lane caught stays closed.
+                # NOT also compared here: newtype IDENTITY. `nt_skin_of` returns "" for
+                # an INFERRED local (`dup := ids` in tests/newtype_agg.ty), so adding it
+                # rejects that legal program. `A == B` over two distinct newtypes with
+                # the same underlying therefore still fails open exactly as it did
+                # before -- pre-existing, and filed as Phase 40 together with the
+                # nt_skin_of gap that has to be closed first.
+                if resolve_nt(dc, ctx, lt) != resolve_nt(dc, ctx, rty):
                     die_at(dc, _el, "cannot compare " + lt + " with " + rty)
                 eqx := eq_field(dc, ctx, lt, gen_expr(l, names, types, dc, ctx), gen_expr(r, names, types, dc, ctx))
                 if op == "!=":
@@ -10057,9 +10119,12 @@ fn is_byval_comp(dc: Decls, ctx: Ctx, ty: string) -> bool:
 # with the map families, so these FUNCTIONS are deferred to the array-of-map pass in the
 # driver — exactly as a dynamic `[[K:V]]` already is. The struct body and the copy/eq
 # protos come earlier, in the topological pass, and are unaffected.
-fn inline_arr_of_map(ty: string) -> bool:
-    if is_bounded(ty) or is_fixarr(ty):
-        return is_map(elem_ty(ty))
+# Newtypes resolve first (both at the top and at the element): `type C = [string:int]`
+# erases to the map, so `[C]` / `[2]C` / `bounded[4]C` must defer with the raw forms.
+fn inline_arr_of_map(dc: Decls, ctx: Ctx, ty: string) -> bool:
+    b := resolve_nt(dc, ctx, ty)
+    if is_bounded(b) or is_fixarr(b):
+        return is_map(resolve_nt(dc, ctx, elem_ty(b)))
     return false
 
 # Struct/tuple/inline-array types directly embedded BY VALUE in `ty` (its fields /
@@ -10130,6 +10195,10 @@ fn emit_comp_body(dc: Decls, ctx: Ctx, ty: string, emitted: inout [string], stac
     return out
 
 fn eq_field(dc: Decls, ctx: Ctx, ty: string, a: string, b: string) -> string:
+    if is_newtype(dc, ctx, ty):                  # zero-cost newtype: dispatch on the UNDERLYING type,
+        return eq_field(dc, ctx, resolve_nt(dc, ctx, ty), a, b)   # exactly as str_field already does. Without this a
+                                                 # `type C = [2]int` element fell through to the scalar
+                                                 # `a == b` arm: "invalid operands to binary =="
     if ty == "str" or ty == "bytes":
         return "str_cmp(" + a + ", " + b + ") == 0"
     if is_array(ty):
@@ -11329,6 +11398,12 @@ fn slice_root(e: Expr) -> string:
 # where a pointer is expected (won't compile -- a fuzz-reject fail-open). Check
 # every user call: collect_elem_types walks every body, so this is universal.
 fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string], types: [string], el: int):
+    # ARITY, first and for the whole builtin set (Phase 35). This must precede every
+    # check below: they index args[0]/args[1] directly, and so does the codegen ladder,
+    # so a short list used to reach tychoc0's own bounds abort instead of a diagnostic.
+    # A user-declared struct/enum-variant/function of the same name wins (a program may
+    # legally name a variant `Some`), so those are excluded before the table is asked.
+    ck_builtin_arity(dc, ctx, nm, len(args), el)
     # Numeric-conversion builtins: validate the single argument's type, matching
     # tychoc (src/tychoc.c:5036-5051). tychoc0 had NO check here, so to_int(int),
     # to_int("x"), to_float(2.5), to_u8([...]) etc. fail-opened into a pointer/
@@ -11353,11 +11428,15 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
             if ress != "int" and ress != "char" and ress != "float" and ress != "f32" and not is_sized_int(ress):
                 die_at(dc, el, nm + "(x) takes a numeric value")
     # char_at(s, i) -> char. tychoc arg-checks it through the generic builtin Sig
-    # table (src/tychoc.c:5486-5522, `.params={ T_STRING, T_INT }`); tychoc0 has no
-    # such table, so check the two argument types here or the reject path fail-opens
-    # on char_at(5, 0) / char_at(s, "x"). Exact match, like tychoc: a newtype skin or
-    # a sized int is NOT accepted (tychoc compares the resolved Type identity).
-    if nm == "char_at" and len(args) == 2:
+    # table (src/tychoc.c:4157 `.params={ T_STRING, T_INT }`, checked at :5525-5539);
+    # tychoc0 has no such table, so check the two argument TYPES here or the reject
+    # path fail-opens on char_at(5, 0) / char_at(s, "x"). Exact match, like tychoc:
+    # a newtype skin or a sized int is NOT accepted (tychoc compares the resolved
+    # Type identity). Phase 26 also needed `len(args) == 2` here to avoid its own
+    # out-of-bounds read; Phase 35's arity check above now guarantees it, so the
+    # guard is gone -- the ARITY half folded into the general mechanism, the TYPE
+    # half is retained because the general check says nothing about types.
+    if nm == "char_at":
         a0 := type_of(args[0], names, types, dc, ctx)
         if a0 != "str":
             die_at(dc, el, "argument 1 of 'char_at' is " + a0 + ", expected string")
@@ -11798,6 +11877,10 @@ fn collect_elem_types(prog: Program, dc: Decls, ctx: Ctx) -> [string]:
     for i < len(prog.structs):                   # literal-only [Struct]/[Enum] (no annotation
         push(acc, prog.structs[i].name)          # to scan) still gets its Arr_T family
         i = i + 1
+    i = 0                                        # seed every newtype's UNDERLYING type: `type C = [2]int`
+    for i < len(prog.ntunder):                   # erases to Arr_f2_int in the emitted C, so the family must be
+        note_arr_types(&acc, prog.ntunder[i])    # declared even when no literal of that shape appears anywhere
+        i = i + 1                                # (a `C` parameter alone referenced it -> "unknown type name")
     i = 0
     for i < len(prog.enums):
         push(acc, prog.enums[i].name)
@@ -16838,7 +16921,7 @@ fn main():
         i = i + 1
     i = 0                                        # 6. array FUNCTIONS (need element bodies
     for i < len(ets):                            #    complete for sizeof / by-value moves)
-        if not is_map(ets[i]) and not is_soa(ets[i]) and not inline_arr_of_map(ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed
+        if not is_map(resolve_nt(dc, ctx, ets[i])) and not is_soa(ets[i]) and not inline_arr_of_map(dc, ctx, ets[i]):   # tuples included: a [tuple] array (e.g. keys() of a tuple key) needs Arr_<tuple>; harmless extra family if the tuple is never arrayed. resolve_nt: `[C]` for `type C = [K:V]` defers with `[[K:V]]`
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     i = 0                                        # 6b. soa families (after struct bodies: push takes S_X by value)
@@ -16893,7 +16976,7 @@ fn main():
         i = i + 1
     i = 0                                        # array-of-map FUNCTIONS: after gen_map_fns so Arr_<map>_from/_copy/_eq can call map_*_copy/_eq (their struct + fwd decls were emitted with the other array families above)
     for i < len(ets):
-        if is_map(ets[i]) or inline_arr_of_map(ets[i]):   # `[2][K:V]` / `bounded[N][K:V]` defer here for the same reason
+        if is_map(resolve_nt(dc, ctx, ets[i])) or inline_arr_of_map(dc, ctx, ets[i]):   # `[2][K:V]` / `bounded[N][K:V]` defer here for the same reason; a newtype over a map defers with them
             out = out + gen_arr_fns(dc, ctx, ets[i])
         i = i + 1
     out = out + gen_strlib()
