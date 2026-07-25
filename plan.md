@@ -4187,7 +4187,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - Done when: the spec sentence is unambiguous, both compilers agree on the decision,
     the `Box($T)` self-reference control still runs on both, fixture-locked, gates green.
 
-- [ ] **Phase 37 — tychoc's `binds[256]` arrays are indexed by the GLOBAL type-parameter id, which is unbounded: a program with >256 distinct `$Name`s overruns a stack array (found by Phase 29's coupling trace, out of its F2/G2 scope)**
+- [x] **Phase 37 — tychoc's `binds[256]` arrays are indexed by the GLOBAL type-parameter id, which is unbounded: a program with >256 distinct `$Name`s overruns a stack array (found by Phase 29's coupling trace, out of its F2/G2 scope)**
   - **This is NOT the 8 → 16 widening Phase 29 did.** Those were *per-generic* arrays and
     are now all sized by `TYCHO_MAX_TYPARAMS` (`src/tychoc.c:538`). These are a different
     family: six fixed locals sized **256** that are indexed by `t - T_TYPARAM_BASE`
@@ -4218,6 +4218,198 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     unaffected — but "probably" is not a verdict; probe it.
   - Done when: the 320-distinct-name program either compiles clean under ASan+UBSan or is
     diagnosed by a spec-backed limit; both compilers agree; fixture-locked; gates green.
+  - **DONE 2026-07-25. Fix (a) — heap-allocate at the table's current length.** Two
+    citations in the prompt were WRONG and are corrected here: `T_TYPARAM_BASE` is
+    defined at **`src/tychoc.c:648`** (not `:637`), and `typaram_of` is at
+    **`:722-728`** (not `:708-716`). `TYCHO_MAX_TYPARAMS 16` at `:538` was correct.
+
+    **My own grep of every `[256]` in `src/tychoc.c` (pre-fix), classified.** Seven are
+    the defect family; three are NOT, each verified capped by reading the guard:
+    ```
+    214:    int indent_stack[256];          NOT the family -- capped at :249
+                                           `if (sp + 1 >= 256) die_at(line, "indentation too deep");`
+    592:    static HandleType g_handles[256];  NOT the family -- capped at :3591
+                                           `if (g_nhandles >= 256) die_at(..., "too many handle types (max 256)");`
+    1919:   Type binds[256];               FAMILY -- parse_type_inner, generic struct application
+    1949:   Type binds[256];               FAMILY -- parse_type_inner, generic enum application
+    4098:   Type b[256];                   FAMILY -- ufcs_generic
+    5106:   Type binds[256];               FAMILY -- generic struct literal, field-driven inference
+    5141:   Type binds[256];               FAMILY -- generic enum variant constructor
+    6802:   Type binds[256];               FAMILY -- instantiate_generic
+    6804:   int64_t sizebinds[256];        FAMILY -- instantiate_generic, `$N` side
+    11398:  char *imp_paths[256]; int n_imp = 0;   NOT the family -- scan_imports takes `max`
+    11485:  char *imp_paths[256]; int n_imp = 0;   and guards at :11320 `if (*n < max) paths[(*n)++] = ...`
+    ```
+    So the prompt's list of seven was complete and correct; the three non-family
+    `[256]`s are all fail-closed with a real bound check. Also checked the sibling
+    growing tables (`g_structs`, `g_enums`, `g_arrtypes`, `g_opttypes`, `g_restypes`,
+    `g_tuptypes`, `g_soatypes`, `g_maptypes`, `g_functypes`, `g_chantypes`,
+    `g_tasktypes`, `g_sigs`, `g_ginsts`, `g_newtypes`, `g_consts`, `g_vars`,
+    `g_laminfo`, `g_esc`, ...): every one of those is reached through a **grown**
+    `TBL_ENSURE` table or a bounded per-generic count, never through a fixed local
+    indexed by its id. `g_typarams` and `g_sizeparams` were the only two growing
+    tables whose ids indexed a fixed-size stack local. **Nothing structurally
+    different was found, so no Phase 38 was filed.**
+
+    **The two families are genuinely independent, and BOTH were live.** The `$T` side
+    overran the `binds[i] = T_VOID` init loop. The `$N` side is worse than the plan
+    said: `:6805`'s init loop *was* clamped (`i < g_nsizeparams && i < 256`), which
+    hid it, but `match_type`'s write at `:1585` `g_sizebinds[sid] = cs_` had no clamp,
+    so >256 distinct `$N` names wrote past the array with no diagnostic at all.
+
+    **Fix choice — (a), heap-allocate; justified, not defaulted.** Candidate (b) (cap
+    the global table + diagnose) was rejected because the limit it would impose does
+    not exist in the language. Verified by search, not assumed: `docs/spec/05-generics.md:20`
+    says "At most 16 type parameters and 16 size parameters" — **per generic**, and
+    that bound is already enforced and already honoured by this program (every
+    generic here has 8). Grepping all of `docs/spec/` for `type parameters` / `typaram`
+    and `appendix-f-impl-defined.md` for `distinct` / `program-wide` / `per program`
+    returns **no** statement of any limit on the *total distinct `$Name`s in a
+    program*. So (b) would invent a new user-visible restriction to paper over an
+    implementation array size; (a) makes the implementation match what the spec
+    already permits, needs no spec sentence, and removes the cliff instead of moving
+    it. Raising 256 to a bigger constant was explicitly not done for the same reason.
+
+    Two allocators added next to the tables they size — `new_binds()` after
+    `typaram_name` (`:729`) and `new_sizebinds()` after `sizeparam_id` — each
+    `xmalloc`ing `g_n{typarams,sizeparams}` entries (min 1) and filling the unbound
+    sentinel (`T_VOID` / `0`). All seven sites became `Type *binds = new_binds();` /
+    `int64_t *sizebinds = new_sizebinds();`, deleting the init loops.
+
+    **Lifetime / allocation-discipline reasoning (the part that makes (a) safe).**
+    Not a new discipline: `gi.binds` at `:6870` already `xmalloc`s a bind vector at
+    `g_ntyparams` and never frees it, so this matches the file. Nothing frees a bind
+    vector, so nothing can free one early; the leak is bounded and one-shot (tychoc
+    is a single-pass compiler that leaks by design throughout — `sfmt`, every
+    `xmalloc` of an `Expr`/`Stmt`/`Proc`). Sizing at *allocation time* is sufficient
+    rather than merely convenient: `g_typarams` only ever **grows** (`typaram_of` is
+    find-or-append, no removal), and every id ever written into a vector belongs to a
+    `$Name` interned **before** that vector was allocated — the writers index by
+    `gt->typarams[i] - T_TYPARAM_BASE` / `g_{structs,enums}[id].typarams[i] - ...`,
+    all recorded when the template was parsed. Confirmed the growth cannot race a
+    live vector: every caller of `typaram_of` is parse-time (`:1728`, `:1886`,
+    `:3313`, `:3331`, `:3349` — `parse_type`, `parse_type_inner`, `parse_fn`), so
+    `g_ntyparams` is final before `resolve_*` runs, and the two parse-time vectors
+    (`:1919`/`:1949`) are consumed synchronously by `struct_instantiate`/
+    `enum_instantiate` before parsing resumes. `ufcs_generic` is the only hot path
+    that now allocates on a negative answer; at `8 * g_ntyparams` bytes per call in a
+    process that already leaks every AST node, that is not a regression worth
+    branching for. ASan on tychoc itself is not part of any gate (`tests/run.sh:74`
+    applies `-fsanitize=address,undefined` to the *emitted* C, and `:50` sets
+    `ASAN_OPTIONS=detect_leaks=$TYCHO_LSAN` for those binaries), so no gate can be
+    tripped by the added allocations.
+
+    **BEFORE — ASan+UBSan tychoc, 320 distinct `$Name`s, 8 per generic (`/tmp/ph37/p320.ty`,
+    generated by `/tmp/ph37/gen.py`).** Built
+    `gcc -fsanitize=address,undefined -g -O1 -fwrapv -std=c11 -Ibuild src/tychoc.c`,
+    run with `env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0`:
+    ```
+    src/tychoc.c:1920:60: runtime error: index 256 out of bounds for type 'Type [256]'
+    src/tychoc.c:1920:64: runtime error: store to address 0x7b85c49685a0 with insufficient space for an object of type 'Type'
+    =================================================================
+    ==310664==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7b85c49685a0 at pc 0x55ad9be9fcc9 bp 0x7fffbf0b7140 sp 0x7fffbf0b7138
+    WRITE of size 4 at 0x7b85c49685a0 thread T0
+        #0 0x55ad9be9fcc8 in parse_type_inner src/tychoc.c:1920
+        #1 0x55ad9bea1c44 in parse_type src/tychoc.c:1713
+        #2 0x55ad9beb22aa in parse_stmt src/tychoc.c:3126
+        #3 0x55ad9beb39fc in parse_block src/tychoc.c:3221
+        #4 0x55ad9beb7dc3 in parse_fn src/tychoc.c:3359
+        #5 0x55ad9beb98e4 in parse_program src/tychoc.c:3999
+        #6 0x55ad9bf0f8e3 in main src/tychoc.c:11662
+    Address 0x7b85c49685a0 is located in stack of thread T0 at offset 1440 in frame
+        #0 0x55ad9be9bd71 in parse_type_inner src/tychoc.c:1717
+      This frame has 8 object(s):
+        [416, 1440) 'binds' (line 1919) <== Memory access at offset 1440 overflows this variable
+        [1568, 2592) 'binds' (line 1949)
+    SUMMARY: AddressSanitizer: stack-buffer-overflow src/tychoc.c:1920 in parse_type_inner
+    ```
+    Note this is a hard **stack-buffer-overflow WRITE**, not only the UBSan note the
+    plan quoted — the release build writes 4 bytes past a 1024-byte frame object.
+
+    **BEFORE — the `$N` side, proved separately** (`/tmp/ph37/sz320.ty`: 320 distinct
+    `[$N]int` size-parameter names, same pre-fix binary). Different site, different
+    access, same root cause:
+    ```
+    ==311153==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7bddbf7f71a0 ...
+    READ of size 8 at 0x7bddbf7f71a0 thread T0
+        #0 0x559d25b51325 in match_type src/tychoc.c:1584
+        #1 0x559d25bf3f3b in instantiate_generic src/tychoc.c:6818
+        #2 0x559d25bed94d in resolve_expr_inner src/tychoc.c:5486
+    ```
+
+    **AFTER — same ASan+UBSan build, post-fix.** Clean compile *and* correct run:
+    ```
+    $ env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0 ./tychoc-san2 /tmp/ph37/p320.ty -o /tmp/ph37/p320
+    built /tmp/ph37/p320
+    $ /tmp/ph37/p320
+    41 10 7 8 9 5 ok          (one per line; = the 8-name control's output, byte for byte)
+    $ env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0 ./tychoc-san2 /tmp/ph37/sz320.ty -o /tmp/ph37/sz_new
+    built /tmp/ph37/sz_new
+    $ /tmp/ph37/sz_new
+    9
+    ```
+    The 8-distinct-name control (`/tmp/ph37/p8.ty`) was clean before AND after, which
+    is what makes the 320 result attributable to the id, not to the program shape.
+
+    **SCALED UP — the cliff is gone, not moved.** Same ASan+UBSan binary, no diagnostic,
+    correct output at every size:
+    ```
+    320  distinct $Names -> built, ran: 41 10 7 8 9 5 ok
+    1200 distinct $Names -> built, ran: 41 10 7 8 9 5 ok
+    4000 distinct $Names -> built, ran: 41 10 7 8 9 5 ok
+    ```
+    A raised constant would have failed at some size; nothing here does.
+
+    **tychoc0's verdict — PROBED, genuinely unaffected (not "probably").** tychoc0 has
+    no `-o`; it emits C on stdout, so each probe was `tychoc0 X.ty > X.c0.c`, then
+    `gcc -O1 -fwrapv -std=c11 X.c0.c -o X.c0.bin -lm -lpthread`, then run:
+    ```
+    p8      OK  out=41 10 7 8 9 5 ok
+    p320    OK  out=41 10 7 8 9 5 ok
+    p1200   OK  out=41 10 7 8 9 5 ok
+    p4000   OK  out=41 10 7 8 9 5 ok
+    sz320   OK  out=9
+    ```
+    Identical output at every size, no rejection, no crash — consistent with its
+    binding representation being growing `[string]` name/type lists
+    (`match_typaram_str`, `compiler/tychoc0.ty:13902`) rather than an id-indexed
+    array. So the defect was tychoc-only, and after the fix **both compilers agree**
+    on all five probes. tychoc0 was built with the fixed tychoc via
+    `./tychoc compiler/tychoc0.ty -o /tmp/ph37/tychoc0` (there is no `make tychoc0`).
+
+    **FIXTURE — carried, and it is not impractical: 191 lines.** New
+    `tests/generic_many_typaram_names.ty` + `.out`. 272 distinct `$T` names (34 fns x
+    8) and 272 distinct `$N` names (34 fns x 8), every generic at 8 parameters so the
+    program stays comfortably inside the spec's per-generic 16, then a tail that
+    exercises **all seven** sites in one program: `ident(41)` and `ident("ok")`
+    (`:6802` + `:6804`, two instances), `xs.firstof()` (`:4098`), `Box(7)` (`:5106`),
+    `bb: Box(int)` (`:1919`), `Yep(9)` (`:5141`), `mm: Maybe(int)` (`:1949`), and
+    `lastof(fx)` for `[$N]T` size inference. Golden: `41 ok 10 7 8 9 5 6`.
+    The fixture is a real lock, confirmed by running it against the **pre-fix** ASan
+    binary:
+    ```
+    $ ASAN_OPTIONS=detect_leaks=0 ./tychoc-san tests/generic_many_typaram_names.ty -o /tmp/ph37/fx_pre
+    src/tychoc.c:1920:60: runtime error: index 256 out of bounds for type 'Type [256]'
+    ==311553==ERROR: AddressSanitizer: stack-buffer-overflow ... WRITE of size 4
+    ```
+    and both compilers match the golden post-fix (`TYCHOC-FIXTURE-MATCH`,
+    `TYCHOC0-FIXTURE-MATCH`). **Test count 513 -> 514**; no count is hard-coded in
+    `tests/run.sh`, so `make test` and `make ilp32` both picked it up automatically.
+    `gcc -O2 -fwrapv -Wall -Wextra -std=c11` on the edited `src/tychoc.c` is warning-clean.
+
+    **Gate set — one per command, foreground, `env -u LD_PRELOAD`:**
+    ```
+    make test         passed: 514   failed: 0 / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok B == C : tychoc0 reproduces itself byte-identically (35376 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 514   failed: 0 / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+    ```
+    `git status --short` before the commit: `M src/tychoc.c` plus the two new fixture
+    files only — no build spill.
 
 ## Out of scope
 

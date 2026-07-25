@@ -1,0 +1,191 @@
+# Phase 37 regression. A bind vector inside tychoc is indexed by the GLOBAL
+# type-parameter id (`t - T_TYPARAM_BASE`), i.e. by a position in the program-wide
+# `$Name` intern table, which has no cap -- NOT by the per-generic count that
+# TYCHO_MAX_TYPARAMS bounds. This program declares 272 distinct `$T` names and 272
+# distinct `$N` names while every individual generic stays well under the
+# 16-parameter cap, so it is VALID. Before the fix tychoc held those vectors in
+# fixed `Type binds[256]` / `int64_t sizebinds[256]` stack locals and overran them
+# (ASan: stack-buffer-overflow WRITE at the `binds[i] = T_VOID` init loop, and a
+# READ in match_type for the `$N` side). The tail exercises every site that builds
+# such a vector: a generic fn call, a UFCS generic, a generic struct literal and a
+# generic struct in type position, a generic enum constructor and a generic enum in
+# type position, and a `[$N]T` size inference. Both compilers.
+
+fn tfill0(p0: $T0, p1: $T1, p2: $T2, p3: $T3, p4: $T4, p5: $T5, p6: $T6, p7: $T7) -> int:
+    return 0
+fn tfill1(p0: $T8, p1: $T9, p2: $T10, p3: $T11, p4: $T12, p5: $T13, p6: $T14, p7: $T15) -> int:
+    return 1
+fn tfill2(p0: $T16, p1: $T17, p2: $T18, p3: $T19, p4: $T20, p5: $T21, p6: $T22, p7: $T23) -> int:
+    return 2
+fn tfill3(p0: $T24, p1: $T25, p2: $T26, p3: $T27, p4: $T28, p5: $T29, p6: $T30, p7: $T31) -> int:
+    return 3
+fn tfill4(p0: $T32, p1: $T33, p2: $T34, p3: $T35, p4: $T36, p5: $T37, p6: $T38, p7: $T39) -> int:
+    return 4
+fn tfill5(p0: $T40, p1: $T41, p2: $T42, p3: $T43, p4: $T44, p5: $T45, p6: $T46, p7: $T47) -> int:
+    return 5
+fn tfill6(p0: $T48, p1: $T49, p2: $T50, p3: $T51, p4: $T52, p5: $T53, p6: $T54, p7: $T55) -> int:
+    return 6
+fn tfill7(p0: $T56, p1: $T57, p2: $T58, p3: $T59, p4: $T60, p5: $T61, p6: $T62, p7: $T63) -> int:
+    return 7
+fn tfill8(p0: $T64, p1: $T65, p2: $T66, p3: $T67, p4: $T68, p5: $T69, p6: $T70, p7: $T71) -> int:
+    return 8
+fn tfill9(p0: $T72, p1: $T73, p2: $T74, p3: $T75, p4: $T76, p5: $T77, p6: $T78, p7: $T79) -> int:
+    return 9
+fn tfill10(p0: $T80, p1: $T81, p2: $T82, p3: $T83, p4: $T84, p5: $T85, p6: $T86, p7: $T87) -> int:
+    return 10
+fn tfill11(p0: $T88, p1: $T89, p2: $T90, p3: $T91, p4: $T92, p5: $T93, p6: $T94, p7: $T95) -> int:
+    return 11
+fn tfill12(p0: $T96, p1: $T97, p2: $T98, p3: $T99, p4: $T100, p5: $T101, p6: $T102, p7: $T103) -> int:
+    return 12
+fn tfill13(p0: $T104, p1: $T105, p2: $T106, p3: $T107, p4: $T108, p5: $T109, p6: $T110, p7: $T111) -> int:
+    return 13
+fn tfill14(p0: $T112, p1: $T113, p2: $T114, p3: $T115, p4: $T116, p5: $T117, p6: $T118, p7: $T119) -> int:
+    return 14
+fn tfill15(p0: $T120, p1: $T121, p2: $T122, p3: $T123, p4: $T124, p5: $T125, p6: $T126, p7: $T127) -> int:
+    return 15
+fn tfill16(p0: $T128, p1: $T129, p2: $T130, p3: $T131, p4: $T132, p5: $T133, p6: $T134, p7: $T135) -> int:
+    return 16
+fn tfill17(p0: $T136, p1: $T137, p2: $T138, p3: $T139, p4: $T140, p5: $T141, p6: $T142, p7: $T143) -> int:
+    return 17
+fn tfill18(p0: $T144, p1: $T145, p2: $T146, p3: $T147, p4: $T148, p5: $T149, p6: $T150, p7: $T151) -> int:
+    return 18
+fn tfill19(p0: $T152, p1: $T153, p2: $T154, p3: $T155, p4: $T156, p5: $T157, p6: $T158, p7: $T159) -> int:
+    return 19
+fn tfill20(p0: $T160, p1: $T161, p2: $T162, p3: $T163, p4: $T164, p5: $T165, p6: $T166, p7: $T167) -> int:
+    return 20
+fn tfill21(p0: $T168, p1: $T169, p2: $T170, p3: $T171, p4: $T172, p5: $T173, p6: $T174, p7: $T175) -> int:
+    return 21
+fn tfill22(p0: $T176, p1: $T177, p2: $T178, p3: $T179, p4: $T180, p5: $T181, p6: $T182, p7: $T183) -> int:
+    return 22
+fn tfill23(p0: $T184, p1: $T185, p2: $T186, p3: $T187, p4: $T188, p5: $T189, p6: $T190, p7: $T191) -> int:
+    return 23
+fn tfill24(p0: $T192, p1: $T193, p2: $T194, p3: $T195, p4: $T196, p5: $T197, p6: $T198, p7: $T199) -> int:
+    return 24
+fn tfill25(p0: $T200, p1: $T201, p2: $T202, p3: $T203, p4: $T204, p5: $T205, p6: $T206, p7: $T207) -> int:
+    return 25
+fn tfill26(p0: $T208, p1: $T209, p2: $T210, p3: $T211, p4: $T212, p5: $T213, p6: $T214, p7: $T215) -> int:
+    return 26
+fn tfill27(p0: $T216, p1: $T217, p2: $T218, p3: $T219, p4: $T220, p5: $T221, p6: $T222, p7: $T223) -> int:
+    return 27
+fn tfill28(p0: $T224, p1: $T225, p2: $T226, p3: $T227, p4: $T228, p5: $T229, p6: $T230, p7: $T231) -> int:
+    return 28
+fn tfill29(p0: $T232, p1: $T233, p2: $T234, p3: $T235, p4: $T236, p5: $T237, p6: $T238, p7: $T239) -> int:
+    return 29
+fn tfill30(p0: $T240, p1: $T241, p2: $T242, p3: $T243, p4: $T244, p5: $T245, p6: $T246, p7: $T247) -> int:
+    return 30
+fn tfill31(p0: $T248, p1: $T249, p2: $T250, p3: $T251, p4: $T252, p5: $T253, p6: $T254, p7: $T255) -> int:
+    return 31
+fn tfill32(p0: $T256, p1: $T257, p2: $T258, p3: $T259, p4: $T260, p5: $T261, p6: $T262, p7: $T263) -> int:
+    return 32
+fn tfill33(p0: $T264, p1: $T265, p2: $T266, p3: $T267, p4: $T268, p5: $T269, p6: $T270, p7: $T271) -> int:
+    return 33
+
+fn nfill0(q0: [$N0]int, q1: [$N1]int, q2: [$N2]int, q3: [$N3]int, q4: [$N4]int, q5: [$N5]int, q6: [$N6]int, q7: [$N7]int) -> int:
+    return N0
+fn nfill1(q0: [$N8]int, q1: [$N9]int, q2: [$N10]int, q3: [$N11]int, q4: [$N12]int, q5: [$N13]int, q6: [$N14]int, q7: [$N15]int) -> int:
+    return N8
+fn nfill2(q0: [$N16]int, q1: [$N17]int, q2: [$N18]int, q3: [$N19]int, q4: [$N20]int, q5: [$N21]int, q6: [$N22]int, q7: [$N23]int) -> int:
+    return N16
+fn nfill3(q0: [$N24]int, q1: [$N25]int, q2: [$N26]int, q3: [$N27]int, q4: [$N28]int, q5: [$N29]int, q6: [$N30]int, q7: [$N31]int) -> int:
+    return N24
+fn nfill4(q0: [$N32]int, q1: [$N33]int, q2: [$N34]int, q3: [$N35]int, q4: [$N36]int, q5: [$N37]int, q6: [$N38]int, q7: [$N39]int) -> int:
+    return N32
+fn nfill5(q0: [$N40]int, q1: [$N41]int, q2: [$N42]int, q3: [$N43]int, q4: [$N44]int, q5: [$N45]int, q6: [$N46]int, q7: [$N47]int) -> int:
+    return N40
+fn nfill6(q0: [$N48]int, q1: [$N49]int, q2: [$N50]int, q3: [$N51]int, q4: [$N52]int, q5: [$N53]int, q6: [$N54]int, q7: [$N55]int) -> int:
+    return N48
+fn nfill7(q0: [$N56]int, q1: [$N57]int, q2: [$N58]int, q3: [$N59]int, q4: [$N60]int, q5: [$N61]int, q6: [$N62]int, q7: [$N63]int) -> int:
+    return N56
+fn nfill8(q0: [$N64]int, q1: [$N65]int, q2: [$N66]int, q3: [$N67]int, q4: [$N68]int, q5: [$N69]int, q6: [$N70]int, q7: [$N71]int) -> int:
+    return N64
+fn nfill9(q0: [$N72]int, q1: [$N73]int, q2: [$N74]int, q3: [$N75]int, q4: [$N76]int, q5: [$N77]int, q6: [$N78]int, q7: [$N79]int) -> int:
+    return N72
+fn nfill10(q0: [$N80]int, q1: [$N81]int, q2: [$N82]int, q3: [$N83]int, q4: [$N84]int, q5: [$N85]int, q6: [$N86]int, q7: [$N87]int) -> int:
+    return N80
+fn nfill11(q0: [$N88]int, q1: [$N89]int, q2: [$N90]int, q3: [$N91]int, q4: [$N92]int, q5: [$N93]int, q6: [$N94]int, q7: [$N95]int) -> int:
+    return N88
+fn nfill12(q0: [$N96]int, q1: [$N97]int, q2: [$N98]int, q3: [$N99]int, q4: [$N100]int, q5: [$N101]int, q6: [$N102]int, q7: [$N103]int) -> int:
+    return N96
+fn nfill13(q0: [$N104]int, q1: [$N105]int, q2: [$N106]int, q3: [$N107]int, q4: [$N108]int, q5: [$N109]int, q6: [$N110]int, q7: [$N111]int) -> int:
+    return N104
+fn nfill14(q0: [$N112]int, q1: [$N113]int, q2: [$N114]int, q3: [$N115]int, q4: [$N116]int, q5: [$N117]int, q6: [$N118]int, q7: [$N119]int) -> int:
+    return N112
+fn nfill15(q0: [$N120]int, q1: [$N121]int, q2: [$N122]int, q3: [$N123]int, q4: [$N124]int, q5: [$N125]int, q6: [$N126]int, q7: [$N127]int) -> int:
+    return N120
+fn nfill16(q0: [$N128]int, q1: [$N129]int, q2: [$N130]int, q3: [$N131]int, q4: [$N132]int, q5: [$N133]int, q6: [$N134]int, q7: [$N135]int) -> int:
+    return N128
+fn nfill17(q0: [$N136]int, q1: [$N137]int, q2: [$N138]int, q3: [$N139]int, q4: [$N140]int, q5: [$N141]int, q6: [$N142]int, q7: [$N143]int) -> int:
+    return N136
+fn nfill18(q0: [$N144]int, q1: [$N145]int, q2: [$N146]int, q3: [$N147]int, q4: [$N148]int, q5: [$N149]int, q6: [$N150]int, q7: [$N151]int) -> int:
+    return N144
+fn nfill19(q0: [$N152]int, q1: [$N153]int, q2: [$N154]int, q3: [$N155]int, q4: [$N156]int, q5: [$N157]int, q6: [$N158]int, q7: [$N159]int) -> int:
+    return N152
+fn nfill20(q0: [$N160]int, q1: [$N161]int, q2: [$N162]int, q3: [$N163]int, q4: [$N164]int, q5: [$N165]int, q6: [$N166]int, q7: [$N167]int) -> int:
+    return N160
+fn nfill21(q0: [$N168]int, q1: [$N169]int, q2: [$N170]int, q3: [$N171]int, q4: [$N172]int, q5: [$N173]int, q6: [$N174]int, q7: [$N175]int) -> int:
+    return N168
+fn nfill22(q0: [$N176]int, q1: [$N177]int, q2: [$N178]int, q3: [$N179]int, q4: [$N180]int, q5: [$N181]int, q6: [$N182]int, q7: [$N183]int) -> int:
+    return N176
+fn nfill23(q0: [$N184]int, q1: [$N185]int, q2: [$N186]int, q3: [$N187]int, q4: [$N188]int, q5: [$N189]int, q6: [$N190]int, q7: [$N191]int) -> int:
+    return N184
+fn nfill24(q0: [$N192]int, q1: [$N193]int, q2: [$N194]int, q3: [$N195]int, q4: [$N196]int, q5: [$N197]int, q6: [$N198]int, q7: [$N199]int) -> int:
+    return N192
+fn nfill25(q0: [$N200]int, q1: [$N201]int, q2: [$N202]int, q3: [$N203]int, q4: [$N204]int, q5: [$N205]int, q6: [$N206]int, q7: [$N207]int) -> int:
+    return N200
+fn nfill26(q0: [$N208]int, q1: [$N209]int, q2: [$N210]int, q3: [$N211]int, q4: [$N212]int, q5: [$N213]int, q6: [$N214]int, q7: [$N215]int) -> int:
+    return N208
+fn nfill27(q0: [$N216]int, q1: [$N217]int, q2: [$N218]int, q3: [$N219]int, q4: [$N220]int, q5: [$N221]int, q6: [$N222]int, q7: [$N223]int) -> int:
+    return N216
+fn nfill28(q0: [$N224]int, q1: [$N225]int, q2: [$N226]int, q3: [$N227]int, q4: [$N228]int, q5: [$N229]int, q6: [$N230]int, q7: [$N231]int) -> int:
+    return N224
+fn nfill29(q0: [$N232]int, q1: [$N233]int, q2: [$N234]int, q3: [$N235]int, q4: [$N236]int, q5: [$N237]int, q6: [$N238]int, q7: [$N239]int) -> int:
+    return N232
+fn nfill30(q0: [$N240]int, q1: [$N241]int, q2: [$N242]int, q3: [$N243]int, q4: [$N244]int, q5: [$N245]int, q6: [$N246]int, q7: [$N247]int) -> int:
+    return N240
+fn nfill31(q0: [$N248]int, q1: [$N249]int, q2: [$N250]int, q3: [$N251]int, q4: [$N252]int, q5: [$N253]int, q6: [$N254]int, q7: [$N255]int) -> int:
+    return N248
+fn nfill32(q0: [$N256]int, q1: [$N257]int, q2: [$N258]int, q3: [$N259]int, q4: [$N260]int, q5: [$N261]int, q6: [$N262]int, q7: [$N263]int) -> int:
+    return N256
+fn nfill33(q0: [$N264]int, q1: [$N265]int, q2: [$N266]int, q3: [$N267]int, q4: [$N268]int, q5: [$N269]int, q6: [$N270]int, q7: [$N271]int) -> int:
+    return N264
+
+# the generics actually used come LAST, so their ids are the highest in each table
+struct Box($BoxT):
+    v: $BoxT
+
+enum Maybe($MaybeT):
+    Yep($MaybeT)
+    Nothing
+
+fn ident(x: $Zed) -> $Zed:
+    return x
+
+fn firstof(xs: [$Wye]) -> $Wye:
+    return xs[0]
+
+fn unbox(b: Box($BoxT)) -> $BoxT:
+    return b.v
+
+fn unmaybe(m: Maybe($MaybeT), d: $MaybeT) -> $MaybeT:
+    match m:
+        Yep(v): return v
+        Nothing: return d
+
+fn lastof(xs: [$Nz]int) -> int:
+    return xs[Nz - 1]
+
+fn main():
+    println(str(ident(41)))                  # 41  instantiate_generic: binds + sizebinds
+    println(ident("ok"))                     # ok  a second instance of the same template
+    xs := [10, 20, 30]
+    println(str(xs.firstof()))               # 10  ufcs_generic's bind vector
+    b := Box(7)
+    println(str(unbox(b)))                   # 7   generic struct literal inference
+    bb: Box(int) = Box(8)
+    println(str(unbox(bb)))                  # 8   generic struct in TYPE position
+    m := Yep(9)
+    println(str(unmaybe(m, 0)))              # 9   generic enum variant constructor
+    mm: Maybe(int) = Nothing$(int)
+    println(str(unmaybe(mm, 5)))             # 5   generic enum in TYPE position
+    fx: [3]int = [4, 5, 6]
+    println(str(lastof(fx)))                 # 6   `[$N]T` size inference

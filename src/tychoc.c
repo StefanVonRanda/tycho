@@ -727,6 +727,24 @@ static Type typaram_of(char *name) {
     return T_TYPARAM_BASE + g_ntyparams++;
 }
 static char *typaram_name(Type t) { return g_typarams[(int)(t - T_TYPARAM_BASE)].name; }
+/* A BIND VECTOR is indexed by the GLOBAL type-parameter id (`t - T_TYPARAM_BASE`),
+ * NOT by a per-generic count -- so it must be as long as `g_typarams`, which grows
+ * with the number of DISTINCT `$Name`s in the whole program and has no cap (see
+ * typaram_of above). Every such vector used to be a fixed `Type binds[256]` local,
+ * which a valid program with more than 256 distinct names overran (each individual
+ * generic staying well under TYCHO_MAX_TYPARAMS): ASan reported a stack-buffer-
+ * overflow WRITE at the `for (i < g_ntyparams) binds[i] = T_VOID` init loop. Raising
+ * 256 would only move the cliff, so allocate at the table's current length instead.
+ * `g_typarams` only ever grows and a vector is only ever indexed by an id interned
+ * BEFORE it was allocated, so `g_ntyparams` at allocation time covers every index
+ * that can legally be written. Never freed -- tychoc is one-shot and allocates this
+ * way throughout (cf. `gi.binds`, which already used exactly this pattern). */
+static Type *new_binds(void) {
+    int n = g_ntyparams > 0 ? g_ntyparams : 1;
+    Type *b = (Type *)xmalloc((size_t)n * sizeof(Type));
+    for (int i = 0; i < n; i++) b[i] = T_VOID;   /* T_VOID == unbound */
+    return b;
+}
 static char *g_cur_typarams[16];
 static int   g_ncur_typarams = 0;
 
@@ -747,6 +765,17 @@ static int64_t sizeparam_enc(char *name) {           /* find-or-create; returns 
     return -(int64_t)(id + 1);
 }
 static int   sizeparam_id(int64_t enc) { return (int)(-enc - 1); }   /* decode the NEGATIVE size back to a table index */
+/* Same shape as new_binds, for the `$N` side: indexed by sizeparam_id, so it must be
+ * as long as the uncapped `g_sizeparams`. The old fixed `int64_t sizebinds[256]` local
+ * clamped only its own init loop (`i < g_nsizeparams && i < 256`); match_type's
+ * `g_sizebinds[sid] = cs_` had no such clamp, so >256 distinct `$N` names wrote past
+ * the array. Allocated at the table's current length; never freed (one-shot). */
+static int64_t *new_sizebinds(void) {
+    int n = g_nsizeparams > 0 ? g_nsizeparams : 1;
+    int64_t *b = (int64_t *)xmalloc((size_t)n * sizeof(int64_t));
+    for (int i = 0; i < n; i++) b[i] = 0;   /* 0 == unbound (real sizes are > 0) */
+    return b;
+}
 static char *g_cur_sizeparams[16];
 static int   g_ncur_sizeparams = 0;
 static int64_t *g_sizebinds = NULL;   /* during instantiate_generic: sizebinds[sizeparam_id] = concrete N (0 == unbound; real sizes are > 0) */
@@ -1916,8 +1945,7 @@ static Type parse_type_inner(Parser *ps) {
                         die_at(t->line, "generic struct '%s': a type argument may not partially mention a type "
                                "parameter; use the generic applied to its own parameters (a recursive reference) "
                                "or to concrete types", g_structs[sid].name);
-                Type binds[256];
-                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                Type *binds = new_binds();
                 for (int i = 0; i < np; i++) binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return STRUCT_TYPE(struct_instantiate(sid, binds));
             }
@@ -1946,8 +1974,7 @@ static Type parse_type_inner(Parser *ps) {
                         die_at(t->line, "generic enum '%s': a type argument may not partially mention a type "
                                "parameter; use the generic applied to its own parameters (a recursive reference) "
                                "or to concrete types", g_enums[eid].name);
-                Type binds[256];
-                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                Type *binds = new_binds();
                 for (int i = 0; i < np; i++) binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return ENUM_TYPE(enum_instantiate(eid, binds));
             }
@@ -4095,8 +4122,7 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
     if (!gt && pkg && pkg[0]) gt = generic_find(sfmt("%s%s", pkg, name));
     if (!gt) { const char *pp = type_pkg_prefix(recv); if (pp) gt = generic_find(sfmt("%s%s", pp, name)); }
     if (!gt || gt->nparams < 1 || gt->params[0].is_inout) return NULL;
-    Type b[256];
-    for (int i = 0; i < g_ntyparams; i++) b[i] = T_VOID;
+    Type *b = new_binds();
     return match_type(gt->params[0].type, recv, b) ? gt->name : NULL;
 }
 /* Stage-2 generics: each instance carries its OWN cloned body — a deep copy of
@@ -5103,8 +5129,7 @@ static Type resolve_expr_inner(Expr *e) {
                 StructDef *t = &g_structs[sid];
                 if (e->nargs != t->nfields)
                     die_at(e->line, "%s takes %d field value(s), got %d", t->name, t->nfields, e->nargs);
-                Type binds[256];
-                for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                Type *binds = new_binds();
                 for (int i = 0; i < e->nargs; i++) {
                     Type at_ = resolve_expr(e->args[i]);
                     if (!match_type(t->fields[i].type, at_, binds))
@@ -5138,8 +5163,7 @@ static Type resolve_expr_inner(Expr *e) {
                 if (eid >= 0 && g_enums[eid].generic) {   /* generic enum: fix $T from explicit type args and/or the payload values, then instantiate */
                     EnumDef *gt = &g_enums[eid];
                     Variant *gv = &gt->variants[evi];
-                    Type binds[256];
-                    for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;
+                    Type *binds = new_binds();
                     if (e->ntypeargs > 0) {        /* `Leaf$(int)`: explicit -- the only way to fix a nullary variant */
                         if (e->ntypeargs != gt->ntyparams)
                             die_at(e->line, "%s expects %d type argument(s), got %d", gt->name, gt->ntyparams, e->ntypeargs);
@@ -6799,10 +6823,8 @@ static int constraint_ok(const char *pred, Type t) {
 static void instantiate_generic(Proc *gt, Expr *e) {
     if (e->nargs != gt->nparams)
         die_at(e->line, "'%s' takes %d argument(s), got %d", gt->name, gt->nparams, e->nargs);
-    Type binds[256];
-    for (int i = 0; i < g_ntyparams; i++) binds[i] = T_VOID;   /* T_VOID == unbound */
-    int64_t sizebinds[256];                                       /* const generics 1.6B: sizebinds[sizeparam_id] = concrete N */
-    for (int i = 0; i < g_nsizeparams && i < 256; i++) sizebinds[i] = 0;   /* 0 == unbound (real sizes are > 0) */
+    Type *binds = new_binds();
+    int64_t *sizebinds = new_sizebinds();                         /* const generics 1.6B: sizebinds[sizeparam_id] = concrete N */
     int64_t *saved_sb = g_sizebinds; g_sizebinds = sizebinds;     /* match_type/subst_type bind & substitute `$N` while this is live */
     if (e->ntypeargs > 0) {   /* explicit call-site type args bind the params in declaration order */
         if (e->ntypeargs != gt->ntyparams)
