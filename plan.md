@@ -4706,6 +4706,38 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 ### Filed by Phases 27/28/30/31/34 (2026-07-25)
 
 - [ ] **Phase 36 — tychoc0 accepts a generic type argument that WHOLLY names a foreign type parameter (found by Phase 30, out of its B20/B21 scope)**
+  - **MAIN-AGENT DIRECTION 2026-07-25 (user delegated: "do 36 and 39 too"): DO NOT RULE
+    ON PREFERENCE — SETTLE A FACT FIRST.** Unlike Phase 39 this is not an oversight with
+    an obvious direction. The disputed program is ordinary generic code:
+    ```
+    fn wrap(x: $U) -> Box($U):
+        return Box(x)
+    ```
+    tychoc REJECTS it; tychoc0 ACCEPTS, compiles and RUNS it, printing the right answer.
+    If tychoc is right, the language cannot express a generic function returning a
+    generic struct over its own type parameter — a severe hole. If tychoc0 is right,
+    tychoc is over-tight. `05-generics.md:80-82` ("fully concrete or a whole
+    own-parameter reference") genuinely reads both ways depending on whose *own* is
+    meant, so the spec cannot settle it.
+  - **The deciding question is capability, not taste: CAN tychoc's monomorphizer
+    instantiate this, and it merely refuses — or can it genuinely not?** Evidence to
+    gather before touching either compiler:
+    - Does the pattern appear anywhere in `corelib/` (36 packages), `examples/`, or
+      `tests/`? If it is absent, check whether the code visibly WORKS AROUND it
+      (e.g. concrete wrappers, `$T`-named parameters chosen to match the struct's) —
+      a workaround is evidence the restriction bites in practice.
+    - Can `ginst` (`src/tychoc.c`, the instantiation path) bind a foreign parameter, or
+      does its design assume self-reference? Read it; do not infer from the error text.
+    - Does tychoc0's acceptance produce CORRECT code in non-trivial cases — nested
+      generics, two foreign parameters, a foreign parameter inside a container — or does
+      it only happen to work for the one-level case measured? Probe it. tychoc0 being
+      permissive is not evidence of correctness.
+  - **Then rule, and say which:** if tychoc CAN support it, the pattern becomes legal,
+    tychoc relaxes, and the spec gains a sentence saying any in-scope parameter counts.
+    If it genuinely CANNOT, the spec says so plainly, tychoc0 gains the check, and the
+    limitation is documented rather than silent. **If the answer is "cannot, and this is
+    a real expressiveness hole", STOP and report rather than speccing the limitation** —
+    that is a language-design decision for the user, not a conformance fix.
   - Phase 30 closed the *partial* mention (`Box([$T])`). tychoc refuses more than that:
     at `src/tychoc.c:1900-1907` it defers only the **self-reference** — the generic
     applied to *exactly its own* type parameters — and then dies on any remaining
@@ -5180,6 +5212,26 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 ### Filed by Phase 32 (2026-07-25)
 
 - [ ] **Phase 39 — the type-name collision check is ONE-DIRECTIONAL: `handle H` after `struct H` is rejected, `struct H` after `handle H` is not (found by Phase 32, out of its E1 scope)**
+  - **MAIN-AGENT RULING 2026-07-25 (user delegated: "do 36 and 39 too"): FIX BOTH HALVES.**
+    This *does* reject something tychoc compiles today, which the Phase 32 ruling said to
+    avoid — the reasons it is not a contradiction, both checkable:
+    1. **The rule already exists; only its application is asymmetric.** `parse_handle`
+       checks all four namespaces (`src/tychoc.c:3616`). `parse_struct` (`:3652`),
+       `parse_enum` (`:3705`) and `parse_typedecl` (`:3751`) omit `handle_find`.
+       `parse_const` (`:3996-3997`) *includes* it — so the omission is an oversight, not
+       a design decision. Enforcing it symmetrically is completing an existing rule, not
+       adopting a new limit.
+    2. **Nothing that works today stops working.** The accepted program is already broken
+       on tychoc0 (CCFAIL: `incompatible type for argument 1 of 'S_H_eq'`). It compiles
+       on exactly one of the two compilers, so it was never portable Tycho.
+    The second half — `resolve_program` `continue`ing past a generic template before the
+    I6/I7/I8 checks (`:7091-7096`) — is likewise not a new restriction: Phase 32 ratified
+    those three as MUST NOTs in the spec, and this closes a technicality that lets a
+    program bypass a rule the spec now states. Phase 32 mirrored the gap in tychoc0
+    deliberately so the two agreed; now close it in both.
+  - Verify the ruling's premises before acting on them (both are line citations, and this
+    plan's citations have been wrong repeatedly). If `parse_const` does NOT include
+    `handle_find`, the "oversight" argument collapses and you should stop and report.
   - **NOT the E1 row Phase 32 closed.** E1 is the `handle` declaration checking the
     names already taken. This is the reverse: the three *other* declaration forms do
     **not** check the handle table, so the same collision is legal in one order and
