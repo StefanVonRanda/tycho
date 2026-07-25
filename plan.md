@@ -1873,7 +1873,7 @@ codegen.
     the chosen route lands with `make fixpoint` green (emission changes are
     exactly what fixpoint guards).
 
-- [ ] **Phase 14 — `tychoc`'s own build has 3 `-Wmissing-field-initializers` (observed by Phase 1, re-confirmed by Phase 4)**
+- [x] **Phase 14 — `tychoc`'s own build has 3 `-Wmissing-field-initializers` (observed by Phase 1, re-confirmed by Phase 4)**
   - `src/tychoc.c:6092`, `:6093`, `:6095` — `missing initializer for field
     'is_sink' of 'Param'`. Count was 3 before Phase 1 and is still 3 after
     Phase 4; nothing in this plan changed it.
@@ -1883,6 +1883,101 @@ codegen.
     than riding along on a codegen change.
   - Done when: `make` compiles `src/tychoc.c` with zero warnings; full gate set
     green.
+
+  **CORRECTED CITATIONS (2026-07-25).** The prompt's `:6092/:6093/:6095` had
+  drifted 20 lines across 17 phases. The real sites, from the compiler's own
+  output, were `src/tychoc.c:6112`, `:6113`, `:6115`, all inside
+  `resolve_parfor`. `Param` is declared at `src/tychoc.c:1394`:
+  ```c
+  typedef struct { char *name; Type type; int is_inout; int is_sink; int is_variadic; const char *ffi_ct; } Param;
+  ```
+  Six fields; the three initializers supplied three (`{ "__plo", T_INT, 0 }`),
+  so `is_sink`, `is_variadic` and `ffi_ct` were all left to implicit zero. GCC
+  names only the first missing field, which is why the warning reads `is_sink`.
+
+  **DIAGNOSIS: cosmetic — zero is the REQUIRED value, not an accident. Not a
+  latent bug.** The trace, site by site:
+  - `:6112` / `:6113` — `__plo` / `__phi` are the synthesized chunk bounds,
+    `T_INT`. `sink` is an ownership annotation on a heap-bearing value; on an
+    `int` it has no meaning, and `int` is mutable regardless
+    (`mutable = (!is_array && !is_map && !IS_SOA) || is_inout || is_sink`,
+    `:7106`). Both are 0 by construction.
+  - `:6115` — the captures. This is the one that could have been a latent bug,
+    so it was traced to its consumers. The lifted proc `pr` is pushed to
+    `g_parprocs` (`:6186`) and emitted by `gen_proc` (`:11205`), which does
+    `g_param_sink[i] = pr->params[i].is_sink` (`:9978`). `g_param_sink` is read
+    only by `is_sink_param` (`:7271`), whose single caller is `:7858`:
+    ```c
+    if (arg->kind == E_IDENT && (!is_param(arg->sval) || is_sink_param(arg->sval)))
+    ```
+    i.e. `is_sink = 1` is what PERMITS moving out of (consuming) a parameter's
+    buffer. Every chunk task of a `parallel for` is handed the SAME capture
+    values — they are borrows of the enclosing scope, shared across `tycho_ncpu()`
+    chunks — so consuming one in any chunk would hand off a buffer the other
+    chunks still read. `is_sink = 0` is therefore mandatory, and the omission was
+    correct. Confirmed against the twin path: the lambda-lift capture builder at
+    `:4533` sets `caps[ncap].is_sink = 0` **explicitly** for exactly the same
+    reason. Also note `resolve_parfor`'s own body-scope push at `:6172` computes
+    mutability as `!is_array(pt) && !is_map(pt) && !IS_SOA(pt)` and never reads
+    `is_sink` at all, and the parfor `Sig` is `memset` to 0 at `:6165`.
+    Non-zero at any of the three sites would have been the bug; zero is right.
+    No behaviour probe is possible because there is no observable difference —
+    the fix is byte-identical in behaviour, which the gates confirm.
+  - Fix: spell all six fields at each site and add the reasoning as a comment, so
+    a future `Param` field re-raises the warning here and forces a decision
+    rather than silently defaulting. No pragma, no `-Wno-`.
+
+  **TOTAL warning count for the compiler's own build (not just this class).**
+  The prompt asked whether "3" was the whole-file total or one class. VERIFIED:
+  it is the whole-file total — `grep -c 'warning:'` over the complete
+  `-Wall -Wextra` compile is 3, and all 3 lines carry
+  `[-Wmissing-field-initializers]`. There are no survivors needing justification.
+  ```
+  $ cc -O2 -fwrapv -Wall -Wextra -std=c11 -Ibuild -c src/tychoc.c -o /tmp/ph14/tychoc_before.o
+  BEFORE  exit=0  warnings=3   (all 3 -Wmissing-field-initializers)
+    src/tychoc.c:6112:5: warning: missing initializer for field ‘is_sink’ of ‘Param’
+     6112 |     pr->params[0] = (Param){ "__plo", T_INT, 0 };
+    src/tychoc.c:6113:5: warning: missing initializer for field ‘is_sink’ of ‘Param’
+     6113 |     pr->params[1] = (Param){ "__phi", T_INT, 0 };
+    src/tychoc.c:6115:9: warning: missing initializer for field ‘is_sink’ of ‘Param’
+     6115 |         pr->params[2 + i] = (Param){ pf->caps[i]->sval, pf->caps[i]->type, 0 };
+    src/tychoc.c:1394:59: note: ‘is_sink’ declared here
+
+  AFTER   exit=0  warnings=0   (empty stderr)
+  $ env -u LD_PRELOAD make
+  cc -O2 -fwrapv -Wall -Wextra -std=c11 -Ibuild src/tychoc.c -o tychoc
+  (no diagnostics)
+  ```
+  **3 → 0.**
+
+  **`compiler/tychoc0.ty` has no analogous gap — checked, and it is structurally
+  immune.** tychoc0 has no `Param` record at all: sink-ness is a `~` prefix on
+  the parameter's *type string* (`compiler/tychoc0.ty:3743`,
+  `fn is_sink(ty: string) -> bool: return len(ty) > 0 and ty[0] == 126`), so a
+  parameter's sink flag travels in the same value as its type and cannot be
+  "omitted" from an initializer. Its parfor twin builds the chunk proc's params
+  as two parallel `[]string`s (`:13418-13428`, `push(cps,"__plo")` /
+  `push(cpt,"int")` then the captures), and the capture types are filled at
+  `:13398` with `push(capt, base_ty(var_type(names, types, raw[j])))` — `base_ty`
+  strips the `~`, so a capture of an enclosing `sink` parameter is de-sinked
+  exactly as tychoc's `is_sink = 0` does. The two compilers agree on the
+  semantics by different mechanisms. Nothing to fix.
+
+  **Gates — all seven green, one per command, foreground, `env -u LD_PRELOAD`:**
+  ```
+  make test         passed: 478   failed: 0    / all green
+  make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+  make conc         conc: passed 37   failed 0
+  make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (35141 lines C)
+                    fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  make ilp32        passed: 478   failed: 0    / all green
+  make spec-check   spec-examples: 7 runnable example(s), all pass
+  make check-links  link check: ok (121 markdown files, no dead relative links)
+  git status --short   M src/tychoc.c        (no build spill)
+  ```
+  `make fixpoint` staying green is the meaningful signal here: the change is in
+  the resolver's synthesized-`Param` construction, and tychoc0 still reproduces
+  itself byte-identically, so nothing reached emitted text.
 
 - [x] **Phase 15 — tychoc0 does not check that an `if` condition is a bool (found by Phase 7, NOT fixed there)**
   - *(Renumbered from 14 → 15 by the main agent: Phase 4 had already filed a
@@ -3007,6 +3102,39 @@ codegen.
     `make fixpoint` is load-bearing.
   - Done when: `[bounded[N]T]`, `[[N]T]` and a `bounded` map key compile and run
     identically on both compilers, with fixtures; full gate set green.
+
+- [ ] **Phase 24 — `runtime/tycho_rt.c` has 4 real `-Wmisleading-indentation` warnings under the project's own flags (found by Phase 14, out of its scope)**
+  - Phase 14 owned the *compiler's* own build (`src/tychoc.c`, `Makefile:31-32`),
+    which is now 0 warnings. The runtime is a different surface: `Makefile:23-26`
+    never compiles `runtime/tycho_rt.c` — it `awk`s it into a C string literal
+    (`build/tycho_rt_embed.h`), and the bytes are only ever compiled as part of an
+    *emitted* program, on the codegen `cc` line inside `src/tychoc.c`. So the
+    runtime's warning-cleanliness under `-Wall -Wextra` is currently unmeasured by
+    any gate, in either direction.
+  - Measured on 2026-07-25 (probe, not a change):
+    ```
+    $ cc -O2 -fwrapv -Wall -Wextra -std=c11 -c runtime/tycho_rt.c -o /tmp/ph14/rt.o
+    exit=0  warnings=37  errors=0
+      33  [-Wunused-function]
+       4  [-Wmisleading-indentation]   runtime/tycho_rt.c:2380, :2390, :2400, :2410
+    ```
+  - **Only the 4 are real.** The 33 `-Wunused-function` are an artifact of the
+    probe: every runtime helper is `static`, and compiling the file standalone
+    means nothing calls them. In real use the runtime is inlined into a program
+    that uses a subset, so that class is expected there too and is not evidence of
+    dead code. The 4 `-Wmisleading-indentation` are genuine source hygiene in the
+    runtime itself and are independent of how it is compiled.
+  - NOT absorbed into Phase 14 (scope lock: Phase 14's scope is the compiler's own
+    build). Also distinct from Phase 4, which scored the *emitted* C of specific
+    fixtures, not the embedded runtime prelude.
+  - Scope when taken: read the four sites, fix the indentation (or the control
+    flow, if the indentation is telling the truth and the braces are not — check
+    that first, `-Wmisleading-indentation` occasionally finds a real bug). Decide
+    separately whether a gate should compile the runtime standalone with
+    `-Wall -Wextra -Wno-unused-function`; that is a new gate and new failure
+    surface, so it is a judgement call, not automatic.
+  - Done when: the 4 `-Wmisleading-indentation` sites are diagnosed as cosmetic or
+    real (with the reasoning written down) and fixed; full gate set green.
 
 ## Out of scope
 

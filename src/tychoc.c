@@ -6109,10 +6109,21 @@ static void resolve_parfor(Stmt *s) {
     pr->line = s->line;
     pr->nparams = 2 + pf->ncap;
     pr->params = (Param *)xmalloc((size_t)pr->nparams * sizeof(Param));
-    pr->params[0] = (Param){ "__plo", T_INT, 0 };
-    pr->params[1] = (Param){ "__phi", T_INT, 0 };
+    /* Every field spelled out (name, type, is_inout, is_sink, is_variadic,
+     * ffi_ct) so a future Param field re-raises -Wmissing-field-initializers
+     * here and forces a decision, instead of silently defaulting.
+     * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
+     * value the callee may consume once (is_sink_param -> can_move_from,
+     * :7271/:7858). Every chunk proc is handed the SAME capture values, and the
+     * bounds/captures are borrows of the enclosing scope, so consuming one in
+     * any chunk would hand off a buffer another chunk still reads. 0 is the
+     * required value, and it matches the lambda-lift twin at :4533 which sets
+     * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
+     * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
+    pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
+    pr->params[1] = (Param){ "__phi", T_INT, 0, 0, 0, NULL };
     for (int i = 0; i < pf->ncap; i++)
-        pr->params[2 + i] = (Param){ pf->caps[i]->sval, pf->caps[i]->type, 0 };
+        pr->params[2 + i] = (Param){ pf->caps[i]->sval, pf->caps[i]->type, 0, 0, 0, NULL };
     Type accts[4];
     for (int i = 0; i < pf->nacc; i++) accts[i] = pf->acct[i];
     pr->ret = pf->nacc == 0 ? T_INT : pf->nacc == 1 ? pf->acct[0] : tup_of(accts, pf->nacc);
