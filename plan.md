@@ -2330,7 +2330,7 @@ codegen.
     nested-`bounded` and `bytes` elements in local, param, field and return
     positions; §5.3.10's caveat note removed; full gate set green.
 
-- [ ] **Phase 20 — tychoc0 FAIL-OPENS on an affine handle in *every* container and aggregate, not only `bounded` (measured by Phase 18, out of its scope)**
+- [x] **Phase 20 — tychoc0 FAIL-OPENS on an affine handle in *every* container and aggregate, not only `bounded` (measured by Phase 18, out of its scope)**
   - Phase 18 fixed `bounded[N]Channel(T)` because that is the divergence Phase 11
     filed. While verifying it, an 11-probe sweep found the same fail-open across
     **the whole container family** — tychoc rejects at six type-intern choke
@@ -2380,6 +2380,211 @@ codegen.
     fixture-locked, `tests/conc/` still passes (the legal uses — a `Channel(T)`
     *parameter*, `spawn`, `wait` — must NOT be tightened), full gate set green.
 
+  **DONE 2026-07-25. 75 probes, FRONTEND-DIVERGENT 40 → 0. Method: FRONT/CC/RUN
+  per compiler, `--emit-c` on BOTH sides (`/tmp/ph20/probe.py`, Phase 11/18's
+  harness), never an `rc` comparison. `src/tychoc.c` was NOT touched — tychoc was
+  right throughout.**
+
+  **1. Every citation this phase relied on was opened and VERIFIED.**
+
+  | Claim | Verdict |
+  |---|---|
+  | `docs/spec/03-types.md` §5.3.9 already requires the reject | **correct** — §5.3.9 heading at `:234`; `:236-241` "A handle value cannot be copied, stored in any aggregate, captured by a closure or `parallel for`, or returned from a Tycho function (§25). The concurrency handle types `Task(T)` and `Channel(T)` are similarly affine and non-storable" |
+  | tychoc rejects at six type-intern choke points `:611-613`, `:669-671`, `:752-754`, `:775-777`, `:839-841`, `:1009-1011` | **correct**, and there is a **seventh** the plan missed: `func_of` `:1030-1032` (a function VALUE may not take or return a handle) |
+  | `tests/run.sh:148-212` compares the FRONTEND status | **correct** — `:155` `"$TYCHOC" "$hi" --emit-c`, `:159` `"$TMP/h0" "$hi" --emit-c`; no `cc` on either side |
+
+  **2. tychoc's enforcement pattern, from its source.** Every composite type in
+  tychoc is built by a *find-or-create interner*, and the affine check is the
+  first thing each one does — before the dedupe scan, so no spelling can reach
+  the table:
+  ```
+  chan_of      :611-613   arrc_sized_b :669-671   opt_of :752-754   res_of :775-777
+  tup_of       :839-841   mapc_of      :1009-1011 func_of :1030-1032
+      if (IS_TASK(x)) task_container_err();     /* :566-568 */
+      if (IS_HANDLE(x)) handle_container_err(); /* :587-589 */
+      if (IS_CHAN(x)) chan_container_err();     /* :606-608 */
+  ```
+  Its own comment states the argument (`:563-565`): "every aggregate containing a
+  task would have to intern a type through one of these". Three positions are
+  **not** composite constructions — a bare `Channel(T)` field, enum payload or
+  newtype underlying — so `resolve_program` scans the declarations for those
+  (`:7011-7014`, `:7019-7023`, `:7020-7022`). Seven interners + one decl scan is
+  the whole enforcement.
+
+  **3. tychoc0's equivalent choke points, and why they cover the FAMILY and not
+  the sample.** tychoc0 has no intern step: **a type IS the string that spells
+  it**. So the structural analogue of "interning" is "constructing the type
+  string", and there are exactly **two** functions in the compiler that do it:
+  - **`parse_type_d`** (`compiler/tychoc0.ty:1680`) — every *written* composite
+    spelling. All 13 construction sites now call one shared guard,
+    `ck_affine_part` (`:1653`): tuple `:1703`, `[N]T` `:1725`, `[#W]T` `:1740`,
+    `[$N]T` `:1752`, map key+value `:1759-1760`, dynamic `[T]` `:1763`, `soa`
+    `:1770`, `bounded` `:1802`, `Channel(T)` `:1862`, `Option(T)` `:1868`,
+    `Result(T,E)` `:1876-1877`, generic type argument `:1914`; the `fn(P)->R`
+    type is `:1820`/`:1825` with tychoc's own two `func_of` messages.
+  - **`type_of`** (`:5165`) — every *inferred* composite, from a literal that
+    spells no type at all. Shared guard `ck_affine_inferred` (`:5096`) at
+    `EArrLit` `:5179`/`:5182`, `EArrEmpty` `:5189`, `EMapEmpty` `:5192-5193`,
+    `EMapLit` `:5198-5199`, `ETuple` `:5210`, `Some(...)` `:5344`.
+
+    Plus the same three declaration positions tychoc scans, which are not
+    composite constructions: struct field `:2432`, enum payload `:2771`, newtype
+    underlying `:2799` — each with tychoc's exact wording.
+
+    **Why this is the family, not the sample.** The check is on each *immediate*
+    component at construction, which closes nesting by induction exactly as
+    tychoc's seven interners do: `[Option(Channel(int))]` dies at the inner
+    `Option` site before the array site is ever reached; `[string: [Task(int)]]`
+    dies at the inner array. A twelfth spelling cannot fail open unless it is a
+    composite type built somewhere other than these two functions — and there is
+    nowhere else, because a composite type in tychoc0 has no representation other
+    than a string one of them produced. Phase 18's inline `bounded` check was
+    **folded into** the shared guard so the rule is one rule, not eleven.
+  - **The `Task(T)` twin, resolved by measurement not assumption.** `Task(T)` is
+    tychoc0's INTERNAL spelling of the spawn handle (`type_of`'s `ESpawn` arm,
+    `:5253`), so a *written* `Task(int)` fell through the generic-instance branch
+    and was handed straight back as the real handle type — the identical fail-open
+    shape Phase 9 closed for `str`/`void`/`char` one level down. tychoc reports
+    `unknown type 'Task'` (`src/tychoc.c:1951`). But a blanket reject would have
+    **over-tightened**: `Task` is an ordinary name in tychoc, and
+    `struct Task($T)` + `[Task(int)]` is *accepted and runs on both compilers*
+    (measured — probes `uTask_gen_in_arr`, `uTask_gen_opt`, `uTask_plain_in_arr`).
+    So the guard is decl-aware: `declares_type_name(toks, "Task")` (`:1671`), a
+    token scan reached only when a type literally spells `Task(`. `Channel` needs
+    no such test — `parse_type_d` has a dedicated `Channel` branch that shadows any
+    user declaration, and tychoc does the same (measured: `struct Channel($T)` +
+    `[Channel(int)]` is REJECTED by tychoc, `uChannel_gen_in_arr`).
+
+  **4. BEFORE — the plan's 11 probes plus 43 more (`/tmp/ph20/p20.py`, `x.py`,
+  `y.py`).** The plan's table is reproduced exactly; the four marked **RAN** are
+  the ones that produced a working binary storing a handle the compiler promised
+  could not be stored.
+
+  | probe | form | tychoc FRONT | tychoc0 FRONT |
+  |---|---|---|---|
+  | dynarr_chan | `[Channel(int)]` local | REJECT | **ACCEPT** (CCFAIL) |
+  | fixarr_chan | `[2]Channel(int)` local | REJECT | **ACCEPT** (CCFAIL) |
+  | dynarr_chan_param | `[Channel(int)]` param | REJECT | **ACCEPT** (CCFAIL) |
+  | fixarr_chan_param | `[2]Channel(int)` param | REJECT | **ACCEPT** (CCFAIL) |
+  | struct_chan | `Channel(int)` struct field | REJECT `a struct field cannot be a channel` | **ACCEPT, COMPILED AND RAN** |
+  | map_chan | `[string: Channel(int)]` | REJECT | **ACCEPT** (CCFAIL) |
+  | opt_chan | `Option(Channel(int))` | REJECT | **ACCEPT, COMPILED AND RAN** |
+  | tuple_chan | `(int, Channel(int))` | REJECT | **ACCEPT** (CCFAIL) |
+  | chan_of_chan | `Channel(Channel(int))` | REJECT | **ACCEPT, COMPILED AND RAN** |
+  | plain_task_ty | `Task(int)` written param type | REJECT `unknown type 'Task'` | **ACCEPT, COMPILED AND RAN** |
+  | dynarr_task | `[Task(int)]` param | REJECT | **ACCEPT** (CCFAIL) |
+
+  The extended sweep found the same fail-open in **29 further shapes**, eleven of
+  which also COMPILED AND RAN: `res_ok_chan`, `res_err_chan`, `res_ok_task`,
+  `opt_task`, `struct_task`, `enum_chan`, `enum_task`, `chan_of_task`,
+  `task_of_chan`, `soa_chan`, `soa_task`, `generic_arg_chan`, `generic_arg_task`,
+  `ret_task`, `newtype_chan`, `newtype_task`, `inf_opt_chan`, `inf_some_task`.
+  CCFAIL in the rest: `fixarr_task`, `map_task`, `tuple_task`, `arr_opt_chan`,
+  `map_arr_task`, `arr_tuple_chan`, `opt_arr_chan`, `arr_arr_chan`,
+  `ret_arr_chan`, `fnty_param_chan`, `fnty_ret_chan`, `inf_arr_chan`,
+  `inf_arr_task`, `inf_map_chan`, `inf_tuple_chan`, `inf_push_chan`,
+  `inf_fixarr_chan`, `inf_arr_empty_chan`, `inf_tuple_task`, `inf_map_task`.
+
+  ```
+  BEFORE  p20.py 54 probes  DIVERGENT 40      x.py 17 probes  DIVERGENT 9
+          y.py    4 probes  DIVERGENT  1      TOTAL 75 / 50
+  ```
+  (`p20.py` and `x.py` overlap on two probes whose first spelling was invalid —
+  `newtype_chan` used `newtype C = ...` where the syntax is `type C = ...`, and
+  `inf_struct_chan` omitted the channel; `x.py` carries the corrected forms.)
+
+  **5. AFTER — same three harnesses, same probes.**
+  ```
+  AFTER   p20.py 54 probes  FRONTEND-DIVERGENT 0
+          x.py   17 probes  FRONTEND-DIVERGENT 0
+          y.py    4 probes  FRONTEND-DIVERGENT 0
+          TOTAL  75 probes  FRONTEND-DIVERGENT 0
+  ```
+  Representative rows, tychoc → tychoc0:
+  ```
+  struct_chan       a struct field cannot be a channel        -> same text
+  enum_chan         an enum payload cannot be a channel       -> same text
+  opt_chan          a channel handle cannot be stored in a container or aggregate
+                    -- pass it as an argument instead         -> same text
+  fnty_param_chan   a function value cannot take a task or channel handle -> same text
+  fnty_ret_chan     a function value cannot return a task or channel handle -> same text
+  newtype_chan      (tychoc: newtype underlying restriction)  -> a newtype cannot wrap a channel
+  plain_task_ty     unknown type 'Task'                       -> unknown type 'Task' -- a task
+                                                                 handle is produced by `spawn f(...)`
+  inf_arr_chan      a channel handle cannot be stored ...     -> same text (die_at, with caret)
+  inf_some_task     a task handle cannot be stored ... wait(t) first -> same text
+  bounded_chan / bounded_task (Phase 18) — still REJECT on both, unchanged
+  ```
+
+  **6. Legal-use control — NOT over-tightened.** Eight positive probes carried in
+  the same sweep, all ACCEPT/cc-ok/correct output on **both** compilers, before
+  and after, byte-identical:
+  ```
+  ok_chan_local    ch := channel(int,4); send; recv; close      -> "7"
+  ok_chan_param    Channel(int) param + spawn + wait + recv     -> "3 3"
+  ok_spawn_wait    t := spawn f(21); wait(t)                    -> "42"
+  ok_arr_int / ok_opt_int / ok_struct_arr / ok_bounded_int / ok_generic_box
+  uTask_gen_in_arr    struct Task($T) + [Task(int)]             -> "2"   (would have regressed
+  uTask_gen_opt       struct Task($T) + Option(Task(int))       -> "1"    under a blanket
+  uTask_plain_in_arr  struct Task + [Task]                      -> "1"    Task( reject)
+  ```
+  `make conc` (37 fixtures, the real channel/spawn/parallel-for corpus) and
+  `make fixpoint` (tychoc0 compiling **itself** — its own source uses channels)
+  are the load-bearing tripwires and both stayed green.
+
+  **7. Fixtures — 22 new, one file per distinct rejection** (the compiler halts at
+  the first error, so they cannot be merged). Test count **452 → 474**. Each was
+  hand-checked against **both** compilers before the gate run: 22/22 reject on
+  both, with a non-empty diagnostic from tychoc.
+  ```
+  tests/reject/affine_chan_arr_elem.ty        [Channel(int)]
+  tests/reject/affine_chan_fixarr_elem.ty     [2]Channel(int)
+  tests/reject/affine_chan_map_val.ty         [string: Channel(int)]
+  tests/reject/affine_chan_tuple_elem.ty      (int, Channel(int))
+  tests/reject/affine_chan_opt_inner.ty       Option(Channel(int))          <- RAN before
+  tests/reject/affine_chan_result_inner.ty    Result(Channel(int), string)  <- RAN before
+  tests/reject/affine_chan_struct_field.ty    struct field                  <- RAN before
+  tests/reject/affine_chan_enum_payload.ty    enum payload                  <- RAN before
+  tests/reject/affine_chan_of_chan.ty         Channel(Channel(int))         <- RAN before
+  tests/reject/affine_chan_generic_arg.ty     Box(Channel(int))             <- RAN before
+  tests/reject/affine_chan_newtype.ty         type C = Channel(int)         <- RAN before
+  tests/reject/affine_chan_soa_field.ty       soa[S], S has a chan field    <- RAN before
+  tests/reject/affine_chan_fnty_param.ty      fn(Channel(int)) -> int
+  tests/reject/affine_chan_fnty_ret.ty        fn(int) -> Channel(int)
+  tests/reject/affine_task_written_type.ty    Task(int) as a written type   <- RAN before
+  tests/reject/affine_task_arr_elem.ty        [Task(int)]
+  tests/reject/affine_chan_infer_arr.ty       cs := [ch]            (inferred)
+  tests/reject/affine_task_infer_arr.ty       ts := [spawn f(1)]    (inferred)
+  tests/reject/affine_chan_infer_map.ty       m := ["a": ch]        (inferred)
+  tests/reject/affine_chan_infer_tuple.ty     p := (1, ch)          (inferred)
+  tests/reject/affine_chan_infer_some.ty      o := Some(ch)         (inferred) <- RAN before
+  tests/reject/affine_chan_infer_push.ty      cs := []; push(cs,ch) (inferred, no type anywhere)
+  ```
+
+  **8. Gates — all seven green, each its own foreground `env -u LD_PRELOAD make …`;
+  tychoc0 built to `/tmp/ph20/`, outside the tree:**
+  ```
+  test        passed: 474   failed: 0  /  all green          (was 452; +22 fixtures)
+  corelib     corelib: all green (tychoc and tychoc0 agree, match goldens)
+  conc        conc: passed 37   failed 0
+  fixpoint    ok  B == C : tychoc0 reproduces itself byte-identically (35081 lines C)
+              ok  split tychoc0 (2 packages) self-hosts E==F and matches the single-file compiler
+              fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+  ilp32       passed: 474   failed: 0  /  all green
+  spec-check  spec-examples: 7 runnable example(s), all pass
+  check-links link check: ok (121 markdown files, no dead relative links)
+  ```
+  `git status --short`: `compiler/tychoc0.ty` modified + the 22 new fixtures only.
+  No build spill.
+
+  **Residual uncertainty.** `declares_type_name` matches `struct|enum|type Task`
+  anywhere in the token stream, so a program that declares `Task` in *one*
+  package of a multi-package bundle re-opens the written-`Task` hole for the
+  others. That is strictly narrower than the pre-phase behaviour (which was open
+  unconditionally), and it needs a decl table the parser does not have; a
+  program that declares a type named `Task` at all is the exotic case the guard
+  exists to protect. Not fixture-locked.
+
 - [ ] **Phase 21 — the deferred const-size encodings leak into diagnostics outside a local declaration (observed by Phase 18)**
   - Both `[#W]T` (fixed array, `compiler/tychoc0.ty:1692`) and `[b#W]T`
     (`bounded`, `:1734`) are parser-internal encodings resolved by `mangle_type`.
@@ -2400,6 +2605,29 @@ codegen.
     the mechanism Phase 3 established for locking message text.
   - Done when: all four positions give tychoc's wording on both compilers, the
     diag fixtures lock it, full gate set green.
+
+- [ ] **Phase 22 — tychoc0 does not restrict a newtype's UNDERLYING type the way tychoc does (found by Phase 20, out of its scope)**
+  - Phase 20 needed one newtype probe (`type C = Channel(int)`) and found that
+    tychoc rejects it with a *general* rule — `a newtype's underlying type must
+    be int, float, string…` (measured 2026-07-25, `/tmp/ph20/x.py`) — while
+    tychoc0 had no such rule at all and accepted it, compiled it and ran it.
+  - Phase 20 closed **only the affine-handle case** (`compiler/tychoc0.ty:2799`,
+    `a newtype cannot wrap a channel`, tychoc's `resolve_program` wording from
+    `src/tychoc.c:7020-7022`), because that is what its scope named. The rest of
+    tychoc's underlying-type restriction is unmeasured: whether `type C = [int]`,
+    `type C = (int, int)`, `type C = Option(int)`, `type C = SomeStruct`,
+    `type C = fn(int)->int` and friends agree is **not known**, and every one of
+    them is a potential fail-open of the same class.
+  - Scope when taken: read tychoc's newtype underlying-type check, sweep the
+    whole underlying-type space with the FRONT/CC/RUN harness, fix whichever side
+    the spec supports, and fixture-lock each distinct rejection.
+  - Also fold in one diagnostic-quality observation from the same probe:
+    `soa[Channel(int)]` is rejected by both, but tychoc says `soa requires a
+    struct element type` where tychoc0 now says the affine-container message
+    (before Phase 20 it said `codegen: soa of unknown struct`). Decision agrees;
+    text does not. Phase 2's divergence set, not a fail-open.
+  - Done when: the underlying-type decision agrees on both compilers across the
+    swept space, each distinct rejection is fixture-locked, full gate set green.
 
 ## Out of scope
 

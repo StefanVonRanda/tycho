@@ -1,0 +1,6 @@
+# Phase 20: the same written-Task fail-open seen through a container.
+fn f(v: [Task(int)]) -> int:
+    return len(v)
+
+fn main():
+    print("x")

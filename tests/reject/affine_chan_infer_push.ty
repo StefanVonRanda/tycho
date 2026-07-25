@@ -1,0 +1,8 @@
+# Phase 20, INFERRED half: a bare [] grounded to the element type by a later push
+# (type_of's EArrEmpty arm) -- the spelling that carries no type ANYWHERE in the source.
+fn main():
+    ch := channel(int, 4)
+    cs := []
+    push(cs, ch)
+    print(str(len(cs)))
+    close(ch)

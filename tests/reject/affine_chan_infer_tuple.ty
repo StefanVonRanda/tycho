@@ -1,0 +1,6 @@
+# Phase 20, INFERRED half: a tuple literal (type_of's ETuple arm).
+fn main():
+    ch := channel(int, 4)
+    p := (1, ch)
+    print("x")
+    close(ch)

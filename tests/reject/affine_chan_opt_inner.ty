@@ -1,0 +1,7 @@
+# Phase 20: ... nor an Option payload (tychoc: opt_of, src/tychoc.c:752-754).
+# BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
+fn f(v: Option(Channel(int))) -> int:
+    return 1
+
+fn main():
+    print("x")

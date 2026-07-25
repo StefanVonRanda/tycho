@@ -1,0 +1,6 @@
+# Phase 20, INFERRED half: a map literal (type_of's EMapLit arm).
+fn main():
+    ch := channel(int, 4)
+    m := ["a": ch]
+    print(str(len(m)))
+    close(ch)

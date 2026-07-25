@@ -1,0 +1,7 @@
+# Phase 20, INFERRED half: an array LITERAL spells no type, so it never reaches
+# parse_type_d -- type_of's EArrLit arm is the second construction choke point.
+fn main():
+    ch := channel(int, 4)
+    cs := [ch]
+    print(str(len(cs)))
+    close(ch)

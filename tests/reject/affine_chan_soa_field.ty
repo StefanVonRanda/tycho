@@ -1,0 +1,10 @@
+# Phase 20: ... nor a soa element's field (soa is an aggregate of the struct's fields).
+# BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
+struct S:
+    c: Channel(int)
+
+fn f(v: soa[S]) -> int:
+    return 1
+
+fn main():
+    print("x")

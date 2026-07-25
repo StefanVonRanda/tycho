@@ -1631,6 +1631,52 @@ fn parse_stmt(toks: [Token], pos: inout int, pending: inout [Stmt]) -> Stmt:
 fn tok_starts_type(k: Tok) -> bool:
     return k == TIdent or k == TLBracket or k == TDollar or k == TLParen
 
+# --- affine concurrency handles in containers/aggregates (spec 03-types.md
+# 5.3.9: a handle "cannot be copied, stored in any aggregate, ...", and
+# "Task(T) and Channel(T) are similarly affine and non-storable") --------------
+#
+# tychoc fails closed at its type-INTERN choke points: every composite type it
+# builds is constructed by one of seven find-or-create functions, each of which
+# rejects an affine component before interning -- chan_of (src/tychoc.c:611-613),
+# arrc_sized_b (:669-671), opt_of (:752-754), res_of (:775-777), tup_of
+# (:839-841), mapc_of (:1009-1011) and func_of (:1030-1032) -- plus a scan of the
+# struct/enum/newtype declarations in resolve_program (:7011-7026).
+#
+# tychoc0 has NO intern step: a type IS the string that spells it. Its equivalent
+# choke points are therefore the two places a composite type string is
+# CONSTRUCTED -- parse_type_d below (every WRITTEN composite spelling) and type_of
+# (every INFERRED one, from a literal) -- plus the same three declaration
+# positions tychoc scans. Checking each IMMEDIATE component at construction covers
+# the whole family by induction, exactly as tychoc's seven interners do: a nested
+# `[Option(Channel(int))]` dies at the inner Option site before the array site is
+# ever reached, so no spelling can slip past by being deeper.
+fn ck_affine_part(toks: [Token], ty: string, line: int):
+    if has_prefix(ty, "Channel("):
+        die("parse: line " + str(line) + ": a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead")
+    if has_prefix(ty, "Task(") and not declares_type_name(toks, "Task"):
+        die("parse: line " + str(line) + ": a task handle cannot be stored in a container or aggregate -- wait(t) first")
+
+# Does the token stream DECLARE a type named `nm` (`struct nm` / `enum nm` /
+# `type nm`)? `Task(T)` is tychoc0's INTERNAL spelling of the spawn handle (built
+# by type_of's ESpawn arm) and is NOT a written type keyword: tychoc reports
+# `unknown type 'Task'` for a written `Task(...)`. But `Task` is an ORDINARY name
+# there, so a program that declares `struct Task($T)` and writes `[Task(int)]` is
+# accepted and runs on BOTH compilers (measured, Phase 20) -- rejecting the
+# spelling outright would over-tighten. `Channel` needs no such test: parse_type_d
+# has a dedicated `Channel` branch that shadows any user declaration, and tychoc
+# does the same (a `struct Channel($T)` + `[Channel(int)]` is rejected by tychoc).
+# The parser has no decl table, so the two sites that need the answer scan the
+# token stream. Only reached when a type literally spells `Task(`, so it costs
+# nothing on ordinary code.
+fn declares_type_name(toks: [Token], nm: string) -> bool:
+    i := 0
+    for i + 1 < len(toks):
+        if toks[i].kind == TIdent and (toks[i].text == "struct" or toks[i].text == "enum" or toks[i].text == "type"):
+            if toks[i + 1].kind == TIdent and toks[i + 1].text == nm:
+                return true
+        i = i + 1
+    return false
+
 fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
     # H2 (type vector): bound nested-type recursion ([[[[...]]]], tuples,
     # generics) so a crafted deeply-nested type can't overflow the stack.
@@ -1654,6 +1700,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         out := "("
         i := 0
         for i < len(parts):
+            ck_affine_part(toks, parts[i], toks[pos].line)   # tup_of, src/tychoc.c:839-841
             if i > 0:
                 out = out + ","
             out = out + parts[i]
@@ -1675,6 +1722,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
             return "[" + str(fixn) + "]" + felem
         # [W]T where W is an int `const` name (resolved to its literal in the mangle pass,
         # which always runs when a const is present). Encoded "[#W]T" until then.
@@ -1689,6 +1737,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
             return "[#" + cnm + "]" + felem
         # [$N]T generic-over-size (const generics 1.6B): a `$N` size parameter (its length
         # inferred from the argument at each call). Distinguished from a dynamic `[$T]`
@@ -1700,20 +1749,25 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
             return "[$" + snm + "]" + felem
         inner := parse_type_d(toks, &pos, depth + 1)
         if toks[pos].kind == TColon:
             pos = pos + 1
             v := parse_type_d(toks, &pos, depth + 1)
             expect(toks, &pos, TRBracket)
+            ck_affine_part(toks, inner, toks[pos].line)       # mapc_of, src/tychoc.c:1009-1011
+            ck_affine_part(toks, v, toks[pos].line)
             return "{" + inner + ":" + v + "}"
         expect(toks, &pos, TRBracket)
+        ck_affine_part(toks, inner, toks[pos].line)           # arrc_sized_b (dynamic [T]), src/tychoc.c:669-671
         return "[" + inner + "]"
     if toks[pos].kind == TIdent and toks[pos].text == "soa":   # soa [Struct]
         pos = pos + 1
         expect(toks, &pos, TLBracket)
         st := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRBracket)
+        ck_affine_part(toks, st, toks[pos].line)              # soa element (a struct with a handle field is caught at parse_struct)
         return "soa[" + st + "]"
     if toks[pos].kind == TIdent and toks[pos].text == "bounded":   # bounded[N]T: inline fixed-cap, variable-count
         pos = pos + 1
@@ -1742,11 +1796,10 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         # An affine concurrency handle may not be stored in a container or aggregate
         # (spec 03-types.md 5.3.9/5.3.10). tychoc fails closed at its type-intern choke
         # point (src/tychoc.c:669-671 arrc_sized_b, messages :567 and :607); tychoc0 has
-        # no intern step, so the bounded element is checked here.
-        if has_prefix(belem, "Channel("):
-            die("parse: line " + str(toks[pos].line) + ": a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead")
-        if has_prefix(belem, "Task("):
-            die("parse: line " + str(toks[pos].line) + ": a task handle cannot be stored in a container or aggregate -- wait(t) first")
+        # no intern step, so the bounded element is checked here. Phase 18 added this
+        # inline; Phase 20 folded it into the shared ck_affine_part used by every other
+        # composite site, so the whole family is one rule rather than eleven.
+        ck_affine_part(toks, belem, toks[pos].line)           # arrc_sized_b, src/tychoc.c:669-671
         return bpfx + belem
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
         pos = pos + 1
@@ -1762,9 +1815,14 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         if toks[pos].kind == TArrow:
             pos = pos + 1
             ret = parse_type_d(toks, &pos, depth + 1)
+        # func_of, src/tychoc.c:1030-1032 -- tychoc's messages, verbatim.
+        if has_prefix(ret, "Channel(") or (has_prefix(ret, "Task(") and not declares_type_name(toks, "Task")):
+            die("parse: line " + str(toks[pos].line) + ": a function value cannot return a task or channel handle")
         out := "fn("
         i := 0
         for i < len(params):
+            if has_prefix(params[i], "Channel(") or (has_prefix(params[i], "Task(") and not declares_type_name(toks, "Task")):
+                die("parse: line " + str(toks[pos].line) + ": a function value cannot take a task or channel handle")
             if i > 0:
                 out = out + ","
             out = out + params[i]
@@ -1801,11 +1859,13 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         expect(toks, &pos, TLParen)
         cht := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
+        ck_affine_part(toks, cht, toks[pos].line)             # chan_of, src/tychoc.c:611-613
         return "Channel(" + cht + ")"
     elif name == "Option":
         expect(toks, &pos, TLParen)
         t := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
+        ck_affine_part(toks, t, toks[pos].line)               # opt_of, src/tychoc.c:752-754
         return "Option(" + t + ")"
     elif name == "Result":
         expect(toks, &pos, TLParen)
@@ -1813,6 +1873,8 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         expect(toks, &pos, TComma)
         e := parse_type_d(toks, &pos, depth + 1)
         expect(toks, &pos, TRParen)
+        ck_affine_part(toks, t, toks[pos].line)               # res_of, src/tychoc.c:775-777
+        ck_affine_part(toks, e, toks[pos].line)
         return "Result(" + t + "," + e + ")"
     else:
         # AUDIT/spec: the type keywords are EXACTLY int/float/bool/string/ptr/bytes/
@@ -1829,6 +1891,15 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         # here: an internal spelling is not user-writable.
         if name == "char" or name == "void" or name == "str":
             die("type: '" + name + "' is not a type keyword (the type keywords are int, float, bool, string, ptr, bytes, u8..u64, i8..i64, f32); a char arises by inference (e.g. c := 'x'), `void` is the implicit no-return, and the string type is spelled `string`")
+        # Same fail-OPEN shape as the three above, one level up: "Task(T)" is tychoc0's
+        # INTERNAL spelling of the spawn handle (type_of's ESpawn arm), so a WRITTEN
+        # `Task(int)` would fall through the generic-instance branch below and be handed
+        # back as the real handle type -- tychoc rejects it (`unknown type 'Task'`,
+        # src/tychoc.c:1951: Task has no written type name, a handle is born from
+        # `spawn`). Unlike `Channel`, `Task` is an ordinary name in tychoc, so a program
+        # that DECLARES one keeps working on both compilers -- hence the decl test.
+        if name == "Task" and toks[pos].kind == TLParen and not declares_type_name(toks, "Task"):
+            die("parse: line " + str(toks[pos].line) + ": unknown type 'Task' -- a task handle is produced by `spawn f(...)` and has no written type name")
         if toks[pos].kind == TLParen:            # generics: `Box(int)` generic-struct instance in type position
             pos = pos + 1
             targs := []string
@@ -1840,6 +1911,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             out := name + "("
             j := 0
             for j < len(targs):
+                ck_affine_part(toks, targs[j], toks[pos].line)   # a generic type ARGUMENT is stored in the instance's fields, so it is an aggregate slot too (tychoc: `a struct field cannot be a channel`, src/tychoc.c:7018)
                 if j > 0:
                     out = out + ","
                 out = out + targs[j]
@@ -2350,6 +2422,14 @@ fn parse_struct(toks: [Token], pos: inout int) -> StructDef:
             pos = pos + 1
             expect(toks, &pos, TColon)
             fty := parse_type(toks, &pos)
+            # A field is an aggregate slot, and a bare `Channel(T)` there is not a
+            # composite construction, so parse_type_d's component checks never see it.
+            # tychoc scans the declarations for exactly this (resolve_program,
+            # src/tychoc.c:7011-7014); its wording, verbatim. A `Task(T)` field is
+            # already rejected inside parse_type as `unknown type 'Task'`, matching
+            # tychoc's own verdict for that position.
+            if has_prefix(fty, "Channel("):
+                die("parse: line " + str(toks[pos].line) + ": a struct field cannot be a channel")
             push(fields, Field(fname, fty))
             if toks[pos].kind == TNewline:
                 pos = pos + 1
@@ -2685,6 +2765,11 @@ fn parse_enum(toks: [Token], pos: inout int) -> EnumDef:
                         pos = pos + 1
                         push(ptypes, parse_type(toks, &pos))
                 expect(toks, &pos, TRParen)
+            pk := 0                              # enum payload = an aggregate slot (resolve_program, src/tychoc.c:7019-7023); tychoc's wording, verbatim
+            for pk < len(ptypes):
+                if has_prefix(ptypes[pk], "Channel("):
+                    die("parse: line " + str(toks[pos].line) + ": an enum payload cannot be a channel")
+                pk = pk + 1
             push(variants, Variant(vname, ptypes))
             if toks[pos].kind == TNewline:
                 pos = pos + 1
@@ -2709,7 +2794,10 @@ fn parse_newtype(toks: [Token], pos: inout int) -> Param:   # `type Name = Under
     ck_ident(name, toks[pos].line)
     pos = pos + 1
     expect(toks, &pos, TEq)
-    return Param(name, parse_type(toks, &pos))
+    under := parse_type(toks, &pos)
+    if has_prefix(under, "Channel("):            # resolve_program, src/tychoc.c:7020-7022; tychoc's wording, verbatim
+        die("parse: line " + str(toks[pos].line) + ": a newtype cannot wrap a channel")
+    return Param(name, under)
 
 # ---- package mangling (Stage D) ------------------------------------------
 # The stdin stream may concatenate several packages, each headed by `package X`
@@ -4999,6 +5087,18 @@ fn ufcs_name(dc: Decls, ctx: Ctx, names: [string], types: [string], callee: Expr
             return cn
     return ""
 
+# The INFERRED half of the affine-containment rule (see ck_affine_part, :1634).
+# A container built from a LITERAL never passes through parse_type_d -- `cs := [ch]`
+# spells no type at all -- so type_of's composite arms are the second and last place
+# a composite type string is constructed, and they get the same per-component check.
+# Decl-aware where the parser could not be: `Task(` is the internal spawn-handle
+# spelling unless the program declares a type of that name.
+fn ck_affine_inferred(dc: Decls, ctx: Ctx, code: int, ty: string):
+    if is_chan(ty):
+        die_at(dc, code, "a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead")
+    if is_task(ty) and not is_struct(dc, ctx, "Task") and not is_enum(dc, ctx, "Task"):
+        die_at(dc, code, "a task handle cannot be stored in a container or aggregate -- wait(t) first")
+
 fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> string:
     match e:
         EInt(t, _el):
@@ -5076,18 +5176,28 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 return _ft
             esk := nt_skin_of(elems[0], names, types, dc, ctx)   # keep a NEWTYPE element's identity: `[a]` where a: Id is `[Id]`, not `[int]` (mirrors the EIndex element case + tychoc); type_of would resolve-erase it and a later arg/map check would reject the value as a plain base
             if esk != "":
+                ck_affine_inferred(dc, ctx, _el, esk)
                 return "[" + esk + "]"
-            return "[" + type_of(elems[0], names, types, dc, ctx) + "]"
+            aet := type_of(elems[0], names, types, dc, ctx)
+            ck_affine_inferred(dc, ctx, _el, aet)             # arrc_sized_b, src/tychoc.c:669-671
+            return "[" + aet + "]"
         EArrEmpty(ety, _el):
             if ety == "":                         # bare []: ground_pre had no destination type for it
                 die("type: cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")
             if is_soa(ety):                       # `soa []Struct` carries the full soa type
                 return ety
+            ck_affine_inferred(dc, ctx, _el, ety)             # `cs := []` grounded to the element type by a later push
             return "[" + ety + "]"
         EMapEmpty(kty, vty, _el):
+            ck_affine_inferred(dc, ctx, _el, kty)             # mapc_of, src/tychoc.c:1009-1011
+            ck_affine_inferred(dc, ctx, _el, vty)
             return "{" + kty + ":" + vty + "}"
         EMapLit(keys, vals, _el):
-            return "{" + type_of(keys[0], names, types, dc, ctx) + ":" + type_of(vals[0], names, types, dc, ctx) + "}"
+            mkt := type_of(keys[0], names, types, dc, ctx)
+            mvt := type_of(vals[0], names, types, dc, ctx)
+            ck_affine_inferred(dc, ctx, _el, mkt)             # mapc_of, src/tychoc.c:1009-1011
+            ck_affine_inferred(dc, ctx, _el, mvt)
+            return "{" + mkt + ":" + mvt + "}"
         ETuple(elems, _el):
             out := "("
             j := 0
@@ -5095,10 +5205,10 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 if j > 0:
                     out = out + ","
                 esk := nt_skin_of(elems[j], names, types, dc, ctx)   # keep a NEWTYPE element's identity: (a, 9) with a: Id is (Id, int), so t.0 stays Id (mirrors EArrLit / EIndex); type_of would resolve-erase it
-                if esk != "":
-                    out = out + esk
-                else:
-                    out = out + type_of(elems[j], names, types, dc, ctx)
+                if esk == "":
+                    esk = type_of(elems[j], names, types, dc, ctx)
+                ck_affine_inferred(dc, ctx, _el, esk)         # tup_of, src/tychoc.c:839-841
+                out = out + esk
                 j = j + 1
             return out + ")"
         ESlice(base, lo, hi, _el):
@@ -5230,7 +5340,9 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 # bare elem type "Nt" (fuzz-found: len() then gen'd the array path)
                 return resolve_nt(dc, ctx, type_of(args[0], names, types, dc, ctx))
             if name == "Some":
-                return "Option(" + type_of(args[0], names, types, dc, ctx) + ")"
+                sit := type_of(args[0], names, types, dc, ctx)
+                ck_affine_inferred(dc, ctx, _el, sit)         # opt_of, src/tychoc.c:752-754
+                return "Option(" + sit + ")"
             if name == "Ok":
                 return "Result(" + type_of(args[0], names, types, dc, ctx) + ",)"
             if name == "Err":

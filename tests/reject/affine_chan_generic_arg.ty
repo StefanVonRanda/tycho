@@ -1,0 +1,10 @@
+# Phase 20: ... nor a generic type ARGUMENT -- it lands in the instance's field.
+# BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
+struct Box($T):
+    v: $T
+
+fn f(b: Box(Channel(int))) -> int:
+    return 1
+
+fn main():
+    print("x")
