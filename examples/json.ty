@@ -8,8 +8,11 @@
 # code with real recursion, not a microbenchmark.
 #
 # Scope: null / bool / integers / strings (with \n \t \" \\ escapes) / arrays /
-# objects, plus whitespace. (Objects are parallel key/value arrays because Tycho's
-# maps are int/float-valued only; floats are left as an exercise.)
+# objects, plus whitespace; floats are left as an exercise. An object is simply a
+# `[string: Json]` map: a map's VALUE type is unrestricted (docs/spec/03-types.md
+# 5.3.5), so it may be the recursive enum itself, and `keys()` yields keys in
+# insertion order (12-aggregates.md 18.6) so a round-trip preserves member order.
+# (A repeated member name keeps the last value, as most JSON readers do.)
 
 enum Json:
     JNull
@@ -17,7 +20,7 @@ enum Json:
     JNum(int)
     JStr(string)
     JArr([Json])
-    JObj([string], [Json])        # parallel keys / values
+    JObj([string: Json])          # a map keyed by member name
 
 # ---- parser (recursive descent; `pos` is threaded by inout) ----------------
 
@@ -76,21 +79,19 @@ fn parse_array(s: string, n: int, pos: inout int) -> Json:
 
 fn parse_object(s: string, n: int, pos: inout int) -> Json:
     pos = pos + 1                              # skip {
-    ks := []string
-    vs := []Json
+    m := []string: Json
     skip_ws(s, n, &pos)
     for pos < n and s[pos] != 125:             # until }
         k := parse_string(s, n, &pos)
         skip_ws(s, n, &pos)
         pos = pos + 1                          # skip :
-        push(ks, k)
-        push(vs, parse_value(s, n, &pos))
+        m[k] = parse_value(s, n, &pos)
         skip_ws(s, n, &pos)
         if pos < n and s[pos] == 44:           # ,
             pos = pos + 1
             skip_ws(s, n, &pos)
     pos = pos + 1                              # skip }
-    return JObj(ks, vs)
+    return JObj(m)
 
 fn parse_value(s: string, n: int, pos: inout int) -> Json:
     skip_ws(s, n, &pos)
@@ -149,23 +150,22 @@ fn to_json(j: Json) -> string:
                     out = out + ","
                 out = out + to_json(xs[i])
             return out + "]"
-        JObj(ks, vs):
+        JObj(m):
             out := "{"
-            for i in range(len(ks)):
-                if i > 0:
+            first := true
+            for k in keys(m):                  # keys() is insertion order (spec 18.6)
+                if not first:
                     out = out + ","
-                out = out + "\"" + esc(ks[i]) + "\":" + to_json(vs[i])
+                first = false
+                out = out + "\"" + esc(k) + "\":" + to_json(m[k])
             return out + "}"
 
 # ---- working with the tree (a typed query into the document) ----------------
 
 fn get(j: Json, key: string) -> Json:          # object field lookup, else JNull
     match j:
-        JObj(ks, vs):
-            for i in range(len(ks)):
-                if ks[i] == key:
-                    return vs[i]
-            return JNull
+        JObj(m):
+            return m.get(key, JNull)
         JNull:
             return JNull
         JBool(b):
@@ -189,7 +189,7 @@ fn as_num(j: Json) -> int:                      # extract a JNum, else 0
             return 0
         JArr(xs):
             return 0
-        JObj(ks, vs):
+        JObj(m):
             return 0
 
 fn count_nums(j: Json) -> int:                  # recursive walk: sum every number in the tree
@@ -201,10 +201,10 @@ fn count_nums(j: Json) -> int:                  # recursive walk: sum every numb
             for i in range(len(xs)):
                 t = t + count_nums(xs[i])
             return t
-        JObj(ks, vs):
+        JObj(m):
             t := 0
-            for i in range(len(vs)):
-                t = t + count_nums(vs[i])
+            for k in keys(m):
+                t = t + count_nums(m[k])
             return t
         JNull:
             return 0

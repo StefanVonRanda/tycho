@@ -556,7 +556,7 @@ codegen.
   - `make check-links` → `link check: ok (121 markdown files, no dead relative links)`
   - `git status --short` → `M src/tychoc.c` only; no build spill.
 
-- [ ] **Phase 5 — examples stop describing a restriction that no longer exists (#5)**
+- [x] **Phase 5 — examples stop describing a restriction that no longer exists (#5)**
   - Scope: `examples/json.ty` and `examples/invindex.ty`. Both state maps are
     int/float-valued and both build **parallel key/value arrays** to route around
     it (`json.ty` `JObj([string], [Json])`; `invindex.ty` `[string: int]` into a
@@ -575,6 +575,152 @@ codegen.
   - Verify: paste a probe showing the composite-valued map form compiling and
     running; `make test` and `make corelib` green (examples are gated); full gate
     set green.
+  - **DONE 2026-07-25. Three examples changed; the sweep found a THIRD false
+    restriction the phase text did not know about (`examples/inout.ty:5`).**
+
+    **PROBE 1 — a map's value type really is unrestricted** (array-, string- and
+    struct-valued in one program; `/tmp/ph5/p1.ty`):
+    ```
+    $ ./tychoc /tmp/ph5/p1.ty -o /tmp/ph5/p1 && /tmp/ph5/p1
+    built /tmp/ph5/p1
+    3 hello x
+    ```
+    Matches `docs/spec/03-types.md:189-191` (§5.3.5): "A map `[K: V]` … The
+    **value type `V` is unrestricted** (any type)." Only the KEY type is
+    constrained (`:193-196`).
+
+    **PROBE 2 — the `[string: Json]` question the phase flagged as "may or may
+    not compile". It COMPILES.** A map valued by the recursive enum that
+    contains it (`/tmp/ph5/p2.ty`, `enum Json: JNull / JNum(int) /
+    JObj([string: Json])`), built and run: `rc=0`, prints `obj`. So there is no
+    limit to document — `json.ty` was converted rather than annotated.
+
+    **PROBE 3 — `[string: Posting]` with in-place field growth through the map
+    place** (`/tmp/ph5/p4.ty`): `push(idx[term].docs, doc)` through an
+    `inout [string: Posting]` works —
+    ```
+    a -> 2
+    b -> 1
+    ```
+    (First attempt used `idx.has(term)` → `'.has' on a non-struct value`;
+    membership is spelled `k in m`, `docs/spec/12-aggregates.md:401`.)
+
+    **PROBE 4 — `keys()` order, which decides whether json.ty's round-trip can
+    change.** `docs/spec/12-aggregates.md:400-402` and `17-runtime.md:75` make
+    `keys(m)` **insertion order**, normatively (`appendix-e-conformance.md:183`,
+    §30.4). So a `[string: Json]` object round-trips member order unchanged —
+    confirmed empirically by the golden diff below, not assumed.
+
+    ### DECISION 1 — `examples/json.ty`: CONVERTED to `JObj([string: Json])`
+    The parallel arrays existed *only* to route around the phantom restriction
+    (the old comment said so in as many words), and Probe 2 shows the direct
+    form compiles. The change is confined to the `JObj` payload: the enum
+    variant, `parse_object`, and the four `JObj` match arms (`to_json`, `get`,
+    `as_num`, `count_nums`). `get` collapses from a linear scan over `ks` to
+    `m.get(key, JNull)`. 21 insertions / 21 deletions; no other function touched.
+    Header now reads (`examples/json.ty:10-15`):
+    > Scope: … objects, plus whitespace; floats are left as an exercise. An
+    > object is simply a `[string: Json]` map: a map's VALUE type is unrestricted
+    > (docs/spec/03-types.md 5.3.5), so it may be the recursive enum itself, and
+    > `keys()` yields keys in insertion order (12-aggregates.md 18.6) so a
+    > round-trip preserves member order. (A repeated member name keeps the last
+    > value, as most JSON readers do.)
+
+    The last sentence is the one honest behaviour change: parallel arrays kept
+    both entries for a duplicate member name and `get` returned the first; a map
+    keeps the last. The fixture has no duplicate keys, so **output is
+    byte-identical and `tests/json.out` was NOT touched** —
+    ```
+    $ ./tychoc examples/json.ty -o /tmp/ph5/j2 && /tmp/ph5/j2 | diff tests/json.out -
+    (no output)
+    round-trip: {"name":"tycho","version":7,"tags":["systems","arena"],"nested":{"ok":true,"n":-3},"empty":[],"nothing":null}
+    version    = 7
+    nested.n   = -3
+    sum of nums = 4
+    ```
+
+    ### DECISION 2 — `examples/invindex.ty`: KEEPS the slot form, comment made honest
+    **The alternative was BUILT AND RUN before deciding, not reasoned about.**
+    `/tmp/ph5/inv_new.ty` is the full `[string: Posting]` rewrite (drops the
+    `postings` array and `term_slot`, rewrites `add`, `index_doc`, `query_and`
+    and `main`): it compiles, runs, and `diff tests/invindex.out` is **empty** —
+    it is a perfectly legal program. It was still rejected, for two reasons that
+    are about the example and not the language:
+    1. it deletes the file's own second teaching point — growing an element's
+       array field in place through an `inout [Posting]` borrow
+       (`push(postings[i].docs, …)`), advertised in the header;
+    2. it restructures 5 of 8 functions and removes one, which this phase's
+       **non-scope** rule forbids ("do not restructure an example beyond what
+       the stale claim touches").
+    The comment now gives the real reason and explicitly denies the language
+    limit (`examples/invindex.ty:5-10`):
+    > a [string: int] map maps each term to its slot in a [Posting] array. This
+    > indirection is a DELIBERATE choice, not a language limit: a map's value
+    > type is unrestricted (docs/spec/03-types.md 5.3.5) and `[string: Posting]`
+    > compiles and runs fine. The slot form is kept because it is how a real
+    > inverted index is laid out — a small term dictionary over one contiguous
+    > posting array — and because it is what lets the next bullet exist;
+
+    ### DECISION 3 — `examples/inout.ty:5`: a THIRD false restriction, deleted
+    Found by the sweep, not named in the phase text. The line said
+    *"Restricted to non-heap types (int, bool, pure-value structs)."* That is
+    false twice over: `examples/invindex.ty` has itself been passing
+    `inout [Posting]` and `inout [string: int]` since it shipped, and
+    `docs/spec/07-memory-model.md:182-186` has a section titled **"11.3 Heap
+    `inout`"** — "`inout` extends to heap-bearing values". Probe
+    (`/tmp/ph5/p6.ty`, one call taking `inout string`, `inout [int]`,
+    `inout [string: int]`): builds, prints `hi! 1 1`. Replaced with a pointer to
+    §11.3 and to invindex.ty. The line ABOVE it (`:4`, "the same variable can't
+    be passed to two inout params at once") was probed too and is **TRUE** —
+    `f(&x, &x)` → `error: variable 'x' passed to two inout parameters of 'f'
+    (overlapping mutable access)` — so it was left alone.
+
+    ### DRIFT SWEEP — method and findings
+    Searched every `examples/*.ty` and `examples/*/*.ty` for restriction-shaped
+    assertions (`no X` / `not supported` / `only …` / `can't be` / `lacks` /
+    `maps are|hold`), then every `#` comment mentioning `char`, `while`, `str`,
+    `void`; then all of `docs/` + `README.md` for map-value-type, `inout`-scalar
+    and `char`/`void`/`while`/`str`-keyword claims.
+
+    | Finding | Verdict |
+    |---|---|
+    | `examples/json.ty:12` "maps are int/float-valued only" | **FALSE — fixed** (Decision 1) |
+    | `examples/invindex.ty:6` "maps hold int/float values" | **FALSE — fixed** (Decision 2) |
+    | `examples/inout.ty:5` "Restricted to non-heap types" | **FALSE — fixed** (Decision 3) |
+    | `examples/inout.ty:4` "same variable can't be passed to two inout params" | TRUE — probed, left |
+    | `examples/json.ty:44` `'\0' + byte: int -> char` | TRUE — that is exactly how a `char` is obtained (no `char` keyword) |
+    | `examples/fetch/main.ty:34` "as a void helper" | TRUE — describes a fn with no return type, not a written `void` annotation |
+    | `docs/spec/01-lexical.md:115-116`, `02-grammar.md:168`, `03-types.md:74`, `appendix-b-keywords.md:20` — "there is no `while`/`char`/`void` keyword", "`str` is not a type" | **TRUE on both compilers, re-probed after Phases 1 and 9.** `x: str/void/char = …` → tychoc `unknown type 'X'`, tychoc0 `'X' is not a type keyword (…)`, both rc≠0; and `while := 3` compiles and prints `3`, so `while` really is an ordinary identifier |
+    | `docs/spec/appendix-h-differences.md:22` (H2) | Already records the removed "int-keyed maps support only int/float values" diagnostic and states V is unrestricted — consistent |
+    | `docs/spec/14-ffi.md:43` "`inout` out-parameters — a numeric scalar or `ptr` only" | TRUE and unrelated: an **FFI** restriction, not a language one |
+
+    **No out-of-scope drift was found, so no new phase is filed by this one.**
+    The `docs/` side of the map claim was already correct (H2 above), and the
+    `char`/`void`/`while`/`str` statements Phases 1 and 9 could have falsified
+    were all re-probed and still hold.
+
+    **Gate set — all seven green** (each its own foreground
+    `env -u LD_PRELOAD make …`):
+    ```
+    make test         passed: 437   failed: 0   / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 36   failed 0
+    make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (34839 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 437   failed: 0   / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (121 markdown files, no dead relative links)
+    ```
+    Per-example, both compilers, against the recorded goldens (tychoc0 built to
+    `/tmp/ph5/` so no `.c` spilled into the tree):
+    ```
+    json:     OK  tychoc==tychoc0==golden
+    invindex: OK  tychoc==tychoc0==golden
+    inout:    OK  tychoc==tychoc0==golden
+    ```
+    `git status --short` after the run: `M examples/inout.ty`,
+    `M examples/invindex.ty`, `M examples/json.ty` — no build spill. **No golden
+    file was modified.**
 
 - [ ] **Phase 6 — PARKED, NEEDS A USER RULING: `s[i]` → `int` vs `char` (#1)**
   - **Do not start this phase without an explicit ruling.** It changes what an

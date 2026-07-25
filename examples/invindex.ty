@@ -2,8 +2,12 @@
 # documents, then answers boolean-AND and term-frequency queries over it. This is
 # the value-semantic / arena memory model on a realistic systems workload, with
 # ZERO malloc/free/refcount/GC in the source:
-#   - a [string: int] map maps each term to its slot in a [Posting] array
-#     (maps hold int/float values, so the posting LISTS live in the struct array);
+#   - a [string: int] map maps each term to its slot in a [Posting] array. This
+#     indirection is a DELIBERATE choice, not a language limit: a map's value
+#     type is unrestricted (docs/spec/03-types.md 5.3.5) and `[string: Posting]`
+#     compiles and runs fine. The slot form is kept because it is how a real
+#     inverted index is laid out -- a small term dictionary over one contiguous
+#     posting array -- and because it is what lets the next bullet exist;
 #   - each Posting owns its growing doc-id and frequency arrays, and we grow an
 #     element's array field IN PLACE (`push(postings[i].docs, ...)`) through an
 #     `inout [Posting]` borrow -- a projection, no pointer ever exposed;
