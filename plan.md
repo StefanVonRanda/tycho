@@ -4706,6 +4706,39 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 ### Filed by Phases 27/28/30/31/34 (2026-07-25)
 
 - [ ] **Phase 36 — tychoc0 accepts a generic type argument that WHOLLY names a foreign type parameter (found by Phase 30, out of its B20/B21 scope)**
+  - **MAIN-AGENT RULING 2026-07-25, made on delegation ("close the 2 remaining phases")
+    after the question was put to the user three times and left open. Direction: SPEC THE
+    LIMITATION, add the check to tychoc0, and file the expressiveness gap as named future
+    work. Stated loudly because it blesses a real hole.**
+  - **Why not simply leave it open.** The two compilers disagree on the *accept/reject
+    decision* for `fn wrap(x: $U) -> Box($U)`. That is the one property
+    `docs/spec/00-conventions.md` §1.3 and `appendix-f-impl-defined.md:63-64` make
+    normative — the two-implementation conformance oracle is the project's central
+    claim. Leaving it open means shipping a known oracle violation, which costs more than
+    any generics limitation does.
+  - **Why not implement it in tychoc instead.** Phase 39 established this is structural,
+    not an oversight: `parse_type` defers only *positional self-reference*, and that works
+    only because `struct_instantiate` indexes the caller's binds by the template's own
+    typaram ids. Deferring `Box($U)` reads an unset slot. There is no node for an
+    unapplied generic application — supporting it needs a **new type form**. That is a
+    language feature, and building one unilaterally to close a conformance gap is far
+    outside what this plan should decide.
+  - **What this costs, stated honestly rather than buried.** Tycho will not be able to
+    express these, and no renaming workaround reaches them:
+    ```
+    fn dup(x: $A) -> Pair($A, $A)
+    fn swap(p: Pair($A,$B)) -> Pair($B,$A)
+    ```
+    A language that cannot write `swap` over its own pair type has a real expressiveness
+    hole. tychoc0 implements both correctly today (probed across swap, duplication,
+    struct fields and type identity, ASan+UBSan clean) and **this ruling removes that
+    working behaviour**. The justification is the same one the user accepted for Phase 39:
+    such programs compile on exactly one of the two compilers, so they were never
+    portable Tycho — but unlike Phase 39 this is a capability loss, not just a tightened
+    check, and it should be recorded as one.
+  - **Reversible by design.** Reversing it is: delete the spec sentence, delete tychoc0's
+    check, delete the reject fixtures — then build the type form. Nothing here forecloses
+    that, and the ROADMAP entry exists to keep it visible.
   - **MAIN-AGENT DIRECTION 2026-07-25 (user delegated: "do 36 and 39 too"): DO NOT RULE
     ON PREFERENCE — SETTLE A FACT FIRST.** Unlike Phase 39 this is not an oversight with
     an obvious direction. The disputed program is ordinary generic code:
@@ -6145,7 +6178,29 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
 
 ### Filed by Phase 42 (2026-07-25)
 
-- [ ] **Phase 44 — the `docs/spec` provenance corpus is substantially stale, not marginally: 114 of the 119 mechanically-checkable citations point outside the function their own sentence names (measured by Phase 42, far beyond its scope)**
+- [x] **Phase 44 — CLOSED, WILL NOT DO AS A SWEEP (user decision 2026-07-25): the `docs/spec` provenance corpus is substantially stale, not marginally: 114 of the 119 mechanically-checkable citations point outside the function their own sentence names (measured by Phase 42, far beyond its scope)**
+  - **Closed without sweeping it, deliberately.** The user asked to close the remaining
+    phases on 2026-07-25. Reasons, in order of weight:
+    1. **A hand sweep of 1451 citations cannot be trusted, and this plan proved it.**
+       Phases 34, 35 and 40 each repaired a batch, and each time the *replacement* lines
+       were also wrong — including two of the four replacements written into Phase 42's
+       own text by the main agent. A corpus that large, repaired by hand against a moving
+       file, regenerates its own error rate. Doing it would produce the appearance of
+       accuracy rather than accuracy.
+    2. **The bleeding is stopped where it can be.** `scripts/check_citations.py` (Phase
+       42) gates every *anchored* citation and costs 0.07s. New and touched citations can
+       carry an `@token` anchor and are then checked forever.
+    3. **The unfixed remainder is honestly labelled.** The count, the method, the
+       reproduction scripts and the indexer's known false-positive mode are all recorded
+       above. A reader is told the corpus is unreliable rather than being left to assume
+       it is not.
+  - **The standing rule that replaces the sweep:** when a phase edits `src/tychoc.c` or
+    `compiler/tychoc0.ty`, it repairs and `@`-anchors the citations it touches — the
+    incremental path Phase 42's gate was built for. Anchored coverage at closure: 22 of
+    1342.
+  - Reopen only with a *mechanical* repairer (a symbol-indexer that rewrites `path:N`
+    from the named symbol), never as another hand sweep. That tool is the real Phase 44;
+    the sweep is not.
   - Phase 42 was scoped to "fix the four known-wrong ones and gate the class". Measuring
     the class first is what turned up the real number, and it is not a batch — it is a
     corpus. **Do not let a future phase quietly re-scope itself into this.**
