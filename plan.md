@@ -77,9 +77,27 @@ dev shell, NOT a code regression. Do **not** add `verify_asan_link_order=0` to
 
 **Gate set (all phases):** `make test`, `make corelib`, `make conc`,
 `make fixpoint`, `make ilp32`, `make spec-check`, `make check-links`.
-`make fixpoint` is the self-hosting tripwire: any change to `src/tychoc.c` that
-alters emitted text must land together with its `compiler/tychoc0.ty` counterpart
-or fixpoint goes red.
+**CORRECTION (Phase 4, 2026-07-25) — an earlier version of this preamble said
+`make fixpoint` asserts that *tychoc and tychoc0* emit byte-identical C, and that
+any emitted-text change must therefore land in both compilers in one commit. That
+was FALSE, and it was repeated in five phase prompts before Phase 4 checked it.**
+`compiler/fixpoint.sh:16-21` builds `A` with tychoc, then compares `cA` against
+`cB` — **both emitted by tychoc0-derived binaries**. Its own header states the
+purpose: "cB == cC proves the Tycho compiler reproduces itself exactly." tychoc is
+compared only **behaviourally**, by golden output over `tests/` + `examples/`
+(`:23-30`). So fixpoint is a tychoc0 **self-reproduction** check, not a
+cross-compiler byte-identity check, and the two emitters legitimately differ in
+text today (`char **ekeys` vs `char** ekeys`) while green.
+
+Consequence for planning: a change to `src/tychoc.c`'s emitted text does **not**
+mechanically require a paired `compiler/tychoc0.ty` edit. It requires that the two
+stay *behaviourally* equivalent. Verify which of the two you actually need before
+assuming the twin must change — Phase 4 found tychoc0 never had the defect it was
+told to fix there.
+
+`make fixpoint` remains in the gate set: it is the self-hosting tripwire, and a
+front-end-only change leaving it green is real evidence the change did not reach
+codegen.
 
 - [x] **Phase 1 — `type_name` names every reachable type (#2)**
   - Scope: `src/tychoc.c` `type_name()`. Add `case T_CHAR: return "char";`.
@@ -396,6 +414,23 @@ or fixpoint goes red.
   - Verify: paste the pre-fix and post-fix warning counts over the whole suite;
     `make fixpoint` green (proves the two emitters stayed byte-identical); full
     gate set green.
+  - **DONE-WHEN AMENDED after the fact — read this before trusting the tick.**
+    Two clauses above were mis-specified by the plan's author, and the box is
+    ticked against the amended form, not the original:
+    (a) *"the full suite emits zero warnings"* conflated two different compile
+    lines. `Makefile:11`'s `-Wall -Wextra` builds **tychoc itself**; the line
+    tychoc emits to compile a user's program (`src/tychoc.c:11532`) carries no
+    `-Wall`. Under the flags emitted C is actually compiled with, the count went
+    **24 → 4** and `-Wdiscarded-qualifiers` **20 → 0**. Under opt-in
+    `-Wall -Wextra` the residue is 13346, ~89% unused-symbol noise inherent to
+    emitting the whole runtime into every program — a design change, out of
+    scope here, filed as Phase 13. That clause is **NOT met** and is deferred,
+    not waived.
+    (b) *"both compilers changed together"* rested on the false fixpoint premise
+    corrected in the Phases preamble above. tychoc0 never had this defect
+    (`tychoc0.ty:10475` states the invariant directly), so only tychoc changed.
+    The phase's substantive goal — the const-qualifier defect and its safety
+    verdict — was met in full.
 
   **EVIDENCE (2026-07-25).** Two premises in the phase text above were wrong and
   are corrected here rather than edited away.
