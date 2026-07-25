@@ -446,7 +446,7 @@ codegen.
   itself. tychoc's emitted text is only compared *behaviourally* (`ref` output
   equality over `tests/*.ty` + `examples/*.ty`, `:23-30`). The two emitters
   already differ in text today and are green: tychoc emits `char **ekeys`
-  (`%s*ekeys`, `:10292`, `ks="char *"`) while tychoc0 emits `char** ekeys`
+  (`%s*ekeys`, `src/tychoc.c:10292`, `ks="char *"`) while tychoc0 emits `char** ekeys`
   (`compiler/tychoc0.ty:10400`). So this phase did NOT have to change tychoc0 —
   and did not need to, because **tychoc0 never had the defect** (below).
 
@@ -5947,7 +5947,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     make frontparity  frontparity: agreed: 287   diverged: 0   (skipped: 15) / all green
     ```
 
-- [ ] **Phase 42 — `src/tychoc.c:N` / `compiler/tychoc0.ty:N` provenance citations across `docs/` have now gone stale three times in one plan, and nothing checks them (Phase 34, Phase 35, Phase 40)**
+- [x] **Phase 42 — `src/tychoc.c:N` / `compiler/tychoc0.ty:N` provenance citations across `docs/` have now gone stale three times in one plan, and nothing checks them (Phase 34, Phase 35, Phase 40)**
   - Phase 34 fixed `15-program.md`, Phase 35 fixed `16-builtins.md`'s
     `register_builtins` ranges, Phase 40 fixed the rest of `16-builtins.md`. Each time
     the finding was "the plan's own replacement lines were wrong too". There are **96**
@@ -5969,10 +5969,110 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     (e.g. `` `src/tychoc.c:5323 len` ``), which is a docs-wide edit.
   - Done when: every `path:N` citation under `docs/` resolves to the code it claims,
     verified by reading, and a gate fails when one stops resolving.
+  - **DONE 2026-07-25, but the premise was wrong by an order of magnitude and the phase
+    is closed on a *scoped* deliverable, not on "every citation repaired". Read this.**
+  - **Magnitude, measured (`/tmp/ph42/scan.py`, `/tmp/ph42/classify.py`).** Not 96
+    citations — **1451** `path:N` citations across `docs/`, of which **850** point into
+    implementation trees. `docs/spec/**` alone holds **295**. The plan's "96
+    `tychoc0.ty:N` citations" counted one target in one spelling.
+  - **Staleness, measured.** A structural symbol indexer (C: column-0 definition to the
+    first column-0 `}`; Tycho: `fn`/`struct`/… to the next one) was used to ask, for
+    each `docs/spec` citation that sits next to a backticked symbol name, whether the
+    cited line lies inside that symbol. Of the **119** citations answerable that way:
+    **114 point outside the function the prose names; 5 are correct.** The other 176 name
+    no symbol and could not be judged mechanically. Spot-reads confirm the machine:
+    `compile_package` cited `:10355-10360` (actually `clone_expr`; the function is at
+    `:11522-11527`), `parse_extern_fn` cited `:3212-3282` (actually compound-assign
+    parsing; the function is at `:3530-3600`). **The `docs/spec` provenance corpus is
+    substantially stale, not marginally so.** Repairing all of it means re-deriving each
+    sentence's intent — a project, not a phase. Filed as **Phase 44**.
+  - **What this phase DID repair (21 citations, each verified by reading the target):**
+    `15-program.md`'s whole entry-point provenance block (7 citations — Phase 43's four
+    plus `compile_package`, the driver, `parse_extern_fn`, the `cc` invocation);
+    `03-types.md`'s `bounded` provenance block (6, including the four the phase named —
+    and **two of those four replacements given in the phase text were themselves wrong**:
+    `mangle_type` at `:2859` is not `:3237` (that is the *variadic* branch) but
+    `:3251@[b#`, and the unresolved-name guard is not `:11840` (a `j := 0` in a switch)
+    but `:11858-11862` in `collect_stmt`); 8 in-source comment citations in
+    `compiler/tychoc0.ty` (`:1669`→`:1803`, `:1686`→`:1821`, `:2859`→`:3251`,
+    `:3451`→`:11858-11862`, `:1734`→`:1882` ×2, `src/tychoc.c:669-671`→`:679-691` ×5 —
+    `arrc_sized_b` had moved); and 9 unattributable bare continuations in
+    `plan-int64-DONE.md` / `plan.md` given their explicit path.
+  - **THE GATE — `scripts/check_citations.py`, hosted in the `check-links` lane**
+    (`Makefile:65-71`; `scripts/ci.sh:126-127` already calls `make check-links`, so it is
+    wired into CI with no new step). Extending the existing lane beat a new one: every
+    caller that already runs `check-links` picks the new check up without remembering to.
+  - **Design decision, and the two shapes that were tried and rejected.**
+    1. *Symbol-extent anchors* (the form `src/tychoc.c:7206-7207` suffixed `@resolve_program` — assert the cited range
+       lies inside that function) were implemented first and **demonstrated useless for
+       this failure mode**: pointing the citation back at the original bad `src/tychoc.c:7098-7099`
+       left the gate GREEN, because `resolve_program` spans `src/tychoc.c:7096-7219` and the wrong
+       lines are inside it too. Function granularity is too coarse. Rejected on evidence.
+    2. *A generated lockfile of cited-line hashes* was considered and rejected: it
+       freezes whatever is on disk at generation time, so it would have blessed all ~290
+       stale citations as correct, and it puts the expected content in a second file that
+       drifts from the prose.
+    3. **Adopted: an opt-in content anchor.** `` `src/tychoc.c:7206-7207@'main' must be` ``
+       — the gate asserts the cited range literally contains that token. The token is
+       chosen by whoever verifies the citation, which is exactly the expected content a
+       bare `path:N` cannot carry. Not applied docs-wide (1300+ sites, and anchoring an
+       unverified citation to its own wrong line is worse than leaving it bare) — the
+       rule is **anchor a citation when you verify it**. 18 anchored so far.
+  - **What the gate does NOT catch — stated in its header and repeated here.**
+    A **bare** `path:N` that drifts onto a different-but-existing line is invisible: that
+    is precisely the Phase 43 failure mode, and only anchoring catches it. Coverage is
+    therefore **22 anchored / 1320 bare** at commit (the 18/1304 in the transcripts
+    below was the state at proof time, before this evidence block added its own
+    anchored quotes), and a green run honestly means "no
+    anchored citation has drifted and no citation of either kind points outside its
+    file" — nothing more. It also cannot catch a drift that keeps the token inside the
+    new range, a citation anchored to its own wrong line on the day it was written, or a
+    docs claim that is wrong about *behaviour* rather than about a line number.
+    Fail-open by design: a bare `:N` whose paragraph names no path is skipped, not
+    guessed at.
+  - **Two bugs the gate found in its own author's work, before any of this was committed.**
+    (a) `docs/spec/03-types.md` and `15-program.md` each had a continuation `:N` that
+    silently inherited the *wrong* file, because naming `` `compiler/tychoc0.ty` ``
+    without a line number does not rebind the path. (b) The anchor regex banned spaces,
+    so every multi-word anchor (`@'main' must be`) matched nothing and was scored as
+    unchecked — 18 anchored citations silently became 6. Both fixed; (b) is the reason
+    the header now documents the shapes explicitly (RULE 7).
+  - **DEMONSTRATED RED — reproducing the real failure mode, not an out-of-range number.**
+    `docs/spec/15-program.md:20`'s anchor re-pointed at `:7098-7099`, lines that exist
+    and hold plausible C (`/* CC-4: a channel handle must not outlive its creating
+    scope. ... */`) — exactly the drift that survived Phase 34 and shipped to Phase 43:
+    ```
+    link check: ok (122 markdown files, no dead relative links)
+    STALE  docs/spec/15-program.md:20  `:7098-7099@'main' must be` -> lines 7098-7099 of src/tychoc.c do NOT contain ''main' must be'; it appears at :7207
+    citation check: FAILED (1 stale citation(s) above)
+    make: *** [Makefile:70: check-links] Error 1
+    exit=2
+    ```
+    Restored → GREEN:
+    ```
+    link check: ok (122 markdown files, no dead relative links)
+    citation check: ok (18 anchored contain the token they name, 1304 bare in bounds)
+    exit=0
+    ```
+  - **Cost: 0.07 s** (`0.05s user 0.02s system` over 122 markdown files / 1322 citations).
+    Free at the scale of the `check-links` lane; no separate `make` target needed.
+  - Gate set, one per command, foreground, `env -u LD_PRELOAD`:
+    ```
+    make test         passed: 540   failed: 0 / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 37   failed 0
+    make fixpoint     ok B == C : tychoc0 reproduces itself byte-identically (35691 lines C) / fixpoint: all green
+    make ilp32        passed: 540   failed: 0 / all green
+    make asan-self    asan-self: compiled: 540   failed: 0 / all green
+    make frontparity  frontparity: agreed: 287   diverged: 0   (skipped, tychoc refused: 15) / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (122 markdown files, no dead relative links)
+                      citation check: ok (18 anchored contain the token they name, 1304 bare in bounds)
+    ```
 
 ### Filed by Phase 39 (2026-07-25)
 
-- [ ] **Phase 43 — `15-program.md`'s `main`-signature provenance is stale AGAIN, and it now points at two unrelated rules (found by Phase 39, out of its scope)**
+- [x] **Phase 43 — `15-program.md`'s `main`-signature provenance is stale AGAIN, and it now points at two unrelated rules (found by Phase 39, out of its scope)**
   - Phase 34 was the phase that fixed these exact citations. They have drifted since, and
     the drift is the bad kind: the lines still exist and still contain plausible-looking
     code, so nothing looks wrong until you read them.
@@ -6000,6 +6100,87 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     already wrong on arrival and are out of its scope lock.
   - Done when: each of the four citations resolves to the code its sentence claims,
     verified by reading, and the gate set is green.
+  - **DONE 2026-07-25. Ran before Phase 42, as this block asked.**
+  - **THE TRACED ENFORCEMENT SITE.** Started from the fixture, not from a grep of the
+    spec's wording. `./tychoc tests/reject/main_with_param.ty` emits:
+    ```
+    tests/reject/main_with_param.ty:3: error: 'main' must be 'fn main():' with no return
+    ```
+    Grepping **that** message lands on `src/tychoc.c:7207`, inside `resolve_program`
+    (`:7096-7219`), and the rule is **one combined test covering both halves** — there is
+    no separate "no parameters" `die_at`, which is why `grep "main.*no parameters"`
+    returned nothing and why the earlier repairs guessed:
+    ```
+    7206|         if (!strcmp(pr->name, "main") && (pr->nparams != 0 || pr->ret != T_VOID))
+    7207|             die_at(pr->line, "'main' must be 'fn main():' with no return");
+    ```
+    The companion "no `main` at all" rule is **not** a `die_at` either — it is a bare
+    `fprintf`/`exit` twelve lines earlier, `src/tychoc.c:7181`:
+    ```
+    7180|     Sig *m = sig_find("main");
+    7181|     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_srcname); exit(1); }
+    ```
+    tychoc0's twin is at `compiler/tychoc0.ty:3861`, in `parse_program` (`:3741-3947`) —
+    a **parse-time** check, where tychoc's is a **resolve-time** one. Both reject; the
+    phase difference is real and is now stated in the spec sentence.
+  - **Re-derived at HEAD, and the plan's own numbers had moved again.** This block
+    recorded `no 'main' procedure` at `:7132`; at HEAD it is `:7181` (Phase 39 shifted
+    `resolve_program`). The prompt's numbers were not trusted.
+  - **Repaired (5 sites, each verified by reading the target line):**
+    `docs/spec/15-program.md:19-23` (the provenance block) and `:31-36` (§27.1's
+    sentence) — both `:7098-7099` and `:7124-7125` replaced with
+    `` `src/tychoc.c:7181@no 'main' procedure` `` and
+    `` `:7206-7207@'main' must be` ``, plus the tychoc0 citation corrected from
+    `parse_program` `:3637-3648` to `` `compiler/tychoc0.ty:3861@'main' must be` ``;
+    `docs/internals/frontend-restriction-audit-2026-07-25.md:356` — the audit's §8 is a
+    dated record, so its wrong text is left standing and a **Corrected 2026-07-25** note
+    is appended beneath it naming the real sites (rewriting a dated audit in place would
+    destroy the evidence that the drift happened twice);
+    `tests/reject/main_with_param.ty:1` — the fixture's own header cited the same dead
+    `src/tychoc.c:7124-7125`, now `:7206-7207 (resolve_program)`.
+  - **Each repaired citation is anchored** (`@token`), so Phase 42's gate content-checks
+    all five rather than merely bounds-checking them. Verified RED against exactly this
+    drift — see Phase 42's evidence.
+  - Gate set: all green (single run shared with Phase 42; summary lines under Phase 42).
+
+### Filed by Phase 42 (2026-07-25)
+
+- [ ] **Phase 44 — the `docs/spec` provenance corpus is substantially stale, not marginally: 114 of the 119 mechanically-checkable citations point outside the function their own sentence names (measured by Phase 42, far beyond its scope)**
+  - Phase 42 was scoped to "fix the four known-wrong ones and gate the class". Measuring
+    the class first is what turned up the real number, and it is not a batch — it is a
+    corpus. **Do not let a future phase quietly re-scope itself into this.**
+  - **The measurement.** `docs/` holds **1451** `path:N` citations, **850** into
+    implementation trees, **295** in `docs/spec/**`. A structural symbol indexer answered
+    "is the cited line inside the function the prose names?" for the **119** citations
+    that sit beside a backticked symbol: **114 outside, 5 inside**. The remaining 176
+    name no symbol and cannot be judged without reading each sentence's intent.
+    Reproduce with `/tmp/ph42/scan.py` and `/tmp/ph42/classify.py` (both throwaway;
+    re-derive rather than trust them, and note the indexer is a heuristic — it false-
+    positives when the prose names a symbol it does not actually mean, e.g. a doc saying
+    "the generated `main`" while `main` is also a function in `src/tychoc.c`).
+  - **Worked examples confirming the machine, not just its count:**
+    `15-program.md` cites `compile_package` at `:10355-10360` — those lines are
+    `clone_expr` field copies; the function is at `:11522-11527` (Phase 42 fixed this
+    one). It cites `parse_extern_fn` at `:3212-3282` — compound-assign parsing; the
+    function is at `:3530-3600` (also fixed). Roughly a dozen more citations in that
+    file alone (`:10162`, `:10604`, `:3728`, `:10601`, `:10600`, `:10518`, `:10534`,
+    `:10541-10547`, `:10537-10540`, `:10415-10424`, `:10328-10347`, `:4319-4331`,
+    `:10336-10339`, `:10197`, `:3466-3478`, `:3559-3568`, `:3572-3578`, `:3448-3452`,
+    `:1343-1345`, `:3580-3587`) were read and are wrong in the same way, and were left
+    alone rather than half-fixed. `03-types.md`'s `arrc_sized_b` message citations
+    `:567` / `:607` are unverified and likely share the drift.
+  - **Do it with the mechanism, not by hand.** Phase 42 shipped
+    `scripts/check_citations.py` and the `@token` anchor. The unit of work here is: read
+    the sentence, find what it actually means, re-point the citation, **anchor it**, and
+    watch the gate's anchored count rise. A citation repaired without an anchor will
+    silently rot again — that is the whole lesson of Phases 34/35/40/43.
+  - **This is a corpus, so it needs a stopping rule, not a completion date.** A defensible
+    sub-scope: `docs/spec/**` only (295), or even one chapter per phase. The archival
+    trees (`docs/internals/*-DONE.md`, `docs/internals/*audit*`, `docs/rfc/`) are dated
+    point-in-time records — **do not rewrite them in place**; append a correction note
+    the way Phase 43 did for `frontend-restriction-audit-2026-07-25.md`.
+  - Done when: a named sub-scope's citations each resolve to what their sentence claims,
+    verified by reading, and each is anchored so the gate holds them.
 
 ## Out of scope
 

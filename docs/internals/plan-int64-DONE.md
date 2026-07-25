@@ -166,9 +166,9 @@ to `run.sh` (that would blind the check for real link-order bugs).
       emitted `"tycho: …"` trap-text keys textually; tychoc0's `preamble()` carries a
       SECOND hand-maintained copy of these runtime diagnostics, so migrating only
       `tycho_rt.c`'s `%ld` drifted them. Fix: ported `%ld`→`%" TY_PRId "` into the 6
-      FIXED-runtime diagnostics in `tychoc0.ty` (`:9803` too-many-tasks, `:9844` hs,
+      FIXED-runtime diagnostics in `tychoc0.ty` (`compiler/tychoc0.ty:9803` too-many-tasks, `:9844` hs,
       `:9846` hi_sidx, `:9850` hi_bchk, `:9873` hi_cap_check, `:9896` hi_chr; 8
-      occurrences). LEFT the per-type array templates (`:9950-9971`) and slice
+      occurrences). LEFT the per-type array templates (`compiler/tychoc0.ty:9950-9971`) and slice
       (`:5329/:10027`) as `%ld` — they mirror `src/tychoc.c`'s still-`%ld` inline
       emission (Phase 4), so `tycho: index %ld out of bounds (len %ld)` stays SHARED.
       Empirically re-diffed emitted C: symbol sets now equal (28 shared, both diffs
@@ -804,7 +804,7 @@ to `run.sh` (that would blind the check for real link-order bugs).
     to both is the same transform on the same construct: every hash return type,
     accumulator, element temp and 64-bit FNV constant is now fixed-width.
   - **Correction to 6a's filing:** the emitted map `mask` was cited as pending in
-    BOTH compilers. Re-reading the tree showed tychoc0 `:10379-10380` was already
+    BOTH compilers. Re-reading the tree showed tychoc0 `compiler/tychoc0.ty:10379-10380` was already
     `uint64_t mask = (uint64_t)m…icap - 1` (6a fixed it there). Only
     `src/tychoc.c:10623/10628/10665` still emitted `unsigned long mask`; retyping
     them CLOSES a real cross-compiler divergence rather than adding one.

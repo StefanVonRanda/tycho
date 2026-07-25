@@ -1809,7 +1809,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
-            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:679-691
             return "[" + str(fixn) + "]" + felem
         # [W]T where W is an int `const` name (resolved to its literal in the mangle pass,
         # which always runs when a const is present). Encoded "[#W]T" until then.
@@ -1824,7 +1824,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
-            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:679-691
             return "[#" + cnm + "]" + felem
         # [$N]T generic-over-size (const generics 1.6B): a `$N` size parameter (its length
         # inferred from the argument at each call). Distinguished from a dynamic `[$T]`
@@ -1836,7 +1836,7 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             felem := parse_type_d(toks, &pos, depth + 1)
             if felem == "void" or felem == "bool":
                 die("parse: line " + str(toks[pos].line) + ": array elements must be int, float, string, a struct, or an array")
-            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:669-671
+            ck_affine_part(toks, felem, toks[pos].line)       # arrc_sized_b, src/tychoc.c:679-691
             return "[$" + snm + "]" + felem
         inner := parse_type_d(toks, &pos, depth + 1)
         if toks[pos].kind == TColon:
@@ -1867,11 +1867,11 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
         pos = pos + 1
         expect(toks, &pos, TLBracket)
         # Capacity N: an int literal OR an int `const` NAME -- the same two spellings a
-        # fixed [N]T accepts (:1669 literal, :1686 const name; spec 03-types.md 5.3.2,
-        # and src/tychoc.c:1730-1737 "same as a fixed [N]T"). The const form is encoded
-        # "[b#W]T" here and resolved to "[bN]T" by mangle_type (:2859), exactly as the
+        # fixed [N]T accepts (:1803 literal, :1821 const name; spec 03-types.md 5.3.2,
+        # and src/tychoc.c:1769-1779 "same as a fixed [N]T"). The const form is encoded
+        # "[b#W]T" here and resolved to "[bN]T" by mangle_type (:3251), exactly as the
         # fixed array's "[#W]T" is -- the parser has no const table, the mangle pass does,
-        # and that pass always runs when a const is present (dofold, :3451).
+        # and that pass always runs when a const is present (collect_stmt, :11858-11862).
         bpfx := ""
         if toks[pos].kind == TInt:
             bcap := lit_to_int(toks[pos].text)
@@ -1889,11 +1889,11 @@ fn parse_type_d(toks: [Token], pos: inout int, depth: int) -> string:
             die("parse: line " + str(toks[pos].line) + ": a bounded element cannot be bool or void")
         # An affine concurrency handle may not be stored in a container or aggregate
         # (spec 03-types.md 5.3.9/5.3.10). tychoc fails closed at its type-intern choke
-        # point (src/tychoc.c:669-671 arrc_sized_b, messages :567 and :607); tychoc0 has
+        # point (src/tychoc.c:679-691 arrc_sized_b, messages :567 and :607); tychoc0 has
         # no intern step, so the bounded element is checked here. Phase 18 added this
         # inline; Phase 20 folded it into the shared ck_affine_part used by every other
         # composite site, so the whole family is one rule rather than eleven.
-        ck_affine_part(toks, belem, toks[pos].line)           # arrc_sized_b, src/tychoc.c:669-671
+        ck_affine_part(toks, belem, toks[pos].line)           # arrc_sized_b, src/tychoc.c:679-691
         return bpfx + belem
     if toks[pos].kind == TIdent and toks[pos].text == "fn":    # function type fn(P...) [-> R]
         fnln := toks[pos].line                   # the 'fn' line -- tychoc reports at t->line
@@ -3248,7 +3248,7 @@ fn mangle_type(m: Mctx, ty: string) -> string:
         if cv <= 0:
             die("resolve: a fixed-size array length must be positive")
         return "[" + str(cv) + "]" + mangle_type(m, celem)
-    if has_prefix(ty, "[b#"):                     # [b#W]T: a bounded whose capacity is an int `const` W -- resolve W to its literal now, exactly as [#W]T above (parser encoding at :1734)
+    if has_prefix(ty, "[b#"):                     # [b#W]T: a bounded whose capacity is an int `const` W -- resolve W to its literal now, exactly as [#W]T above (parser encoding at :1882)
         bi := find(ty, "]")
         bnm := substr(ty, 3, bi)
         belem := substr(ty, bi + 1, len(ty))
@@ -5559,7 +5559,7 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ck_affine_inferred(dc, ctx, _el, esk)
                 return "[" + esk + "]"
             aet := type_of(elems[0], names, types, dc, ctx)
-            ck_affine_inferred(dc, ctx, _el, aet)             # arrc_sized_b, src/tychoc.c:669-671
+            ck_affine_inferred(dc, ctx, _el, aet)             # arrc_sized_b, src/tychoc.c:679-691
             return "[" + aet + "]"
         EArrEmpty(ety, _el):
             if ety == "":                         # bare []: ground_pre had no destination type for it
@@ -11855,7 +11855,7 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             # at parse (src/tychoc.c:1818-1820); say the same thing.
             if has_prefix(t, "[#"):
                 die_at(dc, _sl, "a fixed-size array length must be an integer literal or an int `const` -- '" + substr(t, 2, find(t, "]")) + "' is not")
-            # Same shape for a bounded capacity named by a const ("[b#W]T", parser :1734):
+            # Same shape for a bounded capacity named by a const ("[b#W]T", parser :1882):
             # a surviving "[b#" means W is not a const in this program, so the mangle pass
             # never resolved it. tychoc dies on the capacity itself, at parse
             # (src/tychoc.c:1734-1735); say the same thing.

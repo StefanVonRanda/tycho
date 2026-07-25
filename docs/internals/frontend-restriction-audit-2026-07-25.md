@@ -355,6 +355,15 @@ ever emitting that type's declaration. Same family as Phases 19 and 23.
 `declared type %s but value is %s` diagnostic — unrelated code. The live sites are
 `src/tychoc.c:7097-7098` (`no 'main' procedure`) and `:7123-7124` (the signature rule).
 
+**Corrected 2026-07-25 (plan.md Phase 43).** Those replacement lines were *also* wrong —
+they named the "a function cannot return a channel" die and the `inout` function-value
+die. Traced from `tests/reject/main_with_param.ty`, whose real message is `'main' must be
+'fn main():' with no return`: both rules live in `resolve_program` —
+`src/tychoc.c:7181@no 'main' procedure` (`no 'main' procedure`) and
+`src/tychoc.c:7206-7207@'main' must be` (the signature rule, one combined test on
+`nparams != 0 || ret != T_VOID`). tychoc0's twin is at
+`compiler/tychoc0.ty:3861@'main' must be`.
+
 ## 9. What this audit does NOT cover
 
 Stated plainly so the coverage claim is not read wider than it is.

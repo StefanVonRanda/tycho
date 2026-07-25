@@ -123,7 +123,7 @@ make -s recursion
 step "[18/19] make spec-check  (spec: Appendix A grammar == §3/§4 · Appendix E fixtures exist · runnable examples match output on both compilers)"
 make -s spec-check
 
-step "[19/19] make check-links  (every relative Markdown link in the docs resolves to a real file)"
+step "[19/19] make check-links  (every relative Markdown link resolves to a real file; every provenance citation still resolves)"
 make -s check-links
 
 bar

@@ -61,9 +61,13 @@ tools-check: tychoc
 spec-check:
 	@sh scripts/spec_check.sh
 
-# Doc hygiene: every relative Markdown link points at a file that exists.
+# Doc hygiene: every relative Markdown link points at a file that exists, and
+# every `path:N` provenance citation still resolves (bounds for a bare citation,
+# the named symbol's extent for an anchored `path:N@symbol` one — see the header
+# of scripts/check_citations.py for exactly what that does and does not catch).
 check-links:
 	@sh scripts/check_links.sh
+	@python3 scripts/check_citations.py
 
 # Regenerate the GitHub wiki's reader-doc mirror from /docs. Clones or pulls the
 # wiki repo into ./.wiki (gitignored), runs the sync, and audits the links. Does
