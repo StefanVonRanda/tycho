@@ -4713,6 +4713,28 @@ fn sig_ret(dc: Decls, ctx: Ctx, name: string) -> string:
     die_at(dc, ctx.line, "type: unknown function '" + name + "'" + dym_hint(name, sig_names(dc)))
     return "int"
 
+# MISDIAGNOSIS FIX. `f$(int)` parses to the encoded callee name "f$<int>" (:866).
+# When `f` is NOT generic the generics pass leaves that name alone and it reaches
+# the checker as an undeclared callee, which used to die "unknown function
+# 'f$<int>'" -- a name the user never wrote, blaming a missing declaration when
+# `f` is declared and the real defect is the explicit type argument list. If the
+# BASE name is a known function, say that instead: same reject, same line, the
+# wording tychoc uses (src/tychoc.c:5455) and that this compiler's own generics
+# pass already uses on the paths it does reach. No-op for a genuinely unknown
+# name (falls through to the caller's unknown-function die). ONE call site: the
+# codegen-position unknown-callee die. A second call ahead of the type_of-side
+# die was written and then removed after a build with it stubbed out produced
+# byte-identical diagnostics for both `println(str(f$(int)()))` and
+# `x := f$(int)()` -- that path is never the one that fires, and a dead guard in
+# a self-hosting compiler is a maintenance cost with no reader benefit.
+fn explicit_ta_check(dc: Decls, ctx: Ctx, name: string):
+    tak := find(name, "$<")
+    if tak < 0:
+        return
+    base := substr(name, 0, tak)
+    if dc.sigmap.get(base, -1) >= 0:
+        die_at(dc, ctx.line, "type: explicit type arguments given, but '" + base + "' is not a generic function")
+
 # The function-value type "fn(p1,p2->ret)" for a top-level function name, or ""
 # if `name` is not a user function (so a bare name can be typed as a value).
 fn sig_ptypes(dc: Decls, name: string) -> [string]:   # the named fn's param types (spawn-site copy-in, CC-1)
@@ -4917,6 +4939,21 @@ fn type_of(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> st
                 ft := sig_functype(dc, name)
                 if ft != "":
                     return ft
+                # MISDIAGNOSIS FIX: a nullary variant of a GENERIC enum (`enum Box($T)`
+                # / `Empty`) is not in vmap -- it fixes no type parameter, so it is only
+                # usable with an explicit type argument. It IS a declared name, so
+                # "unknown variable 'Empty'" cited the wrong rule and sent the reader
+                # looking for a missing declaration six lines above their own enum.
+                # Name the real rule, as tychoc does (src/tychoc.c:4628).
+                gvi := 0
+                for gvi < len(dc.enums):
+                    if len(dc.enums[gvi].typeparams) > 0:
+                        gvj := 0
+                        for gvj < len(dc.enums[gvi].variants):
+                            if dc.enums[gvi].variants[gvj].name == name:
+                                die_at(dc, _el, "type: " + name + " is a variant of generic enum " + dc.enums[gvi].name + "; supply the type explicitly, e.g. " + name + "$(int)")
+                            gvj = gvj + 1
+                    gvi = gvi + 1
                 die_at(dc, _el, "type: unknown variable '" + name + "'" + dym_hint(name, names))
             vt := base_ty(var_type(names, types, name))
             return resolve_nt(dc, ctx, vt)
@@ -6707,6 +6744,7 @@ fn gen_expr(e: Expr, names: [string], types: [string], dc: Decls, ctx: Ctx) -> s
             # the statement position, whose result -- and thus type_of -- is unused.)
             csidx := dc.sigmap.get(name, -1)
             if csidx < 0:
+                explicit_ta_check(dc, ctx, name)   # `f$(int)()` reaches HERE (demonstrated: tests/reject/explicit_nongeneric.ty) -- same misdiagnosis as the type_of path
                 die_at(dc, ctx.line, "type: unknown function '" + name + "'" + dym_hint(name, sig_names(dc)))
             if len(args) == 0:                    # user call: thread the current scope as the callee's _parent
                 return un(name) + "(" + ctx.owner + ")"
@@ -10734,7 +10772,14 @@ fn check_call_args(dc: Decls, ctx: Ctx, nm: string, args: [Expr], names: [string
             else:
                 nt_check(dc, ctx, base_ty(pp[k]), args[k], names, types, aname, el)   # inout: the &place's newtype identity must match the param's base type (was unchecked -- fail-open)
                 if base_type_mismatch(dc, ctx, base_ty(pp[k]), args[k], names, types):   # inout base-type mismatch (&str-var into inout int): clean diagnostic (EAddr recurses to the place)
-                    die_at(dc, el, aname + " is " + base_ty(pp[k]) + " but the &place is a different type")
+                    # MISDIAGNOSIS FIX: this used to print the PARAMETER's type in the
+                    # argument's slot ("argument 1 of 'f' is int but the &place is a
+                    # different type" for a `float` variable), naming the one type the
+                    # argument does NOT have and never naming the actual one. type_of on
+                    # an EAddr recurses to the place (:5033), so the sibling by-value and
+                    # sink arms below get this right; say it the same way, matching
+                    # tychoc (src/tychoc.c:5500).
+                    die_at(dc, el, aname + " is " + type_of(args[k], names, types, dc, ctx) + ", expected " + base_ty(pp[k]))
         elif is_sink(pp[k]):
             sw := base_ty(pp[k])                                                      # sink is by-value-owned: check the value like a normal arg (was NOT checked at all -- fail-open on scalar coercion / newtype / sum mismatch)
             nt_check(dc, ctx, sw, args[k], names, types, aname, el)
@@ -11022,6 +11067,17 @@ fn collect_stmt(acc: inout [string], s: Stmt, names: inout [string], types: inou
             collect_expr(&acc, e, names, types, dc, ctx)
         STypedDecl(n, t, e, _sl):
             note_arr_types(&acc, t)
+            # MISDIAGNOSIS FIX: "[#W]T" is the parser's encoding for a fixed array whose
+            # length is an int `const` W (:1692); the mangle pass resolves every real one
+            # to "[N]T" before this walk (:2812 -- verified: `const W = 3` / `v: [W]int =
+            # [1, 2]` reports "a fixed-size array of length 3 needs 3 elements, got 2").
+            # So a surviving "[#" means W is not a const, and the old path let it fall
+            # through to the annotation/value comparison below, which blamed the array
+            # literal ("declared type [#n]int but value is [int]") and printed an
+            # internal spelling the user never wrote. tychoc dies on the length itself,
+            # at parse (src/tychoc.c:1818-1820); say the same thing.
+            if has_prefix(t, "[#"):
+                die_at(dc, _sl, "a fixed-size array length must be an integer literal or an int `const` -- '" + substr(t, 2, find(t, "]")) + "' is not")
             collect_expr(&acc, e, names, types, dc, ctx)
             nt_check(dc, ctx, t, e, names, types, "'" + n + "'", _sl)   # newtype identity: RHS must match the annotation
             if base_type_mismatch(dc, ctx, t, e, names, types):         # base-type mismatch on an annotated decl (x:int="h"): clean diagnostic
@@ -14278,6 +14334,25 @@ fn mono_expr(e: Expr, names: [string], types: [string], gens: [Func], insts: ino
         EStr(s, el):
             return e
         EVar(s, el):
+            # MISDIAGNOSIS FIX: a bare nullary variant of a GENERIC enum (`enum Box($T)`
+            # / `Empty`) fixes no type parameter, so it is only usable written out
+            # (`Empty$(int)`). It has to be caught HERE: Stage 2b drops every generic
+            # enum template from the enum list (:14890), so by the time the checker's
+            # EVar arm runs, `Empty` is not a known variant and the old path died
+            # "unknown variable 'Empty'" -- the wrong rule, sending the reader to look
+            # for a missing declaration instead of at their own enum. tychoc names the
+            # enum and the fix (src/tychoc.c:4628); say the same. Locals win (a variable
+            # of that name is a variable), and `Empty$<int>` does not match by name.
+            if not has_str(names, s):
+                gvi := 0
+                for gvi < len(dc.enums):
+                    if len(dc.enums[gvi].typeparams) > 0:
+                        gvj := 0
+                        for gvj < len(dc.enums[gvi].variants):
+                            if dc.enums[gvi].variants[gvj].name == s and len(dc.enums[gvi].variants[gvj].ptypes) == 0:
+                                die_at(dc, el, "generics: " + s + " is a variant of generic enum " + dc.enums[gvi].name + "; supply the type explicitly, e.g. " + s + "$(int)")
+                            gvj = gvj + 1
+                    gvi = gvi + 1
             return e
         EArrEmpty(t, el):
             return EArrEmpty(resolve_gtype(t, dc.structs, dc.enums, &sinsts, &einsts), el)   # generics: `[]LL(int)` -> `[]LL__int`

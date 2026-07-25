@@ -1,0 +1,3 @@
+line 9: generics: Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
+        x := Empty
+             ^

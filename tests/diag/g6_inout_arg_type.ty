@@ -1,0 +1,11 @@
+# Locks the ARGUMENT's type in an inout base-type mismatch. tychoc0 used to print
+# the PARAMETER's type in the argument's slot ("argument 1 of 'f' is int ..." for a
+# float variable), naming the one type the argument does not have. The goldens
+# (.err / .h0err) hold both compilers to naming `float`.
+fn f(x: inout int):
+    x = x
+
+fn main():
+    y : float = 2.5
+    f(&y)
+    println("unreachable")

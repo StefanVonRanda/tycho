@@ -1,0 +1,7 @@
+# Locks the RULE cited for a non-const fixed-array length. tychoc0 used to blame the
+# array literal ("declared type [#n]int but value is [int]"), printing the parser's
+# internal `[#n]` encoding; the defect is that `n` is a variable, not an int `const`.
+fn main():
+    n := 3
+    v: [n]int = [1, 2, 3]
+    print(str(v[0]))

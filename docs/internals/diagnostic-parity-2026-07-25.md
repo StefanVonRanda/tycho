@@ -434,6 +434,64 @@ Bodies shown for DIVERGENT rows only, per the phase brief.
 | 142 | `where_unknown_pred` | IDENTICAL | — | unknown `where` predicate 'fancy' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int \| float`) | *(same)* |
 | 143 | `zero_bad_type` | IDENTICAL | — | zero$([int]): only int, float, bool, and string are defaultable | *(same)* |
 
+## Decision (Phase 3, 2026-07-25)
+
+**No blanket diagnostic-text parity gate. The divergence is recorded as ACCEPTED.**
+
+The criterion was pre-registered in `../../plan.md` Pre-flight: *"If DIVERGENT is large or
+the differences are deliberate, do NOT force them equal — record the divergence as accepted,
+write the rationale, and drop the gate."* The measurement above returned 75/143 = **52%**
+DIVERGENT. That is the "large" branch, and it is taken.
+
+Rationale, in the order it matters:
+
+1. **The spec does not make message text normative.** `../spec/00-conventions.md` §1.3 and
+   `../spec/appendix-f-impl-defined.md:63-64` make the *accept/reject decision* normative and
+   say nothing about wording. A text gate would lock, on every future edit, a surface the
+   language deliberately leaves free.
+2. **The divergence is mostly deliberate.** G2 (16) and G5 (17) are cases where one compiler
+   carries a hint or a containing declaration the other omits — the C compiler is the
+   user-facing one and is *supposed* to be richer. Forcing equality means deleting good
+   messages or hand-writing 33 matching strings in two languages, every one of which must
+   land in both files together or `make fixpoint` goes red. No correctness payoff.
+3. **The repo already made this call, in code.** `../../tests/run.sh:248-254` keeps tychoc0's
+   diagnostic goldens in a *separate* file (`tests/diag/<name>.h0err`) precisely because
+   "tychoc0's format and its wording are behind the C compiler's on purpose … holding them to
+   one golden would either block this lane or force a premature rewrite". A parity gate would
+   contradict a decision the harness already documents.
+4. **Cost of the gate is permanent, its benefit one-off.** 33 of the 75 (G1/G3/G4) are
+   reachable by editing a few format strings, but the gate that locks the result is new
+   failure surface on every diagnostic edit thereafter.
+
+**What IS gated — and it was already gated before this phase.** The normative property (both
+compilers agree on accept/reject for every reject fixture) is asserted by `tests/run.sh`, in
+`make test`, in `scripts/ci.sh` step [2/19]:
+
+```
+tests/run.sh:148   "$TYCHOC" compiler/tychoc0.ty -o "$TMP/h0" … || { echo "could not build tychoc0 for reject checks"; exit 2; }
+tests/run.sh:150   for hi in tests/reject/*.ty; do
+tests/run.sh:155       if "$TYCHOC" "$hi" --emit-c -o "$TMP/rj" …; then
+tests/run.sh:156           note "$name" "tychoc ACCEPTED an invalid program"; …
+tests/run.sh:159       elif [ "$skip0" = 0 ] && "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/rj0.log"; then
+tests/run.sh:160           note "$name" "tychoc0 ACCEPTED an invalid program (fail-open)"; …
+```
+
+with the same shape for the package rejects at `tests/run.sh:169-183`. The skip-list
+(`H0_REJECT_SKIP`, `:149`) is empty, so all 143 single-file fixtures plus the package fixture
+are covered on both sides. **No new lane was added: one already exists, it is decision-only,
+and it deliberately does not compare text.**
+
+### What Phase 3 did change: four G6 misdiagnoses
+
+G6 was the only group where the divergence was not wording — the two compilers disagreed
+about *what is wrong with the program*. All nine were classified against the source; four
+were genuine misdiagnoses in tychoc0 (a message that names the wrong type or the wrong rule,
+sending the reader to the wrong place in their own program) and were fixed. The other five
+are two independently-true diagnoses of the same program, or the same rule said better on one
+side; those were left alone. The classification table and the fixtures that lock the new
+wording (`tests/diag/g6_*.ty`, with per-compiler `.err`/`.h0err` goldens) are in
+`../../plan.md` under Phase 3.
+
 ## Reproducing this
 
 ```sh

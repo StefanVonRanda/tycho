@@ -1,0 +1,8 @@
+# Locks the RULE cited for explicit type arguments on a non-generic function.
+# tychoc0 used to die "unknown function 'f$<int>'" -- an internally-encoded name the
+# user never wrote, blaming a missing declaration when `f` is declared right here.
+fn f() -> int:
+    return 1
+
+fn main():
+    println(str(f$(int)()))

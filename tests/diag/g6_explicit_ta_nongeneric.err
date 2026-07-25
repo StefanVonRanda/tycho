@@ -1,0 +1,2 @@
+tests/diag/g6_explicit_ta_nongeneric.ty:8: error: explicit type arguments given, but 'f' is not a generic function
+     8 |     println(str(f$(int)()))

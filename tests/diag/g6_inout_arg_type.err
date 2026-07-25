@@ -1,0 +1,2 @@
+tests/diag/g6_inout_arg_type.ty:10: error: argument 1 of 'f' is float, expected int
+    10 |     f(&y)

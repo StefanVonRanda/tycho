@@ -285,7 +285,7 @@ or fixpoint goes red.
     make check-links  link check: ok (121 markdown files, no dead relative links)
     ```
 
-- [ ] **Phase 3 — gate diagnostic parity, IF Phase 2 says it is bounded (#3, part 2)**
+- [x] **Phase 3 — gate diagnostic parity, IF Phase 2 says it is bounded (#3, part 2)**
   - **Conditional.** Read Phase 2's totals first. If DIVERGENT is small and each
     case is a genuine defect, fix them and add a `make diag-parity` lane that
     locks the normalized bodies. If DIVERGENT is large or the differences are
@@ -299,6 +299,86 @@ or fixpoint goes red.
     or the doc records the decision not to gate with its reasoning.
   - Verify: if gated, paste the lane's summary line and show it fails on a
     deliberately perturbed message; full gate set green either way.
+  - **DONE 2026-07-25. Branch taken: the "large / deliberate" one — NO blanket
+    text-parity gate.** Phase 2 measured 75/143 = 52% DIVERGENT with
+    DECISION-DIVERGENT = 0. The decision and its four reasons are written up in
+    `docs/internals/diagnostic-parity-2026-07-25.md` § "Decision (Phase 3)". The
+    short form: the spec makes only the accept/reject decision normative
+    (`docs/spec/00-conventions.md` §1.3, `appendix-f-impl-defined.md:63-64`);
+    G2+G5 (33 fixtures) are *deliberately* asymmetric because the C compiler is
+    the user-facing one; and `tests/run.sh:248-254` already says in code that
+    tychoc0's wording is held to a SEPARATE golden on purpose, so a shared-text
+    gate would contradict a decision the harness documents.
+
+    **Part A — the normative property was ALREADY gated. No lane added.**
+    `tests/run.sh:148` builds tychoc0 (`"$TYCHOC" compiler/tychoc0.ty -o
+    "$TMP/h0"`, hard `exit 2` if that fails) and the loop at `:150-163` asserts,
+    per fixture, that tychoc rejects (`:155-156`), that its diagnostic is
+    non-empty (`:157-158`), and that **tychoc0 does not fail-open** (`:159-160`,
+    "tychoc0 ACCEPTED an invalid program (fail-open)"). `H0_REJECT_SKIP` (`:149`)
+    is empty, so all 143 are covered on both sides; `:169-183` does the same for
+    the package-reject dirs. `make test` runs `tests/run.sh` (`Makefile:88-89`),
+    and `scripts/ci.sh` step `[2/19]` runs `make test`. It is decision-only and
+    compares no text — exactly the lane this phase would have written. A second
+    lane would have been duplicate coverage, so none was added.
+
+    **Part B — the 9 G6 fixtures, classified against both sources.** Fixed only
+    category (ii). All four fixes are in `compiler/tychoc0.ty` and are message
+    paths (a `die_at` that already fired); none touches emitted C, which
+    `make fixpoint` green confirms empirically.
+
+    | Fixture | Class | Verdict and evidence |
+    |---|---|---|
+    | `base_mismatch_inout` | **(ii) FIXED** | `tychoc0.ty:10737` printed `base_ty(pp[k])` — the PARAMETER's type — in the argument's slot, so a `float` argument was reported as `int`: the one type it does not have. The sibling by-value/sink arms (`:10745`, `:10752`) already use `type_of(args[k], …)`, and `type_of` on an `EAddr` recurses to the place (`:5033`). Now `argument 1 of 'f' is float, expected int`, byte-identical to tychoc (`src/tychoc.c:5500`) |
+    | `explicit_nongeneric` | **(ii) FIXED** | `f$(int)` parses to the encoded callee `f$<int>` (`tychoc0.ty:866`); when `f` is not generic the generics pass leaves it and the codegen-position unknown-callee die (`:6710`) blamed a **missing declaration** for a function declared two lines up, quoting a name the user never wrote. New helper `explicit_ta_check` re-uses this compiler's own wording from `:14371` and tychoc's from `src/tychoc.c:5455` |
+    | `genenum_bare_nullary` | **(ii) FIXED** | tychoc0 said `unknown variable 'Empty'`; `Empty` is declared 3 lines above. Root cause: Stage 2b **drops every generic-enum template** from the enum list (`tychoc0.ty:14890`), so by checker time `Empty` is genuinely not a known variant. Caught earlier instead, in `mono_expr`'s `EVar` arm (`:14332`) where the templates are still present, guarded by `not has_str(names, s)` so a local of that name still wins. Now matches tychoc (`src/tychoc.c:4628`) |
+    | `fixed_array_nonconst_size` | **(ii) FIXED** | tychoc0 said `declared type [#n]int but value is [int]` — blaming the array literal and printing `[#`, the parser's internal encoding for a const-sized array (`tychoc0.ty:1692`). Every *real* const is resolved to `[N]T` before the checker (`:2812`; verified: `const W = 3` / `v: [W]int = [1, 2]` → "a fixed-size array of length 3 needs 3 elements, got 2"), so a surviving `[#` means the name is not a const. Guard added at the `STypedDecl` arm; wording matches tychoc, which dies at parse (`src/tychoc.c:1818-1820`) |
+    | `bare_expr_stmt` | (i) both correct — left | tychoc rejects semantically (`src/tychoc.c:3190`), tychoc0's parser rejects the same line one phase earlier (`tychoc0.ty:1622`, "expected ':=', '=', or '('"). Both statements are true of `x` on a line by itself; neither names a wrong type, rule, or operand |
+    | `chan_reassign` | (i) both correct — left | The program violates two rules at once. tychoc cites "a channel variable cannot be reassigned" (`src/tychoc.c:6418`); tychoc0 cites "a channel must be created directly in a declaration" (`tychoc0.ty:10916`) — the same string tychoc uses on the sibling fixture `chan_in_container`, where the two agree. Both compilers own both rules; they pick different true ones |
+    | `char_as_type` | (iii) tychoc0 strictly better — left | `tychoc0.ty:1799-1800` carries an explicit AUDIT comment: it knows tychoc says `unknown type 'char'` and deliberately says more ("there is no `char` type keyword — a char arises by inference"). Same rule, one side actionable. Converging would mean deleting the better message. (Improving *tychoc's* side is Phase 6 territory — it is the `char` ruling's surface, not a defect) |
+    | `explicit_count` | (i) both correct — left | `empty$(int, str)` violates two rules: wrong arity **and** a bad type name. tychoc resolves type arguments first and dies `unknown type 'str'`; tychoc0 checks arity first (`:13820`). Verified `str` genuinely is not a tychoc type name: probe `x: str = "h"` → `unknown type 'str'`. Order of checks, not a misdiagnosis. (The probe did turn up a real defect on the tychoc0 side — see the new phase below) |
+    | `infer_use_before_ground` | (iii) same rule, tychoc more actionable — left | Both say the type of `xs` cannot be inferred (`src/tychoc.c:4607` vs `tychoc0.ty:12851`). tychoc adds "assign/push/pass it first" and points at the use; tychoc0 points at the block. Same rule, no wrong claim — a wording/detail gap of the G2 kind, out of scope by this phase's own non-scope rule |
+
+    **Fixtures locking the four corrected diagnoses.** `tests/reject/` scores the
+    decision only, so the corrected *text* is locked with the mechanism that
+    exists for exactly that (`tests/run.sh:227-278`): four new
+    `tests/diag/g6_*.ty` with a `.err` (tychoc) and a `.h0err` (tychoc0) golden
+    each. They fail the build if either message regresses:
+    ```
+    tests/diag/g6_inout_arg_type.h0err          line 10: argument 1 of 'f' is float, expected int
+    tests/diag/g6_explicit_ta_nongeneric.h0err  line 8: type: explicit type arguments given, but 'f' is not a generic function
+    tests/diag/g6_genenum_bare_nullary.h0err    line 9: generics: Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
+    tests/diag/g6_fixarr_nonconst_size.h0err    line 6: a fixed-size array length must be an integer literal or an int `const` -- 'n' is not
+    ```
+    `make test` rose 427 → **435** (4 fixtures × 2 lanes: `diag_` + `diag0_`).
+
+    **A dead guard was written and then removed, on evidence.** The first version
+    also called `explicit_ta_check` ahead of the type_of-side unknown-function
+    die (`tychoc0.ty:4713`). A build with that call stubbed out produced
+    byte-identical diagnostics for both `println(str(f$(int)()))` and
+    `x := f$(int)()`, proving that path never fires — so it was deleted rather
+    than shipped unexercised. The reason is recorded above the helper.
+
+    **No-regression probes (all still accepted, rc=0):** `const W = 3` /
+    `v: [W]int = [1, 2, 3]` (the const-sized array the new `[#` guard must not
+    touch); `Empty$(int)` written out with a `match` over `Box(int)`; a bare
+    `Red` of a non-generic enum. And `nosuch$(int)()` still reports an unknown
+    function, so the new guard does not swallow a genuinely undefined name.
+
+    **Gate set — all seven green:**
+    ```
+    make test         passed: 435   failed: 0   / all green
+    make corelib      corelib: all green (tychoc and tychoc0 agree, match goldens)
+    make conc         conc: passed 36   failed 0
+    make fixpoint     ok  B == C : tychoc0 reproduces itself byte-identically (34839 lines C)
+                      fixpoint: all green (self-hosting; B==C; single files + packages; tychoc0 self-split dogfood)
+    make ilp32        passed: 435   failed: 0   / all green
+    make spec-check   spec-examples: 7 runnable example(s), all pass
+    make check-links  link check: ok (121 markdown files, no dead relative links)
+    ```
+    `git status --short` after the run: `M compiler/tychoc0.ty` plus the 12 new
+    `tests/diag/g6_*` files. No build spill (tychoc0 was built to a scratch dir
+    outside the tree, per Phase 2's note that `-o` drops a sibling `.c`).
 
 - [ ] **Phase 4 — emitted C is warning-clean under `-Wall -Wextra` (#4)**
   - Scope: `src/tychoc.c` map-append emitter (`:10701` emits the store;
@@ -395,6 +475,11 @@ or fixpoint goes red.
     diagnostic naming the line; a reject fixture locks it; full gate set green.
 
 - [ ] **Phase 8 — two concrete diagnostic defects surfaced by Phase 2's G6 (NOT fixed there)**
+  - **(a) IS CLOSED BY PHASE 3** (2026-07-25), together with three more G6
+    misdiagnoses the phase's non-scope note had assumed were defensible
+    (`explicit_nongeneric`, `genenum_bare_nullary`, `fixed_array_nonconst_size`).
+    See Phase 3's classification table. **What remains of this phase is (b)
+    only** — the six line-number disagreements, none of which Phase 3 touched.
   - Phase 2 was measurement-only, so these were recorded, not touched. They are
     *message* defects, not soundness holes — both compilers still reject both
     programs. Listed separately from Phase 3 because they are worth fixing
@@ -422,6 +507,41 @@ or fixpoint goes red.
   - Done when: (a) tychoc0 names the argument's actual type; (b) each of the six
     has a recorded ruling and the compilers agree where a ruling says they
     should; full gate set green.
+
+- [ ] **Phase 9 — DECISION divergence: tychoc0 accepts `str` as a written type annotation, tychoc rejects it (found by Phase 3, NOT fixed there)**
+  - Found while checking whether tychoc's `unknown type 'str'` on
+    `tests/reject/explicit_count.ty` was itself a misdiagnosis. It is not — but
+    the probe that proved it exposed something bigger than a message:
+    ```
+    fn main():
+        x: str = "h"
+        println(x)
+    ```
+    ```
+    tychoc   probe.ty:2: error: unknown type 'str'      (rc 1)
+    tychoc0  <no diagnostic>                            (rc 0)
+    ```
+  - **This is an accept/reject divergence, i.e. the one property the spec makes
+    normative** (`docs/spec/00-conventions.md` §1.3,
+    `appendix-f-impl-defined.md:63-64`) — unlike everything else in the
+    diagnostic-parity work, which is deliberately non-normative text. tychoc0
+    fail-opens: `str` is its *internal* spelling of the string type
+    (`compiler/tychoc0.ty:2116`, `:2844` list it alongside `int`/`float`/`bool`
+    as a base type name), so a user annotation reading `str` sails through.
+  - Phase 2 reported DECISION-DIVERGENT = 0, and that stands: it measured only
+    `tests/reject/*.ty`, and no fixture writes `str` in type position. This is a
+    hole in the fixture set, not a contradiction of the measurement.
+  - Scope when taken: decide first which spelling the language has —
+    `docs/spec/03-types.md` and `01-lexical.md` are the authority, and the answer
+    determines whether tychoc0 must reject `str` or tychoc must accept it (do NOT
+    assume tychoc is right merely because it is stricter). Then the type-name
+    validation in whichever compiler is wrong, plus a `tests/reject/` fixture so
+    the reject lane covers it on both sides.
+  - Also sweep the same shape: every other name tychoc0 accepts in type position
+    that tychoc does not (`tychoc0.ty:2844` is the list to walk — `ptr`, `bytes`,
+    the sized ints), since each is the same class of fail-open.
+  - Done when: both compilers agree on the accept/reject decision for a written
+    `str` annotation, a reject fixture locks it, full gate set green.
 
 ## Out of scope
 

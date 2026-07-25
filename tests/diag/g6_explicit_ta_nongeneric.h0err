@@ -1,0 +1,3 @@
+line 8: type: explicit type arguments given, but 'f' is not a generic function
+        println(str(f$(int)()))
+        ^

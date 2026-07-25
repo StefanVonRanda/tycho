@@ -1,0 +1,2 @@
+tests/diag/g6_genenum_bare_nullary.ty:9: error: Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
+     9 |     x := Empty

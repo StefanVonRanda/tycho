@@ -1,0 +1,10 @@
+# Locks the RULE cited for a bare nullary variant of a generic enum. tychoc0 used
+# to die "unknown variable 'Empty'" -- Empty is declared four lines up; the defect
+# is that it fixes no type parameter and must be written `Empty$(int)`.
+enum Box($T):
+    Has($T)
+    Empty
+
+fn main():
+    x := Empty
+    println("unreachable")
