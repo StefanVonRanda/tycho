@@ -64,6 +64,44 @@ Written while trying to stand up the simplest possible concurrent server.
 
 ## Phases
 
+- [ ] **Phase 0 — BLOCKING: freeze tychoc0 and cut it out of the gates (user direction, 2026-07-26)**
+  - **User direction, verbatim: *"I told you, tychoc0 is out. Stop running fix points, fuzzer
+    etc against it."*** Chosen retirement: **FREEZE** — `compiler/tychoc0.ty` stays in the tree
+    as the artifact that proved the thesis, but no gate runs it and no future change mirrors
+    into it. It bit-rots by design.
+  - **Why this blocks everything else.** tychoc0 is load-bearing in **13 of the 19 CI steps**
+    (`scripts/ci.sh`): `test` (reject/abort/diag lanes), `frontparity`, `fixpoint`, `rtparity`,
+    `corelib`, `conc`, `ffi`, all four `fuzz` lanes, `typeparity`, `parforparity`, `eqparity`,
+    `unaryparity`, `recursion`, `spec-check`. These do not merely *use* tychoc0 — they assert
+    the two compilers AGREE, so they go red the moment tychoc changes alone. Phase 6's
+    tychoc-only diagnostic already trips this: tychoc now rejects `fn handle(...)` while
+    tychoc0 accepts it. Nothing can be verified until the gate set is redefined.
+  - **What must NOT be lost.** Strip only the tychoc0 half. The reject lane must still assert
+    *tychoc rejects with a non-empty diagnostic*; the golden lanes must still compare tychoc's
+    output against recorded goldens. Removing a whole lane because it happens to mention
+    tychoc0 would silently drop real coverage — check each one and say what remains.
+  - Scope:
+    1. `Makefile` + `scripts/ci.sh`: remove `fixpoint`, `frontparity`, `typeparity`,
+       `parforparity`, `eqparity`, `unaryparity`, and the differential `fuzz` lanes. Decide
+       `rtparity` and `bootstrap` deliberately — read what they actually compare first.
+    2. `tests/run.sh`, `corelib/run.sh`, `tests/conc/run.sh`, and the `ffi`/`recursion` lanes:
+       remove the tychoc0 build and its comparisons, keep the tychoc assertions.
+    3. Mark `compiler/tychoc0.ty` frozen in a header comment — what it proved, when it was
+       frozen, and that it is unmaintained. Same in `README.md` and `ROADMAP.md`.
+    4. **The spec's conformance model changes and must be edited, not left false.**
+       `docs/spec/appendix-f-impl-defined.md` F.3 lists among the invariants "the accept/reject
+       decision for every program (the two-implementation conformance oracle, §1.3)", and
+       `docs/spec/00-conventions.md` §1.3 defines conformance that way. With one implementation
+       that definition no longer describes reality. Rewrite both so conformance is defined
+       against the SPEC, with tychoc named as the reference implementation. Sweep for other
+       places asserting two implementations (`docs/architecture.md`, `docs/bootstrap.md`,
+       `appendix-e-conformance.md`).
+  - Non-scope: do NOT delete tychoc0, do NOT fix anything in it, do NOT chase the parity gaps
+    the removed lanes were covering. It is frozen, not maintained.
+  - Done when: `make ci` is green with no tychoc0 step; a tychoc-only change (Phase 6's, already
+    in the tree) verifies cleanly; the surviving gates' coverage is stated; the spec no longer
+    claims a conformance model the project does not have.
+
 - [x] **Phase 1 — decide the concurrency shape (probe only, no library change)**
   - Task handles cannot be stored, so thread-per-connection-with-tracking is out. Probe
     what IS expressible for N long-lived workers, and pick one:
