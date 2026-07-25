@@ -30,6 +30,23 @@ failure mode to avoid, not a template. Rules for this plan:
   left alone. That file is a deliverable; fixing everything in it is not.
 - **Stop condition: the server serves the site.** Not "the language is good."
 
+### GATE CONSTRAINT — user directive, 2026-07-26, binding on me and every subagent
+
+**`make ci` and `make test` run AT MOST ONCE PER DAY.** Not per phase, not per commit —
+per day, across all agents. Violating it means the gates get removed from the project
+entirely, which is the user's call and a reasonable one.
+
+Every phase prompt in this session before this date told its agent to "run the full gate
+set, one per command, foreground". That was wrong: a docs-and-Makefile change was paying
+for `ilp32`, `asan-self`, `fuzz` and `bench-guard`, none of which can catch anything such
+a change could break. Do not reproduce that boilerplate.
+
+What replaces it: **run the thing you built.** For this plan that means starting the
+server and hitting it with `curl` — faster than any gate, and it actually answers the
+question. A phase that changed one corelib function verifies by calling that function.
+Record what you ran and why it was the right check; "gates not run, daily allowance spent"
+is a complete and correct justification, not a gap to apologise for.
+
 ## What the probes already established (2026-07-25, measured not assumed)
 
 Written while trying to stand up the simplest possible concurrent server.
@@ -56,15 +73,18 @@ Written while trying to stand up the simplest possible concurrent server.
   response with. If concatenating `bytes` is painful, the server's whole IO path is
   painful, and that is itself a headline ergonomics finding — record it either way.
 - Reversibility: git; one commit per phase; no user data.
-- The gate set still applies (`make test`, `corelib`, `conc`, `fixpoint`, `ilp32`,
-  `asan-self`, `frontparity`, `spec-check`, `check-links`) — these are corelib changes and
-  the corelib is gated. Run them; do not add to them.
+- The gate set still applies — **as redefined by Phase 0**: `make test`, `ilp32`,
+  `asan-self`, `corelib` (+ `corelib-examples`, `site`, `raytrace`, `mandelbrot`), `conc`,
+  `ffi`, the three `fuzz` lanes, `tools-check`, `bench-guard`, `recursion`, `spec-check`,
+  `check-links`. Thirteen steps, none of which builds tychoc0; `fixpoint` and
+  `frontparity` no longer exist. These are corelib changes and the corelib is gated. Run
+  them; do not add to them.
 - **ENVIRONMENT:** run every gate as `env -u LD_PRELOAD make …` (a foreign preload in the
   dev shell breaks ASan link order; not a code bug).
 
 ## Phases
 
-- [ ] **Phase 0 — BLOCKING: freeze tychoc0 and cut it out of the gates (user direction, 2026-07-26)**
+- [x] **Phase 0 — BLOCKING: freeze tychoc0 and cut it out of the gates (user direction, 2026-07-26)**
   - **User direction, verbatim: *"I told you, tychoc0 is out. Stop running fix points, fuzzer
     etc against it."*** Chosen retirement: **FREEZE** — `compiler/tychoc0.ty` stays in the tree
     as the artifact that proved the thesis, but no gate runs it and no future change mirrors
@@ -101,6 +121,140 @@ Written while trying to stand up the simplest possible concurrent server.
   - Done when: `make ci` is green with no tychoc0 step; a tychoc-only change (Phase 6's, already
     in the tree) verifies cleanly; the surviving gates' coverage is stated; the spec no longer
     claims a conformance model the project does not have.
+
+  **DONE 2026-07-26.** CI went from **19 steps to 13**. No step builds or runs a tychoc0
+  binary. Phases 5 and 6 were stranded in the tree by the redirection; both are verified
+  and committed here (this phase is what made them verifiable — Phase 6's tychoc-only
+  diagnostic would have reddened `frontparity` and `fixpoint` on the exact change the
+  user asked for).
+
+  ### Per-lane coverage: what it checked before → what it checks now
+
+  Nothing below lost a tychoc assertion. Every removal is a **second-implementation
+  comparison**, never a property of tychoc.
+
+  | Lane | Checked BEFORE | Checks NOW | Verdict |
+  |---|---|---|---|
+  | `test` — positive | tychoc: native `-O2` == ASan/UBSan == recorded golden | unchanged | kept whole |
+  | `test` — `reject/` | tychoc rejects w/ nonzero exit **and non-empty diagnostic**; tychoc0 must also reject (fail-open guard) | tychoc rejects w/ nonzero exit **and non-empty diagnostic** | tychoc half kept verbatim |
+  | `test` — `reject/pkg/` | same, package-scoped | same, package-scoped | tychoc half kept verbatim |
+  | `test` — `abort/` | tychoc builds, dies nonzero w/ a `tycho:` message; tychoc0 builds and dies with **byte-identical stderr + same exit status** | tychoc builds, dies nonzero w/ a `tycho:` message | tychoc half kept verbatim |
+  | `test` — `diag/` | tychoc's exact stderr == `tests/diag/*.err` golden | unchanged | kept whole |
+  | `test` — `diag0/` | tychoc0's exact stderr == `tests/diag/*.h0err` golden | **removed** | 100% tychoc0; the 15 lanes are the entire 540→525 drop |
+  | `test` — `warn/` | tychoc accepts, warns, stderr == golden | unchanged | kept whole |
+  | `ilp32` | same suite rebuilt `gcc -m32`, 64-bit goldens | unchanged | kept whole |
+  | `asan-self` | src/tychoc.c under ASan+UBSan compiles the whole corpus **incl. `compiler/tychoc0.ty` as input** | unchanged, tychoc0.ty still in the corpus | kept whole — see the `asan-self` note below |
+  | `corelib` | tychoc **and** `tychoc --bundle \| tychoc0` **and** standalone tychoc0, all three == golden | tychoc == golden | 2 of 3 legs were tychoc0; golden comparison + deps-skip untouched |
+  | `corelib-examples` | same three ways == golden | tychoc == golden | as above |
+  | `site` | 3 compilers + ASan == golden build report | tychoc + ASan == golden | ASan leg re-pointed at tychoc's emitted C |
+  | `raytrace` | tychoc == tychoc0 == ASan == golden, valid QOI magic | tychoc == ASan == golden, valid QOI magic | as above |
+  | `mandelbrot` | tychoc == tychoc0 == TSan == ASan == golden | tychoc == TSan == ASan == golden | as above |
+  | `conc` | per fixture: tychoc native+ASan+TSan == golden, **plus** tychoc0 == same golden; aborts die identically in both; rejects refused by tychoc | tychoc native+ASan+TSan == golden; aborts fire w/ their `.err` message; rejects refused | 37/37 still pass — the count did not move |
+  | `ffi` | every check run twice (tychoc + tychoc0) and the outputs compared; handle bans, injection guard, sized ints, first-class sized types asserted in both | every check asserted for tychoc; ASan leg re-pointed at tychoc's emitted C | each individual assertion survives; only the pairwise `cmp` is gone |
+  | `recursion` | 7 pathological inputs rejected cleanly + 4 valid accepted, **in both** compilers | same 11, for tychoc | tychoc half kept verbatim |
+  | `spec-check` | grammar==chapters, Appendix E fixtures exist, 7 runnable examples run on **both** compilers | grammar==chapters, fixtures exist, 7 examples run on tychoc | still "7 runnable example(s), all pass" |
+  | `tools-check` | formatter/LSP checks (tychoc-only) + 3 warning lints asserted in **both** compilers | same, tychoc only | lints still asserted; only the tychoc0 mirror is gone |
+  | `check-links` | dead links + `path:N` citations resolve | unchanged | kept whole |
+  | `bench-guard` | tree-alloc wall: tycho beats C | unchanged | kept whole |
+  | `fuzz` | random valid program: tychoc native vs **tychoc0** native vs **tychoc0** ASan vs tychoc ASan, all byte-identical | random valid program: **tychoc native `-O2` vs tychoc ASan/UBSan `-O1`** must agree byte-for-byte, neither may fault | **tychoc half KEPT** — the native-vs-sanitizer differential of thesis §3 is a single-compiler oracle and it survives; what was lost is a second implementation as an output oracle |
+  | `fuzz-reject` | malformed input: **each** compiler must not crash, and anything either accepts must emit valid C; divergence merely *reported* | malformed input: **tychoc** must not crash, and anything it accepts must emit valid C | **tychoc half KEPT verbatim.** Invariants (1) NO CRASH and (2) NO FAIL-OPEN are properties of one compiler. Only the advisory divergence report — which never failed a run — is gone |
+  | `fuzz-leak` | valid random programs under ASan+LSan, **both** compilers, no leak at exit | same, tychoc's emitted C | **tychoc half KEPT.** The leak class lives in the emitted runtime, which is tychoc's |
+  | `fuzz-pkg` | random 2-package program built **three ways** (tychoc, tychoc0 `--bundle`, tychoc0 standalone), all byte-identical | **removed** | read it: it has **no ASan leg and no golden** — its only oracle was tychoc0. Cross-package codegen stays gated by `tests/pkg/*` goldens and `tests/reject/pkg/*` in `make test` |
+  | `fixpoint` | `B==C` byte-identical self-emission + `B` matches tychoc | **removed** | 100% tychoc0 |
+  | `frontparity` | tychoc0's frontend must accept everything tychoc accepts | **removed** | 100% tychoc0 |
+  | `rtparity` | **decided deliberately.** Read `tests/rtparity/run.py` + `Makefile`: it compiles one probe with both compilers and diffs the *user-visible surface of the emitted C* — env knobs, `tycho:` trap texts, arena-stats rows — because the project shipped **two hand-maintained runtimes**, `runtime/tycho_rt.c` and the one tychoc0 emits as C string literals | **removed** | there is now **one** runtime. The lane's entire subject is the second one. 100% tychoc0 |
+  | `bootstrap` | **decided deliberately.** Read `compiler/run.sh`: for each `compiler/tests/*.ty` it builds tychoc0, runs the fixture through it, and asserts `cc(tychoc0(P))` prints what tychoc's binary prints | **removed** | it *is* the tychoc0 validation harness — there is no tychoc-only half. Residual: `compiler/tests/*.ty` is no longer compiled by any gate; those fixtures only ever existed to exercise tychoc0's subset |
+  | `typeparity` / `parforparity` / `eqparity` / `unaryparity` | tychoc and tychoc0 agree on accept/reject over an exhaustive matrix | **removed** | each is *defined* as a two-compiler agreement; there is no single-compiler residue |
+
+  **`asan-self` note (the one deliberate exception).** `scripts/asan_self.sh:137` still
+  lists `compiler/tychoc0.ty` in its glob. That is **not** running tychoc0: it feeds the
+  file to the ASan-built *tychoc* as `--emit-c` input, and no binary is linked. It is the
+  largest single Tycho source in the tree (~16k lines) and therefore the corpus's hardest
+  stress on tychoc's own memory safety. Kept on purpose; `asan-self: compiled: 540` still
+  counts it.
+
+  ### Spec + doc edits (conformance redefined, divergence stated)
+
+  The old model was a **two-implementation oracle**. With one maintained compiler that is
+  false, so it was rewritten rather than left standing:
+
+  - `docs/spec/00-conventions.md` — §1.2 "The two-implementation contract" → **"The
+    reference implementation"**: `tychoc` named as reference, the spec restated as
+    normative over it, plus a subsection saying plainly that `tychoc0` is a **frozen
+    snapshot, not a second implementation**, that it and tychoc now accept and reject
+    different programs, and naming the live divergence. §1.3 gains a paragraph defining
+    conformance against **this specification**, checked via the Appendix E fixture corpus.
+  - `docs/spec/appendix-f-impl-defined.md` — F.3's invariant "the accept/reject decision
+    for every program (**the two-implementation conformance oracle**, §1.3)" now reads
+    "fixed by this specification and checked against the fixture corpus of Appendix E",
+    with the old wording kept as a dated historical note. F.1 and the `int`-width note
+    de-pluralized off "both reference compilers".
+  - `docs/spec/appendix-e-conformance.md` — E.1 redefined against the spec + fixtures;
+    the removed parity/fuzz-differential corpora replaced by what actually runs; a
+    historical note explains that surviving `*parity` **lane** citations in the E.2 matrix
+    name gates that no longer run, and that the clause each backs is normative regardless.
+  - `docs/spec/appendix-g-glossary.md` — "Fixpoint" reworded from "anchors the
+    two-implementation conformance oracle" to a dated past-tense entry; its dead anchor
+    `#12-the-two-implementation-contract` repointed.
+  - `docs/spec/09-expressions.md` §13.4 note — "both reference compilers" / "the two
+    compilers" → the reference compiler and the now-frozen snapshot.
+  - `docs/architecture.md` — the pieces table marks tychoc0 **FROZEN 2026-07-26**; the
+    fixpoint paragraph becomes "proved, then frozen" and states the divergence with the
+    `fn handle(...)` example; the 16-row gate table rewritten to the 13 surviving gates,
+    with a blockquote naming every removed two-implementation gate.
+  - `CONTRIBUTING.md` — rule 1 inverted. It said *"Every language feature lands in BOTH
+    transpilers, or not at all."* It now says there is one maintained compiler, tychoc0 is
+    frozen, do not update it, do not read it to learn the language.
+  - `README.md` — the "two compilers … `make fixpoint`" paragraph and the self-hosting
+    evidence section rewritten: the result stands as recorded, is not re-run, and tychoc0
+    is a dated snapshot.
+  - `ROADMAP.md` — "Keeping the two compilers honest" → "Keeping the compiler honest",
+    with tychoc0 explicitly out of the loop.
+  - `docs/reference/index.md` — "runs under both … the language has two implementations
+    that must agree" → runs under tychoc.
+  - `compiler/tychoc0.ty` — a 50-line **FROZEN** banner at the top of the file (the place
+    someone lands): what it proved, what changed, that it is **already diverging** (naming
+    the `fn handle(...)` case), that it is not authoritative about Tycho, and that it is
+    finished rather than broken. Plus a mechanical note that its own internal `:N`
+    self-citations are now off by −50.
+  - `compiler/README.md` — **new**, same message at the directory level, plus a table of
+    what each stranded harness in `compiler/` used to be.
+  - `docs/bootstrap.md` **does not exist** (verified: `find . -name 'bootstrap*'` returns
+    nothing). The dead reference in tychoc0's header was dropped; the sweep target named
+    in this phase's scope was stale. Logged in `FRICTION.md`.
+  - 21 stale `path:N` citations repaired — the line shifts from Phase 6's `src/tychoc.c`
+    edit (+10), this phase's tychoc0 banner (+50), and the shrunken `tests/run.sh` /
+    `scripts/ci.sh`. Four archived citations pointed at code this phase deleted and were
+    de-numbered rather than re-pointed.
+
+  ### Gate evidence (each run individually, foreground, `env -u LD_PRELOAD`)
+
+  ```
+  make test         passed: 525   failed: 0            all green
+  make ilp32        passed: 525   failed: 0            all green
+  make asan-self    asan-self: compiled: 540   failed: 0
+  make corelib      corelib: all green (tychoc matches goldens)
+  make corelib-examples   corelib examples: all green
+  make site         site: green (io+path+json+csv+strings+sort+datetime+sha256 compose; tychoc+ASan, matches golden)
+  make raytrace     raytrace: green (float-heavy Vec3 value semantics; tychoc == ASan; valid QOI)
+  make mandelbrot   mandelbrot: green (float in a parallel-for reduction; tychoc == TSan == ASan; deterministic)
+  make conc         conc: passed 37   failed 0
+  make ffi          ffi: green (tychoc: ASan-clean, matches golden — scalars+string, sized ints, ptr handles, null/is_null, -L + --shim, package-scoped extern)
+  make recursion    recursion-cap: all green (fail closed on deep input, no stack overflow)
+  make tools-check  tools-check: ok
+  make spec-check   spec-examples: 7 runnable example(s), all pass
+  make check-links  link check: ok (124 markdown files, no dead relative links)
+                    citation check: ok (22 anchored contain the token they name, 1322 bare in bounds)
+  fuzz/run.py 20        DONE: ok=20 skip=0 timeout=0 FAIL=0
+  fuzz/run_reject.py 20 DONE: accepted=6 rejected=14 FAIL=0
+  fuzz/run_leak.py 10   DONE: ok=10 skip=0 FAIL=0
+  ```
+
+  **On the test count.** The brief expected 540. It is **525**, and the whole difference
+  is the 15 removed `diag0` (`tests/diag/*.h0err`) lanes — one per tychoc0 diagnostic
+  golden, `ls tests/diag/*.h0err | wc -l` = 15. 540 − 15 = 525. No tychoc fixture was
+  dropped; `asan-self` independently still counts **540** compiles because its corpus is
+  file-based, not lane-based.
 
 - [x] **Phase 1 — decide the concurrency shape (probe only, no library change)**
   - Task handles cannot be stored, so thread-per-connection-with-tracking is out. Probe
@@ -142,7 +296,8 @@ Written while trying to stand up the simplest possible concurrent server.
   `spawn work(1)` statement is rejected — `error: a statement must be a declaration,
   assignment, or call -- a bare expression has no effect`. Once bound, the compiler
   emits an implicit join at the handle's scope exit — `src/tychoc.c:9148`
-  (`taskvar_push(sfmt("tycho_task_finish(h_%s)", s->name))`) and `compiler/tychoc0.ty:9100,:9116`
+  (`taskvar_push(sfmt("tycho_task_finish(h_%s)", s->name))`) and `compiler/tychoc0.ty:9150,:9166`
+  (renumbered +50 by Phase 0's freeze banner)
   — which runs `pthread_join` for any un-waited task (`runtime/tycho_rt.c:602-606`). In an
   accept loop the handle is a loop-body local, so every iteration joins before the next
   `accept`: 4 clients cost 4 units. Answering the phase's question directly: an un-waited
@@ -230,17 +385,59 @@ Written while trying to stand up the simplest possible concurrent server.
   - Done when: `curl -v` shows connection reuse across two requests, and an idle
     connection is dropped rather than holding a worker.
 
-- [ ] **Phase 5 — FRICTION: `sleep` in `core:time`**
+- [x] **Phase 5 — FRICTION: `sleep` in `core:time`**
   - `runtime/tycho_rt.c:822` already calls `nanosleep` for `select`; expose `sleep_ms(ms)`
     and `sleep_ns(ns)`. Small, additive, and needed for backoff, retry and shutdown.
   - Done when: it sleeps for the requested duration (measured, not assumed) and is spec'd
     in `16-builtins.md`/the `core:time` docs.
 
-- [ ] **Phase 6 — FRICTION (cheap): say why `handle` is rejected**
+  **DONE 2026-07-26.** Written by a stopped agent before the Phase 0 redirection, left
+  uncommitted in the tree, and verified + committed here. `corelib/time/time.ty` gains
+  `sleep_ms`/`sleep_ns` over a new `corelib/time/time_shim.c` (pure libc `nanosleep`, no
+  `deps`, so nothing gains a pkg-config dependency). Spec'd in `docs/spec/18-library.md`
+  and `docs/guides/corelib.md`.
+
+  The duration is **measured, not assumed** — `corelib/test/time/main.ty` sleeps and then
+  checks the elapsed clock, and the four new assertions are golden-locked in
+  `corelib/test/time.out`:
+
+  ```
+  sleep_ms_at_least=true      # slept at least the requested ms
+  sleep_ms_sane=true          # and not absurdly longer
+  sleep_ns_at_least=true      # ns path too
+  nonpositive_immediate=true  # sleep(<=0) returns immediately, does not block
+  ```
+
+  Gate: `make corelib` → `ok   time` … `corelib: all green (tychoc matches goldens)`.
+
+- [x] **Phase 6 — FRICTION (cheap): say why `handle` is rejected**
   - `fn handle(...)` gives `expected a procedure name`. `handle` is a real keyword
     (`docs/spec/01-lexical.md`), so the fix is the *message*, not the grammar: name the
     keyword. Check the sibling keywords give the same treatment.
-  - Done when: the diagnostic names the reserved word, in both compilers.
+  - ~~Done when: the diagnostic names the reserved word, in both compilers.~~
+    **Amended by Phase 0's user direction: tychoc only.** tychoc0 is frozen; mirroring
+    into it is exactly what the freeze forbids. Its half of this change was written and is
+    deliberately left on the stash (`git stash list`), unapplied.
+  - Done when: the diagnostic names the reserved word in tychoc.
+
+  **DONE 2026-07-26.** `src/tychoc.c` (+10 lines). Before, `fn handle(x: int) -> int:`
+  gave `expected a procedure name` — true but useless, since it never says *why* the name
+  was refused. Now:
+
+  ```
+  $ ./tychoc /tmp/h.ty --emit-c -o /tmp/h
+  /tmp/h.ty:1: error: 'handle' is a reserved keyword and cannot be used as a procedure name
+       1 | fn handle(x: int) -> int:
+         |    ^
+  ```
+
+  **This is the project's first deliberate tychoc/tychoc0 divergence**, and it is the
+  reason Phase 0 had to land first: tychoc now rejects this program, tychoc0 still accepts
+  it, and under the old gate set `frontparity` (tychoc0's frontend must accept everything
+  tychoc accepts) and `fixpoint` would have gone red on precisely the change the user
+  asked for. It is cited by name in the freeze notice in `compiler/tychoc0.ty`,
+  `compiler/README.md`, `docs/spec/00-conventions.md` §1.2, `docs/architecture.md` and
+  `CONTRIBUTING.md` as the concrete evidence that the two have split.
 
 - [ ] **Phase 7 — THE POINT: write the server**
   - Worker pool per Phase 1. Serves a real content directory: static files with correct

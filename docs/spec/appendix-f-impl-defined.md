@@ -27,12 +27,11 @@ order to the C compiler rather than lifting every argument into a sequenced
 temporary. Sequencing them soundly is not free — an argument may sit inside a
 short-circuit (`f(x, cond and g())`), so a naive lift to a statement-level temp
 would evaluate it *unconditionally*; a correct lift is a per-call-site sequenced
-temporary, and that cost was judged not worth closing a hole that is not a live
-divergence (both reference compilers currently emit arguments in the same order).
-The **assignment-place index** was the exception: it *was* a real divergence
-between the two compilers, and it is cheap and sound to sequence (a place index is
-never short-circuited), so it is now pinned left-to-right (§13.4) and excluded
-above. A conforming implementation still need not match the unspecified
+temporary, and that cost was judged not worth closing a hole that was not a live
+divergence at the time. The **assignment-place index** was the exception: it *was*
+a real divergence between the reference compiler and the (now frozen) `tychoc0`
+snapshot, and it is cheap and sound to sequence (a place index is never
+short-circuited), so it is now pinned left-to-right (§13.4) and excluded above. A conforming implementation still need not match the unspecified
 argument/operand order.
 
 ## F.2 Implementation-defined behavior
@@ -60,13 +59,20 @@ differ:
 - the defined signed-overflow wrap and the div/mod-by-zero abort;
 - the deep-copy value semantics and the no-dangling / no-leak storage guarantees
   — [§9](07-memory-model.md), [§10.3](07-memory-model.md#103-observable-storage-guarantees);
-- the accept/reject decision for every program (the two-implementation
-  conformance oracle, [§1.3](00-conventions.md#13-conformance)).
+- the accept/reject decision for every program — which programs must be accepted
+  and which MUST be rejected is fixed by this specification and checked against
+  the fixture corpus of [Appendix E](appendix-e-conformance.md)
+  ([§1.3](00-conventions.md#13-conformance)). (Through 2026-07-25 this invariant
+  was stated as a *two-implementation conformance oracle*, agreement between
+  `tychoc` and the self-hosted `tychoc0`. `tychoc0` is now frozen and diverging —
+  see [§1.2](00-conventions.md#12-the-reference-implementation) — so the
+  requirement is stated against the specification and its fixtures, where it
+  always belonged.)
 
 > **Reference-implementation note (not a spec allowance).** The required 64-bit
 > `int` width above is normative for *every* conforming implementation; it is
-> **not** implementation-defined. The reference compilers (`tychoc`, `tychoc0`)
-> realize `int` as a **fixed-width 64-bit** C type — `typedef int64_t tycho_int;`
+> **not** implementation-defined. The reference compiler (`tychoc`)
+> realizes `int` as a **fixed-width 64-bit** C type — `typedef int64_t tycho_int;`
 > in the emitted prelude, which is the single width authority for `int`, the
 > `int`-carried `char` representation, array/slice length headers, map keys and
 > the FFI crossing signatures — and emit `long long`-suffixed integer literals so

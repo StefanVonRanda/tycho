@@ -5,3 +5,7 @@ elapsed_ms_nonneg=true
 unix_positive=true
 conv=2,2,3
 monotonic=true
+sleep_ms_at_least=true
+sleep_ms_sane=true
+sleep_ns_at_least=true
+nonpositive_immediate=true

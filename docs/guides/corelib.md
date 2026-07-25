@@ -115,7 +115,12 @@ element type instead of a family of per-type siblings.
   Stopwatch (value-semantic, no inout — a reading is just an int): `sw := time.start()`,
   then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
   `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
-  to avoid shadowing the builtin and recursing).
+  to avoid shadowing the builtin and recursing). Blocking sleep `sleep_ms(ms)` /
+  `sleep_ns(ns)` (a libc-only shim over `nanosleep`): a non-positive duration returns
+  immediately, the sleep is *not* interruptible (it retries on `EINTR` with the
+  remaining time, so the full duration always elapses — backoff schedules stay
+  honest), and it parks the **calling task only**, so a sleeping worker does not
+  stall its siblings.
 - **`datetime`** — civil (proleptic Gregorian) calendar math over UNIX timestamps, all
   pure integer arithmetic (Howard Hinnant's `days_from_civil`/`civil_from_days`, which
   port verbatim because tycho's int `/` truncates like C's). A `DateTime` struct

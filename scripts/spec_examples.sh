@@ -9,8 +9,11 @@
 # is skipped — the spec is written mostly in fragments and grammar, by design.
 #
 # Build path mirrors tests/run.sh's native lane: tychoc --emit-c, then cc -O2.
-# (Reference compiler only; running the self-hosted tychoc0 too is a documented
-# tier-2b follow-up.) Exit 0 = all runnable examples pass; non-zero on failure.
+# tychoc is the reference implementation (docs/spec/00-conventions.md §1.3), so a
+# spec example is conformant iff tychoc produces the documented output. Until
+# 2026-07-26 each example was also run through the self-hosted tychoc0; that
+# compiler is frozen (see compiler/tychoc0.ty) and no gate builds it, so that leg
+# is gone. Exit 0 = all runnable examples pass; non-zero on failure.
 set -u
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -20,16 +23,6 @@ TYCHOC=./tychoc
 CC="${CC:-cc}"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-
-# Tier 2b: build the self-hosted tychoc0 once, so each example is exercised on
-# BOTH compilers (the two-compiler oracle of Appendix E.1). tychoc0 compiles a
-# single file from stdin to C on stdout.
-T0="$TMP/tychoc0"
-if ! "$TYCHOC" compiler/tychoc0.ty -o "$T0" >"$TMP/t0build.log" 2>&1; then
-    echo "spec-examples: FAIL — could not build tychoc0 for the dual-compiler check" >&2
-    sed 's/^/    /' "$TMP/t0build.log" >&2
-    exit 2
-fi
 
 # compile a C file, run it, diff stdout against the expected block.
 # args: <cfile> <compiler-tag> <docfile> <docline> <expected.out>; returns 0/1.
@@ -91,15 +84,8 @@ echo "$index" | while IFS='	' read -r id f line; do
     echo "spec-examples: FAIL $f:$line [tychoc] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$id.log" >&2; efail=1
   fi
 
-  # tychoc0 (self-hosted): stdin -> C on stdout
-  if "$T0" <"$src" >"$TMP/ex_$id.t0.c" 2>"$TMP/ex_$id.t0.log"; then
-    check_c "$TMP/ex_$id.t0.c" tychoc0 "$f" "$line" "$exp" || efail=1
-  else
-    echo "spec-examples: FAIL $f:$line [tychoc0] — transpile error" >&2; sed 's/^/    /' "$TMP/ex_$id.t0.log" >&2; efail=1
-  fi
-
   if [ "$efail" -eq 0 ]; then
-    echo "spec-examples: ok $f:$line (tychoc + tychoc0)"
+    echo "spec-examples: ok $f:$line (tychoc)"
   else
     : >"$TMP/failed"
   fi

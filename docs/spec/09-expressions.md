@@ -105,11 +105,11 @@ both compilers):
 > would mean lifting every side-effecting argument into a sequenced temporary — and
 > it must be lifted *at the call site*, not to statement level, because an argument
 > may sit inside a short-circuit (`f(x, cond and g())`) that must not evaluate it.
-> That per-call-site cost was judged not worth closing a hole that is not a live
-> divergence: both reference compilers currently emit arguments in the same order.
-> The **assignment-place index** was the one case that *did* diverge between the
-> two compilers — and it is cheap and sound to sequence (a place index is never
-> short-circuited), so it is pinned left-to-right (above). A conforming third
+> That per-call-site cost was judged not worth closing a hole that was not a live
+> divergence when the decision was taken. The **assignment-place index** was the
+> one case that *did* diverge between the reference compiler and the (now frozen)
+> `tychoc0` snapshot — and it is cheap and sound to sequence (a place index is
+> never short-circuited), so it is pinned left-to-right (above). A conforming
 > implementation still need not match the unspecified argument/operand order.
 > Appendix F lists this in the unspecified-behavior register.
 

@@ -29,25 +29,41 @@ never the definition. The single, minimal register of behavior an
 implementation is permitted to vary is collected in
 [Appendix F](appendix-f-impl-defined.md).
 
-### 1.2 The two-implementation contract
+### 1.2 The reference implementation
 
-Tycho is unusual among specified languages: its behavioral contract is already
-pinned by **two independent implementations that agree byte-for-byte**.
+**`tychoc`** — the transpiler in `src/tychoc.c` — is the **reference
+implementation** of this specification. Where an example, a fixture, or a
+diagnostic is cited below, it is `tychoc`'s.
 
-- `tychoc` — the reference transpiler (C).
-- `tychoc0` — a self-hosted transpiler written in Tycho.
+This document is nonetheless *normative* and `tychoc` is not: where the two
+disagree, it is a defect in one of them, to be reconciled. The specification
+does not defer to the implementation, and no implementation's behavior
+establishes a requirement this document does not state.
 
-The project asserts, as a standing gate, that `tychoc0` compiled by itself
-reproduces its own emitted C byte-for-byte (the *fixpoint*), that both
-transpilers produce identical program output across the whole test suite, and
-that both make identical accept/reject decisions (differential fuzzing plus the
-`typeparity`/`eqparity`/`unaryparity`/`parforparity` lanes). See
-[architecture.md](../architecture.md).
+#### A note on `tychoc0` — a frozen snapshot, not a second implementation
 
-This specification is written *from* that contract. Every normative clause is
-required to be verifiable against both implementations. Where this document and
-the implementations disagree, it is a defect in one or the other, to be
-reconciled — not a license for an implementation to differ.
+The tree also contains **`compiler/tychoc0.ty`**, a transpiler for Tycho written
+in Tycho. It is what proved the self-hosting thesis: it compiles its own ~16k
+lines of source to C, and the C it emits when compiled by itself is
+byte-identical to the C the reference compiler emits from it (the *fixpoint*).
+Through 2026-07-25 this specification was written from a **two-implementation
+contract** — every normative clause was required to hold in both compilers, and
+a battery of parity gates enforced it.
+
+**That contract ended on 2026-07-26.** `tychoc0` is **frozen**: it is preserved
+unchanged as the artifact that proved self-hosting, no gate builds or runs it,
+and no language change is mirrored into it. It therefore compiles **the language
+as it stood on the freeze date**, and `tychoc` and `tychoc0` will accept and
+reject different programs from that date forward. The first such divergence is
+already in the tree: `tychoc` rejects a reserved word used as a procedure name
+(`fn handle(...)`) with a diagnostic naming the keyword; `tychoc0` still accepts
+it.
+
+`tychoc0` is therefore **not authoritative about Tycho's semantics** — reading it
+to learn how the language behaves today is reading history. This specification is
+normative; `tychoc` is the reference implementation. Nothing about the freeze
+implies `tychoc0` is defective: it correctly compiles the language it was frozen
+against, which is exactly what it was built to demonstrate.
 
 ### 1.3 Conformance
 
@@ -82,6 +98,13 @@ rejected. **Failing closed** — rejecting a doubtful program rather than
 compiling it to undefined behavior — is a normative principle of this language
 ([§30](17-runtime.md)), inherited from the reference
 implementation's design.
+
+Conformance is a claim about **this specification**, not about agreement with any
+particular compiler. It is *checked* against the reference implementation and the
+golden fixture corpus of [Appendix E](appendix-e-conformance.md) — a fixture
+records the behavior this document requires, so a second implementation that
+reproduces the corpus and this document's requirements conforms whether or not it
+resembles `tychoc` internally.
 
 ### 1.4 Requirement keywords
 

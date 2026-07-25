@@ -8,26 +8,42 @@ flagged in E.2.1.
 
 ## E.1 The conformance oracle
 
-Conformance is defined against the **two-implementation oracle**
-([§1.3](00-conventions.md#13-conformance)): across the conformance suite an
-implementation MUST accept exactly the programs `tychoc` accepts, reject exactly
-those it rejects, and produce byte-identical output. The suite is drawn from:
+Conformance is defined against **this specification**
+([§1.3](00-conventions.md#13-conformance)), and *checked* against the fixture
+corpus below: across the conformance suite an implementation MUST accept every
+program the suite records as accepted, reject every program it records as
+must-fail, and reproduce each behavioral fixture's recorded output. The suite is
+drawn from:
 
 - the existing golden fixtures under `tests/` (behavioral) and `tests/reject/`
   (must-fail);
 - the corelib fixtures under `corelib/test/`;
-- the differential-fuzz and accept/reject parity corpora (`fuzz/`, the
-  `typeparity`/`eqparity`/`unaryparity`/`parforparity` lanes);
+- the fuzz corpora under `fuzz/` (random well-typed programs, whose optimized and
+  sanitized builds must agree; malformed input, which must be refused without a
+  crash and without emitting invalid C);
 - new probe fixtures written to pin previously-untested corners (the resolved
   items in `spec-plan.md §6a` each become a fixture).
+
+> **Historical note.** Through 2026-07-25 this appendix defined conformance as a
+> **two-implementation oracle** — agreement between `tychoc` and the self-hosted
+> `tychoc0`, enforced by the `fixpoint`, `frontparity`, `typeparity`, `eqparity`,
+> `unaryparity` and `parforparity` gates. `tychoc0` was frozen on 2026-07-26 and
+> now diverges from `tychoc` (see
+> [§1.2](00-conventions.md#12-the-reference-implementation)); those gates were
+> removed, and every requirement they backed is now stated against this
+> specification and locked by a recorded fixture. Rows below that cite a
+> `*parity` **lane** name refer to gates that no longer run; the clause is
+> normative regardless, and the fixture citations beside it still hold.
 
 ## E.2 The coverage matrix
 
 Each row binds a normative clause (section + requirement) to one or more fixtures
 in the suite of E.1. A behavioral fixture is `tests/<name>` (golden output); a
-must-fail fixture is `tests/reject/<name>`; parity **lanes** are the differential
-gates (`typeparity`/`eqparity`/`unaryparity`/`parforparity`). A clause with no
-dedicated fixture is flagged in E.2.1, exactly as an untested branch is.
+must-fail fixture is `tests/reject/<name>`. A clause with no dedicated fixture is
+flagged in E.2.1, exactly as an untested branch is. Citations naming a
+`typeparity`/`eqparity`/`unaryparity`/`parforparity` **lane** are historical: those
+gates compared `tychoc` against the now-frozen `tychoc0` and were removed on
+2026-07-26 (see the note in E.1). The clause each backs is normative regardless.
 
 ### §3 Lexical structure
 
@@ -193,9 +209,12 @@ These are covered by construction or by design rather than a single fixture, and
 are flagged here so the gap is explicit rather than hidden:
 
 - **§5.1 identity, §9.4 uniqueness, §9.5 transparent optimizations, §10.4
-  soundness** — properties of the model proven by the whole differential suite +
-  byte-identical fixpoint, not one fixture. The `eqparity`/`typeparity` lanes and
-  `make fixpoint` are the evidence.
+  soundness** — properties of the model exercised by the whole corpus rather than
+  by one fixture: every golden fixture is built native *and* under ASan/UBSan and
+  the two outputs must agree, and `make fuzz` applies the same differential to
+  randomly generated programs. (Through 2026-07-25 the `eqparity`/`typeparity`
+  lanes and the byte-identical `make fixpoint` were also cited here; both are gone
+  with the `tychoc0` freeze — see E.1.)
 - **§6.6 non-goals of inference (no Hindley-Milner)** — a design boundary; no
   program can exercise the absence of a feature. Asserted, not tested.
 - **§10.2 escape rule** — enforced structurally (re-home on escape); the closest

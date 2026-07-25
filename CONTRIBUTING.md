@@ -34,24 +34,31 @@ make                 # build ./tychoc
 gate is `scripts/ci.sh`, run locally:
 
 ```
-make ci              # build · test · self-host fixpoint · corelib + examples ·
-                     # concurrency · FFI · the three fuzz lanes · tooling · perf guard
+make ci              # build · test · ilp32 · asan-self · corelib + examples ·
+                     # concurrency · FFI · the three fuzz lanes · tooling ·
+                     # perf guard · recursion · spec-check · link+citation check
 make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
 ```
 
 A change is "green" iff `make ci` passes. You can also install the local
-pre-push hook (`make hooks`), which blocks a push if `make test` or
-`make fixpoint` fails.
+pre-push hook (`make hooks`), which runs `make ci N=0` plus a fuzz smoke and
+blocks the push if either fails.
 
 ## Two rules that will surprise you
 
-1. **Every language feature lands in BOTH transpilers, or not at all.** Tycho has
-   a C reference transpiler (`src/tychoc.c`) and a self-hosted one written in
-   Tycho (`compiler/tychoc0.ty`). `make fixpoint` asserts the Tycho-built
-   transpiler reproduces its own emitted C byte-for-byte **and** that the two
-   transpilers produce identical program output across the whole suite. A feature
-   in only one of them turns the fixpoint red. This is the parity discipline that
-   keeps the two from drifting apart — plan for it.
+1. **There is one maintained compiler, and `compiler/tychoc0.ty` is not it.**
+   `src/tychoc.c` (`tychoc`) is the reference transpiler; the
+   [spec](docs/spec/) is normative. The tree also holds `compiler/tychoc0.ty`, a
+   transpiler for Tycho written in Tycho — the artifact that proved self-hosting
+   (compiled by itself, it reproduced its own emitted C byte-for-byte).
+
+   **It was frozen on 2026-07-26.** Do not update it, do not mirror a language
+   change into it, and do not read it to learn how Tycho behaves — no gate builds
+   or runs it, so it compiles the language as it stood on the freeze date and
+   already diverges from `tychoc` (which now rejects `fn handle(...)`, a reserved
+   word as a procedure name, where `tychoc0` still accepts it). Until that date the
+   opposite rule applied: every feature had to land in both, enforced by
+   `make fixpoint` and the accept/reject parity lanes. Those gates are gone.
 
 2. **The arena memory model is the whole point.** Value semantics + implicit
    per-scope arenas (no GC, no manual `free`) is the thesis
@@ -92,7 +99,7 @@ Generics, on the other hand, *are* supported — `$T`, see
   `compiler/`/`corelib/` follows the existing Tycho style (run `tycho fmt` and
   `make tools-check`).
 - One focused change per commit; the commit message says **what was wrong** and
-  **how the fix was verified** (which test / fixpoint / fuzz run).
+  **how the fix was verified** (which test / gate / fuzz run).
 - New behavior gets a regression test under `tests/` (or a `corelib/test/`
   fixture) with a recorded golden, so it can't silently regress.
 

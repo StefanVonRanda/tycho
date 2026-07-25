@@ -13,7 +13,7 @@ CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: all tools tools-check demo test test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site bootstrap fixpoint fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-pkg typeparity parforparity eqparity unaryparity corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self frontparity clean
+.PHONY: all tools tools-check demo test test-update conc bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples fetch site raytrace mandelbrot ffi recursion spec-check check-links wiki ci hooks ilp32 asan-self clean
 
 all: tychoc
 
@@ -103,23 +103,9 @@ test: tychoc
 asan-self: $(EMBED)
 	@sh scripts/asan_self.sh
 
-# The POSITIVE lane's missing half. tests/run.sh:113 compiles every fixture with
-# tychoc alone; tychoc0 is used there only where it must REFUSE (reject :159/:178,
-# abort :199, diag :262). So a program tychoc accepts and tychoc0 over-rejects can
-# score `all green` -- which is how plan.md Phase 40's eleven newtype
-# over-rejections and Phase 33's five stayed invisible to `make test`. This lane
-# runs BOTH frontends (--emit-c, no cc, no run) and fails on any program tychoc
-# accepts and tychoc0 refuses. ~3s. fixpoint covers most of this glob already but
-# reports every cause as "B differs from the C compiler"; the overlap, the surface
-# only this lane reaches (tests/warn, tools/*.ty), and what is NOT covered:
-# scripts/frontparity.sh.
-frontparity: tychoc
-	@sh scripts/frontparity.sh
-
 # Concurrency suite (spawn/wait, parallel for, channels): tychoc builds each
-# positive fixture native + ASan/LSan + TSan against the goldens, the
-# tychoc-built tychoc0 must reproduce the same outputs (parity differential),
-# rejects must fail, aborts must die with their .err message. In `make ci`.
+# positive fixture native + ASan/LSan + TSan against the goldens, rejects must
+# fail, aborts must die with their .err message. In `make ci`.
 conc: tychoc
 	@sh tests/conc/run.sh
 
@@ -177,25 +163,20 @@ bench-latency: tychoc
 bench-gcscan: tychoc
 	@sh bench/gcscan/run.sh
 
-# Self-hosting bootstrap: build tychoc0 (the subset compiler written in Tycho)
-# and validate it on its fixtures. See compiler/.
-bootstrap: tychoc
-	@sh compiler/run.sh
-
 # corelib: the standard library (packages under corelib/, imported as `core:<name>`,
-# resolved via TYCHO_CORELIB). Each corelib/test/<name> must compile + run identically
-# through the C compiler and the self-hosted tychoc0. See corelib/run.sh.
+# resolved via TYCHO_CORELIB). Each corelib/test/<name> must compile + run and match
+# its recorded golden. See corelib/run.sh.
 corelib: tychoc
 	@sh corelib/run.sh
 
 # corelib examples: a small, readable program per core module (usage as
-# documentation, not assertions like corelib/test/), validated 3-way + golden
-# like the tests, with the same deps-skip. See examples/corelib/run.sh.
+# documentation, not assertions like corelib/test/), golden-validated like the
+# tests, with the same deps-skip. See examples/corelib/run.sh.
 corelib-examples: tychoc
 	@sh examples/corelib/run.sh
 
 # fetch: a CLI dogfood that composes core:http + json + sha256 + io + path,
-# built by both compilers + ASan and run against a local file:// fixture (so the
+# built by tychoc + ASan and run against a local file:// fixture (so the
 # whole pipeline is deterministic + offline). Skips without libcurl. Standalone
 # (not in `make ci`, like examples/sqlite); the http module is covered in ci via
 # corelib-examples. See examples/fetch/run.sh.
@@ -204,19 +185,19 @@ fetch: tychoc
 
 # site: a static-site generator dogfood composing eight corelib modules
 # (io+path+json+csv+strings+sort+datetime+sha256) -- no FFI, no external deps, so
-# it is deterministic and IS part of `make ci`. Built by all three compilers +
-# ASan against a fixture site, asserting the build report. See examples/site/run.sh.
+# it is deterministic and IS part of `make ci`. Built by tychoc + ASan against a
+# fixture site, asserting the build report. See examples/site/run.sh.
 site: tychoc
 	@sh examples/site/run.sh
 
 # raytrace: a small ray tracer -> QOI, stressing float-heavy Vec3 value semantics.
-# Deterministic, so tychoc == tychoc0 == ASan on the summary line. See
+# Deterministic, so tychoc == ASan on the summary line. See
 # examples/raytrace/run.sh. In `make ci`.
 raytrace: tychoc
 	@sh examples/raytrace/run.sh
 
 # mandelbrot: a parallel Mandelbrot -- float compute inside a `parallel for`
-# reduction. Deterministic, so tychoc == tychoc0 == TSan == ASan on stdout. See
+# reduction. Deterministic, so tychoc == TSan == ASan on stdout. See
 # examples/mandelbrot/run.sh. In `make ci`.
 mandelbrot: tychoc
 	@sh examples/mandelbrot/run.sh
@@ -242,46 +223,24 @@ ilp32: tychoc
 	@CC="gcc -m32" TYCHO_NO_ASAN=1 sh tests/run.sh
 
 # FFI Stage 1 regression: extern fn (scalars + string) against a fixture C lib,
-# through BOTH compilers, ASan-clean, matched to a golden. See tests/ffi/run.sh.
+# ASan-clean, matched to a golden. See tests/ffi/run.sh.
 ffi: tychoc
 	@sh tests/ffi/run.sh
 
 # Recursion-cap regression: deeply nested / long input must fail closed (clean
-# nonzero exit) in BOTH compilers instead of overflowing the C stack (SIGSEGV).
+# nonzero exit) instead of overflowing the C stack (SIGSEGV).
 # Covers parens, unary/operator chains, generic bodies, statement + type nesting.
 recursion: tychoc
 	@sh tests/recursion/run.sh
 
-# Stage 4 self-host fixpoint: A=tychoc·tychoc0.ty, B=A·tychoc0.ty, C=B·tychoc0.ty;
-# assert B==C (byte-identical self-emission) and B matches the C compiler.
-fixpoint: tychoc
-	@sh compiler/fixpoint.sh
-
-# Runtime drift gate: tycho ships TWO hand-maintained runtimes -- runtime/tycho_rt.c
-# (embedded verbatim by tychoc) and the one tychoc0 emits as C string literals --
-# and fixpoint compares them only BEHAVIOURALLY, on programs that never trip a
-# trap or read an env knob. So a feature present in one and absent in the other
-# stays green everywhere (TYCHO_ARENA_STATS was a silent no-op in tychoc0-built
-# binaries until 2b24ca6). This lane compiles one broad probe with both compilers
-# and diffs the user-visible surface of the emitted C: env knobs, `tycho:` trap
-# texts, arena-stats rows. See tests/rtparity/run.py. In `make ci`.
-rtparity: tychoc
-	@python3 tests/rtparity/run.py
-
-# Soundness fuzzer: generate N random well-typed Tycho programs, compile each
-# with tychoc (reference, native) and tychoc0 (native + ASan/UBSan), and assert
-# byte-identical output with no sanitizer fault. N defaults to 200; failing
-# programs are saved to fuzz/findings/. See fuzz/README.md.
+# Soundness fuzzer: generate N random well-typed Tycho programs, compile each with
+# tychoc twice -- native -O2 and ASan/UBSan -O1 -- and assert byte-identical output
+# with no sanitizer fault (the native-vs-sanitizer differential of docs/thesis.md
+# §3, on randomly generated programs instead of fixtures). N defaults to 200;
+# failing programs are saved to fuzz/findings/. See fuzz/README.md.
 N ?= 200
 fuzz: tychoc
 	@python3 fuzz/run.py $(N)
-
-# Package differential lane: random two-package programs compiled THREE ways
-# (tychoc, tychoc0 --bundle, tychoc0 standalone) and asserted byte-identical --
-# the cross-package mangling paths the single-file fuzzer can't reach (where the
-# mangle_type / generic-instance-over-tuple bugs hid). In `make ci`.
-fuzz-pkg: tychoc
-	@python3 fuzz/run_pkg.py $(N)
 
 # Quick fuzz: a small differential+ASan sweep for the inner dev loop, so a
 # compiler change can be smoke-tested in ~1-2 min instead of the full ~30 min.
@@ -290,64 +249,32 @@ QN ?= 60
 fuzz-quick: tychoc
 	@python3 fuzz/run.py $(QN)
 
-# Robustness lane: feed MALFORMED input to BOTH compilers (built under
-# ASan+UBSan) and assert each FAILS CLOSED -- never crashes, and any input it
-# accepts must emit valid C. Wired into `make ci` (scripts/ci.sh, step 8/9).
+# Robustness lane: feed MALFORMED input to tychoc (built under ASan+UBSan) and
+# assert it FAILS CLOSED -- never crashes, and any input it accepts must emit
+# valid C. Wired into `make ci`.
 fuzz-reject: tychoc
 	@python3 fuzz/run_reject.py $(N)
 
 # Leak lane: run the SOUNDNESS generator's valid programs (gen.py) under
 # ASan+LeakSanitizer, SEQUENTIALLY, and assert nothing leaks at exit -- the one
-# class the differential lane (detect_leaks=0) can't see. Slowest lane (sequential
-# ASan+LSan); wired into `make ci` (scripts/ci.sh step 9/10) capped at N=150 there.
+# class the soundness lane (detect_leaks=0) can't see. Slowest lane (sequential
+# ASan+LSan); wired into `make ci` capped at N=150 there.
 # Run a deeper sweep directly: `make fuzz-leak N=500`.
 fuzz-leak: tychoc
 	@python3 fuzz/run_leak.py $(N)
 
-# Type-parity lane: assert tychoc and tychoc0 agree on accept/reject for the
-# EXHAUSTIVE scalar binary-operator matrix (every type x literal/var x operator).
-# A TYPE-boundary accept/reject divergence is a bug -- unlike the tolerated
-# grammar-boundary divergence in fuzz-reject. Deterministic, no seeds. In `make ci`.
-typeparity: tychoc
-	@python3 fuzz/run_typeparity.py
-
-# parallel-for GATE accept/reject parity: tychoc and tychoc0 must agree on whether
-# a `parallel for` body is legal (no early exit / captured-var mutation / non-
-# reduction outer update / non-int range). The fixpoint differential is output-
-# only and the reject harness gates tychoc alone, so a tychoc0 fail-open here is
-# otherwise invisible -- this closed 12 of them. Deterministic, no seeds. In CI.
-parforparity: tychoc
-	@python3 fuzz/run_parforparity.py
-
-# composite/newtype ==,!= accept/reject parity: tychoc and tychoc0 must agree on
-# whether equality over arrays/options/structs/tuples/maps/newtypes type-checks.
-# tychoc0's structural-eq codegen keyed off the LEFT operand only, so every
-# composite mismatch (`[int] == [string]`, `xs == 7`, ...) over-accepted -- 330
-# of these, invisible to the OUTPUT-only fixpoint differential. Deterministic,
-# no seeds (4 newtype-erasure pairs skipped by design). In CI.
-eqparity: tychoc
-	@python3 fuzz/run_eqparity.py
-
-# unary-operator accept/reject parity: tychoc and tychoc0 must agree on `-x`,
-# `~x`, `not x`. tychoc0 used to desugar `-x`/`~x` into binary arithmetic at
-# parse, so the permissive arithmetic rules over-accepted `~float`, `~char`,
-# `-char` (4 fail-opens) -- tychoc's unary rules are stricter. Deterministic,
-# no seeds (1 newtype-erasure pair skipped). In CI.
-unaryparity: tychoc
-	@python3 fuzz/run_unaryparity.py
-
 # Wall-time regression guard: asserts tycho beats hand-written C on tree-alloc
 # workloads (relative, machine-independent). Catches perf regressions that golden/
-# fuzz/fixpoint can't (they check output, not speed -- see commit 6ff7aa1). In CI.
+# fuzz/golden lanes can't (they check output, not speed -- see commit 6ff7aa1). In CI.
 bench-guard: tychoc
 	@sh bench/guard.sh
 
-# Local CI gate (NO GitHub Actions): build + test + fixpoint + fuzz + perf guard.
+# Local CI gate (NO GitHub Actions): build + test + corelib + fuzz + perf guard.
 # The single "is the tree green" command. N defaults to 200 (override: make ci N=500 for a deeper sweep).
 ci:
 	@sh scripts/ci.sh $(N)
 
-# Activate the local git pre-push gate (.githooks/pre-push: test + fixpoint).
+# Activate the local git pre-push gate (.githooks/pre-push: make ci N=0 + fuzz-quick).
 hooks:
 	@git config core.hooksPath .githooks
 	@echo "git hooks activated: core.hooksPath -> .githooks (pre-push runs make ci N=0 + fuzz-quick)"

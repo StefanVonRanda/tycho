@@ -35,7 +35,8 @@ every page compiles on both transpilers and produces the shown output.
   two variables never share storage. Each page says how this plays out for its types
   instead of restating the principle; [the thesis](../thesis.md) explains the claim
   and the evidence (no GC, no `free`, no data races on owned values).
-- **Examples are real.** Every code sample compiles and runs under both the C reference
-  transpiler and the self-hosted transpiler — the language has two implementations that
-  must agree (see [The evidence](../../README.md#the-evidence)). Output shown in a
-  comment is the actual output.
+- **Examples are real.** Every code sample compiles and runs under `tychoc`, the
+  reference transpiler (see [The evidence](../../README.md#the-evidence)). Output shown
+  in a comment is the actual output. (Through 2026-07-25 each sample also had to run
+  under the self-hosted `tychoc0`; that compiler was frozen on 2026-07-26 and now
+  diverges — see [spec §1.2](../spec/00-conventions.md#12-the-reference-implementation).)

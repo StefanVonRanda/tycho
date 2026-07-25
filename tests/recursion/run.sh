@@ -8,8 +8,11 @@
 #                                       tychoc0 also deep-copies on construction)
 #   - long chain inside a GENERIC body (clone_expr, which precedes resolve)
 #   - deep statement nesting           (parse_block recursion / indent stack)
-# Both compilers must reject each with a nonzero exit that is NOT a signal
-# (rc < 128), and must still accept the matching "valid, modestly nested" case.
+# tychoc must reject each with a nonzero exit that is NOT a signal (rc < 128),
+# and must still accept the matching "valid, modestly nested" case. (Until
+# 2026-07-26 the same inputs were also fed to the self-hosted tychoc0; it is
+# frozen -- see compiler/tychoc0.ty -- and no gate builds it, so that half is
+# gone. Every assertion about tychoc is unchanged.)
 # Inputs are generated here (megabytes at the cap) rather than committed.
 # No `set -e`: the reject cases expect nonzero compiler exits, checked explicitly.
 cd "$(dirname "$0")/../.." || exit 2
@@ -17,8 +20,6 @@ TYCHOC=./tychoc
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-"$TYCHOC" compiler/tychoc0.ty -o "$T/h0" >/dev/null 2>&1 || { echo "FAIL: could not build tychoc0"; exit 1; }
-
 # Every compile of a pathological fixture runs under a memory + CPU cap. tychoc0
 # has value semantics, so a deep type/expression deep-copies O(n^2) and, without
 # a cap fired first, would exhaust host RAM (the OS OOM-killer then takes down
@@ -87,25 +88,19 @@ import sys; print("fn g(a: [[[int]]], b: Option(int)) -> int:\n    return 0\nfn 
 P
 
 fail=0
-# A pathological input: BOTH compilers must reject it cleanly (nonzero, not a signal).
+# A pathological input: tychoc must reject it cleanly (nonzero, not a signal).
 reject() {
     name="$1"; f="$T/$2.ty"
     run "$TYCHOC" "$f" -o "$T/c.bin" >/dev/null 2>&1; rc=$?
     if [ "$rc" -eq 0 ]; then echo "FAIL $name (tychoc ACCEPTED it)"; fail=1
     elif [ "$rc" -ge 128 ]; then echo "FAIL $name (tychoc died on signal $((rc-128)) -- stack overflow)"; fail=1
     else echo "ok    $name (tychoc rejected, rc=$rc)"; fi
-    run "$T/h0" < "$f" >/dev/null 2>&1; rc=$?
-    if [ "$rc" -eq 0 ]; then echo "FAIL $name (tychoc0 ACCEPTED it)"; fail=1
-    elif [ "$rc" -ge 128 ]; then echo "FAIL $name (tychoc0 died on signal $((rc-128)) -- stack overflow)"; fail=1
-    else echo "ok    $name (tychoc0 rejected, rc=$rc)"; fi
 }
-# A valid input: BOTH compilers must accept it (emit C without error).
+# A valid input: tychoc must accept it (emit C without error).
 accept() {
     name="$1"; f="$T/$2.ty"
     if ! run "$TYCHOC" "$f" -o "$T/c.bin" >/dev/null 2>&1; then echo "FAIL $name (tychoc rejected a valid program)"; fail=1
     else echo "ok    $name (tychoc accepted)"; fi
-    if ! run "$T/h0" < "$f" >/dev/null 2>&1; then echo "FAIL $name (tychoc0 rejected a valid program)"; fail=1
-    else echo "ok    $name (tychoc0 accepted)"; fi
 }
 
 reject "paren-nest"      paren

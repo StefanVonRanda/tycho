@@ -359,7 +359,7 @@ codegen.
 
     **Fixtures locking the four corrected diagnoses.** `tests/reject/` scores the
     decision only, so the corrected *text* is locked with the mechanism that
-    exists for exactly that (`tests/run.sh:227-278`): four new
+    exists for exactly that (`tests/run.sh`'s negative lanes (as they stood before the 2026-07-26 tychoc0 freeze)): four new
     `tests/diag/g6_*.ty` with a `.err` (tychoc) and a `.h0err` (tychoc0) golden
     each. They fail the build if either message regresses:
     ```
@@ -5830,7 +5830,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     `run.sh` on **four** lanes, not one: reject `:159`, reject-pkg `:178`, abort `:199`,
     diag goldens `:262`. What they have in common is the point: every one of them scores
     tychoc0 **refusing**. Nothing there scores tychoc0 **accepting**. The warn lane
-    (`:291-314`) is the positive lane that runs `$TYCHOC` alone.
+    (`tests/warn/`) is the positive lane that runs `$TYCHOC` alone.
 
     ### THE SHAPE QUESTION, ANSWERED FIRST — and the answer is not the flattering one
 
@@ -5872,7 +5872,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
        `B differs from the C compiler`. Phase 40 had to re-run tychoc0 by hand to learn
        which. The lane's failure line *is* the refusal and its diagnostic.
     2. **It widens the glob by 9 programs no gate front-checks against tychoc0**:
-       `tests/warn/*.ty` (6 — `tests/run.sh:291-314` runs `$TYCHOC` only) and
+       `tests/warn/*.ty` (6 — `tests/run.sh`'s warn lane runs `$TYCHOC` only) and
        `tools/*.ty` (3 — `tycho.ty`, `tychofmt.ty`, `lsp.ty`, built at `Makefile:38,:44,
        :49` with tychoc alone, and among the largest real Tycho programs in the tree).
        Verified by grep over every `*.sh` plus the `Makefile`; the only other hits are
@@ -6025,14 +6025,14 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
     `03-types.md`'s `bounded` provenance block (6, including the four the phase named —
     and **two of those four replacements given in the phase text were themselves wrong**:
     `mangle_type` at `:2859` is not `:3237` (that is the *variadic* branch) but
-    `:3251@[b#`, and the unresolved-name guard is not `:11840` (a `j := 0` in a switch)
+    `:3301@[b#`, and the unresolved-name guard is not `:11840` (a `j := 0` in a switch)
     but `:11858-11862` in `collect_stmt`); 8 in-source comment citations in
     `compiler/tychoc0.ty` (`:1669`→`:1803`, `:1686`→`:1821`, `:2859`→`:3251`,
     `:3451`→`:11858-11862`, `:1734`→`:1882` ×2, `src/tychoc.c:669-671`→`:679-691` ×5 —
     `arrc_sized_b` had moved); and 9 unattributable bare continuations in
     `plan-int64-DONE.md` / `plan.md` given their explicit path.
   - **THE GATE — `scripts/check_citations.py`, hosted in the `check-links` lane**
-    (`Makefile:65-71`; `scripts/ci.sh:126-127` already calls `make check-links`, so it is
+    (`Makefile:65-71`; `scripts/ci.sh`'s last step already calls `make check-links`, so it is
     wired into CI with no new step). Extending the existing lane beat a new one: every
     caller that already runs `check-links` picks the new check up without remembering to.
   - **Design decision, and the two shapes that were tried and rejected.**
@@ -6045,7 +6045,7 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
        freezes whatever is on disk at generation time, so it would have blessed all ~290
        stale citations as correct, and it puts the expected content in a second file that
        drifts from the prose.
-    3. **Adopted: an opt-in content anchor.** `` `src/tychoc.c:7206-7207@'main' must be` ``
+    3. **Adopted: an opt-in content anchor.** `` `src/tychoc.c:7216-7217@'main' must be` ``
        — the gate asserts the cited range literally contains that token. The token is
        chosen by whoever verifies the citation, which is exactly the expected content a
        bare `path:N` cannot carry. Not applied docs-wide (1300+ sites, and anchoring an
@@ -6162,9 +6162,9 @@ same way onto tychoc0's declaration parsers. Check that before writing five chec
   - **Repaired (5 sites, each verified by reading the target line):**
     `docs/spec/15-program.md:19-23` (the provenance block) and `:31-36` (§27.1's
     sentence) — both `:7098-7099` and `:7124-7125` replaced with
-    `` `src/tychoc.c:7181@no 'main' procedure` `` and
-    `` `:7206-7207@'main' must be` ``, plus the tychoc0 citation corrected from
-    `parse_program` `:3637-3648` to `` `compiler/tychoc0.ty:3861@'main' must be` ``;
+    `` `src/tychoc.c:7191@no 'main' procedure` `` and
+    `` `:7216-7217@'main' must be` ``, plus the tychoc0 citation corrected from
+    `parse_program` `:3637-3648` to `` `compiler/tychoc0.ty:3911@'main' must be` ``;
     `docs/internals/frontend-restriction-audit-2026-07-25.md:356` — the audit's §8 is a
     dated record, so its wrong text is left standing and a **Corrected 2026-07-25** note
     is appended beneath it naming the real sites (rewriting a dated audit in place would

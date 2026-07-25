@@ -42,3 +42,30 @@ fn ns_to_s(ns: int) -> int:
 
 fn unix_secs() -> int:
     return now()
+
+# --- blocking sleep (libc-only shim, time_shim.c) ---
+#
+# Three semantics, decided deliberately because callers depend on them:
+#
+#   1. NON-POSITIVE RETURNS IMMEDIATELY. `sleep_ms(0)` / `sleep_ms(-1)` do
+#      nothing at all -- no syscall, no busy-spin, no abort. A zero delay is a
+#      normal first value in a retry loop.
+#   2. NOT INTERRUPTIBLE. nanosleep can return early when a signal arrives; the
+#      shim retries with the remaining time, so the FULL requested duration
+#      always elapses. A sleep that silently returned short would turn a backoff
+#      schedule into a spin.
+#   3. PER-TASK, NOT PER-PROCESS. A tycho task is a thread, and nanosleep parks
+#      only the calling thread -- a worker that sleeps does not stall its
+#      siblings. (Measured: one task sleeping 500ms alongside one task spinning
+#      500ms finishes in ~500ms, not ~1000ms.)
+#
+# The wait is AT LEAST the requested duration; scheduler granularity can make it
+# longer, never shorter.
+
+extern fn tmx_sleep_ns(ns: int)      # libc nanosleep, EINTR-retrying (time_shim.c)
+
+fn sleep_ns(ns: int):                # park this task for `ns` nanoseconds
+    tmx_sleep_ns(ns)
+
+fn sleep_ms(ms: int):                # park this task for `ms` milliseconds
+    tmx_sleep_ns(ms * 1000000)

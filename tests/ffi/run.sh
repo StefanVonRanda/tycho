@@ -1,11 +1,17 @@
 #!/bin/sh
 # FFI Stage 1 regression harness. Builds the fixture C lib (tests/ffi/demo.c),
-# then compiles tests/ffi/main.ty BOTH ways — via the C reference compiler
-# (tychoc, which links -lffidemo itself from `extern "ffidemo"`) and via the
-# self-hosted compiler (tychoc0, which emits C that we link) — and asserts both
-# produce the golden tests/ffi/expected.out. Also recompiles the emitted C under
-# ASan/UBSan to prove the string-return arena-copy is memory-clean (no UAF/leak).
+# compiles tests/ffi/main.ty with tychoc (which links -lffidemo itself from
+# `extern "ffidemo"`), and asserts it produces the golden tests/ffi/expected.out.
+# Also recompiles the emitted C under ASan/UBSan to prove the string-return
+# arena-copy is memory-clean (no UAF/leak).
 # Re-record the golden with RECORD=1 sh tests/ffi/run.sh.
+#
+# Until 2026-07-26 every check here ran through the self-hosted tychoc0 as well
+# and the two outputs had to agree. tychoc0 is frozen (see compiler/tychoc0.ty)
+# and no gate builds it, so those legs are gone. Each individual assertion --
+# golden match, ASan-clean, --shim, package-scoped extern, the four affine
+# handle-misuse REJECTIONS, the shell-injection refusals, sized-int ABI values,
+# first-class sized types -- is still asserted for tychoc, unchanged.
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
 TYCHOC=./tychoc
@@ -20,9 +26,6 @@ fail=0
 $CC -O2 -fwrapv -c tests/ffi/demo.c -o "$T/demo.o" || { echo "FAIL: compiling demo.c"; exit 1; }
 ar rcs "$T/libffidemo.a" "$T/demo.o"
 
-# the self-hosted compiler
-"$TYCHOC" compiler/tychoc0.ty -o "$T/h0" >/dev/null 2>&1 || { echo "FAIL: could not build tychoc0"; exit 1; }
-
 # (1) C reference compiler: it resolves `extern "ffidemo"` -> -lffidemo on its own
 # cc line; the Stage-3 `-L` flag points the linker at our static lib (no LIBRARY_PATH).
 if ! "$TYCHOC" tests/ffi/main.ty -o "$T/c_bin" -L "$T" >"$T/c.log" 2>&1; then
@@ -31,27 +34,17 @@ else
     "$T/c_bin" > "$T/c.out" 2>&1
 fi
 
-# (2) self-hosted compiler: emits C to stdout; we compile+link it ourselves.
-if ! { "$T/h0" tests/ffi/main.ty > "$T/h0.c" 2>/dev/null && \
-       LIBRARY_PATH="$T" $CC -O2 -fwrapv -std=c11 -o "$T/h0_bin" "$T/h0.c" -lffidemo -lm 2>"$T/h0.log"; }; then
-    echo "FAIL: tychoc0 compile"; sed 's/^/      /' "$T/h0.log"; fail=1
-else
-    "$T/h0_bin" > "$T/h0.out" 2>&1
+# (2) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
+if ! "$TYCHOC" tests/ffi/main.ty --emit-c -o "$T/hc" >"$T/emit.log" 2>&1; then
+    echo "FAIL: tychoc --emit-c"; sed 's/^/      /' "$T/emit.log"; fail=1
 fi
-
-# (3) ASan/UBSan over the emitted C: the str-return arena-copy must be clean.
 if ! LIBRARY_PATH="$T" $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
-        -std=c11 -o "$T/h0_san" "$T/h0.c" -lffidemo -lm 2>"$T/san.log"; then
+        -std=c11 -o "$T/h0_san" "$T/hc.c" -lffidemo -lm 2>"$T/san.log"; then
     echo "FAIL: sanitizer cc"; sed 's/^/      /' "$T/san.log"; fail=1
 else
     "$T/h0_san" > "$T/san.out" 2>"$T/san.err"; src=$?
     [ "$src" -eq 0 ] || { echo "FAIL: sanitizer exit $src"; sed 's/^/      /' "$T/san.err"; fail=1; }
     grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' "$T/san.err" && { echo "FAIL: sanitizer report"; sed 's/^/      /' "$T/san.err"; fail=1; }
-fi
-
-# the two compilers must agree
-if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$T/h0.out"; then
-    echo "FAIL: tychoc vs tychoc0 output differ"; diff "$T/c.out" "$T/h0.out" | sed 's/^/      /'; fail=1
 fi
 
 # (4) Stage 3 --shim: an extern implemented by a companion C file, compiled and
@@ -71,21 +64,14 @@ if ! "$TYCHOC" tests/ffi/pkgext/main.ty -o "$T/pkg_c" --shim tests/ffi/shim.c >"
 else
     [ "$("$T/pkg_c" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc output"; fail=1; }
 fi
-if ! { "$TYCHOC" tests/ffi/pkgext/main.ty --bundle 2>/dev/null | "$T/h0" > "$T/pkg_h0.c" 2>/dev/null && \
-       $CC -O2 -fwrapv -std=c11 -o "$T/pkg_h0" "$T/pkg_h0.c" tests/ffi/shim.c -lm 2>"$T/pkg_h0.log"; }; then
-    echo "FAIL: pkg-extern tychoc0 compile"; sed 's/^/      /' "$T/pkg_h0.log"; fail=1
-else
-    [ "$("$T/pkg_h0" 2>&1)" = "tri6=42" ] || { echo "FAIL: pkg-extern tychoc0 output"; fail=1; }
-fi
 
-# (6) Affine handle bans (FFI R2): BOTH compilers must REJECT each misuse — a
+# (6) Affine handle bans (FFI R2): tychoc must REJECT each misuse — a
 # handle returned, reassigned, stored in a container, or captured would double-free
 # or dangle. Rejection is at compile time, so the opener/closer need not link.
 hh='handle R:\n    free: hc\nextern fn ho(i: int) -> R\nextern fn hc(h: R) -> int\nextern fn hu(h: R) -> int\n'
 reject_handle() {   # $1 = printf-escaped program body, $2 = label
     printf '%b' "$hh$1" > "$T/rej.ty"
     if "$TYCHOC" "$T/rej.ty" --emit-c -o "$T/rej" >/dev/null 2>&1; then echo "FAIL: handle-ban ($2): tychoc accepted it"; fail=1; fi
-    if "$T/h0" < "$T/rej.ty" >/dev/null 2>&1; then echo "FAIL: handle-ban ($2): tychoc0 accepted it"; fail=1; fi
 }
 reject_handle 'fn main():\n    d := ho(1)\n    d = ho(2)\n' reassign
 reject_handle 'fn main():\n    a := [ho(1)]\n    print("x")\n' container
@@ -105,16 +91,13 @@ if "$TYCHOC" tests/ffi/main.ty --link "m; touch $mark" -L "$T" >/dev/null 2>&1; 
 
 # (8) FFI R4 out-param fail-closed: only int/char/float/bool/ptr may be `inout`
 # (a clean T* the C fn fills). `inout string` (a char** with no length header) and
-# other non-trivial out-param shapes must be rejected by BOTH compilers.
+# other non-trivial out-param shapes must be rejected.
 printf 'extern "x" fn f(s: inout string)\nfn main():\n    print("x")\n' > "$T/r4rej.ty"
 if "$TYCHOC" "$T/r4rej.ty" -o "$T/r4rej" >/dev/null 2>&1; then echo "FAIL: inout-string out-param accepted by tychoc"; fail=1; fi
-if "$T/h0" "$T/r4rej.ty" >/dev/null 2>&1; then echo "FAIL: inout-string out-param accepted by tychoc0"; fail=1; fi
 
 # (9) FFI-boundary sized ints (u8/u16/u32/u64/i8/i16/i32/i64): recognized ONLY in
 # extern signatures; the value is `int` to Tycho but the emitted prototype uses the
-# real C ABI type, so a u32 wraps at 2^32 and a u64 return carries >32 bits. BOTH
-# compilers must build+run identically; and a sized type OUTSIDE an extern (a plain
-# `int` to Tycho) must be rejected fail-closed by both.
+# real C ABI type, so a u32 wraps at 2^32 and a u64 return carries >32 bits.
 sz='extern fn ffi_add32(a: u32, b: u32) -> u32\nextern fn ffi_shl64(x: u32, n: i32) -> u64\nextern fn ffi_negbyte(x: u8) -> i8\nfn main():\n    print(f"{ffi_add32(4000000000, 300000000)} {ffi_shl64(1, 33)} {ffi_negbyte(5)}\\n")\n'
 printf '%b' "$sz" > "$T/sz.ty"
 szexp="5032704 8589934592 -5"
@@ -123,20 +106,13 @@ if ! "$TYCHOC" "$T/sz.ty" -o "$T/sz_c" --shim tests/ffi/shim.c >"$T/sz.log" 2>&1
 else
     [ "$("$T/sz_c" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc output '$("$T/sz_c" 2>&1)' != '$szexp'"; fail=1; }
 fi
-if ! { "$T/h0" "$T/sz.ty" > "$T/sz_h0.c" 2>/dev/null && \
-       $CC -O2 -fwrapv -std=c11 -o "$T/sz_h0" "$T/sz_h0.c" tests/ffi/shim.c -lm 2>"$T/sz_h0.log"; }; then
-    echo "FAIL: sized-ffi tychoc0 compile"; sed 's/^/      /' "$T/sz_h0.log"; fail=1
-else
-    [ "$("$T/sz_h0" 2>&1)" = "$szexp" ] || { echo "FAIL: sized-ffi tychoc0 output"; fail=1; }
-fi
 # first-class: the WHOLE fixed-width integer family (u8/u16/u32/u64/i8/i16/i32/i64,
 # and f32) is a first-class Tycho type per the spec (docs/spec/14-ffi.md §5.2.7),
 # usable anywhere a type is written -- not only in extern signatures. Both compilers
 # must ACCEPT a non-extern sized annotation. (A sized name is a reserved type keyword,
-# so it cannot be used as an identifier -- covered by the type-parity lane.)
+# so it cannot be used as an identifier.)
 printf 'fn main():\n    x: i16 = 3\n    if x > 0:\n        println("pos")\n' > "$T/szok.ty"
 if ! "$TYCHOC" "$T/szok.ty" --emit-c -o "$T/szok" >/dev/null 2>&1; then echo "FAIL: first-class i16 rejected by tychoc"; fail=1; fi
-if ! "$T/h0" "$T/szok.ty" >/dev/null 2>&1; then echo "FAIL: first-class i16 rejected by tychoc0"; fail=1; fi
 
 if [ "$RECORD" = 1 ]; then cp "$T/c.out" "$golden"; echo "rec  ffi"; fi
 if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden — run RECORD=1"; fail=1; fi
@@ -144,4 +120,4 @@ if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 
-[ "$fail" -eq 0 ] && echo "ffi: green (tychoc + tychoc0 agree, ASan-clean, match golden — scalars+string, sized ints, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "ffi: green (tychoc: ASan-clean, matches golden — scalars+string, sized ints, ptr handles, null/is_null, -L + --shim, package-scoped extern)" || { echo "ffi: FAIL"; exit 1; }

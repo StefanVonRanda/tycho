@@ -152,9 +152,18 @@ int threaded via `inout`: `seed(n)`, `next(&st)` (`[1, 2^32)`), `below(&st, n)`
 
 ### 32.10 `time`
 
-Wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins (pure
-Tycho): stopwatch `start()`, `elapsed_ns`/`elapsed_us`/`elapsed_ms`; conversions
+Wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins: stopwatch
+`start()`, `elapsed_ns`/`elapsed_us`/`elapsed_ms`; conversions
 `ns_to_us`/`ns_to_ms`/`ns_to_s`; wall clock `unix_secs()`. `docs/corelib.md:102-106`.
+The clock surface is pure Tycho, but the package carries a **libc-only shim**
+(`time_shim.c`) for blocking sleep: `sleep_ms(ms)` and `sleep_ns(ns)` over POSIX
+`nanosleep`. Core tier. Three semantics are normative for the package: a
+non-positive duration returns immediately (no syscall, no busy-spin, no abort);
+the sleep is **not** interruptible (the shim retries on `EINTR` with the
+remaining time, so the full requested duration always elapses); and it parks the
+**calling task only** — a task is a thread, so a sleeping worker does not stall
+its siblings. The wait is at least the requested duration, never shorter. Shim
+`corelib/time/time_shim.c`.
 
 ### 32.11 `datetime`
 

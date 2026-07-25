@@ -20,3 +20,20 @@ fn main():
     a := time.start()
     b := time.start()
     println(f"monotonic={b >= a}")
+    # sleep: AT LEAST the requested duration (scheduler granularity can make it
+    # longer, never shorter), so the golden locks the lower bound plus a loose
+    # upper sanity bound -- never an exact duration.
+    s1 := time.start()
+    time.sleep_ms(200)
+    d1 := time.elapsed_ms(s1)
+    println(f"sleep_ms_at_least={d1 >= 200}")
+    println(f"sleep_ms_sane={d1 < 5000}")
+    s2 := time.start()
+    time.sleep_ns(50000000)
+    println(f"sleep_ns_at_least={time.elapsed_ms(s2) >= 50}")
+    # a non-positive duration returns immediately: no syscall, no busy-spin, no abort
+    s3 := time.start()
+    time.sleep_ms(0)
+    time.sleep_ms(-5)
+    time.sleep_ns(-1)
+    println(f"nonpositive_immediate={time.elapsed_ms(s3) < 50}")

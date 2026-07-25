@@ -139,25 +139,19 @@ done
 # index, pop from empty, reserve out of range. Abort programs run native-only:
 # a deliberate exit(1) leaves live arenas, so LeakSanitizer would (correctly,
 # uselessly) report them.
-# BOTH compilers must reject these (the reject path is now differential too --
-# the malformed-input fuzzer found tychoc0 had been fail-opening on many of these
-# where tychoc rejects). Build tychoc0 once for the tychoc0-side assertion.
-# (newtype distinctness used to be skip-listed here -- tychoc0 erased newtype
-# identity. As of the newtype-identity parity work, tychoc0 tracks identity through
-# the checker and rejects the mismatches too, so the skip-list is empty.)
-"$TYCHOC" compiler/tychoc0.ty -o "$TMP/h0" >/dev/null 2>&1 || { echo "could not build tychoc0 for reject checks"; exit 2; }
-H0_REJECT_SKIP=" "
+# tychoc must reject each with a NONZERO exit AND a non-empty diagnostic (a silent
+# refusal is as bad as an acceptance -- the user gets nothing to act on). Until
+# 2026-07-26 this lane also built the self-hosted tychoc0 and asserted it refused
+# them too; tychoc0 is frozen (see compiler/tychoc0.ty) and no gate builds it, so
+# that half is gone. The tychoc assertions below are unchanged.
 for hi in tests/reject/*.ty; do
     [ -e "$hi" ] || continue
     base="$(basename "$hi" .ty)"
     name="reject_$base"
-    skip0=0; case "$H0_REJECT_SKIP" in *" $base "*) skip0=1 ;; esac
     if "$TYCHOC" "$hi" --emit-c -o "$TMP/rj" >"$TMP/rj.log" 2>&1; then
         note "$name" "tychoc ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rj.log" ]; then
         note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
-    elif [ "$skip0" = 0 ] && "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/rj0.log"; then
-        note "$name" "tychoc0 ACCEPTED an invalid program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi
@@ -165,7 +159,8 @@ done
 # Package-level reject tests: tests/reject/pkg/<name>/ is a multi-file package
 # program the compiler must REFUSE (e.g. a cross-package access to a
 # package-private `_name`). Its own directory keeps the entry's package-merge
-# isolated from the single-file rejects above. Both compilers must reject it.
+# isolated from the single-file rejects above. Same discipline as above: tychoc
+# must exit nonzero AND print a diagnostic.
 for d in tests/reject/pkg/*/; do
     [ -d "$d" ] || continue
     name="rejectpkg_$(basename "$d")"
@@ -175,19 +170,16 @@ for d in tests/reject/pkg/*/; do
         note "$name" "tychoc ACCEPTED an invalid package program"; fail=$((fail + 1)); fails="$fails $name"
     elif [ ! -s "$TMP/rjp.log" ]; then
         note "$name" "tychoc rejected but with no diagnostic"; fail=$((fail + 1)); fails="$fails $name"
-    elif "$TMP/h0" "$entry" --emit-c >/dev/null 2>"$TMP/rjp0.log"; then
-        note "$name" "tychoc0 ACCEPTED an invalid package program (fail-open)"; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
-# Differential: BOTH compilers must die identically on the same fixture. The
-# reference (tychoc) side asserts the abort fires at all (nonzero exit + a
-# 'tycho:' message); the self-hosted (tychoc0) side then asserts it dies with
-# the SAME stderr byte-for-byte and the SAME exit status. Before this, tychoc0's
-# runtime traps were locked only by rtparity, which proves the trap TEXT exists
-# in the emitted C, not that it fires on the same input. Reuses the $TMP/h0
-# tychoc0 built above; it emits C to stdout.
+# Runtime aborts: the fixture must BUILD with tychoc and then DIE cleanly --
+# nonzero exit plus a 'tycho:' message on stderr, never a silent exit 0 and never
+# a bare signal. Until 2026-07-26 this lane also built each fixture with tychoc0
+# and required byte-identical stderr and the same exit status from both; tychoc0
+# is frozen and no gate builds it, so that comparison is gone. The tychoc
+# assertions -- builds, fires, names itself -- are unchanged.
 for hi in tests/abort/*.ty; do
     [ -e "$hi" ] || continue
     name="abort_$(basename "$hi" .ty)"
@@ -196,24 +188,11 @@ for hi in tests/abort/*.ty; do
         note "$name" "tychoc did not build"; sed 's/^/      /' "$TMP/ab.log"
         fail=$((fail + 1)); fails="$fails $name"; continue
     fi
-    if ! "$TMP/h0" "$hi" >"$TMP/ab0.c" 2>"$TMP/ab.log" \
-       || ! $CC -O2 -fwrapv -std=c11 -o "$TMP/ab0.bin" "$TMP/ab0.c" -lm 2>"$TMP/ab.log"; then
-        note "$name" "tychoc0 did not build"; sed 's/^/      /' "$TMP/ab.log"
-        fail=$((fail + 1)); fails="$fails $name"; continue
-    fi
     "$TMP/ab.bin"  </dev/null >/dev/null 2>"$TMP/ab.err";  rc=$?
-    "$TMP/ab0.bin" </dev/null >/dev/null 2>"$TMP/ab0.err"; rc0=$?
     if [ "$rc" -eq 0 ]; then
         note "$name" "runtime abort did not fire (exit 0)"; fail=$((fail + 1)); fails="$fails $name"
     elif ! grep -q 'tycho:' "$TMP/ab.err"; then
         note "$name" "died (exit $rc) but without a 'tycho:' message"; sed 's/^/      /' "$TMP/ab.err"
-        fail=$((fail + 1)); fails="$fails $name"
-    elif [ "$rc0" -ne "$rc" ]; then
-        note "$name" "compilers diverge on exit status (tychoc $rc, tychoc0 $rc0)"
-        fail=$((fail + 1)); fails="$fails $name"
-    elif ! cmp -s "$TMP/ab.err" "$TMP/ab0.err"; then
-        note "$name" "compilers diverge on abort message"
-        diff "$TMP/ab.err" "$TMP/ab0.err" | head | sed 's/^/      /'
         fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
@@ -240,36 +219,6 @@ for hi in tests/diag/*.ty; do
     elif ! cmp -s "$TMP/dg.log" "$g"; then
         note "$name" "diagnostic != golden ($g)"
         diff "$g" "$TMP/dg.log" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
-    else
-        echo "ok    $name"; pass=$((pass + 1))
-    fi
-done
-
-# The SAME fixtures through tychoc0, locked separately as tests/diag/<name>.h0err.
-# The reject lane already asserts tychoc0 refuses invalid programs; this asserts
-# WHAT IT SAYS, which nothing did before — a refactor could have degraded every
-# self-hosted message to a bare "type error" with no line number and the build
-# would still have gone green. The goldens are deliberately a SEPARATE file, not
-# a shared one: tychoc0's format ("line N: ...") and its wording are behind the C
-# compiler's on purpose (no did-you-mean, fewer hints), so holding them to one
-# golden would either block this lane or force a premature rewrite. Convergence
-# work now shows up as a diff in these files. Reuses the $TMP/h0 built above.
-for hi in tests/diag/*.ty; do
-    [ -e "$hi" ] || continue
-    base="$(basename "$hi" .ty)"
-    name="diag0_$base"
-    g="tests/diag/$base.h0err"
-    if "$TMP/h0" "$hi" --emit-c >/dev/null 2>"$TMP/dg0.log"; then
-        note "$name" "tychoc0 ACCEPTED an invalid program"; fail=$((fail + 1)); fails="$fails $name"; continue
-    fi
-    if [ "$RECORD" = 1 ]; then
-        cp "$TMP/dg0.log" "$g"; echo "rec   $name"; recorded=$((recorded + 1)); continue
-    fi
-    if [ ! -f "$g" ]; then
-        note "$name" "no golden — run 'make test-update'"; fail=$((fail + 1)); fails="$fails $name"
-    elif ! cmp -s "$TMP/dg0.log" "$g"; then
-        note "$name" "tychoc0 diagnostic != golden ($g)"
-        diff "$g" "$TMP/dg0.log" | head | sed 's/^/      /'; fail=$((fail + 1)); fails="$fails $name"
     else
         echo "ok    $name"; pass=$((pass + 1))
     fi

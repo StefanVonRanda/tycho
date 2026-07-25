@@ -19,8 +19,17 @@ Foundation before feature breadth. In rough priority:
 1. **Demand-gated corelib / tooling.** New library and tooling work is built against a
    real program that needs it, never ahead of one — e.g. more image codecs, richer
    date/time, additional networking. Requests belong in the issue tracker.
-2. **Keeping the two compilers honest.** As new language features land, each is
-   adversarially fuzzed and gated before shipping. This is ongoing, not a milestone.
+2. **Keeping the compiler honest.** As new language features land, each is
+   adversarially fuzzed and gated against recorded goldens before shipping. This is
+   ongoing, not a milestone.
+
+   The self-hosted `compiler/tychoc0.ty` is **out of this loop as of 2026-07-26**. It
+   proved self-hosting — compiled by itself it reproduced its own emitted C
+   byte-for-byte — and is preserved frozen as that artifact. No gate builds or runs it
+   and no language change is mirrored into it, so it compiles the language as it stood
+   on the freeze date and will diverge from `tychoc` on which programs it accepts. It is
+   not deprecated for being wrong; it is finished. `tychoc` is the reference
+   implementation and the [spec](docs/spec/) is normative.
 
 ## Non-goals
 

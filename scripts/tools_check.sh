@@ -114,33 +114,30 @@ print("    docsym=%s  completion=%s  references=%s  rename=%s  inlay=%s  fstr-re
 sys.exit(0 if (init and clean and flagged and loc_ok and fn_ok and def_ok and warn_ok and sym_ok and comp_ok and refs_ok and ren_ok and inlay_ok and fstr_ok and sig_ok and wsym_ok and stok_ok) else 1)
 PY
 
-echo ">>> loop-warning: tychoc + tychoc0 both warn on a non-advancing for-loop"
-# Guards the loop-progress diagnostic in BOTH compilers. It is stderr-only, so
-# `make fixpoint` (which compares emitted C on stdout) can't catch a regression
-# that silently disables it -- this can. Bad loop must warn; good loop must not.
-"$TYCHOC" compiler/tychoc0.ty -o "$TMP/tychoc0" >/dev/null 2>&1 || { echo "  tychoc0 build FAILED"; fail=1; }
+echo ">>> loop-warning: tychoc warns on a non-advancing for-loop"
+# Guards the loop-progress diagnostic. It is stderr-only, so a golden lane that
+# compares emitted C on stdout can't catch a regression that silently disables it
+# -- this can. Bad loop must warn; good loop must not. (The tychoc0 half of this
+# and the two checks below was removed on 2026-07-26 with the freeze; see
+# compiler/tychoc0.ty.)
 printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n' > "$TMP/badloop.ty"
 printf 'fn main():\n    i := 0\n    for i < 3:\n        print(str(i))\n        i = i + 1\n' > "$TMP/goodloop.ty"
 "$TYCHOC"      "$TMP/badloop.ty"  --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/e1"; cbw=$(grep -c 'warning:' "$TMP/e1")
 "$TYCHOC"      "$TMP/goodloop.ty" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/e2"; cgw=$(grep -c 'warning:' "$TMP/e2")
-"$TMP/tychoc0" "$TMP/badloop.ty"  --emit-c 1>/dev/null 2>"$TMP/e3"; zbw=$(grep -c 'warning:' "$TMP/e3")
-"$TMP/tychoc0" "$TMP/goodloop.ty" --emit-c 1>/dev/null 2>"$TMP/e4"; zgw=$(grep -c 'warning:' "$TMP/e4")
-echo "    tychoc: bad=$cbw good=$cgw   tychoc0: bad=$zbw good=$zgw"
-{ [ "$cbw" -ge 1 ] && [ "$cgw" -eq 0 ] && [ "$zbw" -ge 1 ] && [ "$zgw" -eq 0 ]; } || { echo "  LOOP-WARN PARITY FAIL"; fail=1; }
+echo "    tychoc: bad=$cbw good=$cgw"
+{ [ "$cbw" -ge 1 ] && [ "$cgw" -eq 0 ]; } || { echo "  LOOP-WARN FAIL"; fail=1; }
 
-echo ">>> pure-result: both compilers warn on a discarded pure-builtin result"
+echo ">>> pure-result: tychoc warns on a discarded pure-builtin result"
 # Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
 # A bare `m.get(k,d)` discards the value it returns -> must warn; `m[k]=v` must not.
 printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    m.get("a", 0)\n' > "$TMP/pure.ty"
 printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in m))\n' > "$TMP/nopure.ty"
 "$TYCHOC"      "$TMP/pure.ty"   --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p1"; cpw=$(grep -c 'warning:' "$TMP/p1")
 "$TYCHOC"      "$TMP/nopure.ty" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/p2"; cpn=$(grep -c 'warning:' "$TMP/p2")
-"$TMP/tychoc0" "$TMP/pure.ty"   --emit-c 1>/dev/null 2>"$TMP/p3"; zpw=$(grep -c 'warning:' "$TMP/p3")
-"$TMP/tychoc0" "$TMP/nopure.ty" --emit-c 1>/dev/null 2>"$TMP/p4"; zpn=$(grep -c 'warning:' "$TMP/p4")
-echo "    tychoc: bad=$cpw good=$cpn   tychoc0: bad=$zpw good=$zpn"
-{ [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ] && [ "$zpw" -ge 1 ] && [ "$zpn" -eq 0 ]; } || { echo "  PURE-RESULT PARITY FAIL"; fail=1; }
+echo "    tychoc: bad=$cpw good=$cpn"
+{ [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ]; } || { echo "  PURE-RESULT FAIL"; fail=1; }
 
-echo ">>> fall-off-the-end: both compilers warn on a non-void proc that can reach its end without returning"
+echo ">>> fall-off-the-end: tychoc warns on a non-void proc that can reach its end without returning"
 # Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
 # A `-> int` proc whose `if` has no else + no trailing return can fall off the
 # end (codegen zero-fills) -> must warn; a trailing return must not.
@@ -148,10 +145,8 @@ printf 'fn f(n: int) -> int:\n    if n > 0:\n        return 1\n\nfn main():\n   
 printf 'fn f(n: int) -> int:\n    if n > 0:\n        return 1\n    return 0\n\nfn main():\n    print(str(f(1)))\n' > "$TMP/allret.ty"
 "$TYCHOC"      "$TMP/falloff.ty" --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/f1"; cfo=$(grep -c 'not all paths' "$TMP/f1")
 "$TYCHOC"      "$TMP/allret.ty"  --emit-c -o "$TMP/x" 1>/dev/null 2>"$TMP/f2"; cfn=$(grep -c 'not all paths' "$TMP/f2")
-"$TMP/tychoc0" "$TMP/falloff.ty" --emit-c 1>/dev/null 2>"$TMP/f3"; zfo=$(grep -c 'not all paths' "$TMP/f3")
-"$TMP/tychoc0" "$TMP/allret.ty"  --emit-c 1>/dev/null 2>"$TMP/f4"; zfn=$(grep -c 'not all paths' "$TMP/f4")
-echo "    tychoc: bad=$cfo good=$cfn   tychoc0: bad=$zfo good=$zfn"
-{ [ "$cfo" -ge 1 ] && [ "$cfn" -eq 0 ] && [ "$zfo" -ge 1 ] && [ "$zfn" -eq 0 ]; } || { echo "  FALL-OFF PARITY FAIL"; fail=1; }
+echo "    tychoc: bad=$cfo good=$cfn"
+{ [ "$cfo" -ge 1 ] && [ "$cfn" -eq 0 ]; } || { echo "  FALL-OFF FAIL"; fail=1; }
 
 echo ">>> line-info: -g emits #line mapping + compiles; default stays clean"
 # Guards B1 (tychoc-only feature). Default output must carry NO #line so the

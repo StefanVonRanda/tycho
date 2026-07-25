@@ -1,18 +1,17 @@
 #!/bin/sh
 # tycho pre-push gate -- no broken code leaves this machine. (Local. No GitHub
 # Actions, ever.) Runs the FULL DETERMINISTIC gate via `make ci N=0`: every ci
-# lane EXCEPT the minutes-long differential fuzz campaign -- build, golden +
-# sanitizer tests, self-host fixpoint, corelib + corelib-examples + the `site`
-# dogfood, concurrency, ffi, formatter/LSP tools-check, the four accept/reject
-# parity lanes, bench-guard, recursion, and spec-check -- plus a quick differential
-# fuzz smoke (`make fuzz-quick`).
+# lane EXCEPT the minutes-long fuzz campaign -- build, golden +
+# sanitizer tests, corelib + corelib-examples + the `site`
+# dogfood, concurrency, ffi, formatter/LSP tools-check, bench-guard, recursion,
+# and spec-check -- plus a quick fuzz smoke (`make fuzz-quick`).
 #
 # Why this wide: a green `make test` is NOT a green tree. A `datetime`-FFI link
 # break in the `site` dogfood, and cross-package type-mangling divergences, are
-# invisible to test+fixpoint but caught here -- running only test+fixpoint (+
+# invisible to `make test` but caught here -- running only test (+
 # corelib) once let a red `make ci` reach `main` unnoticed.
 #
-# The full fuzz campaign (fuzz N=200 + reject + leak + pkg, ~20 min) is NOT in
+# The full fuzz campaign (fuzz N=200 + reject + leak, ~20 min) is NOT in
 # this hook -- run it before a substantial push with `make ci`.
 #
 # Activate once:  make hooks   (sets core.hooksPath to .githooks)
@@ -39,7 +38,7 @@ gate() {   # gate "<label>" <make args...>
 }
 
 gate "make ci N=0 (all deterministic lanes)" ci N=0
-gate "make fuzz-quick (differential smoke)"  fuzz-quick
+gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 
 rm -f "$LOG"
 printf 'pre-push: gates green -- allowing push (run `make ci` for the full fuzz campaign).\n'

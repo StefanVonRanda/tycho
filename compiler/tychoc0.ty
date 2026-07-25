@@ -1,16 +1,66 @@
+#  ███ FROZEN — 2026-07-26 ███
+#
+#  This file is an ARTIFACT, not a maintained compiler. Read this before you
+#  read anything below it.
+#
+#  WHAT IT PROVED. tychoc0 is a compiler for Tycho, written in Tycho — ~16k
+#  lines that include the subset needed to compile itself. Compiled by the C
+#  reference compiler and then run on its own source, it reproduces its own
+#  emitted C BYTE-FOR-BYTE (the fixpoint: with A = tychoc·tychoc0.ty,
+#  B = A·tychoc0.ty, C = B·tychoc0.ty, then B == C), and the programs it built
+#  matched the reference compiler's output across the whole test corpus, the
+#  corelib, the concurrency suite and the FFI suite. Tycho self-hosts. That was
+#  the thesis, it held, and this file is the evidence. It is preserved exactly
+#  as it stood, unchanged.
+#
+#  WHAT CHANGED ON 2026-07-26. tychoc0 is frozen and out of the gate set. No CI
+#  step builds it or runs it; thirteen of the nineteen steps that did — fixpoint,
+#  frontparity, rtparity, the four accept/reject parity lanes, the differential
+#  fuzz halves, and the tychoc0 side of test / corelib / conc / ffi / recursion /
+#  spec-check — were removed. No language change is mirrored into this file any
+#  more. It bit-rots by design.
+#
+#  IT IS DIVERGING FROM TYCHO — ALREADY, NOT EVENTUALLY. This file compiles the
+#  language AS IT STOOD ON THE FREEZE DATE. From that date forward tychoc and
+#  tychoc0 are different languages: they accept and reject different programs,
+#  and nothing checks the difference. The first divergence is already in the
+#  tree — tychoc now REJECTS a reserved word used as a procedure name
+#  (`fn handle(...)`) with a diagnostic naming the keyword; tychoc0 still
+#  ACCEPTS it. Expect that list to grow and never be reconciled.
+#
+#  SO: THIS FILE IS NOT AUTHORITATIVE ABOUT TYCHO. If you are reading it to
+#  learn how the language works, stop — you are reading history. The
+#  specification in docs/spec/ is normative, and `src/tychoc.c` (tychoc) is the
+#  reference implementation. If the two disagree with what is written here, this
+#  file is the one that is out of date.
+#
+#  NONE OF THIS MEANS IT IS BROKEN. It is not deprecated for being wrong. It
+#  correctly compiles the language it was frozen against, which is exactly what
+#  it was built to demonstrate. It is finished, not failed. Do not "fix" it, do
+#  not update it, and do not re-gate it.
+#
+#  ONE MECHANICAL NOTE. This banner was prepended to an otherwise unchanged
+#  file and shifted every line in it down by 50. Every `:N` SELF-citation in the
+#  comments below (e.g. "resolved by mangle_type (:3251)") predates the banner
+#  and is therefore off by -50: add 50 to reach the line it means. Citations
+#  from docs/ into this file were updated and are correct.
+#
+# ---------------------------------------------------------------------------
+#
 # tychoc0 — a compiler for a SUBSET of Tycho, written in Tycho. Stage 1 of the
-# self-hosting bootstrap (docs/bootstrap.md). Emits C to stdout. With no
-# argument it reads source on stdin; `tychoc0 path/to/main.ty` compiles that file
-# directly, and if the file declares a `package` it walks the whole package
-# (imports included) from disk via the read_file/list_dir/args builtins — a
-# standalone driver, no `tychoc --bundle` needed.
+# self-hosting bootstrap. Emits C to stdout. With no argument it reads source on
+# stdin; `tychoc0 path/to/main.ty` compiles that file directly, and if the file
+# declares a `package` it walks the whole package (imports included) from disk
+# via the read_file/list_dir/args builtins — a standalone driver, no
+# `tychoc --bundle` needed.
 #
 # Subset: one or more `fn name(p: int, ...) -> int:` / `fn main():`, whose
 # indented bodies have `x := EXPR`, `x = EXPR`, `print(SEXPR)`, `return EXPR`,
 # and `if`/`elif`/`else`. EXPR = integer arithmetic (`+ - *`, parens, vars, int
 # literals, calls `f(args)`) and comparisons (`== < >`). SEXPR (string, only in
-# print position) = string literals and `str(EXPR)` joined by `+`. Validated
-# DIFFERENTIALLY against the C compiler by `make bootstrap`.
+# print position) = string literals and `str(EXPR)` joined by `+`. It was
+# validated DIFFERENTIALLY against the C compiler by `make bootstrap` and the
+# gates named above; that target no longer exists.
 
 # ---------------------------------------------------------------- lexer ----
 

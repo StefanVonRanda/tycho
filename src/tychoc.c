@@ -3291,6 +3291,16 @@ static Proc *parse_fn(Parser *ps) {
     g_ncur_typarams = 0;                  /* fresh `$T` scope for this function */
     g_ncur_sizeparams = 0;                /* fresh `$N` size-param scope (const generics 1.6B) */
     eat(ps, TK_FN, "'fn'");
+    /* `fn handle(conn: int):` is a real trip-up -- `handle` is reserved (§3.6)
+     * but "expected a procedure name" never said WHY, so it reads as a parser
+     * bug. Name the keyword. A reserved word is exactly a token whose lexeme
+     * `keyword()` maps back to its own kind; the contextual identifiers of §3.7
+     * (`package`, `extern`, `soa`, `sink`, `where`, `range`, every builtin, ...)
+     * lex as TK_IDENT and are unaffected -- they stay legal procedure names. */
+    if (!at(ps, TK_IDENT) && cur(ps)->text && keyword(cur(ps)->text) == cur(ps)->kind) {
+        g_err_col = cur(ps)->col;
+        die_at(cur(ps)->line, "'%s' is a reserved keyword and cannot be used as a procedure name", cur(ps)->text);
+    }
     Tok *nameT = eat(ps, TK_IDENT, "a procedure name");
     eat(ps, TK_LPAREN, "'('");
 

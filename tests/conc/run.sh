@@ -1,13 +1,17 @@
 #!/bin/sh
-# Concurrency (spawn/wait/parallel-for/channels) test runner — BOTH compilers.
+# Concurrency (spawn/wait/parallel-for/channels) test runner.
 #
 # Per positive fixture: tychoc builds native (-O3), ASan+UBSan (leaks on), and
 # TSan binaries — all three must produce the golden tests/conc/<name>.out with
-# silent sanitizers — AND the tychoc-built tychoc0 compiles the same fixture,
-# whose output must match the same golden (the concurrency parity
-# differential). Reject fixtures: tychoc must FAIL (repo precedent: negative
-# paths gate the C compiler only). Abort fixtures: compile, then die with the
-# message in the sibling .err file.
+# silent sanitizers. Reject fixtures: tychoc must FAIL. Abort fixtures: compile,
+# then die with the message in the sibling .err file.
+#
+# Until 2026-07-26 each positive fixture was also compiled by the self-hosted
+# tychoc0 and its output required to match the same golden, and each abort
+# fixture was required to die identically under both compilers. tychoc0 is frozen
+# (see compiler/tychoc0.ty) and no gate builds it, so those legs are gone. Every
+# tychoc assertion — three sanitizer builds vs golden, aborts fire with their
+# message, rejects are refused — is unchanged.
 set -u
 cd "$(dirname "$0")/../.."
 CC="${CC:-cc}"
@@ -29,11 +33,6 @@ else TO=""; fi
 if ( ulimit -v 1500000 ) 2>/dev/null; then AS_CAP="ulimit -v 1500000"; else AS_CAP=":"; fi
 pass=0; fail=0
 note() { echo "FAIL $1 ($2)"; }
-
-# the self-hosted compiler, for the parity differential
-if ! $TYCHOC compiler/tychoc0.ty -o "$TMP/tychoc0" >/dev/null 2>&1; then
-    echo "FAIL tychoc0 (build)"; exit 1
-fi
 
 for f in tests/conc/*.ty; do
     name=$(basename "$f" .ty)
@@ -58,50 +57,29 @@ for f in tests/conc/*.ty; do
             note "$name" "$tag output"; diff "$gold" "$TMP/$name.got" | sed 's/^/      /'; ok=0; break
         fi
     done
-    if [ $ok -eq 1 ]; then
-        # parity differential: the SELF-HOSTED compiler must agree on the golden
-        if ! "$TMP/tychoc0" < "$f" > "$TMP/$name.h0.c" 2>"$TMP/$name.h0e" \
-           || ! $CC -O2 -fwrapv -pthread -o "$TMP/$name.h0" "$TMP/$name.h0.c" -lm 2>"$TMP/$name.h0e" \
-           || ! "$TMP/$name.h0" > "$TMP/$name.h0out" 2>&1 \
-           || ! cmp -s "$TMP/$name.h0out" "$gold"; then
-            note "$name" "tychoc0 parity"; sed 's/^/      /' "$TMP/$name.h0e" 2>/dev/null | head -3; ok=0
-        fi
-    fi
     if [ $ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 done
 
-# abort fixtures: BOTH compilers must compile, then DIE at runtime with the
-# message in the sibling .err file, under the SAME resource bounds (the CC-2
+# abort fixtures: tychoc must compile them, and the binary must DIE at runtime
+# with the message in the sibling .err file, under a resource bound (the CC-2
 # double-wait and CC-4 closed-channel backstops -- defined loud failures, never
-# UB). tychoc drives its own build; the self-hosted tychoc0 ($TMP/tychoc0, built
-# above for the positive parity differential) emits C to stdout. Before this the
-# conc backstops were locked only by that positive differential, which proves
-# the trap TEXT is emitted, never that it FIRES on the same input. The reference
-# (tychoc) side asserts the backstop fires with its message; the tychoc0 side
-# asserts it dies with the SAME message and the SAME exit status. Substring grep
-# (not byte-for-byte) because spawn_cap is a fork-bomb: several threads can race
-# the cap and each print the line, a count that is not stable run to run.
+# UB). Substring grep (not byte-for-byte) because spawn_cap is a fork-bomb:
+# several threads can race the cap and each print the line, a count that is not
+# stable run to run. (The tychoc0 half of this lane -- same message, same exit
+# status from the self-hosted compiler -- was removed on 2026-07-26 with the
+# freeze; the assertion that the backstop FIRES is unchanged.)
 for f in tests/conc/abort/*.ty; do
     name=abort/$(basename "$f" .ty)
     want=$(cat "${f%.ty}.err")
     if ! $TYCHOC "$f" -o "$TMP/ab" >/dev/null 2>&1; then
         note "$name" "tychoc"; fail=$((fail+1)); continue
     fi
-    if ! "$TMP/tychoc0" < "$f" > "$TMP/ab0.c" 2>"$TMP/ab0b.err" \
-       || ! $CC -O2 -fwrapv -pthread -o "$TMP/ab0" "$TMP/ab0.c" -lm 2>"$TMP/ab0b.err"; then
-        note "$name" "tychoc0 build"; sed 's/^/      /' "$TMP/ab0b.err"; fail=$((fail+1)); continue
-    fi
     # Bound every abort run by memory + CPU, and pin a low task cap so the
     # spawn fork-bomb (recursive spawn) hits the bounded-concurrency ceiling fast
     # instead of exhausting host threads. Harmless to the non-spawn fixtures.
     ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab" )  >/dev/null 2>"$TMP/ab.err";  rc=$?
-    ( ulimit -t 15; $AS_CAP; TYCHO_MAX_TASKS=16 $TO "$TMP/ab0" ) >/dev/null 2>"$TMP/ab0.err"; rc0=$?
     if [ $rc -eq 0 ] || ! grep -q "$want" "$TMP/ab.err"; then
         note "$name" "tychoc expected runtime die '$want'"; fail=$((fail+1))
-    elif [ $rc0 -eq 0 ] || ! grep -q "$want" "$TMP/ab0.err"; then
-        note "$name" "tychoc0 expected runtime die '$want'"; sed 's/^/      /' "$TMP/ab0.err"; fail=$((fail+1))
-    elif [ $rc0 -ne $rc ]; then
-        note "$name" "compilers diverge on exit status (tychoc $rc, tychoc0 $rc0)"; fail=$((fail+1))
     else
         pass=$((pass+1))
     fi

@@ -34,5 +34,10 @@ one-line reminders.
 - **Core tier / extended tier** — the language plus libc-only corelib, versus the
   additionally-required `pkg-config` corelib packages
   ([§1.3](00-conventions.md#13-conformance)).
-- **Fixpoint** — the byte-identical self-hosting property that anchors the
-  two-implementation conformance oracle ([§1.2](00-conventions.md#12-the-two-implementation-contract)).
+- **Fixpoint** — the byte-identical self-hosting property demonstrated by
+  `compiler/tychoc0.ty`: compiled by itself, it reproduces its own emitted C
+  byte-for-byte. It anchored the two-implementation conformance oracle this
+  specification was written from until `tychoc0` was frozen on 2026-07-26
+  ([§1.2](00-conventions.md#12-the-reference-implementation)); conformance is now
+  defined against this specification and its fixture corpus
+  ([§1.3](00-conventions.md#13-conformance), [Appendix E](appendix-e-conformance.md)).

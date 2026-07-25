@@ -303,9 +303,9 @@ iteration behave as they do for a fixed-size array. `pop`, slicing, and
 > Provenance: the `bounded` branch of `parse_type_inner`,
 > `src/tychoc.c:1767-1783@"bounded"` (capacity `:1769-1779`, element
 > restriction `:1781-1782`); its twin
-> `compiler/tychoc0.ty:1866-1897@"bounded"`, whose `const` capacity is
-> deferred as `[b#W]T` and resolved in `mangle_type` (`:3251@[b#`),
-> with the unresolved-name guard at `:11858-11862@[b#`. The affine-element
+> `compiler/tychoc0.ty:1916-1947@"bounded"`, whose `const` capacity is
+> deferred as `[b#W]T` and resolved in `mangle_type` (`:3301@[b#`),
+> with the unresolved-name guard at `:11908-11912@[b#`. The affine-element
 > rejection is a type-intern choke point in `src/tychoc.c`
 > (`arrc_sized_b` `src/tychoc.c:679-691@arrc_sized_b`, messages `:567` and `:607`) and an
 > explicit check at `compiler/tychoc0.ty:1890-1896@ck_affine_part`.

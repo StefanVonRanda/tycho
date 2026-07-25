@@ -26,14 +26,19 @@ fn main():
 ```
 
 It's a research project — an experiment testing that one idea — but a heavily-checked
-one, and that's the part most experiments this young skip. There are two compilers — a
-reference in C and a second one *written in Tycho* that compiles itself — and `make
-fixpoint` holds the
-self-hosted one to reproducing its own emitted C **byte-for-byte** and to matching the
-reference's output on every test. A differential fuzzer runs both on random programs
-under ASan/UBSan; every example is built twice, native and sanitized, and checked against
-a committed golden. No cloud CI to take on faith — `make ci` runs the whole gate locally.
-Experimental in *scope*, not in rigor.
+one, and that's the part most experiments this young skip. Every example is built twice,
+native and sanitized, and checked against a committed golden; a fuzzer applies the same
+differential to random programs under ASan/UBSan, and feeds malformed input in to prove
+the compiler fails closed rather than crashing. No cloud CI to take on faith — `make ci`
+runs the whole gate locally. Experimental in *scope*, not in rigor.
+
+Tycho also compiles itself: `compiler/tychoc0.ty` is a transpiler for Tycho written in
+Tycho, and compiled by itself it reproduces its own emitted C **byte-for-byte**. That
+proof is done. As of **2026-07-26 `tychoc0` is frozen** — preserved unchanged as the
+artifact that demonstrated self-hosting, gated by nothing, and no longer updated. It
+compiles the language as it stood on that date, so it and `tychoc` will accept and reject
+different programs from here on. `tychoc` is the reference implementation; the
+[spec](docs/spec/) is normative.
 
 ## Quick start
 
@@ -79,19 +84,24 @@ sound *because* the value is provably un-aliased; neither is visible in your cod
 
 ## The evidence
 
-The programs behind these numbers run in CI on both transpilers, their output
+The programs behind these numbers run in CI on `tychoc`, their output
 checked byte-for-byte against a golden. The figures themselves are measured and machine-specific, so the cross-language
 *ratios* are the claim, not the absolute times.
 
 **Self-hosting proof.** The strongest evidence for the thesis is that Tycho
 compiles itself on it. Besides the C reference transpiler (`src/tychoc.c`), there
 is a second transpiler written in Tycho — `compiler/tychoc0.ty` — and its codegen
-runs on the same implicit arenas it emits. `make fixpoint` is the discipline: it
-builds `tychoc0` three ways and asserts the last two emit **byte-identical** C,
-and that the self-hosted build produces the same output as the C transpiler across
-every test and example. A compiler is the hostile case for any allocator:
-thousands of small, short-lived, deeply-recursive AST nodes. It manages its own
-memory with no GC and no leaks ([docs/guides/memory-model.md](docs/guides/memory-model.md)).
+runs on the same implicit arenas it emits. Built three ways, the last two emitted
+**byte-identical** C, and the self-hosted build reproduced the C transpiler's
+output across every test and example. A compiler is the hostile case for any
+allocator: thousands of small, short-lived, deeply-recursive AST nodes. It managed
+its own memory with no GC and no leaks
+([docs/guides/memory-model.md](docs/guides/memory-model.md)).
+
+That result stands as recorded; it is **not re-run**. `tychoc0` was frozen on
+2026-07-26 and no gate builds it, so it is a snapshot of the language on that date,
+not a second implementation of Tycho today — expect it to accept and reject
+different programs than `tychoc` does. See the header of `compiler/tychoc0.ty`.
 
 **A real program at flat memory.** [`examples/json.ty`](examples/json.ty) is a
 220-line recursive-descent JSON parser over a recursive `Json` sum type — real

@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 # Soundness fuzz harness. For each seed: generate a random Tycho program, compile
-# it with BOTH compilers, and assert they agree and neither faults.
+# it with tychoc, and assert the optimized and sanitized builds agree and neither
+# faults.
 #
-#   tychoc (C reference)   -> native -O2          : the trusted oracle output
-#   tychoc0 (self-hosted)  -> native -O2          : must match tychoc byte-for-byte
-#   tychoc0 (self-hosted)  -> ASan/UBSan          : must not fault (UAF/UB) and must
-#                                                  match its own native output
+#   tychoc -> native -O2          : the reference output
+#   tychoc -> ASan/UBSan -O1      : must not fault (UAF/UB) and must produce the
+#                                   SAME bytes as the -O2 build
 #
-# A divergence (tychoc vs tychoc0, or native vs ASan), a sanitizer fault, a crash,
-# or a compile-acceptance discrepancy is a FINDING (program saved to findings/).
-# Programs both compilers reject are skipped. Leak detection is OFF (leaks aren't
-# soundness bugs); we hunt use-after-free / heap-corruption / UB / miscompiles.
+# The native-vs-sanitizer differential is the oracle (docs/thesis.md §3): the
+# optimizer and the sanitizer disagree exactly where the emitted C has undefined
+# behaviour, so a mismatch or a sanitizer report is a real codegen bug. A
+# divergence, a sanitizer fault, or a crash is a FINDING (program saved to
+# findings/). Programs tychoc rejects are skipped. Leak detection is OFF here
+# (leaks aren't soundness bugs, and run_leak.py owns that class); we hunt
+# use-after-free / heap-corruption / UB / miscompiles.
+#
+# HISTORY: until 2026-07-26 this lane was a tychoc-vs-tychoc0 DIFFERENTIAL. tychoc0
+# is frozen (see compiler/tychoc0.ty) and no gate builds it, so the tychoc0 legs
+# were removed; what remains is the tychoc half, unchanged in what it asserts about
+# tychoc. What was LOST with the tychoc0 legs: a second independent implementation
+# as an output oracle for programs whose UB the sanitizer cannot see.
 #
 # Seeds are independent, so they run in PARALLEL across a process pool (each worker
 # in its own temp dir). Worker count defaults to cpu_count()-2; override with the
@@ -26,7 +35,7 @@ FFI_SHIM = os.path.join(REPO, "fuzz", "ffi_shim.c")   # backs the generator's ex
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0", UBSAN_OPTIONS="halt_on_error=1")
-TIMEOUT = 20        # compile steps (tychoc / tychoc0 / cc)
+TIMEOUT = 20        # compile steps (tychoc / cc)
 RUN_TIMEOUT = 120   # generated binaries: generous, so a loaded machine can't
                     # false-positive a slow-but-valid program. The generator only
                     # emits terminating programs, so a real timeout is a hang:
@@ -40,11 +49,6 @@ def sh(args, **kw):
 def emit_tychoc(src_path, out_c):
     r = subprocess.run([TYCHOC, src_path, "--emit-c", "-o", out_c[:-2]], capture_output=True, text=True, timeout=TIMEOUT)
     return r.returncode == 0 and os.path.exists(out_c)
-
-def emit_tychoc0(h0, src_path, out_c):
-    with open(src_path) as fi, open(out_c, "w") as fo:
-        r = subprocess.run([h0], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, timeout=TIMEOUT)
-    return r.returncode == 0 and os.path.getsize(out_c) > 0
 
 def build_run(c_file, exe, tmp, asan=False):
     cc = ["cc", "-O1" if asan else "-O2", "-fwrapv", "-std=c11", "-pthread"] + (ASAN if asan else []) + [c_file, FFI_SHIM, "-o", exe]
@@ -65,7 +69,7 @@ def build_run(c_file, exe, tmp, asan=False):
 def is_to(e):
     return e is not None and e.startswith("timeout")
 
-def classify(seed, h0, tmp):
+def classify(seed, tmp):
     # generator failure (crash / empty output) is a hard failure of the fuzz
     # run itself, never a silent skip: every seed must yield a valid program.
     g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True, text=True, timeout=TIMEOUT)
@@ -78,53 +82,32 @@ def classify(seed, h0, tmp):
     try:
         hc_ok = emit_tychoc(src, os.path.join(tmp, "hc.c"))
     except subprocess.TimeoutExpired:
-        hc_ok = "timeout"
-    try:
-        h0_ok = emit_tychoc0(h0, src, os.path.join(tmp, "h0.c"))
-    except subprocess.TimeoutExpired:
-        h0_ok = "timeout"
-    if hc_ok == "timeout" or h0_ok == "timeout":
-        if hc_ok == h0_ok:
-            return "timeout", "both compilers timed out (%ds)" % TIMEOUT
-        return "FAIL", "compile-timeout divergence: tychoc=%s tychoc0=%s" % (hc_ok, h0_ok)
-    if not hc_ok and not h0_ok:
-        return "skip", None
-    if hc_ok != h0_ok:
-        return "FAIL", "compile-discrepancy: tychoc=%s tychoc0=%s" % (hc_ok, h0_ok)
-    # native (-O2) runs of both sides: the differential oracle on optimized code
+        return "timeout", "tychoc timed out compiling (%ds)" % TIMEOUT
+    if not hc_ok:
+        return "skip", None                         # tychoc rejected it
+    # native (-O2) run: the reference output
     out_hc, e1 = build_run(os.path.join(tmp, "hc.c"), os.path.join(tmp, "run_hc"), tmp)
-    out_h0, e2 = build_run(os.path.join(tmp, "h0.c"), os.path.join(tmp, "run_h0"), tmp)
-    if is_to(e1) or is_to(e2):
-        if is_to(e1) and is_to(e2):
-            return "timeout", "both sides timed out (%ds): tychoc=%s tychoc0=%s" % (RUN_TIMEOUT, e1, e2)
-        return "FAIL", "one-sided timeout (hang): tychoc=%s tychoc0=%s" % (e1, e2)
-    if e1: return "FAIL", "tychoc " + e1            # reference itself faulted -> real bug
-    if e2: return "FAIL", "tychoc0 " + e2
-    # ASan/UBSan runs of BOTH sides: catches a UAF/UB in tychoc-only codegen
-    # directly, not just via output divergence. ASan is slow; an ASan-only
-    # timeout after a clean native run is counted (reported), not a FAIL.
+    if is_to(e1):
+        return "timeout", "native run timed out (%ds): %s" % (RUN_TIMEOUT, e1)
+    if e1: return "FAIL", "tychoc " + e1            # the reference itself faulted -> real bug
+    # ASan/UBSan run: catches a UAF/UB in the emitted C directly, not only via an
+    # output difference. ASan is slow; an ASan-only timeout after a clean native
+    # run is counted (reported), not a FAIL.
     out_hca, e1a = build_run(os.path.join(tmp, "hc.c"), os.path.join(tmp, "run_hca"), tmp, asan=True)
     if is_to(e1a): return "timeout", "tychoc-ASan timed out: " + e1a
     if e1a: return "FAIL", "tychoc-ASan " + e1a
-    out_as, e3 = build_run(os.path.join(tmp, "h0.c"), os.path.join(tmp, "run_h0a"), tmp, asan=True)
-    if is_to(e3): return "timeout", "tychoc0-ASan timed out: " + e3
-    if e3: return "FAIL", "tychoc0-ASan " + e3
-    if out_hc != out_h0:
-        return "FAIL", "output diverge: tychoc=%r tychoc0=%r" % (out_hc, out_h0)
     if out_hc != out_hca:
         return "FAIL", "tychoc native vs ASan diverge (UB): %r vs %r" % (out_hc, out_hca)
-    if out_h0 != out_as:
-        return "FAIL", "tychoc0 native vs ASan diverge (UB): %r vs %r" % (out_h0, out_as)
     return "ok", None
 
-def run_seed(seed, h0):
+def run_seed(seed):
     # one self-contained task: own temp dir (so parallel seeds never clobber each
     # other's p.ty/*.c/binaries), classify, and on FAIL copy the program into
     # findings/ under its unique seed name before the temp dir is torn down.
     tmp = tempfile.mkdtemp(prefix="fuzz_")
     try:
         try:
-            verdict, msg = classify(seed, h0, tmp)
+            verdict, msg = classify(seed, tmp)
         except subprocess.TimeoutExpired:
             return seed, "timeout", "unexpected TimeoutExpired"   # safety net
         if verdict == "FAIL":
@@ -141,37 +124,30 @@ def main():
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     jobs = int(os.environ.get("FUZZ_JOBS", 0)) or max(1, (os.cpu_count() or 4) - 2)
     os.makedirs(FINDINGS, exist_ok=True)
-    tmp0 = tempfile.mkdtemp(prefix="fuzz_h0_")
-    h0 = os.path.join(tmp0, "h0")
-    if subprocess.run([TYCHOC, os.path.join(REPO, "compiler", "tychoc0.ty"), "-o", h0]).returncode != 0:
-        print("tychoc0 build failed"); shutil.rmtree(tmp0, ignore_errors=True); return 2
     counts = {"ok": 0, "skip": 0, "FAIL": 0, "timeout": 0}
     done = genfail = 0
-    print("fuzz: %d seeds x 4 builds (2 native, 2 ASan), %d workers" % (n, jobs))
-    try:
-        with ProcessPoolExecutor(max_workers=jobs) as ex:
-            futs = {ex.submit(run_seed, seed, h0): seed for seed in range(start, start + n)}
-            for fut in as_completed(futs):
-                seed, verdict, msg = fut.result()
-                if verdict == "GENFAIL":
-                    # the generator itself crashed / produced nothing: the whole
-                    # run is meaningless. Abort now, cancelling pending seeds.
-                    print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
-                    genfail = 1
-                    for f in futs:
-                        f.cancel()
-                    break
-                counts[verdict] = counts.get(verdict, 0) + 1
-                if verdict == "FAIL":
-                    print("FAIL seed %d: %s" % (seed, msg))
-                elif verdict == "timeout":
-                    print("timeout seed %d: %s" % (seed, msg))
-                done += 1
-                if done % 200 == 0:
-                    print("... %d/%d  ok=%d skip=%d timeout=%d FAIL=%d" % (
-                        done, n, counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
-    finally:
-        shutil.rmtree(tmp0, ignore_errors=True)
+    print("fuzz: %d seeds x 2 builds (native -O2, ASan/UBSan -O1), %d workers" % (n, jobs))
+    with ProcessPoolExecutor(max_workers=jobs) as ex:
+        futs = {ex.submit(run_seed, seed): seed for seed in range(start, start + n)}
+        for fut in as_completed(futs):
+            seed, verdict, msg = fut.result()
+            if verdict == "GENFAIL":
+                # the generator itself crashed / produced nothing: the whole
+                # run is meaningless. Abort now, cancelling pending seeds.
+                print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
+                genfail = 1
+                for f in futs:
+                    f.cancel()
+                break
+            counts[verdict] = counts.get(verdict, 0) + 1
+            if verdict == "FAIL":
+                print("FAIL seed %d: %s" % (seed, msg))
+            elif verdict == "timeout":
+                print("timeout seed %d: %s" % (seed, msg))
+            done += 1
+            if done % 200 == 0:
+                print("... %d/%d  ok=%d skip=%d timeout=%d FAIL=%d" % (
+                    done, n, counts["ok"], counts["skip"], counts["timeout"], counts["FAIL"]))
     if genfail:
         return 1
     print("DONE: ok=%d skip=%d timeout=%d FAIL=%d  (findings in fuzz/findings/)" % (
@@ -183,7 +159,7 @@ def main():
     # compiler front-end regression) has invalidated the run -- fail loudly
     # instead of green-exiting on near-zero coverage.
     if n >= 20 and counts["skip"] > 0.3 * n:
-        print("SKIP CEILING EXCEEDED: %d/%d (>30%%) programs rejected by both compilers -- generator or front-end regression" % (counts["skip"], n))
+        print("SKIP CEILING EXCEEDED: %d/%d (>30%%) programs rejected by tychoc -- generator or front-end regression" % (counts["skip"], n))
         return 1
     return 0
 
